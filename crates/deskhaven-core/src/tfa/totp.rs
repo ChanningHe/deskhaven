@@ -11,6 +11,7 @@ use data_encoding::BASE32_NOPAD;
 use hmac::digest::Key;
 use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{CryptoError, fill_random};
@@ -95,9 +96,15 @@ pub(crate) fn matching_step(
 ) -> Option<i64> {
     let wanted = parse_code(code)?;
     let now = step_at(now_ms);
-    (now - SKEW_STEPS..=now + SKEW_STEPS)
-        .filter(|step| last_step.is_none_or(|last| *step > last))
-        .find(|step| hotp(secret, *step) == wanted)
+    // Every step of the window is computed and compared in constant time; only then is
+    // the earliest match picked.
+    let matches: Vec<(i64, bool)> = (now - SKEW_STEPS..=now + SKEW_STEPS)
+        .map(|step| (step, bool::from(hotp(secret, step).ct_eq(&wanted))))
+        .collect();
+    matches
+        .into_iter()
+        .filter(|(step, _)| last_step.is_none_or(|last| *step > last))
+        .find_map(|(step, matched)| matched.then_some(step))
 }
 
 /// Whether `code` has the shape of a TOTP code (as opposed to a recovery code).
