@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
+use deskhaven_core::auth::limiter::LoginThrottle;
 use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::SecretBox;
 use deskhaven_core::keys::{
@@ -133,6 +134,7 @@ pub async fn open_state(
         PasswordHasher::default(),
         Arc::clone(&clock),
     );
+    let login_throttle = LoginThrottle::new(db.clone(), settings.clone(), Arc::clone(&clock));
     let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
 
     Ok(AppState {
@@ -142,6 +144,7 @@ pub async fn open_state(
         signal_public_key,
         users,
         sessions,
+        login_throttle,
     })
 }
 

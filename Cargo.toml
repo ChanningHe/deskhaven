@@ -120,6 +120,13 @@ argon2 = { version = "0.5.3", default-features = false, features = ["std", "pass
 # boxing; async-trait 0.1 is already in the graph through sea-orm-migration.
 async-trait = "0.1"
 
+# --- rate limit (M2-06) ---
+# (tokio, tracing, sea-orm, arc-swap, chrono: reused from earlier blocks.)
+# Keyed GCRA limiter for login-type endpoints (02 §5.1); never tower_governor (trusts XFF).
+# No `quanta` (time comes from core's injectable `Clock`), `jitter` or `dashmap` (a mutexed
+# HashMap is plenty for login traffic).
+governor = { version = "0.10.4", default-features = false, features = ["std"] }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 
