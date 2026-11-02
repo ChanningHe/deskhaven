@@ -39,6 +39,37 @@ pub struct ClientFlowStart {
     pub url: Url,
 }
 
+/// The value that ties a console flow to the browser that started it (a cookie). Exposed
+/// once; `Debug` never shows it.
+pub struct BrowserBinding(SessionToken);
+
+impl BrowserBinding {
+    pub fn expose(&self) -> &str {
+        self.0.expose()
+    }
+}
+
+impl fmt::Debug for BrowserBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BrowserBinding(<redacted>)")
+    }
+}
+
+/// A started console login: send the browser to `url` with `binding` in a cookie.
+#[derive(Debug)]
+pub struct ConsoleFlowStart {
+    pub url: Url,
+    /// Must come back with the completion (see `OidcService::complete_console`).
+    pub binding: BrowserBinding,
+}
+
+/// What differs between the flow kinds at the start.
+struct FlowRow {
+    flow: Flow,
+    context: serde_json::Value,
+    client_code_hash: Option<String>,
+}
+
 impl OidcService {
     /// Starts a client login at the enabled provider named `provider` (the client's `op`)
     /// for `device`, which the session will be bound to.
@@ -47,12 +78,44 @@ impl OidcService {
         provider: &str,
         device: &ClientDevice,
     ) -> Result<ClientFlowStart, OidcError> {
+        device.check().map_err(|_| OidcError::InvalidDevice)?;
+        let code = SessionToken::generate()?;
+        let row = FlowRow {
+            flow: Flow::Client,
+            context: context::for_client(device),
+            client_code_hash: Some(code.hash().as_str().to_owned()),
+        };
+        let url = self.begin(provider, row).await?;
+        Ok(ClientFlowStart {
+            code: ClientCode(code),
+            url,
+        })
+    }
+
+    /// Starts a web console login at the enabled provider named `provider`. The flow only
+    /// completes with the returned binding (`complete_console`), so a callback opened in
+    /// another browser (a forwarded link, an attacker's flow) does nothing.
+    pub async fn begin_console(&self, provider: &str) -> Result<ConsoleFlowStart, OidcError> {
+        let binding = SessionToken::generate()?;
+        let row = FlowRow {
+            flow: Flow::Console,
+            context: context::for_console(&binding.hash()),
+            client_code_hash: None,
+        };
+        let url = self.begin(provider, row).await?;
+        Ok(ConsoleFlowStart {
+            url,
+            binding: BrowserBinding(binding),
+        })
+    }
+
+    /// Stores the flow row and returns the IdP's authorization URL.
+    async fn begin(&self, provider: &str, row: FlowRow) -> Result<Url, OidcError> {
         let redirect_uri = self
             .inner
             .redirect_uri
             .as_ref()
             .ok_or(OidcError::NotConfigured)?;
-        device.check().map_err(|_| OidcError::InvalidDevice)?;
         let provider = self
             .enabled_provider(provider)
             .await?
@@ -70,9 +133,7 @@ impl OidcService {
         let state = SessionToken::generate()?;
         let nonce = SessionToken::generate()?;
         let verifier = SessionToken::generate()?;
-        let code = SessionToken::generate()?;
         let state_hash = state.hash();
-        let context = context::for_client(device);
         let sealed = self.inner.crypto.seal(
             &verifier_context(state_hash.as_str()),
             verifier.expose().as_bytes(),
@@ -81,12 +142,12 @@ impl OidcService {
         let ttl = i64::try_from(FLOW_TTL.as_millis()).unwrap_or(i64::MAX);
         oidc_flow::ActiveModel {
             state_hash: Set(state_hash.as_str().to_owned()),
-            client_code_hash: Set(Some(code.hash().as_str().to_owned())),
+            client_code_hash: Set(row.client_code_hash),
             provider_id: Set(provider.id),
             pkce_verifier_enc: Set(sealed),
             nonce: Set(nonce.expose().to_owned()),
-            flow: Set(Flow::Client),
-            context: Set(context.to_string()),
+            flow: Set(row.flow),
+            context: Set(row.context.to_string()),
             created_at: Set(timestamp(now)?),
             expires_at: Set(timestamp(now.saturating_add(ttl))?),
             completed_user_id: Set(None),
@@ -106,11 +167,12 @@ impl OidcService {
             nonce: nonce.expose(),
             pkce_verifier: verifier.expose(),
         };
-        let url = protocol::authorization_url(&discovered, &rp, &provider.scopes, &secrets);
-        Ok(ClientFlowStart {
-            code: ClientCode(code),
-            url,
-        })
+        Ok(protocol::authorization_url(
+            &discovered,
+            &rp,
+            &provider.scopes,
+            &secrets,
+        ))
     }
 
     /// Deletes expired flows; returns how many (periodic job, M2-20).

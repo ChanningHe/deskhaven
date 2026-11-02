@@ -13,6 +13,7 @@ use deskhaven_db::entity::oidc_flow::{self, Column, Flow};
 use deskhaven_db::entity::{oidc_provider, user};
 use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use subtle::ConstantTimeEq;
 
 use super::claims::Asserted;
 use super::discovery::{Discovered, Freshness};
@@ -68,19 +69,89 @@ pub struct CallbackReport {
     pub outcome: Result<OidcLogin, Failure>,
 }
 
+/// What a completion requires of the flow before claiming it.
+#[derive(Clone, Copy)]
+enum Expect<'a> {
+    Client,
+    /// The browser binding the console sent back (`None`: no cookie).
+    Console(Option<&'a str>),
+}
+
+impl Expect<'_> {
+    fn admits(self, row: &oidc_flow::Model) -> bool {
+        match (self, row.flow) {
+            (Self::Client, Flow::Client) => true,
+            (Self::Console(Some(presented)), Flow::Console) => {
+                let (Some(hash), Some(stored)) = (
+                    TokenHash::of_presented(presented),
+                    context::console_binding(&row.context),
+                ) else {
+                    return false;
+                };
+                bool::from(hash.as_str().as_bytes().ct_eq(stored.as_bytes()))
+            }
+            _ => false,
+        }
+    }
+}
+
 impl OidcService {
+    /// Completes a client flow (the confirmed callback page). A console flow is
+    /// [`CallbackError::InvalidState`] here and stays untouched: it completes only through
+    /// [`complete_console`](Self::complete_console).
     pub async fn complete_callback(
         &self,
         params: &CallbackParams<'_>,
     ) -> Result<CallbackReport, CallbackError> {
-        let row = self.claim(params.state).await?;
+        self.complete(params, Expect::Client).await
+    }
+
+    /// Completes a console flow in the browser that started it: `binding` is the
+    /// [`BrowserBinding`](super::BrowserBinding) of `begin_console`, sent back in its cookie.
+    /// A missing or different binding, or a client flow, is [`CallbackError::InvalidState`]
+    /// and leaves the flow untouched (a callback link forwarded to, or planted in, another
+    /// browser does nothing). The flow row is deleted once it has an outcome; the session
+    /// is the caller's business.
+    pub async fn complete_console(
+        &self,
+        params: &CallbackParams<'_>,
+        binding: Option<&str>,
+    ) -> Result<CallbackReport, CallbackError> {
+        self.complete(params, Expect::Console(binding)).await
+    }
+
+    async fn complete(
+        &self,
+        params: &CallbackParams<'_>,
+        expect: Expect<'_>,
+    ) -> Result<CallbackReport, CallbackError> {
+        let row = self.claim(params.state, expect).await?;
         let flow = flow_kind(&row)?;
+        let report = self.finish(&row, flow, params).await;
+        if row.flow == Flow::Console {
+            // Nobody polls a console flow: its outcome is in the report.
+            let deleted = oidc_flow::Entity::delete_by_id(row.id)
+                .exec(&self.inner.db)
+                .await;
+            if let Err(err) = deleted {
+                tracing::warn!(flow_id = row.id, error = %err, "cannot delete a completed console OIDC flow");
+            }
+        }
+        report
+    }
+
+    async fn finish(
+        &self,
+        row: &oidc_flow::Model,
+        flow: FlowKind,
+        params: &CallbackParams<'_>,
+    ) -> Result<CallbackReport, CallbackError> {
         let provider = oidc_provider::Entity::find_by_id(row.provider_id)
             .one(&self.inner.db)
             .await?
             .ok_or(CallbackError::InvalidState)?;
-        let (subject, outcome) = match self.verify_callback(&row, &provider, params).await {
-            Ok(asserted) => match self.resolve(&row, &provider, &asserted).await {
+        let (subject, outcome) = match self.verify_callback(row, &provider, params).await {
+            Ok(asserted) => match self.resolve(row, &provider, &asserted).await {
                 Ok(outcome) => (Some(asserted.subject), outcome),
                 Err(err) => {
                     // Best effort: let the poller stop instead of waiting for the expiry.
@@ -121,12 +192,19 @@ impl OidcService {
             .ok_or(CallbackError::InvalidState)
     }
 
-    /// Marks the live flow of `state` consumed and returns it.
-    async fn claim(&self, state: Option<&str>) -> Result<oidc_flow::Model, CallbackError> {
+    /// Marks the live flow of `state` consumed and returns it, when `expect` admits it.
+    async fn claim(
+        &self,
+        state: Option<&str>,
+        expect: Expect<'_>,
+    ) -> Result<oidc_flow::Model, CallbackError> {
         // Read first: a state that matches nothing (the unauthenticated, unlimited case)
         // costs one indexed read, never a write lock (SQLite locks the database for an
         // UPDATE even when it matches no row).
         let live = self.live_flow(state).await?;
+        if !expect.admits(&live) {
+            return Err(CallbackError::InvalidState);
+        }
         let now = timestamp(self.inner.now_ms())?;
         let claimed = oidc_flow::Entity::update_many()
             .col_expr(Column::ConsumedAt, Expr::value(now))

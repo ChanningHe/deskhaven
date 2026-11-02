@@ -13,6 +13,7 @@ pub mod oidc;
 pub mod pagination;
 pub mod sessions;
 pub mod settings;
+pub mod setup;
 pub mod state;
 pub mod strategies;
 mod text;

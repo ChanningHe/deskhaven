@@ -13,23 +13,41 @@ use sea_orm::{
 
 use super::normalize::{self, Email};
 use super::{
-    AuthSource, Credential, Inner, NewUser, Password, ProfileUpdate, Role, Status, User, UserError,
-    UserEvent, UserService, check_password_policy,
+    AuthSource, Credential, CredentialStamp, Inner, MAX_PASSWORD_LEN, NewUser, Password,
+    PasswordError, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserService,
+    check_password_policy,
 };
 use crate::addressbooks;
+use crate::console_audit::{self, NewConsoleAudit};
 use crate::sessions::revoke_user_sessions;
 use crate::strategies;
 
 impl UserService {
     /// Creates an account. Local accounts need a password that passes the policy.
     pub async fn create(&self, new: NewUser) -> Result<User, UserError> {
-        let mut model = validated(&new)?;
+        let prepared = self.prepare(&new).await?;
+        let created = self.insert_prepared(&self.inner.db, prepared).await?;
+        Ok(created.into())
+    }
+
+    /// Validates `new` and hashes its local password (before any write lock is taken),
+    /// for [`insert_prepared`](Self::insert_prepared) inside the caller's transaction.
+    pub(crate) async fn prepare(&self, new: &NewUser) -> Result<PreparedUser, UserError> {
+        let mut model = validated(new)?;
         if let Credential::Local { password } = &new.credential {
             let hash = self.inner.hash_new_password(password).await?;
             model.password_hash = Set(Some(hash));
         }
-        let created = self.insert(&self.inner.db, model).await?;
-        Ok(created.into())
+        Ok(PreparedUser(model))
+    }
+
+    /// Inserts a prepared account on `conn`.
+    pub(crate) async fn insert_prepared<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        prepared: PreparedUser,
+    ) -> Result<user::Model, UserError> {
+        self.insert(conn, prepared.0).await
     }
 
     /// Creates an external (LDAP / OIDC) account on `conn`, typically inside the caller's
@@ -116,35 +134,60 @@ impl UserService {
         }
         // Hashed before any write lock is taken: it takes tens of milliseconds.
         let hash = self.inner.hash_new_password(password).await?;
-        let previous = target.password_changed_at;
-        self.detached(move |inner| async move {
-            let now = inner.now();
-            let changes = user::ActiveModel {
-                password_hash: Set(Some(hash)),
-                password_changed_at: Set(Some(after(previous, now))),
-                must_change_password: Set(must_change),
-                updated_at: Set(now),
-                ..Default::default()
-            };
-            let tx = begin_write(&inner.db).await?;
-            let result = user::Entity::update_many()
-                .set(changes)
-                .filter(user::Column::Id.eq(id))
-                .filter(user::Column::AuthSource.eq(AuthSource::Local))
-                .exec(&tx)
-                .await?;
-            // Deleted (or no longer local) since it was read.
-            if result.rows_affected == 0 {
-                return Err(UserError::NotFound);
-            }
-            revoke_user_sessions(&tx, id, now).await?;
-            tx.commit().await?;
-            inner.committed(UserChange::Event(UserEvent::PasswordChanged {
-                user_id: id,
-            }));
-            Ok(())
-        })
-        .await
+        let change = PasswordChange {
+            id,
+            hash,
+            previous: target.password_changed_at,
+            must_change,
+            replaces: None,
+            audit: None,
+        };
+        // Deleted (or no longer local) since it was read.
+        self.detached(move |inner| async move { inner.replace_password(change).await })
+            .await?
+            .ok_or(UserError::NotFound)
+            .map(drop)
+    }
+
+    /// Self-service password change (console): verifies `current` against the stored hash
+    /// (one Argon2id computation either way), then, in one transaction, replaces it with
+    /// `new` (policy-checked; `must_change_password` cleared), revokes every session of the
+    /// user and records `audit`. Returns the new password's credential stamp, for the
+    /// caller's fresh session. [`UserError::WrongPassword`] when `current` does not match,
+    /// also when the password changed concurrently. Emits [`UserEvent::PasswordChanged`].
+    pub async fn change_password(
+        &self,
+        id: i64,
+        current: &Password,
+        new: &Password,
+        audit: &NewConsoleAudit,
+    ) -> Result<CredentialStamp, UserError> {
+        let target = user::Entity::find_by_id(id).one(&self.inner.db).await?;
+        let target = target.ok_or(UserError::NotFound)?;
+        let stored = match (&target.auth_source, &target.password_hash) {
+            (AuthSource::Local, Some(hash)) => hash.clone(),
+            _ => return Err(UserError::NotLocal),
+        };
+        if !self.inner.verify_current(id, current, &stored).await? {
+            return Err(UserError::WrongPassword);
+        }
+        let hash = self.inner.hash_new_password(new).await?;
+        let change = PasswordChange {
+            id,
+            hash,
+            previous: target.password_changed_at,
+            must_change: false,
+            replaces: Some(stored),
+            audit: Some(audit.clone()),
+        };
+        let changed_at = self
+            .detached(move |inner| async move { inner.replace_password(change).await })
+            .await?
+            .ok_or(UserError::WrongPassword)?;
+        Ok(CredentialStamp::from_parts(
+            Some(changed_at.timestamp_millis()),
+            AuthSource::Local,
+        ))
     }
 
     /// Changes the status. Leaving `active` is refused for the last active owner; entering
@@ -227,12 +270,87 @@ impl UserService {
     }
 }
 
+/// A validated account row, its local password hashed.
+pub(crate) struct PreparedUser(user::ActiveModel);
+
+/// A password replacement, ready to write.
+struct PasswordChange {
+    id: i64,
+    hash: String,
+    previous: Option<TimestampMs>,
+    must_change: bool,
+    /// Only replace this stored hash (self-service change: the one just verified).
+    replaces: Option<String>,
+    audit: Option<NewConsoleAudit>,
+}
+
 impl Inner {
     /// Policy check with the current minimum length, then a fresh hash.
     async fn hash_new_password(&self, password: &Password) -> Result<String, UserError> {
         check_password_policy(password, self.min_password_length())
             .map_err(|reason| UserError::PolicyViolation { reason })?;
         Ok(self.hasher.hash(password).await?)
+    }
+
+    /// Whether `password` matches `stored` (an over-long one is refused after the dummy
+    /// cost, a malformed hash never matches).
+    async fn verify_current(
+        &self,
+        id: i64,
+        password: &Password,
+        stored: &str,
+    ) -> Result<bool, UserError> {
+        if password.char_len() > MAX_PASSWORD_LEN {
+            self.hasher.verify_dummy(&Password::new("")).await?;
+            return Ok(false);
+        }
+        match self.hasher.verify(password, stored).await {
+            Ok(matched) => Ok(matched),
+            Err(PasswordError::MalformedHash) => {
+                tracing::error!(user_id = id, "stored password hash is malformed");
+                self.hasher.verify_dummy(password).await?;
+                Ok(false)
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Writes the new hash, revokes every session of the user and records the audit row,
+    /// in one transaction. The new `password_changed_at`, or `None` when no row matched
+    /// (deleted, no longer local, or the hash to replace is gone).
+    async fn replace_password(
+        &self,
+        change: PasswordChange,
+    ) -> Result<Option<TimestampMs>, UserError> {
+        let now = self.now();
+        let changed_at = after(change.previous, now);
+        let changes = user::ActiveModel {
+            password_hash: Set(Some(change.hash)),
+            password_changed_at: Set(Some(changed_at)),
+            must_change_password: Set(change.must_change),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let tx = begin_write(&self.db).await?;
+        let mut update = user::Entity::update_many()
+            .set(changes)
+            .filter(user::Column::Id.eq(change.id))
+            .filter(user::Column::AuthSource.eq(AuthSource::Local));
+        if let Some(replaces) = change.replaces {
+            update = update.filter(user::Column::PasswordHash.eq(replaces));
+        }
+        if update.exec(&tx).await?.rows_affected == 0 {
+            return Ok(None);
+        }
+        revoke_user_sessions(&tx, change.id, now).await?;
+        if let Some(entry) = &change.audit {
+            console_audit::insert(&tx, entry, now.timestamp_millis()).await?;
+        }
+        tx.commit().await?;
+        self.committed(UserChange::Event(UserEvent::PasswordChanged {
+            user_id: change.id,
+        }));
+        Ok(Some(changed_at))
     }
 }
 

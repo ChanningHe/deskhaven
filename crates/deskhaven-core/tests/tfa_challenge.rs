@@ -11,7 +11,8 @@ use std::time::Duration;
 use common::tfa::{Env, RUSTDESK_ID, device, first_code, pending};
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::tfa::{
-    CHALLENGE_TTL, ChallengeError, MAX_CHALLENGE_ATTEMPTS, Passed, SecondFactorMethod,
+    CHALLENGE_TTL, ChallengeError, LoginBinding, MAX_CHALLENGE_ATTEMPTS, Passed, PendingLogin,
+    SecondFactorMethod, SecondStep,
 };
 use deskhaven_db::entity::{auth_challenge, recovery_code, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
@@ -54,6 +55,58 @@ async fn current_code_passes_with_the_step_one_state() {
             row.totp_last_step,
             Some(deskhaven_core::tfa::totp::step_at(env.now_ms()))
         );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_console_challenge_verifies_only_for_the_console() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.enrolled("alice").await;
+        let lockout = pending("alice");
+        let console = PendingLogin {
+            user_id: alice.user_id,
+            stamp: &alice.stamp,
+            binding: LoginBinding::Console,
+            lockout: &lockout,
+        };
+        let from_console = env.tfa.issue_challenge(&console).await.unwrap();
+        let from_device = env.challenge(&alice).await;
+        let b = db.backend;
+        fn step<'a>(secret: &'a str, binding: LoginBinding<'a>, code: &'a str) -> SecondStep<'a> {
+            SecondStep {
+                secret,
+                username: "alice",
+                binding,
+                code,
+            }
+        }
+
+        // A wrong binding spends the attempt and fails before the code is looked at.
+        let device = device();
+        let console_by_device = env
+            .tfa
+            .verify_challenge(&step(
+                from_console.expose(),
+                LoginBinding::Device(&device),
+                "000000",
+            ))
+            .await;
+        let device_by_console = env
+            .tfa
+            .verify_challenge(&step(from_device.expose(), LoginBinding::Console, "000000"))
+            .await;
+        env.clock.advance(STEP);
+        let code = env.code(&alice);
+        let passed = env
+            .tfa
+            .verify_challenge(&step(from_console.expose(), LoginBinding::Console, &code))
+            .await;
+
+        assert!(invalid(&console_by_device), "{b}: {console_by_device:?}");
+        assert!(invalid(&device_by_console), "{b}: {device_by_console:?}");
+        assert_eq!(passed.unwrap().user.id, alice.user_id, "{b}");
     })
     .await;
 }
@@ -209,12 +262,13 @@ async fn an_expired_or_unknown_challenge_is_invalid() {
         let other = env.challenge(&alice).await;
         let mut tampered = other.expose().to_owned();
         tampered.replace_range(..1, if tampered.starts_with('A') { "B" } else { "A" });
+        let device = device();
         let unknown = env
             .tfa
             .verify_challenge(&deskhaven_core::tfa::SecondStep {
                 secret: &tampered,
                 username: "alice",
-                device: &device(),
+                binding: LoginBinding::Device(&device),
                 code: &env.code(&alice),
             })
             .await;
@@ -223,7 +277,7 @@ async fn an_expired_or_unknown_challenge_is_invalid() {
             .verify_challenge(&deskhaven_core::tfa::SecondStep {
                 secret: "not a secret",
                 username: "alice",
-                device: &device(),
+                binding: LoginBinding::Device(&device),
                 code: &env.code(&alice),
             })
             .await;

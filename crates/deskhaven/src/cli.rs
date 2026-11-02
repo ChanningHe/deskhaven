@@ -39,6 +39,15 @@ pub enum Command {
     /// Inspect key material
     #[command(subcommand)]
     Key(KeyCommand),
+    /// Administrative tasks
+    #[command(subcommand)]
+    Admin(AdminCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AdminCommand {
+    /// Issue a new one-time first-run setup link (while the instance has no owner)
+    CreateSetupLink,
 }
 
 #[derive(Debug, Subcommand)]

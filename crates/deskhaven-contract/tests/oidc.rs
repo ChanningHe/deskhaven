@@ -480,6 +480,41 @@ async fn the_redirect_shows_the_device_and_completes_only_on_confirmation() {
     assert_eq!(after.status, 200, "{}", text(&after));
 }
 
+/// M3-02: a console flow is handed on to the console (which holds its binding cookie),
+/// never confirmed or completed on the callback page.
+#[tokio::test]
+async fn a_console_flow_redirects_to_the_console_and_cannot_be_confirmed_here() {
+    let env = env().await;
+    let start = env.app.state.oidc.begin_console(PROVIDER).await.unwrap();
+    let request = AuthRequest::parse(&start.url);
+    let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+
+    let shown = env.app.send(&oidc_callback(&pairs)).await.unwrap();
+    let confirmed = env.app.send(&oidc_confirm(&pairs)).await.unwrap();
+
+    assert_eq!(shown.status, 303, "{}", text(&shown));
+    let location = header(&shown, "location");
+    assert!(location.starts_with("/login/oidc?"), "{location}");
+    assert!(
+        location.contains(&format!("state={}", request.state)) && location.contains("code="),
+        "{location}"
+    );
+    assert_eq!(header(&shown, "cache-control"), "no-store");
+    assert!(
+        text(&confirmed).contains("invalid, expired or already used"),
+        "{}",
+        text(&confirmed)
+    );
+    assert!(env.idp.token_requests().await.is_empty());
+    let preview = env
+        .app
+        .state
+        .oidc
+        .preview_callback(Some(&request.state))
+        .await;
+    assert!(preview.is_ok(), "the console flow is still live");
+}
+
 /// M1: a confirmation works once.
 #[tokio::test]
 async fn a_replayed_confirmation_is_refused() {

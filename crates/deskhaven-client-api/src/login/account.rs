@@ -21,7 +21,7 @@ use deskhaven_core::auth::limiter::{Attempt, ClientAddr, LockStatus, PendingSubj
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::sessions::{ClientDevice, SessionError, SessionToken};
 use deskhaven_core::state::AppState;
-use deskhaven_core::tfa::{ChallengeSecret, PendingLogin, SecondFactor};
+use deskhaven_core::tfa::{ChallengeSecret, LoginBinding, PendingLogin, SecondFactor};
 use deskhaven_core::users::{Authenticated, CredentialStamp, User};
 
 use super::event::{self, Attempted};
@@ -123,7 +123,7 @@ async fn challenge(
     let pending = PendingLogin {
         user_id: user.id,
         stamp,
-        device: &request.device,
+        binding: LoginBinding::Device(&request.device),
         lockout: &lockout,
     };
     let secret = state

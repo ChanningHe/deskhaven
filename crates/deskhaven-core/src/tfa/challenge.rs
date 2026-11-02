@@ -3,8 +3,10 @@
 //!
 //! The secret is a session-format token (256 random bits); only its SHA-256 is stored.
 //! The `context` binds the challenge to what step 1 established, so a stolen secret is
-//! useless elsewhere: the client device (`id` + `uuid`), the lockout subject (whose name is
-//! the normalized username) and the password's credential stamp.
+//! useless elsewhere: where the login runs ([`LoginBinding`]: the client device `id` +
+//! `uuid`, or the web console), the lockout subject (whose name is the normalized username)
+//! and the password's credential stamp. A console challenge never verifies for a client
+//! login and a client challenge never for the console.
 
 use std::fmt;
 
@@ -19,6 +21,9 @@ use super::{CHALLENGE_TTL, ChallengeError, Inner, MAX_CHALLENGE_ATTEMPTS, TfaErr
 use crate::auth::limiter::PendingSubject;
 use crate::sessions::{ClientDevice, SessionToken, TokenHash};
 use crate::users::{CredentialStamp, username_norm};
+
+/// `context` marker of a console challenge (instead of a device).
+const CONSOLE_KEY: &str = "console";
 
 /// The `secret` handed to the client with the challenge. Exposed once; `Debug` never
 /// shows it.
@@ -36,13 +41,22 @@ impl fmt::Debug for ChallengeSecret {
     }
 }
 
+/// Where a two-step login runs: both steps must name the same place.
+#[derive(Clone, Copy, Debug)]
+pub enum LoginBinding<'a> {
+    /// A RustDesk client login, from this device.
+    Device(&'a ClientDevice),
+    /// A web console login (the session becomes a cookie, not bound to a device).
+    Console,
+}
+
 /// Step 1 passed the password and the user needs a second factor.
 #[derive(Debug)]
 pub struct PendingLogin<'a> {
     pub user_id: i64,
     pub stamp: &'a CredentialStamp,
-    /// The device of the login request; step 2 must come from the same one.
-    pub device: &'a ClientDevice,
+    /// Where the login runs; step 2 must run there too.
+    pub binding: LoginBinding<'a>,
     /// From `LoginThrottle::on_password_ok_pending_2fa`.
     pub lockout: &'a PendingSubject,
 }
@@ -52,7 +66,7 @@ pub struct SecondStep<'a> {
     pub secret: &'a str,
     /// Must name the user of the challenge (case-insensitively).
     pub username: &'a str,
-    pub device: &'a ClientDevice,
+    pub binding: LoginBinding<'a>,
     /// A TOTP code or a recovery code. Never logged.
     pub code: &'a str,
 }
@@ -61,15 +75,33 @@ impl fmt::Debug for SecondStep<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SecondStep")
             .field("username", &self.username)
-            .field("device", &self.device)
+            .field("binding", &self.binding)
             .finish_non_exhaustive()
+    }
+}
+
+/// Where the challenge was issued, read back from `context`.
+#[derive(Debug, PartialEq, Eq)]
+enum BoundBinding {
+    Device { rustdesk_id: String, uuid: String },
+    Console,
+}
+
+impl BoundBinding {
+    fn matches(&self, presented: LoginBinding<'_>) -> bool {
+        match (self, presented) {
+            (Self::Device { rustdesk_id, uuid }, LoginBinding::Device(device)) => {
+                *rustdesk_id == device.rustdesk_id && *uuid == device.uuid
+            }
+            (Self::Console, LoginBinding::Console) => true,
+            _ => false,
+        }
     }
 }
 
 /// What the challenge carries from step 1, read back from `context`.
 pub(super) struct Bound {
-    pub(super) rustdesk_id: String,
-    pub(super) uuid: String,
+    binding: BoundBinding,
     pub(super) lockout: PendingSubject,
     pub(super) stamp: CredentialStamp,
 }
@@ -86,13 +118,22 @@ impl TfaService {
         let now = inner.clock.now_ms();
         let ttl = i64::try_from(CHALLENGE_TTL.as_millis()).unwrap_or(i64::MAX);
         let (name, source) = login.lockout.parts();
-        let context = json!({
-            "rustdesk_id": login.device.rustdesk_id,
-            "uuid": login.device.uuid,
+        let mut context = json!({
             "lockout_name": name,
             "lockout_source": source,
             "password_changed_at": login.stamp.to_stored(),
         });
+        if let Value::Object(fields) = &mut context {
+            match login.binding {
+                LoginBinding::Device(device) => {
+                    fields.insert("rustdesk_id".to_owned(), json!(device.rustdesk_id));
+                    fields.insert("uuid".to_owned(), json!(device.uuid));
+                }
+                LoginBinding::Console => {
+                    fields.insert(CONSOLE_KEY.to_owned(), Value::Bool(true));
+                }
+            }
+        }
         auth_challenge::ActiveModel {
             secret_hash: Set(secret.hash().as_str().to_owned()),
             user_id: Set(login.user_id),
@@ -126,7 +167,7 @@ impl TfaService {
 
 impl Inner {
     /// Spends one attempt of the live challenge `secret` names, and checks it was issued
-    /// for `step`'s username and device. Every failure is [`ChallengeError::Invalid`]; a
+    /// for `step`'s username and binding. Every failure is [`ChallengeError::Invalid`]; a
     /// bad binding still spends the attempt (the secret was presented).
     pub(super) async fn claim(
         &self,
@@ -144,9 +185,7 @@ impl Inner {
         let row = claimed.into_iter().next().ok_or(ChallengeError::Invalid)?;
         let bound = parse_context(&row)?;
         let same_user = username_norm(step.username).as_deref() == Some(bound.lockout.parts().0);
-        let same_device =
-            bound.rustdesk_id == step.device.rustdesk_id && bound.uuid == step.device.uuid;
-        if !(same_user && same_device) {
+        if !(same_user && bound.binding.matches(step.binding)) {
             return Err(ChallengeError::Invalid);
         }
         Ok((row, bound))
@@ -163,13 +202,13 @@ fn parse_context(row: &auth_challenge::Model) -> Result<Bound, ChallengeError> {
     };
     let value: Value = serde_json::from_str(&row.context).map_err(|_| corrupt())?;
     let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
-    let (Some(rustdesk_id), Some(uuid), Some(name), Some(source)) = (
-        text("rustdesk_id"),
-        text("uuid"),
-        text("lockout_name"),
-        text("lockout_source"),
-    ) else {
+    let (Some(name), Some(source)) = (text("lockout_name"), text("lockout_source")) else {
         return Err(corrupt());
+    };
+    let binding = match (text("rustdesk_id"), text("uuid"), value.get(CONSOLE_KEY)) {
+        (Some(rustdesk_id), Some(uuid), None) => BoundBinding::Device { rustdesk_id, uuid },
+        (None, None, Some(Value::Bool(true))) => BoundBinding::Console,
+        _ => return Err(corrupt()),
     };
     let lockout = PendingSubject::from_parts(&name, &source).ok_or_else(corrupt)?;
     let stamp = match value.get("password_changed_at") {
@@ -178,8 +217,7 @@ fn parse_context(row: &auth_challenge::Model) -> Result<Bound, ChallengeError> {
         None => return Err(corrupt()),
     };
     Ok(Bound {
-        rustdesk_id,
-        uuid,
+        binding,
         lockout,
         stamp,
     })
@@ -197,17 +235,21 @@ fn timestamp(ms: i64) -> Result<time::TimestampMs, TfaError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn debug_never_shows_the_secret_or_the_code() {
-        let device = ClientDevice {
+    fn device() -> ClientDevice {
+        ClientDevice {
             rustdesk_id: "123456789".to_owned(),
             uuid: "dXVpZA==".to_owned(),
             info: None,
-        };
+        }
+    }
+
+    #[test]
+    fn debug_never_shows_the_secret_or_the_code() {
+        let device = device();
         let step = SecondStep {
             secret: "s3cret-challenge-value",
             username: "alice",
-            device: &device,
+            binding: LoginBinding::Device(&device),
             code: "987654",
         };
 
@@ -218,5 +260,24 @@ mod tests {
             !shown.contains("s3cret-challenge-value") && !shown.contains("987654"),
             "{shown}"
         );
+    }
+
+    #[test]
+    fn a_binding_matches_only_its_own_kind_and_device() {
+        let device = device();
+        let other = ClientDevice {
+            uuid: "other".to_owned(),
+            ..device.clone()
+        };
+        let bound_device = BoundBinding::Device {
+            rustdesk_id: device.rustdesk_id.clone(),
+            uuid: device.uuid.clone(),
+        };
+
+        assert!(bound_device.matches(LoginBinding::Device(&device)));
+        assert!(!bound_device.matches(LoginBinding::Device(&other)));
+        assert!(!bound_device.matches(LoginBinding::Console));
+        assert!(BoundBinding::Console.matches(LoginBinding::Console));
+        assert!(!BoundBinding::Console.matches(LoginBinding::Device(&device)));
     }
 }

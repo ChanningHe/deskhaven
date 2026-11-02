@@ -16,7 +16,7 @@
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::state::AppState;
-use deskhaven_core::tfa::{SecondFactorMethod, SecondStep};
+use deskhaven_core::tfa::{LoginBinding, SecondFactorMethod, SecondStep};
 
 use super::account::{Completion, LoggedIn, Session, counted, issue_session};
 use super::event::{self, Attempted};
@@ -62,7 +62,7 @@ async fn verify(
     let step = SecondStep {
         secret: &request.secret,
         username: &request.username,
-        device: &request.device,
+        binding: LoginBinding::Device(&request.device),
         code: &request.code,
     };
     match state.tfa.verify_challenge(&step).await {

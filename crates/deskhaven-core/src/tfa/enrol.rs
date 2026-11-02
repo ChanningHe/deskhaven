@@ -18,6 +18,7 @@ use zeroize::Zeroizing;
 
 use super::totp::{self, TotpSecret};
 use super::{ISSUER, Inner, RecoveryCodes, TfaError, TfaService, recovery, seed_context};
+use crate::console_audit::{self, NewConsoleAudit};
 
 /// A pending enrolment, to show its owner once (as text and as a QR code of `uri`).
 /// `Debug` never shows the seed.
@@ -47,6 +48,23 @@ impl TfaService {
     /// Generates a new seed and stores it, sealed, as a pending enrolment (replacing any
     /// earlier pending one). [`TfaError::AlreadyEnabled`] while TOTP is enabled.
     pub async fn begin_enrolment(&self, user_id: i64) -> Result<Enrolment, TfaError> {
+        self.begin(user_id, None).await
+    }
+
+    /// [`begin_enrolment`](Self::begin_enrolment), recording `audit` in its transaction.
+    pub async fn begin_enrolment_audited(
+        &self,
+        user_id: i64,
+        audit: &NewConsoleAudit,
+    ) -> Result<Enrolment, TfaError> {
+        self.begin(user_id, Some(audit)).await
+    }
+
+    async fn begin(
+        &self,
+        user_id: i64,
+        audit: Option<&NewConsoleAudit>,
+    ) -> Result<Enrolment, TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
         let user = locked_user(&txn, user_id).await?;
@@ -56,6 +74,7 @@ impl TfaService {
         let secret = TotpSecret::generate()?;
         let sealed = inner.crypto.seal(&seed_context(user_id), secret.bytes())?;
         set_totp(&txn, inner, user_id, Some(sealed), None, None).await?;
+        record(&txn, inner, audit).await?;
         txn.commit().await?;
         Ok(Enrolment {
             secret: secret.to_base32(),
@@ -70,6 +89,25 @@ impl TfaService {
         user_id: i64,
         code: &str,
     ) -> Result<RecoveryCodes, TfaError> {
+        self.confirm(user_id, code, None).await
+    }
+
+    /// [`confirm_enrolment`](Self::confirm_enrolment), recording `audit` in its transaction.
+    pub async fn confirm_enrolment_audited(
+        &self,
+        user_id: i64,
+        code: &str,
+        audit: &NewConsoleAudit,
+    ) -> Result<RecoveryCodes, TfaError> {
+        self.confirm(user_id, code, Some(audit)).await
+    }
+
+    async fn confirm(
+        &self,
+        user_id: i64,
+        code: &str,
+        audit: Option<&NewConsoleAudit>,
+    ) -> Result<RecoveryCodes, TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
         let user = locked_user(&txn, user_id).await?;
@@ -83,6 +121,7 @@ impl TfaService {
         let now = inner.now();
         set_totp(&txn, inner, user_id, Some(sealed), Some(now), Some(step)).await?;
         let codes = replace_recovery_codes(&txn, inner, user_id).await?;
+        record(&txn, inner, audit).await?;
         txn.commit().await?;
         Ok(codes)
     }
@@ -151,6 +190,18 @@ impl Inner {
             })?;
         TotpSecret::from_bytes(Zeroizing::new(bytes.to_vec())).ok_or(TfaError::Corrupt)
     }
+}
+
+/// Writes `audit` (when given) in the operation's transaction.
+async fn record(
+    txn: &DatabaseTransaction,
+    inner: &Inner,
+    audit: Option<&NewConsoleAudit>,
+) -> Result<(), TfaError> {
+    if let Some(entry) = audit {
+        console_audit::insert(txn, entry, inner.clock.now_ms()).await?;
+    }
+    Ok(())
 }
 
 /// The user row, write-locked until the transaction ends (PostgreSQL).

@@ -42,8 +42,8 @@ use sea_orm::{DatabaseConnection, DbErr};
 pub use cache::{CACHE_TTL, CacheGeneration, CachedSession, DEFAULT_CAPACITY, SessionCache};
 pub use error::SessionError;
 pub use model::{
-    ClientDevice, DeviceBinding, MAX_DEVICE_FIELD_LEN, MAX_DEVICE_INFO_LEN, Session, SessionKind,
-    SessionPrincipal,
+    AccountFlags, ClientDevice, DeviceBinding, MAX_DEVICE_FIELD_LEN, MAX_DEVICE_INFO_LEN, Session,
+    SessionKind, SessionPrincipal,
 };
 pub(crate) use revoke::revoke_user_sessions;
 pub use token::{SessionToken, TOKEN_BYTES, TOKEN_LEN, TokenHash};

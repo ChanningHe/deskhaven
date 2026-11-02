@@ -96,24 +96,33 @@ impl ConsoleAuditLog {
         conn: &C,
         entry: &NewConsoleAudit,
     ) -> Result<i64, DbErr> {
-        let now = self.clock.now_ms();
-        let created_at = time::from_millis(now)
-            .ok_or_else(|| DbErr::Custom(format!("timestamp {now} out of range")))?;
-        let (actor_kind, actor_id) = entry.actor.columns();
-        let row = console_audit::ActiveModel {
-            actor_kind: Set(actor_kind),
-            actor_id: Set(actor_id),
-            action: Set(label(&entry.action)),
-            target_type: Set(label(&entry.target_type)),
-            target_id: Set(label(&entry.target_id)),
-            before: Set(entry.before.as_ref().map(|v| redact(v).to_string())),
-            after: Set(entry.after.as_ref().map(|v| redact(v).to_string())),
-            ip: Set(entry.ip.map(|ip| ip.to_string())),
-            created_at: Set(created_at),
-            ..Default::default()
-        };
-        row.insert(conn).await.map(|row| row.id)
+        insert(conn, entry, self.clock.now_ms()).await
     }
+}
+
+/// Inserts one row on `conn` stamped `now` (unix ms): for services that write a change
+/// and its audit row in their own transaction, on their own clock.
+pub(crate) async fn insert<C: ConnectionTrait>(
+    conn: &C,
+    entry: &NewConsoleAudit,
+    now: i64,
+) -> Result<i64, DbErr> {
+    let created_at = time::from_millis(now)
+        .ok_or_else(|| DbErr::Custom(format!("timestamp {now} out of range")))?;
+    let (actor_kind, actor_id) = entry.actor.columns();
+    let row = console_audit::ActiveModel {
+        actor_kind: Set(actor_kind),
+        actor_id: Set(actor_id),
+        action: Set(label(&entry.action)),
+        target_type: Set(label(&entry.target_type)),
+        target_id: Set(label(&entry.target_id)),
+        before: Set(entry.before.as_ref().map(|v| redact(v).to_string())),
+        after: Set(entry.after.as_ref().map(|v| redact(v).to_string())),
+        ip: Set(entry.ip.map(|ip| ip.to_string())),
+        created_at: Set(created_at),
+        ..Default::default()
+    };
+    row.insert(conn).await.map(|row| row.id)
 }
 
 fn label(s: &str) -> String {

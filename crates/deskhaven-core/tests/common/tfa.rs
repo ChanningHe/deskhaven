@@ -10,7 +10,8 @@ use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::tfa::{
-    ChallengeError, ChallengeSecret, Passed, PendingLogin, RecoveryCodes, SecondStep, TfaService,
+    ChallengeError, ChallengeSecret, LoginBinding, Passed, PendingLogin, RecoveryCodes, SecondStep,
+    TfaService,
 };
 use deskhaven_core::users::{
     Credential, CredentialStamp, HashParams, NewUser, Password, PasswordHasher, Role, UserService,
@@ -152,10 +153,11 @@ impl Env {
 
     pub async fn challenge(&self, user: &Enrolled) -> ChallengeSecret {
         let lockout = pending(&user.username);
+        let device = device();
         let login = PendingLogin {
             user_id: user.user_id,
             stamp: &user.stamp,
-            device: &device(),
+            binding: LoginBinding::Device(&device),
             lockout: &lockout,
         };
         self.tfa.issue_challenge(&login).await.unwrap()
@@ -180,7 +182,7 @@ impl Env {
         let step = SecondStep {
             secret: secret.expose(),
             username,
-            device,
+            binding: LoginBinding::Device(device),
             code,
         };
         self.tfa.verify_challenge(&step).await

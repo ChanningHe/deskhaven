@@ -14,6 +14,7 @@ pub mod key_cmd;
 pub mod log_safe;
 pub mod logging;
 pub mod serve;
+pub mod setup_link;
 pub mod shutdown;
 pub mod signal_server;
 pub mod signal_store;

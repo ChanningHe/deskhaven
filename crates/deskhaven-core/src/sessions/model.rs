@@ -3,7 +3,7 @@
 use std::net::IpAddr;
 
 use deskhaven_db::entity::session;
-use deskhaven_db::entity::user::Role;
+use deskhaven_db::entity::user::{self, AuthSource, Role};
 use deskhaven_db::time::TimestampMs;
 
 pub use deskhaven_db::entity::session::Kind as SessionKind;
@@ -27,6 +27,38 @@ pub struct SessionPrincipal {
     pub kind: SessionKind,
     /// Client sessions: the device the token was issued to.
     pub device: Option<DeviceBinding>,
+    /// Read with `role`, as old as it may be.
+    pub account: AccountFlags,
+}
+
+/// The owner's account state that decides what a console session may do before the
+/// account setup is finished (change a temporary password, enrol a required second
+/// factor; the admin API's gate enforces it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccountFlags {
+    pub auth_source: AuthSource,
+    pub must_change_password: bool,
+    pub totp_enabled: bool,
+}
+
+impl AccountFlags {
+    pub(super) fn of(user: &user::Model) -> Self {
+        Self {
+            auth_source: user.auth_source,
+            must_change_password: user.must_change_password,
+            totp_enabled: user.totp_enabled_at.is_some(),
+        }
+    }
+}
+
+impl From<&crate::users::User> for AccountFlags {
+    fn from(user: &crate::users::User) -> Self {
+        Self {
+            auth_source: user.auth_source,
+            must_change_password: user.must_change_password,
+            totp_enabled: user.totp_enabled,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

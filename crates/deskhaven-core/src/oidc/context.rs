@@ -5,7 +5,7 @@ use deskhaven_db::entity::user::AuthSource;
 use sea_orm::ActiveEnum;
 use serde_json::{Value, json};
 
-use crate::sessions::ClientDevice;
+use crate::sessions::{ClientDevice, TokenHash};
 use crate::users::CredentialStamp;
 
 pub(crate) fn for_client(device: &ClientDevice) -> Value {
@@ -14,6 +14,17 @@ pub(crate) fn for_client(device: &ClientDevice) -> Value {
         "uuid": device.uuid.trim(),
         "device_info": device.info.clone().unwrap_or(Value::Null),
     })
+}
+
+/// A console flow: the SHA-256 of the browser binding it must complete with.
+pub(crate) fn for_console(binding: &TokenHash) -> Value {
+    json!({ "binding": binding.as_str() })
+}
+
+/// The browser binding hash of a console flow; `None` when the context is not one.
+pub(crate) fn console_binding(raw: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    value.get("binding")?.as_str().map(str::to_owned)
 }
 
 /// The device of a client flow; `None` when the context is not one.

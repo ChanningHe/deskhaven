@@ -26,7 +26,7 @@ pub(crate) async fn revoke_user_sessions<C: ConnectionTrait>(
     revoke_rows(conn, session::Column::UserId.eq(user_id).into(), now).await
 }
 
-async fn revoke_rows<C: ConnectionTrait>(
+pub(super) async fn revoke_rows<C: ConnectionTrait>(
     conn: &C,
     which: Condition,
     now: TimestampMs,

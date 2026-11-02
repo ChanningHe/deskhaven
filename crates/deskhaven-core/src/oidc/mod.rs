@@ -24,8 +24,17 @@
 //!    exactly once by deleting the row (`DELETE … WHERE completed_user_id IS NOT NULL`); the
 //!    caller mints the session from the stored stamp.
 //!
-//! Console logins (M3-02) reuse steps 1–2 with `flow = console` (no polling code): the
-//! callback reports the flow kind and leaves the session to its caller.
+//! # Flow (console)
+//!
+//! [`OidcService::begin_console`] stores a `flow = console` row (no polling code) whose
+//! context holds SHA-256 of a 256-bit browser binding the console keeps in a cookie. The
+//! callback page sends the browser on to the console, which completes the flow with
+//! [`OidcService::complete_console`]: it requires that binding (constant-time compare)
+//! before it claims the row, so the browser that started the login is the one that
+//! finishes it. That makes the client flow's confirmation step unnecessary here: a
+//! forwarded authorization URL or a planted callback link (login CSRF) lands in a browser
+//! without the binding and does nothing. The session cookie is the caller's business; the
+//! row is deleted once the flow has an outcome.
 //!
 //! # Identity (06 §3.4)
 //!
@@ -86,7 +95,7 @@ use url::Url;
 pub use callback::{CallbackParams, CallbackReport, FlowKind, OidcLogin};
 pub use discovery::NEGATIVE_TTL;
 pub use error::{CallbackError, Failure, OidcError, PollError, ProviderError};
-pub use flow::{ClientCode, ClientFlowStart};
+pub use flow::{BrowserBinding, ClientCode, ClientFlowStart, ConsoleFlowStart};
 pub use http::{
     CONNECT_TIMEOUT, FetchError, FetchFuture, HttpFetch, MAX_RESPONSE_BYTES, REQUEST_TIMEOUT,
     ReqwestFetch,

@@ -6,7 +6,7 @@ use deskhaven_db::entity::user::{self, Status};
 use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter};
 
-use super::model::binding;
+use super::model::{AccountFlags, binding};
 use super::{
     CacheGeneration, CachedSession, Core, SessionError, SessionKind, SessionPrincipal,
     SessionService, TOUCH_INTERVAL, TokenHash, millis, timestamp,
@@ -117,6 +117,7 @@ impl Core {
                 role: owner.role,
                 kind: row.kind,
                 device: binding(row.rustdesk_id, row.device_uuid),
+                account: AccountFlags::of(&owner),
             },
             expires_at_ms: row.expires_at.timestamp_millis(),
             last_used_at_ms: row.last_used_at.timestamp_millis(),

@@ -4,8 +4,8 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use clap::Parser;
-use deskhaven::cli::{Cli, Command, ConfigCommand, KeyCommand};
-use deskhaven::{config_cmd, key_cmd, log_safe, serve};
+use deskhaven::cli::{AdminCommand, Cli, Command, ConfigCommand, KeyCommand};
+use deskhaven::{config_cmd, key_cmd, log_safe, serve, setup_link};
 
 fn main() -> ExitCode {
     let result = deskhaven::install_crypto_provider().and_then(|()| run(&Cli::parse()));
@@ -35,5 +35,6 @@ fn run(cli: &Cli) -> anyhow::Result<ExitCode> {
         }
         Command::Config(ConfigCommand::Schema) => done(config_cmd::schema()),
         Command::Key(KeyCommand::Show) => done(key_cmd::show(&options)),
+        Command::Admin(AdminCommand::CreateSetupLink) => done(setup_link::create(&options)),
     }
 }

@@ -17,6 +17,7 @@ use crate::login_events::LoginEventLog;
 use crate::oidc::{OidcService, ReqwestFetch};
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
+use crate::setup::SetupService;
 use crate::strategies::StrategyService;
 use crate::tfa::TfaService;
 use crate::users::{PasswordHasher, UserService};
@@ -51,6 +52,10 @@ pub struct AppState {
     /// Device registry operations and the presence table (`devices.presence()`), which the
     /// signal server's liveness notifications feed.
     pub devices: DeviceService,
+    /// First-run owner setup.
+    pub setup: SetupService,
+    /// See [`StateConfig::console_url`].
+    pub console_url: String,
 }
 
 /// Bootstrap values the services need beyond the database and the settings.
@@ -58,6 +63,11 @@ pub struct AppState {
 pub struct StateConfig {
     /// `public_url`, as validated by the bootstrap loader; blank disables OIDC logins.
     pub public_url: String,
+    /// Base URL of the web console as reached from the client API listener, for redirects
+    /// from there into the console (the OIDC callback of a console login):
+    /// `listen.admin_public_url` when the admin side has its own listener, blank when the
+    /// console shares the client API listener (redirects stay relative).
+    pub console_url: String,
 }
 
 impl AppState {
@@ -104,6 +114,7 @@ impl AppState {
             strategies.clone(),
             Arc::clone(&clock),
         );
+        let setup = SetupService::new(db.clone(), users.clone(), Arc::clone(&clock));
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {
             db,
@@ -120,6 +131,8 @@ impl AppState {
             groups,
             strategies,
             devices,
+            setup,
+            console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
         }
     }
 }

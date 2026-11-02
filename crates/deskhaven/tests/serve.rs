@@ -154,6 +154,47 @@ fn second_start_reuses_key_material() {
     }
 }
 
+/// M3-02 (M0-09 deferred): the first start logs a one-time setup link (token in the
+/// fragment, no password); the next start issues none while that one is live.
+#[test]
+fn first_start_logs_a_setup_link_once() {
+    let dir = workdir("setup-link");
+    let is_link = |f: &Value| {
+        f["message"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("first-run setup:")
+    };
+    let mut first = start(&dir, &config(&dir, ""), &[]);
+    let fields = first.wait_for_event(is_link);
+    first.listening("client_api");
+    let (status, _) = first.terminate();
+    let first_logs = first.logs();
+    assert_eq!(status.code(), Some(0), "{first_logs}");
+
+    let mut second = start(&dir, &config(&dir, ""), &[]);
+    let pending = second.wait_for_event(|f| {
+        f["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("setup pending")
+    });
+    second.listening("client_api");
+    let (status, _) = second.terminate();
+    let second_logs = second.logs();
+
+    assert_eq!(status.code(), Some(0), "{second_logs}");
+    let link = fields["link"].as_str().unwrap();
+    let token = link.strip_prefix("/setup#token=").expect(link);
+    assert_eq!(token.len(), 43, "{link}");
+    assert!(
+        !first_logs.to_lowercase().contains("password\":"),
+        "{first_logs}"
+    );
+    assert!(pending["expires_at"].is_string(), "{pending}");
+    assert!(!second_logs.contains(token), "{second_logs}");
+}
+
 #[test]
 fn split_admin_listener_serves_health_and_client_root_redirects() {
     let dir = workdir("split");

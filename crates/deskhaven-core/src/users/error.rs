@@ -29,6 +29,10 @@ pub enum UserError {
     #[error("the account does not use a local password")]
     NotLocal,
 
+    /// Self-service password change: the current password does not match.
+    #[error("the current password is wrong")]
+    WrongPassword,
+
     #[error("password hashing failed")]
     Password(#[source] PasswordError),
 

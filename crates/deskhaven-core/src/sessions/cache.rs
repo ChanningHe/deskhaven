@@ -222,6 +222,11 @@ mod tests {
                 role: Role::User,
                 kind: SessionKind::Console,
                 device: None,
+                account: super::super::AccountFlags {
+                    auth_source: deskhaven_db::entity::user::AuthSource::Local,
+                    must_change_password: false,
+                    totp_enabled: false,
+                },
             },
             expires_at_ms: 1_000_000,
             last_used_at_ms: 0,

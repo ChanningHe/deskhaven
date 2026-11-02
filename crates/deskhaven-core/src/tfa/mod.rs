@@ -49,7 +49,7 @@ use deskhaven_config::settings::{AUTH_TFA_ENFORCE, TfaEnforce};
 use deskhaven_db::time::TimestampMs;
 use sea_orm::DatabaseConnection;
 
-pub use challenge::{ChallengeSecret, PendingLogin, SecondStep};
+pub use challenge::{ChallengeSecret, LoginBinding, PendingLogin, SecondStep};
 pub use enrol::{Enrolment, TfaStatus};
 pub use error::{ChallengeError, TfaError};
 pub use recovery::{RECOVERY_CODE_CHARS, RECOVERY_CODE_COUNT, RecoveryCodes};
@@ -115,15 +115,19 @@ impl TfaService {
         if user.totp_enabled {
             return SecondFactor::Required;
         }
-        let enforced = match self.inner.settings.snapshot().get(&AUTH_TFA_ENFORCE) {
-            TfaEnforce::Off => false,
-            TfaEnforce::Admins => matches!(user.role, Role::Owner | Role::Admin),
-            TfaEnforce::All => true,
-        };
-        if enforced {
+        if self.enforced_for(user.role) {
             SecondFactor::SetupRequired
         } else {
             SecondFactor::NotRequired
+        }
+    }
+
+    /// Whether `auth.tfa.enforce` (read at each call) requires a second factor of `role`.
+    pub fn enforced_for(&self, role: Role) -> bool {
+        match self.inner.settings.snapshot().get(&AUTH_TFA_ENFORCE) {
+            TfaEnforce::Off => false,
+            TfaEnforce::Admins => matches!(role, Role::Owner | Role::Admin),
+            TfaEnforce::All => true,
         }
     }
 }

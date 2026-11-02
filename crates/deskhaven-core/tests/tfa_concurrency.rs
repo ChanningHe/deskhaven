@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use common::tfa::{Enrolled, Env, device, first_code};
 use deskhaven_core::tfa::{
-    ChallengeError, MAX_CHALLENGE_ATTEMPTS, Passed, SecondFactorMethod, SecondStep, TfaService,
-    totp,
+    ChallengeError, LoginBinding, MAX_CHALLENGE_ATTEMPTS, Passed, SecondFactorMethod, SecondStep,
+    TfaService, totp,
 };
 use deskhaven_db::entity::{auth_challenge, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
@@ -33,7 +33,7 @@ async fn race(tfa: &TfaService, steps: Vec<(String, String)>) -> Vec<Outcome> {
             let step = SecondStep {
                 secret: &secret,
                 username: "alice",
-                device: &device,
+                binding: LoginBinding::Device(&device),
                 code: &code,
             };
             tfa.verify_challenge(&step).await

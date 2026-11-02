@@ -9,13 +9,19 @@
 //! - `POST` (the button; the form posts back to the same URL, query included, so the code
 //!   and state are never copied into the page) completes the flow once (single use).
 //!
-//! Always 200 with a small HTML page (`page`): the reader is a person, and the HTTP stack
-//! replaces the body of any non-JSON 4xx/5xx under `/api`, which would hide the message. The
-//! outcome is in the page, the log and the login event.
+//! - A **console** flow (M3-02) is not completed here: `GET` answers `303` to the
+//!   console's `/login/oidc` with the IdP's query, where the browser that started the login
+//!   (holding the flow's binding cookie on the console origin) completes it through the
+//!   admin API. `POST` treats a console flow as an invalid link and leaves it untouched.
+//!
+//! Otherwise always 200 with a small HTML page (`page`): the reader is a person, and the
+//! HTTP stack replaces the body of any non-JSON 4xx/5xx under `/api`, which would hide the
+//! message. The outcome is in the page, the log and the login event.
 //!
 //! | case | `GET` | `POST` |
 //! |---|---|---|
-//! | live flow | confirmation | the outcome: success, or the failure's message |
+//! | live client flow | confirmation | the outcome: success, or the failure's message |
+//! | live console flow | 303 to the console | invalid link |
 //! | IdP `error` or no `code` | "stop waiting?" confirmation | denied (the client stops polling) |
 //! | unknown, expired or already used state | invalid link | invalid link |
 //! | server error | generic | generic |
@@ -28,11 +34,12 @@
 use std::sync::Arc;
 
 use axum::extract::{RawQuery, State};
-use axum::response::Response;
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::oidc::{
-    CallbackError, CallbackParams, CallbackPreview, CallbackReport, FlowKind,
+    CallbackError, CallbackParams, CallbackPreview, CallbackReport, DeviceSummary, FlowKind,
 };
 use deskhaven_core::state::AppState;
 
@@ -47,6 +54,8 @@ const INVALID_LINK: &str =
     "This login link is invalid, expired or already used. Start the login again from RustDesk.";
 const SERVER_ERROR: &str = "The login could not be completed. Please try again later.";
 const WARNING: &str = "Only continue if you started this login on that device yourself.";
+/// The console page that completes a console login (`web/src/routes/login.oidc.tsx`).
+pub const CONSOLE_COMPLETION_PATH: &str = "/login/oidc";
 
 /// The callback query, decoded.
 struct Query {
@@ -78,11 +87,18 @@ impl Query {
     }
 }
 
-/// `GET`: the confirmation page; nothing changes.
+/// `GET`: the confirmation page of a client flow, or the way on into the console for a
+/// console flow; nothing changes.
 pub async fn confirm(State(state): State<Arc<AppState>>, RawQuery(raw): RawQuery) -> Response {
     let query = Query::parse(raw.as_deref());
     match state.oidc.preview_callback(query.state.as_deref()).await {
-        Ok(preview) => confirmation(&preview, query.is_denied()),
+        Ok(CallbackPreview {
+            provider,
+            device: Some(device),
+        }) => confirmation(&provider, &device, query.is_denied()),
+        Ok(CallbackPreview { device: None, .. }) => {
+            to_console(&state.console_url, raw.as_deref().unwrap_or_default())
+        }
         Err(CallbackError::InvalidState) => page::message(INVALID_LINK),
         Err(err) => {
             tracing::error!(error = %err, "OIDC callback preview failed");
@@ -115,12 +131,26 @@ pub async fn complete(
     page::message(message)
 }
 
-fn confirmation(preview: &CallbackPreview, denied: bool) -> Response {
-    let provider = escape(&preview.provider);
-    let Some(device) = &preview.device else {
-        let question = format!("Sign in to the deskhaven console with {provider}?");
-        return page::confirm(&question, WARNING, "Sign in");
-    };
+/// A console login completes in the console itself (the browser that started it holds
+/// the flow's binding cookie there): `303` to `<console>/login/oidc?<the IdP's query>`.
+/// Only the query is copied; the target is fixed, so this is no open redirect.
+fn to_console(console_url: &str, raw_query: &str) -> Response {
+    let location = format!("{console_url}{CONSOLE_COMPLETION_PATH}?{raw_query}");
+    match HeaderValue::from_str(&location) {
+        Ok(location) => (
+            StatusCode::SEE_OTHER,
+            [
+                (header::LOCATION, location),
+                (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            ],
+        )
+            .into_response(),
+        Err(_) => page::message(INVALID_LINK),
+    }
+}
+
+fn confirmation(provider: &str, device: &DeviceSummary, denied: bool) -> Response {
+    let provider = escape(provider);
     let details: Vec<String> = [device.name.as_deref(), device.os.as_deref()]
         .into_iter()
         .flatten()

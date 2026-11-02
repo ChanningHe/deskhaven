@@ -23,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use crate::instance_lock::{self, InstanceLock};
 use crate::signal_server::{self, Backoff, CoreControl, Launcher, RunningSignal, SignalStatus};
 use crate::signal_store::SignalPeerStore;
-use crate::{data_dir, database, http};
+use crate::{data_dir, database, http, setup_link};
 
 /// Files this process creates (data_dir, database and its side files, keys,
 /// lock file) are owner-only.
@@ -113,6 +113,7 @@ pub async fn start(
     } = prepared;
     let public_key = signal_key.public_key_base64();
     let state = Arc::new(open_state(config, pins, crypto, public_key).await?);
+    setup_link::announce(config, &state.setup).await?;
     let signal = start_signal(config, &signal_key, &state, token).await?;
     if let Some(running) = &signal {
         forget_deleted_devices(&state, running.status.clone());
@@ -189,6 +190,10 @@ pub async fn open_state(
         Arc::new(SystemClock),
         &StateConfig {
             public_url: config.public_url.clone(),
+            console_url: match config.listen.admin_addr() {
+                Some(_) => config.listen.admin_public_url.clone(),
+                None => String::new(),
+            },
         },
     ))
 }
