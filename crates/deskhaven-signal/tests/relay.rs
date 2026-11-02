@@ -3,24 +3,20 @@
 //! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). Relay
 //! addresses are TEST-NET-1 (RFC 5737), so the health check never finds them healthy and never
 //! replaces the list. Relay selection uses the process-wide `ROTATION_RELAY_SERVER` cursor,
-//! so only membership in the configured set is asserted, never the order.
+//! so this binary asserts only membership; the rotation order is pinned in `relay_rotation.rs`.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod support;
 
-use deskhaven_signal::SignalConfig;
 use hbb_common::{
-    rendezvous_proto::{IdPk, NatType, PunchHoleRequest, RequestRelay},
-    tokio::{
-        self,
-        time::{Duration, Instant, sleep},
-    },
+    rendezvous_proto::{IdPk, NatType, RequestRelay},
+    tokio,
 };
 use support::{
-    CLIENT_VERSION, Conn, Rendezvous, STEP, TcpClient, TestServer, UdpClient, decode_addr,
-    expect_msg, open_id_pk, relay_response, request_relay, rv,
+    CLIENT_VERSION, Conn, Rendezvous, TestServer, decode_addr, expect_msg, next_relay, open_id_pk,
+    relay_response, relay_via, request_relay, rv, wait_for_relay,
 };
 
 const TARGET: &str = "relay-target-1";
@@ -30,54 +26,9 @@ const RELAY_3: &str = "192.0.2.3:21117";
 const RELAY_4: &str = "192.0.2.4:21117";
 /// Punch holes sampled after a relay list took effect.
 const SAMPLES: usize = 6;
-const POLL: Duration = Duration::from_millis(50);
 
 fn relays(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_owned()).collect()
-}
-
-async fn start_with_relays(list: &[&str]) -> TestServer {
-    TestServer::start_with(|cfg| SignalConfig {
-        relay_servers: relays(list),
-        ..cfg
-    })
-    .await
-}
-
-/// The relay_server of the PunchHole forwarded for a request sent on `controller`.
-async fn relay_via(
-    controller: &mut TcpClient,
-    target: &mut UdpClient,
-    req: &PunchHoleRequest,
-) -> String {
-    controller.punch_hole_request(req.clone()).await;
-    expect_msg!(target.recv().await, PunchHole).relay_server
-}
-
-/// [`relay_via`] a new controller connection. A connection keeps the relay list that was
-/// current when it was accepted (rs:1174-1182 clones the server state into each connection
-/// task), so only new connections see a new list.
-async fn next_relay(server: &TestServer, target: &mut UdpClient, req: &PunchHoleRequest) -> String {
-    relay_via(&mut server.tcp().await, target, req).await
-}
-
-/// Repeats [`next_relay`] until the relay satisfies `accept`: relay lists apply asynchronously
-/// (initial config at the first timer tick, handle updates through the server loop).
-async fn wait_for_relay(
-    server: &TestServer,
-    target: &mut UdpClient,
-    req: &PunchHoleRequest,
-    accept: impl Fn(&str) -> bool,
-) -> String {
-    let deadline = Instant::now() + STEP;
-    loop {
-        let relay = next_relay(server, target, req).await;
-        if accept(&relay) {
-            return relay;
-        }
-        assert!(Instant::now() < deadline, "relay {relay:?} never accepted");
-        sleep(POLL).await;
-    }
 }
 
 /// rs:541-554: RequestRelay for a peer in memory is passed on over UDP unchanged except for
@@ -165,7 +116,7 @@ async fn relay_response_from_target_reaches_controller_with_signed_pk() {
 #[tokio::test]
 async fn single_configured_relay_is_handed_out_in_every_punch_hole() {
     // Arrange
-    let server = start_with_relays(&[RELAY_1]).await;
+    let server = TestServer::start_with_relays(&[RELAY_1]).await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let req = server.punch_req(TARGET);
 
@@ -178,13 +129,12 @@ async fn single_configured_relay_is_handed_out_in_every_punch_hole() {
     server.stop().await;
 }
 
-/// rs:965-966: with several relays each PunchHole names one of the configured ones
-/// (round-robin over the process-wide cursor; order not asserted).
+/// rs:965-966: with several relays each PunchHole names one of the configured ones.
 #[tokio::test]
 async fn punch_hole_relay_is_a_member_of_the_configured_set() {
     // Arrange
     let set = [RELAY_1, RELAY_2, RELAY_3];
-    let server = start_with_relays(&set).await;
+    let server = TestServer::start_with_relays(&set).await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let req = server.punch_req(TARGET);
 
@@ -198,14 +148,37 @@ async fn punch_hole_relay_is_a_member_of_the_configured_set() {
 }
 
 /// `SignalHandle::set_relay_servers` (replaces the console `rs` command, CHANGES.md M1-03):
-/// once applied, punch holes on new connections only name relays of the new set, while a
-/// connection accepted before keeps the old set (rs:1174-1182: each connection task works on
-/// a clone of the server state, including `relay_servers`).
+/// once applied, punch holes on new connections only name relays of the new set.
 #[tokio::test]
-async fn relay_set_replaced_through_handle_applies_to_new_connections_only() {
+async fn relay_set_replaced_through_handle_is_used_by_new_connections() {
     // Arrange
     let (old, new) = ([RELAY_1, RELAY_2], [RELAY_3, RELAY_4]);
-    let server = start_with_relays(&old).await;
+    let server = TestServer::start_with_relays(&old).await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let req = server.punch_req(TARGET);
+    wait_for_relay(&server, &mut target, &req, |r| old.contains(&r)).await;
+
+    // Act
+    server.handle.set_relay_servers(relays(&new)).await.unwrap();
+
+    // Assert
+    wait_for_relay(&server, &mut target, &req, |r| new.contains(&r)).await;
+    for _ in 0..SAMPLES {
+        let relay = next_relay(&server, &mut target, &req).await;
+        assert!(new.contains(&relay.as_str()), "{relay:?} not in {new:?}");
+    }
+    server.stop().await;
+}
+
+/// rs:1174-1182: every connection task works on a clone of the server state, including
+/// `relay_servers`, so a controller connection accepted before a relay update keeps handing
+/// out the old set even after new connections use the new one. M1-06 (`RelayRegistry`) is
+/// expected to change this.
+#[tokio::test]
+async fn early_connection_keeps_old_relay_set_upstream_behavior_m1_06_changes_this() {
+    // Arrange
+    let (old, new) = ([RELAY_1, RELAY_2], [RELAY_3, RELAY_4]);
+    let server = TestServer::start_with_relays(&old).await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let req = server.punch_req(TARGET);
     wait_for_relay(&server, &mut target, &req, |r| old.contains(&r)).await;
@@ -214,16 +187,14 @@ async fn relay_set_replaced_through_handle_applies_to_new_connections_only() {
 
     // Act
     server.handle.set_relay_servers(relays(&new)).await.unwrap();
+    wait_for_relay(&server, &mut target, &req, |r| new.contains(&r)).await;
 
     // Assert
     assert!(old.contains(&before.as_str()), "{before:?}");
-    wait_for_relay(&server, &mut target, &req, |r| new.contains(&r)).await;
     for _ in 0..SAMPLES {
-        let relay = next_relay(&server, &mut target, &req).await;
-        assert!(new.contains(&relay.as_str()), "{relay:?} not in {new:?}");
+        let after = relay_via(&mut early, &mut target, &req).await;
+        assert!(old.contains(&after.as_str()), "early connection: {after:?}");
     }
-    let after = relay_via(&mut early, &mut target, &req).await;
-    assert!(old.contains(&after.as_str()), "early connection: {after:?}");
     server.stop().await;
 }
 

@@ -84,6 +84,6 @@ async fn online_request_on_main_port_gets_no_answer() {
     client.send(&rv(|m| m.set_online_request(req))).await;
 
     // Assert
-    client.assert_silent().await;
+    client.assert_closed().await;
     server.stop().await;
 }

@@ -2,6 +2,7 @@
 
 use super::{QUIET, STEP, msg::rv};
 use hbb_common::{
+    protobuf::Message as _,
     rendezvous_proto::{
         OnlineRequest, OnlineResponse, PunchHoleRequest, RendezvousMessage, RequestRelay,
         TestNatRequest, TestNatResponse,
@@ -9,26 +10,60 @@ use hbb_common::{
     tokio::time::Duration,
 };
 
+/// What one receive saw within its wait.
+#[derive(Debug)]
+pub enum Recv {
+    Msg(Box<RendezvousMessage>),
+    /// The server closed the connection (or reset it). Never happens on UDP.
+    Closed,
+    /// Nothing arrived and the connection is still open.
+    Quiet,
+}
+
+impl Recv {
+    /// A received payload; panics if it is not a `RendezvousMessage`.
+    pub fn parse(bytes: &[u8]) -> Self {
+        Self::Msg(Box::new(
+            RendezvousMessage::parse_from_bytes(bytes).unwrap(),
+        ))
+    }
+}
+
 /// Sending and receiving `RendezvousMessage`s over one transport.
 #[allow(async_fn_in_trait)] // test-only trait, never used as `dyn` or across threads
 pub trait Conn {
     async fn send(&mut self, msg: &RendezvousMessage);
 
-    /// The next message within `wait`; `None` on timeout or when the server closed.
-    async fn try_recv(&mut self, wait: Duration) -> Option<RendezvousMessage>;
+    async fn recv_within(&mut self, wait: Duration) -> Recv;
 
-    /// The next message; panics if none arrives within [`STEP`].
-    async fn recv(&mut self) -> RendezvousMessage {
-        match self.try_recv(STEP).await {
-            Some(msg) => msg,
-            None => panic!("no message within {STEP:?}"),
+    /// The next message within `wait`; `None` on silence or when the server closed.
+    async fn try_recv(&mut self, wait: Duration) -> Option<RendezvousMessage> {
+        match self.recv_within(wait).await {
+            Recv::Msg(msg) => Some(*msg),
+            Recv::Closed | Recv::Quiet => None,
         }
     }
 
-    /// Panics if a message arrives within [`QUIET`].
+    /// The next message; panics if none arrives within [`STEP`].
+    async fn recv(&mut self) -> RendezvousMessage {
+        match self.recv_within(STEP).await {
+            Recv::Msg(msg) => *msg,
+            other => panic!("no message within {STEP:?}: {other:?}"),
+        }
+    }
+
+    /// Panics if a message arrives within [`QUIET`]; a closed connection counts as silent.
     async fn assert_silent(&mut self) {
-        if let Some(msg) = self.try_recv(QUIET).await {
+        if let Recv::Msg(msg) = self.recv_within(QUIET).await {
             panic!("unexpected message: {msg:?}");
+        }
+    }
+
+    /// Panics unless the server closes the connection within [`STEP`] without sending anything.
+    async fn assert_closed(&mut self) {
+        match self.recv_within(STEP).await {
+            Recv::Closed => {}
+            other => panic!("expected the server to close the connection, got {other:?}"),
         }
     }
 }

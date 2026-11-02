@@ -20,8 +20,8 @@ use hbb_common::{
 };
 use std::net::SocketAddr;
 use support::{
-    Conn, Rendezvous, TcpClient, TestServer, decode_addr, expect_msg, local_addr, open_id_pk,
-    punch_hole_sent, rv,
+    Conn, Rendezvous, TcpClient, TestServer, decode_addr, encode_addr, expect_msg, local_addr,
+    open_id_pk, punch_hole_sent, rv,
 };
 
 const TARGET: &str = "target-peer-1";
@@ -185,5 +185,34 @@ async fn punch_hole_request_with_wrong_or_missing_licence_key_gets_license_misma
         );
     }
     target.assert_silent().await;
+    server.stop().await;
+}
+
+/// rs:475-484: PunchHoleRequest, PunchHoleSent and LocalAddr over UDP are ignored (no UDP
+/// reflection / amplification): neither the sender nor the target hears anything, and the
+/// server keeps answering.
+#[tokio::test]
+async fn punch_messages_over_udp_get_no_answer() {
+    // Arrange
+    let server = TestServer::start().await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let mut sender = server.udp().await;
+    let victim = encode_addr(target.local_addr());
+    let lan: SocketAddr = "192.168.7.20:21118".parse().unwrap();
+    let msgs = [
+        rv(|m| m.set_punch_hole_request(server.punch_req(TARGET))),
+        rv(|m| m.set_punch_hole_sent(punch_hole_sent(&victim, TARGET, TARGET_RELAY))),
+        rv(|m| m.set_local_addr(local_addr(&victim, TARGET, lan))),
+    ];
+
+    // Act
+    for msg in &msgs {
+        sender.send(msg).await;
+    }
+
+    // Assert
+    sender.assert_silent().await;
+    target.assert_silent().await;
+    assert!(sender.register_peer("still-serving").await.request_pk);
     server.stop().await;
 }

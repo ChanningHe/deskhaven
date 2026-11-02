@@ -24,14 +24,18 @@ use support::{
 const TARGET: &str = "stale-target-1";
 /// rs:750 `elapsed >= REG_TIMEOUT`, plus a margin.
 const GO_STALE: Duration = REG_TIMEOUT.saturating_add(Duration::from_millis(500));
+/// Checked before REG_TIMEOUT: the peer must still be online here.
+const STILL_ONLINE: Duration = REG_TIMEOUT.saturating_sub(Duration::from_secs(2));
 
 async fn is_online(server: &TestServer, id: &str) -> bool {
     let res = server.nat().await.online_request(&[id]).await;
     online_bits(&res.states, 1)[0]
 }
 
-/// rs:745-757 and rs:836-842: a peer silent for REG_TIMEOUT gets PunchHoleResponse{OFFLINE}
-/// and a clear online bit; a RegisterPeer heartbeat (pk known, rs:627-630) brings it back.
+/// rs:745-757 and rs:836-842: a peer silent for less than REG_TIMEOUT is still online (punch
+/// holes are forwarded, the online bit is set); silent for REG_TIMEOUT it gets
+/// PunchHoleResponse{OFFLINE} and a clear online bit; a RegisterPeer heartbeat (pk known,
+/// rs:627-630) brings it back.
 #[tokio::test]
 async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
     // Arrange
@@ -42,8 +46,18 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
         "online right after RegisterPk"
     );
 
+    // Act + Assert: still online shortly before REG_TIMEOUT.
+    sleep(STILL_ONLINE).await;
+    assert!(
+        is_online(&server, TARGET).await,
+        "online before REG_TIMEOUT"
+    );
+    let mut early = server.tcp().await;
+    early.punch_hole_request(server.punch_req(TARGET)).await;
+    expect_msg!(target.recv().await, PunchHole);
+
     // Act
-    sleep(GO_STALE).await;
+    sleep(GO_STALE - STILL_ONLINE).await;
 
     // Assert
     assert!(!is_online(&server, TARGET).await, "stale");

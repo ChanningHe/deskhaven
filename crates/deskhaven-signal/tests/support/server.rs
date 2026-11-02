@@ -53,6 +53,16 @@ pub async fn wait_until_ready(port: u16, task: &RunTask) -> bool {
     panic!("signal server on port {port} did not become ready");
 }
 
+/// Everything a server is built from, kept so [`TestServer::restart`] can rebuild the same
+/// server (same ports, same key).
+///
+/// Extension point for M1-05: add the injected `PeerStore` here and hand it to the server in
+/// [`TestServer::try_start`]; `restart` then keeps the store (and its registrations) as well.
+#[derive(Clone)]
+struct Setup {
+    cfg: SignalConfig,
+}
+
 pub struct TestServer {
     pub port: u16,
     pub handle: SignalHandle,
@@ -60,6 +70,7 @@ pub struct TestServer {
     pub licence_key: String,
     /// Verifies the `IdPk`s the server signs.
     pub public_key: sign::PublicKey,
+    setup: Setup,
     shutdown: CancellationToken,
     task: RunTask,
     /// Stops the server if a test panics before [`TestServer::stop`].
@@ -71,18 +82,54 @@ impl TestServer {
         Self::start_with(|cfg| cfg).await
     }
 
-    /// Starts with `customize(config(port))`, retrying on a lost port race.
+    /// Starts with `customize(config(port))` on free ports, retrying on a lost port race.
     pub async fn start_with(customize: impl Fn(SignalConfig) -> SignalConfig) -> Self {
         for _ in 0..START_ATTEMPTS {
             let cfg = customize(config(free_base_port()));
-            if let Some(server) = Self::try_start(cfg).await {
+            if let Some(server) = Self::try_start(Setup { cfg }).await {
                 return server;
             }
         }
         panic!("could not start the signal server");
     }
 
-    async fn try_start(cfg: SignalConfig) -> Option<Self> {
+    /// Starts with the given initial relay list (`SignalConfig::relay_servers`).
+    pub async fn start_with_relays(relays: &[&str]) -> Self {
+        let relays: Vec<String> = relays.iter().map(|r| (*r).to_owned()).collect();
+        Self::start_with(|cfg| SignalConfig {
+            relay_servers: relays.clone(),
+            ..cfg
+        })
+        .await
+    }
+
+    /// Starts on exactly `cfg` (its port and key), retrying briefly while the ports are busy.
+    pub async fn start_on(cfg: SignalConfig) -> Self {
+        Self::start_setup(Setup { cfg }).await
+    }
+
+    /// Stops the server and starts a new one on the same ports with the same key.
+    pub async fn restart(self) -> Self {
+        let setup = self.setup.clone();
+        self.stop().await;
+        Self::start_setup(setup).await
+    }
+
+    async fn start_setup(setup: Setup) -> Self {
+        for _ in 0..START_ATTEMPTS {
+            if let Some(server) = Self::try_start(setup.clone()).await {
+                return server;
+            }
+            sleep(READY_POLL).await;
+        }
+        panic!(
+            "could not start the signal server on port {}",
+            setup.cfg.port
+        );
+    }
+
+    async fn try_start(setup: Setup) -> Option<Self> {
+        let cfg = setup.cfg.clone();
         let (port, licence_key) = (cfg.port, cfg.licence_key());
         let public_key = cfg.secret_key.public_key();
         let shutdown = CancellationToken::new();
@@ -100,6 +147,7 @@ impl TestServer {
             handle,
             licence_key,
             public_key,
+            setup,
             shutdown,
             task,
             _stop_on_drop,

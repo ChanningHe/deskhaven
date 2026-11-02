@@ -1,14 +1,14 @@
 //! Websocket client (main port + 2): one protobuf per binary message, like RustDesk's
 //! websocket transport.
 
-use super::{Conn, Rendezvous, next_client_ip};
+use super::{Conn, Recv, Rendezvous, STEP, next_client_ip};
 use hbb_common::{
     futures::{SinkExt, StreamExt},
     protobuf::Message as _,
     rendezvous_proto::RendezvousMessage,
     tokio::{
         net::{TcpSocket, TcpStream},
-        time::{Duration, Instant, timeout_at},
+        time::{Duration, Instant, timeout, timeout_at},
     },
 };
 use std::net::{IpAddr, SocketAddr};
@@ -32,8 +32,15 @@ impl WsClient {
         Self::connect_from(next_client_ip(), server, &[]).await
     }
 
-    /// Connects from `ip` with extra handshake headers (e.g. what a reverse proxy adds).
+    /// Connects from `ip` with extra handshake headers (e.g. what a reverse proxy adds);
+    /// connect + handshake must finish within [`STEP`].
     pub async fn connect_from(ip: IpAddr, server: SocketAddr, headers: &[(&str, &str)]) -> Self {
+        timeout(STEP, Self::handshake(ip, server, headers))
+            .await
+            .expect("websocket connect + handshake within STEP")
+    }
+
+    async fn handshake(ip: IpAddr, server: SocketAddr, headers: &[(&str, &str)]) -> Self {
         let socket = TcpSocket::new_v4().unwrap();
         socket.bind(SocketAddr::new(ip, 0)).unwrap();
         let stream = socket.connect(server).await.unwrap();
@@ -53,24 +60,30 @@ impl WsClient {
     pub fn local_addr(&self) -> SocketAddr {
         self.local
     }
+
+    /// Sends any frame, e.g. a text frame or a binary frame that is not a protobuf.
+    pub async fn send_frame(&mut self, frame: Message) {
+        self.ws.send(frame).await.unwrap();
+    }
 }
 
 impl Conn for WsClient {
     async fn send(&mut self, msg: &RendezvousMessage) {
         let bytes = msg.write_to_bytes().unwrap();
-        self.ws.send(Message::Binary(bytes.into())).await.unwrap();
+        self.send_frame(Message::Binary(bytes.into())).await;
     }
 
-    /// Skips control frames; `None` on timeout, close or error.
-    async fn try_recv(&mut self, wait: Duration) -> Option<RendezvousMessage> {
+    /// Skips control frames.
+    async fn recv_within(&mut self, wait: Duration) -> Recv {
         let deadline = Instant::now() + wait;
         loop {
-            match timeout_at(deadline, self.ws.next()).await.ok()?? {
-                Ok(Message::Binary(bytes)) => {
-                    return Some(RendezvousMessage::parse_from_bytes(&bytes).unwrap());
+            match timeout_at(deadline, self.ws.next()).await {
+                Err(_) => return Recv::Quiet,
+                Ok(Some(Ok(Message::Binary(bytes)))) => {
+                    return Recv::parse(&bytes);
                 }
-                Ok(Message::Close(_)) | Err(_) => return None,
-                Ok(_) => {}
+                Ok(Some(Ok(Message::Close(_)) | Err(_)) | None) => return Recv::Closed,
+                Ok(Some(Ok(_))) => {}
             }
         }
     }

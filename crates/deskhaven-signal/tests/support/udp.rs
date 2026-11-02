@@ -1,7 +1,7 @@
 //! UDP client: the controlled side's registration channel (RegisterPeer / RegisterPk) and
 //! where hbbs delivers PunchHole / FetchLocalAddr / RequestRelay to it.
 
-use super::{Conn, PeerKeys, msg, next_client_ip};
+use super::{Conn, PeerKeys, Recv, msg, next_client_ip};
 use hbb_common::{
     protobuf::Message as _,
     rendezvous_proto::{RegisterPeerResponse, RendezvousMessage, register_pk_response},
@@ -44,21 +44,25 @@ impl UdpClient {
         let res = expect_msg!(self.recv().await, RegisterPkResponse);
         res.result.enum_value().unwrap()
     }
+
+    /// Sends a datagram that need not be a valid protobuf.
+    pub async fn send_raw(&mut self, bytes: &[u8]) {
+        self.socket.send_to(bytes, self.server).await.unwrap();
+    }
 }
 
 impl Conn for UdpClient {
     async fn send(&mut self, msg: &RendezvousMessage) {
-        let bytes = msg.write_to_bytes().unwrap();
-        self.socket.send_to(&bytes, self.server).await.unwrap();
+        self.send_raw(&msg.write_to_bytes().unwrap()).await;
     }
 
-    async fn try_recv(&mut self, wait: Duration) -> Option<RendezvousMessage> {
+    async fn recv_within(&mut self, wait: Duration) -> Recv {
         let mut buf = vec![0u8; MAX_DATAGRAM];
-        let (n, from) = timeout(wait, self.socket.recv_from(&mut buf))
-            .await
-            .ok()?
-            .unwrap();
+        let Ok(res) = timeout(wait, self.socket.recv_from(&mut buf)).await else {
+            return Recv::Quiet;
+        };
+        let (n, from) = res.unwrap();
         assert_eq!(from, self.server, "datagram from a stranger");
-        Some(RendezvousMessage::parse_from_bytes(&buf[..n]).unwrap())
+        Recv::parse(&buf[..n])
     }
 }

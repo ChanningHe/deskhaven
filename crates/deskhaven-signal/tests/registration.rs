@@ -11,10 +11,15 @@
 mod support;
 
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{NOT_SUPPORT, OK, UUID_MISMATCH},
+    rendezvous_proto::{
+        punch_hole_response::Failure::ID_NOT_EXIST,
+        register_pk_response::Result::{NOT_SUPPORT, OK, UUID_MISMATCH},
+    },
     tokio,
 };
-use support::{Conn, PeerKeys, Rendezvous, TestServer, expect_msg, register_peer, register_pk};
+use support::{
+    Conn, PeerKeys, Rendezvous, TestServer, decode_addr, expect_msg, register_peer, register_pk,
+};
 
 const ID: &str = "123456789";
 /// peer.rs:27 `MAX_PEER_ID_LEN`.
@@ -116,17 +121,52 @@ async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
 }
 
 /// rs:401-405, 465-473: the first RegisterPk of an id stores uuid / pk / address and answers
-/// OK; repeating it unchanged answers OK again.
+/// OK (the id is now reachable at the registering address, rs:745); repeating it unchanged
+/// answers OK again.
 #[tokio::test]
-async fn register_pk_new_id_then_repeat_is_ok() {
+async fn register_pk_stores_peer_and_repeat_is_ok() {
     // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
 
-    // Act + Assert
-    assert_eq!(peer.register_pk(ID, &keys).await, OK);
-    assert_eq!(peer.register_pk(ID, &keys).await, OK);
+    // Act
+    let first = peer.register_pk(ID, &keys).await;
+    let again = peer.register_pk(ID, &keys).await;
+    let mut controller = server.tcp().await;
+    controller.punch_hole_request(server.punch_req(ID)).await;
+
+    // Assert
+    assert_eq!((first, again), (OK, OK));
+    let ph = expect_msg!(peer.recv().await, PunchHole);
+    assert_eq!(decode_addr(&ph.socket_addr), controller.local_addr());
+    server.stop().await;
+}
+
+/// database.rs SECURITY note: registrations live in the in-memory stub, so a restart (same
+/// ports, same key) forgets them: the id is unknown again and any uuid can claim it. M1-05's
+/// persistent `PeerStore` keeps them (and its tests flip this one).
+#[tokio::test]
+async fn restart_forgets_registrations_in_memory_stub_m1_05_changes_this() {
+    // Arrange
+    let server = TestServer::start().await;
+    let (_owner, _) = server.online_peer(ID).await;
+
+    // Act
+    let server = server.restart().await;
+    let mut controller = server.tcp().await;
+    controller.punch_hole_request(server.punch_req(ID)).await;
+    let res = expect_msg!(controller.recv().await, PunchHoleResponse);
+    let claimed = server
+        .udp()
+        .await
+        .register_pk(ID, &PeerKeys::random())
+        .await;
+
+    // Assert
+    assert_eq!(res.failure.enum_value(), Ok(ID_NOT_EXIST));
+    assert!(res.socket_addr.is_empty());
+    assert_eq!(claimed, OK, "another uuid claims the forgotten id");
     server.stop().await;
 }
 
@@ -203,6 +243,6 @@ async fn register_over_tcp_is_not_supported_upstream_behavior_m1_08_changes_this
     // Assert
     let res = expect_msg!(pk_conn.recv().await, RegisterPkResponse);
     assert_eq!(res.result.enum_value(), Ok(NOT_SUPPORT));
-    peer_conn.assert_silent().await;
+    peer_conn.assert_closed().await;
     server.stop().await;
 }

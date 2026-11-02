@@ -3,7 +3,10 @@
 use hbb_common::tokio::time::Duration;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        Once,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 /// Where every test server listens.
@@ -21,10 +24,25 @@ const CLIENT_NET: [u8; 2] = [127, 77];
 const HOSTS_PER_OCTET: u32 = 250;
 const FIRST_HOST: u32 = 2;
 static NEXT_CLIENT: AtomicU32 = AtomicU32::new(0);
+static LOOPBACK_PROBE: Once = Once::new();
+
+/// Fails fast, with the reason, where 127.77.0.0/16 is not routed to the loopback interface.
+fn ensure_loopback_net() {
+    LOOPBACK_PROBE.call_once(|| {
+        let ip = Ipv4Addr::new(CLIENT_NET[0], CLIENT_NET[1], 0, 1);
+        if let Err(err) = std::net::UdpSocket::bind(SocketAddr::new(ip.into(), 0)) {
+            panic!(
+                "cannot bind {ip} ({err}): the signal protocol tests require Linux 127.0.0.0/8 \
+                 loopback routing (on macOS add lo0 aliases for 127.77.0.0/16)"
+            );
+        }
+    });
+}
 
 /// A loopback source address no other client in this process has used, so per-IP server
 /// state (`IP_BLOCKER`) never leaks between tests.
 pub fn next_client_ip() -> IpAddr {
+    ensure_loopback_net();
     let n = NEXT_CLIENT.fetch_add(1, Ordering::Relaxed);
     let hi = u8::try_from(n / HOSTS_PER_OCTET).unwrap();
     let lo = u8::try_from(n % HOSTS_PER_OCTET + FIRST_HOST).unwrap();
