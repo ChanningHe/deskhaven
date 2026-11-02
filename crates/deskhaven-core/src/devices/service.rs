@@ -128,6 +128,7 @@ impl DeviceService {
         let identity = match presence.identity(rustdesk_id) {
             Some(identity) => identity,
             None => {
+                let epoch = presence.identity_epoch();
                 let Some(row) = self.inner.find(rustdesk_id).await? else {
                     return Ok(None);
                 };
@@ -135,7 +136,7 @@ impl DeviceService {
                     device_id: row.id,
                     uuid: row.uuid,
                 };
-                presence.remember(rustdesk_id, identity.clone());
+                presence.remember(rustdesk_id, identity.clone(), epoch);
                 identity
             }
         };

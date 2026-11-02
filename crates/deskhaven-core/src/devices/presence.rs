@@ -7,17 +7,24 @@
 //!   **or** a heartbeat within [`HEARTBEAT_TTL`] (three idle heartbeat periods of the client,
 //!   `sync.rs` `TIME_HEARTBEAT` = 15 s). A signal channel that closed ends the signal half at
 //!   once ([`Presence::signal_offline`]), as it does in hbbs.
-//! - **Bounded**: at most `capacity` entries ([`DEFAULT_CAPACITY`]). A new id beyond that first
-//!   evicts the entries that are offline and already flushed (at most once per
-//!   [`SWEEP_INTERVAL`]); if none can go, the new id is not tracked (logged at warn at most once
-//!   per minute) while every tracked id keeps updating. Each entry keeps at most
+//! - **Bounded**: at most `capacity` entries ([`DEFAULT_CAPACITY`]). A new id beyond that
+//!   triggers an eviction pass (at most once per [`SWEEP_INTERVAL`]): first the entries that
+//!   are offline and already flushed; if the table is still full, offline entries oldest
+//!   contact first (identity-only entries before any) down to 90 % of the capacity, even
+//!   unflushed ones, which only costs `last_seen_at` precision (logged). Online entries are
+//!   never evicted: if they alone fill the table, the new id is not tracked (logged at warn at
+//!   most once per minute) while every tracked id keeps updating. Each entry keeps at most
 //!   [`MAX_CONNS`] connection ids. Inputs only come from ids the signal server holds a key for
 //!   and from verified heartbeats, so the bound is a safety net, not the normal regime.
+//! - **Flush**: nothing here writes to the database. The `last_seen_at` flush task (M2-14)
+//!   must call [`Presence::take_unflushed`] every `devices.last_seen_flush`; it also evicts
+//!   the flushed offline entries. Until it is wired, entries stay until the table fills.
 //! - **Cheap**: one mutex over a map, short critical sections, no I/O: the signal server
 //!   calls in from its UDP loop.
 //! - It also caches the verified identity of a device (row id and uuid, both immutable for a
 //!   row) so heartbeat verification needs no query once a device is known; deleting the
-//!   device drops it ([`Presence::forget`]).
+//!   device drops it ([`Presence::forget`]). A lookup that started before a forget cannot
+//!   re-insert what it read ([`Presence::identity_epoch`]).
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -86,6 +93,9 @@ struct State {
     /// Unix ms of the last eviction pass (`None`: never).
     last_sweep_ms: Option<i64>,
     last_full_warn_ms: Option<i64>,
+    last_precision_warn_ms: Option<i64>,
+    /// Number of [`Presence::forget`] calls so far.
+    forgets: u64,
 }
 
 #[derive(Default)]
@@ -216,7 +226,9 @@ impl Presence {
 
     /// Drops everything about `rustdesk_id` (its device was deleted).
     pub fn forget(&self, rustdesk_id: &str) {
-        self.lock().entries.remove(rustdesk_id);
+        let mut state = self.lock();
+        state.entries.remove(rustdesk_id);
+        state.forgets += 1;
     }
 
     pub(crate) fn identity(&self, rustdesk_id: &str) -> Option<Identity> {
@@ -224,8 +236,28 @@ impl Presence {
         state.entries.get(rustdesk_id)?.identity.clone()
     }
 
-    pub(crate) fn remember(&self, rustdesk_id: &str, identity: Identity) {
-        self.update(rustdesk_id, |entry, _| entry.identity = Some(identity));
+    /// Take before reading an identity from the database; pass to [`remember`](Self::remember).
+    pub(crate) fn identity_epoch(&self) -> u64 {
+        self.lock().forgets
+    }
+
+    /// Caches `identity` unless a [`forget`](Self::forget) happened since `epoch` was taken
+    /// (the row read may be gone).
+    pub(crate) fn remember(&self, rustdesk_id: &str, identity: Identity, epoch: u64) {
+        let now = self.now();
+        let mut state = self.lock();
+        if state.forgets != epoch {
+            return;
+        }
+        if let Some(entry) = state.entries.get_mut(rustdesk_id) {
+            entry.identity = Some(identity);
+        } else if self.make_room(&mut state, now) {
+            let entry = Entry {
+                identity: Some(identity),
+                ..Entry::default()
+            };
+            state.entries.insert(rustdesk_id.to_owned(), entry);
+        }
     }
 
     /// Applies `change` to the entry of `rustdesk_id`, creating it if the table has room.
@@ -256,18 +288,18 @@ impl Presence {
         if !swept_recently {
             state.entries.retain(|_, e| !e.is_evictable(now));
             state.last_sweep_ms = Some(now);
+            if state.entries.len() >= capacity {
+                let target = capacity.saturating_sub((capacity / 10).max(1));
+                evict_oldest_offline(state, now, target);
+            }
         }
         if state.entries.len() < capacity {
             return true;
         }
-        let warned_recently = state
-            .last_full_warn_ms
-            .is_some_and(|t| now - t < FULL_WARN_INTERVAL_MS);
-        if !warned_recently {
-            state.last_full_warn_ms = Some(now);
+        if !recently(&mut state.last_full_warn_ms, now) {
             tracing::warn!(
                 capacity,
-                "device presence table full; new devices are not tracked"
+                "device presence table full of online devices; new devices are not tracked"
             );
         }
         false
@@ -284,6 +316,41 @@ impl Presence {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Removes offline entries, those without any contact first, then oldest contact first,
+/// until at most `target` entries remain (online entries are kept even above it).
+fn evict_oldest_offline(state: &mut State, now: i64, target: usize) {
+    let mut offline: Vec<(Option<i64>, String)> = state
+        .entries
+        .iter()
+        .filter(|(_, e)| !e.is_online(now))
+        .map(|(id, e)| (e.last_seen_ms(), id.clone()))
+        .collect();
+    offline.sort_unstable();
+    let excess = state.entries.len().saturating_sub(target);
+    let mut unflushed = 0_usize;
+    for (_, id) in offline.into_iter().take(excess) {
+        if state.entries.remove(&id).is_some_and(|e| e.unflushed) {
+            unflushed += 1;
+        }
+    }
+    if unflushed > 0 && !recently(&mut state.last_precision_warn_ms, now) {
+        tracing::warn!(
+            unflushed,
+            "device presence table full: evicted offline devices before their last_seen_at \
+             was flushed"
+        );
+    }
+}
+
+/// Whether `last` is within [`FULL_WARN_INTERVAL_MS`] of `now`; if not, moves it to `now`.
+fn recently(last: &mut Option<i64>, now: i64) -> bool {
+    if last.is_some_and(|t| now - t < FULL_WARN_INTERVAL_MS) {
+        return true;
+    }
+    *last = Some(now);
+    false
 }
 
 fn millis(d: Duration) -> i64 {

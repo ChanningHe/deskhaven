@@ -174,37 +174,86 @@ fn a_full_table_of_online_devices_refuses_new_ids_but_keeps_updating_known_ones(
     assert_eq!(p.get("a").unwrap().last_seen_ms, Some(T0_MS + 20_000));
 }
 
+/// Without a flush (M2-14 not wired yet), a full table still admits new devices: offline
+/// entries go oldest contact first, unflushed or not; online ones stay.
 #[test]
-fn unflushed_entries_survive_eviction_even_when_offline() {
+fn a_full_table_evicts_offline_entries_oldest_first_even_unflushed() {
     // Arrange
-    let (p, clock) = presence(1);
-    p.signal_online("a", ip(1));
+    let (p, clock) = presence(3);
+    p.signal_online("oldest", ip(1));
+    clock.advance(Duration::from_secs(1));
+    p.signal_online("older", ip(2));
     clock.advance(SIGNAL_TTL);
+    p.signal_online("online", ip(3));
 
     // Act
-    p.signal_online("b", ip(2));
+    p.signal_online("new", ip(4));
 
     // Assert
-    assert_eq!(p.get("b"), None, "a's last_seen is not flushed yet");
-    assert_eq!(p.take_unflushed().len(), 1);
+    assert_eq!(p.get("oldest"), None, "oldest offline entry evicted");
+    assert!(p.get("older").is_some(), "only as many as needed");
+    assert!(p.is_online("online") && p.is_online("new"));
+    assert_eq!(p.len(), 3);
+}
+
+/// Online entries are never evicted: a table full of them refuses new ids.
+#[test]
+fn a_full_table_keeps_online_entries_over_offline_unflushed_ones() {
+    // Arrange
+    let (p, clock) = presence(2);
+    p.signal_online("stale", ip(1));
+    clock.advance(SIGNAL_TTL);
+    p.signal_online("live", ip(2));
+
+    // Act
+    p.signal_online("new", ip(3));
+    p.signal_online("newer", ip(4));
+
+    // Assert
+    assert_eq!(p.get("stale"), None);
+    assert!(p.is_online("live") && p.is_online("new"));
+    assert_eq!(
+        p.get("newer"),
+        None,
+        "only online entries left, sweep rate-limited"
+    );
+}
+
+fn identity() -> Identity {
+    Identity {
+        device_id: 7,
+        uuid: b"uuid".to_vec(),
+    }
 }
 
 #[test]
 fn identity_is_cached_until_forgotten() {
     // Arrange
     let (p, _) = presence(10);
-    let identity = Identity {
-        device_id: 7,
-        uuid: b"uuid".to_vec(),
-    };
 
     // Act
-    p.remember(ID, identity.clone());
+    p.remember(ID, identity(), p.identity_epoch());
     let cached = p.identity(ID);
     p.forget(ID);
 
     // Assert
-    assert_eq!(cached, Some(identity));
+    assert_eq!(cached, Some(identity()));
+    assert_eq!(p.identity(ID), None);
+    assert_eq!(p.get(ID), None);
+}
+
+/// A lookup that read the row before the device was deleted cannot cache it afterwards.
+#[test]
+fn an_identity_read_before_a_forget_is_not_cached() {
+    // Arrange
+    let (p, _) = presence(10);
+    let epoch = p.identity_epoch();
+
+    // Act: the device is deleted while the lookup is in flight.
+    p.forget(ID);
+    p.remember(ID, identity(), epoch);
+
+    // Assert
     assert_eq!(p.identity(ID), None);
     assert_eq!(p.get(ID), None);
 }
@@ -217,7 +266,7 @@ fn a_cached_identity_alone_is_not_online_and_is_evictable() {
         device_id: 7,
         uuid: b"uuid".to_vec(),
     };
-    p.remember(ID, identity);
+    p.remember(ID, identity, p.identity_epoch());
 
     // Act
     let status = p.get(ID).unwrap();
