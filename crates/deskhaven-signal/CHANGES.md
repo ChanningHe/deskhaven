@@ -369,3 +369,23 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   and `request_relay_still_forwarded_to_stale_peer_upstream_behavior_m1_08_changes_this` became
   `request_relay_to_unknown_peer_is_refused_with_id_does_not_exist` and
   `request_relay_to_stale_peer_is_refused_as_offline`.
+- 2026-11-02, M1-08, stream connection limits (`rendezvous_server.rs`; 07 §2.4): new constants
+  `MAX_FRAME_LEN` (64 KiB), `FIRST_FRAME_TIMEOUT` (20 s) and `IDLE_TIMEOUT` (30 s), applied to
+  the TCP main port, the NAT test port (`handle_listener2`) and the websocket port. A TCP frame
+  whose header declares more than `MAX_FRAME_LEN` ends the connection as soon as the header is
+  read (`BytesCodec::set_max_packet_length`; upstream accepted any length the 4-byte header can
+  declare, up to 1 GiB, and buffered while waiting for it); websocket messages and frames get
+  the same bound (`ws_config`, `accept_hdr_async_with_config`; tungstenite's defaults were
+  64 MiB / 16 MiB). The first complete frame must arrive within `FIRST_FRAME_TIMEOUT` of the
+  accept, the websocket handshake included (upstream: 30 s per frame, and no limit at all on
+  the handshake, so a connection that never sent its upgrade request lived until shutdown);
+  later frames within `IDLE_TIMEOUT` of the previous one (upstream's 30 s). Non-binary
+  websocket messages are still skipped and still count as activity. `handle_listener_inner`
+  reads both transports through the new `Reader` enum with one deadline-based loop instead of
+  two `timeout(30_000, ..)` loops. Sizing: the largest messages clients send to these ports
+  are PunchHoleRequest / PunchHoleSent / RelayResponse with a WebRTC SDP offer / answer (a few
+  KiB), OnlineRequest (one id per shown peer, about 5000 ids fit) and the M1-07 KeyExchange
+  reply (about 100 bytes); RegisterPk is under 512 bytes. `FIRST_FRAME_TIMEOUT` stays above the
+  client's 18 s READ_TIMEOUT, which logged-in controllers and TCP-mode controlled clients wait
+  for a server KeyExchange before sending (it can drop once M1-07 always sends one).
+  HttpProxyRequest bodies (M5) may need a larger limit on secured connections.

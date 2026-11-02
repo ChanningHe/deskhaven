@@ -15,7 +15,7 @@ use hbb_common::{
     futures::future::join_all,
     futures_util::{
         sink::SinkExt,
-        stream::{SplitSink, StreamExt},
+        stream::{SplitSink, SplitStream, StreamExt},
     },
     log,
     protobuf::Message as _,
@@ -24,12 +24,11 @@ use hbb_common::{
         *,
     },
     tcp::FramedStream,
-    timeout,
     tokio::{
         self,
         net::{TcpListener, TcpStream},
         sync::{Mutex, mpsc, watch},
-        time::{Duration, interval},
+        time::{Duration, Instant as TokioInstant, interval, timeout_at},
     },
     tokio_util::codec::Framed,
     try_into_v4,
@@ -44,6 +43,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Data {
@@ -73,6 +73,36 @@ enum Sink {
     TcpStream(TcpStreamSink),
     Ws(WsSink),
 }
+
+// deskhaven (M1-08): the read half of a stream connection, so TCP and websocket share one read
+// loop and its limits.
+enum Reader {
+    Tcp(SplitStream<Framed<TcpStream, BytesCodec>>),
+    Ws(SplitStream<tokio_tungstenite::WebSocketStream<TcpStream>>),
+}
+
+impl Reader {
+    /// The next frame's payload; `Some(None)` for a websocket message that is not binary
+    /// (skipped like upstream, but it counts as activity); `None` once the connection is closed
+    /// or broken, a frame over MAX_FRAME_LEN included.
+    async fn next(&mut self) -> Option<Option<Bytes>> {
+        match self {
+            Self::Tcp(s) => s.next().await?.ok().map(|b| Some(b.freeze())),
+            Self::Ws(s) => match s.next().await?.ok()? {
+                tungstenite::Message::Binary(b) => Some(Some(b)),
+                _ => Some(None),
+            },
+        }
+    }
+}
+
+// deskhaven (M1-08): websocket messages and frames are bounded like TCP frames (tungstenite's
+// defaults allow 64 MiB messages); the frame header is checked before its payload is read.
+fn ws_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_message_size(Some(MAX_FRAME_LEN))
+        .max_frame_size(Some(MAX_FRAME_LEN))
+}
 pub(crate) type Sender = mpsc::UnboundedSender<Data>;
 pub(crate) type Receiver = mpsc::UnboundedReceiver<Data>;
 // deskhaven (M1-06): the ROTATION_RELAY_SERVER static moved into `AllowAll` (control.rs).
@@ -88,6 +118,23 @@ const MAX_REGISTER_UUID_LEN: usize = 128;
 // deskhaven (M1-05): dropped malformed RegisterPk are logged at most once a minute, with count.
 static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs(60));
 // deskhaven: the ALWAYS_USE_RELAY static became the per-instance `always_use_relay` field.
+
+// deskhaven (M1-08): limits of the stream connections (TCP main / NAT test port, websocket;
+// 07 §2.4). Upstream decoded frames without a size limit and gave each frame 30 s.
+/// Largest frame (TCP) or message (websocket) accepted. The largest messages clients send to
+/// these ports are PunchHoleRequest / PunchHoleSent / RelayResponse carrying a WebRTC SDP
+/// offer / answer (base64 of the JSON SDP: a few KiB), OnlineRequest (one id per peer shown;
+/// about 5000 ids fit) and, from M1-07, the KeyExchange reply (about 100 bytes); RegisterPk is
+/// under 512 bytes (pk 32, uuid at most 128, id at most 253). 64 KiB leaves ten times the
+/// room. HttpProxyRequest bodies (M5) may need more.
+const MAX_FRAME_LEN: usize = 64 * 1024;
+/// From accept to the first complete frame (websocket: handshake included). Above the
+/// client's READ_TIMEOUT (18 s): logged-in controllers and every TCP-mode controlled client
+/// first wait that long for a KeyExchange (`secure_tcp`) from a server that sends none.
+const FIRST_FRAME_TIMEOUT_MS: u64 = 20_000;
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(FIRST_FRAME_TIMEOUT_MS);
+/// Between frames after the first (upstream's 30 s per frame).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Store punch hole requests
 use once_cell::sync::Lazy;
@@ -1129,10 +1176,13 @@ impl RendezvousServer {
         let mut rs = self.clone();
         // deskhaven: loopback connections are no longer diverted to the removed console; they
         // get the same NAT test / online query handling as everyone else.
-        let stream = FramedStream::from(stream, addr);
+        let mut stream = FramedStream::from(stream, addr);
+        // deskhaven (M1-08): same frame and first-frame limits as the main port (was 30 s and
+        // no size limit).
+        stream.codec_mut().set_max_packet_length(MAX_FRAME_LEN);
         self.tasks.spawn(async move {
             let mut stream = stream;
-            if let Some(Ok(bytes)) = stream.next_timeout(30_000).await
+            if let Some(Ok(bytes)) = stream.next_timeout(FIRST_FRAME_TIMEOUT_MS).await
                 && let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes)
             {
                 match msg_in.union {
@@ -1170,7 +1220,14 @@ impl RendezvousServer {
         key: &str,
         ws: bool,
     ) -> ResultType<()> {
+        // deskhaven (M1-08): the first complete frame (websocket: handshake included) must
+        // arrive within FIRST_FRAME_TIMEOUT of the accept, later ones within IDLE_TIMEOUT of the
+        // previous one, and a frame over MAX_FRAME_LEN ends the connection as soon as its
+        // header is read. Upstream gave every frame 30 s, the handshake no limit at all and
+        // frames no size limit.
+        let first_frame = TokioInstant::now() + FIRST_FRAME_TIMEOUT;
         let mut sink;
+        let mut reader;
         if ws {
             use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
             let callback = |req: &Request, response: Response| {
@@ -1197,23 +1254,28 @@ impl RendezvousServer {
                 }
                 Ok(response)
             };
-            let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
-            let (a, mut b) = ws_stream.split();
+            let handshake = tokio_tungstenite::accept_hdr_async_with_config(
+                stream,
+                callback,
+                Some(ws_config()),
+            );
+            let (a, b) = timeout_at(first_frame, handshake).await??.split();
             sink = Some(Sink::Ws(a));
-            while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
-                if let tungstenite::Message::Binary(bytes) = msg
-                    && !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await
-                {
-                    break;
-                }
-            }
+            reader = Reader::Ws(b);
         } else {
-            let (a, mut b) = Framed::new(stream, BytesCodec::new()).split();
+            let mut codec = BytesCodec::new();
+            codec.set_max_packet_length(MAX_FRAME_LEN);
+            let (a, b) = Framed::new(stream, codec).split();
             sink = Some(Sink::TcpStream(a));
-            while let Ok(Some(Ok(bytes))) = timeout(30_000, b.next()).await {
-                if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
-                    break;
-                }
+            reader = Reader::Tcp(b);
+        }
+        let mut deadline = first_frame;
+        while let Ok(Some(frame)) = timeout_at(deadline, reader.next()).await {
+            deadline = TokioInstant::now() + IDLE_TIMEOUT;
+            if let Some(bytes) = frame
+                && !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await
+            {
+                break;
             }
         }
         if sink.is_none() {
@@ -1451,6 +1513,7 @@ fn local_addr(listener: &TcpListener) -> Result<SocketAddr, SignalError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hbb_common::timeout;
 
     fn memory_store() -> Arc<dyn PeerStore> {
         Arc::new(crate::store::MemoryPeerStore::new())
