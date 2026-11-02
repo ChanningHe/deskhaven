@@ -2,6 +2,8 @@
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
 use deskhaven_db::entity::device::{self, DeviceStatus};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time::{self, TimestampMs};
@@ -33,10 +35,11 @@ fn device_row(rustdesk_id: &str) -> device::ActiveModel {
 #[tokio::test]
 async fn device_round_trips_with_binary_keys_and_nullable_columns() {
     each_migrated_backend(async |db: &TestDb| {
+        let owner = common::user_row("owner").insert(&db.conn).await.unwrap();
         let row = device::ActiveModel {
             id: NotSet,
             status: Set(DeviceStatus::Active),
-            owner_user_id: Set(Some(42)),
+            owner_user_id: Set(Some(owner.id)),
             hostname: Set(Some("host-1".to_owned())),
             ..device_row("123456789")
         };
@@ -46,7 +49,7 @@ async fn device_round_trips_with_binary_keys_and_nullable_columns() {
         assert_eq!(stored.rustdesk_id, "123456789", "{}", db.backend);
         assert_eq!(stored.uuid, vec![0, 1, 2, 0xff], "{}", db.backend);
         assert_eq!(stored.pk, vec![7; 32], "{}", db.backend);
-        assert_eq!(stored.owner_user_id, Some(42), "{}", db.backend);
+        assert_eq!(stored.owner_user_id, Some(owner.id), "{}", db.backend);
         assert_eq!(stored.device_group_id, None, "{}", db.backend);
         assert_eq!(stored.deployed_at, None, "{}", db.backend);
         assert_eq!(stored.register_at, ts(1_700_000_000_123), "{}", db.backend);

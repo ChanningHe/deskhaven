@@ -43,9 +43,9 @@ pub struct Model {
     /// Content hash of the last stored sysinfo (unchanged sysinfo is not written).
     #[sea_orm(column_type = "Text", nullable)]
     pub sysinfo_hash: Option<String>,
-    /// `None` = unassigned. FK to `users(id)` from M2-02.
+    /// `None` = unassigned; cleared when the user is deleted.
     pub owner_user_id: Option<i64>,
-    /// FK to `device_groups(id)` from M2-02.
+    /// `None` = ungrouped; cleared when the group is deleted.
     pub device_group_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub note: Option<String>,
@@ -67,6 +67,33 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::user::Entity",
+        from = "Column::OwnerUserId",
+        to = "super::user::Column::Id",
+        on_delete = "SetNull"
+    )]
+    Owner,
+    #[sea_orm(
+        belongs_to = "super::device_group::Entity",
+        from = "Column::DeviceGroupId",
+        to = "super::device_group::Column::Id",
+        on_delete = "SetNull"
+    )]
+    DeviceGroup,
+}
+
+impl Related<super::user::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Owner.def()
+    }
+}
+
+impl Related<super::device_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceGroup.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

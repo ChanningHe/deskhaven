@@ -4,6 +4,8 @@
 // Each test crate uses a subset.
 #![allow(dead_code)]
 
+pub mod ops;
+
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::user::{AuthSource, Role, Status};
 use deskhaven_db::entity::{

@@ -14,6 +14,11 @@ mod m20261102_000011_external_identity;
 mod m20261102_000012_sessions_credentials;
 mod m20261102_000013_password_changed_at;
 mod m20261102_000014_auth_lockouts;
+mod m20261102_000020_device_groups;
+mod m20261102_000021_devices_foreign_keys;
+mod m20261102_000022_address_books;
+mod m20261102_000023_strategies;
+mod m20261102_000024_audit;
 
 pub struct Migrator;
 
@@ -27,6 +32,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20261102_000012_sessions_credentials::Migration),
             Box::new(m20261102_000013_password_changed_at::Migration),
             Box::new(m20261102_000014_auth_lockouts::Migration),
+            Box::new(m20261102_000020_device_groups::Migration),
+            Box::new(m20261102_000021_devices_foreign_keys::Migration),
+            Box::new(m20261102_000022_address_books::Migration),
+            Box::new(m20261102_000023_strategies::Migration),
+            Box::new(m20261102_000024_audit::Migration),
         ]
     }
 }
