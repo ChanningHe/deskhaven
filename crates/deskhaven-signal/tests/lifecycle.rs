@@ -247,6 +247,87 @@ async fn port_in_use_fails_with_bind_error() {
     }
 }
 
+/// Whether `err`'s source is an `AddrInUse` I/O error.
+fn is_addr_in_use(err: &SignalError) -> bool {
+    std::error::Error::source(err)
+        .and_then(|source| source.downcast_ref::<std::io::Error>())
+        .is_some_and(|io| io.kind() == std::io::ErrorKind::AddrInUse)
+}
+
+/// M1-08: upstream bound every listener with SO_REUSEPORT (hbb_common `listen_any`,
+/// `new_listener(.., true)`, `FramedSocket::new_reuse(.., true, ..)`), so a second instance
+/// (e.g. another data dir) on the same ports bound without error and the kernel spread the
+/// clients over both. Now the second instance fails with AddrInUse and the first keeps serving.
+#[tokio::test]
+async fn second_server_on_the_same_ports_fails_with_addr_in_use() {
+    // Arrange
+    let first = TestServer::start().await;
+
+    // Act
+    let res = timeout(
+        STEP,
+        run(
+            config(first.port),
+            memory_store(),
+            allow_all(),
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("bind failure is reported promptly");
+
+    // Assert
+    match &res {
+        Err(err @ SignalError::Bind { port, .. }) => {
+            assert_eq!(*port, first.port);
+            assert!(is_addr_in_use(err), "{err:?}");
+        }
+        other => panic!("expected Bind error, got {other:?}"),
+    }
+    assert!(first.tcp().await.test_nat().await.port > 0, "first serves");
+    assert!(register_peer_udp(first.port).await, "first owns UDP");
+    first.stop().await;
+}
+
+/// SO_REUSEADDR is kept on the TCP listeners: a server stopped while connections were open
+/// (its side of each accepted connection lingers in TIME_WAIT / FIN_WAIT) starts again on the
+/// same ports at the first attempt.
+#[tokio::test]
+async fn restart_right_after_stop_with_open_connections_binds_at_once() {
+    // Arrange
+    let server = TestServer::start().await;
+    let port = server.port;
+    let mut main = server.tcp().await;
+    let mut nat = server.nat().await;
+    let mut ws = server.ws().await;
+    for conn in [&mut main, &mut nat] {
+        assert!(conn.test_nat().await.port > 0);
+    }
+    ws.test_nat().await;
+    server.stop().await;
+    drop((main, nat, ws));
+
+    // Act
+    let shutdown = CancellationToken::new();
+    let task = tokio::spawn(run(
+        config(port),
+        memory_store(),
+        allow_all(),
+        shutdown.clone(),
+    ));
+
+    // Assert
+    assert!(
+        wait_until_ready(port, &task).await,
+        "rebind failed: {:?}",
+        task.await
+    );
+    assert!(register_peer_udp(port).await);
+    shutdown.cancel();
+    let res = timeout(STEP, task).await.expect("run returns promptly");
+    assert!(matches!(res, Ok(Ok(()))), "{res:?}");
+}
+
 #[tokio::test]
 async fn handle_reports_stopped_once_run_has_returned() {
     // Arrange

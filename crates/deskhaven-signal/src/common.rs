@@ -4,23 +4,49 @@ use hbb_common::{
     futures::future::join_all,
     tokio::{net::lookup_host, time::timeout},
 };
+use socket2::{Domain, Protocol, Socket, Type};
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     time::{Duration, Instant},
 };
 
 // deskhaven: `parse_bind_address` (only used by upstream `main.rs`) removed; the module is
 // crate-private since M1-03.
 
+// deskhaven (M1-08): binds its own socket instead of hbb_common `new_listener(addr, true)` /
+// `listen_any`, which set SO_REUSEPORT: with it a second instance bound the same port without
+// error and the kernel balanced connections between both. SO_REUSEADDR stays (an immediate
+// restart while accepted connections linger in TIME_WAIT); without a bind address it listens
+// on IPv6 dual-stack and falls back to IPv4, like `listen_any`.
 pub async fn listen_tcp(
     bind_addr: Option<IpAddr>,
     port: u16,
 ) -> ResultType<hbb_common::tokio::net::TcpListener> {
     if let Some(bind_addr) = bind_addr {
-        hbb_common::tcp::new_listener(SocketAddr::new(bind_addr, port), true).await
-    } else {
-        hbb_common::tcp::listen_any(port).await
+        return Ok(tcp_listener(SocketAddr::new(bind_addr, port))?);
     }
+    match tcp_listener(SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port)) {
+        Ok(listener) => Ok(listener),
+        Err(_) => Ok(tcp_listener(SocketAddr::new(
+            Ipv4Addr::UNSPECIFIED.into(),
+            port,
+        ))?),
+    }
+}
+
+/// hbb_common's listen backlog.
+const TCP_BACKLOG: i32 = 128;
+
+fn tcp_listener(addr: SocketAddr) -> std::io::Result<hbb_common::tokio::net::TcpListener> {
+    let socket = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))?;
+    if addr.is_ipv6() && addr.ip().is_unspecified() {
+        socket.set_only_v6(false).ok();
+    }
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(TCP_BACKLOG)?;
+    hbb_common::tokio::net::TcpListener::from_std(socket.into())
 }
 
 // deskhaven: `console_addr` / `listen_console` / `accept_or_pending` (listener for the removed

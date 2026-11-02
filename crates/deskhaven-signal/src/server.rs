@@ -169,11 +169,16 @@ pub enum SignalError {
 }
 
 impl SignalError {
+    /// An I/O error stays the source itself, so callers can match its kind (e.g. `AddrInUse`).
     pub(crate) fn bind(proto: &'static str, port: u16, err: anyhow::Error) -> Self {
+        let source = match err.downcast::<std::io::Error>() {
+            Ok(io) => io.into(),
+            Err(err) => err.into(),
+        };
         Self::Bind {
             proto,
             port,
-            source: err.into(),
+            source,
         }
     }
 

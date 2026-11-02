@@ -71,10 +71,10 @@ static RESERVED_PORTS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 /// another test of this process (the caller still has to cope with losing a race for them
 /// to another process).
 ///
-/// The probe alone is not enough: the server binds with SO_REUSEPORT, so a second server
-/// started on a probed-but-not-yet-bound triple binds the same ports without error and
-/// steals the first server's traffic. Reserving the whole span closes that race between the
-/// parallel tests of one binary. The reservation is in-process only: `cargo test` runs the
+/// The probe alone is not enough: two tests that probe the same triple before either server
+/// binds it race for it (since M1-08 the loser fails with a Bind error and retries; before,
+/// SO_REUSEPORT let both bind and the second stole the first's traffic). Reserving the whole
+/// span avoids that race between the parallel tests of one binary. The reservation is in-process only: `cargo test` runs the
 /// test binaries one after another, so that suffices; a runner that runs binaries in parallel
 /// (e.g. nextest) would need a cross-process scheme (lock files, per-binary port ranges).
 pub fn free_base_port() -> u16 {

@@ -1367,6 +1367,8 @@ async fn send_rk_res(
     socket.send(&msg_out, addr).await
 }
 
+// deskhaven (M1-08): `reuse = false` (upstream `true` set SO_REUSEPORT and SO_REUSEADDR, so a
+// second instance shared the port). UDP needs neither for a quick restart.
 async fn create_udp_listener(
     bind_addr: Option<IpAddr>,
     port: i32,
@@ -1374,15 +1376,15 @@ async fn create_udp_listener(
 ) -> ResultType<FramedSocket> {
     if let Some(bind_addr) = bind_addr {
         let addr = SocketAddr::new(bind_addr, port as _);
-        return FramedSocket::new_reuse(&addr, true, rmem).await;
+        return FramedSocket::new_reuse(&addr, false, rmem).await;
     }
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port as _);
-    if let Ok(s) = FramedSocket::new_reuse(&addr, true, rmem).await {
+    if let Ok(s) = FramedSocket::new_reuse(&addr, false, rmem).await {
         log::debug!("listen on udp {:?}", s.local_addr());
         return Ok(s);
     }
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port as _);
-    let s = FramedSocket::new_reuse(&addr, true, rmem).await?;
+    let s = FramedSocket::new_reuse(&addr, false, rmem).await?;
     log::debug!("listen on udp {:?}", s.local_addr());
     Ok(s)
 }

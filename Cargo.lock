@@ -1353,6 +1353,7 @@ dependencies = [
  "lazy_static",
  "local-ip-address",
  "once_cell",
+ "socket2 0.6.5",
  "sodiumoxide",
  "thiserror 2.0.21",
  "tokio",

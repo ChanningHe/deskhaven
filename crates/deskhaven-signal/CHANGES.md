@@ -344,3 +344,15 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   target learned the controller's API token. Every other field is forwarded as before. The
   M1-04 baseline test `request_relay_forwards_token_and_licence_key_upstream_behavior_m1_08_changes_this`
   became `request_relay_is_forwarded_without_token_and_licence_key`.
+- 2026-11-02, M1-08, no SO_REUSEPORT (`common.rs` `listen_tcp`, `rendezvous_server.rs`
+  `create_udp_listener`): upstream bound every listener through hbb_common helpers that set
+  SO_REUSEPORT (`listen_any`, `new_listener(addr, true)`, `FramedSocket::new_reuse(addr, true,
+  rmem)`), so a second instance (e.g. with another data dir) bound the same ports without error
+  and the kernel balanced clients between both (found in M1-06). TCP listeners are now plain
+  socket2 sockets with SO_REUSEADDR only (an immediate restart while accepted connections
+  linger in TIME_WAIT still binds), IPv6 dual-stack without a bind address with the same IPv4
+  fallback and backlog (128) as `listen_any`; the UDP socket uses `new_reuse(addr, false,
+  rmem)` (neither option; the receive buffer and dual-stack handling are unchanged). A second
+  instance now fails with `SignalError::Bind`, whose source is now the `std::io::Error` itself
+  (kind `AddrInUse`) instead of an opaque wrapper (`server.rs` `SignalError::bind`).
+  Dependency added: `socket2` 0.6 (already in the tree through tokio).

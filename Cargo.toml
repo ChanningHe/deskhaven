@@ -77,6 +77,10 @@ rustix = { version = "1.1", features = ["fs", "process"] }
 # (thiserror: reused from the db block.)
 # CancellationToken (public `run` API) and TaskTracker (`rt`); same 0.7 line hbb_common uses.
 tokio-util = { version = "0.7", features = ["rt"] }
+# --- signal defects (M1-08) ---
+# TCP listeners without SO_REUSEPORT but with dual-stack and SO_REUSEADDR (hbb_common's helpers
+# always set SO_REUSEPORT); same 0.6 line tokio already pulls in.
+socket2 = "0.6"
 
 # --- http (M0-07) ---
 # (tokio, tokio-util, serde, serde_json, thiserror, ipnet, url, tracing-subscriber, uuid: reused from earlier blocks.)
