@@ -9,6 +9,11 @@
 //! - **Cache and version** ([`StrategyCache`]): effective strategies are computed from one
 //!   in-memory snapshot, and `modified_at` is a counter that only grows.
 //!
+//! **No secrets in strategies.** A strategy's options are sent in clear to every device it
+//! applies to, and a device's placement (owner, device group) can come from its own
+//! `preset-*` fields when `devices.accept_presets` is on; treat every option value as
+//! readable by any device of the targets it is assigned to.
+//!
 //! Anything that deletes a user, user group, device group or device removes the strategy
 //! assignments of that target in the same transaction (`forget_*`) and invalidates the cache
 //! after commit. For users and groups [`StrategyService::watch_users`] and

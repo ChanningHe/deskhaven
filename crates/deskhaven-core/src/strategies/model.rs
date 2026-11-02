@@ -94,7 +94,8 @@ impl From<strategy::Model> for Strategy {
 }
 
 /// Input of [`StrategyService::create`](super::StrategyService::create); the strategy is
-/// managed in the console (`ui`).
+/// managed in the console (`ui`). Its options reach every device it applies to in clear: no
+/// secrets (see the module documentation).
 #[derive(Clone, Debug, Default)]
 pub struct NewStrategy {
     pub name: String,
