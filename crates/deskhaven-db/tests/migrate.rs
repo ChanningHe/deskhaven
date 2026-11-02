@@ -4,7 +4,7 @@
 
 use deskhaven_db::migration::Migrator;
 use deskhaven_db::testing::{TestDb, each_backend};
-use deskhaven_db::{DbError, migrate, migrate_with};
+use deskhaven_db::{DbError, DbOptions, connect, migrate, migrate_with};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::big_integer;
@@ -93,6 +93,36 @@ async fn migrate_is_idempotent() {
         migrate(&db.conn).await.unwrap();
 
         assert_eq!(applied_versions(&db.conn).await, expected_versions());
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_migrations_serialize() {
+    each_backend(async |db: &TestDb| {
+        // A second, independent pool: like two instances starting at once.
+        let other = connect(&DbOptions::new(db.url.clone())).await.unwrap();
+
+        let (a, b) = tokio::join!(migrate(&db.conn), migrate(&other));
+
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(applied_versions(&db.conn).await, expected_versions());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn settings_history_has_key_time_index() {
+    each_backend(async |db: &TestDb| {
+        migrate(&db.conn).await.unwrap();
+
+        let has = SchemaManager::new(&db.conn)
+            .has_index("settings_history", "idx_settings_history_key_updated_at")
+            .await
+            .unwrap();
+
+        assert!(has);
     })
     .await;
 }

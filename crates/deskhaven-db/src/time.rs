@@ -2,6 +2,10 @@
 //!
 //! Entities declare such columns as [`TimestampMs`]; it reads/writes `i64` millis and
 //! derefs to `chrono::DateTime<Utc>`.
+//!
+//! Build values only via [`now`] or [`from_millis`]. Wrapping an arbitrary `DateTime` keeps
+//! its sub-millisecond part, which the DB drops, so the stored row would no longer compare
+//! equal to the in-memory value.
 
 use chrono::{DateTime, SubsecRound, Utc};
 

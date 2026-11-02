@@ -52,9 +52,15 @@ async fn sqlite_pragmas_apply_to_every_pooled_connection() {
         txns.push(conn.begin().await.unwrap());
     }
     for txn in &txns {
-        let stmt = Statement::from_string(DbBackend::Sqlite, "PRAGMA foreign_keys");
-        let row = txn.query_one_raw(stmt).await.unwrap().unwrap();
-        assert_eq!(row.try_get_by_index::<i64>(0).unwrap(), 1);
+        for (pragma, expected) in [("foreign_keys", 1), ("busy_timeout", 5_000)] {
+            let stmt = Statement::from_string(DbBackend::Sqlite, format!("PRAGMA {pragma}"));
+            let row = txn.query_one_raw(stmt).await.unwrap().unwrap();
+            assert_eq!(
+                row.try_get_by_index::<i64>(0).unwrap(),
+                expected,
+                "{pragma}"
+            );
+        }
     }
 }
 
@@ -97,6 +103,28 @@ async fn unreachable_postgres_returns_connect_error() {
     let err = connect(&opts).await.unwrap_err();
 
     assert!(matches!(err, DbError::Connect(_)), "{err:?}");
+}
+
+#[test]
+fn options_debug_redacts_password() {
+    let opts = DbOptions::new("postgres://u:hunter2@127.0.0.1:1/x?password=hunter2");
+
+    let dbg = format!("{opts:?}");
+
+    assert!(!dbg.contains("hunter2"), "{dbg}");
+    assert!(dbg.contains("127.0.0.1"), "{dbg}");
+}
+
+#[tokio::test]
+async fn connect_failure_does_not_leak_password() {
+    let mut opts = DbOptions::new("postgres://u:hunter2@127.0.0.1:1/x");
+    opts.connect_timeout = std::time::Duration::from_secs(1);
+
+    let err = connect(&opts).await.unwrap_err();
+
+    for text in [format!("{err}"), format!("{err:?}"), format!("{opts:?}")] {
+        assert!(!text.contains("hunter2"), "{text}");
+    }
 }
 
 #[tokio::test]

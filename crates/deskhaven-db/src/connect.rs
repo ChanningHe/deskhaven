@@ -1,11 +1,17 @@
 //! Connection factory for `sqlite:` and `postgres:` URLs.
+//!
+//! PostgreSQL TLS (`sslmode=require` etc.) uses rustls (ring) with the bundled Mozilla
+//! (webpki) root store, not the system store: a server certificate from an internal CA
+//! needs `sslrootcert=/path/to/ca.pem` in the URL.
 
+use std::fmt;
 use std::time::Duration;
 
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use crate::DbError;
+use crate::redact::redact_url;
 
 /// How long a SQLite writer waits on a locked database before failing.
 pub const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -13,8 +19,10 @@ pub const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Connection settings (mirrors the bootstrap `[database]` section).
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Connection settings (mirrors the bootstrap `[database]` section). Build with
+/// [`DbOptions::new`], then adjust fields. `Debug` masks credentials in the URL.
+#[derive(Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DbOptions {
     pub url: String,
     pub max_connections: u32,
@@ -29,6 +37,16 @@ impl DbOptions {
             max_connections: DEFAULT_MAX_CONNECTIONS,
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
         }
+    }
+}
+
+impl fmt::Debug for DbOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DbOptions")
+            .field("url", &redact_url(&self.url))
+            .field("max_connections", &self.max_connections)
+            .field("connect_timeout", &self.connect_timeout)
+            .finish()
     }
 }
 
@@ -50,6 +68,8 @@ fn scheme_of(url: &str) -> Result<Scheme, DbError> {
 }
 
 /// SQLite: create the file if missing, WAL, busy timeout, foreign keys on (every connection).
+/// Applied after URL parsing, so these always override the same settings given in the URL
+/// (`mode`, `journal_mode`, `synchronous`, `busy_timeout`, `foreign_keys` cannot be changed).
 fn sqlite_tuning(opts: SqliteConnectOptions) -> SqliteConnectOptions {
     opts.create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)

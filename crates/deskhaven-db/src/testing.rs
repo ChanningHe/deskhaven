@@ -17,6 +17,8 @@ use crate::{DbOptions, connect, migrate};
 
 /// Env var holding an admin-capable PostgreSQL URL for tests.
 pub const PG_URL_ENV: &str = "DESKHAVEN_TEST_PG_URL";
+/// Set to `1` (CI) to fail instead of skipping when [`PG_URL_ENV`] is missing.
+pub const REQUIRE_PG_ENV: &str = "DESKHAVEN_TEST_REQUIRE_PG";
 
 const SCHEMA_PREFIX: &str = "dh_test";
 
@@ -54,15 +56,31 @@ enum Guard {
 
 /// Runs `test` against an empty database on every available backend.
 /// Each database is created right before its run, so a failure never leaks the next one.
+/// Any failure (setup or assertion) is reported with the backend it happened on.
 pub async fn each_backend<F: AsyncFn(&TestDb)>(test: F) {
+    let ctx = FailureContext(Backend::Sqlite);
     let sqlite = sqlite_db().await;
     test(&sqlite).await;
     sqlite.cleanup().await;
+    drop(ctx);
 
     let Some(pg_url) = pg_url() else { return };
+    let ctx = FailureContext(Backend::Postgres);
     let pg = postgres_db(&pg_url).await;
     test(&pg).await;
     pg.cleanup().await;
+    drop(ctx);
+}
+
+/// On unwind, names the backend in the failed test's (captured, then shown) output.
+struct FailureContext(Backend);
+
+impl Drop for FailureContext {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("dual-backend test FAILED on backend: {}", self.0);
+        }
+    }
 }
 
 /// Like [`each_backend`], with all migrations applied.
@@ -74,12 +92,33 @@ pub async fn each_migrated_backend<F: AsyncFn(&TestDb)>(test: F) {
     .await;
 }
 
-fn pg_url() -> Option<String> {
-    let url = std::env::var(PG_URL_ENV).ok().filter(|u| !u.is_empty());
-    if url.is_none() {
-        warn_pg_skipped();
+#[derive(Debug, PartialEq, Eq)]
+enum PgTarget {
+    Run(String),
+    Skip,
+    /// PostgreSQL is required (CI) but no URL was given.
+    Missing,
+}
+
+fn pg_target(url: Option<String>, require: Option<String>) -> PgTarget {
+    match url.filter(|u| !u.is_empty()) {
+        Some(url) => PgTarget::Run(url),
+        None if require.as_deref() == Some("1") => PgTarget::Missing,
+        None => PgTarget::Skip,
     }
-    url
+}
+
+#[allow(clippy::panic)]
+fn pg_url() -> Option<String> {
+    let env = |k| std::env::var(k).ok();
+    match pg_target(env(PG_URL_ENV), env(REQUIRE_PG_ENV)) {
+        PgTarget::Run(url) => Some(url),
+        PgTarget::Skip => {
+            warn_pg_skipped();
+            None
+        }
+        PgTarget::Missing => panic!("{REQUIRE_PG_ENV}=1 but {PG_URL_ENV} is not set"),
+    }
 }
 
 async fn sqlite_db() -> TestDb {
@@ -156,4 +195,24 @@ fn warn_pg_skipped() {
 #[allow(clippy::panic)]
 fn must<T, E: fmt::Debug>(res: Result<T, E>, what: &str) -> T {
     res.unwrap_or_else(|e| panic!("test db setup failed ({what}): {e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &str) -> Option<String> {
+        Some(v.to_owned())
+    }
+
+    #[test]
+    fn pg_target_policy() {
+        let url = "postgres://x";
+        assert_eq!(pg_target(s(url), None), PgTarget::Run(url.to_owned()));
+        assert_eq!(pg_target(s(url), s("1")), PgTarget::Run(url.to_owned()));
+        assert_eq!(pg_target(None, None), PgTarget::Skip);
+        assert_eq!(pg_target(s(""), s("0")), PgTarget::Skip);
+        assert_eq!(pg_target(None, s("1")), PgTarget::Missing);
+        assert_eq!(pg_target(s(""), s("1")), PgTarget::Missing);
+    }
 }
