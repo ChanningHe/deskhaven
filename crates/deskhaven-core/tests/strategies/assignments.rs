@@ -223,3 +223,38 @@ async fn deleting_a_strategy_removes_its_assignments() {
     })
     .await;
 }
+
+/// `assign_if_unassigned` (device presets, M2-12) fills an empty target only, and only then
+/// invalidates the cache.
+#[tokio::test]
+async fn assign_if_unassigned_never_replaces_an_assignment() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        let (a, b) = (c.strategy("a", &[]).await, c.strategy("b", &[]).await);
+        let device = c.device("123456789").await;
+        let target = Target::Device(device);
+
+        // Act
+        let first = c.svc.assign_if_unassigned(target, a.id).await.unwrap();
+        c.svc.effective(&Default::default()).await.unwrap();
+        let second = c.svc.assign_if_unassigned(target, b.id).await.unwrap();
+        let kept_cache = c.svc.cache().is_loaded();
+        let missing = c
+            .svc
+            .assign_if_unassigned(Target::Device(device + 100), a.id)
+            .await;
+
+        // Assert
+        let be = db.backend;
+        assert!(first && !second, "{be}");
+        assert_eq!(c.svc.assignment(target).await.unwrap(), Some(a.id), "{be}");
+        assert!(kept_cache, "{be}: nothing changed, nothing invalidated");
+        assert!(
+            matches!(missing, Err(StrategyError::TargetNotFound(_))),
+            "{be}: {missing:?}"
+        );
+        assert_eq!(rows(db).await, 1, "{be}");
+    })
+    .await;
+}

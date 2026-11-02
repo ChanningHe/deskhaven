@@ -1,6 +1,6 @@
 //! Process-wide state shared by the HTTP routers (02 §3). Built once at
 //! startup (`deskhaven::startup::open_state`) and handed to the API crates
-//! as `State<Arc<AppState>>`; later subsystems (presence, domain events)
+//! as `State<Arc<AppState>>`; later subsystems (domain events)
 //! become further fields.
 
 use std::sync::Arc;
@@ -11,10 +11,13 @@ use crate::auth::limiter::LoginThrottle;
 use crate::clock::SharedClock;
 use crate::console_audit::ConsoleAuditLog;
 use crate::crypto::SecretBox;
+use crate::devices::{DeviceService, Presence};
+use crate::groups::GroupService;
 use crate::login_events::LoginEventLog;
 use crate::oidc::{OidcService, ReqwestFetch};
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
+use crate::strategies::StrategyService;
 use crate::tfa::TfaService;
 use crate::users::{PasswordHasher, UserService};
 
@@ -41,6 +44,13 @@ pub struct AppState {
     pub console_audit: ConsoleAuditLog,
     /// OIDC providers and logins.
     pub oidc: OidcService,
+    /// User groups (membership changes invalidate the strategy cache).
+    pub groups: GroupService,
+    /// Strategies and the effective-strategy cache, watching `users` and `groups`.
+    pub strategies: StrategyService,
+    /// Device registry operations and the presence table (`devices.presence()`), which the
+    /// signal server's liveness notifications feed.
+    pub devices: DeviceService,
 }
 
 /// Bootstrap values the services need beyond the database and the settings.
@@ -83,6 +93,17 @@ impl AppState {
             &config.public_url,
             Arc::new(ReqwestFetch::new()),
         );
+        let groups = GroupService::new(db.clone());
+        let strategies = StrategyService::new(db.clone(), Arc::clone(&clock));
+        strategies.watch_users(&users);
+        strategies.watch_groups(&groups);
+        let devices = DeviceService::new(
+            db.clone(),
+            settings.clone(),
+            Arc::clone(&crypto),
+            strategies.clone(),
+            Presence::new(Arc::clone(&clock)),
+        );
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {
             db,
@@ -96,6 +117,9 @@ impl AppState {
             tfa,
             console_audit,
             oidc,
+            groups,
+            strategies,
+            devices,
         }
     }
 }

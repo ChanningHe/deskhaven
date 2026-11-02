@@ -4,6 +4,23 @@
 //! §3.1) and bind that id to the device uuid for good: the uuid never changes afterwards
 //! (06-security §2), only the public key and the registration address / time do.
 //! `uuid` / `pk` are stored as raw bytes (`BLOB` / `BYTEA`), compared byte for byte.
+//!
+//! [`Presence`] tracks which devices are online (in memory only). [`DeviceService`] serves
+//! the device endpoints: id + uuid verification, sysinfo with its deployment presets, and the
+//! deletion of devices and device groups.
+
+mod presence;
+mod presets;
+mod service;
+mod sysinfo;
+
+pub use presence::{
+    DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
+    SWEEP_INTERVAL, Seen,
+};
+pub use presets::{AddressBookPreset, PRESET_TAG_COLOR, Presets};
+pub use service::{DEVICE_GROUP_NAME_MAX_LEN, DeviceService, SysinfoOutcome, SysinfoReport};
+pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
 
 use std::net::IpAddr;
 
@@ -37,13 +54,25 @@ pub struct RegisteredKeys {
     pub register_ip: String,
 }
 
-/// Why a registration was not stored.
+/// Why a device operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DeviceError {
     /// The id is registered with another uuid; nothing changed.
     #[error("device {rustdesk_id} is registered with another uuid")]
     UuidMismatch { rustdesk_id: String },
+
+    /// Malformed input; `field` names the offending input field.
+    #[error("invalid {field}: {reason}")]
+    Invalid { field: &'static str, reason: String },
+
+    #[error("{field} is already taken")]
+    Conflict { field: &'static str },
+
+    /// The operation's task panicked or the runtime is shutting down; whether it committed
+    /// is unknown until the next read.
+    #[error("device operation did not complete")]
+    Aborted,
 
     #[error("device storage failed")]
     Database(#[from] DbErr),

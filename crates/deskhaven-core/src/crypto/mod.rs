@@ -1,6 +1,6 @@
 //! Secret-at-rest encryption (06-security §5): the master key and `SecretBox`.
 
-mod b64;
+pub(crate) mod b64;
 mod mac;
 mod master_key;
 mod secret_box;

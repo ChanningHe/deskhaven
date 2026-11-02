@@ -36,6 +36,32 @@ impl StrategyService {
         .await
     }
 
+    /// Makes `strategy_id` the strategy of `target` only if `target` has none (a device's
+    /// `preset-strategy-name`, which must never replace an administrator's choice); `true` if
+    /// it was assigned. Atomic: a concurrent [`assign`](Self::assign) either comes first and
+    /// wins, or replaces this one.
+    pub async fn assign_if_unassigned(
+        &self,
+        target: Target,
+        strategy_id: i64,
+    ) -> Result<bool, StrategyError> {
+        self.detached(move |inner| async move {
+            let tx = begin_write(&inner.db).await?;
+            ensure_strategy(&tx, strategy_id).await?;
+            ensure_target(&tx, target).await?;
+            let inserted = insert_if_absent(target, strategy_id)
+                .exec_without_returning(&tx)
+                .await?;
+            let assigned = matches!(inserted, TryInsertResult::Inserted(n) if n > 0);
+            tx.commit().await?;
+            if assigned {
+                inner.cache.invalidate();
+            }
+            Ok(assigned)
+        })
+        .await
+    }
+
     /// Removes the strategy of `target`; `false` if it had none.
     pub async fn unassign(&self, target: Target) -> Result<bool, StrategyError> {
         self.detached(move |inner| async move {
