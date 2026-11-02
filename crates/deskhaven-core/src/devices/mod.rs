@@ -3,6 +3,7 @@
 //! Rows are created by the signal server's first accepted RegisterPk of an id (07-hbbs-fork
 //! §3.1) and bind that id to the device uuid for good: the uuid never changes afterwards
 //! (06-security §2), only the public key and the registration address / time do.
+//! `uuid` / `pk` are stored as raw bytes (`BLOB` / `BYTEA`), compared byte for byte.
 
 use std::net::IpAddr;
 
@@ -11,7 +12,7 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, TryInsertResult,
+    QueryFilter, QuerySelect, TryInsertResult,
 };
 
 /// An accepted RegisterPk.
@@ -24,6 +25,16 @@ pub struct Registration {
     pub ip: IpAddr,
     /// When it was accepted.
     pub at: TimestampMs,
+}
+
+/// What the signal server needs of a registered device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegisteredKeys {
+    pub rustdesk_id: String,
+    pub uuid: Vec<u8>,
+    pub pk: Vec<u8>,
+    /// Source address of the last RegisterPk, as stored.
+    pub register_ip: String,
 }
 
 /// Why a registration was not stored.
@@ -59,17 +70,53 @@ impl DeviceRepository {
             .await
     }
 
+    /// The keys of every registered device, for the signal server's startup preload.
+    pub async fn all_registrations(&self) -> Result<Vec<RegisteredKeys>, DbErr> {
+        let rows: Vec<(String, Vec<u8>, Vec<u8>, String)> = device::Entity::find()
+            .select_only()
+            .columns([
+                device::Column::RustdeskId,
+                device::Column::Uuid,
+                device::Column::Pk,
+                device::Column::RegisterIp,
+            ])
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(rustdesk_id, uuid, pk, register_ip)| RegisteredKeys {
+                rustdesk_id,
+                uuid,
+                pk,
+                register_ip,
+            })
+            .collect())
+    }
+
     /// Inserts the device on its first registration; afterwards updates `pk`, `register_ip`
     /// and `register_at`, but only while the stored uuid matches (otherwise
-    /// [`DeviceError::UuidMismatch`]).
+    /// [`DeviceError::UuidMismatch`], nothing changed).
     ///
-    /// Two statements, each atomic on both backends, so concurrent calls need no lock: an
-    /// insert that conflicts on the unique `rustdesk_id` does nothing, and the update is
-    /// conditional on the uuid.
+    /// Each statement is atomic on both backends, so concurrent calls need no lock: the
+    /// update is conditional on the uuid, and the insert does nothing when it conflicts on
+    /// the unique `rustdesk_id`. The common case (re-registration) is a single UPDATE, which
+    /// on PostgreSQL also avoids burning a sequence value on a conflicting INSERT.
     pub async fn upsert_registration(&self, reg: &Registration) -> Result<(), DeviceError> {
-        if self.insert_new(reg).await? {
+        if self.update_keys(reg).await? || self.insert_new(reg).await? {
             return Ok(());
         }
+        // Lost an insert race: fine if the winner registered the same uuid.
+        if self.update_keys(reg).await? {
+            return Ok(());
+        }
+        Err(DeviceError::UuidMismatch {
+            rustdesk_id: reg.rustdesk_id.clone(),
+        })
+    }
+
+    /// `true` if a row with this id and uuid was updated.
+    async fn update_keys(&self, reg: &Registration) -> Result<bool, DbErr> {
         let updated = device::Entity::update_many()
             .col_expr(device::Column::Pk, Expr::value(reg.pk.clone()))
             .col_expr(device::Column::RegisterIp, Expr::value(reg.ip.to_string()))
@@ -79,12 +126,7 @@ impl DeviceRepository {
             .filter(device::Column::Uuid.eq(reg.uuid.clone()))
             .exec(&self.db)
             .await?;
-        if updated.rows_affected == 0 {
-            return Err(DeviceError::UuidMismatch {
-                rustdesk_id: reg.rustdesk_id.clone(),
-            });
-        }
-        Ok(())
+        Ok(updated.rows_affected > 0)
     }
 
     /// `true` if `reg` created the row, `false` if the id already existed.

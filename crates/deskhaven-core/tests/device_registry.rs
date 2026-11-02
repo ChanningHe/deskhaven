@@ -5,7 +5,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
-use deskhaven_core::devices::{DeviceError, DeviceRepository, Registration};
+use deskhaven_core::devices::{DeviceError, DeviceRepository, RegisteredKeys, Registration};
 use deskhaven_db::entity::device::{self, DeviceStatus};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time::{self, TimestampMs};
@@ -178,6 +178,76 @@ async fn concurrent_first_registrations_leave_one_row() {
         let backend = db.backend;
         assert!(a.is_ok() && b.is_ok(), "{backend}: {a:?} {b:?}");
         assert_eq!(count(db).await, 1, "{backend}");
+    })
+    .await;
+}
+
+/// Two devices racing for the same new id (different uuids): exactly one row, owned by the
+/// winner; the loser gets UuidMismatch. Repeated over several ids so both orders occur.
+#[tokio::test]
+async fn concurrent_first_registrations_with_different_uuids_keep_the_winner() {
+    const RACES: u32 = 10;
+    each_migrated_backend(async |db: &TestDb| {
+        let repo = DeviceRepository::new(db.conn.clone());
+        for n in 0..RACES {
+            let id = format!("race-{n}");
+            let a = registration(&id, b"uuid-a", b"pk-a", 1, 1_000);
+            let b = registration(&id, b"uuid-b", b"pk-b", 2, 1_000);
+
+            let (res_a, res_b) = tokio::join!(repo.upsert_registration(&a), repo.upsert_registration(&b));
+
+            let backend = db.backend;
+            let stored = row(&repo, &id).await;
+            let (winner, loser) = match (&res_a, &res_b) {
+                (Ok(()), Err(_)) => (&a, res_b),
+                (Err(_), Ok(())) => (&b, res_a),
+                other => panic!("{backend}: expected one winner, got {other:?}"),
+            };
+            assert!(
+                matches!(&loser, Err(DeviceError::UuidMismatch { rustdesk_id }) if *rustdesk_id == id),
+                "{backend}: {loser:?}"
+            );
+            assert_eq!((stored.uuid, stored.pk), (winner.uuid.clone(), winner.pk.clone()), "{backend}");
+        }
+        assert_eq!(count(db).await, u64::from(RACES), "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn all_registrations_lists_every_device_with_its_keys() {
+    each_migrated_backend(async |db: &TestDb| {
+        let repo = DeviceRepository::new(db.conn.clone());
+        assert!(
+            repo.all_registrations().await.unwrap().is_empty(),
+            "{}",
+            db.backend
+        );
+        repo.upsert_registration(&registration("111111111", b"a", b"pk-a", 1, 1_000))
+            .await
+            .unwrap();
+        repo.upsert_registration(&registration("222222222", b"b", b"pk-b", 2, 1_000))
+            .await
+            .unwrap();
+
+        let mut all = repo.all_registrations().await.unwrap();
+
+        all.sort_by(|x, y| x.rustdesk_id.cmp(&y.rustdesk_id));
+        let expected = vec![
+            RegisteredKeys {
+                rustdesk_id: "111111111".to_owned(),
+                uuid: b"a".to_vec(),
+                pk: b"pk-a".to_vec(),
+                register_ip: "192.0.2.1".to_owned(),
+            },
+            RegisteredKeys {
+                rustdesk_id: "222222222".to_owned(),
+                uuid: b"b".to_vec(),
+                pk: b"pk-b".to_vec(),
+                register_ip: "192.0.2.2".to_owned(),
+            },
+        ];
+        assert_eq!(all, expected, "{}", db.backend);
     })
     .await;
 }
