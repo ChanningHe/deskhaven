@@ -108,6 +108,12 @@ rust-embed = { version = "8.13", default-features = false, features = ["mime-gue
 # Only to install ring as the process-wide CryptoProvider (02 §5.1); never aws-lc.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 
+# --- users (M2-04) ---
+# (thiserror, tokio, sea-orm, zeroize: reused from earlier blocks.)
+# Argon2id password hashing (06 §3.1), RustCrypto. No `rand` feature: salts come from the
+# OS RNG core already uses (chacha20poly1305's `OsRng`).
+argon2 = { version = "0.5.3", default-features = false, features = ["std", "password-hash", "zeroize"] }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 
@@ -123,3 +129,10 @@ dbg_macro = "deny"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Argon2 is unusably slow unoptimized, and tests hash with the production parameters.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
