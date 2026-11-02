@@ -22,18 +22,25 @@ impl SignalPeerStore {
 
 #[async_trait]
 impl PeerStore for SignalPeerStore {
+    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError> {
+        let all = self
+            .devices
+            .all_registrations()
+            .await
+            .map_err(StoreError::backend)?;
+        Ok(all
+            .into_iter()
+            .map(|d| record(d.rustdesk_id, d.uuid, d.pk, &d.register_ip))
+            .collect())
+    }
+
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError> {
         let device = self
             .devices
             .find_by_rustdesk_id(id)
             .await
             .map_err(StoreError::backend)?;
-        Ok(device.map(|d| PeerRecord {
-            uuid: d.uuid,
-            pk: d.pk,
-            // Always written from an `IpAddr`; anything else reads as unknown.
-            ip: d.register_ip.parse().ok(),
-        }))
+        Ok(device.map(|d| record(d.rustdesk_id, d.uuid, d.pk, &d.register_ip)))
     }
 
     async fn upsert_pk(&self, rec: &PeerUpsert) -> Result<(), StoreError> {
@@ -53,6 +60,16 @@ impl PeerStore for SignalPeerStore {
                 }
                 other => StoreError::backend(other),
             })
+    }
+}
+
+fn record(id: String, uuid: Vec<u8>, pk: Vec<u8>, register_ip: &str) -> PeerRecord {
+    PeerRecord {
+        id,
+        uuid,
+        pk,
+        // Always written from an `IpAddr`; anything else reads as unknown.
+        ip: register_ip.parse().ok(),
     }
 }
 

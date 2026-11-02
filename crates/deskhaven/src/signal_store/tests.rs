@@ -9,7 +9,7 @@ use deskhaven_core::devices::DeviceRepository;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::{DbOptions, connect, migrate};
 use deskhaven_signal::{
-    PeerStore, PeerUpsert, SignalConfig, SignalError, SignalServer, StoreError,
+    PeerRecord, PeerStore, PeerUpsert, SignalConfig, SignalError, SignalServer, StoreError,
 };
 use hbb_common::protobuf::Message as _;
 use hbb_common::rendezvous_proto::{
@@ -26,6 +26,9 @@ use super::SignalPeerStore;
 
 const ID: &str = "123456789";
 const OWNER_UUID: &[u8] = b"owner-uuid";
+/// RegisterPk carries 32-byte ed25519 public keys (anything else is dropped).
+const PK1: &[u8] = &[1; 32];
+const PK2: &[u8] = &[2; 32];
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const STEP: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(20);
@@ -51,20 +54,14 @@ async fn upsert_then_get_round_trips_through_devices() {
         let store = store(&db.conn);
         assert!(store.get(ID).await.unwrap().is_none(), "{}", db.backend);
 
-        store
-            .upsert_pk(&upsert(OWNER_UUID, b"pk1", 7))
-            .await
-            .unwrap();
-        store
-            .upsert_pk(&upsert(OWNER_UUID, b"pk2", 8))
-            .await
-            .unwrap();
+        store.upsert_pk(&upsert(OWNER_UUID, PK1, 7)).await.unwrap();
+        store.upsert_pk(&upsert(OWNER_UUID, PK2, 8)).await.unwrap();
 
         let rec = store.get(ID).await.unwrap().unwrap();
         let b = db.backend;
         assert_eq!(
             (rec.uuid, rec.pk),
-            (OWNER_UUID.to_vec(), b"pk2".to_vec()),
+            (OWNER_UUID.to_vec(), PK2.to_vec()),
             "{b}"
         );
         assert_eq!(rec.ip, Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 8))), "{b}");
@@ -73,15 +70,32 @@ async fn upsert_then_get_round_trips_through_devices() {
 }
 
 #[tokio::test]
+async fn load_all_returns_every_device_as_a_peer_record() {
+    each_migrated_backend(async |db: &TestDb| {
+        let store = store(&db.conn);
+        assert!(store.load_all().await.unwrap().is_empty(), "{}", db.backend);
+        store.upsert_pk(&upsert(OWNER_UUID, PK1, 7)).await.unwrap();
+
+        let all = store.load_all().await.unwrap();
+
+        let expected = PeerRecord {
+            id: ID.to_owned(),
+            uuid: OWNER_UUID.to_vec(),
+            pk: PK1.to_vec(),
+            ip: Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7))),
+        };
+        assert_eq!(all, vec![expected], "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn other_uuid_maps_to_uuid_mismatch() {
     each_migrated_backend(async |db: &TestDb| {
         let store = store(&db.conn);
-        store
-            .upsert_pk(&upsert(OWNER_UUID, b"pk1", 7))
-            .await
-            .unwrap();
+        store.upsert_pk(&upsert(OWNER_UUID, PK1, 7)).await.unwrap();
 
-        let res = store.upsert_pk(&upsert(b"thief", b"pk2", 9)).await;
+        let res = store.upsert_pk(&upsert(b"thief", PK2, 9)).await;
 
         assert!(
             matches!(&res, Err(StoreError::UuidMismatch { id }) if id == ID),
@@ -210,15 +224,15 @@ async fn registration_survives_restart_on_the_same_database() {
     let conn = connect(&options).await.unwrap();
     migrate(&conn).await.unwrap();
     let server = Server::start(&key, &store(&conn)).await;
-    let first = register_pk(server.addr, OWNER_UUID, b"pk1").await;
+    let first = register_pk(server.addr, OWNER_UUID, PK1).await;
     server.stop().await;
     conn.close().await.unwrap();
 
     // Act
     let conn = connect(&options).await.unwrap();
     let server = Server::start(&key, &store(&conn)).await;
-    let thief = register_pk(server.addr, b"thief-uuid", b"pk2").await;
-    let owner = register_pk(server.addr, OWNER_UUID, b"pk1").await;
+    let thief = register_pk(server.addr, b"thief-uuid", PK2).await;
+    let owner = register_pk(server.addr, OWNER_UUID, PK1).await;
     server.stop().await;
 
     // Assert
@@ -232,7 +246,7 @@ async fn registration_survives_restart_on_the_same_database() {
         .expect("devices row");
     assert_eq!(
         (device.uuid, device.pk),
-        (OWNER_UUID.to_vec(), b"pk1".to_vec())
+        (OWNER_UUID.to_vec(), PK1.to_vec())
     );
     assert_eq!(device.register_ip, "127.0.0.1");
 }
