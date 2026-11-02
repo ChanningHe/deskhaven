@@ -3,7 +3,7 @@
 
 use axum::Json;
 use deskhaven_admin_api::{
-    AdminApiError, AdminRoutes, Audit, PageQuery, Paginated, ValidJson, ValidQuery,
+    AdminApiError, AdminRoutes, Audit, ConsoleUser, PageQuery, Paginated, ValidJson, ValidQuery,
 };
 use deskhaven_config::Secret;
 use deskhaven_core::pagination::Page;
@@ -75,6 +75,12 @@ async fn public_write() -> Json<Value> {
     Json(json!({ "ok": true }))
 }
 
+/// A public route that still wants the session if there is one (e.g. logout).
+#[utoipa::path(post, path = "/probe/public-session", security(()), responses((status = 200)))]
+async fn public_session(ConsoleUser(user): ConsoleUser) -> Json<Value> {
+    Json(json!({ "user_id": user.user_id }))
+}
+
 /// A paginated list of 0..total.
 #[utoipa::path(get, path = "/probe/list", security(("console_session" = ["self"])), params(PageQuery), responses((status = 200, body = Paginated<u64>)))]
 async fn list(ValidQuery(q): ValidQuery<PageQuery>) -> Json<Paginated<u64>> {
@@ -97,5 +103,6 @@ pub fn routes() -> AdminRoutes {
     let r = add(r, routes!(failing_write));
     let r = add(r, routes!(self_write));
     let r = add(r, routes!(public_write));
+    let r = add(r, routes!(public_session));
     add(r, routes!(list))
 }

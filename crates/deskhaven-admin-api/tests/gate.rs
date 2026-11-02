@@ -204,6 +204,32 @@ async fn roles_below_the_route_permission_are_403() {
 }
 
 #[tokio::test]
+async fn console_user_on_a_public_route_still_requires_csrf_for_writes() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        let path = "/admin/api/v1/probe/public-session";
+
+        let anonymous = app
+            .send(Method::POST, path, None, None, Some(json!({})))
+            .await;
+        let no_csrf = app
+            .send(Method::POST, path, Some(&uma.cookie), None, Some(json!({})))
+            .await;
+        let ok = app.write(Method::POST, path, &uma, json!({})).await;
+
+        assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED, "{}", db.backend);
+        assert_eq!(
+            (no_csrf.status, no_csrf.code()),
+            (StatusCode::FORBIDDEN, "csrf_failed")
+        );
+        assert_eq!(ok.status, StatusCode::OK);
+        assert_eq!(ok.body, json!({ "user_id": uma.user_id }));
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn public_routes_need_no_session_or_csrf() {
     each_migrated_backend(async |db: &TestDb| {
         let app = app(db).await;

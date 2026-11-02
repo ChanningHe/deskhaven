@@ -44,9 +44,10 @@ const CSRF_DOMAIN: &[u8] = b"deskhaven/csrf/v1\0";
 const COOKIE_ATTRIBUTES: &str = "Path=/; Secure; SameSite=Lax";
 
 /// The authenticated console session of a request. As a handler argument it reuses the
-/// gate's result, or authenticates the session cookie itself (on a `Public` route);
-/// rejects with 401 (no, malformed or invalid cookie, or a client session), 429 (uncached
-/// cookie from an address over its budget) or 500 (storage failure).
+/// gate's result, or (on a `Public` route) authenticates the session cookie itself and,
+/// for a state-changing method, checks the CSRF header like the gate does. Rejects with
+/// 401 (no, malformed or invalid cookie, or a client session), 403 `csrf_failed`, 429
+/// (uncached cookie from an address over its budget) or 500 (storage failure).
 #[derive(Clone, Debug)]
 pub struct ConsoleUser(pub SessionPrincipal);
 
@@ -62,7 +63,11 @@ impl FromRequestParts<Arc<AppState>> for ConsoleUser {
         }
         let client = client_addr(parts, state).await?;
         let token = session_token(&parts.headers).ok_or_else(AdminApiError::unauthorized)?;
-        authenticate(state, client, token).await.map(Self)
+        let principal = authenticate(state, client, token).await?;
+        if is_state_changing(&parts.method) {
+            check_csrf(&parts.headers, token)?;
+        }
+        Ok(Self(principal))
     }
 }
 
