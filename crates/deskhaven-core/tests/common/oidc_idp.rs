@@ -59,6 +59,8 @@ pub struct TokenSpec {
     pub issuer: Option<String>,
     /// Overrides the audience (default: [`CLIENT_ID`]).
     pub audience: Option<String>,
+    /// Further audiences next to it.
+    pub extra_audiences: Vec<String>,
     /// Expiry relative to `now`.
     pub expires_in: ChronoDuration,
     /// The test's notion of now (the service clock).
@@ -81,6 +83,7 @@ impl TokenSpec {
             extra: Map::new(),
             issuer: None,
             audience: None,
+            extra_audiences: Vec::new(),
             expires_in: ChronoDuration::minutes(5),
             now: DateTime::from_timestamp_millis(now_ms).unwrap(),
             key: KEY_A,
@@ -204,9 +207,13 @@ impl MockIdp {
             standard =
                 standard.set_name(Some(LocalizedClaim::from(EndUserName::new(name.clone()))));
         }
+        let audiences = std::iter::once(audience)
+            .chain(spec.extra_audiences.iter().cloned())
+            .map(Audience::new)
+            .collect();
         let claims: IdTokenClaims<Extra, CoreGenderClaim> = IdTokenClaims::new(
             IssuerUrl::new(issuer).unwrap(),
-            vec![Audience::new(audience)],
+            audiences,
             spec.now + spec.expires_in,
             spec.now,
             standard,
@@ -227,6 +234,46 @@ impl MockIdp {
         )
         .unwrap();
         token.to_string()
+    }
+
+    /// A JWT with the claims of `spec`, header `{"alg": alg, "kid": KID}` and the signature
+    /// `sign(signing input)` (algorithm-confusion tests: HS256, `none`).
+    pub fn raw_token(
+        &self,
+        spec: &TokenSpec,
+        alg: &str,
+        sign: impl Fn(&[u8]) -> Vec<u8>,
+    ) -> String {
+        use base64_022::Engine as _;
+        let b64 = |bytes: &[u8]| base64_022::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let header = json!({ "alg": alg, "typ": "JWT", "kid": KID });
+        let claims = json!({
+            "iss": spec.issuer.clone().unwrap_or_else(|| self.issuer.clone()),
+            "aud": spec.audience.clone().unwrap_or_else(|| CLIENT_ID.to_owned()),
+            "sub": spec.subject,
+            "exp": (spec.now + spec.expires_in).timestamp(),
+            "iat": spec.now.timestamp(),
+            "nonce": spec.nonce,
+        });
+        let input = format!(
+            "{}.{}",
+            b64(header.to_string().as_bytes()),
+            b64(claims.to_string().as_bytes())
+        );
+        let signature = sign(input.as_bytes());
+        format!("{input}.{}", b64(&signature))
+    }
+
+    /// The token endpoint answers with this raw ID token (discovery and JWKS remounted).
+    pub async fn mount_raw_token(&self, id_token: &str, discovery: Value) {
+        self.server.reset().await;
+        self.mount_discovery(discovery).await;
+        self.mount_jwks(KEY_A, KID).await;
+        let body = json!({
+            "access_token": "mock-access-token", "token_type": "Bearer", "id_token": id_token,
+        });
+        self.mount_token_response(ResponseTemplate::new(200).set_body_json(body))
+            .await;
     }
 
     /// Form bodies of every token request received so far.

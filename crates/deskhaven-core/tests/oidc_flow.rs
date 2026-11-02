@@ -120,6 +120,71 @@ async fn a_state_completes_once_and_a_replay_does_nothing() {
     .await;
 }
 
+/// M3: algorithm confusion. Even when the discovery document advertises HS256 and `none`,
+/// a token MACed with the client secret, an unsigned one, and one also issued to another
+/// audience are all refused.
+#[tokio::test]
+async fn hs256_with_the_client_secret_alg_none_and_extra_audiences_are_rejected() {
+    use hmac::{Hmac, KeyInit, Mac};
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let mut lax = env.idp.discovery();
+        lax["id_token_signing_alg_values_supported"] =
+            serde_json::json!(["RS256", "HS256", "none"]);
+        let hs256 = |input: &[u8]| {
+            let mut mac = <Hmac<sha2_011::Sha256> as KeyInit>::new_from_slice(
+                common::oidc_idp::CLIENT_SECRET.as_bytes(),
+            )
+            .unwrap();
+            mac.update(input);
+            mac.finalize().into_bytes().to_vec()
+        };
+
+        let (_, request) = env.begin().await;
+        let token = env
+            .idp
+            .raw_token(&env.spec("sub-1", &request), "HS256", hs256);
+        env.idp.mount_raw_token(&token, lax.clone()).await;
+        let mac_ed = env.callback(&request).await;
+
+        let (_, request) = env.begin().await;
+        let token = env
+            .idp
+            .raw_token(&env.spec("sub-1", &request), "none", |_| Vec::new());
+        env.idp.mount_raw_token(&token, lax.clone()).await;
+        let unsigned = env.callback(&request).await;
+
+        let (_, request) = env.begin().await;
+        let spec = TokenSpec {
+            extra_audiences: vec!["untrusted-client".to_owned()],
+            ..env.spec("sub-1", &request)
+        };
+        env.idp.mount_token(&spec).await;
+        let extra_audience = env.callback(&request).await;
+
+        for (case, report) in [
+            ("HS256", mac_ed),
+            ("none", unsigned),
+            ("aud", extra_audience),
+        ] {
+            assert_eq!(
+                failure(&report),
+                Some(Failure::InvalidToken),
+                "{}: {case}",
+                db.backend
+            );
+        }
+        assert!(
+            deskhaven_db::entity::user_identity::Entity::find()
+                .all(&db.conn)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn the_callback_preview_names_the_device_and_consumes_nothing() {
     each_migrated_backend(async |db: &TestDb| {
