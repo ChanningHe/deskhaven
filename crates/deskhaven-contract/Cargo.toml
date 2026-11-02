@@ -21,7 +21,6 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-toml = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 # OidcAuthUrl.url is a url::Url in the client.
 url = { workspace = true, features = ["serde"] }

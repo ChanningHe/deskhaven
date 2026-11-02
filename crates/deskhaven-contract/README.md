@@ -127,9 +127,11 @@ Mirror types exist so the server's responses are checked by an independent
 description of the client. If production code serialized with them, the test
 would only prove that serde round-trips. Therefore:
 
-- deskhaven-contract may only appear under `[dev-dependencies]`;
-  `tests/no_production_dependents.rs` fails if any workspace member lists it
-  under `[dependencies]` or `[build-dependencies]` (also `[target.*]`, also
-  renamed). For every crate the server depends on, Cargo would reject it anyway
-  (this crate depends on `deskhaven`, so it would be a cycle).
+- deskhaven-contract may only be a dev-dependency:
+  `tests/no_production_dependents.rs` asks `cargo metadata --no-deps` and
+  fails if any workspace package depends on it with a kind other than `dev`
+  (normal or build, any `[target.*]`, any rename, inherited or not: Cargo has
+  already resolved all of that). For every crate the server depends on, Cargo
+  would reject it anyway (this crate depends on `deskhaven`, so it would be a
+  cycle).
 - Mirror types are `Deserialize` only: they cannot produce a response.

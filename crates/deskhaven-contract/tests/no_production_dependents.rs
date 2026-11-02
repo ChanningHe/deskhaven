@@ -1,78 +1,80 @@
-//! deskhaven-contract may only be a dev-dependency (09-testing §2.2): no
-//! workspace member may list it under `[dependencies]` or
-//! `[build-dependencies]` (plain or `[target.*]`), under any rename.
-//! (Crates the server depends on could not anyway: that would be a cycle.)
+//! deskhaven-contract may only be a dev-dependency (09-testing §2.2). Asked
+//! of Cargo itself (`cargo metadata --no-deps`), so workspace inheritance,
+//! renames (`name` is the package, `rename` the alias) and `[target.*]`
+//! tables are already resolved: no workspace package may depend on it with a
+//! kind other than `dev`. (Crates the server depends on could not anyway:
+//! that would be a cycle.)
 #![allow(clippy::unwrap_used, clippy::panic)]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::process::Command;
 
-use toml::Value;
+use serde_json::{Value, json};
 
 const CONTRACT: &str = "deskhaven-contract";
-const FORBIDDEN_TABLES: [&str; 2] = ["dependencies", "build-dependencies"];
+const DEV_KIND: &str = "dev";
 
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+fn workspace_metadata() -> Value {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let output = Command::new(cargo)
+        .args([
+            "metadata",
+            "--no-deps",
+            "--format-version",
+            "1",
+            "--offline",
+        ])
+        .arg("--manifest-path")
+        .arg(manifest)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "cargo metadata failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
 }
 
-fn read_toml(path: &Path) -> Value {
-    let text = std::fs::read_to_string(path).unwrap();
-    toml::from_str(&text).unwrap_or_else(|err| panic!("{}: {err}", path.display()))
+fn packages(metadata: &Value) -> &[Value] {
+    metadata["packages"].as_array().unwrap()
 }
 
-/// Member manifests from `[workspace] members` (`dir` or `dir/*`).
-fn member_manifests(root: &Path) -> Vec<PathBuf> {
-    let workspace = read_toml(&root.join("Cargo.toml"));
-    let members = workspace["workspace"]["members"].as_array().unwrap();
-    members
+/// `package: kind (target)` for every non-dev dependency on the contract
+/// crate. `kind` is `null` for normal dependencies, `"build"`, or `"dev"`.
+fn offenders(metadata: &Value) -> Vec<String> {
+    packages(metadata)
         .iter()
-        .map(|m| m.as_str().unwrap())
-        .flat_map(|member| match member.strip_suffix("/*") {
-            Some(dir) => std::fs::read_dir(root.join(dir))
+        .flat_map(|package| {
+            package["dependencies"]
+                .as_array()
                 .unwrap()
-                .map(|e| e.unwrap().path().join("Cargo.toml"))
-                .filter(|p| p.is_file())
-                .collect(),
-            None => vec![root.join(member).join("Cargo.toml")],
+                .iter()
+                .filter(|dep| dep["name"] == CONTRACT && dep["kind"] != DEV_KIND)
+                .map(move |dep| {
+                    format!(
+                        "{}: kind {} (target {}, rename {})",
+                        package["name"], dep["kind"], dep["target"], dep["rename"]
+                    )
+                })
         })
         .collect()
 }
 
-/// Dependency tables that ship with the crate.
-fn production_tables(manifest: &Value) -> Vec<&toml::Table> {
-    let top = FORBIDDEN_TABLES.iter().filter_map(|t| manifest.get(*t));
-    let targets = manifest
-        .get("target")
-        .and_then(Value::as_table)
-        .into_iter()
-        .flat_map(|targets| targets.values())
-        .flat_map(|target| FORBIDDEN_TABLES.iter().filter_map(|t| target.get(*t)));
-    top.chain(targets).filter_map(Value::as_table).collect()
-}
-
-fn names_contract(key: &str, spec: &Value) -> bool {
-    key == CONTRACT || spec.get("package").and_then(Value::as_str) == Some(CONTRACT)
-}
-
-fn offenders(manifest_path: &Path) -> Vec<String> {
-    let manifest = read_toml(manifest_path);
-    production_tables(&manifest)
-        .into_iter()
-        .flat_map(|table| table.iter())
-        .filter(|(key, spec)| names_contract(key, spec))
-        .map(|(key, _)| format!("{}: {key}", manifest_path.display()))
-        .collect()
-}
-
 #[test]
-fn no_member_depends_on_contract_outside_dev_dependencies() {
-    let manifests = member_manifests(&workspace_root());
+fn no_workspace_package_depends_on_contract_outside_dev_dependencies() {
+    let metadata = workspace_metadata();
+    let names: Vec<_> = packages(&metadata)
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
     assert!(
-        manifests.len() > 5,
-        "workspace members not found: {manifests:?}"
+        names.contains(&CONTRACT) && names.contains(&"deskhaven"),
+        "workspace packages not found: {names:?}"
     );
 
-    let found: Vec<_> = manifests.iter().flat_map(|m| offenders(m)).collect();
+    let found = offenders(&metadata);
 
     assert!(
         found.is_empty(),
@@ -80,26 +82,33 @@ fn no_member_depends_on_contract_outside_dev_dependencies() {
     );
 }
 
+fn dep(kind: Value, target: Value, rename: Value) -> Value {
+    json!({ "name": CONTRACT, "kind": kind, "target": target, "rename": rename })
+}
+
 #[test]
-fn detector_catches_normal_renamed_and_target_dependencies() {
-    let manifest: Value = toml::from_str(
-        r#"
-        [dependencies]
-        mirror = { package = "deskhaven-contract", path = "x" }
-        [target.'cfg(unix)'.build-dependencies]
-        deskhaven-contract = { workspace = true }
-        [dev-dependencies]
-        deskhaven-contract = { workspace = true }
-        "#,
-    )
-    .unwrap();
+fn detector_catches_normal_renamed_build_and_target_dependencies() {
+    let metadata = json!({ "packages": [
+        { "name": "server", "dependencies": [
+            dep(Value::Null, Value::Null, Value::Null),
+            dep(Value::Null, Value::Null, json!("mirror")),
+            dep(json!("build"), Value::Null, Value::Null),
+            dep(Value::Null, json!("cfg(unix)"), Value::Null),
+            dep(json!("dev"), Value::Null, Value::Null),
+            dep(json!("dev"), json!("cfg(unix)"), json!("mirror")),
+            { "name": "serde", "kind": null, "target": null, "rename": null }
+        ] },
+        { "name": "tests-only", "dependencies": [dep(json!("dev"), Value::Null, Value::Null)] }
+    ] });
 
-    let hits: Vec<_> = production_tables(&manifest)
-        .into_iter()
-        .flat_map(|t| t.iter())
-        .filter(|(k, v)| names_contract(k, v))
-        .map(|(k, _)| k.clone())
-        .collect();
+    let found = offenders(&metadata);
 
-    assert_eq!(hits, ["mirror", "deskhaven-contract"]);
+    assert_eq!(found.len(), 4, "{found:?}");
+    assert!(
+        found.iter().all(|f| f.starts_with("\"server\"")),
+        "{found:?}"
+    );
+    assert!(found[1].contains("rename \"mirror\""), "{found:?}");
+    assert!(found[2].contains("kind \"build\""), "{found:?}");
+    assert!(found[3].contains("target \"cfg(unix)\""), "{found:?}");
 }
