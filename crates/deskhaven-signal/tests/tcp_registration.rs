@@ -247,8 +247,9 @@ async fn heartbeats_keep_a_tcp_peer_online_past_reg_timeout() {
     server.stop().await;
 }
 
-/// A registered peer that stops answering heartbeats is dropped after the idle timeout and is
-/// offline. Paused clock.
+/// A registered peer that stops answering heartbeats is dropped after the idle timeout (its
+/// socket reads end of stream once the queued heartbeats are drained; offline alone would also
+/// follow from REG_TIMEOUT) and is offline. Paused clock.
 #[tokio::test(start_paused = true)]
 async fn tcp_peer_that_ignores_heartbeats_is_dropped_and_offline() {
     const ID: &str = "tcp-peer-mute";
@@ -261,6 +262,11 @@ async fn tcp_peer_that_ignores_heartbeats_is_dropped_and_offline() {
     sleep(REG_TIMEOUT + Duration::from_secs(5)).await;
 
     // Assert
+    match target.recv_within(STEP).await {
+        support::Recv::Closed => {}
+        other => panic!("connection not dropped: {other:?}"),
+    }
+    assert!(target.heartbeats() > 0, "heartbeats were sent");
     assert!(!is_online(&server, ID).await);
     let mut controller = server.tcp().await;
     controller.punch_hole_request(server.punch_req(ID)).await;

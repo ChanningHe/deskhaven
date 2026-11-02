@@ -513,6 +513,9 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   enable features the target had disabled (upstream behavior). Test
   `request_relay_is_forwarded_without_token_and_licence_key` became
   `request_relay_is_forwarded_without_secrets_or_server_only_fields`.
+- 2026-11-03, M1-08 review (LOW), tests only: `tcp_peer_that_ignores_heartbeats_is_dropped_and_offline`
+  now asserts the client's socket reaches end of stream (the idle timeout dropped the
+  connection), not only that the peer is offline, which REG_TIMEOUT alone would give.
 - 2026-11-03, M1-08, known limitations (no change): a claimed websocket port is unique among
   websocket connections claiming that IP but can equal the source port of a direct TCP
   connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in
