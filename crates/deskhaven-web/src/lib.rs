@@ -22,7 +22,10 @@
 //!   extension (`/assets/x.js`) or a non-HTML `Accept` is a 404. Directories
 //!   are never listed.
 //! - API paths are a bare 404 here, so the stack's API renderers
-//!   (`deskhaven-http`) turn them into the API's JSON 404.
+//!   (`deskhaven-http`) turn them into the API's JSON 404. The check is made on
+//!   the decoded path with empty segments collapsed, so `//api/x`, `/admin//api/x`
+//!   and `/%61pi/x` are 404s as well; those spellings are not literal API
+//!   prefixes, so they get the bare 404 instead of the JSON shape.
 //! - Other methods get 405. `..`, hidden segments and malformed escapes are 404.
 //! - Security headers other than the cache headers come from the
 //!   `deskhaven-http` middleware.
@@ -31,8 +34,9 @@
 //!
 //! Release builds embed `web/dist` (debug builds read it from disk). Without
 //! `web/dist` the crate still compiles, and the SPA routes answer 503 with a
-//! "web console not built" page. `cargo run -p xtask -- dist` builds the
-//! frontend and then the release binary.
+//! "web console not built" page. `build.rs` watches `web/dist`, so rebuilding
+//! the frontend re-embeds it. `cargo run -p xtask -- dist` builds the frontend
+//! and then the release binary.
 
 mod accept;
 mod csp;
@@ -51,6 +55,8 @@ pub use csp::CSP;
 #[folder = "../../web/dist"]
 #[allow_missing = true]
 #[exclude = "*.map"]
+#[exclude = ".*"]
+#[exclude = "*/.*"]
 struct Dist;
 
 /// Router for the embedded console. All paths are served by its fallback, so
@@ -62,4 +68,18 @@ pub fn router() -> Router {
 /// Like [`router`] for another asset set (tests, alternative dists).
 pub fn router_for<E: RustEmbed + 'static>() -> Router {
     serve::router::<E>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Vacuous when `web/dist` is not built.
+    #[test]
+    fn the_embed_has_no_dotfiles_or_source_maps() {
+        for name in Dist::iter() {
+            let hidden = name.split('/').any(|s| s.starts_with('.'));
+            assert!(!hidden && !name.ends_with(".map"), "{name}");
+        }
+    }
 }

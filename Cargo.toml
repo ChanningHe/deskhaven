@@ -97,7 +97,8 @@ arc-swap = "1.9"
 
 # --- web embed (M0-08) ---
 # (axum, tower, tokio, thiserror: reused from earlier blocks; http types come from `axum::http`.)
-# `mime-guess`: Content-Type per asset; `include-exclude`: drop dotfiles and source maps.
+# `mime-guess`: Content-Type per asset; `include-exclude`: enables the `#[exclude]` attributes
+# deskhaven-web uses to keep source maps and dotfiles out of the embed.
 rust-embed = { version = "8.13", default-features = false, features = ["mime-guess", "include-exclude"] }
 
 [workspace.lints.rust]

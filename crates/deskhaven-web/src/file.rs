@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 
 use axum::body::Body;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH};
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use rust_embed::EmbeddedFile;
 
@@ -40,7 +40,7 @@ impl File {
     }
 
     /// 200 with the body (empty for HEAD), or 304 when the client's cache is current.
-    pub(crate) fn respond(self, method: &Method, request_headers: &HeaderMap) -> Response {
+    pub(crate) fn respond(self, request_headers: &HeaderMap) -> Response {
         let Ok(etag) = HeaderValue::from_str(&self.etag) else {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         };
@@ -57,12 +57,9 @@ impl File {
             let [_, etag, cache] = headers;
             return (StatusCode::NOT_MODIFIED, [etag, cache]).into_response();
         }
-        let body = if *method == Method::HEAD {
-            Body::empty()
-        } else {
-            Body::from(self.data)
-        };
-        (StatusCode::OK, headers, body).into_response()
+        // HEAD gets the full body too: axum strips it after fixing Content-Length,
+        // so the length matches GET.
+        (StatusCode::OK, headers, Body::from(self.data)).into_response()
     }
 }
 
@@ -94,7 +91,9 @@ fn matches_etag(headers: &HeaderMap, etag: &str) -> bool {
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(','))
         .map(str::trim)
-        .any(|candidate| candidate == "*" || candidate.trim_start_matches("W/") == etag)
+        .any(|candidate| {
+            candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+        })
 }
 
 #[cfg(test)]
@@ -127,6 +126,8 @@ mod tests {
         assert!(matches_etag(&if_none_match("W/\"abc\""), tag));
         assert!(matches_etag(&if_none_match("*"), tag));
         assert!(!matches_etag(&if_none_match("\"abd\""), tag));
+        // Only one weak marker is valid syntax.
+        assert!(!matches_etag(&if_none_match("W/W/\"abc\""), tag));
         assert!(!matches_etag(&HeaderMap::new(), tag));
     }
 }

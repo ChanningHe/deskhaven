@@ -129,6 +129,10 @@ async fn api_prefixes_are_never_served_the_spa() {
         "/admin/api",
         "/admin/api/x",
         "/%61pi/x",
+        "//api/x",
+        "/%2fapi/x",
+        "/admin//api/x",
+        "/admin%2Fapi/x",
     ] {
         let res = get(path).headers(&[("accept", ACCEPT_NAV)]).send(&r).await;
         assert_eq!(res.status, StatusCode::NOT_FOUND, "{path}");

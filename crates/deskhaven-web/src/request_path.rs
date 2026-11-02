@@ -20,18 +20,18 @@ pub(crate) fn classify(raw_path: &str) -> Target {
     let Some(path) = percent_decode(raw_path) else {
         return Target::Reject;
     };
-    if is_api(&path) {
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let key = segments.join("/");
+    // Judge the API prefix on the same normalized path the file key comes from,
+    // so `//api/x` and `/admin//api/x` cannot slip past to the SPA.
+    if is_api(&format!("/{key}")) {
         return Target::Reject;
     }
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if segments.iter().any(|s| is_forbidden_segment(s)) {
         return Target::Reject;
     }
     let has_extension = segments.last().is_some_and(|s| s.contains('.'));
-    Target::Path {
-        key: segments.join("/"),
-        has_extension,
-    }
+    Target::Path { key, has_extension }
 }
 
 fn is_api(path: &str) -> bool {
@@ -107,9 +107,20 @@ mod tests {
     }
 
     #[test]
-    fn encoded_api_prefix_is_still_an_api_path() {
-        assert_eq!(classify("/%61pi/unknown"), Target::Reject);
-        assert_eq!(classify("/admin%2Fapi/x"), Target::Reject);
+    fn encoded_and_doubled_slash_api_prefixes_are_still_api_paths() {
+        for p in [
+            "/%61pi/unknown",
+            "/admin%2Fapi/x",
+            "//api/x",
+            "///api",
+            "/%2fapi/x",
+            "/admin//api/x",
+            "/admin//api",
+            "//admin//api//x",
+            "/%2Fadmin%2F%2Fapi%2Fx",
+        ] {
+            assert_eq!(classify(p), Target::Reject, "{p}");
+        }
     }
 
     #[test]

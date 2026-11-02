@@ -54,37 +54,70 @@ fn config() -> HttpConfig {
 
 struct Server {
     addr: SocketAddr,
+    admin: Option<SocketAddr>,
     token: CancellationToken,
     task: tokio::task::JoinHandle<()>,
 }
 
+fn loopback() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 0))
+}
+
 async fn start() -> Server {
+    start_with(None).await
+}
+
+/// Split mode: the console and the admin API get their own listener.
+async fn start_split() -> Server {
+    start_with(Some(loopback())).await
+}
+
+async fn start_with(admin: Option<SocketAddr>) -> Server {
     let listen = ListenConfig {
-        client_api: SocketAddr::from(([127, 0, 0, 1], 0)),
-        admin: None,
+        client_api: loopback(),
+        admin,
         admin_public_url: None,
     };
     let listeners = Listeners::bind(&listen).await.unwrap();
     let addr = listeners.client_api_addr();
+    let admin = listeners.admin_addr();
     let token = CancellationToken::new();
     let shutdown = token.clone();
     let cfg = config();
     let task = tokio::spawn(async move {
         listeners.serve(apps(), &cfg, shutdown).await.unwrap();
     });
-    Server { addr, token, task }
+    Server {
+        addr,
+        admin,
+        token,
+        task,
+    }
+}
+
+/// One request on a fresh connection; reads until the server closes it.
+async fn send(addr: SocketAddr, method: &str, path: &str, accept: &str) -> String {
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: t\r\nAccept: {accept}\r\nConnection: close\r\n\r\n"
+    );
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).await.unwrap();
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+fn content_length(response: &str) -> Option<usize> {
+    response.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse().ok())?
+    })
 }
 
 impl Server {
     async fn get(&self, path: &str, accept: &str) -> String {
-        let request = format!(
-            "GET {path} HTTP/1.1\r\nHost: t\r\nAccept: {accept}\r\nConnection: close\r\n\r\n"
-        );
-        let mut stream = TcpStream::connect(self.addr).await.unwrap();
-        stream.write_all(request.as_bytes()).await.unwrap();
-        let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).await.unwrap();
-        String::from_utf8_lossy(&buf).into_owned()
+        send(self.addr, "GET", path, accept).await
     }
 
     async fn stop(self) {
@@ -160,4 +193,46 @@ async fn a_missing_asset_stays_a_plain_404_outside_the_api() {
 
     assert!(res.starts_with("HTTP/1.1 404"), "{res}");
     assert!(!res.contains("<html"), "{res}");
+}
+
+#[tokio::test]
+async fn doubled_slash_api_paths_never_get_the_spa() {
+    let srv = start().await;
+    for path in ["//api/x", "/admin//api/x", "/%2fapi/x"] {
+        let res = srv.get(path, NAV).await;
+        assert!(res.starts_with("HTTP/1.1 404"), "{path}: {res}");
+        assert!(!res.contains("<html"), "{path}: {res}");
+    }
+    srv.stop().await;
+}
+
+/// Split mode: the admin listener does not serve the client API, and the
+/// console must not answer for it either.
+#[tokio::test]
+async fn split_admin_listener_gets_a_404_for_client_api_paths_not_the_spa() {
+    let srv = start_split().await;
+    let admin = srv.admin.unwrap();
+    let res = send(admin, "GET", "/api/unknown", NAV).await;
+    let spa = send(admin, "GET", "/devices", NAV).await;
+    srv.stop().await;
+
+    assert!(res.starts_with("HTTP/1.1 404"), "{res}");
+    assert!(!res.contains("<html"), "{res}");
+    assert!(spa.starts_with("HTTP/1.1 200"), "{spa}");
+    assert_eq!(body(&spa), INDEX_HTML);
+}
+
+#[tokio::test]
+async fn head_reports_the_same_content_length_as_get_with_no_body() {
+    let srv = start().await;
+    for path in ["/devices", "/assets/index-AbC123.js"] {
+        let get = send(srv.addr, "GET", path, NAV).await;
+        let head = send(srv.addr, "HEAD", path, NAV).await;
+
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        assert_eq!(body(&head), "", "{path}");
+        assert_eq!(content_length(&head), Some(body(&get).len()), "{path}");
+        assert_eq!(content_length(&get), Some(body(&get).len()), "{path}");
+    }
+    srv.stop().await;
 }
