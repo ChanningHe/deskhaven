@@ -32,7 +32,9 @@ use crate::stack_error::{ErrorBodies, render_stack_errors};
 
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_BODY_LIMIT: usize = 2 * 1024 * 1024;
-pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// nginx's `client_header_timeout` default; long enough that reverse proxies
+/// reusing upstream keep-alive connections do not race our idle close (502s).
+pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_MAX_CONNECTIONS: usize = 10_000;
 pub const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -46,10 +48,11 @@ pub struct HttpConfig {
     pub request_timeout: Duration,
     /// Max request body in bytes; exceeded -> 413. Replaces axum's 2 MiB default.
     pub body_limit: usize,
-    /// Time a client gets to send a complete request head. hyper runs the same
-    /// timer while a keep-alive connection waits for its next request, so this is
-    /// also the idle keep-alive timeout (reverse proxies should reuse upstream
-    /// connections for less than this).
+    /// Time a client gets to send a complete request head (default 60s). hyper
+    /// runs the same timer while a keep-alive connection waits for its next
+    /// request, so this is also the idle keep-alive timeout; reverse proxies
+    /// should reuse upstream connections for less than this. Slow clients are
+    /// bounded per connection by this and in number by `max_connections`.
     pub header_read_timeout: Duration,
     /// Open connections per listener; further connections wait in the backlog.
     pub max_connections: usize,

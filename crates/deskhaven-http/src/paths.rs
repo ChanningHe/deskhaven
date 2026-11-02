@@ -15,8 +15,12 @@ pub(crate) fn is_client_api(path: &str) -> bool {
     is_under(path, CLIENT_API_PREFIX)
 }
 
+pub(crate) fn is_admin_api(path: &str) -> bool {
+    is_under(path, ADMIN_API_PREFIX)
+}
+
 pub(crate) fn is_api(path: &str) -> bool {
-    is_client_api(path) || is_under(path, ADMIN_API_PREFIX)
+    is_client_api(path) || is_admin_api(path)
 }
 
 #[cfg(test)]

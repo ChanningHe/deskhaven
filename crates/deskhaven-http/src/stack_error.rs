@@ -1,13 +1,17 @@
 //! Errors produced by the HTTP stack itself (unknown route, wrong method, body
 //! too large, timeout, panic, ...) rendered in the API's contract shape.
 //!
-//! Any 4xx/5xx response *without* a JSON content type is treated as
-//! stack-generated: its body is replaced by the renderer's (the status and other
-//! headers are kept), so framework wording never reaches clients. Handlers that
-//! want their own error body must return JSON (both API error types do).
+//! Only requests under the API prefixes (`/api`, `/admin/api`, whole segments)
+//! are affected: there, any 4xx/5xx response *without* a JSON content type is
+//! treated as stack-generated and its body is replaced by the renderer's (the
+//! status and other headers are kept), so framework wording never reaches API
+//! clients. API handlers that want their own error body must return JSON (both
+//! API error types do). Everything else (SPA routes, static assets) passes
+//! through untouched.
 //!
 //! The request deadline lives here as well because a timeout has to be rendered:
-//! it returns 503, which RustDesk clients retry once through hbbs (03 §1.4).
+//! it returns 503 (API renderer under the API prefixes, plain text elsewhere),
+//! which RustDesk clients retry once through hbbs (03 §1.4).
 
 use std::time::Duration;
 
@@ -70,8 +74,9 @@ pub fn plain_text(err: StackError) -> Response<Body> {
     err.message().into_response()
 }
 
-/// Renderers per API. Paths under [`paths::CLIENT_API_PREFIX`] use `client_api`,
-/// everything else (admin API, console) uses `admin`.
+/// Renderers per API: paths under [`paths::CLIENT_API_PREFIX`] use `client_api`,
+/// paths under [`paths::ADMIN_API_PREFIX`] use `admin`; other paths are not
+/// re-rendered.
 #[derive(Debug, Clone, Copy)]
 pub struct ErrorBodies {
     pub client_api: ErrorRenderer,
@@ -87,11 +92,14 @@ impl ErrorBodies {
         }
     }
 
-    fn select(&self, path: &str) -> ErrorRenderer {
+    /// `None` outside the API prefixes.
+    fn select(&self, path: &str) -> Option<ErrorRenderer> {
         if paths::is_client_api(path) {
-            self.client_api
+            Some(self.client_api)
+        } else if paths::is_admin_api(path) {
+            Some(self.admin)
         } else {
-            self.admin
+            None
         }
     }
 }
@@ -133,7 +141,10 @@ pub(crate) async fn render_stack_errors(
     let render = bodies.select(req.uri().path());
     let Ok(res) = tokio::time::timeout(deadline, next.run(req)).await else {
         let timed_out = StatusCode::SERVICE_UNAVAILABLE.into_response();
-        return rerender(timed_out, render, StackError::Timeout);
+        return rerender(timed_out, render.unwrap_or(plain_text), StackError::Timeout);
+    };
+    let Some(render) = render else {
+        return res;
     };
     let status = res.status();
     let is_error = status.is_client_error() || status.is_server_error();

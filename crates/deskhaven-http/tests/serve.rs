@@ -193,6 +193,14 @@ async fn graceful_shutdown_finishes_in_flight_requests() {
     assert!(TcpStream::connect(addr).await.is_err());
 }
 
+#[test]
+fn header_read_timeout_defaults_to_nginx_client_header_timeout() {
+    assert_eq!(
+        HttpConfig::default().header_read_timeout,
+        Duration::from_secs(60)
+    );
+}
+
 /// Review H2: a client that never finishes its request head is disconnected.
 #[tokio::test]
 async fn slow_header_connection_is_closed_by_header_read_timeout() {
@@ -254,6 +262,8 @@ async fn shutdown_with_stuck_connections_returns_within_drain_deadline() {
 async fn connection_cap_defers_extra_connections() {
     let cfg = HttpConfig {
         max_connections: 1,
+        // The holder must outlive the assertion window below.
+        header_read_timeout: Duration::from_secs(30),
         ..HttpConfig::default()
     };
     let srv = Running::start(single(), cfg).await;

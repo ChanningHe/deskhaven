@@ -22,21 +22,37 @@ async fn boom() -> &'static str {
     panic!("handler exploded with internal detail")
 }
 
-fn routes() -> Router {
+/// Error-producing routes, mounted at the root, under `/api` and under
+/// `/admin/api` (re-rendering only applies to the API prefixes).
+fn fixtures(prefix: &str) -> Router {
+    let at = |path: &str| format!("{prefix}{path}");
     Router::new()
-        .route("/ok", get(|| async { "ok" }))
-        .route("/panic", get(boom))
+        .route(&at("/panic"), get(boom))
         .route(
-            "/slow",
+            &at("/slow"),
             get(|| async {
                 tokio::time::sleep(SLOW).await;
                 "late"
             }),
         )
         .route(
-            "/echo",
+            &at("/echo"),
             post(|body: Bytes| async move { body.len().to_string() }),
         )
+        .route(
+            &at("/plain-400"),
+            get(|| async { (StatusCode::BAD_REQUEST, "axum wording: detail") }),
+        )
+        .route(&at("/json-400"), get(|| async { json_error() }))
+        .route(
+            &at("/not-ready"),
+            get(|| async { (StatusCode::SERVICE_UNAVAILABLE, "not ready") }),
+        )
+}
+
+fn routes() -> Router {
+    Router::new()
+        .route("/ok", get(|| async { "ok" }))
         .route(
             "/own-header",
             get(|| async { ([(header::X_FRAME_OPTIONS, "SAMEORIGIN")], "x") }),
@@ -48,15 +64,9 @@ fn routes() -> Router {
             get(|| async { ([(header::CACHE_CONTROL, "max-age=5")], "c") }),
         )
         .route("/assets/app.js", get(|| async { "js" }))
-        .route(
-            "/plain-400",
-            get(|| async { (StatusCode::BAD_REQUEST, "axum wording: detail") }),
-        )
-        .route("/json-400", get(|| async { json_error() }))
-        .route(
-            "/not-ready",
-            get(|| async { (StatusCode::SERVICE_UNAVAILABLE, "not ready") }),
-        )
+        .merge(fixtures(""))
+        .merge(fixtures("/api"))
+        .merge(fixtures("/admin/api"))
 }
 
 fn json_error() -> Response<Body> {
@@ -82,12 +92,15 @@ fn admin_render(e: StackError) -> Response<Body> {
     (StatusCode::IM_A_TEAPOT, format!("admin:{e:?}")).into_response()
 }
 
-fn tagged() -> Router {
-    let bodies = ErrorBodies {
+fn tagging() -> ErrorBodies {
+    ErrorBodies {
         client_api: client_render,
         admin: admin_render,
-    };
-    apply_middleware(routes(), &HttpConfig::default(), bodies)
+    }
+}
+
+fn tagged() -> Router {
+    apply_middleware(routes(), &HttpConfig::default(), tagging())
 }
 
 async fn send(app: Router, req: Request<Body>) -> Response<Body> {
@@ -252,18 +265,35 @@ async fn invalid_request_id_from_trusted_proxy_is_replaced() {
 
 // --- timeout and body limit ---------------------------------------------------------
 
-#[tokio::test]
-async fn slow_handler_times_out_with_503_and_rendered_body() {
-    let cfg = HttpConfig {
+fn timing_out() -> HttpConfig {
+    HttpConfig {
         request_timeout: Duration::from_millis(20),
         ..HttpConfig::default()
-    };
-    let res = tokio::time::timeout(Duration::from_secs(5), send(app(&cfg), get_req("/slow")))
+    }
+}
+
+async fn within_deadline(app: Router, path: &str) -> Response<Body> {
+    tokio::time::timeout(Duration::from_secs(5), send(app, get_req(path)))
         .await
-        .unwrap();
+        .unwrap()
+}
+
+#[tokio::test]
+async fn slow_handler_times_out_with_503_and_plain_body() {
+    for path in ["/slow", "/api/slow"] {
+        let res = within_deadline(app(&timing_out()), path).await;
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE, "{path}");
+        assert!(res.headers().contains_key(X_REQUEST_ID));
+        assert_eq!(body_text(res).await, "request timed out", "{path}");
+    }
+}
+
+#[tokio::test]
+async fn api_timeout_uses_the_api_renderer() {
+    let tagged_timeout = apply_middleware(routes(), &timing_out(), tagging());
+    let res = within_deadline(tagged_timeout, "/api/slow").await;
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(res.headers().contains_key(X_REQUEST_ID));
-    assert_eq!(body_text(res).await, "request timed out");
+    assert_eq!(body_text(res).await, "client:Timeout");
 }
 
 fn limited(limit: usize) -> Router {
@@ -273,19 +303,22 @@ fn limited(limit: usize) -> Router {
     })
 }
 
+fn post_bytes(path: &str, len: usize) -> Request<Body> {
+    Request::post(path)
+        .body(Body::from(vec![0u8; len]))
+        .unwrap()
+}
+
 #[tokio::test]
 async fn body_within_limit_is_accepted() {
-    let req = Request::post("/echo")
-        .body(Body::from(vec![0u8; 16]))
-        .unwrap();
-    let res = send(limited(16), req).await;
+    let res = send(limited(16), post_bytes("/api/echo", 16)).await;
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(body_text(res).await, "16");
 }
 
 #[tokio::test]
 async fn oversized_content_length_is_413() {
-    let req = Request::post("/echo")
+    let req = Request::post("/api/echo")
         .header(header::CONTENT_LENGTH, "17")
         .body(Body::from(vec![0u8; 17]))
         .unwrap();
@@ -298,10 +331,7 @@ async fn oversized_content_length_is_413() {
 
 #[tokio::test]
 async fn oversized_body_without_content_length_is_413() {
-    let req = Request::post("/echo")
-        .body(Body::from(vec![0u8; 17]))
-        .unwrap();
-    let got = status_and_body(limited(16), req).await;
+    let got = status_and_body(limited(16), post_bytes("/api/echo", 17)).await;
     assert_eq!(
         got,
         (StatusCode::PAYLOAD_TOO_LARGE, "payload too large".into())
@@ -309,11 +339,23 @@ async fn oversized_body_without_content_length_is_413() {
 }
 
 #[tokio::test]
+async fn oversized_body_outside_api_is_413_but_not_rerendered() {
+    let app = apply_middleware(
+        routes(),
+        &HttpConfig {
+            body_limit: 4,
+            ..HttpConfig::default()
+        },
+        tagging(),
+    );
+    let (status, body) = status_and_body(app, post_bytes("/echo", 5)).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(!body.starts_with("admin:"), "{body}");
+}
+
+#[tokio::test]
 async fn body_limit_overrides_axum_default_of_2mib() {
-    let size = 3 * 1024 * 1024;
-    let req = Request::post("/echo")
-        .body(Body::from(vec![0u8; size]))
-        .unwrap();
+    let req = post_bytes("/api/echo", 3 * 1024 * 1024);
     let res = send(limited(4 * 1024 * 1024), req).await;
     assert_eq!(res.status(), StatusCode::OK);
 }
@@ -321,25 +363,58 @@ async fn body_limit_overrides_axum_default_of_2mib() {
 // --- error bodies (review M1) -----------------------------------------------------------
 
 #[tokio::test]
-async fn stack_errors_are_rendered_by_path_keeping_status() {
+async fn api_stack_errors_are_rendered_by_prefix_keeping_status() {
     let cases = [
         ("/api/missing", StatusCode::NOT_FOUND, "client:NotFound"),
+        (
+            "/api/plain-400",
+            StatusCode::BAD_REQUEST,
+            "client:BadRequest",
+        ),
         (
             "/admin/api/missing",
             StatusCode::NOT_FOUND,
             "admin:NotFound",
         ),
-        ("/elsewhere", StatusCode::NOT_FOUND, "admin:NotFound"),
         (
-            "/panic",
+            "/admin/api/panic",
             StatusCode::INTERNAL_SERVER_ERROR,
             "admin:Internal",
         ),
-        ("/plain-400", StatusCode::BAD_REQUEST, "admin:BadRequest"),
         (
-            "/not-ready",
+            "/admin/api/plain-400",
+            StatusCode::BAD_REQUEST,
+            "admin:BadRequest",
+        ),
+        (
+            "/admin/api/not-ready",
             StatusCode::SERVICE_UNAVAILABLE,
             "admin:Unavailable",
+        ),
+    ];
+    for (path, status, body) in cases {
+        let got = status_and_body(tagged(), get_req(path)).await;
+        assert_eq!(got, (status, body.to_owned()), "{path}");
+    }
+}
+
+/// Future SPA routes and static assets keep whatever the stack produced.
+#[tokio::test]
+async fn non_api_errors_pass_through_untouched() {
+    let cases = [
+        ("/elsewhere", StatusCode::NOT_FOUND, ""),
+        ("/apix", StatusCode::NOT_FOUND, ""),
+        ("/admin/apix/x", StatusCode::NOT_FOUND, ""),
+        (
+            "/plain-400",
+            StatusCode::BAD_REQUEST,
+            "axum wording: detail",
+        ),
+        ("/not-ready", StatusCode::SERVICE_UNAVAILABLE, "not ready"),
+        (
+            "/panic",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal server error",
         ),
     ];
     for (path, status, body) in cases {
@@ -360,23 +435,14 @@ async fn method_not_allowed_is_rendered_and_keeps_allow_header() {
 #[tokio::test]
 async fn payload_too_large_uses_the_path_renderer() {
     let app = apply_middleware(
-        routes().route(
-            "/api/echo",
-            post(|b: Bytes| async move { b.len().to_string() }),
-        ),
+        routes(),
         &HttpConfig {
             body_limit: 4,
             ..HttpConfig::default()
         },
-        ErrorBodies {
-            client_api: client_render,
-            admin: admin_render,
-        },
+        tagging(),
     );
-    let req = Request::post("/api/echo")
-        .body(Body::from(vec![0u8; 5]))
-        .unwrap();
-    let got = status_and_body(app, req).await;
+    let got = status_and_body(app, post_bytes("/api/echo", 5)).await;
     assert_eq!(
         got,
         (
@@ -388,7 +454,7 @@ async fn payload_too_large_uses_the_path_renderer() {
 
 #[tokio::test]
 async fn json_and_success_responses_are_untouched() {
-    let res = send(tagged(), get_req("/json-400")).await;
+    let res = send(tagged(), get_req("/admin/api/json-400")).await;
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     assert_eq!(body_text(res).await, r#"{"error":"handler"}"#);
     let got = status_and_body(tagged(), get_req("/api/thing")).await;
@@ -396,8 +462,10 @@ async fn json_and_success_responses_are_untouched() {
 }
 
 #[tokio::test]
-async fn axum_rejection_wording_never_leaks() {
-    let (status, body) = status_and_body(tagged(), get_req("/plain-400")).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(!body.contains("axum wording"), "{body}");
+async fn axum_rejection_wording_never_leaks_from_the_api() {
+    for path in ["/api/plain-400", "/admin/api/plain-400"] {
+        let (status, body) = status_and_body(tagged(), get_req(path)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.contains("axum wording"), "{path}: {body}");
+    }
 }
