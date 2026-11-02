@@ -10,6 +10,10 @@
 //! it must then treat **every** user as affected (e.g. flush its whole cache). Events are not
 //! persisted: anything that must survive a crash between commit and delivery (sessions in the
 //! database) must also be enforced at read time (e.g. reject sessions of disabled users).
+//!
+//! Role changes emit **no** event: sessions stay valid across a promotion or demotion, so
+//! authorization (RBAC) must read the user's current role on every request (or from a cache
+//! no older than its TTL), never from a value captured at login.
 
 /// Capacity of the event channel before slow receivers start lagging.
 pub(super) const EVENT_CAPACITY: usize = 1024;

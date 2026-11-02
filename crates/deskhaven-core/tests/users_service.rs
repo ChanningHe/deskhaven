@@ -282,7 +282,7 @@ async fn authentication_failures_are_indistinguishable() {
             .authenticate_local("grace", &pw(PASSWORD))
             .await
             .unwrap();
-        assert_eq!(ok.id, grace.id);
+        assert_eq!(ok.user.id, grace.id);
 
         let too_long = "x".repeat(10_000);
         let failures = [
@@ -377,7 +377,7 @@ async fn set_password_replaces_the_hash_and_checks_policy() {
             .authenticate_local("ken", &pw("new-Secret-Phrase"))
             .await
             .unwrap();
-        assert!(user.must_change_password);
+        assert!(user.user.must_change_password);
         let missing = svc
             .set_password(9999, &pw("new-Secret-Phrase"), false)
             .await;

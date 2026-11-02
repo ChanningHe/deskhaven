@@ -30,11 +30,12 @@ use sea_orm::{
 };
 use tokio::sync::broadcast;
 
+pub use auth::{Authenticated, CredentialStamp};
 pub use deskhaven_db::entity::user::{AuthSource, Role, Status};
 pub use error::{AuthError, UserError};
 pub use events::UserEvent;
 pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery};
-pub use password::{HashParams, Password, PasswordError, PasswordHasher};
+pub use password::{HashLimits, HashParams, Password, PasswordError, PasswordHasher};
 pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
 
 use crate::pagination::Page;

@@ -7,7 +7,10 @@
 //!   uses one, and folding it prevents two accounts (or an OIDC link) differing only in case.
 //!   Validation is deliberately shallow: at most 254 characters, no whitespace or control
 //!   characters, exactly one `@` with a non-empty part on each side. Deliverability is
-//!   proven by verification, not by syntax.
+//!   proven by verification, not by syntax. No Unicode normalization (NFC / NFKC) is applied:
+//!   differently composed forms of the same internationalized address are distinct.
+//!   Accepted trade-off (no extra dependency; such addresses are rare and verification
+//!   catches typos).
 
 use super::UserError;
 use crate::text::{self, NOTE_MAX_LEN};
