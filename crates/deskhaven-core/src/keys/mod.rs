@@ -1,10 +1,23 @@
 //! Key material on disk: the master key and the hbbs Ed25519 key pair.
 //!
-//! `read_*` functions never write; `load_or_generate_*` create missing keys
-//! (atomically, never overwriting) inside a 0700 data directory.
+//! - `read_*` functions never write; `load_or_generate_*` create missing
+//!   keys inside a 0700 directory and then read back whatever is on disk, so
+//!   concurrent first starts converge on one key.
+//! - Key files are created atomically and never overwritten: a temporary
+//!   file is written, synced, then linked into place with
+//!   `persist_noclobber`. That needs `renameat2(RENAME_NOREPLACE)` or hard
+//!   links; some network or FUSE mounts (e.g. certain CIFS setups) support
+//!   neither, and key generation fails there with an I/O error.
+//! - Symlinked key files are refused (checked, then opened with
+//!   `O_NOFOLLOW`); symlinks in parent directories are allowed. Key files
+//!   larger than [`MAX_KEY_FILE_LEN`] are refused before reading.
+//! - Group/other access to a private key, a foreign owner, or a
+//!   group/other-writable key directory are reported as warnings; nothing
+//!   is chmod-ed.
 
 mod fs;
 mod master;
+mod read;
 mod signal;
 mod signal_pair;
 
@@ -14,6 +27,7 @@ use std::path::PathBuf;
 use crate::crypto::CryptoError;
 
 pub use master::{MASTER_KEY_FILE, load_or_generate_master_key, master_key_path, read_master_key};
+pub use read::MAX_KEY_FILE_LEN;
 pub use signal::{SIGNAL_KEY_FILE, SignalKeyPaths, load_or_generate_signal_key, read_signal_key};
 pub use signal_pair::SignalKeyPair;
 
@@ -34,8 +48,18 @@ impl<T> Loaded<T> {
 pub enum KeyWarning {
     /// A private key file is accessible to group or others.
     PermissiveMode { path: PathBuf, mode: u32 },
+    /// A private key file is owned by another user than the process.
+    ForeignOwner {
+        path: PathBuf,
+        owner: u32,
+        euid: u32,
+    },
+    /// The directory holding a private key is writable by group or others.
+    WritableDirectory { path: PathBuf, mode: u32 },
     /// The private key loaded but its `.pub` companion could not be written.
     PublicKeyNotWritten { path: PathBuf, reason: String },
+    /// `security.master_key` is set and `master.key` holds another key.
+    ConflictingMasterKeyFile { path: PathBuf },
 }
 
 impl fmt::Display for KeyWarning {
@@ -46,9 +70,26 @@ impl fmt::Display for KeyWarning {
                 "{} has permissions {mode:04o}; private keys should be 0600 (chmod 600 {0})",
                 path.display()
             ),
+            Self::ForeignOwner { path, owner, euid } => write!(
+                f,
+                "{} is owned by uid {owner}, not by the server's uid {euid}",
+                path.display()
+            ),
+            Self::WritableDirectory { path, mode } => write!(
+                f,
+                "key directory {} is group/other writable (mode {mode:04o}); \
+                 others could replace key files (chmod go-w {0})",
+                path.display()
+            ),
             Self::PublicKeyNotWritten { path, reason } => write!(
                 f,
                 "could not write {}: {reason}; continuing with the existing private key",
+                path.display()
+            ),
+            Self::ConflictingMasterKeyFile { path } => write!(
+                f,
+                "security.master_key is set, but {} holds a different or unreadable key; \
+                 the file is ignored and secrets sealed with it cannot be opened",
                 path.display()
             ),
         }
@@ -76,6 +117,12 @@ pub enum KeyError {
         secret.display()
     )]
     OrphanPublicKey { path: PathBuf, secret: PathBuf },
+    #[error("{} is a symlink; key files must be regular files (copy the key there instead)", path.display())]
+    Symlink { path: PathBuf },
+    #[error("{} is not a regular file", path.display())]
+    NotRegularFile { path: PathBuf },
+    #[error("{} is larger than {limit} bytes; not a key file", path.display())]
+    TooLarge { path: PathBuf, limit: usize },
     #[error("failed to {op} {}", path.display())]
     Io {
         op: &'static str,
@@ -85,6 +132,21 @@ pub enum KeyError {
     },
     #[error("failed to generate key material")]
     Generate(#[source] CryptoError),
+}
+
+impl KeyError {
+    fn io(op: &'static str, path: &std::path::Path, source: std::io::Error) -> Self {
+        Self::Io {
+            op,
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+
+    /// A key file disappeared between being written and read back.
+    fn vanished(path: &std::path::Path) -> Self {
+        Self::io("read back", path, std::io::ErrorKind::NotFound.into())
+    }
 }
 
 /// `error: cause: cause...` for embedding an error chain in a warning.

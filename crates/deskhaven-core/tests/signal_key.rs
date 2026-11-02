@@ -277,3 +277,88 @@ fn debug_output_hides_the_secret() {
     assert!(!debug.contains(&fixture("id_ed25519")[..20]), "{debug}");
     assert!(debug.contains(&fixture("id_ed25519.pub")), "{debug}");
 }
+
+#[test]
+fn oversized_secret_key_file_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SignalKeyPaths::resolve(Path::new(""), dir.path());
+    std::fs::write(paths.secret(), "A".repeat(4097)).unwrap();
+
+    let err = load_or_generate_signal_key(&paths).unwrap_err();
+    assert!(matches!(err, KeyError::TooLarge { .. }), "{err:?}");
+}
+
+#[test]
+fn concurrent_first_start_agrees_on_one_key_pair() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SignalKeyPaths::resolve(Path::new(""), &dir.path().join("data"));
+    let keys: Vec<String> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                s.spawn(|| {
+                    let loaded = load_or_generate_signal_key(&paths).unwrap();
+                    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+                    loaded.value.public_key_base64()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(keys.windows(2).all(|w| w[0] == w[1]), "{keys:?}");
+    assert_eq!(std::fs::read_to_string(paths.public()).unwrap(), keys[0]);
+}
+
+#[cfg(unix)]
+mod unix {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    #[test]
+    fn symlinked_secret_key_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = install_fixture(dir.path());
+        let link = SignalKeyPaths::resolve(&dir.path().join("alias"), dir.path());
+        symlink(real.secret(), link.secret()).unwrap();
+
+        for err in [
+            load_or_generate_signal_key(&link).unwrap_err(),
+            read_signal_key(&link).unwrap_err(),
+        ] {
+            assert!(matches!(err, KeyError::Symlink { .. }), "{err:?}");
+        }
+    }
+
+    #[test]
+    fn symlinked_public_key_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = install_fixture(dir.path());
+        let target = dir.path().join("real.pub");
+        std::fs::rename(paths.public(), &target).unwrap();
+        symlink(&target, paths.public()).unwrap();
+
+        let err = load_or_generate_signal_key(&paths).unwrap_err();
+        assert!(matches!(err, KeyError::Symlink { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn world_writable_key_directory_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let keys = dir.path().join("keys");
+        std::fs::create_dir(&keys).unwrap();
+        let paths = install_fixture(&keys);
+        set_mode(&keys, 0o777);
+
+        let loaded = load_or_generate_signal_key(&paths).unwrap();
+
+        assert_eq!(
+            loaded.warnings,
+            vec![KeyWarning::WritableDirectory {
+                path: keys.clone(),
+                mode: 0o777
+            }]
+        );
+        let text = loaded.warnings[0].to_string();
+        assert!(text.contains("0777") && text.contains("writable"), "{text}");
+    }
+}

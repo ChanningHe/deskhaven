@@ -2,11 +2,11 @@
 
 use std::fmt;
 
-use base64_022::Engine as _;
+use base64_022::{DecodeSliceError, Engine as _};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-use super::{CryptoError, KEY_B64, random_bytes};
+use super::{CryptoError, KEY_B64, fill_random};
 
 pub const MASTER_KEY_LEN: usize = 32;
 const KEY_ID_LEN: usize = 4;
@@ -63,35 +63,53 @@ impl fmt::Debug for KeyId {
     }
 }
 
-/// Encrypts secrets at rest. Wiped on drop; `Debug` shows only the key id.
+type KeyBytes = Box<Zeroizing<[u8; MASTER_KEY_LEN]>>;
+
+/// Encrypts secrets at rest. The key lives on the heap (moving a
+/// `MasterKey` copies no key bytes) and is wiped on drop; `Debug` shows only
+/// the key id.
 pub struct MasterKey {
-    bytes: Zeroizing<[u8; MASTER_KEY_LEN]>,
+    bytes: KeyBytes,
     id: KeyId,
 }
 
 impl MasterKey {
-    pub fn from_bytes(bytes: [u8; MASTER_KEY_LEN]) -> Self {
-        let bytes = Zeroizing::new(bytes);
-        let id = KeyId::of(&bytes);
-        Self { bytes, id }
+    pub fn from_bytes(bytes: &[u8; MASTER_KEY_LEN]) -> Self {
+        let mut key = zeroed();
+        key.copy_from_slice(bytes);
+        Self::from_box(key)
     }
 
     pub fn generate() -> Result<Self, CryptoError> {
-        random_bytes::<MASTER_KEY_LEN>().map(|bytes| Self::from_bytes(*bytes))
+        let mut key = zeroed();
+        fill_random(key.as_mut_slice())?;
+        Ok(Self::from_box(key))
     }
 
-    /// Parses standard base64 (surrounding whitespace ignored). Errors never
-    /// echo the input.
+    /// Parses standard base64 (surrounding whitespace ignored), decoding
+    /// into a wiped scratch buffer. Errors never echo the input.
     pub fn from_base64(text: &str) -> Result<Self, CryptoError> {
-        let decoded = KEY_B64
-            .decode(text.trim())
-            .map(Zeroizing::new)
-            .map_err(|_| CryptoError::InvalidMasterKey("not valid base64"))?;
-        let bytes: &[u8; MASTER_KEY_LEN] = decoded
-            .as_slice()
-            .try_into()
-            .map_err(|_| CryptoError::InvalidMasterKey("must decode to exactly 32 bytes"))?;
-        Ok(Self::from_bytes(*bytes))
+        const WRONG_LENGTH: CryptoError =
+            CryptoError::InvalidMasterKey("must decode to exactly 32 bytes");
+        let mut scratch = Zeroizing::new([0u8; 2 * MASTER_KEY_LEN]);
+        let len = KEY_B64
+            .decode_slice(text.trim(), scratch.as_mut_slice())
+            .map_err(|err| match err {
+                DecodeSliceError::OutputSliceTooSmall => WRONG_LENGTH,
+                DecodeSliceError::DecodeError(_) => {
+                    CryptoError::InvalidMasterKey("not valid base64")
+                }
+            })?;
+        let bytes: &[u8; MASTER_KEY_LEN] = scratch
+            .get(..len)
+            .and_then(|decoded| decoded.try_into().ok())
+            .ok_or(WRONG_LENGTH)?;
+        Ok(Self::from_bytes(bytes))
+    }
+
+    fn from_box(bytes: KeyBytes) -> Self {
+        let id = KeyId::of(&bytes);
+        Self { bytes, id }
     }
 
     /// Padded standard base64, the format of `security.master_key` and `master.key`.
@@ -108,6 +126,10 @@ impl MasterKey {
     }
 }
 
+fn zeroed() -> KeyBytes {
+    Box::new(Zeroizing::new([0u8; MASTER_KEY_LEN]))
+}
+
 impl fmt::Debug for MasterKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MasterKey")
@@ -122,7 +144,7 @@ mod tests {
 
     #[test]
     fn key_id_renders_and_parses_canonically() {
-        let id = MasterKey::from_bytes([1; MASTER_KEY_LEN]).key_id();
+        let id = MasterKey::from_bytes(&[1; MASTER_KEY_LEN]).key_id();
         let text = id.to_string();
         assert_eq!(text.len(), 8);
         assert_eq!(KeyId::parse(&text), Some(id));

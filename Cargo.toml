@@ -70,6 +70,8 @@ sha2 = "0.10"
 # `base64` is taken by the signal block (0.13, legacy API, lenient padding). New code
 # needs 0.22's engines (strict unpadded decoding for sealed strings), hence its own key.
 base64_022 = { package = "base64", version = "0.22" }
+# Safe O_NOFOLLOW open and geteuid for key-file hardening (already in the tree via tempfile).
+rustix = { version = "1.1", features = ["fs", "process"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

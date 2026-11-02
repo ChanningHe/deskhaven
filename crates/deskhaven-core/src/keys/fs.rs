@@ -1,12 +1,10 @@
-//! Filesystem primitives for key files: optional reads, permission checks,
-//! 0700 directories and atomic create-only writes.
+//! Write-side filesystem primitives for key files: 0700 directories and
+//! atomic create-only writes (see the module docs of `keys`).
 
 use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 
-use zeroize::Zeroizing;
-
-use super::{KeyError, KeyWarning};
+use super::KeyError;
 
 /// Owner read/write: private keys.
 #[cfg(unix)]
@@ -24,53 +22,27 @@ pub(super) enum Visibility {
     Public,
 }
 
-fn io_error(op: &'static str, path: &Path) -> impl FnOnce(std::io::Error) -> KeyError {
-    let path = path.to_path_buf();
-    move |source| KeyError::Io { op, path, source }
+/// Outcome of [`create_new`]; losing a race to another writer is not an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Created {
+    New,
+    AlreadyExisted,
 }
 
-/// The file's text, or `None` if it does not exist.
-pub(super) fn read_optional(path: &Path) -> Result<Option<Zeroizing<String>>, KeyError> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(Zeroizing::new(text))),
-        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(io_error("read", path)(err)),
-    }
-}
-
-pub(super) fn exists(path: &Path) -> Result<bool, KeyError> {
-    path.try_exists().map_err(io_error("inspect", path))
-}
-
-/// Warns when group or others have any access to a private key file.
-#[cfg(unix)]
-pub(super) fn permission_warning(path: &Path) -> Result<Option<KeyWarning>, KeyError> {
-    use std::os::unix::fs::PermissionsExt;
-    const PERMISSION_BITS: u32 = 0o7777;
-    const GROUP_OTHER_BITS: u32 = 0o077;
-
-    let mode = std::fs::metadata(path)
-        .map_err(io_error("inspect", path))?
-        .permissions()
-        .mode()
-        & PERMISSION_BITS;
-    Ok(
-        (mode & GROUP_OTHER_BITS != 0).then(|| KeyWarning::PermissiveMode {
-            path: path.to_path_buf(),
-            mode,
-        }),
-    )
-}
-
-#[cfg(not(unix))]
-pub(super) fn permission_warning(_path: &Path) -> Result<Option<KeyWarning>, KeyError> {
-    Ok(None)
-}
-
-fn parent_dir(path: &Path) -> PathBuf {
+/// The directory holding `path` (`.` for a bare file name).
+pub(super) fn parent_dir(path: &Path) -> PathBuf {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         _ => PathBuf::from("."),
+    }
+}
+
+/// Whether anything (including a dangling symlink) occupies `path`.
+pub(super) fn occupied(path: &Path) -> Result<bool, KeyError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(KeyError::io("inspect", path, err)),
     }
 }
 
@@ -84,27 +56,29 @@ pub(super) fn ensure_parent_dir(path: &Path) -> Result<(), KeyError> {
     std::os::unix::fs::DirBuilderExt::mode(&mut builder, DIR_MODE);
     builder
         .create(&dir)
-        .map_err(io_error("create directory", &dir))
+        .map_err(|err| KeyError::io("create directory", &dir, err))
 }
 
 /// Writes `contents` to a temporary file beside `path`, syncs it, then
-/// links it into place only if `path` does not exist yet. A crash leaves
-/// either no key or a complete one; an existing key is never replaced.
+/// links it into place only if `path` is still free. A crash leaves either
+/// no key or a complete one; an existing entry is never replaced.
 pub(super) fn create_new(
     path: &Path,
     contents: &[u8],
     visibility: Visibility,
-) -> Result<(), KeyError> {
+) -> Result<Created, KeyError> {
     let dir = parent_dir(path);
     let mut temp = temp_builder(visibility)
         .tempfile_in(&dir)
-        .map_err(io_error("create a temporary file in", &dir))?;
+        .map_err(|err| KeyError::io("create a temporary file in", &dir, err))?;
     temp.write_all(contents)
         .and_then(|()| temp.as_file().sync_all())
-        .map_err(io_error("write", temp.path()))?;
-    temp.persist_noclobber(path)
-        .map_err(|err| io_error("create", path)(err.error))?;
-    sync_dir(&dir)
+        .map_err(|err| KeyError::io("write", temp.path(), err))?;
+    match temp.persist_noclobber(path) {
+        Ok(_) => sync_dir(&dir).map(|()| Created::New),
+        Err(err) if err.error.kind() == ErrorKind::AlreadyExists => Ok(Created::AlreadyExisted),
+        Err(err) => Err(KeyError::io("create", path, err.error)),
+    }
 }
 
 fn temp_builder(visibility: Visibility) -> tempfile::Builder<'static, 'static> {
@@ -129,7 +103,7 @@ fn temp_builder(visibility: Visibility) -> tempfile::Builder<'static, 'static> {
 fn sync_dir(dir: &Path) -> Result<(), KeyError> {
     std::fs::File::open(dir)
         .and_then(|d| d.sync_all())
-        .map_err(io_error("sync directory", dir))
+        .map_err(|err| KeyError::io("sync directory", dir, err))
 }
 
 #[cfg(not(unix))]

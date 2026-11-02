@@ -20,7 +20,7 @@ fn mode(path: &Path) -> u32 {
 fn configured_key_wins_and_touches_no_file() {
     let dir = tempfile::tempdir().unwrap();
     let data_dir = dir.path().join("data");
-    let key = MasterKey::from_bytes([3; 32]);
+    let key = MasterKey::from_bytes(&[3; 32]);
     let configured = Secret::new(key.to_base64().as_str());
 
     let loaded = load_or_generate_master_key(&configured, &data_dir).unwrap();
@@ -145,4 +145,138 @@ fn master_key_path_is_in_data_dir() {
         master_key_path(Path::new("/srv/dh")),
         Path::new("/srv/dh/master.key")
     );
+}
+
+#[test]
+fn configured_key_differing_from_existing_file_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
+    let configured = MasterKey::from_bytes(&[4; 32]);
+    let secret = Secret::new(configured.to_base64().as_str());
+
+    for loaded in [
+        load_or_generate_master_key(&secret, dir.path()).unwrap(),
+        read_master_key(&secret, dir.path()).unwrap().unwrap(),
+    ] {
+        assert_eq!(loaded.value.key_id(), configured.key_id());
+        assert_eq!(
+            loaded.warnings,
+            vec![KeyWarning::ConflictingMasterKeyFile {
+                path: master_key_path(dir.path())
+            }]
+        );
+    }
+}
+
+#[test]
+fn configured_key_equal_to_existing_file_does_not_warn() {
+    let dir = tempfile::tempdir().unwrap();
+    let generated = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
+    let secret = Secret::new(generated.value.to_base64().as_str());
+
+    let loaded = load_or_generate_master_key(&secret, dir.path()).unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+}
+
+#[test]
+fn oversized_master_key_file_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(master_key_path(dir.path()), "A".repeat(4097)).unwrap();
+
+    let err = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err();
+    assert!(matches!(err, KeyError::TooLarge { .. }), "{err:?}");
+}
+
+#[test]
+fn concurrent_first_start_agrees_on_one_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    let ids: Vec<String> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                s.spawn(|| {
+                    load_or_generate_master_key(&Secret::default(), &data_dir)
+                        .unwrap()
+                        .value
+                        .key_id()
+                        .to_string()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert!(ids.windows(2).all(|w| w[0] == w[1]), "{ids:?}");
+    let on_disk = read_master_key(&Secret::default(), &data_dir)
+        .unwrap()
+        .unwrap();
+    assert_eq!(on_disk.value.key_id().to_string(), ids[0]);
+}
+
+#[cfg(unix)]
+mod unix {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    use super::*;
+
+    #[test]
+    fn symlinked_master_key_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        load_or_generate_master_key(&Secret::default(), elsewhere.path()).unwrap();
+        symlink(
+            master_key_path(elsewhere.path()),
+            master_key_path(dir.path()),
+        )
+        .unwrap();
+
+        for err in [
+            load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err(),
+            read_master_key(&Secret::default(), dir.path()).unwrap_err(),
+        ] {
+            assert!(matches!(err, KeyError::Symlink { .. }), "{err:?}");
+            assert!(err.to_string().contains("symlink"), "{err}");
+        }
+    }
+
+    #[test]
+    fn dangling_symlink_is_refused_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.key");
+        symlink(&target, master_key_path(dir.path())).unwrap();
+
+        let err = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err();
+        assert!(matches!(err, KeyError::Symlink { .. }), "{err:?}");
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn directory_at_key_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(master_key_path(dir.path())).unwrap();
+
+        let err = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err();
+        assert!(matches!(err, KeyError::NotRegularFile { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn group_writable_data_dir_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o775)).unwrap();
+
+        let generated = load_or_generate_master_key(&Secret::default(), &data_dir).unwrap();
+        let read = read_master_key(&Secret::default(), &data_dir)
+            .unwrap()
+            .unwrap();
+
+        let expected = vec![KeyWarning::WritableDirectory {
+            path: data_dir.clone(),
+            mode: 0o775,
+        }];
+        assert_eq!(generated.warnings, expected);
+        assert_eq!(read.warnings, expected);
+        // Existing directories are not modified.
+        assert_eq!(mode(&data_dir), 0o775);
+    }
 }

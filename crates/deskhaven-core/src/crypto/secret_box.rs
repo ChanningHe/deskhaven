@@ -1,8 +1,13 @@
 //! XChaCha20-Poly1305 sealing of secrets stored in the database.
 //!
 //! Sealed form: `v1:<key_id>:<nonce>:<ciphertext>` with unpadded standard
-//! base64 fields and a random 24-byte nonce per seal. `v1:<key_id>` is bound
-//! as associated data, so the header cannot be rewritten undetected.
+//! base64 fields and a random 24-byte nonce per seal.
+//!
+//! Associated data is `"v1:<key_id>:" || context`. The context names where
+//! the ciphertext lives, by convention `"<table>.<column>:<row id>"` (e.g.
+//! `users.totp_secret_enc:42`, 06-security §5), so an attacker with database
+//! write access but no master key cannot move a ciphertext to another row or
+//! column. The context is not stored; callers recompute it on open.
 
 use std::fmt;
 
@@ -12,7 +17,12 @@ use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use zeroize::Zeroizing;
 
 use super::b64::SEALED_B64;
-use super::{CryptoError, KeyId, MasterKey, random_bytes};
+use super::{CryptoError, KeyId, MasterKey, fill_random};
+
+/// Largest plaintext `seal` accepts; sealed output stays below [`MAX_SEALED_LEN`].
+pub const MAX_PLAINTEXT_LEN: usize = 512 * 1024;
+/// Longer strings are refused by `open` before any decoding.
+pub const MAX_SEALED_LEN: usize = 1024 * 1024;
 
 const VERSION: &str = "v1";
 const SEPARATOR: char = ':';
@@ -48,43 +58,51 @@ impl SecretBox {
         }
     }
 
-    /// Adds a retired key that can still open existing ciphertexts.
-    #[must_use]
-    pub fn with_previous(self, key: &MasterKey) -> Self {
+    /// Adds a retired key that can still open existing ciphertexts. Each key
+    /// id may be held once.
+    pub fn with_previous(self, key: &MasterKey) -> Result<Self, CryptoError> {
+        if self.slot(key.key_id()).is_some() {
+            return Err(CryptoError::DuplicateKeyId);
+        }
         let mut previous = self.previous;
         previous.push(Slot::new(key));
-        Self {
+        Ok(Self {
             primary: self.primary,
             previous,
-        }
+        })
     }
 
-    pub fn seal(&self, plaintext: &[u8]) -> Result<String, CryptoError> {
-        let nonce = random_bytes::<NONCE_LEN>()?;
+    pub fn seal(&self, context: &str, plaintext: &[u8]) -> Result<String, CryptoError> {
+        if plaintext.len() > MAX_PLAINTEXT_LEN {
+            return Err(CryptoError::PlaintextTooLarge);
+        }
+        let mut nonce = [0u8; NONCE_LEN];
+        fill_random(&mut nonce)?;
         let header = header(self.primary.id);
+        let aad = aad(&header, context);
         let payload = Payload {
             msg: plaintext,
-            aad: header.as_bytes(),
+            aad: aad.as_bytes(),
         };
         let ciphertext = self
             .primary
             .cipher
-            .encrypt(&XNonce::from(*nonce), payload)
+            .encrypt(&XNonce::from(nonce), payload)
             .map_err(|_| CryptoError::PlaintextTooLarge)?;
         Ok(format!(
             "{header}{SEPARATOR}{}{SEPARATOR}{}",
-            SEALED_B64.encode(nonce.as_slice()),
+            SEALED_B64.encode(nonce),
             SEALED_B64.encode(ciphertext)
         ))
     }
 
-    pub fn open(&self, sealed: &str) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    pub fn open(&self, context: &str, sealed: &str) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
         let parsed = Sealed::parse(sealed)?;
         let slot = self.slot(parsed.key_id).ok_or(CryptoError::UnknownKeyId)?;
-        let header = header(parsed.key_id);
+        let aad = aad(&header(parsed.key_id), context);
         let payload = Payload {
             msg: &parsed.ciphertext,
-            aad: header.as_bytes(),
+            aad: aad.as_bytes(),
         };
         slot.cipher
             .decrypt(&XNonce::from(parsed.nonce), payload)
@@ -113,6 +131,11 @@ fn header(id: KeyId) -> String {
     format!("{VERSION}{SEPARATOR}{id}")
 }
 
+/// The key id has a fixed width, so `header ':' context` is unambiguous.
+fn aad(header: &str, context: &str) -> String {
+    format!("{header}{SEPARATOR}{context}")
+}
+
 struct Sealed {
     key_id: KeyId,
     nonce: [u8; NONCE_LEN],
@@ -121,6 +144,9 @@ struct Sealed {
 
 impl Sealed {
     fn parse(text: &str) -> Result<Self, CryptoError> {
+        if text.len() > MAX_SEALED_LEN {
+            return Err(CryptoError::Malformed);
+        }
         let mut fields = text.split(SEPARATOR);
         let (Some(version), Some(key_id), Some(nonce), Some(ciphertext), None) = (
             fields.next(),

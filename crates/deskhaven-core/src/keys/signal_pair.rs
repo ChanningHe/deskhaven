@@ -8,18 +8,19 @@
 
 use std::fmt;
 
-use base64_022::Engine as _;
+use base64_022::{DecodeSliceError, Engine as _};
 use ed25519_dalek::{KEYPAIR_LENGTH, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH, Signer, SigningKey};
 use zeroize::Zeroizing;
 
-use crate::crypto::{CryptoError, KEY_B64, random_bytes};
+use crate::crypto::{CryptoError, KEY_B64, fill_random};
 
 /// Upstream retries generation this many times (common.rs `gen_sk`).
 const GENERATE_ATTEMPTS: usize = 300;
 
-/// Wiped on drop (ed25519-dalek `zeroize`); `Debug` shows only the public key.
+/// Heap-held so moving the pair copies no key bytes; wiped on drop
+/// (ed25519-dalek `zeroize`); `Debug` shows only the public key.
 pub struct SignalKeyPair {
-    signing: SigningKey,
+    signing: Box<SigningKey>,
 }
 
 impl SignalKeyPair {
@@ -37,25 +38,33 @@ impl SignalKeyPair {
     }
 
     fn random() -> Result<Self, CryptoError> {
-        let seed = random_bytes::<SECRET_KEY_LENGTH>()?;
+        let mut seed = Zeroizing::new([0u8; SECRET_KEY_LENGTH]);
+        fill_random(seed.as_mut_slice())?;
         Ok(Self {
-            signing: SigningKey::from_bytes(&seed),
+            signing: Box::new(SigningKey::from_bytes(&seed)),
         })
     }
 
-    /// Parses the contents of an upstream `id_ed25519` file. The stored
-    /// public half must match the one derived from the seed.
+    /// Parses the contents of an upstream `id_ed25519` file, decoding into a
+    /// wiped scratch buffer. The stored public half must match the one
+    /// derived from the seed.
     pub(crate) fn from_secret_base64(text: &str) -> Result<Self, &'static str> {
-        let decoded = KEY_B64
-            .decode(text.trim())
-            .map(Zeroizing::new)
-            .map_err(|_| "not valid base64")?;
-        let bytes: &[u8; KEYPAIR_LENGTH] = decoded
-            .as_slice()
-            .try_into()
-            .map_err(|_| "expected 64 bytes (seed || public key)")?;
+        const WRONG_LENGTH: &str = "expected 64 bytes (seed || public key)";
+        let mut scratch = Zeroizing::new([0u8; 2 * KEYPAIR_LENGTH]);
+        let len = KEY_B64
+            .decode_slice(text.trim(), scratch.as_mut_slice())
+            .map_err(|err| match err {
+                DecodeSliceError::OutputSliceTooSmall => WRONG_LENGTH,
+                DecodeSliceError::DecodeError(_) => "not valid base64",
+            })?;
+        let bytes: &[u8; KEYPAIR_LENGTH] = scratch
+            .get(..len)
+            .and_then(|decoded| decoded.try_into().ok())
+            .ok_or(WRONG_LENGTH)?;
         SigningKey::from_keypair_bytes(bytes)
-            .map(|signing| Self { signing })
+            .map(|signing| Self {
+                signing: Box::new(signing),
+            })
             .map_err(|_| "public half does not match the seed")
     }
 
