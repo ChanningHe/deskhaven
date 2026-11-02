@@ -1,0 +1,15 @@
+# Upstream provenance for the vendored hbbs sources. Parsed by scripts/verify-upstream.sh.
+repo: https://github.com/rustdesk/rustdesk-server
+commit: 873230e35a8805de7fd057e7eb763c46f7a174ef
+date: 2026-10-10T17:34:18+08:00
+subject: fix: key file perm (#705)
+license: AGPL-3.0
+vendored-dir: upstream-src
+#
+# Verbatim copies at the commit above. Format: <sha256>  <upstream path>  <vendored file name>
+files:
+96dc374fbe785d71f7089c534de768d58656723a07629af2416225b8090cf172  src/common.rs  common.rs
+0788f3c4428900ed4120e385f91249c07dc70b22d106eb6c1bd5e1581d954683  src/lib.rs  lib.rs
+2910b823ebfcee3cc9267df7c1f7e4790f2b004059e03c7c7269da74026a9d7f  src/peer.rs  peer.rs
+ffb88d0308c48b6dd8cf82b684619e400d53652654960e39a36d7dc5ab853409  src/rendezvous_server.rs  rendezvous_server.rs
+8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef  LICENSE  LICENSE
