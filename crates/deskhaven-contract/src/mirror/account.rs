@@ -81,6 +81,11 @@ pub struct UserInfo {
 /// The Rust client is the strict reader: `src/hbbs_http/account.rs:79-97`
 /// (`name` and `info` required). The Flutter reader,
 /// `flutter/lib/common/hbbs/hbbs.dart:36-48`, adds `verifier` (`String?`).
+///
+/// `info` is required on purpose, although Flutter never reads it (and
+/// defaults `name` to `''`): the same payload reaches the Rust client in the
+/// OIDC `AuthBody`, where a missing `info` fails the whole login. Requiring
+/// it everywhere keeps one server shape for every reader.
 #[derive(Debug, Deserialize)]
 pub struct ClientUserPayload {
     pub name: String,
