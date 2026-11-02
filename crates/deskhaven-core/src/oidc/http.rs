@@ -5,7 +5,8 @@
 //! cannot bounce us elsewhere), no proxy from the environment, [`CONNECT_TIMEOUT`] and
 //! [`REQUEST_TIMEOUT`], responses capped at [`MAX_RESPONSE_BYTES`] (checked against
 //! `Content-Length` and while reading), and the URL checked against the provider's
-//! [`EndpointPolicy`] before anything is sent. TLS is rustls on the ring provider with the
+//! [`EndpointPolicy`] before anything is sent; names resolve through the filtering resolver
+//! (`resolver`: no link-local or cloud-metadata addresses). TLS is rustls on the ring provider with the
 //! operating system's root store; the client is built on first use, so a host without roots
 //! fails OIDC requests (logged), not startup.
 
@@ -18,6 +19,7 @@ use openidconnect::{AsyncHttpClient, HttpRequest, HttpResponse};
 use tokio::sync::OnceCell;
 use url::Url;
 
+use super::resolver::{FilteringResolver, Lookup, system_lookup};
 use super::url_policy::EndpointPolicy;
 
 /// TCP + TLS handshake budget per request.
@@ -52,11 +54,13 @@ pub trait HttpFetch: Send + Sync {
     fn fetch(&self, request: HttpRequest) -> FetchFuture<'_>;
 }
 
-/// [`HttpFetch`] over reqwest 0.13 (rustls + ring).
+/// [`HttpFetch`] over reqwest 0.13 (rustls + ring), resolving names through the
+/// [`FilteringResolver`] (no link-local or metadata addresses).
 pub struct ReqwestFetch {
     client: OnceCell<reqwest::Client>,
     connect_timeout: Duration,
     request_timeout: Duration,
+    lookup: Lookup,
 }
 
 impl Default for ReqwestFetch {
@@ -66,7 +70,7 @@ impl Default for ReqwestFetch {
 }
 
 impl ReqwestFetch {
-    /// [`CONNECT_TIMEOUT`] and [`REQUEST_TIMEOUT`].
+    /// [`CONNECT_TIMEOUT`], [`REQUEST_TIMEOUT`], the system resolver.
     pub fn new() -> Self {
         Self::default()
     }
@@ -77,12 +81,21 @@ impl ReqwestFetch {
             client: OnceCell::new(),
             connect_timeout,
             request_timeout,
+            lookup: system_lookup(),
         }
+    }
+
+    /// Another name lookup under the same filter (tests: a resolver stub).
+    pub fn with_lookup(self, lookup: Lookup) -> Self {
+        Self { lookup, ..self }
     }
 
     async fn client(&self) -> Result<&reqwest::Client, FetchError> {
         self.client
-            .get_or_try_init(|| async { build_client(self.connect_timeout, self.request_timeout) })
+            .get_or_try_init(|| async {
+                let resolver = FilteringResolver::new(Arc::clone(&self.lookup));
+                build_client(self.connect_timeout, self.request_timeout, resolver)
+            })
             .await
     }
 }
@@ -96,7 +109,11 @@ impl HttpFetch for ReqwestFetch {
     }
 }
 
-fn build_client(connect: Duration, request: Duration) -> Result<reqwest::Client, FetchError> {
+fn build_client(
+    connect: Duration,
+    request: Duration,
+    resolver: FilteringResolver,
+) -> Result<reqwest::Client, FetchError> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = rustls_platform_verifier::Verifier::new(Arc::clone(&provider))
         .map_err(|err| FetchError::Tls(err.to_string()))?;
@@ -108,6 +125,7 @@ fn build_client(connect: Duration, request: Duration) -> Result<reqwest::Client,
         .with_no_client_auth();
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
+        .dns_resolver(resolver)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .referer(false)

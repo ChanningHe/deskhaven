@@ -55,7 +55,11 @@
 //! # Outbound HTTP
 //!
 //! See `http`: https only (plain http only to a loopback issuer, and then only to loopback
-//! endpoints), no redirects, no proxy, timeouts and a response size cap on every request.
+//! endpoints), no link-local or cloud-metadata addresses (`resolver`, also as IP literals),
+//! no redirects, no proxy, timeouts and a response size cap on every request. A failed
+//! discovery is remembered for 30 s per provider (`discovery`), so an IdP outage does not
+//! make every login attempt wait for its own timeout. Logs name the provider and the kind
+//! of failure only, never upstream bodies or claim values.
 
 mod callback;
 mod claims;
@@ -69,6 +73,7 @@ mod poll;
 mod preview;
 mod protocol;
 mod providers;
+mod resolver;
 mod url_policy;
 mod username;
 
@@ -79,6 +84,7 @@ use sea_orm::DatabaseConnection;
 use url::Url;
 
 pub use callback::{CallbackParams, CallbackReport, FlowKind, OidcLogin};
+pub use discovery::NEGATIVE_TTL;
 pub use error::{CallbackError, Failure, OidcError, PollError, ProviderError};
 pub use flow::{ClientCode, ClientFlowStart};
 pub use http::{
@@ -90,6 +96,7 @@ pub use preview::{CallbackPreview, DeviceSummary};
 pub use providers::{
     LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
 };
+pub use resolver::{Lookup, LookupFuture, system_lookup};
 pub use url_policy::MAX_ISSUER_LEN;
 
 use crate::clock::SharedClock;

@@ -13,6 +13,8 @@ use std::net::IpAddr;
 
 use url::{Host, Url};
 
+use super::resolver::is_forbidden;
+
 /// Longest accepted issuer URL.
 pub const MAX_ISSUER_LEN: usize = 2048;
 
@@ -33,6 +35,15 @@ impl EndpointPolicy {
     pub(crate) fn check(self, url: &Url) -> Result<(), &'static str> {
         if !url.username().is_empty() || url.password().is_some() {
             return Err("credentials in the URL are not allowed");
+        }
+        // Names are filtered by the resolver; IP literals never reach it.
+        let literal = match url.host() {
+            Some(Host::Ipv4(addr)) => Some(IpAddr::V4(addr)),
+            Some(Host::Ipv6(addr)) => Some(IpAddr::V6(addr)),
+            _ => None,
+        };
+        if literal.is_some_and(is_forbidden) {
+            return Err("link-local and cloud metadata addresses are not allowed");
         }
         match url.scheme() {
             "https" if url.host().is_some() => Ok(()),
@@ -113,6 +124,14 @@ mod tests {
         assert!(policy.check(&url("http://127.0.0.1:6379/")).is_err());
         assert!(policy.check(&url("http://idp.example.com/token")).is_err());
         assert!(policy.check(&url("file:///etc/passwd")).is_err());
+        assert!(
+            policy
+                .check(&url("https://169.254.169.254/latest"))
+                .is_err()
+        );
+        assert!(policy.check(&url("https://[fd00:ec2::254]/")).is_err());
+        assert!(policy.check(&url("https://100.100.100.200/")).is_err());
+        assert!(check_issuer("https://169.254.169.254").is_err());
         assert!(
             policy
                 .check(&url("https://u:p@idp.example.com/token"))

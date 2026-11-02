@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use common::oidc::{Env, device};
 use common::oidc_idp::ISSUER_PATH;
-use deskhaven_core::oidc::{FetchError, HttpFetch, MAX_RESPONSE_BYTES, OidcError, ReqwestFetch};
+use deskhaven_core::oidc::{
+    FetchError, HttpFetch, Lookup, MAX_RESPONSE_BYTES, NEGATIVE_TTL, OidcError, ReqwestFetch,
+};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use openidconnect::http;
 use serde_json::json;
@@ -116,9 +118,15 @@ async fn unusable_discovered_endpoints_make_the_provider_unavailable() {
                 "credentials in the token endpoint",
                 with("token_endpoint", "https://u:p@idp.example/token"),
             ),
+            (
+                "JWKS on the cloud metadata address",
+                with("jwks_uri", "https://169.254.169.254/latest/meta-data"),
+            ),
         ];
         for (case, document) in cases {
             with_discovery(&env, document).await;
+            // Past the remembered failure of the previous case.
+            env.clock.advance(NEGATIVE_TTL);
             let result = env.oidc.begin_client("corp", &device()).await;
             assert!(
                 matches!(result, Err(OidcError::Unavailable(_))),
@@ -152,6 +160,95 @@ async fn a_redirected_discovery_document_is_not_followed() {
             "{}: {result:?}",
             db.backend
         );
+    })
+    .await;
+}
+
+/// A resolver stub: `metadata.test` answers the AWS / GCP metadata address, `mixed.test`
+/// that plus loopback, `idp.test` loopback.
+fn stub_lookup() -> Lookup {
+    std::sync::Arc::new(|host: String| {
+        Box::pin(async move {
+            let ips: Vec<&str> = match host.as_str() {
+                "metadata.test" => vec!["169.254.169.254", "fd00:ec2::254"],
+                "mixed.test" => vec!["169.254.169.254", "127.0.0.1"],
+                "idp.test" => vec!["127.0.0.1"],
+                _ => vec![],
+            };
+            Ok(ips
+                .into_iter()
+                .map(|ip| std::net::SocketAddr::new(ip.parse().unwrap(), 0))
+                .collect())
+        })
+    })
+}
+
+#[tokio::test]
+async fn names_resolving_to_metadata_addresses_are_never_connected() {
+    let server = MockServer::start().await;
+    Mock::given(path("/doc"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+    let port = server.address().port();
+    let fetch = ReqwestFetch::with_timeouts(Duration::from_secs(1), Duration::from_secs(2))
+        .with_lookup(stub_lookup());
+
+    let started = std::time::Instant::now();
+    let metadata = fetch
+        .fetch(get(&format!("http://metadata.test:{port}/doc")))
+        .await;
+    let refused_in = started.elapsed();
+    let mixed = fetch
+        .fetch(get(&format!("http://mixed.test:{port}/doc")))
+        .await;
+    let idp = fetch
+        .fetch(get(&format!("http://idp.test:{port}/doc")))
+        .await;
+
+    assert!(
+        matches!(metadata, Err(FetchError::Transport(_))),
+        "{metadata:?}"
+    );
+    assert!(refused_in < Duration::from_secs(1), "{refused_in:?}");
+    // Mixed answers keep the allowed addresses.
+    assert_eq!(mixed.unwrap().status(), 200);
+    assert_eq!(idp.unwrap().status(), 200);
+}
+
+#[tokio::test]
+async fn a_failed_discovery_is_remembered_for_thirty_seconds() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        env.idp.server.reset().await;
+        Mock::given(path(format!(
+            "{ISSUER_PATH}/.well-known/openid-configuration"
+        )))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&env.idp.server)
+        .await;
+        let failed = env.oidc.begin_client("corp", &device()).await;
+        // The IdP recovers.
+        env.idp.server.reset().await;
+        env.idp.mount_discovery(env.idp.discovery()).await;
+        env.idp
+            .mount_jwks(common::oidc_idp::KEY_A, common::oidc_idp::KID)
+            .await;
+
+        let remembered = env.oidc.begin_client("corp", &device()).await;
+        let asked_meanwhile = env.idp.hits("/openid-configuration").await;
+        env.clock.advance(NEGATIVE_TTL);
+        let recovered = env.oidc.begin_client("corp", &device()).await;
+
+        assert_eq!(NEGATIVE_TTL, Duration::from_secs(30));
+        assert!(
+            matches!(failed, Err(OidcError::Unavailable(_))),
+            "{}",
+            db.backend
+        );
+        assert!(matches!(remembered, Err(OidcError::Unavailable(_))));
+        assert_eq!(asked_meanwhile, 0);
+        assert!(recovered.is_ok(), "{recovered:?}");
     })
     .await;
 }

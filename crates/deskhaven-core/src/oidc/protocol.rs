@@ -16,14 +16,15 @@ use openidconnect::core::{
 use openidconnect::{
     AuthType, AuthorizationCode, ClaimsVerificationError, Client, ClientId, ClientSecret,
     CsrfToken, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet, EndpointSet, IdToken,
-    IdTokenFields, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
-    SignatureVerificationError, StandardErrorResponse, StandardTokenResponse, TokenResponse as _,
+    IdTokenFields, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RequestTokenError,
+    Scope, SignatureVerificationError, StandardErrorResponse, StandardTokenResponse,
+    TokenResponse as _,
 };
 use url::Url;
 
 use super::claims::{Claims, ExtraClaims};
-use super::discovery::{Discovered, error_chain};
-use super::http::{HttpFetch, ProviderHttp};
+use super::discovery::{Discovered, fetch_kind};
+use super::http::{FetchError, HttpFetch, ProviderHttp};
 use crate::clock::SharedClock;
 
 /// Signature algorithms accepted for ID tokens.
@@ -156,7 +157,7 @@ pub(crate) async fn exchange(
         .map_err(|err| ExchangeError::Unavailable(err.to_string()))?
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier.to_owned()));
     let response = request.request_async(&http).await.map_err(|err| {
-        ExchangeError::Unavailable(format!("token request: {}", error_chain(&err)))
+        ExchangeError::Unavailable(format!("token request: {}", token_kind(&err)))
     })?;
     response
         .id_token()
@@ -181,6 +182,37 @@ pub(crate) fn verify(
     token
         .claims(&verifier, &Nonce::new(nonce.to_owned()))
         .cloned()
+}
+
+type TokenError = RequestTokenError<FetchError, StandardErrorResponse<CoreErrorResponseType>>;
+
+/// What went wrong with the token request, without the response body (a parse error's
+/// message can quote token values): the OAuth error code at most.
+fn token_kind(err: &TokenError) -> String {
+    match err {
+        RequestTokenError::ServerResponse(response) => {
+            format!("error response {}", response.error())
+        }
+        RequestTokenError::Request(fetch) => fetch_kind(fetch),
+        RequestTokenError::Parse(_, _) => "unparsable token response".to_owned(),
+        RequestTokenError::Other(_) => "unexpected token response".to_owned(),
+    }
+}
+
+/// The kind of an ID token rejection, without claim values (for logs).
+pub(crate) fn rejection_kind(err: &ClaimsVerificationError) -> &'static str {
+    match err {
+        ClaimsVerificationError::Expired(_) => "expired",
+        ClaimsVerificationError::InvalidAudience(_) => "audience",
+        ClaimsVerificationError::InvalidAuthContext(_) => "auth context",
+        ClaimsVerificationError::InvalidAuthTime(_) => "auth time",
+        ClaimsVerificationError::InvalidIssuer(_) => "issuer",
+        ClaimsVerificationError::InvalidNonce(_) => "nonce",
+        ClaimsVerificationError::InvalidSubject(_) => "subject",
+        ClaimsVerificationError::SignatureVerification(_) => "signature",
+        ClaimsVerificationError::Unsupported(_) => "unsupported",
+        _ => "other",
+    }
 }
 
 /// Whether the failure may be a signing key rotated since the JWKS was fetched.

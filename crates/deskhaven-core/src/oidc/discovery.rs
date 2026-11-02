@@ -2,18 +2,23 @@
 //!
 //! A stale entry is refetched on next use; an ID token signed by a key the cached JWKS lacks
 //! (key rotation) forces one refetch, at most once per [`MIN_REFRESH`] per provider, so
-//! forged `kid`s cannot make deskhaven hammer the IdP. Provider writes drop the entry.
-//! Discovery checks that the document's issuer equals the configured one; the endpoints it
-//! names are checked against the provider's [`EndpointPolicy`].
+//! forged `kid`s cannot make deskhaven hammer the IdP. A failed fetch is remembered for
+//! [`NEGATIVE_TTL`]: during an IdP outage, logins fail at once instead of each waiting for
+//! its own timeout. Provider writes drop both. Discovery checks that the document's issuer
+//! equals the configured one; the endpoints it names are checked against the provider's
+//! [`EndpointPolicy`].
+//!
+//! Failure reasons name the kind of failure only (status, transport, parse, policy), never
+//! upstream bodies, which can echo anything.
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
 
-use openidconnect::IssuerUrl;
 use openidconnect::core::CoreProviderMetadata;
+use openidconnect::{DiscoveryError, IssuerUrl};
 
-use super::http::{HttpFetch, ProviderHttp};
+use super::http::{FetchError, HttpFetch, ProviderHttp};
 use super::url_policy::EndpointPolicy;
 use crate::clock::SharedClock;
 
@@ -21,6 +26,8 @@ use crate::clock::SharedClock;
 pub(crate) const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 /// Minimum age of an entry before a key-rotation refetch.
 pub(crate) const MIN_REFRESH: Duration = Duration::from_secs(60);
+/// How long a failed fetch is answered from memory.
+pub const NEGATIVE_TTL: Duration = Duration::from_secs(30);
 
 /// Metadata of one provider, checked: issuer as configured, usable endpoints.
 pub(crate) struct Discovered {
@@ -29,10 +36,17 @@ pub(crate) struct Discovered {
     fetched: Duration,
 }
 
+/// A recent failure: when, and the reason.
+struct Failed {
+    at: Duration,
+    reason: String,
+}
+
 pub(crate) struct Discovery {
     fetch: Arc<dyn HttpFetch>,
     clock: SharedClock,
     entries: RwLock<HashMap<i64, Arc<Discovered>>>,
+    failures: RwLock<HashMap<i64, Failed>>,
 }
 
 /// Which entry a lookup accepts.
@@ -50,6 +64,7 @@ impl Discovery {
             fetch,
             clock,
             entries: RwLock::default(),
+            failures: RwLock::default(),
         }
     }
 
@@ -58,13 +73,11 @@ impl Discovery {
     }
 
     pub(crate) fn forget(&self, provider_id: i64) {
-        self.entries
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&provider_id);
+        write(&self.entries).remove(&provider_id);
+        write(&self.failures).remove(&provider_id);
     }
 
-    /// The provider's metadata; `Err` is a loggable reason (no secrets in it).
+    /// The provider's metadata; `Err` is a loggable reason (no secrets, no upstream text).
     pub(crate) async fn get(
         &self,
         provider_id: i64,
@@ -75,12 +88,25 @@ impl Discovery {
         if let Some(entry) = self.cached(provider_id, now, freshness) {
             return Ok(entry);
         }
-        let entry = Arc::new(self.fetch(issuer, now).await?);
-        self.entries
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(provider_id, Arc::clone(&entry));
-        Ok(entry)
+        if let Some(reason) = self.recent_failure(provider_id, now) {
+            return Err(format!("{reason} (remembered)"));
+        }
+        match self.fetch(issuer, now).await {
+            Ok(entry) => {
+                let entry = Arc::new(entry);
+                write(&self.failures).remove(&provider_id);
+                write(&self.entries).insert(provider_id, Arc::clone(&entry));
+                Ok(entry)
+            }
+            Err(reason) => {
+                let failed = Failed {
+                    at: now,
+                    reason: reason.clone(),
+                };
+                write(&self.failures).insert(provider_id, failed);
+                Err(reason)
+            }
+        }
     }
 
     fn cached(
@@ -99,6 +125,12 @@ impl Discovery {
         (age < max_age).then(|| Arc::clone(entry))
     }
 
+    fn recent_failure(&self, provider_id: i64, now: Duration) -> Option<String> {
+        let failures = self.failures.read().unwrap_or_else(PoisonError::into_inner);
+        let failed = failures.get(&provider_id)?;
+        (now.saturating_sub(failed.at) < NEGATIVE_TTL).then(|| failed.reason.clone())
+    }
+
     async fn fetch(&self, issuer: &str, now: Duration) -> Result<Discovered, String> {
         // As configured, character for character: the document's `issuer` and the tokens'
         // `iss` must equal it exactly.
@@ -108,7 +140,7 @@ impl Discovery {
         let http = ProviderHttp::new(self.fetch.as_ref(), policy);
         let metadata = CoreProviderMetadata::discover_async(issuer_url, &http)
             .await
-            .map_err(|err| format!("discovery failed: {}", error_chain(&err)))?;
+            .map_err(|err| format!("discovery failed: {}", discovery_kind(&err)))?;
         check_endpoints(&metadata, policy)?;
         Ok(Discovered {
             metadata,
@@ -116,6 +148,10 @@ impl Discovery {
             fetched: now,
         })
     }
+}
+
+fn write<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The browser is sent to the authorization endpoint (it must not be `javascript:` or plain
@@ -132,14 +168,27 @@ fn check_endpoints(metadata: &CoreProviderMetadata, policy: EndpointPolicy) -> R
         .map_err(|reason| format!("token endpoint refused: {reason}"))
 }
 
-/// `err` and its sources, for logs.
-pub(crate) fn error_chain(err: &(dyn std::error::Error + 'static)) -> String {
-    let mut text = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
+/// What went wrong, without the document's or response's content.
+fn discovery_kind(err: &DiscoveryError<FetchError>) -> String {
+    match err {
+        DiscoveryError::Request(fetch) => fetch_kind(fetch),
+        DiscoveryError::Response(status, _, _) => format!("HTTP status {status}"),
+        DiscoveryError::Parse(_) => "unparsable document".to_owned(),
+        DiscoveryError::UrlParse(_) => "bad URL".to_owned(),
+        DiscoveryError::Validation(_) => {
+            "the document failed validation (issuer mismatch?)".to_owned()
+        }
+        _ => "other discovery error".to_owned(),
     }
-    text
+}
+
+/// Our own transport errors carry no upstream text; the reqwest error is reduced to its
+/// kind (its message can contain the URL, which is fine, but nothing else is needed).
+pub(crate) fn fetch_kind(err: &FetchError) -> String {
+    match err {
+        FetchError::Transport(inner) if inner.is_timeout() => "request timed out".to_owned(),
+        FetchError::Transport(inner) if inner.is_connect() => "connection failed".to_owned(),
+        FetchError::Transport(_) => "request failed".to_owned(),
+        other => other.to_string(),
+    }
 }

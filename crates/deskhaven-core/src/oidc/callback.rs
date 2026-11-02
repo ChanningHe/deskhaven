@@ -183,7 +183,8 @@ impl OidcService {
                 other => other,
             }
             .map_err(|err| {
-                tracing::warn!(provider = %provider.name, error = %err, "OIDC ID token rejected");
+                let kind = protocol::rejection_kind(&err);
+                tracing::warn!(provider = %provider.name, kind, "OIDC ID token rejected");
                 Failure::InvalidToken
             })?;
         Asserted::from_claims(&claims, provider.group_claim.as_deref()).ok_or_else(|| {

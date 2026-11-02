@@ -19,7 +19,8 @@ deskhaven-db = { workspace = true }
 arc-swap = { workspace = true }
 sea-orm = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+# `net`: DNS lookups of the OIDC resolver (filtered, see `oidc::resolver`).
+tokio = { workspace = true, features = ["sync", "net"] }
 argon2 = { workspace = true }
 tracing = { workspace = true }
 governor = { workspace = true }
