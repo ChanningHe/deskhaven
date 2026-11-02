@@ -112,7 +112,18 @@ fn check_json(expect: &Expect, body: &[u8]) -> Vec<String> {
     shape.into_iter().chain(subset).chain(absent).collect()
 }
 
-/// Mismatches of `want` inside `got`, located by JSON pointer.
+/// By value: `1` equals `1.0`. Two integers compare exactly (serde_json's
+/// `==` also tells `1` from `1.0`; f64 would merge integers above 2^53).
+fn same_number(want: &serde_json::Number, got: &serde_json::Number) -> bool {
+    let is_integer = |n: &serde_json::Number| n.is_i64() || n.is_u64();
+    if is_integer(want) && is_integer(got) {
+        return want == got;
+    }
+    want.as_f64().is_some_and(|w| got.as_f64() == Some(w))
+}
+
+/// Mismatches of `want` inside `got`, located by JSON pointer. Numbers
+/// compare by value ([`same_number`]).
 fn subset(want: &Value, got: &Value, at: &str) -> Vec<String> {
     match (want, got) {
         (Value::Object(want), Value::Object(got)) => want
@@ -131,6 +142,7 @@ fn subset(want: &Value, got: &Value, at: &str) -> Vec<String> {
             .enumerate()
             .flat_map(|(i, (w, g))| subset(w, g, &format!("{at}/{i}")))
             .collect(),
+        (Value::Number(want), Value::Number(got)) if same_number(want, got) => Vec::new(),
         (want, got) if want == got => Vec::new(),
         (want, got) => {
             let at = if at.is_empty() { "(root)" } else { at };
@@ -256,6 +268,21 @@ mod tests {
             subset(&json!({ "nope": 1 }), &got, ""),
             vec!["json_subset: /nope is missing"]
         );
+    }
+
+    #[test]
+    fn subset_compares_numbers_by_value() {
+        let got = json!({ "total": 1, "ratio": 1.5, "big": 9_007_199_254_740_993_u64 });
+
+        assert!(subset(&json!({ "total": 1.0, "ratio": 1.5 }), &got, "").is_empty());
+        assert_eq!(subset(&json!({ "total": 2.0 }), &got, "").len(), 1);
+        assert_eq!(subset(&json!({ "ratio": 1 }), &got, "").len(), 1);
+        // Integers compare exactly (no detour through f64).
+        assert_eq!(
+            subset(&json!({ "big": 9_007_199_254_740_992_u64 }), &got, "").len(),
+            1
+        );
+        assert_eq!(subset(&json!({ "total": "1" }), &got, "").len(), 1);
     }
 
     #[test]

@@ -76,7 +76,7 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
 | `expect.headers` | response headers by name (names in any case): `"exact value"` or `{"contains": "..."}`; values are case-sensitive, a repeated header is joined with `", "`, a missing one fails (`{"Allow": "GET,HEAD", "content-type": "application/json"}`) |
 | `expect.body_kind` | `empty` (zero bytes), `json`, `text` (UTF-8) |
 | `expect.shape` | (json) mirror type name from `src/shapes.rs` that must parse the raw bytes |
-| `expect.json_subset` | (json) objects: listed keys match, others ignored; arrays: same length, element-wise; scalars: equal |
+| `expect.json_subset` | (json) objects: listed keys match, others ignored; arrays: same length, element-wise; scalars: equal, numbers by value (`1` == `1.0`; shape checks still see the exact type) |
 | `expect.json_absent` | (json) JSON pointers that must not exist (`/strategy`) |
 | `expect.text` | (text) exact body |
 
