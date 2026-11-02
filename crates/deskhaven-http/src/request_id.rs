@@ -1,6 +1,8 @@
-//! `x-request-id`: keep a well-formed incoming id only when the peer is a trusted
-//! proxy, otherwise generate a UUIDv4; visible to inner layers (tracing span) and
-//! echoed on every response.
+//! `x-request-id`: keep a well-formed incoming id only when the socket peer is a
+//! trusted proxy (never for [`crate::InternalPeer`]), otherwise generate a
+//! UUIDv4; visible to inner layers (tracing span) and echoed on every response.
+//! The proxy should overwrite the header rather than forward the client's (see
+//! the crate docs).
 
 use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue};
@@ -32,8 +34,8 @@ fn generate() -> HeaderValue {
 }
 
 fn incoming_id(req: &Request, trusted: &TrustedProxies) -> Option<HeaderValue> {
-    let (peer, _) = request_peer(req.extensions())?;
-    if !trusted.is_trusted(peer.ip()) {
+    let (peer, is_internal) = request_peer(req.extensions())?;
+    if is_internal || !trusted.is_trusted(peer.ip()) {
         return None;
     }
     req.headers()

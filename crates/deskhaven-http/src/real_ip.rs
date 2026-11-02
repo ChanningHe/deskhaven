@@ -77,11 +77,6 @@ impl TrustedProxies {
         self.client_ip(candidate)
     }
 
-    /// `addr` taken as the client as-is (no `X-Forwarded-For`).
-    pub fn direct(&self, addr: IpAddr) -> ClientIp {
-        self.client_ip(addr.to_canonical())
-    }
-
     fn client_ip(&self, addr: IpAddr) -> ClientIp {
         ClientIp {
             addr,
@@ -111,8 +106,14 @@ fn canonical_net(net: IpNet) -> IpNet {
 
 /// Peer of a request dispatched in-process (hbbs `HttpProxyRequest`, 03 §1.4),
 /// which has no socket. Only code can insert it; it never comes from headers.
-/// It takes precedence over `ConnectInfo`, and `X-Forwarded-For` is ignored for
-/// it (the tunnelled headers are client-controlled).
+///
+/// It takes precedence over `ConnectInfo` and is used as the client address
+/// as-is: the tunnelled headers are client-controlled, so `X-Forwarded-For` and
+/// `x-request-id` are ignored, and it is never a proxy fallback (it is the
+/// RustDesk client's own rendezvous connection).
+///
+/// The in-process dispatcher (M5-07) must target the **client_api router only**
+/// (wrapped by [`crate::apply_middleware`]), never the admin router.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InternalPeer(pub SocketAddr);
 
@@ -163,14 +164,16 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let (peer, is_internal) =
             request_peer(&parts.extensions).ok_or(ClientIpRejection::MissingPeer)?;
+        if is_internal {
+            return Ok(Self {
+                addr: peer.ip().to_canonical(),
+                is_proxy_fallback: false,
+            });
+        }
         let trusted = parts
             .extensions
             .get::<TrustedProxies>()
             .ok_or(ClientIpRejection::MissingTrustedProxies)?;
-        Ok(if is_internal {
-            trusted.direct(peer.ip())
-        } else {
-            trusted.resolve(peer.ip(), &parts.headers)
-        })
+        Ok(trusted.resolve(peer.ip(), &parts.headers))
     }
 }

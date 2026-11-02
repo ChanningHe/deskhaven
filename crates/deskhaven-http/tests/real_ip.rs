@@ -300,13 +300,13 @@ async fn internal_peer_takes_precedence_and_ignores_xff() {
 }
 
 #[tokio::test]
-async fn internal_peer_works_without_connect_info() {
+async fn internal_peer_works_without_connect_info_and_is_never_a_proxy_fallback() {
     let app = with_proxies(&["10.0.0.0/8"]);
     let mut req = ip_request(Some("198.51.100.7"));
     req.extensions_mut()
         .insert(InternalPeer("10.0.0.9:5000".parse().unwrap()));
     let got = call(app, req).await;
-    assert_eq!(got, (StatusCode::OK, "10.0.0.9 true".to_owned()));
+    assert_eq!(got, (StatusCode::OK, "10.0.0.9 false".to_owned()));
 }
 
 #[tokio::test]

@@ -12,7 +12,8 @@ use axum::http::{HeaderValue, Request, Response, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use deskhaven_http::{
-    ErrorBodies, HttpConfig, StackError, TrustedProxies, X_REQUEST_ID, apply_middleware,
+    ErrorBodies, HttpConfig, InternalPeer, StackError, TrustedProxies, X_REQUEST_ID,
+    apply_middleware,
 };
 use tower::ServiceExt;
 
@@ -238,6 +239,18 @@ async fn incoming_request_id_from_trusted_proxy_is_echoed() {
     let app = from_peer(behind_proxy(), "10.0.0.1:4000");
     let res = send(app, id_request("abc-123_x.y:z")).await;
     assert_eq!(response_id(&res), "abc-123_x.y:z");
+}
+
+/// Review L-b: in-process dispatch carries client-controlled headers.
+#[tokio::test]
+async fn incoming_request_id_is_ignored_for_internal_peer() {
+    let app = behind_proxy();
+    let mut req = id_request("tunnelled-id");
+    req.extensions_mut()
+        .insert(InternalPeer("10.0.0.1:4000".parse().unwrap()));
+    let id = response_id(&send(app, req).await);
+    assert_ne!(id, "tunnelled-id");
+    assert_eq!(id.len(), 36);
 }
 
 #[tokio::test]

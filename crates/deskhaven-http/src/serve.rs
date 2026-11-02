@@ -11,11 +11,14 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+use tower::ServiceExt;
 use url::Url;
 
+use crate::config::HttpConfig;
 use crate::conn::serve_listener;
-use crate::middleware::{HttpConfig, apply_middleware};
+use crate::middleware::apply_middleware;
 use crate::stack_error::ErrorBodies;
+use crate::{nofile, paths};
 
 const CLIENT_API: &str = "client_api";
 const ADMIN: &str = "admin";
@@ -36,14 +39,19 @@ pub struct ListenConfig {
 ///
 /// Single listener: requests not matched by `client_api` fall through to
 /// `admin`, so a path defined in both is served by `client_api` (any fallback
-/// on `client_api` is replaced). Keep the APIs on disjoint prefixes:
-/// `/api/*` (client) and `/admin/api/*` + console (admin).
+/// on `client_api` is replaced), except under `/api`: an unmatched `/api/*`
+/// path is a 404 rendered by the client renderer and never reaches `admin`.
+/// Keep the APIs on disjoint prefixes: `/api/*` (client) and `/admin/api/*` +
+/// console (admin). The SPA fallback of the admin router (deskhaven-web) must
+/// exclude both API prefixes so unknown API paths keep their JSON 404.
 /// Split: each router is served on its own listener.
 pub struct Apps {
     pub client_api: Router,
     pub admin: Router,
-    /// Bodies for stack-generated errors. Single listener: chosen by path;
-    /// split: each listener uses its own API's renderer for every path.
+    /// Bodies for stack-generated errors; only paths under the API prefixes are
+    /// re-rendered (see [`ErrorBodies`]). Single listener: `/api/*` uses
+    /// `client_api`, `/admin/api/*` uses `admin`. Split: each listener uses its
+    /// own API's renderer for both prefixes.
     pub errors: ErrorBodies,
 }
 
@@ -117,8 +125,10 @@ impl Listeners {
     /// Serve until `shutdown` is cancelled, then drain (see [`HttpConfig`]).
     /// Accept errors are logged and retried, so this only returns on shutdown.
     pub async fn serve(self, apps: Apps, cfg: &HttpConfig, shutdown: CancellationToken) {
+        let listeners = if self.admin.is_some() { 2 } else { 1 };
+        let cfg = &fit_descriptor_budget(cfg, listeners);
         let Some(admin) = self.admin else {
-            let router = apps.client_api.fallback_service(apps.admin);
+            let router = single_listener_router(apps.client_api, apps.admin);
             let router = apply_middleware(router, cfg, apps.errors);
             return serve_listener(CLIENT_API, self.client_api.listener, router, cfg, shutdown)
                 .await;
@@ -148,6 +158,37 @@ impl Listeners {
             ),
         );
     }
+}
+
+/// `cfg` with `max_connections` clamped to the `RLIMIT_NOFILE` budget.
+fn fit_descriptor_budget(cfg: &HttpConfig, listeners: usize) -> HttpConfig {
+    let soft = nofile::current_soft_limit();
+    let max_connections = nofile::connection_budget(cfg.max_connections, soft, listeners);
+    if max_connections < cfg.max_connections {
+        tracing::warn!(
+            configured = cfg.max_connections,
+            effective = max_connections,
+            nofile = soft,
+            "max_connections clamped to fit RLIMIT_NOFILE; raise the limit to serve more"
+        );
+    }
+    HttpConfig {
+        max_connections,
+        ..cfg.clone()
+    }
+}
+
+/// `client_api` first; unmatched paths go to `admin`, except under `/api`.
+fn single_listener_router(client_api: Router, admin: Router) -> Router {
+    client_api.fallback(move |req: Request| {
+        let admin = admin.clone();
+        async move {
+            if paths::is_client_api(req.uri().path()) {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            admin.oneshot(req).await.into_response()
+        }
+    })
 }
 
 /// An absolute http(s) URL that is also a valid header value (the raw input is
