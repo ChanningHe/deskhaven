@@ -7,38 +7,68 @@
 //!   bucket. See `ip.rs`.
 //! - [`AccountLockout`]: persistent attempt counters per username, surviving restarts.
 //!   Each attempt counts on two rows (`key.rs`): the username **from this source** (IPv4 /
-//!   IPv6 /64 / `fallback`), with exponential backoff up to 24h, and the username
-//!   **globally**, with 4× the threshold and a fixed `auth.lockout.duration`. One attacker
-//!   can therefore lock a username only for its own source; a distributed attack locks it
-//!   for at most `auth.lockout.duration` at a time. [`LoginThrottle::unlock`] clears all of
-//!   a username's rows (admin unlock, M3-04). See `policy.rs` for the exact rules.
+//!   IPv6 **/48** / `fallback`), with exponential backoff up to 24h, and the username
+//!   **globally**, with [`GLOBAL_FACTOR`]× the threshold and a fixed `auth.lockout.duration`.
+//!   One attacker can therefore lock a username only for its own source; a distributed
+//!   attack locks it for at most `auth.lockout.duration` at a time, and never for a **known
+//!   source** (one that completed a login of that username within
+//!   [`KNOWN_SOURCE_RETENTION`]). With `auth.lockout.window <= 4 × auth.lockout.duration`
+//!   (a settings rule) a single source alone can never trip the global row.
+//!   [`LoginThrottle::unlock`] clears all of a username's rows (admin unlock, M3-04). See
+//!   `policy.rs` and `lockout.rs` for the exact rules.
 //!
 //! # Handler protocol (count before verify)
+//!
+//! One-step login (no second factor):
 //!
 //! ```text
 //! let attempt = throttle.pre_check(client, username).await?;  // Throttled -> 429, no verification
 //! match verify(username, password).await {
-//!     Ok(user)  => throttle.on_success(attempt).await?,     // clears this source + global rows
+//!     Ok(user)  => throttle.on_success(attempt).await?,     // login complete
 //!     Err(Busy) => { throttle.refund(attempt).await?; 503 } // never counted
 //!     Err(_)    => throttle.on_failure(attempt),            // already counted; same response
 //! }                                                         // for unknown accounts
 //! ```
 //!
+//! Two-step login (password, then TOTP / email code). `on_success` is only for a **fully**
+//! authenticated login: calling it after the password alone would reset the budget and let
+//! a password holder alternate password and second-factor guesses forever.
+//!
+//! ```text
+//! // step 1
+//! let attempt = throttle.pre_check(client, username).await?;
+//! verify(username, password) ok -> let pending = throttle.on_password_ok_pending_2fa(attempt);
+//!                                  store pending.parts() in the challenge
+//! // step 2 (same username key; any client)
+//! let pending = PendingSubject::from_parts(..)?;
+//! let attempt = throttle.pre_check(client, username).await?;
+//! match verify_second_factor(..) {
+//!     Ok  => throttle.complete(pending, attempt).await?,
+//!     Err => throttle.on_failure(attempt),                  // counts against the same budget
+//! }
+//! ```
+//!
 //! `pre_check` reserves the attempt in the same write transaction that checks the lock, so
 //! concurrent requests cannot all slip past a check made before any of them failed: per lock
-//! cycle at most `max_failures` verifications run per source. Dropping the [`Attempt`]
-//! without reporting counts as a failure.
+//! cycle at most `max_failures` verifications run per source, password and second factor
+//! together. Dropping an [`Attempt`] without reporting counts as a failure.
 //!
 //! Endpoints:
-//! - Client `/api/login` and console login: the full protocol above.
-//! - 2FA verification: the same protocol with the **same username key** as the first step,
-//!   so second-factor guessing shares the password's budget.
+//! - Client `/api/login` and console login: the protocols above.
+//! - 2FA verification: step 2 above, with the **same username key** as the first step.
 //! - OIDC initiation: [`IpLimiter::check`] only (there is no username to count).
+//!
+//! **Proxy fallback**: requests whose address resolved to a trusted proxy
+//! (`ClientAddr::is_proxy_fallback`) all share the source `fallback` — and one IP bucket — by
+//! design: their real clients cannot be told apart, so one client's failures lock the
+//! username for all of them. This only happens with a misconfigured proxy or a client inside
+//! `trusted_proxies`, and `ip.rs` logs a rate-limited warning when it does.
 //!
 //! Nothing here looks the account up, so [`ThrottleError::Throttled`] is the same for
 //! existing and unknown usernames. Equal timing of the verification itself (dummy Argon2)
 //! is the user service's job.
 
+mod cleanup;
 mod ip;
 mod key;
 mod lockout;
@@ -49,10 +79,12 @@ use std::time::Duration;
 
 use sea_orm::{DatabaseConnection, DbErr};
 
+pub use cleanup::{LOCKOUT_RETENTION, UNLOCKED_RETENTION};
 pub use ip::{FALLBACK_FACTOR, FALLBACK_WARN_INTERVAL, IpLimiter, SWEEP_EVERY, ip_key};
-pub use key::Subject;
+pub use key::{LOCKOUT_IPV6_PREFIX, Subject, source_prefix};
 pub use lockout::{
-    AccountLockout, Attempt, LOCKOUT_RETENTION, LockStatus, Reserved, UNLOCKED_RETENTION,
+    AccountLockout, Attempt, KNOWN_SOURCE_RETENTION, LockStatus, MAX_LOCKOUT_ROWS, PendingSubject,
+    Reserved,
 };
 pub use policy::{GLOBAL_FACTOR, LEVEL_DECAY, MAX_LOCK};
 
@@ -119,9 +151,21 @@ impl LoginThrottle {
         attempt.status()
     }
 
-    /// Verification succeeded: clears the username's counters for this source and globally.
+    /// The login is **fully** authenticated (no second factor pending): deletes the
+    /// username's global row and makes this source a known source.
     pub async fn on_success(&self, attempt: Attempt) -> Result<(), DbErr> {
         self.accounts.release(attempt).await
+    }
+
+    /// The password was right but a second factor is still required. The attempt stays
+    /// counted; store the returned subject with the challenge.
+    pub fn on_password_ok_pending_2fa(&self, attempt: Attempt) -> PendingSubject {
+        PendingSubject::from_subject(attempt.subject().clone())
+    }
+
+    /// The second factor (reserved as `second`) succeeded: the login is complete.
+    pub async fn complete(&self, pending: PendingSubject, second: Attempt) -> Result<(), DbErr> {
+        self.accounts.complete(pending, second).await
     }
 
     /// Verification never ran (password hasher busy -> 503): the attempt is not counted.

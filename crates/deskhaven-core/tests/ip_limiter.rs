@@ -6,12 +6,65 @@
 mod common;
 
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::time::Duration;
 
-use common::{MINUTE, clock, set, settings};
+use common::{MINUTE, T0_MS, clock, set, settings};
 use deskhaven_core::auth::limiter::{ClientAddr, FALLBACK_FACTOR, IpLimiter, SWEEP_EVERY};
+use deskhaven_core::clock::Clock;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
+use deskhaven_db::time::{self, TimestampMs};
 use serde_json::json;
+
+/// A clock whose wall and monotonic readings move independently, like a host whose wall
+/// clock is stepped by NTP or an operator.
+#[derive(Debug)]
+struct SteppedWallClock {
+    wall_ms: AtomicI64,
+    mono_ms: AtomicU64,
+}
+
+impl Clock for SteppedWallClock {
+    fn now(&self) -> TimestampMs {
+        time::from_millis(self.wall_ms.load(Ordering::SeqCst)).unwrap()
+    }
+
+    fn elapsed(&self) -> Duration {
+        Duration::from_millis(self.mono_ms.load(Ordering::SeqCst))
+    }
+}
+
+#[tokio::test]
+async fn buckets_follow_the_monotonic_reading_not_the_wall_clock() {
+    each_migrated_backend(async |db: &TestDb| {
+        let settings = settings(db).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(1)).await;
+        let clock = Arc::new(SteppedWallClock {
+            wall_ms: AtomicI64::new(T0_MS),
+            mono_ms: AtomicU64::new(0),
+        });
+        let limiter = IpLimiter::new(settings, clock.clone());
+        assert!(limiter.check(client("192.0.2.1")).is_ok());
+
+        // Wall clock stepped forward a day: no refill.
+        clock.wall_ms.fetch_add(86_400_000, Ordering::SeqCst);
+        assert!(limiter.check(client("192.0.2.1")).is_err());
+        // Stepped back two days: no change either.
+        clock.wall_ms.fetch_sub(2 * 86_400_000, Ordering::SeqCst);
+        assert_eq!(
+            limiter.check(client("192.0.2.1")).unwrap_err(),
+            MINUTE,
+            "{}",
+            db.backend
+        );
+
+        // Only monotonic time refills.
+        clock.mono_ms.fetch_add(60_000, Ordering::SeqCst);
+        assert!(limiter.check(client("192.0.2.1")).is_ok());
+    })
+    .await;
+}
 
 fn client(addr: &str) -> ClientAddr {
     ClientAddr {

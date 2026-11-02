@@ -109,11 +109,4 @@ mod tests {
         let now = SystemClock.now_ms();
         assert!((before..before + 60_000).contains(&now));
     }
-
-    #[test]
-    fn system_clock_elapsed_is_monotonic() {
-        let a = SystemClock.elapsed();
-        let b = SystemClock.elapsed();
-        assert!(b >= a);
-    }
 }

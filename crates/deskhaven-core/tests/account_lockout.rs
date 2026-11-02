@@ -7,117 +7,19 @@
 
 mod common;
 
-use std::net::IpAddr;
-use std::sync::Arc;
-use std::time::Duration;
-
-use common::{MINUTE, T0_MS, clock, set, settings};
+use common::lockout::*;
+use common::{MINUTE, T0_MS, set, settings};
 use deskhaven_core::auth::limiter::{
-    AccountLockout, Attempt, ClientAddr, LEVEL_DECAY, LOCKOUT_RETENTION, LockStatus, MAX_LOCK,
-    Reserved, Subject, UNLOCKED_RETENTION,
+    AccountLockout, ClientAddr, LEVEL_DECAY, LOCKOUT_RETENTION, LockStatus, MAX_LOCK, Reserved,
+    Subject, UNLOCKED_RETENTION,
 };
-use deskhaven_core::clock::ManualClock;
-use deskhaven_core::settings::SettingsService;
-use deskhaven_db::entity::auth_lockout;
 use deskhaven_db::entity::user::{self, AuthSource, Role, Status};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time;
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait};
+use sea_orm::{ActiveModelTrait, EntityTrait};
 use serde_json::json;
 use tokio::task::JoinSet;
-
-const PARALLEL: usize = 20;
-const IP_A: &str = "192.0.2.1";
-const IP_B: &str = "198.51.100.1";
-
-struct Fixture {
-    settings: SettingsService,
-    clock: Arc<ManualClock>,
-    lockout: AccountLockout,
-}
-
-/// `max_failures`, window 15m, base duration 15m.
-async fn fixture(db: &TestDb, max_failures: u32) -> Fixture {
-    let settings = settings(db).await;
-    set(&settings, "auth.lockout.max_failures", json!(max_failures)).await;
-    let clock = clock();
-    let lockout = AccountLockout::new(db.conn.clone(), settings.clone(), clock.clone());
-    Fixture {
-        settings,
-        clock,
-        lockout,
-    }
-}
-
-fn client(addr: &str) -> ClientAddr {
-    ClientAddr {
-        addr: addr.parse::<IpAddr>().unwrap(),
-        is_proxy_fallback: false,
-    }
-}
-
-fn subject(name: &str, addr: &str) -> Subject {
-    Subject::new(client(addr), name)
-}
-
-/// What a login handler sees for one attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Outcome {
-    /// Verification may run; `Locked` if this attempt started a lock.
-    Granted(LockStatus),
-    Throttled(Duration),
-}
-
-fn outcome(reserved: Reserved) -> Outcome {
-    match reserved {
-        Reserved::Granted(attempt) => Outcome::Granted(attempt.status()),
-        Reserved::Locked { retry_after } => Outcome::Throttled(retry_after),
-    }
-}
-
-fn starts_lock(minutes: u32) -> Outcome {
-    Outcome::Granted(LockStatus::Locked {
-        retry_after: MINUTE * minutes,
-    })
-}
-
-fn throttled(minutes: u32) -> Outcome {
-    Outcome::Throttled(MINUTE * minutes)
-}
-
-const GRANTED: Outcome = Outcome::Granted(LockStatus::Allowed);
-
-/// `n` failed attempts (reserved, attempt dropped); the last outcome.
-async fn fail(lockout: &AccountLockout, subject: &Subject, n: usize) -> Outcome {
-    let mut last = GRANTED;
-    for _ in 0..n {
-        last = outcome(lockout.reserve(subject).await.unwrap());
-    }
-    last
-}
-
-async fn granted(lockout: &AccountLockout, subject: &Subject) -> Attempt {
-    match lockout.reserve(subject).await.unwrap() {
-        Reserved::Granted(attempt) => attempt,
-        Reserved::Locked { retry_after } => panic!("unexpectedly locked for {retry_after:?}"),
-    }
-}
-
-async fn row(db: &TestDb, key: &str) -> Option<auth_lockout::Model> {
-    auth_lockout::Entity::find_by_id(key)
-        .one(&db.conn)
-        .await
-        .unwrap()
-}
-
-async fn failures(db: &TestDb, key: &str) -> i32 {
-    row(db, key).await.map_or(0, |r| r.failures)
-}
-
-async fn row_count(db: &TestDb) -> u64 {
-    auth_lockout::Entity::find().count(&db.conn).await.unwrap()
-}
 
 async fn insert_user(db: &TestDb, username: &str) {
     let t0 = time::from_millis(T0_MS).unwrap();
@@ -199,13 +101,14 @@ async fn window_threshold_and_duration_follow_settings_changes() {
         assert_eq!(fail(&f.lockout, &alice, 2).await, GRANTED);
 
         set(&f.settings, "auth.lockout.max_failures", json!(3)).await;
+        // window <= 4 × duration (cross-key rule): shrink the window first.
+        set(&f.settings, "auth.lockout.window", json!("8m")).await;
         set(&f.settings, "auth.lockout.duration", json!("2m")).await;
         assert_eq!(fail(&f.lockout, &alice, 1).await, starts_lock(2));
 
-        set(&f.settings, "auth.lockout.window", json!("1m")).await;
         let bob = subject("bob", IP_A);
         assert_eq!(fail(&f.lockout, &bob, 2).await, GRANTED);
-        f.clock.advance(MINUTE);
+        f.clock.advance(MINUTE * 8);
         assert_eq!(fail(&f.lockout, &bob, 2).await, GRANTED);
     })
     .await;
@@ -504,7 +407,7 @@ async fn refund_after_the_rows_were_cleared_is_a_no_op() {
 // --- success, anti-enumeration, persistence -------------------------------------------------
 
 #[tokio::test]
-async fn success_resets_this_source_and_the_global_row_only() {
+async fn success_deletes_the_global_row_and_keeps_the_source_as_known() {
     each_migrated_backend(async |db: &TestDb| {
         let f = fixture(db, 3).await;
         let alice = subject("alice", IP_A);
@@ -514,7 +417,17 @@ async fn success_resets_this_source_and_the_global_row_only() {
         let attempt = granted(&f.lockout, &alice).await;
         f.lockout.release(attempt).await.unwrap();
 
-        assert!(row(db, &alice.source_key()).await.is_none());
+        let source = row(db, &alice.source_key()).await.unwrap();
+        assert_eq!(
+            (source.failures, source.locked_until, source.lock_level),
+            (0, None, 0),
+            "{}",
+            db.backend
+        );
+        assert_eq!(
+            source.last_success_at.map(|t| t.timestamp_millis()),
+            Some(T0_MS)
+        );
         assert!(row(db, &alice.global_key()).await.is_none());
         assert_eq!(failures(db, &subject("alice", IP_B).source_key()).await, 2);
         assert_eq!(fail(&f.lockout, &alice, 2).await, GRANTED);
@@ -654,6 +567,29 @@ async fn success_refund_and_unlock_racing_attempts_never_error() {
             "{}: {results:?}",
             db.backend
         );
+        // Final state is consistent: counts within 0..threshold, nothing locked (100 >> 25
+        // attempts per row), the global row is never above the sum of its sources, and one
+        // more sequential success leaves exactly the known source rows.
+        let rows = deskhaven_db::entity::auth_lockout::Entity::find()
+            .all(&db.conn)
+            .await
+            .unwrap();
+        for r in &rows {
+            assert!((0..=100).contains(&r.failures), "{}: {r:?}", db.backend);
+            assert_eq!(
+                (r.locked_until, r.lock_level),
+                (None, 0),
+                "{}: {r:?}",
+                db.backend
+            );
+        }
+        let alice = |ip| subject("alice", ip);
+        let sources = failures(db, &alice(IP_A).source_key()).await
+            + failures(db, &alice(IP_B).source_key()).await;
+        assert!(failures(db, &alice(IP_A).global_key()).await <= sources);
+        succeed(&f.lockout, "alice", IP_A).await;
+        assert!(row(db, &alice(IP_A).global_key()).await.is_none());
+        assert_eq!(failures(db, &alice(IP_A).source_key()).await, 0);
     })
     .await;
 }

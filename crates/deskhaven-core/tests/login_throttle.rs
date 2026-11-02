@@ -9,9 +9,10 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{MINUTE, clock, set, settings};
+use common::{MINUTE, clock, lockout, set, settings};
 use deskhaven_core::auth::limiter::{
-    Attempt, ClientAddr, LOCKOUT_RETENTION, LockStatus, LoginThrottle, ThrottleError,
+    Attempt, ClientAddr, LOCKOUT_RETENTION, LockStatus, LoginThrottle, PendingSubject,
+    ThrottleError,
 };
 use deskhaven_core::clock::ManualClock;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
@@ -211,4 +212,119 @@ async fn cleanup_sweeps_ip_buckets_and_stale_rows() {
         assert_eq!(throttle.ip().tracked_clients(), 0);
     })
     .await;
+}
+
+// --- M-1: two-step logins share one budget ---------------------------------------------------
+
+#[tokio::test]
+async fn password_ok_with_failing_second_factor_reaches_the_lock() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, _) = throttle(db).await;
+        let from = client("192.0.2.1");
+        let mut verifications = 0;
+
+        // A password holder loops: password ok -> one TOTP guess -> password again ...
+        let throttled = loop {
+            let password = match throttle.pre_check(from, "alice").await {
+                Ok(attempt) => attempt,
+                Err(e) => break e,
+            };
+            verifications += 1;
+            let _pending = throttle.on_password_ok_pending_2fa(password);
+            let totp = match throttle.pre_check(from, "alice").await {
+                Ok(attempt) => attempt,
+                Err(e) => break e,
+            };
+            verifications += 1;
+            throttle.on_failure(totp);
+            assert!(verifications < 10, "{}: the budget never ran out", db.backend);
+        };
+
+        assert!(
+            matches!(throttled, ThrottleError::Throttled { retry_after } if retry_after == MINUTE * 15),
+            "{}: {throttled:?}",
+            db.backend
+        );
+        assert_eq!(verifications, 3, "{}: max_failures caps both steps together", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn completed_second_factor_releases_and_marks_the_source_known() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, _) = throttle(db).await;
+        let from = client("192.0.2.1");
+        let password = throttle.pre_check(from, "alice").await.unwrap();
+        let pending = throttle.on_password_ok_pending_2fa(password);
+        let totp = throttle.pre_check(from, "alice").await.unwrap();
+
+        throttle.complete(pending, totp).await.unwrap();
+
+        let alice = lockout::subject("alice", "192.0.2.1");
+        assert!(lockout::row(db, &alice.global_key()).await.is_none());
+        let source = lockout::row(db, &alice.source_key()).await.unwrap();
+        assert_eq!(source.failures, 0, "{}", db.backend);
+        assert!(source.last_success_at.is_some());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn completing_from_another_source_marks_both_sources_known() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, _) = throttle(db).await;
+        let password = throttle
+            .pre_check(client("192.0.2.1"), "alice")
+            .await
+            .unwrap();
+        let pending = throttle.on_password_ok_pending_2fa(password);
+        let totp = throttle
+            .pre_check(client("198.51.100.9"), "alice")
+            .await
+            .unwrap();
+
+        throttle.complete(pending, totp).await.unwrap();
+
+        for ip in ["192.0.2.1", "198.51.100.9"] {
+            let key = lockout::subject("alice", ip).source_key();
+            let row = lockout::row(db, &key).await.unwrap();
+            assert_eq!(row.failures, 0, "{}: {ip}", db.backend);
+            assert!(row.last_success_at.is_some(), "{}: {ip}", db.backend);
+        }
+    })
+    .await;
+}
+
+#[test]
+fn pending_subject_round_trips_through_stored_parts_and_rejects_tampering() {
+    let subject = lockout::subject("Alice", "2001:db8:1:2::9");
+    let pending = PendingSubject::from_parts(subject.name(), subject.source()).unwrap();
+    assert_eq!(pending.subject(), &subject);
+    assert_eq!(pending.parts(), ("alice", "2001:db8:1::"));
+
+    for (name, source) in [
+        ("alice", "192.0.2.1"),
+        ("alice", "fallback"),
+        ("~malformed", "2001:db8:1::"),
+    ] {
+        assert!(
+            PendingSubject::from_parts(name, source).is_some(),
+            "{name} {source}"
+        );
+    }
+    for (name, source) in [
+        ("Alice", "192.0.2.1"),        // not normalized
+        ("al ice", "192.0.2.1"),       // malformed but not the shared name
+        ("alice", "*"),                // the global row
+        ("alice", "2001:db8:1:2::"),   // not a /48 network
+        ("alice", "::ffff:192.0.2.1"), // not canonical
+        ("alice", "garbage"),
+        ("alice|x", "192.0.2.1"),
+    ] {
+        assert!(
+            PendingSubject::from_parts(name, source).is_none(),
+            "{name} {source}"
+        );
+    }
 }

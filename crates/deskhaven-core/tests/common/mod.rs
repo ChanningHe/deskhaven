@@ -13,6 +13,8 @@ use deskhaven_core::settings::{SettingsService, UpdateRequest};
 use deskhaven_db::testing::TestDb;
 use serde_json::Value as Json;
 
+pub mod lockout;
+
 /// A fixed instant with a non-zero millisecond part.
 pub const T0_MS: i64 = 1_700_000_000_123;
 pub const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);

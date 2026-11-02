@@ -23,15 +23,17 @@ use std::time::Duration;
 
 use deskhaven_config::settings::Snapshot;
 use deskhaven_config::settings::{
-    AUTH_LOCKOUT_DURATION, AUTH_LOCKOUT_MAX_FAILURES, AUTH_LOCKOUT_WINDOW,
+    AUTH_LOCKOUT_DURATION, AUTH_LOCKOUT_MAX_FAILURES, AUTH_LOCKOUT_WINDOW, LOCKOUT_GLOBAL_FACTOR,
 };
 
 /// Upper bound of one lock (05-config §3.6).
 pub const MAX_LOCK: Duration = Duration::from_secs(24 * 60 * 60);
 /// Quiet period after which the backoff level resets.
 pub const LEVEL_DECAY: Duration = Duration::from_secs(24 * 60 * 60);
-/// The global row's threshold is this many times the per-source one.
-pub const GLOBAL_FACTOR: i32 = 4;
+/// The global row's threshold is this many times the per-source one. Shared with the
+/// settings rule `auth.lockout.window <= 4 × auth.lockout.duration`.
+#[allow(clippy::cast_possible_wrap)] // 4
+pub const GLOBAL_FACTOR: i32 = LOCKOUT_GLOBAL_FACTOR as i32;
 /// Highest stored level. `duration` is at least 1 minute, and 1m × 2^11 already exceeds
 /// [`MAX_LOCK`], so higher levels would not change anything.
 const MAX_LEVEL: i32 = 11;

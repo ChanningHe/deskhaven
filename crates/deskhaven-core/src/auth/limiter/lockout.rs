@@ -1,7 +1,17 @@
 //! Persistent attempt counting and lockout (`auth_lockouts`), count-before-verify.
 //!
 //! Keys (`key.rs`) never depend on whether the account exists, so an unknown username is
-//! counted and locked exactly like a real one. The state machine lives in `policy.rs`.
+//! counted and locked exactly like a real one. The state machine lives in `policy.rs`,
+//! maintenance (retention, row cap) in `cleanup.rs`.
+//!
+//! # Known sources
+//!
+//! A successful login keeps its source row (count, lock and level cleared) and stamps
+//! `last_success_at`. For [`KNOWN_SOURCE_RETENTION`] after that, the source is **known**:
+//! the global row does not block it (its own row still does). This keeps a distributed
+//! attack, which can hold the global row locked indefinitely, from locking out a user who
+//! logs in from where they logged in before. Fresh sources (zero failures included) get no
+//! such pass, otherwise the global row would bind nobody.
 //!
 //! # Concurrency
 //!
@@ -10,37 +20,36 @@
 //! created if missing, returned, and on PostgreSQL row-locked until commit), then the next
 //! states are written. SQLite: `BEGIN IMMEDIATE` makes concurrent writers wait their turn.
 //! PostgreSQL: the upsert's row lock serializes the read-modify-write; a concurrent success
-//! `DELETE` waits for it instead of making the row vanish mid-transaction. Either way no
-//! attempt is lost, and every lock cycle grants at most `threshold` attempts.
+//! waits for it instead of changing the row mid-transaction. Either way no attempt is lost,
+//! and every lock cycle grants at most `threshold` attempts.
 //!
-//! **Lock order** (PostgreSQL deadlock freedom): every transaction touching a username's
-//! rows locks its global row (`user:<name>|*`) before any of its source rows, one statement
-//! per row. `reserve`, `release`, `refund` and `unlock` all follow it; `cleanup` only
-//! deletes rows nobody has touched for a day or more.
+//! **Lock order** (PostgreSQL deadlock freedom): every transaction that locks rows of a
+//! username locks its global row (`user:<name>|*`) before any of its source rows, one
+//! statement per row. `reserve`, `release`, `complete`, `refund` and `unlock` follow it.
+//! `cleanup` never waits for a row lock at all (`FOR UPDATE SKIP LOCKED`), so it cannot be
+//! part of a deadlock either.
 
 use std::time::Duration;
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::auth_lockout::{self, Column};
 use deskhaven_db::time::{self, TimestampMs};
-use sea_orm::ActiveValue::{Set, Unchanged};
+use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::sea_query::{Expr, LikeExpr, OnConflict, Query};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
-    DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbErr,
+    EntityTrait, QueryFilter, QuerySelect,
 };
 
 use super::key::{LIKE_ESCAPE, Subject, global_key_of, name_of, username_pattern};
-use super::policy::{LEVEL_DECAY, MAX_LOCK, Policy, Reservation, State, millis};
+use super::policy::{Policy, Reservation, State, millis};
 use crate::clock::SharedClock;
 use crate::settings::SettingsService;
 
-/// A row older than this no longer affects any decision: a window lasts at most 24h (the
-/// `auth.lockout.window` maximum, equal to [`MAX_LOCK`]), a lock set at `updated_at` ends by
-/// `updated_at + MAX_LOCK`, and its level is forgotten [`LEVEL_DECAY`] after that.
-pub const LOCKOUT_RETENTION: Duration = MAX_LOCK.saturating_add(LEVEL_DECAY);
-/// A row that never locked only matters while its window is open (at most 24h).
-pub const UNLOCKED_RETENTION: Duration = MAX_LOCK;
+/// How long a successful login makes its source a known source of the username.
+pub const KNOWN_SOURCE_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+/// Default hard cap on `auth_lockouts` rows ([`AccountLockout::with_max_rows`]).
+pub const MAX_LOCKOUT_ROWS: u64 = 100_000;
 
 /// Outcome of a read-only lockout check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +92,32 @@ impl Attempt {
     }
 }
 
+/// The first step of a two-step login passed; the attempt stays counted until the second
+/// factor completes ([`AccountLockout::complete`]). Store [`PendingSubject::parts`] with the
+/// challenge and rebuild it with [`PendingSubject::from_parts`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSubject(Subject);
+
+impl PendingSubject {
+    pub(super) fn from_subject(subject: Subject) -> Self {
+        Self(subject)
+    }
+
+    pub fn subject(&self) -> &Subject {
+        &self.0
+    }
+
+    /// `(name, source)`, both plain text, for storage.
+    pub fn parts(&self) -> (&str, &str) {
+        (self.0.name(), self.0.source())
+    }
+
+    /// `None` unless the parts are exactly what [`PendingSubject::parts`] produces.
+    pub fn from_parts(name: &str, source: &str) -> Option<Self> {
+        Subject::from_parts(name, source).map(Self)
+    }
+}
+
 /// Outcome of [`AccountLockout::reserve`].
 #[derive(Debug)]
 pub enum Reserved {
@@ -94,9 +129,10 @@ pub enum Reserved {
 /// apply immediately. Cheap to clone.
 #[derive(Clone)]
 pub struct AccountLockout {
-    db: DatabaseConnection,
-    settings: SettingsService,
-    clock: SharedClock,
+    pub(super) db: DatabaseConnection,
+    pub(super) settings: SettingsService,
+    pub(super) clock: SharedClock,
+    pub(super) max_rows: u64,
 }
 
 impl AccountLockout {
@@ -105,21 +141,27 @@ impl AccountLockout {
             db,
             settings,
             clock,
+            max_rows: MAX_LOCKOUT_ROWS,
         }
     }
 
-    /// Whether `subject` is locked now (by its source row or the global row). Read-only.
+    /// The same lockout with another hard row cap (see `cleanup`).
+    pub fn with_max_rows(self, max_rows: u64) -> Self {
+        Self { max_rows, ..self }
+    }
+
+    /// Whether `subject` is locked now (by its source row, or by the global row unless it is
+    /// a known source). Read-only.
     pub async fn check(&self, subject: &Subject) -> Result<LockStatus, DbErr> {
         let now = self.clock.now_ms();
-        let rows = auth_lockout::Entity::find()
-            .filter(Column::Key.is_in([subject.source_key(), subject.global_key()]))
-            .all(&self.db)
-            .await?;
-        let retry_after = rows
-            .iter()
-            .filter_map(|row| state_of(row).retry_after(now))
-            .max();
-        Ok(LockStatus::of(retry_after))
+        let find = |key: String| auth_lockout::Entity::find_by_id(key).one(&self.db);
+        let global = find(subject.global_key()).await?;
+        let source = find(subject.source_key()).await?;
+        Ok(LockStatus::of(blocking(
+            source.as_ref(),
+            global.as_ref(),
+            now,
+        )))
     }
 
     /// Counts one attempt for `subject` unless it is locked. The attempt that reaches a
@@ -134,16 +176,13 @@ impl AccountLockout {
 
         let txn = begin_write(&self.db).await?;
         // Lock order: global row first (see module docs).
-        let global = state_of(&upsert(&txn, &global_key, now_ms).await?);
-        let source = state_of(&upsert(&txn, &source_key, now_ms).await?);
-        let locked = [source, global]
-            .iter()
-            .filter_map(|s| s.retry_after(now_ms))
-            .max();
-        if let Some(retry_after) = locked {
+        let global_row = upsert(&txn, &global_key, now_ms).await?;
+        let source_row = upsert(&txn, &source_key, now_ms).await?;
+        if let Some(retry_after) = blocking(Some(&source_row), Some(&global_row), now_ms) {
             txn.rollback().await?;
             return Ok(Reserved::Locked { retry_after });
         }
+        let (global, source) = (state_of(&global_row), state_of(&source_row));
         let next_source = source_policy.on_attempt(source, now_ms);
         let next_global = global_policy.on_attempt(global, now_ms);
         write(&txn, &global_key, next_global, now).await?;
@@ -160,9 +199,11 @@ impl AccountLockout {
         };
         warn_new_lock(subject, "source", &source, now_ms);
         warn_new_lock(subject, "global", &global, now_ms);
-        let retry_after = [next_source, next_global]
+        // Only locks this attempt started (a known source may pass a global lock in force).
+        let retry_after = [source, global]
             .iter()
-            .filter_map(|s| s.retry_after(now_ms))
+            .filter(|r| r.before.starts_lock(&r.after))
+            .filter_map(|r| r.after.retry_after(now_ms))
             .max();
         Ok(Reserved::Granted(Attempt {
             subject: subject.clone(),
@@ -172,15 +213,23 @@ impl AccountLockout {
         }))
     }
 
-    /// The attempt succeeded: forgets the counters (and backoff) of its source row and the
-    /// global row. Other sources' rows stay.
+    /// The attempt completed a login: deletes the username's global row and makes the
+    /// attempt's source a known source (count, lock and level cleared, `last_success_at`
+    /// stamped). Other sources' rows stay.
     pub async fn release(&self, attempt: Attempt) -> Result<(), DbErr> {
-        let txn = begin_write(&self.db).await?;
-        // One statement per row, global first: `key IN (..)` would lock in heap order.
-        for key in [attempt.subject.global_key(), attempt.subject.source_key()] {
-            auth_lockout::Entity::delete_by_id(key).exec(&txn).await?;
+        self.mark_known(attempt.subject.name(), &[attempt.subject.source_key()])
+            .await
+    }
+
+    /// A two-step login completed: releases the first step's source and, when it is the same
+    /// username, the second factor's source too.
+    pub async fn complete(&self, pending: PendingSubject, second: Attempt) -> Result<(), DbErr> {
+        let first = pending.0;
+        let mut sources = vec![first.source_key()];
+        if second.subject.name() == first.name() && second.subject != first {
+            sources.push(second.subject.source_key());
         }
-        txn.commit().await
+        self.mark_known(first.name(), &sources).await
     }
 
     /// Verification never ran (e.g. the password hasher was busy): gives the attempt back.
@@ -205,8 +254,8 @@ impl AccountLockout {
         txn.commit().await
     }
 
-    /// Clears every row of `username` (global and all sources); returns how many. For the
-    /// admin unlock (M3-04).
+    /// Clears every row of `username` (global and all sources, known ones included);
+    /// returns how many. For the admin unlock (M3-04).
     pub async fn unlock(&self, username: &str) -> Result<u64, DbErr> {
         let name = name_of(username);
         let txn = begin_write(&self.db).await?;
@@ -226,25 +275,52 @@ impl AccountLockout {
         Ok(result.rows_affected)
     }
 
-    /// Deletes rows that no longer affect any decision: untouched for
-    /// [`LOCKOUT_RETENTION`], or never locked and untouched for [`UNLOCKED_RETENTION`].
-    /// Returns how many. Scheduled by the maintenance task (M2-20).
-    pub async fn cleanup(&self) -> Result<u64, DbErr> {
-        let now = self.clock.now_ms();
-        let cutoff = |age: Duration| at(now.saturating_sub(millis(age)));
-        let stale = Condition::any()
-            .add(Column::UpdatedAt.lte(cutoff(LOCKOUT_RETENTION)?))
-            .add(
-                Condition::all()
-                    .add(Column::LockedUntil.is_null())
-                    .add(Column::UpdatedAt.lte(cutoff(UNLOCKED_RETENTION)?)),
-            );
-        let result = auth_lockout::Entity::delete_many()
-            .filter(stale)
-            .exec(&self.db)
+    /// Deletes `name`'s global row, then resets each source row to a known source.
+    async fn mark_known(&self, name: &str, source_keys: &[String]) -> Result<(), DbErr> {
+        let now = self.clock.now();
+        let now_ms = now.timestamp_millis();
+        let txn = begin_write(&self.db).await?;
+        auth_lockout::Entity::delete_by_id(global_key_of(name))
+            .exec(&txn)
             .await?;
-        Ok(result.rows_affected)
+        for key in source_keys {
+            upsert(&txn, key, now_ms).await?;
+            auth_lockout::ActiveModel {
+                key: Unchanged(key.clone()),
+                failures: Set(0),
+                window_started_at: Set(now),
+                locked_until: Set(None),
+                lock_level: Set(0),
+                updated_at: Set(now),
+                last_success_at: Set(Some(now)),
+            }
+            .update(&txn)
+            .await?;
+        }
+        txn.commit().await
     }
+}
+
+/// How long the source and global rows block an attempt at `now`; the global row does not
+/// block a known source.
+fn blocking(
+    source: Option<&auth_lockout::Model>,
+    global: Option<&auth_lockout::Model>,
+    now: i64,
+) -> Option<Duration> {
+    let known = source.is_some_and(|row| is_known(row, now));
+    let global = global.filter(|_| !known);
+    [source, global]
+        .into_iter()
+        .flatten()
+        .filter_map(|row| state_of(row).retry_after(now))
+        .max()
+}
+
+pub(super) fn is_known(row: &auth_lockout::Model, now: i64) -> bool {
+    row.last_success_at.is_some_and(|at| {
+        now.saturating_sub(at.timestamp_millis()) < millis(KNOWN_SOURCE_RETENTION)
+    })
 }
 
 /// Returns the row of `key`, inserting a fresh one if missing; on PostgreSQL the row stays
@@ -289,6 +365,7 @@ async fn upsert(
         .ok_or_else(|| DbErr::RecordNotFound(key.to_owned()))
 }
 
+/// Writes the counter columns; `last_success_at` is left as it is.
 async fn write(
     txn: &DatabaseTransaction,
     key: &str,
@@ -302,6 +379,7 @@ async fn write(
         locked_until: Set(state.locked_until.map(at).transpose()?),
         lock_level: Set(state.lock_level),
         updated_at: Set(now),
+        last_success_at: NotSet,
     }
     .update(txn)
     .await?;
@@ -317,7 +395,7 @@ fn state_of(row: &auth_lockout::Model) -> State {
     }
 }
 
-fn at(ms: i64) -> Result<TimestampMs, DbErr> {
+pub(super) fn at(ms: i64) -> Result<TimestampMs, DbErr> {
     time::from_millis(ms).ok_or_else(|| DbErr::Custom("lockout time out of range".to_owned()))
 }
 
@@ -335,15 +413,4 @@ fn warn_new_lock(subject: &Subject, scope: &'static str, r: &Reservation, now_ms
         duration_s,
         "login lockout started"
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn retention_covers_window_lock_and_decay() {
-        assert_eq!(LOCKOUT_RETENTION, Duration::from_secs(48 * 60 * 60));
-        assert_eq!(UNLOCKED_RETENTION, Duration::from_secs(24 * 60 * 60));
-    }
 }
