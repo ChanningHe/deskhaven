@@ -33,10 +33,15 @@ fn run(dir: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// `--config none.toml` must exist; an empty file means "all defaults".
+/// `--config none.toml` must exist: defaults, except an OS-assigned client
+/// API port so the port check of parallel `config check` runs never collides.
 fn prepare(name: &str) -> (PathBuf, PathBuf) {
     let dir = workdir(name);
-    std::fs::write(dir.join("none.toml"), "").unwrap();
+    std::fs::write(
+        dir.join("none.toml"),
+        "[listen]\nclient_api = \"127.0.0.1:0\"\n",
+    )
+    .unwrap();
     let data = dir.join("data");
     (dir, data)
 }

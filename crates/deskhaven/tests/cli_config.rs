@@ -4,7 +4,8 @@
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::result_large_err)]
 
-use std::path::PathBuf;
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn workdir(name: &str) -> PathBuf {
@@ -95,10 +96,18 @@ fn check_fails_on_unknown_file_key() {
     );
 }
 
+/// Own data_dir and an OS-assigned port: `config check` probes both.
+fn isolated_config(dir: &Path, extra: &str) -> String {
+    format!(
+        "data_dir = \"{}\"\n{extra}\n[listen]\nclient_api = \"127.0.0.1:0\"\n",
+        dir.join("data").display()
+    )
+}
+
 #[test]
 fn check_warns_on_unknown_env_but_succeeds() {
     let dir = workdir("unknown_env");
-    std::fs::write(dir.join("deskhaven.toml"), "").unwrap();
+    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
 
     let out = run(
         &dir,
@@ -146,14 +155,116 @@ fn schema_is_json_and_forbids_unknown_keys() {
 }
 
 #[test]
-fn serve_stub_loads_config_and_exits_zero() {
+fn serve_fails_on_missing_config_file() {
     let dir = workdir("serve");
-    std::fs::write(dir.join("deskhaven.toml"), "").unwrap();
 
-    let ok = run(&dir, &["--config", "deskhaven.toml", "serve"], &[]);
     let bad = run(&dir, &["--config", "missing.toml", "serve"], &[]);
 
-    assert!(ok.status.success(), "{}", text(&ok.stderr));
     assert!(!bad.status.success());
     assert!(text(&bad.stderr).contains("missing.toml"));
+}
+
+#[test]
+fn check_fails_when_a_listen_port_is_in_use() {
+    let dir = workdir("port_in_use");
+    let taken = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = taken.local_addr().unwrap();
+    let config = format!(
+        "data_dir = \"{}\"\n[listen]\nclient_api = \"{addr}\"\n",
+        dir.join("data").display()
+    );
+    std::fs::write(dir.join("deskhaven.toml"), config).unwrap();
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[],
+    );
+
+    assert!(!out.status.success());
+    let stderr = text(&out.stderr);
+    assert!(
+        stderr.contains("listen.client_api") && stderr.contains(&addr.to_string()),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn check_fails_on_unreachable_database_without_echoing_secrets() {
+    let dir = workdir("db_down");
+    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
+    let password = "pw-Hunter2-secret";
+    let url = format!("postgres://deskhaven:{password}@127.0.0.1:1/deskhaven");
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[("DESKHAVEN_DATABASE__URL", &url)],
+    );
+
+    assert!(!out.status.success());
+    let all = format!("{}{}", text(&out.stdout), text(&out.stderr));
+    assert!(all.contains("database"), "{all}");
+    assert!(
+        !all.contains(password) && !all.contains("postgres://"),
+        "{all}"
+    );
+}
+
+#[test]
+fn check_rejects_invalid_pin_without_echoing_the_value() {
+    let dir = workdir("bad_pin");
+    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[(
+            "DESKHAVEN_SETTINGS__AUTH__SESSION_TTL",
+            "forty-two-SECRETISH",
+        )],
+    );
+
+    assert!(!out.status.success());
+    let stderr = text(&out.stderr);
+    assert!(stderr.contains("auth.session_ttl"), "{stderr}");
+    assert!(!stderr.contains("SECRETISH"), "{stderr}");
+}
+
+#[test]
+fn check_inspects_the_database_read_only() {
+    let dir = workdir("db_read_only");
+    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
+    let db = dir.join("data").join("deskhaven.db");
+
+    let fresh = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[],
+    );
+
+    assert!(fresh.status.success(), "{}", text(&fresh.stderr));
+    assert!(text(&fresh.stderr).contains("created on first start"));
+    assert!(!dir.join("data").exists(), "check must not create data_dir");
+
+    // A zero-byte file is an empty SQLite database: every migration pending.
+    std::fs::create_dir_all(dir.join("data")).unwrap();
+    std::fs::write(&db, b"").unwrap();
+    let empty = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[],
+    );
+
+    assert!(empty.status.success(), "{}", text(&empty.stderr));
+    assert!(
+        text(&empty.stderr).contains("pending migration"),
+        "{}",
+        text(&empty.stderr)
+    );
+    assert_eq!(
+        std::fs::metadata(&db).unwrap().len(),
+        0,
+        "check wrote to the database"
+    );
 }

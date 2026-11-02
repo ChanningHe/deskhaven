@@ -12,13 +12,26 @@ pub struct Check {
     pub run: fn(&Loaded) -> anyhow::Result<()>,
 }
 
-/// Checks beyond bootstrap validation (which `load` already performs).
-/// Database reachability and port availability are added here by the tasks
-/// that introduce those subsystems.
-const CHECKS: &[Check] = &[Check {
-    name: "key material",
-    run: crate::key_cmd::check,
-}];
+/// Checks beyond bootstrap validation (which `load` already performs), all
+/// read-only; cheap ones first.
+const CHECKS: &[Check] = &[
+    Check {
+        name: "settings pins",
+        run: crate::check::settings_pins,
+    },
+    Check {
+        name: "key material",
+        run: crate::key_cmd::check,
+    },
+    Check {
+        name: "listen ports",
+        run: crate::check::listen_ports,
+    },
+    Check {
+        name: "database",
+        run: crate::check::database,
+    },
+];
 
 /// Loads the configuration and reports warnings on stderr.
 pub fn load_reporting(options: &LoadOptions) -> anyhow::Result<Loaded> {

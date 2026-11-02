@@ -101,6 +101,13 @@ arc-swap = "1.9"
 # deskhaven-web uses to keep source maps and dotfiles out of the embed.
 rust-embed = { version = "8.13", default-features = false, features = ["mime-guess", "include-exclude"] }
 
+# --- bin (M0-09) ---
+# (tokio, tokio-util, tracing, tracing-subscriber, axum, sea-orm, rustix: reused from earlier
+# blocks; the bin enables tokio `signal`/`net` and tracing-subscriber `fmt`/`json`/
+# `tracing-log` itself.)
+# Only to install ring as the process-wide CryptoProvider (02 §5.1); never aws-lc.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 
