@@ -99,6 +99,8 @@ impl StrategyService {
 
     /// `modified_at` of [`effective`](Self::effective) without computing it, for the
     /// heartbeat's "does this client need the strategy" check. Never touches the database.
+    /// The client needs the strategy when its stored value is **different** (`!=`); see
+    /// [`EffectiveStrategy::modified_at`].
     pub fn modified_at(&self, device: &DeviceInputs) -> i64 {
         effective::stamp(self.inner.cache.version(), device)
     }

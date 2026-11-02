@@ -17,6 +17,11 @@
 //! makes every device refetch once) but can never miss a change, including removals, which a
 //! "newest input timestamp" cannot see. Edits made by another process are not noticed.
 //!
+//! The counter is in-memory: after a restart on a wall clock that is behind the maximum
+//! issued before, it can be lower than a value a client holds. Clients must therefore be
+//! served on `server != client`, never `server > client` (see
+//! [`EffectiveStrategy::modified_at`](super::EffectiveStrategy::modified_at)).
+//!
 //! **Fill race.** A reader that missed takes a [`Ticket`] (generation and version) before
 //! it reads the database and stores its snapshot only if the generation is unchanged, so an
 //! invalidation can never be overwritten by a snapshot read before it.

@@ -58,9 +58,13 @@ pub struct EffectiveStrategy {
     /// `config_options` to send. Entries with an empty value are kept: they tell the client
     /// to delete the option.
     pub options: Options,
-    /// Version of this result in unix milliseconds. The server value only grows (see
-    /// [`StrategyCache`](super::StrategyCache)); send `options` to a client whose stored
-    /// value is lower, nothing to one whose value is equal or higher.
+    /// Version of this result in unix milliseconds. Within one process run the server value
+    /// only grows (see [`StrategyCache`](super::StrategyCache)).
+    ///
+    /// **Compare with `!=`, not `<`.** The official client overwrites its stored value
+    /// whenever the server's differs from it, and a restart on a clock that is behind the
+    /// maximum issued before it can legitimately yield a lower value; with `<` such a
+    /// client would never refetch. Send `options` to a client whose stored value differs.
     pub modified_at: i64,
     /// The strategies merged, lowest priority first.
     pub applied: Vec<Assignment>,
