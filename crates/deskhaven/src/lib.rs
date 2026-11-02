@@ -19,6 +19,7 @@ pub mod shutdown;
 pub mod signal_server;
 pub mod signal_store;
 pub mod startup;
+pub mod user_cmd;
 
 use anyhow::anyhow;
 

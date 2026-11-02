@@ -42,12 +42,24 @@ pub enum Command {
     /// Administrative tasks
     #[command(subcommand)]
     Admin(AdminCommand),
+    /// Account maintenance
+    #[command(subcommand)]
+    User(UserCommand),
 }
 
 #[derive(Debug, Subcommand)]
 pub enum AdminCommand {
     /// Issue a new one-time first-run setup link (while the instance has no owner)
     CreateSetupLink,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UserCommand {
+    /// Clear the login lockout and failure counters of an account
+    Unlock {
+        /// The username (as typed at login; case-insensitive)
+        username: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
