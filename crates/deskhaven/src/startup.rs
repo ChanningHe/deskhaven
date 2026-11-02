@@ -11,10 +11,10 @@ use deskhaven_core::keys::{
     KeyWarning, SignalKeyPaths, load_or_generate_master_key, load_or_generate_signal_key,
 };
 use deskhaven_core::settings::SettingsService;
+use deskhaven_core::state::AppState;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 
 use crate::instance_lock::{self, InstanceLock};
-use crate::state::AppState;
 use crate::{data_dir, database, http};
 
 /// Files this process creates (data_dir, database and its side files, keys,

@@ -7,16 +7,18 @@ mod error;
 mod login_options;
 mod stack_error;
 
+use std::sync::Arc;
+
 use axum::Router;
 use axum::routing::get;
+use deskhaven_core::state::AppState;
 
 pub use error::{BoxError, ClientApiError};
 pub use stack_error::render_stack_error;
 
-/// Client API routes (no middleware; the server applies the stack).
-pub fn router<S>() -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
+/// Client API routes, without middleware or state: the server applies the
+/// stack and provides the state (`with_state`) when composing. Handlers that
+/// need services take `State<Arc<AppState>>`.
+pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/api/login-options", get(login_options::login_options))
 }

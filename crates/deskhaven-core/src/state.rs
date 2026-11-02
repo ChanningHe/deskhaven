@@ -1,12 +1,14 @@
 //! Process-wide state shared by the HTTP routers (02 §3). Built once at
-//! startup and handed out as `Arc<AppState>`; later subsystems (presence,
-//! session cache, domain events) become further fields.
+//! startup (`deskhaven::startup::open_state`) and handed to the API crates
+//! as `State<Arc<AppState>>`; later subsystems (presence, session cache,
+//! domain events) become further fields.
 
 use std::sync::Arc;
 
-use deskhaven_core::crypto::SecretBox;
-use deskhaven_core::settings::SettingsService;
 use sea_orm::DatabaseConnection;
+
+use crate::crypto::SecretBox;
+use crate::settings::SettingsService;
 
 pub struct AppState {
     /// Migrated connection pool (cheap to clone).

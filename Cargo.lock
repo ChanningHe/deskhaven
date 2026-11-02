@@ -1201,6 +1201,7 @@ name = "deskhaven-client-api"
 version = "0.1.0-dev"
 dependencies = [
  "axum",
+ "deskhaven-core",
  "deskhaven-http",
  "serde_json",
  "thiserror 2.0.21",

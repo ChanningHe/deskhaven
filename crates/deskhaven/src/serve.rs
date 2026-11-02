@@ -6,16 +6,17 @@
 
 use std::io::Write;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use deskhaven_config::bootstrap::{Bootstrap, LoadOptions, load};
+use deskhaven_core::state::AppState;
 use deskhaven_http::ServeError;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 
 use crate::startup::{self, Prepared, Started};
-use crate::state::AppState;
 use crate::{http, log_safe, logging, shutdown};
 
 /// Hard bound from the signal to process exit (02 §7), split into
@@ -93,7 +94,7 @@ async fn serve_until_shutdown(
         http: http_config,
         lock: _lock,
     } = started;
-    let apps = http::apps(&state, &token);
+    let apps = http::apps(Arc::clone(&state), &token);
     let mut serving = tokio::spawn({
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }

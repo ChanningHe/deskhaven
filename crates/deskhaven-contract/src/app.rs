@@ -11,10 +11,10 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderName, HeaderValue, Method, Request, header};
-use deskhaven::state::AppState;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
+use deskhaven_core::state::AppState;
 use deskhaven_http::{ErrorBodies, apply_middleware};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -49,15 +49,18 @@ impl TestApp {
             ..Bootstrap::default()
         };
         let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&TEST_MASTER_KEY)));
-        let state = deskhaven::startup::open_state(
-            &config,
-            PinSet::empty(),
-            crypto,
-            TEST_SIGNAL_PUBLIC_KEY.to_owned(),
-        )
-        .await?;
+        // One instance: the routers and the seeds share it.
+        let state = Arc::new(
+            deskhaven::startup::open_state(
+                &config,
+                PinSet::empty(),
+                crypto,
+                TEST_SIGNAL_PUBLIC_KEY.to_owned(),
+            )
+            .await?,
+        );
         let shutdown = CancellationToken::new();
-        let apps = deskhaven::http::apps(&state, &shutdown);
+        let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown);
         // As served on a split client_api listener (deskhaven_http::serve);
         // single-listener mode routes `/api/*` identically.
         let http = deskhaven::http::http_config(&config, DRAIN);
@@ -67,7 +70,7 @@ impl TestApp {
             ErrorBodies::uniform(apps.errors.client_api),
         );
         Ok(Self {
-            state: Arc::new(state),
+            state,
             router,
             _shutdown: shutdown,
             _data_dir: data_dir,

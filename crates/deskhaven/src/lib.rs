@@ -16,7 +16,6 @@ pub mod logging;
 pub mod serve;
 pub mod shutdown;
 pub mod startup;
-pub mod state;
 
 use anyhow::anyhow;
 

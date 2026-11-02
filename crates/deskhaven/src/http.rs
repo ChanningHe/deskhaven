@@ -1,12 +1,14 @@
 //! HTTP wiring: listener topology and stack settings from the bootstrap
 //! configuration, the routers of each side and the readiness probe.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
 use axum::http::HeaderValue;
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::{Bootstrap, Listen};
+use deskhaven_core::state::AppState;
 use deskhaven_http::{
     Apps, ErrorBodies, HttpConfig, ListenConfig, NotReady, ReadinessCheck, TrustedProxies,
     health_routes,
@@ -15,7 +17,6 @@ use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::log_safe;
-use crate::state::AppState;
 
 /// HSTS for https deployments: one year, without `includeSubDomains`
 /// (other hosts under the domain are not ours to pin).
@@ -55,10 +56,10 @@ pub fn listen_config(listen: &Listen) -> ListenConfig {
 
 /// Routers of both sides with the API error renderers. Health routes are on
 /// both, so a split admin listener can be probed on its own.
-pub fn apps(state: &AppState, shutdown: &CancellationToken) -> Apps {
+pub fn apps(state: Arc<AppState>, shutdown: &CancellationToken) -> Apps {
     let readiness = readiness(state.db.clone(), shutdown.clone());
     Apps {
-        client_api: client_api_router(readiness.clone()),
+        client_api: client_api_router(state, readiness.clone()),
         admin: admin_router(readiness),
         errors: ErrorBodies {
             client_api: deskhaven_client_api::render_stack_error,
@@ -68,8 +69,8 @@ pub fn apps(state: &AppState, shutdown: &CancellationToken) -> Apps {
 }
 
 /// `/api/*` (RustDesk client contract), plus the health routes.
-fn client_api_router(readiness: impl ReadinessCheck) -> Router {
-    health_routes(readiness).merge(deskhaven_client_api::router())
+fn client_api_router(state: Arc<AppState>, readiness: impl ReadinessCheck) -> Router {
+    health_routes(readiness).merge(deskhaven_client_api::router().with_state(state))
 }
 
 /// `/admin/api/*` joins here. The console serves every other path through

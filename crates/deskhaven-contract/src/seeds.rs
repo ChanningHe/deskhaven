@@ -9,7 +9,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use deskhaven::state::AppState;
+use deskhaven_core::state::AppState;
 
 pub type SeedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>;
 pub type Seed = for<'a> fn(&'a AppState) -> SeedFuture<'a>;
