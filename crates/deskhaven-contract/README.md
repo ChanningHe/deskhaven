@@ -60,7 +60,10 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
    token the real login service issued); refer to them as `${session_token}`
    in `request.path`, header values and body strings. Seeds run in order; an
    output name defined twice, or a placeholder without an output, fails the
-   fixture. There is no escape for a literal `${`.
+   fixture. There is no escape for a literal `${`. Built-in seeds:
+   `client-session` (active local user `alice` logged in from device
+   `123456789` / `contract-seed-device-uuid`; outputs `session_token`,
+   `username`, `rustdesk_id`, `uuid`).
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 

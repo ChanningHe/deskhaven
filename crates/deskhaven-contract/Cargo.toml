@@ -25,5 +25,8 @@ tower = { workspace = true, features = ["util"] }
 # OidcAuthUrl.url is a url::Url in the client.
 url = { workspace = true, features = ["serde"] }
 
+[dev-dependencies]
+deskhaven-client-api = { workspace = true }
+
 [lints]
 workspace = true

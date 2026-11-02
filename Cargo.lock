@@ -1261,6 +1261,7 @@ dependencies = [
  "anyhow",
  "axum",
  "deskhaven",
+ "deskhaven-client-api",
  "deskhaven-config",
  "deskhaven-core",
  "deskhaven-http",
