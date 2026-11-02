@@ -19,6 +19,18 @@ use deskhaven_core::keys::{
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
+/// A data dir like production's: private regardless of the test runner's umask
+/// (CI containers run with umask 000, which would add a writable-directory warning).
+fn data_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    dir
+}
+
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hbbs-libsodium");
 
 fn fixture(name: &str) -> String {
@@ -66,7 +78,7 @@ fn paths_default_to_data_dir_and_append_pub() {
 
 #[test]
 fn libsodium_key_files_load_with_the_same_public_key() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
 
     let loaded = load_or_generate_signal_key(&paths).unwrap();
@@ -93,7 +105,7 @@ fn libsodium_key_files_load_with_the_same_public_key() {
 
 #[test]
 fn signatures_match_libsodium_byte_for_byte() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let pair = load_or_generate_signal_key(&install_fixture(dir.path()))
         .unwrap()
         .value;
@@ -110,7 +122,7 @@ fn signatures_match_libsodium_byte_for_byte() {
 
 #[test]
 fn generates_upstream_format_in_fresh_data_dir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("fresh").join("data");
     let paths = SignalKeyPaths::resolve(Path::new(""), &data_dir);
 
@@ -146,9 +158,9 @@ fn generates_upstream_format_in_fresh_data_dir() {
 
 #[test]
 fn mismatched_public_key_file_is_an_error_and_nothing_changes() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
-    let other = tempfile::tempdir().unwrap();
+    let other = data_dir();
     let other_pub = {
         let p = SignalKeyPaths::resolve(Path::new(""), other.path());
         load_or_generate_signal_key(&p)
@@ -173,7 +185,7 @@ fn mismatched_public_key_file_is_an_error_and_nothing_changes() {
 
 #[test]
 fn public_key_file_with_surrounding_whitespace_matches() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
     std::fs::write(paths.public(), format!("{}\n", fixture("id_ed25519.pub"))).unwrap();
     std::fs::write(paths.secret(), format!("{}\n", fixture("id_ed25519"))).unwrap();
@@ -184,7 +196,7 @@ fn public_key_file_with_surrounding_whitespace_matches() {
 
 #[test]
 fn missing_public_key_file_is_recreated() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
     std::fs::remove_file(paths.public()).unwrap();
 
@@ -200,7 +212,7 @@ fn missing_public_key_file_is_recreated() {
 
 #[test]
 fn orphan_public_key_file_blocks_generation() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = SignalKeyPaths::resolve(Path::new(""), dir.path());
     std::fs::write(paths.public(), fixture("id_ed25519.pub")).unwrap();
 
@@ -212,7 +224,7 @@ fn orphan_public_key_file_blocks_generation() {
 
 #[test]
 fn secret_whose_public_half_does_not_match_its_seed_is_rejected() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
     let mut bytes = STANDARD.decode(fixture("id_ed25519")).unwrap();
     bytes[40] ^= 0xff;
@@ -227,7 +239,7 @@ fn secret_whose_public_half_does_not_match_its_seed_is_rejected() {
 
 #[test]
 fn secret_with_wrong_length_or_encoding_is_rejected() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = SignalKeyPaths::resolve(Path::new(""), dir.path());
     for contents in [STANDARD.encode([1u8; 32]), "%%% not base64".to_owned()] {
         std::fs::write(paths.secret(), &contents).unwrap();
@@ -241,7 +253,7 @@ fn secret_with_wrong_length_or_encoding_is_rejected() {
 #[cfg(unix)]
 #[test]
 fn permissive_secret_key_warns_but_loads() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = install_fixture(dir.path());
     set_mode(paths.secret(), 0o640);
 
@@ -259,7 +271,7 @@ fn permissive_secret_key_warns_but_loads() {
 
 #[test]
 fn read_signal_key_on_empty_dir_is_none_and_creates_nothing() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("data");
     let paths = SignalKeyPaths::resolve(Path::new(""), &data_dir);
 
@@ -269,7 +281,7 @@ fn read_signal_key_on_empty_dir_is_none_and_creates_nothing() {
 
 #[test]
 fn debug_output_hides_the_secret() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let pair = load_or_generate_signal_key(&install_fixture(dir.path()))
         .unwrap()
         .value;
@@ -280,7 +292,7 @@ fn debug_output_hides_the_secret() {
 
 #[test]
 fn oversized_secret_key_file_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = SignalKeyPaths::resolve(Path::new(""), dir.path());
     std::fs::write(paths.secret(), "A".repeat(4097)).unwrap();
 
@@ -290,7 +302,7 @@ fn oversized_secret_key_file_is_refused() {
 
 #[test]
 fn concurrent_first_start_agrees_on_one_key_pair() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let paths = SignalKeyPaths::resolve(Path::new(""), &dir.path().join("data"));
     let keys: Vec<String> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)
@@ -316,7 +328,7 @@ mod unix {
 
     #[test]
     fn symlinked_secret_key_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         let real = install_fixture(dir.path());
         let link = SignalKeyPaths::resolve(&dir.path().join("alias"), dir.path());
         symlink(real.secret(), link.secret()).unwrap();
@@ -331,7 +343,7 @@ mod unix {
 
     #[test]
     fn symlinked_public_key_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         let paths = install_fixture(dir.path());
         let target = dir.path().join("real.pub");
         std::fs::rename(paths.public(), &target).unwrap();
@@ -343,7 +355,7 @@ mod unix {
 
     #[test]
     fn world_writable_key_directory_warns() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         let keys = dir.path().join("keys");
         std::fs::create_dir(&keys).unwrap();
         let paths = install_fixture(&keys);

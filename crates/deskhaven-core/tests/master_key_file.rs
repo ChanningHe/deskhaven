@@ -10,6 +10,18 @@ use deskhaven_core::keys::{
     KeyError, KeyWarning, load_or_generate_master_key, master_key_path, read_master_key,
 };
 
+/// A data dir like production's: private regardless of the test runner's umask
+/// (CI containers run with umask 000, which would add a writable-directory warning).
+fn data_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    dir
+}
+
 #[cfg(unix)]
 fn mode(path: &Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;
@@ -18,7 +30,7 @@ fn mode(path: &Path) -> u32 {
 
 #[test]
 fn configured_key_wins_and_touches_no_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("data");
     let key = MasterKey::from_bytes(&[3; 32]);
     let configured = Secret::new(key.to_base64().as_str());
@@ -32,7 +44,7 @@ fn configured_key_wins_and_touches_no_file() {
 
 #[test]
 fn configured_key_with_wrong_length_is_rejected_without_echo() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let value = "dG9vLXNob3J0"; // "too-short"
     let err = load_or_generate_master_key(&Secret::new(value), dir.path()).unwrap_err();
 
@@ -44,7 +56,7 @@ fn configured_key_with_wrong_length_is_rejected_without_echo() {
 
 #[test]
 fn empty_config_generates_master_key_file_in_fresh_data_dir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("nested").join("data");
 
     let first = load_or_generate_master_key(&Secret::default(), &data_dir).unwrap();
@@ -67,11 +79,11 @@ fn empty_config_generates_master_key_file_in_fresh_data_dir() {
 
 #[test]
 fn file_content_is_accepted_as_configured_value() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let generated = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
     let contents = std::fs::read_to_string(master_key_path(dir.path())).unwrap();
 
-    let other = tempfile::tempdir().unwrap();
+    let other = data_dir();
     let configured = load_or_generate_master_key(&Secret::new(contents), other.path()).unwrap();
     assert_eq!(configured.value.key_id(), generated.value.key_id());
 }
@@ -80,7 +92,7 @@ fn file_content_is_accepted_as_configured_value() {
 #[test]
 fn permissive_master_key_file_warns_but_loads() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let generated = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
     let path = master_key_path(dir.path());
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
@@ -107,7 +119,7 @@ fn permissive_master_key_file_warns_but_loads() {
 
 #[test]
 fn malformed_master_key_file_is_an_error_without_echo() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let path = master_key_path(dir.path());
     std::fs::write(&path, "c2hvcnQ=\n").unwrap();
 
@@ -122,7 +134,7 @@ fn malformed_master_key_file_is_an_error_without_echo() {
 
 #[test]
 fn read_master_key_never_creates_anything() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("data");
 
     assert!(
@@ -149,7 +161,7 @@ fn master_key_path_is_in_data_dir() {
 
 #[test]
 fn configured_key_differing_from_existing_file_warns() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
     let configured = MasterKey::from_bytes(&[4; 32]);
     let secret = Secret::new(configured.to_base64().as_str());
@@ -170,7 +182,7 @@ fn configured_key_differing_from_existing_file_warns() {
 
 #[test]
 fn configured_key_equal_to_existing_file_does_not_warn() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let generated = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap();
     let secret = Secret::new(generated.value.to_base64().as_str());
 
@@ -180,7 +192,7 @@ fn configured_key_equal_to_existing_file_does_not_warn() {
 
 #[test]
 fn oversized_master_key_file_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     std::fs::write(master_key_path(dir.path()), "A".repeat(4097)).unwrap();
 
     let err = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err();
@@ -189,7 +201,7 @@ fn oversized_master_key_file_is_refused() {
 
 #[test]
 fn concurrent_first_start_agrees_on_one_key() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = data_dir();
     let data_dir = dir.path().join("data");
     let ids: Vec<String> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)
@@ -220,8 +232,8 @@ mod unix {
 
     #[test]
     fn symlinked_master_key_file_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let elsewhere = tempfile::tempdir().unwrap();
+        let dir = data_dir();
+        let elsewhere = data_dir();
         load_or_generate_master_key(&Secret::default(), elsewhere.path()).unwrap();
         symlink(
             master_key_path(elsewhere.path()),
@@ -240,7 +252,7 @@ mod unix {
 
     #[test]
     fn dangling_symlink_is_refused_not_followed() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         let target = dir.path().join("target.key");
         symlink(&target, master_key_path(dir.path())).unwrap();
 
@@ -251,7 +263,7 @@ mod unix {
 
     #[test]
     fn directory_at_key_path_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         std::fs::create_dir(master_key_path(dir.path())).unwrap();
 
         let err = load_or_generate_master_key(&Secret::default(), dir.path()).unwrap_err();
@@ -260,7 +272,7 @@ mod unix {
 
     #[test]
     fn group_writable_data_dir_warns() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = data_dir();
         let data_dir = dir.path().join("data");
         std::fs::create_dir(&data_dir).unwrap();
         std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o775)).unwrap();
