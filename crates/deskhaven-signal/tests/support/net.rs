@@ -2,9 +2,10 @@
 
 use hbb_common::tokio::time::Duration;
 use std::{
+    collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
-        Once,
+        Mutex, Once, PoisonError,
         atomic::{AtomicU32, Ordering},
     },
 };
@@ -62,8 +63,18 @@ pub fn ports_free(port: u16) -> bool {
         && std::net::UdpSocket::bind(addr(port)).is_ok()
 }
 
-/// A main port whose derived ports are all free right now (the caller still has to cope
-/// with losing a race for them).
+/// Ports (`port - 1 ..= port + 2`) handed out by [`free_base_port`] in this process; never
+/// handed out again.
+static RESERVED_PORTS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
+
+/// A main port whose derived ports are all free right now and were never handed out to
+/// another test of this process (the caller still has to cope with losing a race for them
+/// to another process).
+///
+/// The probe alone is not enough: the server binds with SO_REUSEPORT, so a second server
+/// started on a probed-but-not-yet-bound triple binds the same ports without error and
+/// steals the first server's traffic. Reserving the whole span closes that race between the
+/// parallel tests of one binary.
 pub fn free_base_port() -> u16 {
     for _ in 0..100 {
         let port = std::net::TcpListener::bind(addr(0))
@@ -71,9 +82,18 @@ pub fn free_base_port() -> u16 {
             .local_addr()
             .unwrap()
             .port();
-        if (3..=65533).contains(&port) && ports_free(port) {
-            return port;
+        if !(3..=65533).contains(&port) {
+            continue;
         }
+        let span = port - 1..=port + 2;
+        let mut reserved = RESERVED_PORTS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if span.clone().any(|p| reserved.contains(&p)) || !ports_free(port) {
+            continue;
+        }
+        reserved.extend(span);
+        return port;
     }
     panic!("no free port triple found");
 }

@@ -24,7 +24,6 @@ use support::{
     open_id_pk, punch_hole_sent, rv,
 };
 
-const TARGET: &str = "target-peer-1";
 const TARGET_RELAY: &str = "192.0.2.70:21117";
 
 fn signed_pk(id: &str, pk: &[u8]) -> IdPk {
@@ -41,6 +40,7 @@ fn signed_pk(id: &str, pk: &[u8]) -> IdPk {
 /// relay_server is empty, rs:960-961). The controller gets no direct answer.
 #[tokio::test]
 async fn punch_hole_request_to_online_peer_is_forwarded_as_punch_hole_with_controller_addr() {
+    const TARGET: &str = "ph-request-forwarded";
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
@@ -70,6 +70,7 @@ async fn punch_hole_request_to_online_peer_is_forwarded_as_punch_hole_with_contr
 /// stays at its default 0 = ID_NOT_EXIST: clients tell success by a non-empty socket_addr.
 #[tokio::test]
 async fn punch_hole_sent_by_target_reaches_controller_as_punch_hole_response() {
+    const TARGET: &str = "ph-sent-response";
     // Arrange
     let server = TestServer::start().await;
     let (mut target, keys) = server.online_peer(TARGET).await;
@@ -102,6 +103,7 @@ async fn punch_hole_sent_by_target_reaches_controller_as_punch_hole_response() {
 /// LocalAddr comes back as PunchHoleResponse{is_local} with the target's LAN address.
 #[tokio::test]
 async fn punch_hole_request_from_targets_ip_goes_through_fetch_local_addr() {
+    const TARGET: &str = "ph-fetch-local-addr";
     // Arrange
     let server = TestServer::start().await;
     let (mut target, keys) = server.online_peer(TARGET).await;
@@ -165,6 +167,7 @@ async fn punch_hole_request_to_unknown_id_gets_id_not_exist() {
 /// PunchHoleResponse{LICENSE_MISMATCH} before any peer lookup; the online target hears nothing.
 #[tokio::test]
 async fn punch_hole_request_with_wrong_or_missing_licence_key_gets_license_mismatch() {
+    const TARGET: &str = "ph-licence-mismatch";
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
@@ -193,6 +196,7 @@ async fn punch_hole_request_with_wrong_or_missing_licence_key_gets_license_misma
 /// server keeps answering.
 #[tokio::test]
 async fn punch_messages_over_udp_get_no_answer() {
+    const TARGET: &str = "ph-udp-ignored";
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
