@@ -1,0 +1,21 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["src/ui/ab.tis:650-662"],
+  "description": "The Sciter UI pulls with POST /api/ab/get (empty object body): {data, updated_at}, data the same JSON string as the Flutter pull. updated_at is read and ignored by the UI; it is the book's last change in unix milliseconds.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/get",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": {} }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "LegacyAb",
+    "json_subset": {
+      "data": "{\"peers\":[{\"alias\":\"office\",\"forceAlwaysRelay\":\"true\",\"futureField\":{\"kept\":true},\"hash\":\"seed-hash\",\"hostname\":\"\",\"id\":\"111111111\",\"loginName\":\"\",\"note\":\"\",\"platform\":\"\",\"rdpPort\":\"\",\"rdpUsername\":\"\",\"tags\":[\"work\"],\"username\":\"\"}],\"tag_colors\":\"{\\\"work\\\":4278190335}\",\"tags\":[\"work\"]}"
+    },
+    "json_absent": ["/licensed_devices", "/error"]
+  }
+}

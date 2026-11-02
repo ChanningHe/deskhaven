@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1055-1089", "src/lang/en.rs:169"],
+  "description": "More distinct peers than addressbook.max_peers (1 here): refused with the client's own wording for a full book; the stored peer stays.",
+  "seed": ["client-session", "ab-personal", "ab-one-peer-max"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "data": "{\"tags\":[],\"peers\":[{\"id\":\"1\"},{\"id\":\"2\"}],\"tag_colors\":\"{}\"}" } }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "You have reached the maximum number of managed devices." } }
+}

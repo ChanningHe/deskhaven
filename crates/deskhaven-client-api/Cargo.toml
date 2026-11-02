@@ -10,6 +10,7 @@ publish.workspace = true
 axum = { workspace = true }
 deskhaven-core = { workspace = true }
 deskhaven-http = { workspace = true }
+flate2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

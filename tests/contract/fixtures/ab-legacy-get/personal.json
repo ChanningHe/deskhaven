@@ -1,0 +1,22 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1008-1050", "flutter/lib/models/ab_model.dart:1325-1356", "flutter/lib/models/peer_model.dart:33-48"],
+  "description": "Legacy pull without gzip negotiation: {data, licensed_devices}, data a JSON *string* holding {tags, peers, tag_colors}, tag_colors itself a JSON string (name -> ARGB int). The personal book's peer comes back with its hash, never a password, and the unknown field it was stored with.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "GET",
+    "path": "/api/ab",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "vary": "Accept-Encoding", "content-type": { "contains": "application/json" } },
+    "body_kind": "json",
+    "shape": "LegacyAb",
+    "json_subset": {
+      "licensed_devices": 0,
+      "data": "{\"peers\":[{\"alias\":\"office\",\"forceAlwaysRelay\":\"true\",\"futureField\":{\"kept\":true},\"hash\":\"seed-hash\",\"hostname\":\"\",\"id\":\"111111111\",\"loginName\":\"\",\"note\":\"\",\"platform\":\"\",\"rdpPort\":\"\",\"rdpUsername\":\"\",\"tags\":[\"work\"],\"username\":\"\"}],\"tag_colors\":\"{\\\"work\\\":4278190335}\",\"tags\":[\"work\"]}"
+    },
+    "json_absent": ["/error"]
+  }
+}

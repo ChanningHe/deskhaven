@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1055-1089"],
+  "description": "Clients before 2026-01 gzipped pushes when licensed_devices > 0 (git 9301edef removed it). deskhaven sends licensed_devices 0, so no client does; a gzip body is refused with a clear message instead of failing as unreadable JSON.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json", "content-encoding": "gzip" },
+    "body": { "text": "not really gzip" }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Unsupported content encoding" } }
+}

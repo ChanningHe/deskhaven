@@ -1280,6 +1280,7 @@ dependencies = [
  "deskhaven-core",
  "deskhaven-db",
  "deskhaven-http",
+ "flate2",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

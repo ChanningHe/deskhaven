@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1044-1052"],
+  "description": "No credential: 401 {error}, after which the client resets its login (statusCode == 401 in the pull's finally block).",
+  "seed": [],
+  "request": {
+    "method": "GET",
+    "path": "/api/ab",
+    "headers": { "content-type": "application/json", "accept-encoding": "gzip" }
+  },
+  "expect": { "status": 401, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Unauthorized" } }
+}

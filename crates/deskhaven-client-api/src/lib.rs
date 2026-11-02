@@ -21,7 +21,7 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use deskhaven_core::state::AppState;
 
-pub use ab::MAX_AB_BODY;
+pub use ab::{MAX_AB_BODY, MAX_LEGACY_AB_BODY};
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use login::MAX_LOGIN_BODY;

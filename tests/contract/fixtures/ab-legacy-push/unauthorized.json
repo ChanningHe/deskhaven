@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1055-1089"],
+  "description": "A push with an unknown token: 401 {error}; nothing is stored.",
+  "seed": [],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab",
+    "headers": { "authorization": "Bearer no-such-token", "content-type": "application/json" },
+    "body": { "json": { "data": "{\"tags\":[],\"peers\":[],\"tag_colors\":\"{}\"}" } }
+  },
+  "expect": { "status": 401, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Unauthorized" } }
+}

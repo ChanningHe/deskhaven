@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1309-1323"],
+  "description": "A peer without an id inside an otherwise valid document: the same wording as the per-peer API, and the whole push is refused (flow test: nothing changed).",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "data": "{\"tags\":[],\"peers\":[{\"id\":\"1\"},{\"alias\":\"no id\"}],\"tag_colors\":\"{}\"}" } }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Invalid id: is required" } }
+}

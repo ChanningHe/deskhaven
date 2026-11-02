@@ -14,9 +14,12 @@
 //! | body over [`MAX_AB_BODY`] | 413 | stack renderer |
 //!
 //! 404 is never used for a missing endpoint the client probes here: `/api/ab/personal`
-//! always exists (a 404 there would switch the client to legacy mode).
+//! always exists (a 404 there would switch the client to legacy mode). The legacy document
+//! endpoints (`GET /api/ab`, `POST /api/ab`, `POST /api/ab/get`; 03 §5.2) are the `legacy`
+//! module, a projection of the personal book that serves the Sciter UI and old clients.
 
 mod books;
+mod legacy;
 mod peers;
 mod query;
 mod tags;
@@ -29,6 +32,8 @@ use axum::routing::{delete, post, put};
 use deskhaven_core::addressbooks::{AddressBookError, AddressBookService};
 use deskhaven_core::state::AppState;
 use serde::de::DeserializeOwned;
+
+pub use legacy::MAX_LEGACY_AB_BODY;
 
 use crate::ClientApiError;
 
@@ -58,6 +63,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/ab/tag/update/{guid}", put(tags::update))
         .route("/api/ab/tag/{guid}", delete(tags::remove))
         .layer(DefaultBodyLimit::max(MAX_AB_BODY))
+        .merge(legacy::routes())
 }
 
 /// The service over the process state (stateless: built per request).
