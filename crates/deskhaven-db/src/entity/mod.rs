@@ -4,6 +4,7 @@
 
 pub mod api_token;
 pub mod auth_challenge;
+pub mod auth_lockout;
 pub mod device;
 pub mod group;
 pub mod group_member;
