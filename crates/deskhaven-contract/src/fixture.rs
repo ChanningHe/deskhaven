@@ -24,8 +24,26 @@ pub struct Fixture {
     /// Names from the seed registry, applied in order.
     #[serde(default)]
     pub seed: Vec<String>,
+    /// What the request is sent to; absent = the client API router alone.
+    #[serde(default)]
+    pub listen: Listen,
     pub request: Request,
     pub expect: Expect,
+}
+
+/// The listener topology a fixture is replayed against (05 §2.2 `[listen]`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Listen {
+    /// The client API router alone: `/api/*`, health, no console.
+    #[default]
+    ClientApi,
+    /// One listener: the console answers what the client API does not
+    /// (`listen.admin` empty).
+    Single,
+    /// Admin on its own listener: this is the client API one, whose `GET /`
+    /// redirects to `admin_public_url`.
+    Split { admin_public_url: String },
 }
 
 /// Sent exactly as written: no implicit headers besides `content-length`
@@ -381,6 +399,29 @@ mod tests {
         });
 
         assert!(Fixture::parse(&text.to_string()).is_err());
+    }
+
+    #[test]
+    fn listen_defaults_to_the_client_api_and_parses_the_topologies() {
+        let default = fixture(json!({}));
+        let single = fixture(json!({ "listen": "single" }));
+        let split =
+            fixture(json!({ "listen": { "split": { "admin_public_url": "https://a.test/" } } }));
+        let typo = json!({
+            "upstream_commit": COMMIT, "source": ["a:1"], "description": "d", "listen": "splitt",
+            "request": { "method": "GET", "path": "/" },
+            "expect": { "status": 200, "body_kind": "empty" }
+        });
+
+        assert_eq!(default.listen, Listen::ClientApi);
+        assert_eq!(single.listen, Listen::Single);
+        assert_eq!(
+            split.listen,
+            Listen::Split {
+                admin_public_url: "https://a.test/".to_owned()
+            }
+        );
+        assert!(Fixture::parse(&typo.to_string()).is_err());
     }
 
     #[test]

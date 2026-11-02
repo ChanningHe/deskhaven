@@ -20,13 +20,13 @@ use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{PasswordHasher, UserService};
-use deskhaven_http::{ErrorBodies, apply_middleware};
+use deskhaven_http::{ErrorBodies, apply_middleware, redirect_client_root, single_listener_router};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 
 use crate::check::Reply;
-use crate::fixture;
+use crate::fixture::{self, Listen};
 
 /// TCP peer of a fixture that names none (TEST-NET-3, not a trusted proxy).
 pub const DEFAULT_PEER: SocketAddr = SocketAddr::new(
@@ -57,6 +57,8 @@ pub struct TestOptions {
     /// `security.trusted_proxies` (a peer inside without `X-Forwarded-For` is a
     /// proxy-fallback client).
     pub trusted_proxies: Vec<Cidr>,
+    /// Which listener the requests go to (default: the client API alone).
+    pub listen: Listen,
 }
 
 impl TestApp {
@@ -90,6 +92,7 @@ impl TestApp {
             routes: extra,
             hasher,
             trusted_proxies,
+            listen,
         } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let mut config = Bootstrap {
@@ -113,14 +116,18 @@ impl TestApp {
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown, None);
         let client_api = apps.client_api.merge(extra.with_state(Arc::clone(&state)));
-        // As served on a split client_api listener (deskhaven_http::serve);
-        // single-listener mode routes `/api/*` identically.
         let http = deskhaven::http::http_config(&config, DRAIN);
-        let router = apply_middleware(
-            client_api,
-            &http,
-            ErrorBodies::uniform(apps.errors.client_api),
-        );
+        let (client_api, errors) = match listen {
+            // As served on a split client_api listener (deskhaven_http::serve);
+            // single-listener mode routes `/api/*` identically.
+            Listen::ClientApi => (client_api, ErrorBodies::uniform(apps.errors.client_api)),
+            Listen::Single => (single_listener_router(client_api, apps.admin), apps.errors),
+            Listen::Split { admin_public_url } => (
+                redirect_client_root(client_api, &admin_public_url)?,
+                ErrorBodies::uniform(apps.errors.client_api),
+            ),
+        };
+        let router = apply_middleware(client_api, &http, errors);
         Ok(Self {
             state,
             router,

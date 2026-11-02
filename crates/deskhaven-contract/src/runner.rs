@@ -9,7 +9,7 @@ use anyhow::{Context, anyhow};
 use axum::Router;
 use deskhaven_core::state::AppState;
 
-use crate::app::TestApp;
+use crate::app::{TestApp, TestOptions};
 use crate::check::{Reply, check};
 use crate::fixture::Fixture;
 use crate::seeds::Seeds;
@@ -106,9 +106,13 @@ async fn run_file(path: &Path, upstream: &str, setup: &Setup) -> Result<(), Fail
 }
 
 async fn replay(fixture: &Fixture, setup: &Setup) -> anyhow::Result<Reply> {
-    let app = TestApp::start_with(setup.routes.clone())
-        .await
-        .context("cannot start the app")?;
+    let app = TestApp::start_with_options(TestOptions {
+        routes: setup.routes.clone(),
+        listen: fixture.listen.clone(),
+        ..TestOptions::default()
+    })
+    .await
+    .context("cannot start the app")?;
     let outputs = setup.seeds.apply(&fixture.seed, &app.state).await?;
     let request = fixture
         .request

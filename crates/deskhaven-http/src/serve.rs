@@ -148,9 +148,7 @@ impl Listeners {
             ..fit_descriptor_budget(cfg, Share::SplitAdmin)
         };
         let client_router = match admin.redirect {
-            Some(location) => apps.client_api.layer(axum::middleware::from_fn(
-                move |req: Request, next: Next| redirect_root(location.clone(), req, next),
-            )),
+            Some(location) => with_root_redirect(apps.client_api, location),
             None => apps.client_api,
         };
         let client_errors = ErrorBodies::uniform(apps.errors.client_api);
@@ -195,8 +193,9 @@ fn fit_descriptor_budget(cfg: &HttpConfig, share: Share) -> HttpConfig {
     }
 }
 
-/// `client_api` first; unmatched paths go to `admin`, except under `/api`.
-fn single_listener_router(client_api: Router, admin: Router) -> Router {
+/// The routers as one listener serves them: `client_api` first; unmatched
+/// paths go to `admin`, except under `/api`.
+pub fn single_listener_router(client_api: Router, admin: Router) -> Router {
     client_api.fallback(move |req: Request| {
         let admin = admin.clone();
         async move {
@@ -222,6 +221,24 @@ fn redirect_target(url: Option<&str>) -> Result<Option<HeaderValue>, ServeError>
     HeaderValue::from_str(parsed.as_str())
         .map(Some)
         .map_err(|_| ServeError::InvalidAdminPublicUrl)
+}
+
+/// The client API router of a split deployment: `GET`/`HEAD /` answers 302 to
+/// `admin_public_url`, validated as `Listeners::bind` does. Exposed so the
+/// contract tests replay the topology a client sees.
+pub fn redirect_client_root(
+    client_api: Router,
+    admin_public_url: &str,
+) -> Result<Router, ServeError> {
+    redirect_target(Some(admin_public_url))?
+        .map(|location| with_root_redirect(client_api, location))
+        .ok_or(ServeError::InvalidAdminPublicUrl)
+}
+
+fn with_root_redirect(client_api: Router, location: HeaderValue) -> Router {
+    client_api.layer(axum::middleware::from_fn(
+        move |req: Request, next: Next| redirect_root(location.clone(), req, next),
+    ))
 }
 
 async fn redirect_root(location: HeaderValue, req: Request, next: Next) -> Response {

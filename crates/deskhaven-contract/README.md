@@ -80,6 +80,7 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
 
 | key | meaning |
 |---|---|
+| `listen` | optional topology the request is sent to: `"client_api"` (default, the client API router alone), `"single"` (client API + console on one listener) or `{"split": {"admin_public_url": "https://..."}}` (the client API listener of a split deployment: `GET /` redirects). A `single` fixture cannot pin the status of `/` (200 with a built `web/dist`, 503 without): use a Rust test (`tests/console_root.rs`) |
 | `request.method`, `request.path` | path includes the query string as sent (`/api/ab/peers?current=1&pageSize=100&ab=g1`) |
 | `request.headers` | sent exactly as written; no implicit `content-type` (Dart's `http.post` with a `String` body sends `text/plain; charset=utf-8`, the Rust client `application/json`; copy what the client sends). `content-length` is added from the body when a body or a non-GET/HEAD method is used (empty POSTs carry `Content-Length: 0`, 03 §1.3) |
 | `request.body` | `"empty"` (default), `{"json": <value>}`, `{"text": "..."}` |
