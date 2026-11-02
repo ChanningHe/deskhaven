@@ -1,23 +1,17 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
-use crate::persist::{PeerWrite, Persist};
-use crate::store::{PeerStore, PeerUpsert, StoreError};
+use crate::persist::{Persist, QueueFull, SaveState, WRITE_QUEUE};
+use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
     bytes::Bytes,
     log,
     tokio::{
-        sync::{Mutex, RwLock, mpsc::error::TrySendError},
+        sync::{Mutex, RwLock},
         time::Duration,
     },
 };
-use std::{
-    collections::HashMap,
-    collections::HashSet,
-    net::SocketAddr,
-    sync::Arc,
-    time::{Instant, SystemTime},
-};
+use std::{collections::HashMap, collections::HashSet, net::SocketAddr, sync::Arc, time::Instant};
 
 // deskhaven: crate-visible for `prune_ip_blocks` (rendezvous_server.rs).
 pub(crate) type IpBlockMap = HashMap<String, ((u32, Instant), (HashSet<String>, Instant))>;
@@ -52,9 +46,8 @@ pub(crate) struct Peer {
     pub(crate) info: PeerInfo,
     // pub(crate) disabled: bool,
     pub(crate) reg_pk: (u32, Instant), // how often register_pk
-    // deskhaven: the accepted registration could not be saved (persist.rs); ask the client for
-    // it again so the write is retried.
-    pub(crate) dirty: bool,
+    // deskhaven: write-behind bookkeeping (persist.rs).
+    pub(crate) save: SaveState,
 }
 
 impl Default for Peer {
@@ -68,7 +61,7 @@ impl Default for Peer {
             // user: None,
             // disabled: false,
             reg_pk: (0, get_expired_time()),
-            dirty: false,
+            save: SaveState::default(),
         }
     }
 }
@@ -88,8 +81,13 @@ pub(crate) struct PeerMap {
 impl PeerMap {
     // deskhaven: upstream resolved DB_URL and opened SQLite here.
     pub(crate) fn new(store: Arc<dyn PeerStore>, tasks: &Tasks) -> Self {
+        Self::with_write_queue(store, tasks, WRITE_QUEUE)
+    }
+
+    // deskhaven: `cap` bounds the write queue for unbound ids (persist.rs).
+    pub(crate) fn with_write_queue(store: Arc<dyn PeerStore>, tasks: &Tasks, cap: usize) -> Self {
         let map = PeerCache::default();
-        let persist = Persist::start(store, map.clone(), tasks);
+        let persist = Persist::start(store, map.clone(), tasks, cap);
         Self { map, persist }
     }
 
@@ -98,9 +96,10 @@ impl PeerMap {
         self.persist.preload(limit).await
     }
 
-    // deskhaven: the store write is queued, not awaited. Fails, before touching the peer,
-    // only when the queue is full or the writer has stopped; the caller then refuses the
-    // registration. Upstream awaited the database and ignored the result.
+    // deskhaven: the store write is queued (coalesced per id), not awaited. Fails, before
+    // touching the peer, only for an id that is not bound yet when the queue is full; the
+    // caller then refuses the registration. Upstream awaited the database and ignored the
+    // result.
     #[inline]
     pub(crate) async fn update_pk(
         &mut self,
@@ -110,26 +109,23 @@ impl PeerMap {
         uuid: Bytes,
         pk: Bytes,
         ip: String,
-    ) -> Result<(), TrySendError<()>> {
+    ) -> Result<(), QueueFull> {
         log::info!("update_pk {} {:?} {:?} {:?}", id, addr, uuid, pk);
-        let permit = self.persist.reserve()?;
-        {
-            let mut w = peer.write().await;
-            w.socket_addr = addr;
-            w.uuid = uuid.clone();
-            w.pk = pk.clone();
-            w.last_reg_time = Instant::now();
-            w.info.ip = ip;
-        }
-        let rec = PeerUpsert {
-            id,
-            uuid: uuid.to_vec(),
-            pk: pk.to_vec(),
-            ip: addr.ip(),
-            registered_at: SystemTime::now(),
-        };
-        permit.send(PeerWrite { peer, rec });
+        let mut w = peer.write().await;
+        // Queued under the peer's lock: the writer reads the peer after this change.
+        self.persist.enqueue(&id, w.uuid.is_empty())?;
+        w.socket_addr = addr;
+        w.uuid = uuid;
+        w.pk = pk;
+        w.last_reg_time = Instant::now();
+        w.info.ip = ip;
+        w.save.accepted();
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn persist(&self) -> &Persist {
+        &self.persist
     }
 
     // deskhaven: memory only; after the preload a miss means the id is not registered.
@@ -163,7 +159,8 @@ impl PeerMap {
         self.map.read().await.contains_key(id)
     }
 
-    // deskhaven: invalidation hook for out-of-band registry changes (admin, M2); not wired.
+    // deskhaven: invalidation hook for out-of-band registry changes (admin, M2); not wired
+    // here (the writer calls `Persist::reload` on UuidMismatch).
     #[allow(dead_code)]
     pub(crate) async fn reload(&self, id: &str) -> Result<(), StoreError> {
         self.persist.reload(id).await

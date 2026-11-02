@@ -1,16 +1,18 @@
 //! Peer registry persistence (deskhaven code, not vendored): the [`PeerStore`] trait that
 //! replaces upstream's `database.rs`, and the non-persistent [`MemoryPeerStore`].
 //!
-//! The server loads every registration at start ([`PeerStore::load_all`]) and from then on
-//! answers from memory only: the UDP and TCP paths never wait for the store. Accepted
-//! registrations are written behind, in order, by one writer task (`persist.rs`). The store
-//! is what makes the anti id-hijack check (UUID_MISMATCH) survive a restart: an id registered
-//! once stays bound to its uuid.
+//! The server loads every registration at start ([`PeerStore::load_page`], page by page) and
+//! from then on answers from memory only: the UDP and TCP paths never wait for the store.
+//! Accepted registrations are written behind by one writer task (`persist.rs`), coalesced per
+//! peer. The store is what makes the anti id-hijack check (UUID_MISMATCH) survive a restart:
+//! an id registered once stays bound to its uuid. Rows of devices that never come online again
+//! are kept; their retention comes with admission (M5) and the device lifecycle (M2-20).
 
 use async_trait::async_trait;
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{BTreeMap, btree_map::Entry},
     net::IpAddr,
+    ops::Bound,
     sync::{Mutex, MutexGuard, PoisonError},
     time::SystemTime,
 };
@@ -68,17 +70,24 @@ impl StoreError {
 /// seen until a restart (an explicit invalidation hook exists for later admin use).
 #[async_trait]
 pub trait PeerStore: Send + Sync + 'static {
-    /// Every stored registration; called once when the server starts, bounded by
+    /// Up to `limit` stored registrations whose ids sort after `after` (from the first if
+    /// `None`), in ascending id order as the store compares ids (keyset pagination: the server
+    /// passes the last id of a page as the next `after`). Fewer than `limit` ends the load.
+    /// Called page by page when the server starts, all pages together bounded by
     /// [`SignalConfig::peer_preload_timeout`](crate::SignalConfig::peer_preload_timeout).
-    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError>;
+    async fn load_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<PeerRecord>, StoreError>;
 
-    /// The stored registration of `id`, if any. Not used while serving; only by the
-    /// invalidation hook.
+    /// The stored registration of `id`, if any. Not used for lookups while serving; only by
+    /// the invalidation hook and after a [`StoreError::UuidMismatch`].
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError>;
 
     /// Inserts `rec`, or updates the stored pk / ip / registration time of `rec.id`. Called
-    /// by one writer task, one call at a time, in the order the server accepted the
-    /// registrations.
+    /// by one writer task, one call at a time, with the peer's state at the time of the call
+    /// (registrations accepted in between are coalesced into one write).
     ///
     /// The uuid is immutable: if `rec.id` is stored with a different uuid, fail with
     /// [`StoreError::UuidMismatch`] and change nothing.
@@ -91,7 +100,7 @@ pub trait PeerStore: Send + Sync + 'static {
 /// restarts within a process to keep registrations.
 #[derive(Debug, Default)]
 pub struct MemoryPeerStore {
-    peers: Mutex<HashMap<String, PeerRecord>>,
+    peers: Mutex<BTreeMap<String, PeerRecord>>,
 }
 
 impl MemoryPeerStore {
@@ -99,7 +108,7 @@ impl MemoryPeerStore {
         Self::default()
     }
 
-    fn peers(&self) -> MutexGuard<'_, HashMap<String, PeerRecord>> {
+    fn peers(&self) -> MutexGuard<'_, BTreeMap<String, PeerRecord>> {
         // The map stays consistent even if a holder panicked: every update is one insert.
         self.peers.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -107,8 +116,15 @@ impl MemoryPeerStore {
 
 #[async_trait]
 impl PeerStore for MemoryPeerStore {
-    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError> {
-        Ok(self.peers().values().cloned().collect())
+    async fn load_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<PeerRecord>, StoreError> {
+        let from = after.map_or(Bound::Unbounded, Bound::Excluded);
+        let peers = self.peers();
+        let page = peers.range::<str, _>((from, Bound::Unbounded));
+        Ok(page.take(limit).map(|(_, rec)| rec.clone()).collect())
     }
 
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError> {
@@ -174,7 +190,27 @@ mod tests {
             ip: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))),
         };
         assert_eq!(store.get("a").await.ok().flatten(), Some(expected.clone()));
-        assert_eq!(store.load_all().await.ok(), Some(vec![expected]));
+        assert_eq!(store.load_page(None, 10).await.ok(), Some(vec![expected]));
+    }
+
+    #[tokio::test]
+    async fn load_page_walks_ids_in_order_after_the_cursor() {
+        let store = MemoryPeerStore::new();
+        for id in ["c", "a", "e", "b", "d"] {
+            store
+                .upsert_pk(&upsert(id, b"u", b"pk", [10, 0, 0, 1]))
+                .await
+                .ok();
+        }
+        let ids = async |after: Option<&str>| -> Vec<String> {
+            let page = store.load_page(after, 2).await.unwrap_or_default();
+            page.into_iter().map(|r| r.id).collect()
+        };
+
+        assert_eq!(ids(None).await, ["a", "b"]);
+        assert_eq!(ids(Some("b")).await, ["c", "d"]);
+        assert_eq!(ids(Some("d")).await, ["e"]);
+        assert!(ids(Some("e")).await.is_empty());
     }
 
     #[tokio::test]

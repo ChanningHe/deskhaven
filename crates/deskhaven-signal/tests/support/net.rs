@@ -74,7 +74,9 @@ static RESERVED_PORTS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 /// The probe alone is not enough: the server binds with SO_REUSEPORT, so a second server
 /// started on a probed-but-not-yet-bound triple binds the same ports without error and
 /// steals the first server's traffic. Reserving the whole span closes that race between the
-/// parallel tests of one binary.
+/// parallel tests of one binary. The reservation is in-process only: `cargo test` runs the
+/// test binaries one after another, so that suffices; a runner that runs binaries in parallel
+/// (e.g. nextest) would need a cross-process scheme (lock files, per-binary port ranges).
 pub fn free_base_port() -> u16 {
     for _ in 0..100 {
         let port = std::net::TcpListener::bind(addr(0))

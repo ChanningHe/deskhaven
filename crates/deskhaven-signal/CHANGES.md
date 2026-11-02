@@ -243,36 +243,46 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   shutdown)` take an `Arc<dyn PeerStore>`, threaded through `RendezvousServer::{serve, new}`
   into `PeerMap::new(store, &tasks)`.
 - 2026-11-02, M1-05, startup preload (`rendezvous_server.rs` `serve`, `persist.rs`): every stored
-  registration is loaded into the peer map before the listeners are bound, bounded by the new
-  `SignalConfig::peer_preload_timeout` (default `DEFAULT_PEER_PRELOAD_TIMEOUT`, 30 s); a store
-  error or timeout ends `run` with the new `SignalError::PeerPreload` (nothing bound). Upstream
-  looked ids up in SQLite on every cache miss, on the UDP loop.
+  registration is loaded into the peer map before the listeners are bound, streamed in pages of
+  1000 with a keyset cursor on the id (`PeerStore::load_page(after, limit)`; one page in flight,
+  no full-table Vec), all pages bounded by the new configurable
+  `SignalConfig::peer_preload_timeout` (default `DEFAULT_PEER_PRELOAD_TIMEOUT`, 30 s); row count
+  and duration are logged. A store error or timeout ends `run` with the new
+  `SignalError::PeerPreload` (nothing bound). Upstream looked ids up in SQLite on every cache
+  miss, on the UDP loop. Never-online rows are kept; their retention comes with admission (M5)
+  and the device lifecycle (M2-20).
 - 2026-11-02, M1-05, `peer.rs` `PeerMap`: memory is authoritative while serving. `get` /
   `get_or` no longer read the store (a miss means "unknown id"; `get_or` is upstream's minus the
   database lookup), so no lookup can stall the UDP loop and no request can exhaust the store's
   connections; no negative cache is needed. The server assumes it is the store's only writer;
-  out-of-band changes need the (not yet wired) invalidation hook `PeerMap::reload(id)`.
-  `Peer.guid` removed (it only chose insert vs. update, which `upsert_pk` decides); new
-  `Peer.dirty`; `PeerInfo` lost its serde derives (the `info` JSON column is gone).
+  out-of-band changes need the (not yet wired) invalidation hook `PeerMap::reload(id)`, which
+  updates the cached peer in place. `Peer.guid` removed (it only chose insert vs. update,
+  which `upsert_pk` decides); new `Peer.save` (write-behind generation bookkeeping);
+  `PeerInfo` lost its serde derives (the `info` JSON column is gone). `update_addr` and the
+  RegisterPk `changed` test are upstream's again (no persistence state in them).
 - 2026-11-02, M1-05, write-behind (`persist.rs`; `PeerMap::update_pk` keeps only the call
-  site): an accepted RegisterPk updates memory and is answered **OK before it is persisted**;
-  the write is queued (bounded, 1024) to one writer task that applies writes in acceptance
-  order. A full queue (or stopped writer) is detected before memory changes and the RegisterPk
-  is answered SERVER_ERROR (upstream ignored `update_pk`'s result and always answered OK).
-  **Async write failures are retried, never silently dropped**: on a backend error the
-  accepted entry stays in memory and the write is retried (5 s per attempt, backoff 0.25 / 1 /
-  2 / 4 s) unless a newer registration of the same peer superseded it; after the last attempt
-  the peer is marked `dirty`, its next RegisterPeer gets `request_pk` (`update_addr`) and the
-  RegisterPk that follows re-queues the write (`changed` includes `dirty`). Only
-  `StoreError::UuidMismatch` (the store binds the id to another device) evicts the entry. On
-  stop the writer flushes the queue, in-flight write included, within one 5 s deadline
-  (`Tasks::spawn_draining`); what is left is cancelled and logged.
+  site): an accepted RegisterPk updates memory, bumps the peer's generation and is answered
+  **OK before it is persisted**. Writes are **coalesced per peer**: the queue holds peer ids,
+  each at most once, and one writer task writes the peer's state as it is when written, so
+  repeated registrations become one write and the queue never exceeds the number of peers.
+  **A store outage keeps devices online** (as upstream, which ignored write errors): a failed
+  write re-queues the id and the writer retries it itself (no `request_pk`, nothing asked of
+  the client); after 3 consecutive failures a circuit breaker pauses all writes for a
+  cool-down (1 s, doubling to 30 s) and then probes with one write; each attempt has a 5 s
+  timeout. The queue bound (1024) refuses only ids that are not bound yet (SERVER_ERROR, the
+  client retries; detected before memory changes); a bound peer is always accepted. On
+  `StoreError::UuidMismatch` (the store binds the id to another device) the store's record is
+  re-read into the cached peer in place (rate-limit counter and address kept). On stop the
+  writer gives each queued write a single attempt (no breaker, no backoff) within one 5 s
+  deadline that covers the in-flight write (`Tasks::spawn_draining`); the number of writes left
+  unsaved is logged.
 - 2026-11-02, M1-05, `handle_udp` RegisterPk input validation: a pk that is not 32 bytes
   (ed25519 public key) or a uuid over 128 bytes is dropped without an answer, like an empty
-  one (upstream rs:391-393), before memory or the store see it. Not UUID_MISMATCH, which makes
-  a real client give up its id. Known limit: RegisterPk is unauthenticated UDP, so spoofed
-  sources can still register (and persist) unclaimed ids; admission (require_deploy /
-  ControlPlane, M5) addresses that.
+  one (upstream rs:391-393), before memory or the store see it; drops are logged at debug
+  level at most once a minute with their count (new deskhaven module `src/log_limit.rs`). Not
+  UUID_MISMATCH, which makes a real client give up its id. Known limit: RegisterPk is
+  unauthenticated UDP, so spoofed sources can still register (and persist) unclaimed ids;
+  admission (require_deploy / ControlPlane, M5) addresses that.
 - 2026-11-02, M1-05, deferred: the `DeviceRegistered` event of the task list (Presence update)
   is not emitted yet; it comes with the ControlPlane wiring in M1-06.
 - 2026-11-02, M1-05, dependencies: added `async-trait` (object-safe async `PeerStore`; upstream

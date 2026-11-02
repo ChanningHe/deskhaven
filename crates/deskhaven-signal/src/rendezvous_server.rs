@@ -1,5 +1,6 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
+use crate::log_limit::LogLimit;
 use crate::peer::*;
 use crate::server::{Ports, SignalConfig, SignalError};
 use crate::store::PeerStore;
@@ -79,6 +80,8 @@ const MAX_IP_BLOCK_ENTRIES: usize = 100_000;
 // uuids are machine ids (16-64 bytes in practice), so 128 leaves ample room.
 const REGISTER_PK_LEN: usize = sign::PUBLICKEYBYTES;
 const MAX_REGISTER_UUID_LEN: usize = 128;
+// deskhaven (M1-05): dropped malformed RegisterPk are logged at most once a minute, with count.
+static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs(60));
 // deskhaven: the ALWAYS_USE_RELAY static became the per-instance `always_use_relay` field.
 
 // Store punch hole requests
@@ -188,13 +191,12 @@ impl RendezvousServer {
         let mut rs = Self::new(&cfg, store, tx, always_use_relay, tasks)
             .await
             .map_err(SignalError::internal)?;
-        // deskhaven (M1-05): the registry is in memory before anything is answered.
-        let peers = rs
-            .pm
+        // deskhaven (M1-05): the registry is in memory before anything is answered (row count
+        // and duration are logged by the preload).
+        rs.pm
             .preload(cfg.peer_preload_timeout)
             .await
             .map_err(SignalError::PeerPreload)?;
-        log::info!("loaded {peers} registered peers");
         let mut socket = bind_udp(bind_addr, ports.main, rmem).await?;
         let mut listener = bind_tcp(bind_addr, ports.main).await?;
         let mut listener2 = bind_tcp(bind_addr, ports.nat).await?;
@@ -486,6 +488,14 @@ impl RendezvousServer {
                     // spoofed source can still register (and persist) unclaimed ids; admission
                     // (require_deploy / ControlPlane, M5) addresses that.
                     if rk.pk.len() != REGISTER_PK_LEN || rk.uuid.len() > MAX_REGISTER_UUID_LEN {
+                        if let Some(n) = MALFORMED_PK_LOG.hit(Instant::now()) {
+                            log::debug!(
+                                "dropped {n} malformed RegisterPk (last: {addr}, pk {} bytes, \
+                                 uuid {} bytes)",
+                                rk.pk.len(),
+                                rk.uuid.len()
+                            );
+                        }
                         return Ok(());
                     }
                     let id = rk.id;
@@ -525,13 +535,8 @@ impl RendezvousServer {
                                 return send_rk_res(socket, addr, UUID_MISMATCH).await;
                             }
                             let ip_changed = peer.info.ip != ip;
-                            // deskhaven: `dirty`: the last accepted registration is not saved
-                            // yet; re-queue its write (persist.rs).
                             (
-                                peer.uuid != rk.uuid
-                                    || peer.pk != rk.pk
-                                    || ip_changed
-                                    || peer.dirty,
+                                peer.uuid != rk.uuid || peer.pk != rk.pk || ip_changed,
                                 ip_changed,
                             )
                         }
@@ -546,8 +551,9 @@ impl RendezvousServer {
                     req_pk.1 = Instant::now();
                     peer.write().await.reg_pk = req_pk;
                     // deskhaven: IP_CHANGES bookkeeping removed (only read by console `ic`).
-                    // deskhaven: the store write is queued, not awaited; a full queue is the
-                    // only failure seen here (upstream ignored update_pk's result).
+                    // deskhaven: the store write is queued, not awaited; refusing an unbound id
+                    // on a full queue is the only failure seen here (upstream ignored
+                    // update_pk's result). A store outage never reaches this path.
                     if changed
                         && self
                             .pm
@@ -685,7 +691,7 @@ impl RendezvousServer {
             } else {
                 ip.to_string() != old.info.ip
             } && !ip.is_loopback();
-            let request_pk = old.pk.is_empty() || ip_change || old.dirty; // deskhaven: + dirty
+            let request_pk = old.pk.is_empty() || ip_change;
             if !request_pk {
                 old.socket_addr = socket_addr;
                 old.last_reg_time = Instant::now();

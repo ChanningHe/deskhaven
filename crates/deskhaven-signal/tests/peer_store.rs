@@ -1,7 +1,7 @@
 //! M1-05: the injected `PeerStore` over the wire. Registrations are preloaded before the
 //! server listens, the UDP / TCP paths never wait for the store afterwards, a store that
-//! cannot be loaded fails `run`, and failed writes neither weaken the anti id-hijack check nor
-//! get lost.
+//! cannot be loaded fails `run`, a store outage keeps bound devices online, and failed writes
+//! neither weaken the anti id-hijack check nor get lost.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -28,13 +28,14 @@ use std::{
     time::SystemTime,
 };
 use support::{
-    Conn, PeerKeys, Rendezvous, STEP, TestServer, config, expect_msg, free_base_port, ports_free,
+    Conn, PeerKeys, Rendezvous, STEP, TestServer, config, decode_addr, expect_msg, free_base_port,
+    online_bits, ports_free,
 };
 use tokio_util::sync::CancellationToken;
 
-/// Exhausting the writer's retries takes 0.25 + 1 + 2 + 4 s; the client's next RegisterPeer
-/// then gets `request_pk` again.
-const RETRIES_EXHAUSTED: Duration = Duration::from_secs(15);
+/// After an outage the writer's breaker may still be open for up to its longest cool-down
+/// (30 s); writing the backlog follows at once.
+const RECOVERY: Duration = Duration::from_secs(40);
 const POLL: Duration = Duration::from_millis(100);
 
 /// A memory store that counts calls and can fail or hang.
@@ -69,11 +70,24 @@ impl TestStore {
     async fn stored_uuid(&self, id: &str) -> Option<Vec<u8>> {
         self.inner.get(id).await.unwrap().map(|r| r.uuid)
     }
+
+    async fn stored_ip(&self, id: &str) -> Option<IpAddr> {
+        self.inner.get(id).await.unwrap().and_then(|r| r.ip)
+    }
+
+    fn set_down(&self, down: bool) {
+        let fail = if down { usize::MAX } else { 0 };
+        self.fail_upserts.store(fail, Ordering::SeqCst);
+    }
 }
 
 #[async_trait]
 impl PeerStore for TestStore {
-    async fn load_all(&self) -> Result<Vec<PeerRecord>, deskhaven_signal::StoreError> {
+    async fn load_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<PeerRecord>, deskhaven_signal::StoreError> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         if self.hang_load.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
@@ -81,7 +95,7 @@ impl PeerStore for TestStore {
         if self.fail_load.load(Ordering::SeqCst) {
             return Err(deskhaven_signal::StoreError::backend("store down"));
         }
-        self.inner.load_all().await
+        self.inner.load_page(after, limit).await
     }
 
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, deskhaven_signal::StoreError> {
@@ -260,31 +274,110 @@ async fn transient_write_failure_still_rejects_another_uuid() {
     server.stop().await;
 }
 
-/// A write that fails on every retry is not dropped: the owner's next RegisterPeer asks for
-/// its pk again, and the RegisterPk it sends re-queues the write, which lands once the store
-/// recovers.
+/// H-A: with the store down, a bound fleet stays online like upstream. Over two rounds, two
+/// seconds apart (the writer's breaker opens meanwhile), every peer keeps refreshing over
+/// RegisterPeer without being asked for its pk, moves to a new source address with a
+/// RegisterPk that is
+/// answered OK (never SERVER_ERROR), shows online in OnlineRequest and receives punch holes at
+/// its new address. Once the store is back, every peer is saved with its latest IP, written
+/// once (the moves were coalesced).
 #[tokio::test]
-async fn unsaved_registration_is_requested_again_and_saved() {
-    // Arrange: every attempt of the first write fails (1 + 4 retries).
+async fn store_outage_keeps_bound_fleet_online_and_persists_after_recovery() {
+    // Arrange
+    const PEERS: usize = 20;
     let store = TestStore::shared();
-    store.fail_upserts.store(5, Ordering::SeqCst);
     let server = start(&store).await;
-    let (mut owner, keys) = server.online_peer("unsaved-peer").await;
+    let ids: Vec<String> = (0..PEERS).map(|n| format!("fleet-peer-{n:02}")).collect();
+    let mut fleet = Vec::new();
+    for id in &ids {
+        fleet.push(server.online_peer(id).await);
+    }
+    eventually("fleet saved", STEP, async || {
+        store.upserts.load(Ordering::SeqCst) == PEERS
+    })
+    .await;
+
+    // Act + Assert
+    store.set_down(true);
+    for round in 0..2 {
+        for (id, (client, keys)) in ids.iter().zip(fleet.iter_mut()) {
+            assert!(!client.register_peer(id).await.request_pk, "{id}: refresh");
+            let mut moved = server.udp().await;
+            assert_eq!(moved.register_pk(id, keys).await, OK, "{id}: round {round}");
+            assert!(!moved.register_peer(id).await.request_pk, "{id}: moved");
+            *client = moved;
+        }
+        sleep(Duration::from_secs(2)).await;
+    }
+    let names: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let online = server.nat().await.online_request(&names).await;
+    assert_eq!(
+        online_bits(&online.states, PEERS),
+        vec![true; PEERS],
+        "all online"
+    );
+    for (id, (client, _)) in ids.iter().zip(fleet.iter_mut()) {
+        let mut controller = server.tcp().await;
+        controller.punch_hole_request(server.punch_req(id)).await;
+        let ph = expect_msg!(client.recv().await, PunchHole);
+        assert_eq!(
+            decode_addr(&ph.socket_addr),
+            controller.local_addr(),
+            "{id}"
+        );
+    }
+    let before = store.upserts.load(Ordering::SeqCst);
+    store.set_down(false);
+    eventually("backlog saved", RECOVERY, async || {
+        let mut all = true;
+        for (id, (client, _)) in ids.iter().zip(&fleet) {
+            all &= store.stored_ip(id).await == Some(client.local_addr().ip());
+        }
+        all
+    })
+    .await;
+    sleep(POLL).await;
+    let recovery = store.upserts.load(Ordering::SeqCst) - before;
+    assert_eq!(recovery, PEERS, "each peer written once");
+    server.stop().await;
+}
+
+/// M-A: the store binds an id to another device (changed out of band after the preload) and
+/// answers the write of a freshly accepted registration with UuidMismatch. The store's
+/// binding is loaded back into memory (the writer re-reads it with `get`): right after that,
+/// an attacker with yet another uuid gets UUID_MISMATCH (eviction let the first comer claim the
+/// id), so does the device memory had accepted, and the store's owner is OK.
+#[tokio::test]
+async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
+    // Arrange
+    const ID: &str = "contested-peer";
+    let store = TestStore::shared();
+    let server = start(&store).await;
+    let owner = PeerKeys::random();
+    store.seed(ID, &owner).await;
+    let (mut accepted, accepted_keys) = server.online_peer(ID).await;
+    eventually("mismatch handled", STEP, async || {
+        store.gets.load(Ordering::SeqCst) == 1
+    })
+    .await;
+    sleep(POLL).await;
 
     // Act
-    eventually("pk requested again", RETRIES_EXHAUSTED, async || {
-        owner.register_peer("unsaved-peer").await.request_pk
-    })
-    .await;
-    let again = owner.register_pk("unsaved-peer", &keys).await;
+    let attacker = server
+        .udp()
+        .await
+        .register_pk(ID, &PeerKeys::random())
+        .await;
+    let previously_accepted = accepted.register_pk(ID, &accepted_keys).await;
+    let store_owner = server.udp().await.register_pk(ID, &owner).await;
 
     // Assert
-    assert_eq!(again, OK);
-    eventually("the re-queued write lands", STEP, async || {
-        store.stored_uuid("unsaved-peer").await.is_some()
-    })
-    .await;
-    assert!(!owner.register_peer("unsaved-peer").await.request_pk);
-    owner.assert_silent().await;
+    assert_eq!(attacker, UUID_MISMATCH, "yet another uuid");
+    assert_eq!(
+        previously_accepted, UUID_MISMATCH,
+        "the binding the store refused"
+    );
+    assert_eq!(store_owner, OK, "the store's owner");
+    assert_eq!(store.stored_uuid(ID).await, Some(owner.uuid.to_vec()));
     server.stop().await;
 }
