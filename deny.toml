@@ -26,10 +26,13 @@ allow = [
 ]
 
 # Git crates that declare no license and ship no license file.
-# hbb_common: covered by rustdesk-server's debian/copyright ("Files: *", AGPL-3.0
-# "or any later version"), which includes the libs/hbb_common submodule.
+# hbb_common: INFERENCE, not a stated license: rustdesk-server's debian/copyright says
+# "Files: *" are AGPL-3.0 ("or any later version"), and that tree carried hbb_common as
+# its libs/hbb_common submodule. The version pin makes this clarification stop matching
+# (and the crate fail as unlicensed) on any version change; hbb_common has stayed at 0.1.0
+# for a long time, so also re-check for a license field/file on every rev bump.
 [[licenses.clarify]]
-crate = "hbb_common"
+crate = "hbb_common@=0.1.0"
 expression = "AGPL-3.0-or-later"
 license-files = []
 
@@ -51,10 +54,14 @@ deny = [
     # TLS backend is rustls with the ring provider only.
     { crate = "aws-lc-rs" },
     { crate = "aws-lc-sys" },
-    # openssl / openssl-sys are NOT banned: documented exception, see
+    # OpenSSL only through hbb_common's native-tls stack: documented exception, see
     # dev/docs/02-architecture.md section 5.1 ("openssl exception"). hbb_common
     # unconditionally depends on native-tls (proxy and wss fallback paths).
     # deskhaven's own code still uses rustls + ring only.
+    { crate = "openssl", wrappers = ["native-tls"] },
+    { crate = "openssl-sys", wrappers = ["native-tls", "openssl"] },
+    { crate = "native-tls", wrappers = ["tokio-native-tls", "tungstenite", "tokio-tungstenite"] },
+    { crate = "tokio-native-tls", wrappers = ["hbb_common", "tokio-tungstenite"] },
     # Exactly one libsqlite3-sys (duplicates are an error), and it must stay
     # below 0.38 (sqlx constraint).
     { crate = "libsqlite3-sys", deny-multiple-versions = true },
@@ -75,7 +82,7 @@ ignore = [
     { id = "RUSTSEC-2023-0040", reason = "users 0.11 unmaintained: re-exported by hbb_common, never called (see RUSTSEC-2025-0040)" },
     { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 (fix needs 0.14, semver-incompatible with hbb_common): hbb_common never uses the with_context stream constructors" },
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7.4: Seekable API only; the `seekable` feature is not enabled" },
-    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.4 streaming decoder: only reached via hbb_common::compress::decompress (client address-book/group cache load); deskhaven never calls it; revisit when hbb_common upgrades zstd" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.4 DCtx::decompress_stream: only the write-side zstd::stream::write::Decoder exposes it; hbb_common's compress.rs uses the read-side zstd::Decoder::new, which the advisory lists as unaffected; revisit when hbb_common upgrades zstd" },
     { id = "RUSTSEC-2023-0051", reason = "dlopen_derive unmaintained: compile-time proc-macro of dlopen, which hbb_common re-exports but deskhaven does not use" },
     { id = "RUSTSEC-2021-0139", reason = "ansi_term unmaintained: build-time only (clap 2 <- bindgen 0.59 <- machine-uid build script)" },
     { id = "RUSTSEC-2024-0375", reason = "atty unmaintained: build-time only (clap 2 / env_logger 0.9 <- bindgen 0.59 <- machine-uid build script)" },
