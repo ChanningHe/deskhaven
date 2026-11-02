@@ -9,12 +9,15 @@ use std::sync::Arc;
 use common::T0_MS;
 use deskhaven_config::REDACTED;
 use deskhaven_core::clock::ManualClock;
+use deskhaven_core::console_audit::redact;
 use deskhaven_core::console_audit::{
     Actor, ActorKind, ConsoleAuditLog, MAX_LABEL_CHARS, NewConsoleAudit,
 };
+use deskhaven_db::begin_write;
 use deskhaven_db::entity::console_audit;
+use deskhaven_db::testing::Backend;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::EntityTrait;
+use sea_orm::{ConnectionTrait, EntityTrait, PaginatorTrait, Statement};
 use serde_json::{Value, json};
 
 fn entry(actor: Actor) -> NewConsoleAudit {
@@ -117,6 +120,87 @@ async fn over_long_labels_are_cut() {
             .unwrap();
 
         assert_eq!(row(db, id).await.target_id.len(), MAX_LABEL_CHARS);
+    })
+    .await;
+}
+
+async fn count(db: &TestDb) -> u64 {
+    console_audit::Entity::find().count(&db.conn).await.unwrap()
+}
+
+#[tokio::test]
+async fn record_in_commits_and_rolls_back_with_the_caller_transaction() {
+    each_migrated_backend(async |db: &TestDb| {
+        let log = ConsoleAuditLog::new(db.conn.clone(), Arc::new(ManualClock::at(T0_MS)));
+
+        let tx = begin_write(&db.conn).await.unwrap();
+        log.record_in(&tx, &entry(Actor::User(1))).await.unwrap();
+        tx.rollback().await.unwrap();
+        assert_eq!(count(db).await, 0, "{}: rolled back row kept", db.backend);
+
+        let tx = begin_write(&db.conn).await.unwrap();
+        let id = log.record_in(&tx, &entry(Actor::User(1))).await.unwrap();
+        tx.commit().await.unwrap();
+        let got = row(db, id).await;
+        assert_eq!(json_of(got.after)["password"], json!(REDACTED));
+    })
+    .await;
+}
+
+/// Every column of the migrated schema, as `(table, column)`.
+async fn schema_columns(db: &TestDb) -> Vec<(String, String)> {
+    let sql = match db.backend {
+        Backend::Sqlite => {
+            "SELECT m.name AS t, p.name AS c FROM sqlite_master m \
+             JOIN pragma_table_info(m.name) p WHERE m.type = 'table'"
+        }
+        Backend::Postgres => {
+            "SELECT table_name::text AS t, column_name::text AS c \
+             FROM information_schema.columns WHERE table_schema = current_schema()"
+        }
+    };
+    let backend = db.conn.get_database_backend();
+    let rows = db
+        .conn
+        .query_all_raw(Statement::from_string(backend, sql))
+        .await
+        .unwrap();
+    rows.iter()
+        .map(|r| (r.try_get("", "t").unwrap(), r.try_get("", "c").unwrap()))
+        .collect()
+}
+
+#[tokio::test]
+async fn every_ciphertext_digest_or_secret_column_of_the_schema_is_redacted() {
+    each_migrated_backend(async |db: &TestDb| {
+        let sensitive: Vec<(String, String)> = schema_columns(db)
+            .await
+            .into_iter()
+            .filter(|(_, c)| {
+                c.ends_with("_enc")
+                    || c.ends_with("_hash")
+                    || ["secret", "password", "token"]
+                        .iter()
+                        .any(|f| c.contains(f))
+            })
+            .collect();
+
+        for must in [
+            "totp_secret_enc",
+            "password_hash",
+            "token_hash",
+            "client_secret_enc",
+        ] {
+            assert!(
+                sensitive.iter().any(|(_, c)| c == must),
+                "{}: {must} missing from {sensitive:?}",
+                db.backend
+            );
+        }
+        for (table, column) in &sensitive {
+            let got = redact(&json!({ column.as_str(): "v" }));
+            assert_eq!(got[column.as_str()], json!(REDACTED), "{table}.{column}");
+        }
     })
     .await;
 }

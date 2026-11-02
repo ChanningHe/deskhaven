@@ -2,41 +2,36 @@
 //! an API token or the CLI. Append-only from here; retention is the background jobs'
 //! business.
 //!
+//! **Atomicity**: a write operation records its row with [`ConsoleAuditLog::record_in`]
+//! on the connection of its own write transaction, so the change and its audit row commit
+//! or roll back together. [`ConsoleAuditLog::record`] (own connection) is for events that
+//! change nothing in the database, and for the admin API's fallback.
+//!
 //! Secrets never reach a row. Two layers, because each misses what the other catches:
 //! - **Type**: secret values that sit in innocuously named fields (a setting's `value`, a
 //!   generic map entry) are [`deskhaven_config::Secret`]s in the snapshot the caller
-//!   serializes; they render as [`REDACTED`] (or `""` when unset).
-//! - **Name**: [`redact`] masks every object member whose key contains one of
-//!   [`SECRET_KEY_FRAGMENTS`] (ASCII case-insensitive), at any depth, so a plain `String`
-//!   password field a caller forgot to wrap is still masked. It errs on the side of masking:
-//!   a non-secret key that happens to match (e.g. `api_token_id`) loses its value too.
+//!   serializes; they render as `<redacted>` (or `""` when unset).
+//! - **Name and shape**: [`redact`] masks members whose key names a secret and strings
+//!   that look like credentials (see [`redact`](mod@redact) for the rules), at any depth,
+//!   so a plain `String` a caller forgot to wrap is still masked. It errs on the side of
+//!   masking: a non-secret key that happens to match (e.g. `api_token_id`) loses its value.
 //!
 //! `null` stays `null` under either layer: whether a secret is set is not itself secret.
 
+pub mod redact;
+
 use std::net::IpAddr;
 
-use deskhaven_config::REDACTED;
 use deskhaven_db::entity::console_audit;
 use deskhaven_db::time;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr};
-use serde_json::{Map, Value};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr};
+use serde_json::Value;
 
 pub use deskhaven_db::entity::console_audit::ActorKind;
+pub use redact::{is_secret_key, redact};
 
 use crate::clock::SharedClock;
-
-/// Object keys whose values [`redact`] masks: a key matches when it contains a fragment,
-/// ignoring ASCII case.
-pub const SECRET_KEY_FRAGMENTS: &[&str] = &[
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "private_key",
-    "recovery_code",
-    "credential",
-];
 
 /// Longest stored `action`, `target_type` and `target_id` (characters; longer is cut).
 pub const MAX_LABEL_CHARS: usize = 256;
@@ -89,8 +84,18 @@ impl ConsoleAuditLog {
         Self { db, clock }
     }
 
-    /// Inserts one row stamped with the clock's time; returns its id.
+    /// Inserts one row on the log's own connection; returns its id.
     pub async fn record(&self, entry: &NewConsoleAudit) -> Result<i64, DbErr> {
+        self.record_in(&self.db, entry).await
+    }
+
+    /// Inserts one row on `conn`, normally the caller's write transaction, so the row
+    /// commits (or rolls back) with the change it describes; returns its id.
+    pub async fn record_in<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        entry: &NewConsoleAudit,
+    ) -> Result<i64, DbErr> {
         let now = self.clock.now_ms();
         let created_at = time::from_millis(now)
             .ok_or_else(|| DbErr::Custom(format!("timestamp {now} out of range")))?;
@@ -107,35 +112,8 @@ impl ConsoleAuditLog {
             created_at: Set(created_at),
             ..Default::default()
         };
-        row.insert(&self.db).await.map(|row| row.id)
+        row.insert(conn).await.map(|row| row.id)
     }
-}
-
-/// `value` with every member whose key names a secret (see [`SECRET_KEY_FRAGMENTS`])
-/// replaced by [`REDACTED`], at any depth. `null` members stay `null`.
-pub fn redact(value: &Value) -> Value {
-    match value {
-        Value::Object(members) => Value::Object(
-            members
-                .iter()
-                .map(|(key, member)| (key.clone(), redact_member(key, member)))
-                .collect::<Map<_, _>>(),
-        ),
-        Value::Array(items) => Value::Array(items.iter().map(redact).collect()),
-        scalar => scalar.clone(),
-    }
-}
-
-fn redact_member(key: &str, member: &Value) -> Value {
-    if member.is_null() || !is_secret_key(key) {
-        return redact(member);
-    }
-    Value::String(REDACTED.to_owned())
-}
-
-fn is_secret_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase();
-    SECRET_KEY_FRAGMENTS.iter().any(|f| key.contains(f))
 }
 
 fn label(s: &str) -> String {
@@ -144,65 +122,7 @@ fn label(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use deskhaven_config::Secret;
-    use serde_json::json;
-
     use super::*;
-
-    #[test]
-    fn masks_secret_keys_at_any_depth_and_keeps_the_rest() {
-        let input = json!({
-            "username": "alice",
-            "Password": "hunter2",
-            "smtp": { "bind_passwd": 1, "host": "mail" },
-            "providers": [{ "client_secret": "s3", "name": "idp" }],
-            "api_token": { "nested": "whole object" },
-            "totp_secret": null,
-        });
-
-        let got = redact(&input);
-
-        assert_eq!(
-            got,
-            json!({
-                "username": "alice",
-                "Password": REDACTED,
-                "smtp": { "bind_passwd": REDACTED, "host": "mail" },
-                "providers": [{ "client_secret": REDACTED, "name": "idp" }],
-                "api_token": REDACTED,
-                "totp_secret": null,
-            })
-        );
-    }
-
-    #[test]
-    fn secret_wrapper_masks_innocuous_field_names() {
-        #[derive(serde::Serialize)]
-        struct SettingView {
-            key: &'static str,
-            value: Secret,
-        }
-        let view = SettingView {
-            key: "smtp.password",
-            value: Secret::new("hunter2"),
-        };
-
-        let got = redact(&serde_json::to_value(view).unwrap());
-
-        assert_eq!(got, json!({ "key": "smtp.password", "value": REDACTED }));
-    }
-
-    #[test]
-    fn scalars_and_arrays_without_objects_are_unchanged() {
-        for value in [
-            json!(1),
-            json!("password"),
-            json!([1, "token"]),
-            json!(null),
-        ] {
-            assert_eq!(redact(&value), value);
-        }
-    }
 
     #[test]
     fn labels_are_bounded() {
