@@ -5,25 +5,31 @@
 
 use std::borrow::Cow;
 use std::error::Error;
+use std::time::Duration;
 
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use deskhaven_http::{INTERNAL_ERROR_BODY, error_chain};
 use serde::Serialize;
 use serde_json::Value;
+use utoipa::ToSchema;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 /// Stable wire codes. Renaming one is a breaking API change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     ValidationFailed,
     Unauthorized,
     Forbidden,
+    /// A state-changing request without the matching `X-Deskhaven-CSRF` header.
+    CsrfFailed,
     NotFound,
     Conflict,
+    RateLimited,
+    UnsupportedMediaType,
     Internal,
     // Produced by the HTTP stack (see `render_stack_error`).
     BadRequest,
@@ -38,9 +44,11 @@ impl ErrorCode {
         match self {
             Self::ValidationFailed => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::Forbidden | Self::CsrfFailed => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict => StatusCode::CONFLICT,
+            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BadRequest => StatusCode::BAD_REQUEST,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
@@ -54,8 +62,11 @@ impl ErrorCode {
             Self::ValidationFailed => "validation_failed",
             Self::Unauthorized => "unauthorized",
             Self::Forbidden => "forbidden",
+            Self::CsrfFailed => "csrf_failed",
             Self::NotFound => "not_found",
             Self::Conflict => "conflict",
+            Self::RateLimited => "rate_limited",
+            Self::UnsupportedMediaType => "unsupported_media_type",
             Self::Internal => "internal",
             Self::BadRequest => "bad_request",
             Self::MethodNotAllowed => "method_not_allowed",
@@ -72,6 +83,7 @@ pub struct AdminApiError {
     code: ErrorCode,
     message: Cow<'static, str>,
     details: Option<Value>,
+    retry_after: Option<Duration>,
     #[source]
     source: Option<BoxError>,
 }
@@ -82,6 +94,7 @@ impl AdminApiError {
             code,
             message: message.into(),
             details: None,
+            retry_after: None,
             source: None,
         }
     }
@@ -114,6 +127,18 @@ impl AdminApiError {
         Self::new(ErrorCode::Forbidden, "permission denied")
     }
 
+    pub fn csrf_failed() -> Self {
+        Self::new(ErrorCode::CsrfFailed, "missing or invalid CSRF token")
+    }
+
+    /// 429 with `Retry-After` (whole seconds, rounded up, at least 1).
+    pub fn rate_limited(retry_after: Duration) -> Self {
+        Self {
+            retry_after: Some(retry_after),
+            ..Self::new(ErrorCode::RateLimited, "too many requests, try again later")
+        }
+    }
+
     /// Generic 500; `err` is logged, never returned.
     pub fn internal(err: impl Into<BoxError>) -> Self {
         Self {
@@ -127,16 +152,21 @@ impl AdminApiError {
     }
 }
 
-#[derive(Serialize)]
-struct Envelope<'a> {
-    error: Body<'a>,
+/// The error body of every admin API failure (08-web-console §6).
+#[derive(Serialize, ToSchema)]
+pub struct ErrorEnvelope<'a> {
+    error: ErrorBody<'a>,
 }
 
-#[derive(Serialize)]
-struct Body<'a> {
+#[derive(Serialize, ToSchema)]
+pub struct ErrorBody<'a> {
     code: ErrorCode,
+    /// Human-readable, English; the console translates by `code`.
     message: &'a str,
+    /// Machine-readable context, e.g. `{"fields": {"<path>": ["<problem>"]}}` for
+    /// `validation_failed`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
     details: Option<&'a Value>,
 }
 
@@ -151,13 +181,26 @@ impl IntoResponse for AdminApiError {
                 tracing::debug!(code = self.code.as_str(), message = %self.message, "admin api error")
             }
         }
-        let envelope = Envelope {
-            error: Body {
+        let envelope = ErrorEnvelope {
+            error: ErrorBody {
                 code: self.code,
                 message: &self.message,
                 details: self.details.as_ref(),
             },
         };
-        (status, Json(envelope)).into_response()
+        let mut response = (status, Json(envelope)).into_response();
+        if let Some(wait) = self.retry_after {
+            response.headers_mut().insert(
+                header::RETRY_AFTER,
+                HeaderValue::from(retry_after_secs(wait)),
+            );
+        }
+        response
     }
+}
+
+/// Whole seconds, rounded up, at least 1 (`Retry-After: 0` would invite a tight loop).
+fn retry_after_secs(wait: Duration) -> u64 {
+    let rounded_up = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+    rounded_up.max(1)
 }

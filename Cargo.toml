@@ -142,8 +142,17 @@ hmac = { version = "0.13", default-features = false }
 sha1 = { version = "0.11", default-features = false }
 sha2_011 = { package = "sha2", version = "0.11", default-features = false }
 data-encoding = "2.11"
-# Constant-time comparison of TOTP codes (already in the graph via the RustCrypto AEADs).
+# Constant-time comparison of TOTP codes and admin CSRF tokens (already in the graph via
+# the RustCrypto AEADs).
 subtle = { version = "2.6", default-features = false }
+
+# --- admin api (M3-01) ---
+# (axum, serde, serde_json, sha2, base64_022, subtle, tracing: reused from earlier blocks.)
+# OpenAPI from handler annotations (02 §5.1); no swagger-ui / scalar UI crate.
+utoipa = { version = "6.0", default-features = false, features = ["macros"] }
+utoipa-axum = "0.3"
+# Input validation; every field needs a rule or an explicit skip (02 §5.1).
+garde = { version = "0.23", default-features = false, features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
