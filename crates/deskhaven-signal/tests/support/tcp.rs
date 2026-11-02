@@ -83,8 +83,8 @@ impl TcpClient {
     }
 
     /// KeyExchange frames the server sent first. Like a RustDesk client, receiving skips up to
-    /// two of them, so `recv` / `expect_msg!` see the first real answer. Empty while the server
-    /// sends no KeyExchange (upstream behavior until M1-07).
+    /// two of them, so `recv` / `expect_msg!` see the first real answer. On the main port the
+    /// server's offer once received (M1-07; upstream sent none); always empty on the NAT port.
     pub fn key_exchanges(&self) -> &[KeyExchange] {
         &self.key_exchanges
     }

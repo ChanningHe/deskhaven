@@ -67,6 +67,11 @@ pub struct SignalConfig {
     /// Force relayed connections (upstream `ALWAYS_USE_RELAY`). Change at runtime with
     /// [`SignalHandle::set_always_use_relay`].
     pub always_use_relay: bool,
+    /// Refuse KeyExchange replies that pick version 0 (clients from before Kx v1, one key for
+    /// both directions) by closing the connection (M1-07). Clients that skip the exchange
+    /// (not logged in) are not affected. Change at runtime with
+    /// [`SignalHandle::set_require_kx_v1`].
+    pub require_kx_v1: bool,
     /// Bound of the in-memory punch request log, 0 disables it (upstream `MAX_PUNCH_REQUESTS`).
     pub punch_req_max: usize,
     /// Bound of loading every registration from the [`PeerStore`] at start, before the
@@ -115,6 +120,7 @@ impl SignalConfig {
             local_ip: None,
             relay_servers: Vec::new(),
             always_use_relay: false,
+            require_kx_v1: false,
             punch_req_max: DEFAULT_PUNCH_REQ_MAX,
             peer_preload_timeout: DEFAULT_PEER_PRELOAD_TIMEOUT,
             secret_key,
@@ -226,19 +232,33 @@ impl SignalError {
 #[derive(Clone, Debug)]
 pub struct SignalHandle {
     tx: Sender,
-    always_use_relay: Arc<AtomicBool>,
+    switches: Switches,
     serving: watch::Receiver<bool>,
 }
 
+/// The runtime switches the handle sets and every connection reads (lock-free).
+#[derive(Clone, Debug)]
+pub(crate) struct Switches {
+    pub(crate) always_use_relay: Arc<AtomicBool>,
+    // deskhaven (M1-07): read when a KeyExchange reply arrives.
+    pub(crate) require_kx_v1: Arc<AtomicBool>,
+}
+
+impl Switches {
+    /// The initial values of `cfg`.
+    pub(crate) fn new(cfg: &SignalConfig) -> Self {
+        Self {
+            always_use_relay: Arc::new(AtomicBool::new(cfg.always_use_relay)),
+            require_kx_v1: Arc::new(AtomicBool::new(cfg.require_kx_v1)),
+        }
+    }
+}
+
 impl SignalHandle {
-    pub(crate) fn new(
-        tx: Sender,
-        always_use_relay: Arc<AtomicBool>,
-        serving: watch::Receiver<bool>,
-    ) -> Self {
+    pub(crate) fn new(tx: Sender, switches: Switches, serving: watch::Receiver<bool>) -> Self {
         Self {
             tx,
-            always_use_relay,
+            switches,
             serving,
         }
     }
@@ -309,8 +329,18 @@ impl SignalHandle {
     /// Takes effect immediately for every connection.
     pub fn set_always_use_relay(&self, on: bool) -> Result<(), SignalError> {
         self.ensure_running()?;
-        self.always_use_relay.store(on, Ordering::SeqCst);
+        self.switches.always_use_relay.store(on, Ordering::SeqCst);
         log::debug!("ALWAYS_USE_RELAY={}", if on { "Y" } else { "N" });
+        Ok(())
+    }
+
+    /// See [`SignalConfig::require_kx_v1`]. Applies to every KeyExchange reply received from
+    /// then on, on new and already open connections alike; connections secured before keep
+    /// their cipher.
+    pub fn set_require_kx_v1(&self, on: bool) -> Result<(), SignalError> {
+        self.ensure_running()?;
+        self.switches.require_kx_v1.store(on, Ordering::SeqCst);
+        log::debug!("require_kx_v1={on}");
         Ok(())
     }
 
@@ -359,13 +389,13 @@ impl SignalServer {
         control: Arc<dyn ControlPlane>,
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
+        let switches = Switches::new(&cfg);
         let (serving, serving_rx) = watch::channel(false);
         Self {
             cfg,
             store,
             control,
-            handle: SignalHandle::new(tx, always_use_relay, serving_rx),
+            handle: SignalHandle::new(tx, switches, serving_rx),
             rx,
             serving,
         }
@@ -426,7 +456,7 @@ impl SignalServer {
             control,
             handle.tx,
             rx,
-            handle.always_use_relay,
+            handle.switches,
             tasks,
             &serving,
         );
@@ -482,6 +512,7 @@ mod tests {
         assert_eq!(c.bind, None);
         assert_eq!(c.punch_req_max, DEFAULT_PUNCH_REQ_MAX);
         assert!(!c.always_use_relay && c.relay_servers.is_empty() && c.mask.is_none());
+        assert!(!c.require_kx_v1, "clients from before Kx v1 are served");
     }
 
     #[test]

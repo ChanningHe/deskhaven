@@ -97,14 +97,12 @@ async fn serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports() {
     // Act + Assert: cancel.
     server.stop().await;
     assert!(ports_free(port), "all ports are released");
-    let mut buf = [0u8; 16];
-    let read = timeout(STEP, idle.read(&mut buf))
+    // The server's KeyExchange offer (M1-07) is still unread; the stream must end (or be
+    // reset) right after it.
+    let mut rest = Vec::new();
+    let _end_or_reset = timeout(STEP, idle.read_to_end(&mut rest))
         .await
-        .expect("idle conn closed");
-    assert!(
-        matches!(read, Ok(0)) || read.is_err(),
-        "connection task ended with run"
-    );
+        .expect("connection task ended with run");
 }
 
 /// Upstream accepted a ConfigureUpdate datagram from loopback and then pushed its serial and

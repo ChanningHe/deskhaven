@@ -2,9 +2,10 @@
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
+use crate::kx::{self, KxState};
 use crate::log_limit::LogLimit;
 use crate::peer::*;
-use crate::server::{ClientIpResolver, Ports, SignalConfig, SignalError};
+use crate::server::{ClientIpResolver, Ports, SignalConfig, SignalError, Switches};
 use crate::store::PeerStore;
 use crate::tasks::Tasks;
 use arc_swap::ArcSwap;
@@ -24,7 +25,7 @@ use hbb_common::{
         register_pk_response::Result::{SERVER_ERROR, TOO_FREQUENT, UUID_MISMATCH},
         *,
     },
-    tcp::FramedStream,
+    tcp::{Encrypt, FramedStream},
     tokio::{
         self,
         net::{TcpListener, TcpStream},
@@ -44,7 +45,7 @@ use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::Ordering,
     time::Instant,
 };
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
@@ -74,7 +75,11 @@ const REG_TIMEOUT: i64 = 30_000;
 type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
 type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
 enum Sink {
-    TcpStream(TcpStreamSink),
+    // deskhaven (M1-07): with the connection's sending cipher once a KeyExchange secured it.
+    // It lives in the sink because the sink outlives the read loop: a PunchHoleRequest /
+    // RequestRelay parks it in `tcp_punch` and another connection's task writes the answer
+    // (`send_to_tcp` / `send_to_tcp_sync`), which must be sealed too.
+    TcpStream(TcpStreamSink, Option<Encrypt>),
     Ws(WsSink),
 }
 
@@ -90,6 +95,8 @@ type StreamOutbox = (
 struct StreamPeer {
     id: Option<String>,
     outbox: Option<StreamOutbox>,
+    // deskhaven (M1-07): a KeyExchange secured this connection (`ConnectReq::secured`, M5).
+    secured: bool,
 }
 /// Server-side entry (`stream_peers`, by id): where the connection is and its queue.
 struct StreamPeerTx {
@@ -162,7 +169,7 @@ const REGISTER_PK_LEN: usize = sign::PUBLICKEYBYTES;
 const MAX_REGISTER_UUID_LEN: usize = 128;
 // deskhaven (M1-05): dropped malformed RegisterPk are logged at most once a minute, with count.
 static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs(60));
-// deskhaven: the ALWAYS_USE_RELAY static became the per-instance `always_use_relay` field.
+// deskhaven: the ALWAYS_USE_RELAY static became the per-instance `switches.always_use_relay` (M1-07: `Switches`).
 
 // deskhaven (M1-08): limits of the stream connections (TCP main / NAT test port, websocket;
 // 07 §2.4). Upstream decoded frames without a size limit and gave each frame 30 s.
@@ -296,7 +303,9 @@ pub(crate) struct RendezvousServer {
     relay_resolving: bool,
     // deskhaven: `rendezvous_servers` removed with the ConfigureUpdate backdoor.
     inner: Arc<Inner>,
-    always_use_relay: Arc<AtomicBool>,
+    // deskhaven: runtime switches shared with the handle (`always_use_relay` was a static;
+    // M1-07 adds `require_kx_v1`).
+    switches: Switches,
     // deskhaven (M1-06): policy hooks (07 §3.2); only `pick_relay` is called so far.
     control: Arc<dyn ControlPlane>,
     tasks: Tasks,
@@ -325,7 +334,7 @@ impl RendezvousServer {
         control: Arc<dyn ControlPlane>,
         tx: Sender,
         mut rx: Receiver,
-        always_use_relay: Arc<AtomicBool>,
+        switches: Switches,
         tasks: Tasks,
         serving: &watch::Sender<bool>,
     ) -> Result<(), SignalError> {
@@ -333,7 +342,7 @@ impl RendezvousServer {
         log::info!("Key: {}", key);
         let bind_addr = cfg.bind;
         let rmem = cfg.rmem;
-        let mut rs = Self::new(&cfg, store, control, tx, always_use_relay, tasks)
+        let mut rs = Self::new(&cfg, store, control, tx, switches, tasks)
             .await
             .map_err(SignalError::internal)?;
         // deskhaven (M1-05): the registry is in memory before anything is answered (row count
@@ -355,7 +364,7 @@ impl RendezvousServer {
         log::info!("Listening on websocket {}", local_addr(&listener3)?);
         log::info!(
             "ALWAYS_USE_RELAY={}",
-            if rs.always_use_relay.load(Ordering::SeqCst) {
+            if rs.switches.always_use_relay.load(Ordering::SeqCst) {
                 "Y"
             } else {
                 "N"
@@ -416,7 +425,7 @@ impl RendezvousServer {
         store: Arc<dyn PeerStore>,
         control: Arc<dyn ControlPlane>,
         tx: Sender,
-        always_use_relay: Arc<AtomicBool>,
+        switches: Switches,
         tasks: Tasks,
     ) -> ResultType<Self> {
         let pm = PeerMap::new(store, &tasks);
@@ -456,7 +465,7 @@ impl RendezvousServer {
                 local_ip,
                 punch_req_max: cfg.punch_req_max,
             }),
-            always_use_relay,
+            switches,
             control,
             tasks,
         };
@@ -800,7 +809,8 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
-                    // ControlPlane hook (M5): `control.authorize(&ConnectReq { kind: Relay, .. })`
+                    // ControlPlane hook (M5): `control.authorize(&ConnectReq { kind: Relay,
+                    // secured: conn.secured, .. })` (`secured`: set by the KeyExchange, M1-07)
                     // goes here; Deny -> RelayResponse{refuse_reason}, Allow(grant) -> inject
                     // grant.permissions / audit_ref into the forwarded RequestRelay. AllowAll
                     // allows with an empty grant, so it is not called yet.
@@ -913,8 +923,8 @@ impl RendezvousServer {
                     return true;
                 }
                 // ControlPlane hooks (M5): an `HttpProxyRequest` arm (`control.http_proxy`, only
-                // on KeyExchange-secured connections, M1-07) and a `Hc` / HealthCheck arm
-                // (`control.health_check`, keeping the connection open for `keep_alive`) go
+                // when `conn.secured`, i.e. after a KeyExchange, M1-07) and a `Hc` / HealthCheck
+                // arm (`control.health_check`, keeping the connection open for `keep_alive`) go
                 // here. Upstream ignores both messages, as AllowAll would.
                 _ => {}
             }
@@ -1140,7 +1150,8 @@ impl RendezvousServer {
         // {other_failure}, Allow(grant) -> inject grant.permissions / audit_ref into the
         // PunchHole / FetchLocalAddr below and remember the grant with A's sink in `tcp_punch`
         // (feedback in handle_hole_sent / handle_local_addr / RelayResponse). AllowAll allows
-        // with an empty grant, so it is not called yet.
+        // with an empty grant, so it is not called yet. `secured` is `handle_tcp`'s
+        // `conn.secured` (M1-07), to be passed down with the request.
         // punch hole request from A, relay to B,
         // check if in same intranet first,
         // fetch local addrs if in same intranet.
@@ -1173,7 +1184,7 @@ impl RendezvousServer {
             let peer_is_lan = self.is_lan(peer_addr);
             let is_lan = self.is_lan(addr);
             let mut relay_server = self.get_relay_server(addr.ip(), peer_addr.ip());
-            if self.always_use_relay.load(Ordering::SeqCst) || (peer_is_lan ^ is_lan) {
+            if self.switches.always_use_relay.load(Ordering::SeqCst) || (peer_is_lan ^ is_lan) {
                 if peer_is_lan {
                     // https://github.com/rustdesk/rustdesk-server/issues/24
                     relay_server = self.inner.local_ip.clone()
@@ -1285,8 +1296,13 @@ impl RendezvousServer {
             return;
         };
         let sent = match s {
-            Sink::TcpStream(s) => matches!(
-                tokio::time::timeout(STREAM_SEND_TIMEOUT, s.send(bytes)).await,
+            // deskhaven (M1-07): sealed on a secured connection, heartbeats excepted.
+            Sink::TcpStream(s, cipher) => matches!(
+                tokio::time::timeout(
+                    STREAM_SEND_TIMEOUT,
+                    s.send(kx::seal(cipher.as_mut(), bytes))
+                )
+                .await,
                 Ok(Ok(()))
             ),
             Sink::Ws(ws) => matches!(
@@ -1470,6 +1486,7 @@ impl RendezvousServer {
         let first_frame = TokioInstant::now() + FIRST_FRAME_TIMEOUT;
         let mut sink;
         let mut reader;
+        let mut kx;
         // deskhaven (M1-08): held until the connection ends (websocket behind a proxy).
         let mut _claim: Option<ClaimedAddr> = None;
         if ws {
@@ -1508,12 +1525,31 @@ impl RendezvousServer {
             }
             sink = Some(Sink::Ws(a));
             reader = Reader::Ws(b);
+            // deskhaven (M1-07): no KeyExchange on websocket; clients skip it there
+            // (`secure_tcp` with `use_ws()`), the deployment's wss proxy protects the traffic.
+            kx = KxState::Plain;
         } else {
             let mut codec = BytesCodec::new();
             codec.set_max_packet_length(MAX_FRAME_LEN);
             let (a, b) = Framed::new(stream, codec).split();
-            sink = Some(Sink::TcpStream(a));
+            sink = Some(Sink::TcpStream(a, None));
             reader = Reader::Tcp(b);
+            // deskhaven (M1-07): offer the KeyExchange before reading anything. Logged-in
+            // controllers and TCP-mode controlled clients wait for it (`secure_tcp`, up to
+            // their 18 s READ_TIMEOUT) before sending; other clients skip it.
+            kx = match KxState::offer(&self.inner.sk) {
+                Ok((kx, offer)) => {
+                    Self::send_to_sink(&mut sink, offer).await;
+                    kx
+                }
+                Err(err) => {
+                    log::warn!("{err}; connection from {addr} stays unencrypted");
+                    KxState::Plain
+                }
+            };
+            if sink.is_none() {
+                return Ok(());
+            }
         }
         let mut deadline = first_frame;
         // deskhaven (M1-08): a peer registered over this connection (`conn`) gets heartbeats
@@ -1529,6 +1565,24 @@ impl RendezvousServer {
                     let Ok(Some(frame)) = res else { break };
                     deadline = TokioInstant::now() + IDLE_TIMEOUT;
                     let Some(bytes) = frame else { continue };
+                    // deskhaven (M1-07): the KeyExchange reply secures the connection; later
+                    // frames are opened (heartbeat answers stay plain). A reply that is refused
+                    // or a frame that does not open ends the connection.
+                    let require_v1 = self.switches.require_kx_v1.load(Ordering::SeqCst);
+                    let bytes = match kx.on_frame(bytes, require_v1) {
+                        Ok(kx::Frame::Message(bytes)) => bytes,
+                        Ok(kx::Frame::Secured(cipher)) => {
+                            if let Some(Sink::TcpStream(_, sending)) = sink.as_mut() {
+                                *sending = Some(cipher);
+                            }
+                            conn.secured = true;
+                            continue;
+                        }
+                        Err(err) => {
+                            log::debug!("Tcp connection from {:?}: {}", addr, err);
+                            break;
+                        }
+                    };
                     if bytes.is_empty()
                         && let Some(id) = &conn.id
                     {
@@ -1559,7 +1613,11 @@ impl RendezvousServer {
         if sink.is_none() {
             self.tcp_punch.lock().await.remove(&try_into_v4(addr));
         }
-        log::debug!("Tcp connection from {:?} closed", addr);
+        log::debug!(
+            "Tcp connection from {:?} closed (secured: {})",
+            addr,
+            conn.secured
+        );
         Ok(())
     }
 
@@ -1886,21 +1944,14 @@ mod tests {
             ..crate::SignalConfig::new(sign::gen_keypair().1)
         };
         let (tx, rx) = mpsc::unbounded_channel();
-        let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
+        let switches = crate::server::Switches::new(&cfg);
         let (_, serving) = watch::channel(false);
-        let handle = crate::SignalHandle::new(tx.clone(), always_use_relay.clone(), serving);
+        let handle = crate::SignalHandle::new(tx.clone(), switches.clone(), serving);
         let tasks = crate::tasks::Tasks::new(Default::default());
         let control = Arc::new(crate::AllowAll::new());
-        let rs = RendezvousServer::new(
-            &cfg,
-            memory_store(),
-            control,
-            tx.clone(),
-            always_use_relay,
-            tasks,
-        )
-        .await
-        .unwrap();
+        let rs = RendezvousServer::new(&cfg, memory_store(), control, tx.clone(), switches, tasks)
+            .await
+            .unwrap();
         let socket = create_udp_listener(Some(IpAddr::V4(Ipv4Addr::LOCALHOST)), 0, 0)
             .await
             .unwrap();
@@ -2199,10 +2250,16 @@ mod tests {
             let (tx, _rx) = mpsc::unbounded_channel();
             let tasks = crate::tasks::Tasks::new(Default::default());
             let control = Arc::new(crate::AllowAll::new());
-            let rs =
-                RendezvousServer::new(&cfg, memory_store(), control, tx, Default::default(), tasks)
-                    .await
-                    .unwrap();
+            let rs = RendezvousServer::new(
+                &cfg,
+                memory_store(),
+                control,
+                tx,
+                crate::server::Switches::new(&cfg),
+                tasks,
+            )
+            .await
+            .unwrap();
 
             rs.inner.local_ip.clone()
         }

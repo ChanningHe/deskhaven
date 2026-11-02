@@ -10,6 +10,8 @@
 //!   protobuf per binary websocket message). [`Conn`] is the common send / receive surface
 //!   ([`Recv`] tells silence from a closed connection), [`Rendezvous`] the typed request
 //!   helpers of the stream transports; `flows` holds multi-step flows.
+//! - `kx` (M1-07): the client half of the KeyExchange as RustDesk clients run it (both client
+//!   generations), to secure a [`TcpClient`] and to check the server's offer.
 //!
 //! Determinism: the server keeps process-wide state (`IP_BLOCKER`: RegisterPk per source IP).
 //! Every client binds its own loopback source address from [`next_client_ip`] so no two
@@ -37,6 +39,7 @@ pub(crate) use expect_msg;
 
 mod conn;
 mod flows;
+mod kx;
 mod msg;
 mod net;
 mod server;
@@ -48,6 +51,7 @@ mod ws;
 pub use {
     conn::{Conn, Recv, Rendezvous},
     flows::*,
+    kx::{KxClient, SIGNED_PARAMS_FLAG, read_offer, reply, secure, secured_tcp, verify_offer},
     msg::*,
     net::*,
     server::{TestServer, TrustXff, allow_all, config, memory_store, trusting, wait_until_ready},

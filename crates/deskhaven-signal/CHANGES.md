@@ -521,3 +521,60 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in
   turn, O(n) in the live claims of one IP in the worst case; without a bind address the
   listeners fall back from IPv6 dual-stack to IPv4 only when the IPv6 bind fails, as upstream.
+- 2026-11-03, M1-07, KeyExchange on the TCP main port (07 §4; new deskhaven module `src/kx.rs`,
+  not vendored, full workspace lints; `rendezvous_server.rs` `Sink`, `StreamPeer`,
+  `send_bytes_to_sink`, `handle_listener_inner`). Upstream hbbs never sent a KeyExchange, so
+  logged-in controllers and TCP-mode controlled clients (client `secure_tcp`) waited out their
+  18 s READ_TIMEOUT and failed ("Failed to secure tcp"). Now:
+  - Right after accepting a main-port TCP connection, before reading, the server sends
+    `KeyExchange{keys: [sign(S_pk, hbbs key)], version: 1, signed_params: sign("rdkx-params" ||
+    KxParams{pk: S_pk, version: 1}, hbbs key)}`, where `S_pk` is a fresh X25519 key of this
+    connection (never a process-wide key pair) with bit 255 set. X25519 ignores the bit, so
+    clients from before Kx v1 use the key unchanged; current clients take it as "signed
+    parameters required", and since it is inside the signature a man in the middle can neither
+    strip it nor drop / alter `signed_params` or the version without the client refusing the
+    offer (client common.rs `key_exchange`). Not on the websocket port (clients skip the
+    exchange there; wss protects that traffic, 07 §8) nor on the NAT test port (never secured).
+  - The first frame from the client decides: a `KeyExchange{keys: [C_pk, sealed key], version:
+    picked}` reply (2 keys, `picked <= 1`, the box opens with this connection's secret key)
+    secures the connection: v0 (`picked` 0, clients before v1) one key for both directions
+    (`Encrypt::new`), v1 one key per direction (`Encrypt::new_split` as responder, transcript
+    C_pk / S_pk as signed / advertised 1 / picked). A reply that fails any check closes the
+    connection. Any other first message means a client that skipped the offer (not logged in;
+    clients skip up to two KeyExchange frames, common.rs `get_next_nonkeyexchange_msg`): the
+    connection stays plain text, exactly as before. Only the first frame can be the reply.
+  - On a secured connection every non-empty frame is a secretbox with hbb_common's counter
+    nonces both ways; a frame that does not open closes the connection. Empty frames stay plain
+    both ways: server heartbeats (`hbb_common::tcp::Encrypt::enc` would seal them, so
+    `kx::seal` skips them; clients skip frames of at most one byte when decrypting) and the
+    clients' heartbeat answers (sent unsealed with `send_bytes`; `kx::open` leaves frames of at
+    most one byte alone, as `Encrypt::dec` does).
+  - The sending cipher lives in `Sink::TcpStream(sink, Option<Encrypt>)`, so every writer
+    seals: the connection's own task and the tasks of other connections that write a parked
+    sink from `tcp_punch` (PunchHoleResponse after PunchHoleSent / LocalAddr, RelayResponse,
+    refusals). The receiving copy stays with the read loop (`kx::KxState`); each copy only uses
+    one direction's key and counter.
+  - `StreamPeer::secured` records the outcome for `ConnectReq::secured` (M5 hooks; logged when
+    the connection closes).
+  - New `SignalConfig::require_kx_v1` (default false) and `SignalHandle::set_require_kx_v1`:
+    a v0 reply closes the connection (clients that skip the exchange are unaffected); read for
+    every reply, so a change applies to exchanges completing afterwards. The runtime switches
+    `always_use_relay` / `require_kx_v1` travel together as `server::Switches`.
+  - Provenance: written from the protocol, i.e. the client side in RustDesk 23e5bb4
+    (src/common.rs `key_exchange`, `create_symmetric_key_msg`) and hbb_common fae47e0 (tcp.rs
+    `Encrypt`, `KxTranscript`, `KX_PARAMS_DOMAIN`; proto `KeyExchange`, `KxParams`). Two
+    AGPL-3.0 forks of rustdesk-server were read as design references; no code was copied from
+    either: cortendesk-server cff9744 (github.com/marcpope/cortendesk-server, "CortenDesk Server
+    project", AGPL-3.0-only: offer / accept split, the cipher carried on the sink) and
+    sctgdesk-server 298b0b2 (github.com/sctg-development/sctgdesk-server, authors "sctg
+    <sctgdesk@k-cloud.pp.ua>", AGPL-3.0: flagged key, `KX_PARAMS_DOMAIN`, `new_split`, refusing
+    v0 on demand). Deviation from sctgdesk: per-connection ephemeral keys instead of one key
+    pair per process.
+  - Tests: `tests/key_exchange.rs` with a client half mirroring RustDesk (`tests/support/kx.rs`,
+    both client generations): v0 and v1 handshakes with encrypted frames both ways, downgrade
+    attempts failing the client's checks, `picked > advertised` and malformed replies closing
+    the connection, cross-connection answers under the controller's cipher, plain clients,
+    plain heartbeats on secured connections, no offer on websocket / NAT port, `require_kx_v1`
+    (also at runtime); `kx.rs` unit tests. `lifecycle.rs`
+    `serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports` now reads past the
+    offer before expecting the end of stream.
