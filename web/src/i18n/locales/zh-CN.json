@@ -18,12 +18,21 @@
     "settings": "设置"
   },
   "shell": {
-    "collapseSidebar": "收起侧栏",
-    "expandSidebar": "展开侧栏",
+    "toggleSidebar": "切换侧栏",
     "openNavigation": "打开导航",
     "close": "关闭",
-    "search": "搜索…",
-    "searchUnavailable": "命令面板即将推出"
+    "search": "搜索…"
+  },
+  "common": {
+    "loading": "加载中…"
+  },
+  "errors": {
+    "route": {
+      "title": "出错了",
+      "description": "页面加载失败。请重试，或返回概览。"
+    },
+    "retry": "重试",
+    "home": "返回概览"
   },
   "theme": {
     "label": "主题",

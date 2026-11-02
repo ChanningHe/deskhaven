@@ -17,7 +17,6 @@ interface AppSidebarProps {
 /** Desktop sidebar (md and up). Small screens use <MobileNav> instead. */
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const { t } = useTranslation()
-  const toggleLabel = collapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose
 
   return (
@@ -37,7 +36,8 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={toggleLabel}
+          // Fixed name; the state is conveyed by aria-expanded alone.
+          aria-label={t('shell.toggleSidebar')}
           aria-expanded={!collapsed}
           aria-controls={SIDEBAR_ID}
           onClick={onToggle}

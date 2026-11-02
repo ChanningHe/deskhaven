@@ -1,9 +1,10 @@
-// Fails when any translation key exists in one locale but not in another.
+// Fails when a translation key exists in one locale but not in another, or
+// when a key's {{placeholders}} differ between locales.
 // Usage: pnpm i18n:check
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 
-import { findMissingKeys, flattenKeys } from './lib/locale-keys.ts'
+import { findMissingKeys, findPlaceholderMismatches, flattenKeys } from './lib/locale-keys.ts'
 
 const LOCALES_DIR = new URL('../src/i18n/locales/', import.meta.url)
 const MIN_LOCALES = 2
@@ -33,7 +34,15 @@ function main(): number {
     process.stderr.write(`i18n:check: ${locale} is missing ${missing.length} key(s):\n`)
     for (const key of missing) process.stderr.write(`  - ${key}\n`)
   }
-  if (problems.length > 0) return 1
+
+  const mismatches = findPlaceholderMismatches(locales)
+  for (const { key, placeholders } of mismatches) {
+    process.stderr.write(`i18n:check: placeholders differ for "${key}":\n`)
+    for (const [locale, names] of Object.entries(placeholders)) {
+      process.stderr.write(`  - ${locale}: ${names.length > 0 ? names.join(', ') : '(none)'}\n`)
+    }
+  }
+  if (problems.length > 0 || mismatches.length > 0) return 1
 
   const keyCount = flattenKeys(locales[names[0] ?? '']).length
   process.stdout.write(`i18n:check: ${keyCount} keys consistent across ${names.join(', ')}\n`)

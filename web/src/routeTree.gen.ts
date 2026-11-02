@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppAddressBooksRouteImport } from './routes/_app/address-books'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppClientSetupRouteImport } from './routes/_app/client-setup'
@@ -35,6 +36,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSplatRoute = AppSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAddressBooksRoute = AppAddressBooksRouteImport.update({
@@ -91,6 +97,7 @@ const AppUsersRoute = AppUsersRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/$': typeof AppSplatRoute
   '/address-books': typeof AppAddressBooksRoute
   '/audit': typeof AppAuditRoute
   '/client-setup': typeof AppClientSetupRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/$': typeof AppSplatRoute
   '/address-books': typeof AppAddressBooksRoute
   '/audit': typeof AppAuditRoute
   '/client-setup': typeof AppClientSetupRoute
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/$': typeof AppSplatRoute
   '/_app/address-books': typeof AppAddressBooksRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/client-setup': typeof AppClientSetupRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/$'
     | '/address-books'
     | '/audit'
     | '/client-setup'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/$'
     | '/address-books'
     | '/audit'
     | '/client-setup'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/$'
     | '/_app/address-books'
     | '/_app/audit'
     | '/_app/client-setup'
@@ -204,6 +216,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$': {
+      id: '/_app/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof AppSplatRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/address-books': {
@@ -280,6 +299,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppSplatRoute: typeof AppSplatRoute
   AppAddressBooksRoute: typeof AppAddressBooksRoute
   AppAuditRoute: typeof AppAuditRoute
   AppClientSetupRoute: typeof AppClientSetupRoute
@@ -294,6 +314,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppSplatRoute: AppSplatRoute,
   AppAddressBooksRoute: AppAddressBooksRoute,
   AppAuditRoute: AppAuditRoute,
   AppClientSetupRoute: AppClientSetupRoute,

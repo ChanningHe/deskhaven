@@ -18,12 +18,21 @@
     "settings": "Settings"
   },
   "shell": {
-    "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar",
+    "toggleSidebar": "Toggle sidebar",
     "openNavigation": "Open navigation",
     "close": "Close",
-    "search": "Search…",
-    "searchUnavailable": "Command palette is coming soon"
+    "search": "Search…"
+  },
+  "common": {
+    "loading": "Loading…"
+  },
+  "errors": {
+    "route": {
+      "title": "Something went wrong",
+      "description": "This page failed to load. Try again, or go back to the overview."
+    },
+    "retry": "Try again",
+    "home": "Back to overview"
   },
   "theme": {
     "label": "Theme",

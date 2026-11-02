@@ -44,20 +44,57 @@ describe('app shell', () => {
     await user.click(screen.getByRole('link', { name: '设备' }))
 
     expect(await screen.findByRole('heading', { level: 1, name: '设备' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '暂无设备' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: '暂无设备' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '前往客户端配置' })).toHaveAttribute(
+      'href',
+      '/client-setup',
+    )
     expect(screen.getByRole('link', { name: '设备' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('moves focus to main and announces the page title after navigation', async () => {
+    const { user } = await renderShell()
+    const status = screen.getByRole('status')
+    expect(status).toBeEmptyDOMElement()
+
+    await user.click(screen.getByRole('link', { name: '用户' }))
+
+    await screen.findByRole('heading', { level: 1, name: '用户' })
+    await waitFor(() => {
+      expect(screen.getByRole('main')).toHaveFocus()
+    })
+    expect(status).toHaveTextContent('用户')
+    expect(document.title).toBe('用户 · deskhaven')
+  })
+
+  it('skip link focuses main without touching the URL', async () => {
+    const { user, router } = await renderShell('/devices')
+
+    await user.click(screen.getByRole('link', { name: '跳到主要内容' }))
+
+    expect(screen.getByRole('main')).toHaveFocus()
+    expect(router.state.location.href).toBe('/devices')
+    expect(router.history.length).toBe(1)
+  })
+
+  it('keeps the command palette placeholder out of the accessibility tree', async () => {
+    await renderShell()
+
+    expect(screen.getByText('搜索…').closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /搜索/ })).not.toBeInTheDocument()
   })
 
   it('collapses the sidebar and persists the state', async () => {
     const { user, unmount } = await renderShell()
 
-    const toggle = screen.getByRole('button', { name: '收起侧栏' })
+    // The name is fixed; only aria-expanded reflects the state.
+    const toggle = screen.getByRole('button', { name: '切换侧栏' })
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
     await user.click(toggle)
 
-    const expand = screen.getByRole('button', { name: '展开侧栏' })
-    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAccessibleName('切换侧栏')
     expect(document.getElementById('app-sidebar')).toHaveAttribute('data-collapsed', 'true')
     // Icon-only links keep an accessible name.
     expect(screen.getByRole('link', { name: '设备' })).toBeInTheDocument()
@@ -65,7 +102,10 @@ describe('app shell', () => {
 
     unmount()
     await renderShell()
-    expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '切换侧栏' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
   })
 
   it('opens the mobile drawer and closes it after navigating', async () => {
@@ -128,10 +168,14 @@ describe('routes outside the shell', () => {
     expect(await screen.findByRole('heading', { name: '登录 deskhaven' })).toBeInTheDocument()
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
+})
 
-  it('renders a not-found page for unknown paths', async () => {
+describe('not found inside the shell', () => {
+  it('renders an h1 not-found page within the console navigation', async () => {
     renderApp('/no-such-page')
 
-    expect(await screen.findByRole('heading', { name: '页面不存在' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '页面不存在' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回概览' })).toHaveAttribute('href', '/')
   })
 })

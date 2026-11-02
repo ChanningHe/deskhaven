@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { readStorage, writeStorage } from '@/lib/storage'
 
@@ -9,11 +9,13 @@ export function useSidebarCollapsed(): { collapsed: boolean; toggle: () => void 
     () => readStorage(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true',
   )
 
-  const toggle = useCallback(() => {
-    const next = !collapsed
-    writeStorage(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
-    setCollapsed(next)
+  useEffect(() => {
+    writeStorage(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed))
   }, [collapsed])
+
+  const toggle = useCallback(() => {
+    setCollapsed((previous) => !previous)
+  }, [])
 
   return { collapsed, toggle }
 }
