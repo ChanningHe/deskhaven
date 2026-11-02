@@ -15,7 +15,7 @@
 use super::UserError;
 use crate::text::{self, NOTE_MAX_LEN};
 
-const USERNAME_MAX_LEN: usize = 64;
+pub(crate) const USERNAME_MAX_LEN: usize = 64;
 const EMAIL_MAX_LEN: usize = 254;
 const DISPLAY_NAME_MAX_LEN: usize = 128;
 
@@ -26,7 +26,7 @@ fn invalid(field: &'static str, reason: impl Into<String>) -> UserError {
     }
 }
 
-fn is_username_char(c: char) -> bool {
+pub(crate) fn is_username_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '@' | '-')
 }
 

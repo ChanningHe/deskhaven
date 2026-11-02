@@ -5,10 +5,10 @@ use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, time};
 
 use super::events::UserChange;
-use sea_orm::ActiveValue::Set;
+use sea_orm::ActiveValue::{self, Set};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, SqlErr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
 use super::normalize::{self, Email};
@@ -23,37 +23,44 @@ use crate::strategies;
 impl UserService {
     /// Creates an account. Local accounts need a password that passes the policy.
     pub async fn create(&self, new: NewUser) -> Result<User, UserError> {
-        let username_norm = normalize::username(&new.username)?;
-        let email = new.email.as_deref().map(normalize::email).transpose()?;
-        let display_name = normalize::display_name(&new.display_name, &new.username)?;
-        let note = normalize::note(&new.note)?;
-        let password_hash = match &new.credential {
-            Credential::Local { password } => Some(self.inner.hash_new_password(password).await?),
-            Credential::Ldap | Credential::Oidc => None,
-        };
-        let (email, email_norm) = split_email(email);
-        let now = self.inner.now();
-        let password_changed_at = password_hash.as_ref().map(|_| now);
-        let model = user::ActiveModel {
-            username: Set(new.username),
-            username_norm: Set(username_norm),
-            display_name: Set(display_name),
-            email: Set(email),
-            email_norm: Set(email_norm),
-            email_verified: Set(new.email_verified),
-            password_hash: Set(password_hash),
-            password_changed_at: Set(password_changed_at),
-            auth_source: Set(new.credential.auth_source()),
-            role: Set(new.role),
-            status: Set(new.status),
-            must_change_password: Set(new.must_change_password),
-            note: Set(note),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let created = model.insert(&self.inner.db).await.map_err(conflict)?;
+        let mut model = validated(&new)?;
+        if let Credential::Local { password } = &new.credential {
+            let hash = self.inner.hash_new_password(password).await?;
+            model.password_hash = Set(Some(hash));
+        }
+        let created = self.insert(&self.inner.db, model).await?;
         Ok(created.into())
+    }
+
+    /// Creates an external (LDAP / OIDC) account on `conn`, typically inside the caller's
+    /// transaction, so the account and what links it to its source commit together.
+    /// [`UserError::Invalid`] for a local credential (it needs a hashed password).
+    pub(crate) async fn create_external<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        new: &NewUser,
+    ) -> Result<user::Model, UserError> {
+        if matches!(new.credential, Credential::Local { .. }) {
+            return Err(UserError::Invalid {
+                field: "credential",
+                reason: "an external account has no local password".to_owned(),
+            });
+        }
+        self.insert(conn, validated(new)?).await
+    }
+
+    async fn insert<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        mut model: user::ActiveModel,
+    ) -> Result<user::Model, UserError> {
+        let now = self.inner.now();
+        if matches!(&model.password_hash, ActiveValue::Set(Some(_))) {
+            model.password_changed_at = Set(Some(now));
+        }
+        model.created_at = Set(now);
+        model.updated_at = Set(now);
+        model.insert(conn).await.map_err(conflict)
     }
 
     pub async fn update_profile(&self, id: i64, update: ProfileUpdate) -> Result<User, UserError> {
@@ -238,6 +245,32 @@ fn after(previous: Option<TimestampMs>, now: TimestampMs) -> TimestampMs {
         Some(next) if next.timestamp_millis() > now.timestamp_millis() => next,
         _ => now,
     }
+}
+
+/// The row of a new account, every input validated and normalized; no password and no
+/// timestamps yet.
+fn validated(new: &NewUser) -> Result<user::ActiveModel, UserError> {
+    let username_norm = normalize::username(&new.username)?;
+    let email = new.email.as_deref().map(normalize::email).transpose()?;
+    let display_name = normalize::display_name(&new.display_name, &new.username)?;
+    let note = normalize::note(&new.note)?;
+    let (email, email_norm) = split_email(email);
+    Ok(user::ActiveModel {
+        username: Set(new.username.clone()),
+        username_norm: Set(username_norm),
+        display_name: Set(display_name),
+        email: Set(email),
+        email_norm: Set(email_norm),
+        email_verified: Set(new.email_verified),
+        password_hash: Set(None),
+        password_changed_at: Set(None),
+        auth_source: Set(new.credential.auth_source()),
+        role: Set(new.role),
+        status: Set(new.status),
+        must_change_password: Set(new.must_change_password),
+        note: Set(note),
+        ..Default::default()
+    })
 }
 
 fn split_email(email: Option<Email>) -> (Option<String>, Option<String>) {

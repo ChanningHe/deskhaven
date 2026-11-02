@@ -1,0 +1,186 @@
+//! OpenID Connect login (06 §3.4): providers, and the authorization-code flow with PKCE that
+//! the official client drives by polling (03 §3.5–3.6).
+//!
+//! # Flow (client)
+//!
+//! 1. [`OidcService::begin_client`] (`POST /api/oidc/auth`): one `oidc_flows` row holding
+//!    SHA-256 of a 256-bit `state`, SHA-256 of a 256-bit client polling `code`, the PKCE S256
+//!    verifier sealed with [`SecretBox`] under `oidc_flows.pkce_verifier_enc:<state_hash>`
+//!    (the row id is unknown before the insert; the state hash is unique per row), the
+//!    `nonce`, the device the session will be bound to (`context`) and `expires_at`
+//!    ([`FLOW_TTL`]). Returns the polling code and the IdP's authorization URL.
+//! 2. [`OidcService::complete_callback`] (`GET <public_url>/api/oidc/callback`): claims the
+//!    flow by its state (`UPDATE … SET consumed_at WHERE consumed_at IS NULL AND
+//!    expires_at > now`, so a state works once), exchanges the code with the verifier,
+//!    verifies the ID token (signature against the provider's JWKS, `iss`, `aud`, `exp`,
+//!    `nonce`), resolves the identity (`identity`), and records the outcome on the row
+//!    (`completed_user_id` plus the account's credential stamp in `context`, or `error`).
+//! 3. [`OidcService::poll_client`] (`GET /api/oidc/auth-query`): pending until the callback
+//!    finished; then, for the device the flow was started from only, hands the account out
+//!    exactly once by deleting the row (`DELETE … WHERE completed_user_id IS NOT NULL`); the
+//!    caller mints the session from the stored stamp.
+//!
+//! Console logins (M3-02) reuse steps 1–2 with `flow = console` (no polling code): the
+//! callback reports the flow kind and leaves the session to its caller.
+//!
+//! # Identity (06 §3.4)
+//!
+//! The identity key is `(provider, sub)` (`user_identities`; a provider's issuer never
+//! changes). An unknown identity is linked to an existing account by email only when the ID
+//! token says `email_verified: true` **and** `auth.oidc.link_verified_email` is on; a
+//! missing claim counts as false. Otherwise, when the email belongs to an account, the login
+//! is refused (the user links the account in the console). With no such account and
+//! `auto_provision` on, a new `oidc` account is created. Accounts are never matched by
+//! username. Disabled and unverified accounts are refused.
+//!
+//! OIDC logins do not ask for the account's local second factor: the IdP authenticates, and
+//! multi-factor policy belongs there.
+//!
+//! # Outbound HTTP
+//!
+//! See `http`: https only (plain http only to a loopback issuer, and then only to loopback
+//! endpoints), no redirects, no proxy, timeouts and a response size cap on every request.
+
+mod callback;
+mod claims;
+mod context;
+mod discovery;
+mod error;
+mod flow;
+mod http;
+mod identity;
+mod poll;
+mod protocol;
+mod providers;
+mod url_policy;
+mod username;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use sea_orm::DatabaseConnection;
+use url::Url;
+
+pub use callback::{CallbackParams, CallbackReport, FlowKind, OidcLogin};
+pub use error::{CallbackError, Failure, OidcError, PollError, ProviderError};
+pub use flow::{ClientCode, ClientFlowStart};
+pub use http::{
+    CONNECT_TIMEOUT, FetchError, FetchFuture, HttpFetch, MAX_RESPONSE_BYTES, REQUEST_TIMEOUT,
+    ReqwestFetch,
+};
+pub use poll::{ClientLogin, PollOutcome};
+pub use providers::{
+    LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
+};
+pub use url_policy::MAX_ISSUER_LEN;
+
+use crate::clock::SharedClock;
+use crate::crypto::SecretBox;
+use crate::settings::SettingsService;
+use crate::users::UserService;
+
+use discovery::Discovery;
+
+/// Lifetime of a flow, from `/api/oidc/auth` to the last poll (06 §3.4). The client gives
+/// up after 3 minutes.
+pub const FLOW_TTL: Duration = Duration::from_secs(10 * 60);
+/// Path of the callback, below `public_url`.
+pub const CALLBACK_PATH: &str = "api/oidc/callback";
+
+/// OIDC providers and logins. Cheap to clone (shared state).
+#[derive(Clone)]
+pub struct OidcService {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    db: DatabaseConnection,
+    crypto: Arc<SecretBox>,
+    settings: SettingsService,
+    users: UserService,
+    clock: SharedClock,
+    /// `<public_url>/api/oidc/callback`; `None` without `public_url` (OIDC unavailable).
+    redirect_uri: Option<Url>,
+    discovery: Discovery,
+    buttons: providers::ButtonCache,
+}
+
+impl OidcService {
+    /// `public_url` is the bootstrap value (validated: http(s), host, no query); blank means
+    /// unset, which leaves providers manageable but every login refused
+    /// ([`OidcError::NotConfigured`]) and no login buttons. `fetch` carries every request to
+    /// the IdPs (production: [`ReqwestFetch`]).
+    pub fn new(
+        db: DatabaseConnection,
+        crypto: Arc<SecretBox>,
+        settings: SettingsService,
+        users: UserService,
+        clock: SharedClock,
+        public_url: &str,
+        fetch: Arc<dyn HttpFetch>,
+    ) -> Self {
+        let inner = Inner {
+            db,
+            crypto,
+            settings,
+            users,
+            discovery: Discovery::new(fetch, Arc::clone(&clock)),
+            clock,
+            redirect_uri: redirect_uri(public_url),
+            buttons: providers::ButtonCache::default(),
+        };
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+
+    /// The fixed callback URL registered at the IdPs, when `public_url` is set.
+    pub fn redirect_uri(&self) -> Option<&Url> {
+        self.inner.redirect_uri.as_ref()
+    }
+}
+
+impl Inner {
+    fn now_ms(&self) -> i64 {
+        self.clock.now_ms()
+    }
+}
+
+/// `<public_url>/api/oidc/callback`, keeping a path prefix of `public_url`.
+fn redirect_uri(public_url: &str) -> Option<Url> {
+    let trimmed = public_url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut base = Url::parse(trimmed).ok()?;
+    if !base.path().ends_with('/') {
+        let path = format!("{}/", base.path());
+        base.set_path(&path);
+    }
+    base.join(CALLBACK_PATH).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redirect_uri_follows_public_url_and_keeps_its_prefix() {
+        let uri = |s: &str| redirect_uri(s).map(|u| u.to_string());
+
+        assert_eq!(
+            uri("https://rd.example.com").as_deref(),
+            Some("https://rd.example.com/api/oidc/callback")
+        );
+        assert_eq!(
+            uri("https://rd.example.com/").as_deref(),
+            Some("https://rd.example.com/api/oidc/callback")
+        );
+        assert_eq!(
+            uri("https://example.com/rustdesk").as_deref(),
+            Some("https://example.com/rustdesk/api/oidc/callback")
+        );
+        assert_eq!(uri(""), None);
+        assert_eq!(uri("   "), None);
+    }
+}

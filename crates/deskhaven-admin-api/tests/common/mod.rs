@@ -20,7 +20,7 @@ use deskhaven_core::clock::SystemClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::settings::SettingsService;
-use deskhaven_core::state::AppState;
+use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::users::{Credential, NewUser, Password, PasswordHasher, Role};
 use deskhaven_db::testing::TestDb;
 use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
@@ -72,6 +72,7 @@ pub async fn harness(db: &TestDb, extra: AdminRoutes) -> Harness {
         "test-signal-key".to_owned(),
         PasswordHasher::default(),
         Arc::new(SystemClock),
+        &StateConfig::default(),
     ));
     let routes = deskhaven_admin_api::api_routes()
         .unwrap()

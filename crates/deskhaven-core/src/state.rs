@@ -12,6 +12,7 @@ use crate::clock::SharedClock;
 use crate::console_audit::ConsoleAuditLog;
 use crate::crypto::SecretBox;
 use crate::login_events::LoginEventLog;
+use crate::oidc::{OidcService, ReqwestFetch};
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
 use crate::tfa::TfaService;
@@ -38,6 +39,15 @@ pub struct AppState {
     pub tfa: TfaService,
     /// Audit trail of console / API / CLI changes.
     pub console_audit: ConsoleAuditLog,
+    /// OIDC providers and logins.
+    pub oidc: OidcService,
+}
+
+/// Bootstrap values the services need beyond the database and the settings.
+#[derive(Debug, Clone, Default)]
+pub struct StateConfig {
+    /// `public_url`, as validated by the bootstrap loader; blank disables OIDC logins.
+    pub public_url: String,
 }
 
 impl AppState {
@@ -51,6 +61,7 @@ impl AppState {
         signal_public_key: String,
         hasher: PasswordHasher,
         clock: SharedClock,
+        config: &StateConfig,
     ) -> Self {
         let users =
             UserService::with_clock(db.clone(), settings.clone(), hasher, Arc::clone(&clock));
@@ -62,6 +73,15 @@ impl AppState {
             Arc::clone(&crypto),
             settings.clone(),
             Arc::clone(&clock),
+        );
+        let oidc = OidcService::new(
+            db.clone(),
+            Arc::clone(&crypto),
+            settings.clone(),
+            users.clone(),
+            Arc::clone(&clock),
+            &config.public_url,
+            Arc::new(ReqwestFetch::new()),
         );
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {
@@ -75,6 +95,7 @@ impl AppState {
             login_events,
             tfa,
             console_audit,
+            oidc,
         }
     }
 }

@@ -10,29 +10,46 @@ use super::{
     UserError, UserService,
 };
 
-/// The credential a login verified: the user's `password_changed_at` at that moment. Opaque;
-/// compare it with [`UserService::credential_stamp_matches`].
+/// The credential a login verified: the user's auth source and `password_changed_at` at
+/// that moment. Opaque; compare it with [`UserService::credential_stamp_matches`].
+///
+/// Local logins take it with `auth_source = local`. An OIDC login takes it from the account
+/// it resolved to, whatever its source, so a password change, a disabled account or a
+/// changed auth source between the verification and the session refuses the session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CredentialStamp {
     password_changed_at: Option<i64>,
+    auth_source: AuthSource,
 }
 
 impl CredentialStamp {
-    fn of(user: &user::Model) -> Self {
+    pub(crate) fn of(user: &user::Model) -> Self {
         Self {
             password_changed_at: user.password_changed_at.map(|t| t.timestamp_millis()),
+            auth_source: user.auth_source,
         }
     }
 
-    /// For carrying a stamp across the two steps of a 2FA login (`tfa`, stored server side
-    /// with the challenge, never sent to the client).
+    /// For carrying a local login's stamp across the two steps of a 2FA login (`tfa`,
+    /// stored server side with the challenge, never sent to the client).
     pub(crate) fn to_stored(self) -> Option<i64> {
         self.password_changed_at
     }
 
+    /// A local login's stamp, read back from [`to_stored`](Self::to_stored).
     pub(crate) fn from_stored(password_changed_at: Option<i64>) -> Self {
+        Self::from_parts(password_changed_at, AuthSource::Local)
+    }
+
+    /// Both parts, for storing a stamp of any source (OIDC flows).
+    pub(crate) fn parts(self) -> (Option<i64>, AuthSource) {
+        (self.password_changed_at, self.auth_source)
+    }
+
+    pub(crate) fn from_parts(password_changed_at: Option<i64>, auth_source: AuthSource) -> Self {
         Self {
             password_changed_at,
+            auth_source,
         }
     }
 }
@@ -98,8 +115,9 @@ impl UserService {
         })
     }
 
-    /// Whether `user_id` still exists, is active, uses a local password and has the
-    /// password `stamp` was taken from.
+    /// Whether `user_id` still exists, is active, and has the auth source and password
+    /// `stamp` was taken from (a local login's stamp: still a local account with the same
+    /// password).
     ///
     /// Call it on the connection of the transaction that creates the session: on PostgreSQL
     /// the user row is share-locked until that transaction ends, so a concurrent password
@@ -115,11 +133,7 @@ impl UserService {
             .lock_shared()
             .one(conn)
             .await?;
-        Ok(found.is_some_and(|u| {
-            u.status == Status::Active
-                && u.auth_source == AuthSource::Local
-                && CredentialStamp::of(&u) == *stamp
-        }))
+        Ok(found.is_some_and(|u| u.status == Status::Active && CredentialStamp::of(&u) == *stamp))
     }
 }
 

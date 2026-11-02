@@ -15,6 +15,8 @@ use serde_json::Value as Json;
 
 pub mod ab;
 pub mod lockout;
+pub mod oidc;
+pub mod oidc_idp;
 pub mod tfa;
 
 /// A fixed instant with a non-zero millisecond part.

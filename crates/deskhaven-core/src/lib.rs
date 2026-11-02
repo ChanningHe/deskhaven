@@ -9,6 +9,7 @@ pub mod devices;
 pub mod groups;
 pub mod keys;
 pub mod login_events;
+pub mod oidc;
 pub mod pagination;
 pub mod sessions;
 pub mod settings;

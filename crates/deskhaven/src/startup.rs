@@ -15,7 +15,7 @@ use deskhaven_core::keys::{
     load_or_generate_signal_key,
 };
 use deskhaven_core::settings::SettingsService;
-use deskhaven_core::state::AppState;
+use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::users::PasswordHasher;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 use deskhaven_signal::AllowAll;
@@ -177,6 +177,9 @@ pub async fn open_state(
         signal_public_key,
         PasswordHasher::default(),
         Arc::new(SystemClock),
+        &StateConfig {
+            public_url: config.public_url.clone(),
+        },
     ))
 }
 

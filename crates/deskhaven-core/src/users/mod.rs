@@ -13,6 +13,7 @@
 mod auth;
 mod error;
 mod events;
+pub(crate) mod lookup;
 mod model;
 mod normalize;
 mod password;
@@ -39,8 +40,8 @@ pub use events::{CommitHook, UserChange, UserEvent};
 pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery};
 pub use password::{HashLimits, HashParams, Password, PasswordError, PasswordHasher};
 pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
-// Also keys the login lockout (`auth::limiter::LockoutKey`).
-pub(crate) use normalize::username_norm;
+// Also keys the login lockout (`auth::limiter::LockoutKey`); OIDC derives usernames by it.
+pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char, username_norm};
 
 use crate::clock::{SharedClock, SystemClock};
 use crate::pagination::Page;
