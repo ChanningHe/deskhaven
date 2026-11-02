@@ -91,7 +91,9 @@ describe('account setup', () => {
     })
   })
 
-  it('enrols TOTP: QR and key, a code, then the recovery codes once', async () => {
+  it('enrols TOTP: QR and key, the current password and a code, then the recovery codes once', async () => {
+    let sent: unknown
+    let attempt = 0
     const enabled = {
       recovery_codes: ['aaaaa-bbbbb', 'ccccc-ddddd'],
       user: { ...OWNER_ME, totp_enabled: true },
@@ -100,7 +102,13 @@ describe('account setup', () => {
       me: TOTP_STEP,
       api: {
         'POST /admin/api/v1/me/totp/enrolment': { body: ENROLMENT },
-        'POST /admin/api/v1/me/totp/enrolment/confirm': { body: enabled },
+        'POST /admin/api/v1/me/totp/enrolment/confirm': ({ init }) => {
+          attempt += 1
+          sent = JSON.parse(typeof init.body === 'string' ? init.body : 'null')
+          return attempt === 1
+            ? { status: 422, body: errorEnvelope('wrong_password') }
+            : { body: enabled }
+        },
       },
     })
 
@@ -110,9 +118,16 @@ describe('account setup', () => {
     expect(screen.getByText('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP')).toBeInTheDocument()
     expect(callsTo(fetchSpy, '/admin/api/v1/me/totp/enrolment')).toBe(1)
 
+    await user.type(screen.getByLabelText('当前密码'), 'wrong')
     await user.type(screen.getByLabelText('应用中的验证码'), '123456')
     await user.click(screen.getByRole('button', { name: '启用' }))
+    expect(await screen.findByText('当前密码错误。')).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('当前密码'))
+    await user.type(screen.getByLabelText('当前密码'), 'my password')
+    await user.type(screen.getByLabelText('应用中的验证码'), '654321')
+    await user.click(screen.getByRole('button', { name: '启用' }))
     const dialog = await screen.findByRole('dialog', { name: '恢复码' })
+    expect(sent).toEqual({ current_password: 'my password', code: '654321' })
     expect(within(dialog).getByRole('textbox')).toHaveValue('aaaaa-bbbbb\nccccc-ddddd')
     await user.click(within(dialog).getByRole('checkbox'))
     await user.click(within(dialog).getByRole('button', { name: '完成' }))

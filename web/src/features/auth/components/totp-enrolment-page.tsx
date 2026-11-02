@@ -38,6 +38,7 @@ export function TotpEnrolmentPage() {
     gcTime: 0,
   })
   const logout = useLogout()
+  const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const started = useRef(false)
 
@@ -49,9 +50,14 @@ export function TotpEnrolmentPage() {
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // The current password re-authenticates: a stolen session cannot bind another
+    // authenticator.
     confirm.mutate(
-      { code: code.trim() },
+      { current_password: password, code: code.trim() },
       {
+        onSuccess: () => {
+          setPassword('')
+        },
         onError: () => {
           setCode('')
         },
@@ -94,6 +100,17 @@ export function TotpEnrolmentPage() {
             </code>
           </div>
           <form method="post" className="space-y-4" onSubmit={submit}>
+            <TextField
+              id="totp-password"
+              label={t('accountSetup.currentPassword')}
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value)
+              }}
+            />
             <TextField
               id="totp-code"
               label={t('accountSetup.code')}

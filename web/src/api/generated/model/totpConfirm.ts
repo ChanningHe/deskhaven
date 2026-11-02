@@ -3,7 +3,12 @@
  * Run `pnpm gen:api` to regenerate.
  */
 
+/**
+ * Never logged.
+ */
 export interface TotpConfirm {
   /** A current six-digit code of the pending seed. */
   code: string
+  /** The account's current password (re-authentication). */
+  current_password: string
 }

@@ -294,9 +294,20 @@ async fn logout_revokes_the_session_clears_the_cookies_and_is_audited() {
         let again = h.post(LOGOUT, None, json!({})).await;
 
         assert_eq!(out.status, 204, "{b}: {:?}", out.body);
-        for cookie in set_cookies(&out) {
+        let cleared = set_cookies(&out);
+        for cookie in &cleared {
             assert!(cookie.contains("Max-Age=0"), "{b}: {cookie}");
         }
+        let names: Vec<&str> = cleared.iter().filter_map(|c| c.split('=').next()).collect();
+        assert_eq!(
+            names,
+            [
+                "__Host-deskhaven_session",
+                "__Host-deskhaven_csrf",
+                "__Host-deskhaven_oidc"
+            ],
+            "{b}: a pending OIDC binding is cleared too"
+        );
         assert_eq!(h.get(ME, &console).await.status, 401, "{b}");
         assert_eq!(again.status, 204, "{b}: idempotent");
         // The audit row is written by a detached task.

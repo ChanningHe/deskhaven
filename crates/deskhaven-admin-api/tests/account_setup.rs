@@ -7,7 +7,7 @@ mod common;
 
 use axum::http::Method;
 use common::login::{console_of, set_cookies};
-use common::{Console, Harness, PASSWORD, harness, probe};
+use common::{CSRF_HEADER_NAME, Console, Harness, PASSWORD, harness, probe};
 use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{ProfileUpdate, Role};
@@ -25,12 +25,18 @@ const NEW_PASSWORD: &str = "glacier Pen 1984 river";
 /// Status (and code) of every kind of route for `console`.
 async fn matrix(h: &Harness, console: &Console) -> Vec<(&'static str, u16, String)> {
     let mut out = Vec::new();
-    let checks: [(&str, Method, &str); 5] = [
+    let checks: [(&str, Method, &str); 6] = [
         ("session", Method::GET, ME),
         ("self", Method::GET, "/admin/api/v1/probe/split"),
         ("admin", Method::GET, "/admin/api/v1/probe/secret"),
         ("owner", Method::DELETE, "/admin/api/v1/probe/owner"),
         ("public", Method::POST, "/admin/api/v1/probe/public"),
+        // A `Public` route that uses the session (`ConsoleUser`): checked there.
+        (
+            "public-session",
+            Method::POST,
+            "/admin/api/v1/probe/public-session",
+        ),
     ];
     for (name, method, path) in checks {
         let reply = if method == Method::GET {
@@ -50,14 +56,22 @@ fn restricted() -> Vec<(&'static str, u16, String)> {
         ("admin", 403, "setup_required".to_owned()),
         ("owner", 403, "setup_required".to_owned()),
         ("public", 200, String::new()),
+        ("public-session", 403, "setup_required".to_owned()),
     ]
 }
 
 fn unrestricted() -> Vec<(&'static str, u16, String)> {
-    ["session", "self", "admin", "owner", "public"]
-        .into_iter()
-        .map(|name| (name, 200, String::new()))
-        .collect()
+    [
+        "session",
+        "self",
+        "admin",
+        "owner",
+        "public",
+        "public-session",
+    ]
+    .into_iter()
+    .map(|name| (name, 200, String::new()))
+    .collect()
 }
 
 async fn must_change(h: &Harness, username: &str) -> i64 {
@@ -198,11 +212,19 @@ async fn enforced_2fa_restricts_until_enrolment_which_rotates_every_console_sess
         );
 
         let wrong = h
-            .post(CONFIRM, Some(&console), json!({ "code": "000000" }))
+            .post(
+                CONFIRM,
+                Some(&console),
+                json!({ "current_password": PASSWORD, "code": "000000" }),
+            )
             .await;
         let code = totp::code_at(&secret, SystemClock.now_ms());
         let confirmed = h
-            .post(CONFIRM, Some(&console), json!({ "code": code }))
+            .post(
+                CONFIRM,
+                Some(&console),
+                json!({ "current_password": PASSWORD, "code": code }),
+            )
             .await;
 
         assert_eq!(wrong.status, 422, "{b}: never 401");
@@ -268,7 +290,11 @@ async fn enrolment_while_enabled_is_a_conflict_and_confirm_needs_a_pending_seed(
         let b = db.backend;
 
         let early = h
-            .post(CONFIRM, Some(&console), json!({ "code": "123456" }))
+            .post(
+                CONFIRM,
+                Some(&console),
+                json!({ "current_password": PASSWORD, "code": "123456" }),
+            )
             .await;
         h.enrol(id).await;
         let again = h.post(ENROL, Some(&console), json!({})).await;
@@ -276,6 +302,148 @@ async fn enrolment_while_enabled_is_a_conflict_and_confirm_needs_a_pending_seed(
         assert_eq!(early.status, 409, "{b}: {:?}", early.body);
         assert_eq!(again.status, 409, "{b}");
         assert!(set_cookies(&again).is_empty(), "{b}");
+    })
+    .await;
+}
+
+/// A pending enrolment of `console`'s user; its seed.
+async fn begin_enrolment(h: &Harness, console: &Console) -> TotpSecret {
+    let begun = h.post(ENROL, Some(console), json!({})).await;
+    assert_eq!(begun.status, 200, "{:?}", begun.body);
+    TotpSecret::from_base32(begun.body["secret"].as_str().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn enabling_totp_needs_the_current_password_and_a_wrong_one_is_counted() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, probe::routes()).await;
+        h.user("alice", Role::User).await;
+        let console = h.signed_in("alice").await;
+        let secret = begin_enrolment(&h, &console).await;
+        let code = totp::code_at(&secret, SystemClock.now_ms());
+        let b = db.backend;
+
+        let missing = h
+            .post(CONFIRM, Some(&console), json!({ "code": code }))
+            .await;
+        let mut wrong = Vec::new();
+        for _ in 0..5 {
+            let body = json!({ "current_password": "not it", "code": code });
+            wrong.push(h.post(CONFIRM, Some(&console), body).await);
+        }
+        let locked = h.login("alice", PASSWORD).await;
+
+        assert_eq!(missing.status, 422, "{b}: {:?}", missing.body);
+        assert_eq!(missing.code(), "validation_failed", "{b}");
+        for reply in &wrong[..4] {
+            assert_eq!(reply.status, 422, "{b}: never 401");
+            assert_eq!(reply.code(), "wrong_password", "{b}");
+            assert!(set_cookies(reply).is_empty(), "{b}");
+        }
+        assert_eq!(h.get(ME, &console).await.body["totp_enabled"], false, "{b}");
+        assert_eq!(
+            h.get(ME, &console).await.status,
+            200,
+            "{b}: not rotated away"
+        );
+        // Five wrong passwords lock the username like five failed logins.
+        assert_eq!(locked.status, 429, "{b}: {:?}", locked.body);
+        assert_eq!(locked.code(), "rate_limited", "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn totp_enrolment_waits_for_the_password_step() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, probe::routes()).await;
+        h.set_setting("auth.tfa.enforce", json!("all")).await;
+        must_change(&h, "alice").await;
+        let console = h.signed_in("alice").await;
+        let b = db.backend;
+
+        let begun = h.post(ENROL, Some(&console), json!({})).await;
+        let body = json!({ "current_password": PASSWORD, "code": "123456" });
+        let confirmed = h.post(CONFIRM, Some(&console), body).await;
+
+        for reply in [&begun, &confirmed] {
+            assert_eq!(reply.status, 403, "{b}: {:?}", reply.body);
+            assert_eq!(reply.code(), "setup_required", "{b}");
+            assert_eq!(
+                reply.body["error"]["details"]["step"], "password_change",
+                "{b}"
+            );
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_temporary_password_set_meanwhile_restricts_a_live_session_at_once() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, probe::routes()).await;
+        let id = h.user("alice", Role::Admin).await;
+        let console = h.signed_in("alice").await;
+        let b = db.backend;
+        // Cached principal.
+        assert_eq!(
+            h.get("/admin/api/v1/probe/split", &console).await.status,
+            200,
+            "{b}"
+        );
+
+        let update = ProfileUpdate {
+            must_change_password: Some(true),
+            ..ProfileUpdate::default()
+        };
+        h.state.users.update_profile(id, update).await.unwrap();
+        let gated = h.get("/admin/api/v1/probe/split", &console).await;
+
+        assert_eq!(gated.code(), "setup_required", "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn cookie_setting_account_routes_refuse_plain_http() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, probe::routes()).await;
+        h.user("alice", Role::User).await;
+        let console = h.signed_in("alice").await;
+        begin_enrolment(&h, &console).await;
+        let b = db.backend;
+        let headers = [
+            ("origin", "http://192.0.2.10:21114"),
+            ("host", "192.0.2.10:21114"),
+            ("cookie", console.cookie.as_str()),
+            (CSRF_HEADER_NAME, console.csrf.as_str()),
+        ];
+        let requests = [
+            (
+                PASSWORD_CHANGE,
+                json!({ "current_password": PASSWORD, "new_password": NEW_PASSWORD }),
+            ),
+            (
+                CONFIRM,
+                json!({ "current_password": PASSWORD, "code": "123456" }),
+            ),
+            ("/admin/api/v1/auth/logout", json!({})),
+        ];
+        let mut replies = Vec::new();
+        for (path, body) in requests {
+            let request = common::request(Method::POST, path, &headers, Some(body));
+            replies.push(h.raw(request).await);
+        }
+
+        for reply in &replies {
+            assert_eq!(reply.code(), "insecure_transport", "{b}: {:?}", reply.body);
+            assert!(set_cookies(reply).is_empty(), "{b}");
+        }
+        assert_eq!(
+            h.get(ME, &console).await.status,
+            200,
+            "{b}: nothing changed"
+        );
     })
     .await;
 }

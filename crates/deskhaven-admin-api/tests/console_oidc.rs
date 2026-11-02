@@ -10,10 +10,10 @@ mod oidc_idp;
 
 use axum::http::Method;
 use common::Harness;
-use common::login::{console_of, cookie_value, harness_with};
+use common::login::{console_of, cookie_value, harness_with, set_cookies};
 use deskhaven_admin_api::{AdminRoutes, OIDC_BINDING_COOKIE};
 use deskhaven_core::clock::{Clock, SystemClock};
-use deskhaven_core::oidc::NewProvider;
+use deskhaven_core::oidc::{FLOW_TTL, NewProvider};
 use deskhaven_core::state::StateConfig;
 use deskhaven_db::entity::login_event;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
@@ -191,6 +191,80 @@ async fn enforced_totp_does_not_restrict_an_oidc_account() {
 
         assert_eq!(reply.status, 200, "{b}: {:?}", reply.body);
         assert_eq!(reply.body["user"]["setup_required"], Value::Null, "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_binding_cookie_is_host_only_secure_http_only_lax_and_lives_as_long_as_the_flow() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let b = db.backend;
+
+        let reply = env.h.post(START, None, json!({ "provider": "corp" })).await;
+
+        let cookie = set_cookies(&reply)
+            .into_iter()
+            .find(|c| c.starts_with(&format!("{OIDC_BINDING_COOKIE}=")))
+            .unwrap();
+        let attributes: Vec<&str> = cookie.split("; ").skip(1).collect();
+        let max_age = format!("Max-Age={}", FLOW_TTL.as_secs());
+        assert!(OIDC_BINDING_COOKIE.starts_with("__Host-"), "{b}");
+        for expected in [
+            "Path=/",
+            "Secure",
+            "SameSite=Lax",
+            "HttpOnly",
+            max_age.as_str(),
+        ] {
+            assert!(
+                attributes.contains(&expected),
+                "{b}: {expected} in {cookie}"
+            );
+        }
+        assert!(
+            !attributes.iter().any(|a| a.starts_with("Domain=")),
+            "{b}: host-only: {cookie}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_oidc_account_has_no_local_password_or_factor_to_manage() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let (request, binding) = env.start().await;
+        env.mount_token(&request).await;
+        let signed = env.complete(answer(&request), Some(&binding)).await;
+        let console = console_of(&signed);
+        let b = db.backend;
+
+        let enrol = env
+            .h
+            .post("/admin/api/v1/me/totp/enrolment", Some(&console), json!({}))
+            .await;
+        let confirm = env
+            .h
+            .post(
+                "/admin/api/v1/me/totp/enrolment/confirm",
+                Some(&console),
+                json!({ "current_password": "x", "code": "123456" }),
+            )
+            .await;
+        let password = env
+            .h
+            .post(
+                "/admin/api/v1/me/password",
+                Some(&console),
+                json!({ "current_password": "x", "new_password": "a long new password" }),
+            )
+            .await;
+
+        for reply in [&enrol, &confirm, &password] {
+            assert_eq!(reply.status, 409, "{b}: {:?}", reply.body);
+            assert_eq!(reply.code(), "not_local_account", "{b}");
+        }
     })
     .await;
 }

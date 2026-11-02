@@ -1,6 +1,6 @@
 //! `POST /auth/logout`: revokes the presented console session (06 §3.2: immediately) and
-//! clears both cookies. Public, so it also clears the cookies of a session that is already
-//! gone (the gate still requires the CSRF header and a same-origin request). Audited as
+//! clears its cookies (session, CSRF and a pending OIDC binding). Public, so it also clears
+//! the cookies of a session that is already gone (the gate still requires the CSRF header and a same-origin request). Audited as
 //! `session.logout` by the owner of a session it revoked.
 
 use std::sync::Arc;
@@ -11,8 +11,10 @@ use axum::response::{AppendHeaders, IntoResponse, Response};
 use deskhaven_core::console_audit::Actor;
 use deskhaven_core::state::AppState;
 
+use super::oidc::clear_binding_cookie;
 use crate::audit::Audit;
 use crate::session::{self, Client, clear_session_cookies};
+use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode};
 
 /// Signs out.
@@ -24,11 +26,13 @@ use crate::{AdminApiError, ErrorCode};
     security(()),
     responses(
         (status = 204, description = "Signed out; the cookies are cleared"),
+        (status = 403, description = "Plain-HTTP console (`insecure_transport`), or `csrf_failed`", body = crate::ErrorEnvelope),
         (status = 429, description = "Too many rejected sessions from this address (`rate_limited`)", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn logout(
     State(state): State<Arc<AppState>>,
+    _secure: SecureTransport,
     Client(client): Client,
     headers: HeaderMap,
 ) -> Result<Response, AdminApiError> {
@@ -50,7 +54,8 @@ pub async fn logout(
             Err(err) => return Err(err),
         },
     };
-    let cookies = clear_session_cookies().map(|value| (header::SET_COOKIE, value));
+    let [session, csrf] = clear_session_cookies();
+    let cookies = [session, csrf, clear_binding_cookie()].map(|value| (header::SET_COOKIE, value));
     let mut response = (StatusCode::NO_CONTENT, AppendHeaders(cookies)).into_response();
     if let Some(audit) = audit {
         response.extensions_mut().insert(audit);

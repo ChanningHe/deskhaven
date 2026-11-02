@@ -14,17 +14,18 @@ use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::{Password, PasswordError, UserError};
+use deskhaven_core::users::{AuthSource, Password};
 use garde::Validate;
 use serde::Deserialize;
-use serde_json::json;
 use utoipa::ToSchema;
 
+use super::reauth::{not_local, user_error, with_current_password};
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::auth::{user_agent, with_session};
 use crate::me::Me;
 use crate::session::{Client, ConsoleUser};
-use crate::{AdminApiError, ErrorCode, ValidJson};
+use crate::transport::SecureTransport;
+use crate::{AdminApiError, ValidJson};
 
 /// Longest accepted password input (characters; the policy maximum is 256).
 const MAX_PASSWORD_INPUT: usize = 1024;
@@ -51,13 +52,16 @@ pub struct PasswordChange {
     request_body = PasswordChange,
     responses(
         (status = 200, description = "Changed; a fresh session (cookies set)", body = Me),
-        (status = 409, description = "The account has no local password (`conflict`)", body = crate::ErrorEnvelope),
+        (status = 403, description = "Plain-HTTP console (`insecure_transport`), or `csrf_failed`", body = crate::ErrorEnvelope),
+        (status = 409, description = "The account has no local password (`not_local_account`)", body = crate::ErrorEnvelope),
         (status = 422, description = "Wrong current password (`wrong_password`), or the new one breaks the policy (`validation_failed`)", body = crate::ErrorEnvelope),
+        (status = 429, description = "Too many attempts (`rate_limited`)", body = crate::ErrorEnvelope),
         (status = 503, description = "Password hashing saturated (`unavailable`)", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn change(
     State(state): State<Arc<AppState>>,
+    _secure: SecureTransport,
     ConsoleUser(principal): ConsoleUser,
     Client(client): Client,
     ctx: AuditCtx,
@@ -66,41 +70,14 @@ pub async fn change(
 ) -> Result<Response, AdminApiError> {
     let user_id = principal.user_id;
     let user = state.users.get(user_id).await.map_err(user_error)?;
-    let throttle = &state.login_throttle;
-    let attempt = throttle
-        .pre_check(client, &user.username)
-        .await
-        .map_err(crate::auth::throttle_error)?;
-    let audit = ctx.entry(Audit::new("user.password_change").target("user", user_id));
-    let changed = state
-        .users
-        .change_password(
-            user_id,
-            &Password::new(body.current_password.as_str()),
-            &Password::new(body.new_password.as_str()),
-            &audit,
-        )
-        .await;
-    let stamp = match changed {
-        Ok(stamp) => stamp,
-        Err(UserError::WrongPassword) => {
-            // Counted, like a failed login (a lockout started here is just as final).
-            let _ = throttle.on_failure(attempt);
-            return Err(AdminApiError::new(
-                ErrorCode::WrongPassword,
-                "the current password is wrong",
-            ));
-        }
-        Err(err) => {
-            if let Err(refund) = throttle.refund(attempt).await {
-                tracing::warn!(error = %refund, "cannot refund a password change attempt");
-            }
-            return Err(user_error(err));
-        }
-    };
-    if let Err(err) = throttle.on_success(attempt).await {
-        tracing::warn!(user_id, error = %err, "cannot reset login failure counters");
+    if user.auth_source != AuthSource::Local {
+        return Err(not_local());
     }
+    let audit = ctx.entry(Audit::new("user.password_change").target("user", user_id));
+    let current = Password::new(body.current_password.as_str());
+    let new = Password::new(body.new_password.as_str());
+    let change = state.users.change_password(user_id, &current, &new, &audit);
+    let stamp = with_current_password(&state, client, &user.username, change).await?;
     let (session, token) = state
         .sessions
         .create_console(user_id, &stamp, Some(client.addr), user_agent(&headers))
@@ -109,19 +86,4 @@ pub async fn change(
     let user = state.users.get(user_id).await.map_err(user_error)?;
     let body = (Audited, Json(Me::of(&state, user)));
     Ok(with_session(&session, &token, body).into_response())
-}
-
-fn user_error(err: UserError) -> AdminApiError {
-    match err {
-        UserError::NotFound => AdminApiError::unauthorized(),
-        UserError::NotLocal => AdminApiError::conflict("the account has no local password"),
-        UserError::PolicyViolation { reason } => {
-            AdminApiError::validation_failed("the new password breaks the password policy")
-                .with_details(json!({ "fields": { "new_password": [reason.to_string()] } }))
-        }
-        UserError::Password(PasswordError::Busy) => {
-            AdminApiError::unavailable(crate::auth::BUSY_RETRY_AFTER)
-        }
-        other => AdminApiError::internal(other),
-    }
 }

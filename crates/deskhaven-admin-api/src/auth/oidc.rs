@@ -23,10 +23,11 @@
 //! enrolment (`account_setup`).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderMap, header};
+use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{AppendHeaders, IntoResponse, Response};
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
@@ -206,9 +207,14 @@ pub async fn complete(
         Err(err) => return Err(AdminApiError::internal(err)),
     };
     revoke_presented(&state, &headers).await;
-    let clear = http_only_cookie(OIDC_BINDING_COOKIE, "", std::time::Duration::ZERO);
+    let clear = clear_binding_cookie();
     let signed = signed_in(&state, login.user, &session, &token);
     Ok((AppendHeaders([(header::SET_COOKIE, clear)]), signed).into_response())
+}
+
+/// A `Set-Cookie` value that removes the binding cookie (completion, logout).
+pub(crate) fn clear_binding_cookie() -> HeaderValue {
+    http_only_cookie(OIDC_BINDING_COOKIE, "", Duration::ZERO)
 }
 
 fn failed(reason: &'static str) -> AdminApiError {

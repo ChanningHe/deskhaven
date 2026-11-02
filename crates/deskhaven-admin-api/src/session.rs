@@ -44,6 +44,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::AdminApiError;
+use crate::account_setup::{pending_step, setup_required};
 
 /// HttpOnly cookie holding the console session token.
 pub const SESSION_COOKIE: &str = "__Host-deskhaven_session";
@@ -58,7 +59,8 @@ const COOKIE_ATTRIBUTES: &str = "Path=/; Secure; SameSite=Lax";
 /// The authenticated console session of a request. As a handler argument it reuses the
 /// gate's result, or (on a `Public` route) authenticates the session cookie itself; the
 /// gate has already checked origin and CSRF for every route. Rejects with 401 (no,
-/// malformed or invalid cookie, or a client session), 429 (uncached cookie from an
+/// malformed or invalid cookie, or a client session), 403 `setup_required` (on a `Public`
+/// route, a session whose account setup is unfinished), 429 (uncached cookie from an
 /// address over its budget) or 500 (storage failure).
 #[derive(Clone, Debug)]
 pub struct ConsoleUser(pub SessionPrincipal);
@@ -76,6 +78,11 @@ impl FromRequestParts<Arc<AppState>> for ConsoleUser {
         let client = client_addr(parts, state).await?;
         let token = session_token(&parts.headers).ok_or_else(AdminApiError::unauthorized)?;
         let principal = authenticate(state, client, token).await?;
+        // A `Public` route: the gate did not check the account setup, so do it here (a
+        // restricted session reaches only `Session` routes through this extractor).
+        if let Some(step) = pending_step(&state.tfa, principal.role, principal.account) {
+            return Err(setup_required(step));
+        }
         if let Some(SessionSlot(slot)) = parts.extensions.get::<SessionSlot>() {
             // Only the first extraction fills it; later ones see the same principal.
             let _ = slot.set(principal.user_id);

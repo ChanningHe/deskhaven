@@ -90,6 +90,11 @@ fn codes_are_stable_snake_case_with_fixed_statuses() {
             StatusCode::CONFLICT,
         ),
         (ErrorCode::OidcFailed, "oidc_failed", StatusCode::FORBIDDEN),
+        (
+            ErrorCode::NotLocalAccount,
+            "not_local_account",
+            StatusCode::CONFLICT,
+        ),
     ];
     for (code, wire, status) in cases {
         assert_eq!(serde_json::to_value(code).unwrap(), json!(wire));

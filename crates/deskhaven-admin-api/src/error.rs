@@ -61,6 +61,8 @@ pub enum ErrorCode {
     SetupCompleted,
     /// A console OIDC login failed (`details.reason`).
     OidcFailed,
+    /// The account has no local password or local second factor (OIDC sign-in).
+    NotLocalAccount,
 }
 
 impl ErrorCode {
@@ -88,7 +90,7 @@ impl ErrorCode {
             | Self::SetupRequired
             | Self::InvalidSetupToken
             | Self::OidcFailed => StatusCode::FORBIDDEN,
-            Self::SetupCompleted => StatusCode::CONFLICT,
+            Self::SetupCompleted | Self::NotLocalAccount => StatusCode::CONFLICT,
         }
     }
 
@@ -119,6 +121,7 @@ impl ErrorCode {
             Self::InvalidSetupToken => "invalid_setup_token",
             Self::SetupCompleted => "setup_completed",
             Self::OidcFailed => "oidc_failed",
+            Self::NotLocalAccount => "not_local_account",
         }
     }
 }

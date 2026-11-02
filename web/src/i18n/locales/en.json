@@ -75,7 +75,8 @@
       "setup_required": "Finish setting up your account first.",
       "invalid_setup_token": "This setup link is invalid, expired or already used.",
       "setup_completed": "This server is already set up. Sign in instead.",
-      "oidc_failed": "Single sign-on failed. Try again."
+      "oidc_failed": "Single sign-on failed. Try again.",
+      "not_local_account": "This account signs in through single sign-on; its password and second factor are managed there."
     }
   },
   "theme": {

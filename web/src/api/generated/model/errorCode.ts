@@ -34,4 +34,5 @@ export const ErrorCode = {
   invalid_setup_token: 'invalid_setup_token',
   setup_completed: 'setup_completed',
   oidc_failed: 'oidc_failed',
+  not_local_account: 'not_local_account',
 } as const

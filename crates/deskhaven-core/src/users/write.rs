@@ -160,6 +160,32 @@ impl UserService {
             .map(drop)
     }
 
+    /// Re-authentication before a sensitive self-service change (console TOTP enrolment):
+    /// verifies `password` against the local account `id`, one Argon2id computation either
+    /// way. [`UserError::WrongPassword`] on mismatch, [`UserError::NotLocal`] for an account
+    /// without a local password.
+    pub async fn verify_password(&self, id: i64, password: &Password) -> Result<(), UserError> {
+        self.verified_local(id, password).await.map(drop)
+    }
+
+    /// The local account `id` and its stored hash, once `password` matched it.
+    async fn verified_local(
+        &self,
+        id: i64,
+        password: &Password,
+    ) -> Result<(user::Model, String), UserError> {
+        let target = user::Entity::find_by_id(id).one(&self.inner.db).await?;
+        let target = target.ok_or(UserError::NotFound)?;
+        let stored = match (&target.auth_source, &target.password_hash) {
+            (AuthSource::Local, Some(hash)) => hash.clone(),
+            _ => return Err(UserError::NotLocal),
+        };
+        if !self.inner.verify_current(id, password, &stored).await? {
+            return Err(UserError::WrongPassword);
+        }
+        Ok((target, stored))
+    }
+
     /// Self-service password change (console): verifies `current` against the stored hash
     /// (one Argon2id computation either way), then, in one transaction, replaces it with
     /// `new` (policy-checked; `must_change_password` cleared), revokes every session of the
@@ -173,15 +199,7 @@ impl UserService {
         new: &Password,
         audit: &NewConsoleAudit,
     ) -> Result<CredentialStamp, UserError> {
-        let target = user::Entity::find_by_id(id).one(&self.inner.db).await?;
-        let target = target.ok_or(UserError::NotFound)?;
-        let stored = match (&target.auth_source, &target.password_hash) {
-            (AuthSource::Local, Some(hash)) => hash.clone(),
-            _ => return Err(UserError::NotLocal),
-        };
-        if !self.inner.verify_current(id, current, &stored).await? {
-            return Err(UserError::WrongPassword);
-        }
+        let (target, stored) = self.verified_local(id, current).await?;
         let hash = self.inner.hash_new_password(new).await?;
         let change = PasswordChange {
             id,

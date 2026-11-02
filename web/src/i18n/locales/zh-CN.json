@@ -75,7 +75,8 @@
       "setup_required": "请先完成账号设置。",
       "invalid_setup_token": "初始化链接无效、已过期或已被使用。",
       "setup_completed": "服务器已完成初始化，请直接登录。",
-      "oidc_failed": "单点登录失败，请重试。"
+      "oidc_failed": "单点登录失败，请重试。",
+      "not_local_account": "该账号通过单点登录，其密码与第二因素由身份提供方管理。"
     }
   },
   "theme": {

@@ -3,12 +3,18 @@
 //! 1. `POST /me/totp/enrolment`: a new pending seed (replacing an earlier pending one),
 //!    shown once as base32 text, `otpauth://` URI and QR path data (`qr`). 409 while TOTP
 //!    is enabled.
-//! 2. `POST /me/totp/enrolment/confirm {code}`: a code of the pending seed enables TOTP
-//!    and issues the recovery codes, returned once. Then every console session of the user
-//!    is rotated (`SessionService::rotate_console`): this one is replaced by a fresh one
-//!    (cookies), others are revoked, so no session that never passed the new factor keeps
-//!    working with it (a session restricted to this enrolment included). Wrong code: 422
-//!    `invalid_code`.
+//! 2. `POST /me/totp/enrolment/confirm {current_password, code}`: the current password
+//!    (re-authentication, see `reauth`: a stolen session alone cannot bind an attacker's
+//!    authenticator, take the recovery codes and log the owner out), then a code of the
+//!    pending seed enables TOTP and issues the recovery codes, returned once. Then every
+//!    console session of the user is rotated (`SessionService::rotate_console`): this one
+//!    is replaced by a fresh one (cookies), others are revoked, so no session that never
+//!    passed the new factor keeps working with it (a session restricted to this enrolment
+//!    included). Wrong password: 422 `wrong_password`; wrong code: 422 `invalid_code`.
+//!
+//! Only local accounts enrol (409 `not_local_account` otherwise: an OIDC sign-in never asks
+//! for a local factor), and only once the password step of the account setup is done (403
+//! `setup_required` while a temporary password is pending: the steps go in order).
 //!
 //! Both are recorded in their own transaction (`user.totp_enrolment_begin`,
 //! `user.totp_enable`). Responses carrying secrets are `Cache-Control: no-store`.
@@ -19,21 +25,28 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
+use deskhaven_core::sessions::AccountFlags;
 use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::TfaError;
+use deskhaven_core::users::{AuthSource, Password, User};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::qr::{self, QrCode};
+use super::reauth::{not_local, user_error, with_current_password};
+use crate::account_setup::{SetupStep, pending_step, setup_required};
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::auth::{user_agent, with_session};
 use crate::me::Me;
 use crate::session::{Client, ConsoleUser};
+use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode, ValidJson};
 
 /// Longest accepted code input (characters).
 const MAX_CODE_INPUT: usize = 16;
+/// Longest accepted password input (characters; the policy maximum is 256).
+const MAX_PASSWORD_INPUT: usize = 1024;
 
 /// A pending enrolment, shown once.
 // Not `Debug`: it carries the seed.
@@ -47,9 +60,14 @@ pub struct TotpEnrolment {
     pub qr: QrCode,
 }
 
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+/// Never logged.
+#[derive(Deserialize, Validate, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TotpConfirm {
+    /// The account's current password (re-authentication).
+    #[garde(length(chars, min = 1, max = MAX_PASSWORD_INPUT))]
+    #[schema(format = Password)]
+    pub current_password: String,
     /// A current six-digit code of the pending seed.
     #[garde(length(chars, min = 1, max = MAX_CODE_INPUT))]
     pub code: String,
@@ -72,7 +90,8 @@ pub struct TotpEnabled {
     security(("console_session" = ["session"])),
     responses(
         (status = 200, description = "The pending seed", body = TotpEnrolment),
-        (status = 409, description = "TOTP is already enabled (`conflict`)", body = crate::ErrorEnvelope),
+        (status = 403, description = "A temporary password must be changed first (`setup_required`), or `csrf_failed`", body = crate::ErrorEnvelope),
+        (status = 409, description = "TOTP is already enabled (`conflict`), or the account is not local (`not_local_account`)", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn begin(
@@ -81,6 +100,7 @@ pub async fn begin(
     ctx: AuditCtx,
 ) -> Result<Response, AdminApiError> {
     let user_id = principal.user_id;
+    may_enrol(&state, user_id).await?;
     let audit = ctx.entry(Audit::new("user.totp_enrolment_begin").target("user", user_id));
     let enrolment = state
         .tfa
@@ -107,12 +127,16 @@ pub async fn begin(
     request_body = TotpConfirm,
     responses(
         (status = 200, description = "Enabled; recovery codes; a fresh session (cookies set)", body = TotpEnabled),
-        (status = 409, description = "Already enabled, or no enrolment pending (`conflict`)", body = crate::ErrorEnvelope),
-        (status = 422, description = "Wrong code (`invalid_code`)", body = crate::ErrorEnvelope),
+        (status = 403, description = "A temporary password must be changed first (`setup_required`), plain-HTTP console (`insecure_transport`), or `csrf_failed`", body = crate::ErrorEnvelope),
+        (status = 409, description = "Already enabled, or no enrolment pending (`conflict`), or the account is not local (`not_local_account`)", body = crate::ErrorEnvelope),
+        (status = 422, description = "Wrong current password (`wrong_password`), or wrong code (`invalid_code`)", body = crate::ErrorEnvelope),
+        (status = 429, description = "Too many attempts (`rate_limited`)", body = crate::ErrorEnvelope),
+        (status = 503, description = "Password hashing saturated (`unavailable`)", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn confirm(
     State(state): State<Arc<AppState>>,
+    _secure: SecureTransport,
     ConsoleUser(principal): ConsoleUser,
     Client(client): Client,
     ctx: AuditCtx,
@@ -120,6 +144,10 @@ pub async fn confirm(
     ValidJson(body): ValidJson<TotpConfirm>,
 ) -> Result<Response, AdminApiError> {
     let user_id = principal.user_id;
+    let user = may_enrol(&state, user_id).await?;
+    let password = Password::new(body.current_password.as_str());
+    let verify = state.users.verify_password(user_id, &password);
+    with_current_password(&state, client, &user.username, verify).await?;
     let audit = ctx.entry(Audit::new("user.totp_enable").target("user", user_id));
     let codes = state
         .tfa
@@ -152,6 +180,20 @@ pub async fn confirm(
             Ok((no_store(), Audited, Json(enabled)).into_response())
         }
     }
+}
+
+/// The user, when it may enrol TOTP now: a local account (an OIDC sign-in never asks for
+/// a local factor), past the password step of its account setup.
+async fn may_enrol(state: &AppState, user_id: i64) -> Result<User, AdminApiError> {
+    let user = state.users.get(user_id).await.map_err(user_error)?;
+    if user.auth_source != AuthSource::Local {
+        return Err(not_local());
+    }
+    let step = pending_step(&state.tfa, user.role, AccountFlags::from(&user));
+    if step == Some(SetupStep::PasswordChange) {
+        return Err(setup_required(SetupStep::PasswordChange));
+    }
+    Ok(user)
 }
 
 fn no_store() -> [(header::HeaderName, HeaderValue); 1] {

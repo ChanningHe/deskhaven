@@ -213,7 +213,7 @@
             "description": "Signed out; the cookies are cleared"
           },
           "403": {
-            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
             "content": {
               "application/json": {
                 "schema": {
@@ -503,7 +503,7 @@
             }
           },
           "403": {
-            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
             "content": {
               "application/json": {
                 "schema": {
@@ -513,7 +513,7 @@
             }
           },
           "409": {
-            "description": "The account has no local password (`conflict`)",
+            "description": "The account has no local password (`not_local_account`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -533,7 +533,7 @@
             }
           },
           "429": {
-            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "description": "Too many attempts (`rate_limited`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -602,7 +602,7 @@
             }
           },
           "403": {
-            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "description": "A temporary password must be changed first (`setup_required`), or `csrf_failed`",
             "content": {
               "application/json": {
                 "schema": {
@@ -612,7 +612,7 @@
             }
           },
           "409": {
-            "description": "TOTP is already enabled (`conflict`)",
+            "description": "TOTP is already enabled (`conflict`), or the account is not local (`not_local_account`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -691,7 +691,7 @@
             }
           },
           "403": {
-            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "description": "A temporary password must be changed first (`setup_required`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
             "content": {
               "application/json": {
                 "schema": {
@@ -701,7 +701,7 @@
             }
           },
           "409": {
-            "description": "Already enabled, or no enrolment pending (`conflict`)",
+            "description": "Already enabled, or no enrolment pending (`conflict`), or the account is not local (`not_local_account`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -711,7 +711,7 @@
             }
           },
           "422": {
-            "description": "Wrong code (`invalid_code`)",
+            "description": "Wrong current password (`wrong_password`), or wrong code (`invalid_code`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -721,7 +721,17 @@
             }
           },
           "429": {
-            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated (`unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -901,7 +911,8 @@
           "setup_required",
           "invalid_setup_token",
           "setup_completed",
-          "oidc_failed"
+          "oidc_failed",
+          "not_local_account"
         ]
       },
       "ErrorEnvelope": {
@@ -1203,13 +1214,20 @@
       },
       "TotpConfirm": {
         "type": "object",
+        "description": "Never logged.",
         "required": [
+          "current_password",
           "code"
         ],
         "properties": {
           "code": {
             "type": "string",
             "description": "A current six-digit code of the pending seed."
+          },
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "description": "The account's current password (re-authentication)."
           }
         },
         "additionalProperties": false

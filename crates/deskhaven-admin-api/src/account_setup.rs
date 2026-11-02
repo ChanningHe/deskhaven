@@ -3,8 +3,8 @@
 //! 1. `password_change`: a local account with `must_change_password` (a temporary password
 //!    set by an administrator);
 //! 2. `totp_enrolment`: `auth.tfa.enforce` covers the role, the account has no TOTP, and
-//!    it signs in with a local factor (OIDC accounts are left to their IdP's MFA policy,
-//!    as at OIDC login).
+//!    it is a local account (OIDC accounts are left to their IdP's MFA policy, as at OIDC
+//!    login; they cannot enrol a local factor, see `account::totp`).
 //!
 //! The gate lets such a session reach only [`Permission::Session`] routes (`/me`, the
 //! password change, the TOTP enrolment) and `Public` ones (logout); everything else is
@@ -46,7 +46,7 @@ pub fn pending_step(tfa: &TfaService, role: Role, flags: AccountFlags) -> Option
     if flags.auth_source == AuthSource::Local && flags.must_change_password {
         return Some(SetupStep::PasswordChange);
     }
-    let local_factor = flags.auth_source != AuthSource::Oidc;
+    let local_factor = flags.auth_source == AuthSource::Local;
     if local_factor && !flags.totp_enabled && tfa.enforced_for(role) {
         return Some(SetupStep::TotpEnrolment);
     }

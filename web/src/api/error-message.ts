@@ -37,6 +37,7 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   invalid_setup_token: 'errors.codes.invalid_setup_token',
   setup_completed: 'errors.codes.setup_completed',
   oidc_failed: 'errors.codes.oidc_failed',
+  not_local_account: 'errors.codes.not_local_account',
 }
 
 // For responses without a (known) code: a proxy error page, a future code.

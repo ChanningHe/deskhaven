@@ -13,6 +13,7 @@
 
 mod password;
 mod qr;
+mod reauth;
 mod totp;
 
 use utoipa_axum::routes;

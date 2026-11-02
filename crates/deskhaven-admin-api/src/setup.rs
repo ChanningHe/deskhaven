@@ -31,7 +31,7 @@ use utoipa::ToSchema;
 use utoipa_axum::routes;
 
 use crate::audit::{Audit, AuditCtx, Audited};
-use crate::auth::{BUSY_RETRY_AFTER, LoginResponse, signed_in, user_agent};
+use crate::auth::{BUSY_RETRY_AFTER, LoginResponse, revoke_presented, signed_in, user_agent};
 use crate::routes::{AdminRoutes, RouteError};
 use crate::session::Client;
 use crate::transport::SecureTransport;
@@ -186,6 +186,8 @@ pub async fn complete(
         )
         .await
         .map_err(AdminApiError::internal)?;
+    // No fixation: a session the browser still presented is replaced.
+    revoke_presented(&state, &headers).await;
     let response = signed_in(&state, done.user, &session, &token);
     Ok((Audited, response).into_response())
 }

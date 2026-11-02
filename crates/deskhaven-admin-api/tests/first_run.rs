@@ -14,8 +14,9 @@ use deskhaven_core::console_audit::ActorKind;
 use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::console_audit;
+use deskhaven_db::entity::user::{self, Role as UserRole};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::EntityTrait;
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::{Value, json};
 
 const SETUP: &str = "/admin/api/v1/setup";
@@ -175,7 +176,7 @@ async fn first_run_owner_login_totp_logout_and_login_with_totp() {
             .post(
                 "/admin/api/v1/me/totp/enrolment/confirm",
                 Some(&console),
-                json!({ "code": code }),
+                json!({ "current_password": OWNER_PASSWORD, "code": code }),
             )
             .await;
         assert_eq!(confirmed.status, 200, "{b}: {:?}", confirmed.body);
@@ -208,6 +209,69 @@ async fn first_run_owner_login_totp_logout_and_login_with_totp() {
         let me = h.get("/admin/api/v1/me", &console_of(&step2)).await;
         assert_eq!(me.body["username"], "root", "{b}");
         assert_eq!(me.body["totp_enabled"], true, "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn setup_replaces_a_session_the_browser_still_presented() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        h.user("earlier", Role::User).await;
+        let stale = h.signed_in("earlier").await;
+        let token = h.state.setup.issue().await.unwrap();
+        let b = db.backend;
+
+        let done = h
+            .post(SETUP, Some(&stale), setup_body(token.expose()))
+            .await;
+
+        assert_eq!(done.status, 200, "{b}: {:?}", done.body);
+        assert_eq!(h.get("/admin/api/v1/me", &stale).await.status, 401, "{b}");
+        assert_eq!(
+            h.get("/admin/api/v1/me", &console_of(&done)).await.status,
+            200,
+            "{b}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn concurrent_setups_with_one_token_create_one_owner() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        let token = h.state.setup.issue().await.unwrap();
+        let body = |n: u8| {
+            let mut body = setup_body(token.expose());
+            body["username"] = json!(format!("root{n}"));
+            body
+        };
+        let b = db.backend;
+
+        let replies = tokio::join!(
+            h.post(SETUP, None, body(1)),
+            h.post(SETUP, None, body(2)),
+            h.post(SETUP, None, body(3)),
+            h.post(SETUP, None, body(4)),
+        );
+
+        let replies = [replies.0, replies.1, replies.2, replies.3];
+        let ok = replies.iter().filter(|r| r.status == 200).count();
+        assert_eq!(ok, 1, "{b}: {:?}", replies.map(|r| r.status));
+        for reply in replies.iter().filter(|r| r.status != 200) {
+            let code = reply.code();
+            assert!(
+                code == "invalid_setup_token" || code == "setup_completed",
+                "{b}: {code}"
+            );
+        }
+        let owners = user::Entity::find()
+            .filter(user::Column::Role.eq(UserRole::Owner))
+            .count(&db.conn)
+            .await
+            .unwrap();
+        assert_eq!(owners, 1, "{b}");
     })
     .await;
 }
