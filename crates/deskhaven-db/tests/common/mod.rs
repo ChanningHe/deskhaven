@@ -33,6 +33,7 @@ pub fn user_row(username: &str) -> user::ActiveModel {
         password_hash: Set(Some(
             "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA".to_owned(),
         )),
+        password_changed_at: Set(Some(ts(T0_MS))),
         auth_source: Set(AuthSource::Local),
         role: Set(Role::User),
         status: Set(Status::Active),

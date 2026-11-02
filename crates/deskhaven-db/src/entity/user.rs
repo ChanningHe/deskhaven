@@ -53,6 +53,9 @@ pub struct Model {
     pub email_verified: bool,
     /// Argon2id PHC string; `None` unless `auth_source` is `local`.
     pub password_hash: Option<String>,
+    /// When the local password was last set; `None` without a local password. Session
+    /// creation re-checks it (credential stamp) against the value seen at login.
+    pub password_changed_at: Option<TimestampMs>,
     pub auth_source: AuthSource,
     pub role: Role,
     pub status: Status,

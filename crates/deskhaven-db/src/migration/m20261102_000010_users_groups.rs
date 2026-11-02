@@ -66,6 +66,19 @@ const STATUSES: &[&str] = &["active", "disabled", "unverified"];
 const MANAGED_BY: &[&str] = &["ui", "config"];
 const USERNAME_MAX_LEN: i32 = 64;
 
+/// `username_norm` is the ASCII lowercase of `username` (the application computes it with
+/// `to_ascii_lowercase`). PostgreSQL's `lower()` follows the column collation's locale (e.g.
+/// Turkish `I` -> `ı`), so it is pinned to the `C` collation, which folds ASCII only.
+/// SQLite's `lower()` folds ASCII only already.
+fn username_norm_check(backend: DbBackend) -> Check {
+    let expr = if backend == DbBackend::Postgres {
+        Expr::cust(r#"username_norm = lower(username COLLATE "C")"#)
+    } else {
+        Expr::col(Users::UsernameNorm).eq(Func::lower(Expr::col(Users::Username)))
+    };
+    Check::named("ck_users_username_norm", expr)
+}
+
 /// `[A-Za-z0-9._@-]` only (04 §3). The two backends have no common character-class syntax
 /// (SQLite has no regex operator, PostgreSQL no GLOB), so the expression branches. Both reject
 /// every non-ASCII character; emptiness is covered by the length check.
@@ -121,10 +134,7 @@ fn users_table(backend: DbBackend) -> TableCreateStatement {
                 .gte(1)
                 .and(username_len().lte(USERNAME_MAX_LEN)),
         ))
-        .check(Check::named(
-            "ck_users_username_norm",
-            Expr::col(Users::UsernameNorm).eq(Func::lower(Expr::col(Users::Username))),
-        ))
+        .check(username_norm_check(backend))
         .check(Check::named("ck_users_email_norm", email_pair_consistent))
         .check(Check::named(
             "ck_users_email_norm_not_empty",
