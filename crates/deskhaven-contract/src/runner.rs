@@ -16,6 +16,8 @@ use crate::seeds::Seeds;
 
 /// Part of a reply body quoted in a failure.
 const BODY_EXCERPT: usize = 512;
+/// Every file under `fixtures/` must have it.
+const FIXTURE_EXTENSION: &str = "json";
 
 /// `tests/contract` at the repository root.
 pub fn contract_dir() -> PathBuf {
@@ -48,7 +50,8 @@ pub struct Setup {
 }
 
 /// Runs `<dir>/fixtures/**/*.json` whose relative path contains `filter`,
-/// against production code only.
+/// against production code only. Any other file under `fixtures/` is an
+/// error (a misnamed fixture would silently never run).
 pub async fn run_dir(dir: &Path, filter: Option<&str>) -> anyhow::Result<Outcome> {
     run_dir_with(dir, filter, &Setup::default()).await
 }
@@ -124,8 +127,14 @@ fn fixture_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
             let path = entry?.path();
             if path.is_dir() {
                 pending.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "json") {
+            } else if path.extension().is_some_and(|ext| ext == FIXTURE_EXTENSION) {
                 files.push(path);
+            } else {
+                // A misnamed fixture would otherwise never run.
+                anyhow::bail!(
+                    "{} is not a .{FIXTURE_EXTENSION} fixture: rename or remove it",
+                    relative(root, &path)
+                );
             }
         }
     }

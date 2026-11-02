@@ -279,6 +279,24 @@ async fn seed_problems_fail_the_fixture_with_the_cause() {
 }
 
 #[tokio::test]
+async fn non_json_files_in_fixture_dirs_fail_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("UPSTREAM_COMMIT"), COMMIT).unwrap();
+    let ok = fixture(
+        json!({ "method": "GET", "path": "/api/x" }),
+        json!({ "status": 404, "body_kind": "json" }),
+    );
+    write_fixture(dir.path(), "login/ok.json", &ok);
+    std::fs::write(dir.path().join("fixtures/login/case.jsn"), "{}").unwrap();
+
+    let err = run_dir_with(dir.path(), None, &setup()).await.unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(message.contains("login/case.jsn"), "{message}");
+    assert!(message.contains(".json"), "{message}");
+}
+
+#[tokio::test]
 async fn filter_selects_by_relative_path() {
     let ok = fixture(
         json!({ "method": "GET", "path": "/api/x" }),
