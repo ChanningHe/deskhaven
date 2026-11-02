@@ -78,6 +78,15 @@ rustix = { version = "1.1", features = ["fs", "process"] }
 # CancellationToken (public `run` API) and TaskTracker (`rt`); same 0.7 line hbb_common uses.
 tokio-util = { version = "0.7", features = ["rt"] }
 
+# --- http (M0-07) ---
+# (tokio, tokio-util, serde, serde_json, thiserror, ipnet, url, tracing-subscriber, uuid: reused from earlier blocks.)
+deskhaven-http = { path = "crates/deskhaven-http" }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "tracing"] }
+tower = { version = "0.5.3", default-features = false }
+tower-http = { version = "0.7.1", default-features = false, features = ["catch-panic", "limit", "set-header", "timeout", "trace"] }
+tracing = "0.1.44"
+proptest = "1.7"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 
