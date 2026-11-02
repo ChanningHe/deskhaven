@@ -6,7 +6,7 @@
 mod common;
 
 use axum::body::Body;
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use common::{DEADLINE, HANDLER_DELAY, Running, apps, http_get, loopback, single, split};
@@ -80,6 +80,45 @@ async fn split_admin_redirects_client_root_and_separates_routes() {
     assert!(res.ends_with("admin-pong"), "{res}");
     let res = http_get(admin, "/api/ip").await;
     assert!(res.starts_with("HTTP/1.1 404"), "{res}");
+    srv.stop().await;
+}
+
+#[tokio::test]
+async fn split_listeners_send_their_own_hsts() {
+    let cfg = HttpConfig {
+        strict_transport_security: Some(HeaderValue::from_static("max-age=1")),
+        admin_strict_transport_security: Some(HeaderValue::from_static("max-age=2")),
+        ..HttpConfig::default()
+    };
+    let srv = Running::start(split(Some(ADMIN_URL)), cfg).await;
+    let admin = srv.admin.unwrap();
+
+    let client = http_get(srv.client_api, "/api/ip").await;
+    let admin = http_get(admin, "/admin/ping").await;
+
+    assert!(
+        client.contains("strict-transport-security: max-age=1\r\n"),
+        "{client}"
+    );
+    assert!(
+        admin.contains("strict-transport-security: max-age=2\r\n"),
+        "{admin}"
+    );
+    srv.stop().await;
+}
+
+#[tokio::test]
+async fn single_listener_ignores_admin_hsts() {
+    let cfg = HttpConfig {
+        strict_transport_security: None,
+        admin_strict_transport_security: Some(HeaderValue::from_static("max-age=2")),
+        ..HttpConfig::default()
+    };
+    let srv = Running::start(single(), cfg).await;
+
+    let res = http_get(srv.client_api, "/admin/ping").await;
+
+    assert!(!res.contains("strict-transport-security"), "{res}");
     srv.stop().await;
 }
 

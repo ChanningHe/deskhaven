@@ -143,7 +143,10 @@ impl Listeners {
             return Ok(());
         };
         let client_cfg = &fit_descriptor_budget(cfg, Share::SplitClientApi);
-        let admin_cfg = &fit_descriptor_budget(cfg, Share::SplitAdmin);
+        let admin_cfg = &HttpConfig {
+            strict_transport_security: cfg.admin_strict_transport_security.clone(),
+            ..fit_descriptor_budget(cfg, Share::SplitAdmin)
+        };
         let client_router = match admin.redirect {
             Some(location) => apps.client_api.layer(axum::middleware::from_fn(
                 move |req: Request, next: Next| redirect_root(location.clone(), req, next),

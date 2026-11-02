@@ -76,7 +76,11 @@ pub struct HttpConfig {
     /// not set one. In single-listener mode the API and the SPA share it.
     pub content_security_policy: Option<HeaderValue>,
     /// `Strict-Transport-Security` value; set it only when `public_url` is https.
+    /// Single listener: applies to everything; split: the client API listener only.
     pub strict_transport_security: Option<HeaderValue>,
+    /// Split mode only: `Strict-Transport-Security` of the admin listener (set it when
+    /// `admin_public_url` is https). Ignored with a single listener.
+    pub admin_strict_transport_security: Option<HeaderValue>,
 }
 
 impl Default for HttpConfig {
@@ -97,6 +101,7 @@ impl Default for HttpConfig {
             nofile_budget_percent: DEFAULT_NOFILE_BUDGET_PERCENT,
             content_security_policy: None,
             strict_transport_security: None,
+            admin_strict_transport_security: None,
         }
     }
 }
