@@ -356,3 +356,16 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   instance now fails with `SignalError::Bind`, whose source is now the `std::io::Error` itself
   (kind `AddrInUse`) instead of an opaque wrapper (`server.rs` `SignalError::bind`).
   Dependency added: `socket2` 0.6 (already in the tree through tokio).
+- 2026-11-02, M1-08, RequestRelay refusals (`rendezvous_server.rs` `handle_tcp`, new
+  `relay_refused`, `REFUSE_ID_NOT_EXIST`, `REFUSE_OFFLINE`): a RequestRelay for an id that is
+  not registered is answered `RelayResponse{uuid, refuse_reason: "ID does not exist"}`, and one
+  for a peer silent for REG_TIMEOUT (the PunchHoleRequest offline rule) with
+  `refuse_reason: "Remote desktop is offline"`, through the controller's connection like the
+  PunchHoleResponse failures; the request is not forwarded. Upstream (rs:541-554) stayed silent
+  for unknown ids and forwarded to stale peers, so clients waited out 3 attempts and failed
+  with "Timeout". Clients show `refuse_reason` verbatim (client.rs:1838-1839); the texts are the
+  client's own messages (and translation keys) for PunchHoleResponse ID_NOT_EXIST / OFFLINE.
+  Baseline tests `request_relay_to_unknown_peer_gets_no_answer_upstream_behavior_m1_08_changes_this`
+  and `request_relay_still_forwarded_to_stale_peer_upstream_behavior_m1_08_changes_this` became
+  `request_relay_to_unknown_peer_is_refused_with_id_does_not_exist` and
+  `request_relay_to_stale_peer_is_refused_as_offline`.

@@ -11,7 +11,7 @@
 mod support;
 
 use hbb_common::{
-    rendezvous_proto::{RequestRelay, punch_hole_response::Failure::OFFLINE},
+    rendezvous_proto::punch_hole_response::Failure::OFFLINE,
     tokio::{
         self,
         time::{Duration, sleep},
@@ -73,10 +73,14 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
     server.stop().await;
 }
 
-/// rs:546 looks the peer up with `get_in_memory` and never checks REG_TIMEOUT: a stale peer
-/// still gets the RequestRelay. M1-08 answers offline peers with RelayResponse{refuse_reason}.
+/// Changed in M1-08. Upstream (rs:546) looked the peer up with `get_in_memory` and never checked
+/// REG_TIMEOUT: a stale peer still got the RequestRelay (lost, it is gone) and the controller
+/// heard nothing until its attempts timed out. Now, like PunchHoleRequest (rs:750-757), a peer
+/// silent for REG_TIMEOUT is refused at once with RelayResponse{refuse_reason}, worded like
+/// the client's PunchHoleResponse OFFLINE message (a translation key, client.rs:1838-1839,
+/// 1010); once it registers again its RequestRelays are forwarded again.
 #[tokio::test]
-async fn request_relay_still_forwarded_to_stale_peer_upstream_behavior_m1_08_changes_this() {
+async fn request_relay_to_stale_peer_is_refused_as_offline() {
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
@@ -87,16 +91,16 @@ async fn request_relay_still_forwarded_to_stale_peer_upstream_behavior_m1_08_cha
 
     // Act
     controller.request_relay(req.clone()).await;
-    let fwd = expect_msg!(target.recv().await, RequestRelay);
+    let res = expect_msg!(controller.recv().await, RelayResponse);
 
     // Assert
-    assert_eq!(decode_addr(&fwd.socket_addr), controller.local_addr());
-    let expected = RequestRelay {
-        socket_addr: fwd.socket_addr.clone(),
-        token: String::new(),
-        licence_key: String::new(),
-        ..req
-    };
-    assert_eq!(fwd, expected);
+    assert_eq!(res.refuse_reason, "Remote desktop is offline");
+    assert_eq!(res.uuid, req.uuid);
+    target.assert_silent().await;
+    assert!(!target.register_peer(TARGET).await.request_pk);
+    let mut again = server.tcp().await;
+    again.request_relay(req).await;
+    let fwd = expect_msg!(target.recv().await, RequestRelay);
+    assert_eq!(decode_addr(&fwd.socket_addr), again.local_addr());
     server.stop().await;
 }

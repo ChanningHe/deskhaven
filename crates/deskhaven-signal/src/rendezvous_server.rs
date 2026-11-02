@@ -658,17 +658,31 @@ impl RendezvousServer {
                     // goes here; Deny -> RelayResponse{refuse_reason}, Allow(grant) -> inject
                     // grant.permissions / audit_ref into the forwarded RequestRelay. AllowAll
                     // allows with an empty grant, so it is not called yet.
-                    if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
-                        let mut msg_out = RendezvousMessage::new();
-                        rf.socket_addr = AddrMangle::encode(addr).into();
-                        // deskhaven (M1-08): the controller's credentials are for this server
-                        // only; upstream forwarded them to the target, in clear over UDP.
-                        rf.token.clear();
-                        rf.licence_key.clear();
-                        msg_out.set_request_relay(rf);
-                        let peer_addr = peer.read().await.socket_addr;
-                        self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
+                    // deskhaven (M1-08): an unknown or offline (REG_TIMEOUT, as for punch holes)
+                    // target is refused at once; upstream forwarded to stale peers and stayed
+                    // silent for unknown ids, so the controller waited for its retries.
+                    let Some(peer) = self.pm.get_in_memory(&rf.id).await else {
+                        let refused = relay_refused(rf.uuid, REFUSE_ID_NOT_EXIST);
+                        allow_err!(self.send_to_tcp_sync(refused, addr).await);
+                        return true;
+                    };
+                    let (elapsed, peer_addr) = {
+                        let r = peer.read().await;
+                        (r.last_reg_time.elapsed().as_millis() as i64, r.socket_addr)
+                    };
+                    if elapsed >= REG_TIMEOUT {
+                        let refused = relay_refused(rf.uuid, REFUSE_OFFLINE);
+                        allow_err!(self.send_to_tcp_sync(refused, addr).await);
+                        return true;
                     }
+                    let mut msg_out = RendezvousMessage::new();
+                    rf.socket_addr = AddrMangle::encode(addr).into();
+                    // deskhaven (M1-08): the controller's credentials are for this server
+                    // only; upstream forwarded them to the target, in clear over UDP.
+                    rf.token.clear();
+                    rf.licence_key.clear();
+                    msg_out.set_request_relay(rf);
+                    self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
                     return true;
                 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
@@ -1351,6 +1365,23 @@ async fn test_hbbs(addr: SocketAddr) -> ResultType<()> {
           }
         }
     }
+}
+
+// deskhaven (M1-08): refusal texts of RelayResponse. Clients show `refuse_reason` as the error
+// (client.rs:1838-1839); these are the texts (and translation keys) the client itself uses for
+// PunchHoleResponse ID_NOT_EXIST / OFFLINE.
+const REFUSE_ID_NOT_EXIST: &str = "ID does not exist";
+const REFUSE_OFFLINE: &str = "Remote desktop is offline";
+
+// deskhaven (M1-08): a RelayResponse refusing the controller's RequestRelay `uuid`.
+fn relay_refused(uuid: String, reason: &str) -> RendezvousMessage {
+    let mut msg_out = RendezvousMessage::new();
+    msg_out.set_relay_response(RelayResponse {
+        uuid,
+        refuse_reason: reason.to_owned(),
+        ..Default::default()
+    });
+    msg_out
 }
 
 #[inline]

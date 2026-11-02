@@ -74,21 +74,25 @@ async fn request_relay_is_forwarded_without_token_and_licence_key() {
     server.stop().await;
 }
 
-/// rs:546-553 has no else branch: RequestRelay for an id not in memory gets no answer at all
-/// (clients wait and retry). M1-08 answers RelayResponse{refuse_reason}.
+/// Changed in M1-08. Upstream (rs:546-553, no else branch) did not answer a RequestRelay for an
+/// id not in memory at all, so the client waited for each of its 3 attempts and then failed
+/// with "Timeout". It now gets RelayResponse{refuse_reason} at once, worded like the client's
+/// own PunchHoleResponse ID_NOT_EXIST message (a translation key, client.rs:1838-1839, 1007).
 #[tokio::test]
-async fn request_relay_to_unknown_peer_gets_no_answer_upstream_behavior_m1_08_changes_this() {
+async fn request_relay_to_unknown_peer_is_refused_with_id_does_not_exist() {
     // Arrange
     let server = TestServer::start().await;
     let mut controller = server.tcp().await;
+    let req = request_relay("unknown-peer", &server.licence_key);
 
     // Act
-    controller
-        .request_relay(request_relay("unknown-peer", &server.licence_key))
-        .await;
+    controller.request_relay(req.clone()).await;
+    let res = expect_msg!(controller.recv().await, RelayResponse);
 
     // Assert
-    controller.assert_silent().await;
+    assert_eq!(res.refuse_reason, "ID does not exist");
+    assert_eq!(res.uuid, req.uuid);
+    assert!(res.relay_server.is_empty() && res.socket_addr.is_empty());
     server.stop().await;
 }
 
