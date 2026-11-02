@@ -121,7 +121,8 @@ const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placehold
 <DataTable id="devices" label={t('nav.devices')} columns={COLUMNS} sortable={SORTABLE}
   data={query.data} error={query.error} onRetry={() => void query.refetch()}
   getRowId={(d) => String(d.id)} search={search}
-  onSearchChange={(patch) => void navigate({ search: (prev) => applyTableSearch(prev, patch) })}
+  onSearchChange={(patch, opts) =>
+    void navigate({ search: (prev) => applyTableSearch(prev, patch), replace: opts?.replace ?? false })}
   searchPlaceholder={...} emptyState={<EmptyState ... />} />
 ```
 
@@ -130,6 +131,8 @@ const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placehold
   Invalid values are dropped, defaults are omitted, and any change except the page itself goes
   back to page 1 (`applyTableSearch`). Page, sort and filter changes push history entries, so
   the back button walks through them; the search box applies after a 300 ms pause or on Enter.
+  Corrections (a page past the end after rows were deleted) arrive with `{ replace: true }` and
+  must replace the history entry, or Back would land on the bad page and be corrected again.
 - Column visibility is a per-browser preference (localStorage), not part of the URL.
 - `bulkActions` enables row selection (current page only; a new page, sort or filter clears it).
 - With no rows and no filter, `emptyState` replaces the table (08 §4: offer the next step); with

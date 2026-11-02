@@ -43,29 +43,47 @@ const COLUMNS = column.columns([
 ])
 const SORTABLE = ['name'] as const
 
-/** A fake list endpoint: filter, sort, paginate. */
-function listDevices({ page, page_size, sort, q }: ListParams): ListPage<Device> {
-  const matching = DEVICES.filter((device) => q === undefined || device.name.includes(q))
+/** A fake list endpoint over `devices`: filter, sort, paginate. */
+function listDevices(
+  devices: readonly Device[],
+  { page, page_size, sort, q }: ListParams,
+): ListPage<Device> {
+  const matching = devices.filter((device) => q === undefined || device.name.includes(q))
   const sorted = sort === '-name' ? [...matching].reverse() : matching
   const start = (page - 1) * page_size
   return { items: sorted.slice(start, start + page_size), total: matching.length, page, page_size }
 }
 
-function renderTable(url: string, { empty = false } = {}) {
+interface RenderTableOptions {
+  empty?: boolean
+  /** Extra history entries before `url` (the last entry is the current one). */
+  before?: string[]
+  /** The server's rows; tests may change them and refetch. */
+  rows?: { current: readonly Device[] }
+}
+
+function renderTable(
+  url: string,
+  { empty = false, before = [], rows = { current: DEVICES } }: RenderTableOptions = {},
+) {
   const fetchList = vi.fn((params: ListParams) =>
-    Promise.resolve(empty ? { items: [], total: 0, page: 1, page_size: 20 } : listDevices(params)),
+    Promise.resolve(
+      empty ? { items: [], total: 0, page: 1, page_size: 20 } : listDevices(rows.current, params),
+    ),
   )
   const onBulk = vi.fn()
+  const queryClient = createQueryClient()
 
   function DevicesTable() {
     const search = devicesRoute.useSearch()
     const navigate = useNavigate()
     const params = toListParams(search)
     const query = useQuery({ queryKey: ['devices', params], queryFn: () => fetchList(params) })
-    const onSearchChange = (patch: TableSearch) => {
+    const onSearchChange = (patch: TableSearch, options?: { replace?: boolean }) => {
       // The test router is not the registered app router, so its paths are untyped here.
       void navigate({
         search: ((previous: TableSearch) => applyTableSearch(previous, patch)) as never,
+        replace: options?.replace ?? false,
       })
     }
     return (
@@ -95,22 +113,28 @@ function renderTable(url: string, { empty = false } = {}) {
   }
 
   const rootRoute = createRootRoute({ component: Outlet })
+  const homeRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    component: () => <h1>Home</h1>,
+  })
   const devicesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/devices',
     validateSearch: (raw: Record<string, unknown>) => parseTableSearch(raw, { sortable: SORTABLE }),
     component: DevicesTable,
   })
+  const entries = [...before, url]
   const router = createRouter({
-    routeTree: rootRoute.addChildren([devicesRoute]),
-    history: createMemoryHistory({ initialEntries: [url] }),
+    routeTree: rootRoute.addChildren([homeRoute, devicesRoute]),
+    history: createMemoryHistory({ initialEntries: entries, initialIndex: entries.length - 1 }),
   })
   render(
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return { router, fetchList, onBulk, user: userEvent.setup() }
+  return { router, fetchList, onBulk, queryClient, user: userEvent.setup() }
 }
 
 function rowNames() {
@@ -239,6 +263,22 @@ describe('DataTable URL sync', () => {
       expect(router.state.location.search).toEqual({ page: 3 })
     })
     expect(await screen.findByText('Device 41')).toBeInTheDocument()
+  })
+
+  it('corrects an out-of-range page in place, so Back is not trapped', async () => {
+    const { router } = renderTable('/devices?page=5', { before: ['/'] })
+
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ page: 3 })
+    })
+    await screen.findByText('Device 41')
+    // The correction replaced ?page=5 instead of pushing ?page=3 on top of it.
+    expect(router.history.length).toBe(2)
+
+    router.history.back()
+
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/')
   })
 })
 

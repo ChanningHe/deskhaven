@@ -17,6 +17,11 @@ import { formatSort, nextSort, pageCount, parseSort, toListParams } from './tabl
 import type { ListPage, TableSearch } from './table-search'
 import { useColumnVisibility } from './use-column-visibility'
 
+export interface SearchChangeOptions {
+  /** Replace the current history entry instead of pushing one. */
+  replace?: boolean
+}
+
 export interface DataTableProps<TData extends RowData> {
   /** Stable id: keys the persisted column visibility. */
   id: string
@@ -31,8 +36,11 @@ export interface DataTableProps<TData extends RowData> {
   getRowId: (row: TData) => string
   /** The table's part of the route search (page, page_size, sort, q). */
   search: TableSearch
-  /** Applies a change to the route search; pages call `applyTableSearch`. */
-  onSearchChange: (patch: TableSearch) => void
+  /**
+   * Applies a change to the route search; pages call `applyTableSearch` and pass
+   * `replace` through to `navigate` (corrections must not add history entries).
+   */
+  onSearchChange: (patch: TableSearch, options?: SearchChangeOptions) => void
   error?: unknown
   onRetry?: () => void
   /** Shows the free-text search box (`q`) with this placeholder. */
@@ -101,7 +109,9 @@ export function DataTable<TData extends RowData>(props: DataTableProps<TData>) {
   // A page past the end (rows deleted elsewhere, a stale link): go to the last one.
   const pages = data === undefined ? undefined : pageCount(data.total, params.page_size)
   useEffect(() => {
-    if (pages !== undefined && params.page > pages) onSearchChange({ page: pages })
+    // Replace: pushing would trap Back (it returns to the bad page, which re-corrects).
+    if (pages !== undefined && params.page > pages)
+      onSearchChange({ page: pages }, { replace: true })
   }, [pages, params.page, onSearchChange])
 
   const onSearch = useCallback(
