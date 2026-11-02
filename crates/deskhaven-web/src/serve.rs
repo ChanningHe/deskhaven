@@ -12,7 +12,7 @@ use crate::file::File;
 use crate::not_built::NOT_BUILT_HTML;
 use crate::request_path::{Target, classify};
 
-const INDEX: &str = "index.html";
+pub(crate) const INDEX: &str = "index.html";
 
 /// Every path is handled by the fallback so the router can be merged into the
 /// admin router (which must not define a fallback of its own).

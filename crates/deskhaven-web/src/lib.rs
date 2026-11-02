@@ -65,6 +65,12 @@ pub fn router() -> Router {
     serve::router::<Dist>()
 }
 
+/// Whether the console is present (the embed holds `index.html`). Without it
+/// the SPA routes answer 503 with the "web console not built" page.
+pub fn is_built() -> bool {
+    Dist::get(serve::INDEX).is_some()
+}
+
 /// Like [`router`] for another asset set (tests, alternative dists).
 pub fn router_for<E: RustEmbed + 'static>() -> Router {
     serve::router::<E>()
@@ -73,6 +79,13 @@ pub fn router_for<E: RustEmbed + 'static>() -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_built_matches_the_embedded_index() {
+        let has_index = Dist::iter().any(|name| name == serve::INDEX);
+
+        assert_eq!(is_built(), has_index);
+    }
 
     /// Vacuous when `web/dist` is not built.
     #[test]
