@@ -1,0 +1,38 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:63-100",
+    "flutter/lib/common/hbbs/hbbs.dart:36-48",
+    "src/hbbs_http/account.rs:53-97"
+  ],
+  "description": "Valid client token: 200 UserPayload of the session's user. The client posts {id, uuid} with Bearer and Content-Type application/json, then parses the body with UserPayload.fromJson (name, display_name, avatar, email, note, status 1/0/-1, is_admin); the Rust reader additionally requires name and info.",
+  "seed": ["client-session"],
+  "request": {
+    "method": "POST",
+    "path": "/api/currentUser",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${session_token}"
+    },
+    "body": { "json": { "id": "${rustdesk_id}", "uuid": "${uuid}" } }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "ClientUserPayload",
+    "json_subset": {
+      "name": "alice",
+      "display_name": "alice",
+      "note": "",
+      "status": 1,
+      "is_admin": false,
+      "info": {
+        "email_verification": false,
+        "email_alarm_notification": false,
+        "login_device_whitelist": [],
+        "other": {}
+      }
+    },
+    "json_absent": ["/error"]
+  }
+}

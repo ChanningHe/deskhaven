@@ -1,0 +1,23 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:84-88"
+  ],
+  "description": "A valid console session token is no client credential (06 §3.2: separate session kinds): the same 401 as an unknown token.",
+  "seed": ["console-session"],
+  "request": {
+    "method": "POST",
+    "path": "/api/currentUser",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${console_token}"
+    },
+    "body": { "json": { "id": "123456789", "uuid": "contract-seed-device-uuid" } }
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unauthorized" }
+  }
+}

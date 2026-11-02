@@ -1,0 +1,21 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:170-190"
+  ],
+  "description": "Logout with the stored token: the client posts {id, uuid} with Bearer, waits at most 2s and ignores the reply (it resets locally either way). The server revokes the presented session and answers 200 with an empty body; the next use of the token is a 401 (multi-step: tests/login.rs).",
+  "seed": ["client-session"],
+  "request": {
+    "method": "POST",
+    "path": "/api/logout",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${session_token}"
+    },
+    "body": { "json": { "id": "${rustdesk_id}", "uuid": "${uuid}" } }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "empty"
+  }
+}

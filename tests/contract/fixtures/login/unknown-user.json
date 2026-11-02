@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:198-211",
+    "flutter/lib/common/widgets/login.dart:850-851",
+    "src/lang/en.rs:57"
+  ],
+  "description": "Unknown username: exactly the wrong-password reply (status and body), so the client and an attacker cannot tell whether the account exists (06 §3.6; the server also spends one dummy Argon2 verification).",
+  "seed": ["local-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "nobody",
+        "password": "not-the-password",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Wrong credentials" }
+  }
+}

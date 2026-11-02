@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:198-211"
+  ],
+  "description": "A body that is not a JSON login object: 400 {\"error\"} (any non-200 with an error string is shown by the client).",
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": { "text": "{\"username\": \"alice\", " }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Invalid login request" }
+  }
+}

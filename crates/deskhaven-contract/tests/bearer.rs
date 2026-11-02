@@ -1,7 +1,7 @@
 //! `BearerUser` through the production stack (03 §1.2-1.3): a test-only route behind the
 //! extractor, a session issued by the real services (`client-session` seed), and the
-//! 401 `{"error"}` contract for every bad credential. No real authenticated endpoint
-//! exists yet (M2-07), hence the test route and the temporary contract directory.
+//! 401 `{"error"}` contract for every bad credential. The test route isolates the
+//! extractor from any endpoint logic (the real endpoints: fixtures and `tests/login.rs`).
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::Path;

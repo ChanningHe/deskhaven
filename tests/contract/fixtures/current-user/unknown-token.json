@@ -1,0 +1,24 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:84-88",
+    "flutter/lib/models/user_model.dart:138-148"
+  ],
+  "description": "A well-formed token no session has: 401 {\"error\": \"Unauthorized\"}; the client resets the login and clears the address book and group models (reset(resetOther: true)).",
+  "seed": ["client-session"],
+  "request": {
+    "method": "POST",
+    "path": "/api/currentUser",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "body": { "json": { "id": "${rustdesk_id}", "uuid": "${uuid}" } }
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unauthorized" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:240-264",
+    "src/hbbs_http/account.rs:149-158"
+  ],
+  "description": "Login options take no auth: an Authorization header with a bogus token is ignored and the reply is still 200 with the empty list (the endpoint doubles as the TLS probe and must always answer 200).",
+  "request": {
+    "method": "GET",
+    "path": "/api/login-options",
+    "headers": { "authorization": "Bearer not-a-token" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "LoginOptions",
+    "json_subset": []
+  }
+}

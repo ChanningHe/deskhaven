@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/common/widgets/login.dart:842-849",
+    "flutter/lib/models/user_model.dart:198-211"
+  ],
+  "description": "The device id the session would be bound to is not a RustDesk id (characters outside [A-Za-z0-9_-]): rejected at the boundary with 400 before anything is counted or verified.",
+  "seed": ["local-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123 456\n789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Invalid login request" },
+    "json_absent": ["/access_token"]
+  }
+}

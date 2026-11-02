@@ -14,9 +14,13 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Context;
+use deskhaven_config::settings::AUTH_LOCKOUT_MAX_FAILURES;
+use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::{Credential, NewUser, Password};
+use deskhaven_core::users::{Credential, NewUser, Password, Status};
+
+use crate::app::DEFAULT_PEER;
 
 /// Output name → value, substituted into `${name}` placeholders.
 pub type SeedOutputs = BTreeMap<String, String>;
@@ -24,24 +28,103 @@ pub type SeedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<SeedOutputs
 pub type Seed = for<'a> fn(&'a AppState) -> SeedFuture<'a>;
 
 /// Register as `("name", |state| Box::pin(my_seed(state)))`.
-const BUILTIN: &[(&str, Seed)] = &[("client-session", |state| Box::pin(client_session(state)))];
+const BUILTIN: &[(&str, Seed)] = &[
+    ("client-session", |state| Box::pin(client_session(state))),
+    ("console-session", |state| Box::pin(console_session(state))),
+    ("local-user", |state| Box::pin(local_user(state))),
+    ("disabled-user", |state| Box::pin(disabled_user(state))),
+    ("unverified-user", |state| Box::pin(unverified_user(state))),
+    ("login-locked-out", |state| {
+        Box::pin(login_locked_out(state))
+    }),
+];
 
-/// `client-session` values (fixed, so fixtures may also spell them out).
+/// `client-session` / `local-user` values (fixed, so fixtures may also spell
+/// them out). Every seeded account has [`SEED_PASSWORD`].
 pub const SEED_USERNAME: &str = "alice";
 pub const SEED_PASSWORD: &str = "contract-Seed-pass-1";
 pub const SEED_RUSTDESK_ID: &str = "123456789";
 pub const SEED_UUID: &str = "contract-seed-device-uuid";
+/// `disabled-user`.
+pub const DISABLED_USERNAME: &str = "dave";
+/// `unverified-user`.
+pub const UNVERIFIED_USERNAME: &str = "erin";
+/// `console-session`.
+pub const CONSOLE_USERNAME: &str = "carol";
+/// A username no seed creates.
+pub const UNKNOWN_USERNAME: &str = "nobody";
+
+async fn create_user(state: &AppState, username: &str, status: Status) -> anyhow::Result<i64> {
+    let password = Password::new(SEED_PASSWORD);
+    let new = NewUser {
+        status,
+        ..NewUser::new(username, Credential::Local { password })
+    };
+    Ok(state.users.create(new).await?.id)
+}
+
+/// An active local user [`SEED_USERNAME`] with [`SEED_PASSWORD`], not logged
+/// in. No outputs.
+async fn local_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    create_user(state, SEED_USERNAME, Status::Active).await?;
+    Ok(SeedOutputs::new())
+}
+
+/// A disabled local user [`DISABLED_USERNAME`]. No outputs.
+async fn disabled_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    create_user(state, DISABLED_USERNAME, Status::Disabled).await?;
+    Ok(SeedOutputs::new())
+}
+
+/// An unverified local user [`UNVERIFIED_USERNAME`]. No outputs.
+async fn unverified_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    create_user(state, UNVERIFIED_USERNAME, Status::Unverified).await?;
+    Ok(SeedOutputs::new())
+}
+
+/// An active user [`CONSOLE_USERNAME`] with a **console** session. Outputs
+/// `console_token`.
+async fn console_session(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    create_user(state, CONSOLE_USERNAME, Status::Active).await?;
+    let login = state
+        .users
+        .authenticate_local(CONSOLE_USERNAME, &Password::new(SEED_PASSWORD))
+        .await?;
+    let (_, token) = state
+        .sessions
+        .create_console(login.user.id, &login.stamp, None, None)
+        .await?;
+    Ok(SeedOutputs::from([(
+        "console_token".to_owned(),
+        token.expose().to_owned(),
+    )]))
+}
+
+/// Spends the whole `auth.lockout.max_failures` budget of [`SEED_USERNAME`]
+/// and of [`UNKNOWN_USERNAME`] from the default peer through the real login
+/// throttle (failed attempts), so the next login of either from that peer is
+/// locked out. Creates no user. No outputs.
+async fn login_locked_out(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let client = ClientAddr {
+        addr: DEFAULT_PEER.ip(),
+        is_proxy_fallback: false,
+    };
+    let budget = state.settings.snapshot().get(&AUTH_LOCKOUT_MAX_FAILURES);
+    for name in [SEED_USERNAME, UNKNOWN_USERNAME] {
+        for _ in 0..budget {
+            let attempt = state.login_throttle.pre_check(client, name).await?;
+            let _ = state.login_throttle.on_failure(attempt);
+        }
+    }
+    Ok(SeedOutputs::new())
+}
 
 /// An active local user [`SEED_USERNAME`] logged in from device
 /// [`SEED_RUSTDESK_ID`] / [`SEED_UUID`] through the real user and session
 /// services. Outputs `session_token` (the bearer token the service issued),
 /// `username`, `rustdesk_id` and `uuid`.
 async fn client_session(state: &AppState) -> anyhow::Result<SeedOutputs> {
-    let password = Password::new(SEED_PASSWORD);
-    state
-        .users
-        .create(NewUser::new(SEED_USERNAME, Credential::Local { password }))
-        .await?;
+    create_user(state, SEED_USERNAME, Status::Active).await?;
     let login = state
         .users
         .authenticate_local(SEED_USERNAME, &Password::new(SEED_PASSWORD))

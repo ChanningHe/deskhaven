@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/common/hbbs/hbbs.dart:10-20",
+    "flutter/lib/models/user_model.dart:198-211"
+  ],
+  "description": "A login type this server does not offer (here \"mobile\"; the client knows account, mobile, sms_code, email_code and tfa_code): 400 {\"error\"}, shown as the login failure. No attempt is counted and nothing is verified.",
+  "seed": ["local-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "mobile",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unsupported login type" },
+    "json_absent": ["/access_token"]
+  }
+}

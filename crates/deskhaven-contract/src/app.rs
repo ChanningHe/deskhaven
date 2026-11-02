@@ -12,9 +12,13 @@ use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderName, HeaderValue, Method, Request, header};
 use deskhaven_config::bootstrap::Bootstrap;
-use deskhaven_config::settings::PinSet;
+use deskhaven_config::settings::{Change, PinSet};
+use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
+use deskhaven_core::sessions::SessionService;
+use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
+use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{ErrorBodies, apply_middleware};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -50,22 +54,38 @@ impl TestApp {
     /// Production routes plus `extra` (test-only routes; they get the same
     /// state and sit behind the same middleware).
     pub async fn start_with(extra: Router<Arc<AppState>>) -> anyhow::Result<Self> {
+        Self::build(extra, None).await
+    }
+
+    /// Production routes, with the user and session services rebuilt around
+    /// `hasher` (e.g. one concurrency slot, to provoke `Busy`). Keep a clone
+    /// of `hasher`: clones share its concurrency limit.
+    pub async fn start_with_hasher(hasher: PasswordHasher) -> anyhow::Result<Self> {
+        Self::build(Router::new(), Some(hasher)).await
+    }
+
+    async fn build(
+        extra: Router<Arc<AppState>>,
+        hasher: Option<PasswordHasher>,
+    ) -> anyhow::Result<Self> {
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let config = Bootstrap {
             data_dir: data_dir.path().to_path_buf(),
             ..Bootstrap::default()
         };
         let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&TEST_MASTER_KEY)));
+        let base = deskhaven::startup::open_state(
+            &config,
+            PinSet::empty(),
+            crypto,
+            TEST_SIGNAL_PUBLIC_KEY.to_owned(),
+        )
+        .await?;
         // One instance: the routers and the seeds share it.
-        let state = Arc::new(
-            deskhaven::startup::open_state(
-                &config,
-                PinSet::empty(),
-                crypto,
-                TEST_SIGNAL_PUBLIC_KEY.to_owned(),
-            )
-            .await?,
-        );
+        let state = Arc::new(match hasher {
+            Some(hasher) => with_hasher(base, hasher),
+            None => base,
+        });
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown, None);
         let client_api = apps.client_api.merge(extra.with_state(Arc::clone(&state)));
@@ -85,6 +105,30 @@ impl TestApp {
         })
     }
 
+    /// Changes one runtime setting through the real settings service (hot
+    /// reload: every service sees it on its next read).
+    pub async fn set_setting(&self, key: &str, value: serde_json::Value) -> anyhow::Result<()> {
+        let settings = &self.state.settings;
+        let version = settings
+            .snapshot()
+            .view(key)
+            .with_context(|| format!("unknown setting {key:?}"))?
+            .version;
+        let change = Change {
+            key: key.to_owned(),
+            value,
+            version,
+        };
+        settings
+            .update(UpdateRequest {
+                changes: vec![change],
+                actor: None,
+                reason: None,
+            })
+            .await?;
+        Ok(())
+    }
+
     pub async fn send(&self, request: &fixture::Request) -> anyhow::Result<Reply> {
         let response = self.router.clone().oneshot(build(request)?).await?;
         let status = response.status().as_u16();
@@ -97,6 +141,25 @@ impl TestApp {
             headers,
             body: body.to_vec(),
         })
+    }
+}
+
+/// `base` with users and sessions on `hasher` (same database, settings and
+/// throttle; the clock is the production one, as in `open_state`).
+fn with_hasher(base: AppState, hasher: PasswordHasher) -> AppState {
+    let clock: SharedClock = Arc::new(SystemClock);
+    let users = UserService::with_clock(
+        base.db.clone(),
+        base.settings.clone(),
+        hasher,
+        Arc::clone(&clock),
+    );
+    let sessions =
+        SessionService::new(base.db.clone(), base.settings.clone(), users.clone(), clock);
+    AppState {
+        users,
+        sessions,
+        ..base
     }
 }
 

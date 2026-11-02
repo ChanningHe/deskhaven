@@ -1,0 +1,51 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/common/widgets/login.dart:842-849",
+    "flutter/lib/common/hbbs/hbbs.dart:155-177",
+    "flutter/lib/utils/http_service.dart:18",
+    "flutter/lib/models/user_model.dart:193-235",
+    "flutter/lib/common/widgets/login.dart:773-788",
+    "flutter/lib/common/hbbs/hbbs.dart:180-197",
+    "src/hbbs_http/account.rs:79-108"
+  ],
+  "description": "Account login with the right password: 200 AuthBody {access_token, type: \"access_token\", user}. The client stores access_token and user only when type is access_token and access_token is non-null; the user payload is the full UserPayload (status 1, info present). Checked against the stricter Rust AuthBody reader (access_token, type and user required; no tfa_type null). The request is exactly what LoginRequest.toJson sends, with the http_service default Content-Type.",
+  "seed": ["local-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "AuthBody",
+    "json_subset": {
+      "type": "access_token",
+      "user": {
+        "name": "alice",
+        "display_name": "alice",
+        "status": 1,
+        "is_admin": false,
+        "info": {
+          "email_verification": false,
+          "email_alarm_notification": false,
+          "login_device_whitelist": [],
+          "other": {}
+        }
+      }
+    },
+    "json_absent": ["/error", "/tfa_type", "/secret"]
+  }
+}

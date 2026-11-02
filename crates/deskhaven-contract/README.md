@@ -60,10 +60,19 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
    token the real login service issued); refer to them as `${session_token}`
    in `request.path`, header values and body strings. Seeds run in order; an
    output name defined twice, or a placeholder without an output, fails the
-   fixture. There is no escape for a literal `${`. Built-in seeds:
-   `client-session` (active local user `alice` logged in from device
-   `123456789` / `contract-seed-device-uuid`; outputs `session_token`,
-   `username`, `rustdesk_id`, `uuid`).
+   fixture. There is no escape for a literal `${`. Built-in seeds (every
+   account's password is `contract-Seed-pass-1`):
+   - `client-session`: active local user `alice` logged in from device
+     `123456789` / `contract-seed-device-uuid`; outputs `session_token`,
+     `username`, `rustdesk_id`, `uuid`.
+   - `local-user`: active local user `alice`, not logged in.
+   - `disabled-user` / `unverified-user`: `dave` (status disabled) / `erin`
+     (status unverified).
+   - `console-session`: active user `carol` with a console session; outputs
+     `console_token`.
+   - `login-locked-out`: spends the whole `auth.lockout.max_failures` budget
+     of `alice` and of the unknown `nobody` from the default peer, so their
+     next login from there is locked out.
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 
@@ -107,7 +116,10 @@ async fn login_options_still_answers_after_a_rejected_method() {
 ```
 
 Prepare state with the same seeds (`Seeds::builtin().apply(&names,
-&app.state)`) or directly through `app.state`'s services, set
+&app.state)`), directly through `app.state`'s services, or with
+`app.set_setting(key, value)` (hot-reloaded runtime settings);
+`TestApp::start_with_hasher` rebuilds users and sessions around a given
+password hasher (e.g. one slot, to provoke `Busy`). Set
 `Request::headers`/`body` for the client's exact request, and carry values
 from one reply into the next request in plain Rust.
 

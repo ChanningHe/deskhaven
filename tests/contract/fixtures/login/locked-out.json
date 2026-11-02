@@ -1,0 +1,33 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:198-211",
+    "flutter/lib/common/widgets/login.dart:850-851",
+    "src/lang/template.rs:138"
+  ],
+  "description": "The account's failure budget from this source is spent (login-locked-out): 429 with Retry-After and {\"error\": \"Please try later\"} (a client translation key), even with the right password; no verification runs. Identical for an unknown username (login/locked-out-unknown-user), so the lock reveals nothing about existence.",
+  "seed": ["local-user", "login-locked-out"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 429,
+    "headers": { "Retry-After": { "contains": "" } },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Please try later" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:84-88"
+  ],
+  "description": "No Authorization header: 401 {\"error\": \"Unauthorized\"} (the client never sends this without a stored token, but the endpoint must not answer without one).",
+  "request": {
+    "method": "POST",
+    "path": "/api/currentUser",
+    "headers": { "content-type": "application/json" },
+    "body": { "json": { "id": "123456789", "uuid": "contract-seed-device-uuid" } }
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unauthorized" }
+  }
+}
