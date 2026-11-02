@@ -71,10 +71,61 @@ would make pnpm try to download another version). `pnpm-workspace.yaml` explains
 - **Retries** (`src/app/query-client.ts`): 4xx responses are never retried. Network errors and 5xx
   are retried once.
 - **401**: any query or mutation that fails with 401 calls `onUnauthorized`, which `createApp`
-  (`src/app/create-app.ts`) wires to a redirect to `/login`.
+  (`src/app/create-app.ts`) wires to: forget the cached session, then redirect to
+  `/login?redirect=<current path>`.
+- **Error messages** come from `errorMessage(error, t)` (`src/api/error-message.ts`): the API
+  error `code` maps to `errors.codes.<code>` (exhaustive over the generated `ErrorCode`, so a new
+  backend code fails `tsc` until it is translated), 429 with `Retry-After` says how long to wait,
+  responses without a known code fall back to their HTTP status, errors without a status read as
+  network failures. The server's English `message` is never shown. `<ErrorAlert>` renders one.
 - **Route errors** use the router's `defaultErrorComponent` (translated, with retry and a link
-  home); slow routes show `defaultPendingComponent`. A route only sets its own `errorComponent`
-  when it needs something more specific.
+  home); a 403 renders "access denied" without a retry. Slow routes show
+  `defaultPendingComponent`. A route only sets its own `errorComponent` when it needs something
+  more specific.
+
+## Session and permissions
+
+- The `_app` layout's `beforeLoad` resolves the session with `GET /admin/api/v1/me`
+  (`requireSession`, cached for 5 minutes) and passes `me` to every child route; no session (401)
+  redirects to `/login?redirect=...`. The login route keeps `redirect` only if it is a same-origin
+  path (`safeRedirectTarget`), so it cannot be turned into an open redirect.
+- Every page's permission (`self` / `admin` / `owner`, named like the API's security scopes) is
+  declared once in `PAGE_PERMISSIONS` (`src/features/auth/permissions.ts`). Each route calls
+  `requirePagePermission(context.me.role, '<page>')` in `beforeLoad`, and the sidebar and command
+  palette hide pages the role cannot open. Plain users land on `/me`. These checks only shape the
+  UI: the server enforces every permission.
+- Components below `_app` read the user with `useMe()`.
+
+## Lists (DataTable)
+
+Every list uses `DataTable` (`src/components/common/data-table`, 08 §1.5): server-side
+pagination, sorting and filtering, all held in the URL. A list page looks like this:
+
+```tsx
+const SORTABLE = ['name', 'last_online'] as const
+const column = createDataTableColumnHelper<Device>()
+const COLUMNS = column.columns([column.accessor('name', { header: 'Name', meta: { label: 'Name' } })])
+
+// route: validateSearch: (raw) => ({ ...parseTableSearch(raw, { sortable: SORTABLE }), online: ... })
+const search = Route.useSearch()
+const navigate = Route.useNavigate()
+const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placeholderData: keepPreviousData })
+<DataTable id="devices" label={t('nav.devices')} columns={COLUMNS} sortable={SORTABLE}
+  data={query.data} error={query.error} onRetry={() => void query.refetch()}
+  getRowId={(d) => String(d.id)} search={search}
+  onSearchChange={(patch) => void navigate({ search: (prev) => applyTableSearch(prev, patch) })}
+  searchPlaceholder={...} emptyState={<EmptyState ... />} />
+```
+
+- URL keys are the API's list parameters (08 §6): `page`, `page_size` (10/20/50/100/200), `sort`
+  (`field` or `-field`, single column, only ids listed in `sortable`), `q`, plus page filters.
+  Invalid values are dropped, defaults are omitted, and any change except the page itself goes
+  back to page 1 (`applyTableSearch`). Page, sort and filter changes push history entries, so
+  the back button walks through them; the search box applies after a 300 ms pause or on Enter.
+- Column visibility is a per-browser preference (localStorage), not part of the URL.
+- `bulkActions` enables row selection (current page only; a new page, sort or filter clears it).
+- With no rows and no filter, `emptyState` replaces the table (08 §4: offer the next step); with
+  filters, the table says "no results" and offers to clear them.
 - **Not found**: unknown URLs render inside the shell (`_app/$.tsx` passes them to the `_app`
   layout's `notFoundComponent`). The root `notFoundComponent` is the shell-less fallback.
 
@@ -89,7 +140,8 @@ src/
     components/        domain components and the page component
     api.ts             query hooks for the domain (added once the API exists)
   components/ui/       shadcn components (Base UI primitives) only, added via `pnpm dlx shadcn add`
-  components/common/   shared app components (PageHeader, EmptyState, later DataTable, ...)
+  components/common/   shared app components (PageHeader, EmptyState, DataTable, dialogs, ...)
+  api/                 apiFetch, ApiError, error-code messages; generated/ is orval output
   i18n/                i18next setup, locales/*.json, typed resources
   lib/                 framework-free helpers (storage, theme, utils)
   test/                test setup and render helpers
