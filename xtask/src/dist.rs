@@ -29,16 +29,18 @@ pub fn steps(cargo: &OsString) -> Vec<Step> {
         step(
             "install web dependencies",
             &pnpm,
-            &["-C", "web", "install", "--frozen-lockfile"],
+            // No dependency lifecycle scripts: the build needs none (verified), and a
+            // release build should not run third-party install code.
+            &[
+                "-C",
+                "web",
+                "install",
+                "--frozen-lockfile",
+                "--ignore-scripts",
+            ],
         ),
         step("build the web console", &pnpm, &["-C", "web", "build"]),
-        // rust-embed cannot tell cargo that web/dist changed (or appeared), so force
-        // the crate that embeds it to be rebuilt.
-        step(
-            "drop the stale embed",
-            cargo,
-            &["clean", "--release", "-p", "deskhaven-web"],
-        ),
+        // deskhaven-web's build.rs watches web/dist, so the embed is refreshed.
         step(
             "build the release binary",
             cargo,
@@ -91,9 +93,8 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "pnpm -C web install --frozen-lockfile",
+                "pnpm -C web install --frozen-lockfile --ignore-scripts",
                 "pnpm -C web build",
-                "cargo clean --release -p deskhaven-web",
                 "cargo build --release -p deskhaven",
             ]
         );

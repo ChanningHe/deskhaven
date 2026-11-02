@@ -6,10 +6,13 @@ const DIST: &str = "../../web/dist";
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    // A missing path counts as changed on every build, which would recompile this
-    // crate each time. Without a dist there is nothing to watch: `xtask dist`
-    // drops the stale release artifact of this crate before it builds.
-    if Path::new(DIST).exists() {
-        println!("cargo:rerun-if-changed={DIST}");
+    // Always watched, also when missing: cargo treats a missing path as changed, so
+    // this crate is recompiled on every build until `web/dist` exists, and once it
+    // appears (or any file in it changes) the next build re-embeds it. That is what
+    // keeps a hand-built `pnpm -C web build && cargo build --release` from shipping
+    // a stale embed; `xtask dist` is the documented path but not required.
+    println!("cargo:rerun-if-changed={DIST}");
+    if !Path::new(DIST).exists() {
+        println!("cargo:warning=web/dist not found; console will serve the not-built page");
     }
 }

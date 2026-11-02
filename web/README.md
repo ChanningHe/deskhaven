@@ -11,16 +11,22 @@ nix develop -c cargo run -p xtask -- dist   # pnpm install + build, then cargo b
 
 - Release builds embed `web/dist`; debug builds read it from disk, so `pnpm -C web build` is enough
   during development (or use `pnpm -C web dev` with the Vite proxy).
-- `cargo build` works without `web/dist`: the SPA routes then answer 503 with a "web console not
-  built" page. After building the frontend by hand, use `xtask dist` (it drops the stale embed)
-  rather than a bare `cargo build --release`.
+- `cargo build` works without `web/dist` (with a `cargo:warning`): the SPA routes then answer 503
+  with a "web console not built" page. `crates/deskhaven-web/build.rs` always watches `web/dist`, so
+  a later `pnpm -C web build && cargo build --release` re-embeds without `xtask dist`. While
+  `web/dist` is missing, that crate is recompiled on every build (cargo treats a missing watched path
+  as changed).
+- `xtask dist` installs with `--ignore-scripts`: the build does not need dependency lifecycle
+  scripts, and a release build should not run third-party install code.
 - The server sends a strict Content-Security-Policy (`deskhaven_web::CSP`): scripts and styles must
   be external files from the same origin. No inline `<script>`/`<style>`, no `style=""` attributes,
   no `eval`, no `data:` images. Setting styles through the DOM (`el.style.x`, which is what React's
   `style` prop does) is fine. A change to `index.html` or the build config that breaks this is caught
   by `crates/deskhaven-web/tests/csp.rs`.
 - Paths under `/api` and `/admin/api` are never answered with `index.html`; a missing file with an
-  extension is a 404.
+  extension is a 404. The check runs on the decoded path with empty segments collapsed, so `//api/x`,
+  `/admin//api/x` and `/%61pi/x` get a bare 404 too. Only the literal prefixes get the API's JSON
+  error shape; these odd spellings do not match any API route and get the bare 404 (acceptable).
 - Playwright smoke tests (open the home page against a release binary) are deferred until
   `deskhaven serve` serves the console (M0-09).
 
