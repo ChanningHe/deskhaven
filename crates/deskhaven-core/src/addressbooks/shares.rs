@@ -1,15 +1,25 @@
 //! Shares of shared books, and the cleanup when a share subject is deleted.
 //!
-//! Lock order (PostgreSQL): the subject row first, then the book row. Deleting a user locks
-//! the user and then, through `ON DELETE SET NULL`, the books it owns; taking the locks in
-//! the same order keeps a concurrent share change and user deletion from deadlocking.
+//! Lock order (PostgreSQL), everywhere: **subject row -> book rows -> share rows**.
+//! - `set_share`: the subject (`FOR KEY SHARE`: only its deletion must wait), then the book
+//!   (`FOR UPDATE`), then the share row it upserts.
+//! - `remove_share`, `delete_shared`, peer and tag writes: the book, then its share rows.
+//! - Deleting a user (`forget_user` inside `UserService::delete`): the user, then every book
+//!   it owns (`FOR UPDATE`, by id, *before* touching shares), then the share rows naming
+//!   it; the `ON DELETE SET NULL` that follows finds those books already locked.
+//! - Deleting a group: the group, then the share rows naming it (groups own no books).
+//!
+//! A share naming the owner of its own book would let the owner's deletion wait for a share
+//! row held by a writer of that book while the writer waits for the book; `set_share`
+//! refuses it (the owner already has full control), and `forget_user` locking the books
+//! first also covers such rows written earlier.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::address_book::{self, Kind};
 use deskhaven_db::entity::address_book_share::{self, SubjectType};
 use deskhaven_db::entity::{group, user};
 use sea_orm::ActiveValue::Set;
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{LockType, OnConflict};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect,
@@ -17,7 +27,7 @@ use sea_orm::{
 
 use super::access::{Actor, authorize};
 use super::books::touch;
-use super::error::AddressBookError;
+use super::error::{AddressBookError, invalid};
 use super::{AddressBookService, Rule};
 
 /// Whom a share grants a book to.
@@ -69,6 +79,11 @@ impl AddressBookService {
         }
         if !subject_exists {
             return Err(AddressBookError::SubjectNotFound);
+        }
+        if let (Subject::User(id), Some(owner)) = (subject, book.owner_user_id)
+            && id == owner
+        {
+            return Err(invalid("subject", "the owner already has full control"));
         }
         let (subject_type, subject_id) = subject.parts();
         let row = address_book_share::ActiveModel {
@@ -131,14 +146,16 @@ impl AddressBookService {
     }
 }
 
-/// Whether the subject row exists; locks it for the rest of the transaction.
+/// Whether the subject row exists. On PostgreSQL it stays locked `FOR KEY SHARE` for the
+/// rest of the transaction: its deletion waits, other updates of the row do not. (SQLite has
+/// no row locks; its write transaction already excludes every other writer.)
 async fn lock_subject(db: &impl ConnectionTrait, subject: Subject) -> Result<bool, DbErr> {
     let found = match subject {
         Subject::User(id) => {
             user::Entity::find_by_id(id)
                 .select_only()
                 .column(user::Column::Id)
-                .lock_exclusive()
+                .lock(LockType::KeyShare)
                 .into_tuple::<i64>()
                 .one(db)
                 .await?
@@ -147,7 +164,7 @@ async fn lock_subject(db: &impl ConnectionTrait, subject: Subject) -> Result<boo
             group::Entity::find_by_id(id)
                 .select_only()
                 .column(group::Column::Id)
-                .lock_exclusive()
+                .lock(LockType::KeyShare)
                 .into_tuple::<i64>()
                 .one(db)
                 .await?
@@ -156,10 +173,21 @@ async fn lock_subject(db: &impl ConnectionTrait, subject: Subject) -> Result<boo
     Ok(found.is_some())
 }
 
-/// Address book data of a user being deleted, inside the deleting transaction: the personal
-/// book (peers and tags cascade) and every share naming the user. The personal book must go
-/// before the user row: the database refuses to orphan one.
+/// Address book data of a user being deleted, inside the deleting transaction (which holds
+/// the user row): first every book the user owns is locked, in id order, then the personal
+/// book (peers and tags cascade) and every share naming the user are deleted (see the module
+/// docs for the lock order). The personal book must go before the user row: the database
+/// refuses to orphan one.
 pub(crate) async fn forget_user(tx: &DatabaseTransaction, user_id: i64) -> Result<(), DbErr> {
+    address_book::Entity::find()
+        .select_only()
+        .column(address_book::Column::Id)
+        .filter(address_book::Column::OwnerUserId.eq(user_id))
+        .order_by_asc(address_book::Column::Id)
+        .lock_exclusive()
+        .into_tuple::<i64>()
+        .all(tx)
+        .await?;
     address_book::Entity::delete_many()
         .filter(address_book::Column::OwnerUserId.eq(user_id))
         .filter(address_book::Column::Kind.eq(Kind::Personal))
