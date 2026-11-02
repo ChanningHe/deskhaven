@@ -47,8 +47,7 @@ pub struct PendingLogin<'a> {
     pub lockout: &'a PendingSubject,
 }
 
-/// The second-step request.
-#[derive(Debug)]
+/// The second-step request. `Debug` shows neither the secret nor the code.
 pub struct SecondStep<'a> {
     pub secret: &'a str,
     /// Must name the user of the challenge (case-insensitively).
@@ -56,6 +55,15 @@ pub struct SecondStep<'a> {
     pub device: &'a ClientDevice,
     /// A TOTP code or a recovery code. Never logged.
     pub code: &'a str,
+}
+
+impl fmt::Debug for SecondStep<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecondStep")
+            .field("username", &self.username)
+            .field("device", &self.device)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What the challenge carries from step 1, read back from `context`.
@@ -183,4 +191,32 @@ fn timestamp(ms: i64) -> Result<time::TimestampMs, TfaError> {
             "timestamp {ms} out of range"
         )))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_never_shows_the_secret_or_the_code() {
+        let device = ClientDevice {
+            rustdesk_id: "123456789".to_owned(),
+            uuid: "dXVpZA==".to_owned(),
+            info: None,
+        };
+        let step = SecondStep {
+            secret: "s3cret-challenge-value",
+            username: "alice",
+            device: &device,
+            code: "987654",
+        };
+
+        let shown = format!("{step:?}");
+
+        assert!(shown.contains("alice"), "{shown}");
+        assert!(
+            !shown.contains("s3cret-challenge-value") && !shown.contains("987654"),
+            "{shown}"
+        );
+    }
 }
