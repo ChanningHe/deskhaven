@@ -2,13 +2,14 @@
 
 mod cli;
 mod config_cmd;
+mod key_cmd;
 
 use std::io::Write;
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{Cli, Command, ConfigCommand};
+use cli::{Cli, Command, ConfigCommand, KeyCommand};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -31,6 +32,7 @@ fn run(cli: &Cli) -> anyhow::Result<()> {
             config_cmd::print(&options, *effective)
         }
         Command::Config(ConfigCommand::Schema) => config_cmd::schema(),
+        Command::Key(KeyCommand::Show) => key_cmd::show(&options),
     }
 }
 

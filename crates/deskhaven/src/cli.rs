@@ -36,6 +36,15 @@ pub enum Command {
     /// Inspect and validate configuration
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Inspect key material
+    #[command(subcommand)]
+    Key(KeyCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum KeyCommand {
+    /// Print the public key (the value clients enter as "Key")
+    Show,
 }
 
 #[derive(Debug, Subcommand)]
