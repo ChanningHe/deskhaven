@@ -65,26 +65,44 @@ static ALWAYS_USE_RELAY: AtomicBool = AtomicBool::new(false);
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex as TokioMutex; // differentiate if needed
 #[derive(Clone)]
-struct PunchReqEntry { tm: Instant, from_ip: String, to_ip: String, to_id: String }
-static PUNCH_REQS: Lazy<TokioMutex<VecDeque<PunchReqEntry>>> = Lazy::new(|| TokioMutex::new(VecDeque::new()));
+struct PunchReqEntry {
+    tm: Instant,
+    from_ip: String,
+    to_ip: String,
+    to_id: String,
+}
+static PUNCH_REQS: Lazy<TokioMutex<VecDeque<PunchReqEntry>>> =
+    Lazy::new(|| TokioMutex::new(VecDeque::new()));
 const PUNCH_REQ_DEDUPE_SEC: u64 = 60;
 static PUNCH_REQ_MAX: Lazy<usize> =
     Lazy::new(|| get_arg("MAX_PUNCH_REQUESTS").parse().unwrap_or(100_000));
 
 async fn record_punch_req(from_ip: String, to_ip: String, to_id: String) {
     let max = *PUNCH_REQ_MAX;
-    if max == 0 { return; }
+    if max == 0 {
+        return;
+    }
     let mut lock = PUNCH_REQS.lock().await;
     let mut dup = false;
-    for e in lock.iter().rev().take(30) { // only check recent tail subset for speed
+    for e in lock.iter().rev().take(30) {
+        // only check recent tail subset for speed
         if e.from_ip == from_ip && e.to_id == to_id {
-            if e.tm.elapsed().as_secs() < PUNCH_REQ_DEDUPE_SEC { dup = true; }
+            if e.tm.elapsed().as_secs() < PUNCH_REQ_DEDUPE_SEC {
+                dup = true;
+            }
             break;
         }
     }
     if !dup {
-        if lock.len() >= max { lock.pop_front(); }
-        lock.push_back(PunchReqEntry { tm: Instant::now(), from_ip, to_ip, to_id });
+        if lock.len() >= max {
+            lock.pop_front();
+        }
+        lock.push_back(PunchReqEntry {
+            tm: Instant::now(),
+            from_ip,
+            to_ip,
+            to_id,
+        });
     }
 }
 
@@ -728,7 +746,11 @@ impl RendezvousServer {
     ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
         let mut ph = ph;
         if !key.is_empty() && ph.licence_key != key {
-            log::warn!("Authentication failed from {} for peer {} - invalid key", addr, ph.id);
+            log::warn!(
+                "Authentication failed from {} for peer {} - invalid key",
+                addr,
+                ph.id
+            );
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 failure: punch_hole_response::Failure::LICENSE_MISMATCH.into(),
@@ -755,7 +777,7 @@ impl RendezvousServer {
                 });
                 return Ok((msg_out, None));
             }
-            
+
             // record punch hole request (from addr -> peer id/peer_addr)
             record_punch_req(
                 try_into_v4(addr).ip().to_string(),
@@ -1084,17 +1106,27 @@ impl RendezvousServer {
                 use std::fmt::Write as _;
                 let mut lock = PUNCH_REQS.lock().await;
                 let arg = fds.next();
-                if let Some("-") = arg { lock.clear(); }
-                else {
+                if let Some("-") = arg {
+                    lock.clear();
+                } else {
                     let start = arg.and_then(|x| x.parse::<usize>().ok()).unwrap_or(0);
-                    let mut page_size = fds.next().and_then(|x| x.parse::<usize>().ok()).unwrap_or(10);
-                    if page_size == 0 { page_size = 10; }
+                    let mut page_size = fds
+                        .next()
+                        .and_then(|x| x.parse::<usize>().ok())
+                        .unwrap_or(10);
+                    if page_size == 0 {
+                        page_size = 10;
+                    }
                     for (_, e) in lock.iter().enumerate().skip(start).take(page_size) {
                         let age = e.tm.elapsed();
                         let event_system = std::time::SystemTime::now() - age;
                         let event_iso = chrono::DateTime::<chrono::Utc>::from(event_system)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                        let _ = writeln!(res, "{} {} -> {}@{}", event_iso, e.from_ip, e.to_id, e.to_ip);
+                        let _ = writeln!(
+                            res,
+                            "{} {} -> {}@{}",
+                            event_iso, e.from_ip, e.to_id, e.to_ip
+                        );
                     }
                 }
             }
@@ -1449,7 +1481,10 @@ mod tests {
         if max > 0 {
             // the oldest half is evicted and the newest kept
             assert_eq!(lock.front().unwrap().to_id, format!("peer{}", max % 31));
-            assert_eq!(lock.back().unwrap().to_id, format!("peer{}", (max * 2 - 1) % 31));
+            assert_eq!(
+                lock.back().unwrap().to_id,
+                format!("peer{}", (max * 2 - 1) % 31)
+            );
         }
     }
 }

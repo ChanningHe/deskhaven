@@ -1,5 +1,6 @@
 use hbb_common::{
-    anyhow::{Context, Result}, log, ResultType
+    anyhow::{Context, Result},
+    log, ResultType,
 };
 use sodiumoxide::crypto::sign;
 use std::{
