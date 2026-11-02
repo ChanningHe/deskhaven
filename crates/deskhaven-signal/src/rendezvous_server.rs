@@ -842,15 +842,16 @@ impl RendezvousServer {
                     Self::send_to_sink(sink, rk_response(res)).await;
                     return true;
                 }
+                // RegisterPeer proves nothing (no uuid), and over a stream the source IP
+                // check of `refresh_peer` is weak (loopback exempt, websocket proxy headers),
+                // so it must not move or bind a peer: it is always answered `request_pk`, and
+                // only an accepted RegisterPk (uuid-checked) binds the connection. TCP-mode
+                // clients never send it (they only send RegisterPk).
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     if rp.id.is_empty() || rp.id.len() > MAX_PEER_ID_LEN {
                         return false;
                     }
-                    let request_pk = self.refresh_peer(rp.id.clone(), addr).await;
-                    if !request_pk {
-                        self.bind_stream_peer(rp.id, addr, conn).await;
-                    }
-                    Self::send_to_sink(sink, register_peer_response(request_pk)).await;
+                    Self::send_to_sink(sink, register_peer_response(true)).await;
                     return true;
                 }
                 // ControlPlane hooks (M5): an `HttpProxyRequest` arm (`control.http_proxy`, only
@@ -870,15 +871,6 @@ impl RendezvousServer {
         socket_addr: SocketAddr,
         socket: &mut FramedSocket,
     ) -> ResultType<()> {
-        let request_pk = self.refresh_peer(id, socket_addr).await;
-        socket
-            .send(&register_peer_response(request_pk), socket_addr)
-            .await
-    }
-
-    // deskhaven (M1-08): upstream `update_addr` without its UDP answer, shared with RegisterPeer
-    // over TCP / websocket; returns the answer's `request_pk`.
-    async fn refresh_peer(&mut self, id: String, socket_addr: SocketAddr) -> bool {
         let (request_pk, ip_change) = if let Some(old) = self.pm.get_in_memory(&id).await {
             let mut old = old.write().await;
             let ip = socket_addr.ip();
@@ -908,7 +900,9 @@ impl RendezvousServer {
         if let Some(old) = ip_change {
             log::info!("IP change of {} from {} to {}", id, old, socket_addr);
         }
-        request_pk
+        socket
+            .send(&register_peer_response(request_pk), socket_addr)
+            .await
     }
 
     // deskhaven (M1-08): makes this stream connection the channel of peer `id`, now at `addr`:

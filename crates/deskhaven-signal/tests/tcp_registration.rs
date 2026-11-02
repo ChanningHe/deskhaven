@@ -157,20 +157,37 @@ async fn register_pk_over_tcp_is_persisted() {
     server.stop().await;
 }
 
-/// RegisterPeer over TCP is answered like over UDP (rs:612-653): the pk is requested until it
-/// is known.
+/// RegisterPeer carries no proof of ownership (no uuid); over a stream it would let anyone
+/// redirect a victim's deliveries (review HIGH-1: a websocket client claiming a loopback IP
+/// skips the IP-change check). It is answered `request_pk` (prove it with RegisterPk) and
+/// changes nothing: the victim, registered over UDP, keeps receiving its punch holes, and the
+/// attacker's connections get none.
 #[tokio::test]
-async fn register_peer_over_tcp_requests_the_pk_until_it_is_known() {
-    const ID: &str = "tcp-peer-heartbeat";
+async fn register_peer_over_a_stream_never_binds_or_moves_the_peer() {
+    const ID: &str = "victim-peer";
     // Arrange
     let server = TestServer::start().await;
-    let mut conn = server.tcp().await;
+    let (mut victim, _) = server.online_peer(ID).await;
+    let mut tcp = server.tcp().await;
+    let mut ws = support::WsClient::connect_from(
+        support::next_client_ip(),
+        server.ws_addr(),
+        &[("X-Real-IP", "127.0.0.1")],
+    )
+    .await;
 
-    // Act + Assert
-    assert!(conn.register_peer(ID).await.request_pk, "unknown id");
-    assert_eq!(conn.register_pk(ID, &PeerKeys::random()).await, OK);
-    assert!(!conn.register_peer(ID).await.request_pk, "pk is known");
-    assert!(is_online(&server, ID).await);
+    // Act
+    let tcp_res = tcp.register_peer(ID).await;
+    let ws_res = ws.register_peer(ID).await;
+    let mut controller = server.tcp().await;
+    controller.punch_hole_request(server.punch_req(ID)).await;
+
+    // Assert
+    assert!(tcp_res.request_pk && ws_res.request_pk);
+    let ph = expect_msg!(victim.recv().await, PunchHole);
+    assert_eq!(decode_addr(&ph.socket_addr), controller.local_addr());
+    tcp.assert_silent().await;
+    ws.assert_silent().await;
     server.stop().await;
 }
 

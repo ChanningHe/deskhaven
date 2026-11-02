@@ -451,3 +451,14 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   New protocol test `full_write_queue_answers_server_error_over_udp_and_tcp`
   (`tests/peer_store.rs`, with a stalling test store) pins it over UDP and TCP, and that bound
   peers are still accepted; it fails if the result is ignored as upstream did.
+- 2026-11-03, M1-08 review (HIGH), RegisterPeer over a stream: supersedes the RegisterPeer part
+  of the TCP / websocket registration entry above. RegisterPeer carries no proof of ownership,
+  and over a stream the IP-change check of `update_addr` is weak (loopback exempt; websocket
+  proxy headers), so binding on it let anyone redirect a victim's PunchHole / FetchLocalAddr /
+  RequestRelay to their own connection. Over TCP / websocket it is now always answered
+  `RegisterPeerResponse{request_pk: true}` and changes nothing (no address refresh, no binding);
+  only an accepted RegisterPk (uuid-checked) binds a connection. TCP-mode clients never send
+  RegisterPeer. The `refresh_peer` split is undone: `update_addr` is upstream's again apart
+  from building its answer with `register_peer_response`. Test
+  `register_peer_over_tcp_requests_the_pk_until_it_is_known` became
+  `register_peer_over_a_stream_never_binds_or_moves_the_peer`.
