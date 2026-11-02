@@ -1,8 +1,8 @@
-//! Write transactions.
+//! Transactions: write (immediate on SQLite) and read (one snapshot).
 
 use sea_orm::{
-    DatabaseConnection, DatabaseTransaction, DbBackend, DbErr, SqliteTransactionMode,
-    TransactionOptions, TransactionTrait,
+    AccessMode, DatabaseConnection, DatabaseTransaction, DbBackend, DbErr, IsolationLevel,
+    SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
 
 /// Begins a transaction that will write. **Use it for every read-then-write transaction.**
@@ -23,6 +23,24 @@ pub async fn begin_write(conn: &DatabaseConnection) -> Result<DatabaseTransactio
             ..TransactionOptions::default()
         },
         _ => TransactionOptions::default(),
+    };
+    conn.begin_with_options(options).await
+}
+
+/// Begins a read-only transaction whose queries all see one snapshot, for reads that join
+/// several tables by hand.
+///
+/// SQLite: a plain deferred `BEGIN`; in WAL mode the first read fixes the snapshot.
+/// PostgreSQL: `REPEATABLE READ, READ ONLY` (the default READ COMMITTED would let each
+/// query see a different state). Finish with `commit` (nothing was written).
+pub async fn begin_read(conn: &DatabaseConnection) -> Result<DatabaseTransaction, DbErr> {
+    let options = match conn.get_database_backend() {
+        DbBackend::Sqlite => TransactionOptions::default(),
+        _ => TransactionOptions {
+            isolation_level: Some(IsolationLevel::RepeatableRead),
+            access_mode: Some(AccessMode::ReadOnly),
+            ..TransactionOptions::default()
+        },
     };
     conn.begin_with_options(options).await
 }

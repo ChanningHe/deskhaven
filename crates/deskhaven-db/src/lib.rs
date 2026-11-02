@@ -16,4 +16,4 @@ pub use connect::{DbOptions, SQLITE_BUSY_TIMEOUT, connect, sqlite_file};
 pub use constraint::is_foreign_key_violation;
 pub use error::DbError;
 pub use migrate::{MigrationStatus, migrate, migrate_with, migration_status};
-pub use tx::begin_write;
+pub use tx::{begin_read, begin_write};

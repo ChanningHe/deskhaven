@@ -199,6 +199,21 @@ impl AddressBookService {
         let mut extra = parse_extra(&current);
         extra.extend(patch.extra);
         check_extra(&extra)?;
+        // A secret equal to the stored one is left sealed as it is: sealing again would
+        // change the ciphertext (a fresh nonce) and so the row, for nothing.
+        let sealed = |secret| match secret {
+            Secret::Hash => current.hash_enc.as_deref(),
+            Secret::Password => current.password_enc.as_deref(),
+        };
+        let same_hash = patch.hash.as_deref().is_some_and(|given| {
+            self.open(Secret::Hash, &current, sealed(Secret::Hash))
+                .as_str()
+                == given
+        });
+        let same_password = patch.password.as_ref().is_some_and(|given| {
+            let stored = self.open(Secret::Password, &current, sealed(Secret::Password));
+            stored.as_str() == given.as_str()
+        });
         let mut row: address_book_peer::ActiveModel = current.into();
         let texts = [
             (&mut row.alias, patch.alias),
@@ -222,10 +237,10 @@ impl AddressBookService {
             row.force_always_relay = Set(relay);
         }
         match book.kind {
-            Kind::Personal if patch.hash.is_some() => {
+            Kind::Personal if patch.hash.is_some() && !same_hash => {
                 row.hash_enc = Set(self.seal(Secret::Hash, book.id, &patch.id, patch.hash)?);
             }
-            Kind::Shared if patch.password.is_some() => {
+            Kind::Shared if patch.password.is_some() && !same_password => {
                 let sealed = self.seal(Secret::Password, book.id, &patch.id, patch.password)?;
                 row.password_enc = Set(sealed);
             }

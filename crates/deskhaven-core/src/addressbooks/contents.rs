@@ -10,12 +10,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use deskhaven_db::begin_write;
+use deskhaven_db::entity::address_book;
 use deskhaven_db::entity::{address_book_peer, address_book_tag};
 use deskhaven_db::time::{self, TimestampMs};
+use deskhaven_db::{begin_read, begin_write};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder,
+    TryIntoModel,
 };
 
 use super::access::{Actor, authorize};
@@ -67,17 +69,21 @@ impl AddressBookService {
         actor: Actor,
         guid: &str,
     ) -> Result<BookContents, AddressBookError> {
-        let (book, _) = authorize(&self.db, actor, guid, Rule::ReadOnly, false).await?;
+        // One snapshot: a client that reads, edits and pushes back must not get peers of
+        // one state and tags of another.
+        let tx = begin_read(&self.db).await?;
+        let (book, _) = authorize(&tx, actor, guid, Rule::ReadOnly, false).await?;
         let peers = address_book_peer::Entity::find()
             .filter(address_book_peer::Column::AddressBookId.eq(book.id))
             .order_by_asc(address_book_peer::Column::RustdeskId)
-            .all(&self.db)
+            .all(&tx)
             .await?;
         let tags = address_book_tag::Entity::find()
             .filter(address_book_tag::Column::AddressBookId.eq(book.id))
             .order_by_asc(address_book_tag::Column::Name)
-            .all(&self.db)
+            .all(&tx)
             .await?;
+        tx.commit().await?;
         Ok(BookContents {
             peers: peers
                 .into_iter()
@@ -124,9 +130,26 @@ impl AddressBookService {
         }
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
+        let peers_changed = self.replace_peers(&tx, &book, peers).await?;
+        let tags_changed = replace_tags(&tx, &book, tags).await?;
+        // A push that changes nothing leaves the book (and its timestamp) alone.
+        if peers_changed || tags_changed {
+            touch(&tx, &book).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Makes the book's peers `peers` (already deduplicated); whether any row changed.
+    async fn replace_peers(
+        &self,
+        tx: &DatabaseTransaction,
+        book: &address_book::Model,
+        peers: Vec<PeerPatch>,
+    ) -> Result<bool, AddressBookError> {
         let stored = address_book_peer::Entity::find()
             .filter(address_book_peer::Column::AddressBookId.eq(book.id))
-            .all(&tx)
+            .all(tx)
             .await?;
         let mut stored: HashMap<String, address_book_peer::Model> = stored
             .into_iter()
@@ -142,46 +165,80 @@ impl AddressBookService {
             address_book_peer::Entity::delete_many()
                 .filter(address_book_peer::Column::AddressBookId.eq(book.id))
                 .filter(address_book_peer::Column::RustdeskId.is_in(chunk.iter().cloned()))
-                .exec(&tx)
+                .exec(tx)
                 .await?;
         }
         let now = time::now();
+        let mut changed = !gone.is_empty();
         let mut added = Vec::new();
         for patch in peers {
-            match stored.remove(&patch.id) {
-                Some(current) => {
-                    self.changes(&book, current, patch)?.update(&tx).await?;
-                }
-                None => added.push(self.new_row(&book, patch, now)?),
+            let Some(current) = stored.remove(&patch.id) else {
+                added.push(self.new_row(book, patch, now)?);
+                continue;
+            };
+            let candidate = self.changes(book, current.clone(), patch)?;
+            if differs(&current, &candidate)? {
+                candidate.update(tx).await?;
+                changed = true;
             }
         }
+        changed |= !added.is_empty();
         for chunk in chunks(added) {
             address_book_peer::Entity::insert_many(chunk)
-                .exec(&tx)
+                .exec(tx)
                 .await?;
         }
-        let colors = stored_colors(&tx, book.id).await?;
-        address_book_tag::Entity::delete_many()
-            .filter(address_book_tag::Column::AddressBookId.eq(book.id))
-            .exec(&tx)
-            .await?;
-        let rows = tags.into_iter().map(|tag| address_book_tag::ActiveModel {
-            address_book_id: Set(book.id),
-            color: Set(tag
-                .color
-                .or_else(|| colors.get(&tag.name).copied())
-                .unwrap_or(DEFAULT_TAG_COLOR)),
-            name: Set(tag.name),
-        });
-        for chunk in chunks(rows.collect()) {
-            address_book_tag::Entity::insert_many(chunk)
-                .exec(&tx)
-                .await?;
-        }
-        touch(&tx, &book).await?;
-        tx.commit().await?;
-        Ok(())
+        Ok(changed)
     }
+}
+
+/// Makes the book's tags `tags` (already deduplicated and checked); whether any changed.
+async fn replace_tags(
+    tx: &DatabaseTransaction,
+    book: &address_book::Model,
+    tags: Vec<ReplacementTag>,
+) -> Result<bool, AddressBookError> {
+    let colors = stored_colors(tx, book.id).await?;
+    let wanted: HashMap<String, i64> = tags
+        .into_iter()
+        .map(|tag| {
+            let color = tag.color.or_else(|| colors.get(&tag.name).copied());
+            (tag.name, color.unwrap_or(DEFAULT_TAG_COLOR))
+        })
+        .collect();
+    if wanted == colors {
+        return Ok(false);
+    }
+    address_book_tag::Entity::delete_many()
+        .filter(address_book_tag::Column::AddressBookId.eq(book.id))
+        .exec(tx)
+        .await?;
+    let rows = wanted
+        .into_iter()
+        .map(|(name, color)| address_book_tag::ActiveModel {
+            address_book_id: Set(book.id),
+            name: Set(name),
+            color: Set(color),
+        });
+    for chunk in chunks(rows.collect()) {
+        address_book_tag::Entity::insert_many(chunk)
+            .exec(tx)
+            .await?;
+    }
+    Ok(true)
+}
+
+/// Whether the update `candidate` would change `current` apart from its timestamp.
+fn differs(
+    current: &address_book_peer::Model,
+    candidate: &address_book_peer::ActiveModel,
+) -> Result<bool, AddressBookError> {
+    let mut next = candidate
+        .clone()
+        .try_into_model()
+        .map_err(AddressBookError::Database)?;
+    next.updated_at = current.updated_at;
+    Ok(next != *current)
 }
 
 /// `items` without repeats of `key`, first occurrence kept.

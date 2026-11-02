@@ -49,6 +49,7 @@ pub use deskhaven_db::entity::address_book_share::Rule;
 pub use error::AddressBookError;
 pub use peer::{EXTRA_MAX_BYTES, Peer, PeerPatch, PeerSecret, TAG_NAME_MAX_LEN};
 pub use shares::{Share, Subject};
+pub use tags::MAX_BOOK_TAGS;
 
 pub(crate) use shares::{forget_group, forget_user};
 
