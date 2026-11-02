@@ -48,12 +48,16 @@ async fn tables_and_indexes_exist() {
                     "idx_connection_sessions_controller_user_id",
                 ),
                 ("connection_sessions", "idx_connection_sessions_created_at"),
+                (
+                    "connection_sessions",
+                    "idx_connection_sessions_device_created",
+                ),
                 ("file_transfers", "idx_file_transfers_device_rustdesk_id"),
                 ("file_transfers", "idx_file_transfers_created_at"),
                 ("alarms", "idx_alarms_device_rustdesk_id"),
                 ("alarms", "idx_alarms_created_at"),
                 ("audit_nonces", "idx_audit_nonces_received_at"),
-                ("login_events", "idx_login_events_user_id"),
+                ("login_events", "idx_login_events_user_created"),
                 ("login_events", "idx_login_events_created_at"),
                 ("console_audit", "idx_console_audit_created_at"),
             ],
@@ -154,21 +158,20 @@ async fn connection_guid_is_unique() {
 }
 
 #[tokio::test]
-async fn connection_conn_type_is_checked() {
+async fn unknown_connection_types_are_stored() {
     each_migrated_backend(async |db: &TestDb| {
-        connection_row("111", 1, "s", "g")
-            .insert(&db.conn)
-            .await
-            .unwrap();
+        // Newer clients may report types this server does not know; an audit insert must
+        // never be rejected for that.
+        for (conn_id, conn_type) in [(1, 5), (2, 99), (3, -1)] {
+            let row = connection_session::ActiveModel {
+                conn_type: Set(Some(conn_type)),
+                ..connection_row("111", conn_id, "s", &format!("g-{conn_id}"))
+            };
 
-        assert_checks(
-            db,
-            &[
-                ("connection_sessions", "conn_type = 5", "conn_type = 4"),
-                ("connection_sessions", "conn_type = -1", "conn_type = 0"),
-            ],
-        )
-        .await;
+            let inserted = row.insert(&db.conn).await.unwrap();
+
+            assert_eq!(inserted.conn_type, Some(conn_type), "{}", db.backend);
+        }
     })
     .await;
 }

@@ -119,13 +119,10 @@ const DIRECTIONS: &[&str] = &["send", "receive"];
 const LOGIN_METHODS: &[&str] = &["password", "totp", "email_code", "oidc", "ldap", "recovery"];
 const LOGIN_CLIENTS: &[&str] = &["rustdesk", "console", "api"];
 const ACTOR_KINDS: &[&str] = &["user", "api_token", "cli", "system"];
-/// Connection types: 0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal.
-const CONN_TYPE_RANGE: (i32, i32) = (0, 4);
 const EMPTY_JSON_OBJECT: &str = "{}";
 const EMPTY_JSON_ARRAY: &str = "[]";
 
 fn connection_sessions_table() -> TableCreateStatement {
-    let (min_type, max_type) = CONN_TYPE_RANGE;
     Table::create()
         .table(ConnectionSessions::Table)
         .col(big_pk_auto(ConnectionSessions::Id))
@@ -136,6 +133,7 @@ fn connection_sessions_table() -> TableCreateStatement {
         .col(text_null(ConnectionSessions::PeerRustdeskId))
         .col(text_null(ConnectionSessions::PeerName))
         .col(big_integer_null(ConnectionSessions::ControllerUserId))
+        // 0 remote control .. 4 terminal today; no CHECK, so a newer client's value is stored.
         .col(integer_null(ConnectionSessions::ConnType))
         .col(integer_null(ConnectionSessions::PrimaryAuth))
         .col(integer_null(ConnectionSessions::TwoFactor))
@@ -146,11 +144,6 @@ fn connection_sessions_table() -> TableCreateStatement {
         .col(text_null(ConnectionSessions::Note))
         .col(text_null(ConnectionSessions::ControllerNote))
         .col(big_integer(ConnectionSessions::CreatedAt))
-        // NULL (not reported yet) satisfies the CHECK.
-        .check(Check::named(
-            "ck_connection_sessions_conn_type",
-            Expr::col(ConnectionSessions::ConnType).between(min_type, max_type),
-        ))
         .foreign_key(&mut foreign_key(
             "fk_connection_sessions_controller",
             (
@@ -270,14 +263,23 @@ fn indexes() -> Vec<IndexCreateStatement> {
             ConnectionSessions::Table,
             ConnectionSessions::Guid,
         ),
-        // The three messages of one connection merge into one row through this key.
+        // The three messages of one connection merge into one row through this key. The
+        // controller's note message and `conn/active` look a connection up by device and
+        // session only, so `conn_id` comes last and the key serves those lookups too.
         Index::create()
             .name("uq_connection_sessions_conn")
             .table(ConnectionSessions::Table)
             .col(ConnectionSessions::DeviceRustdeskId)
-            .col(ConnectionSessions::ConnId)
             .col(ConnectionSessions::SessionId)
+            .col(ConnectionSessions::ConnId)
             .unique()
+            .to_owned(),
+        // A device's connections, newest first.
+        Index::create()
+            .name("idx_connection_sessions_device_created")
+            .table(ConnectionSessions::Table)
+            .col(ConnectionSessions::DeviceRustdeskId)
+            .col(ConnectionSessions::CreatedAt)
             .to_owned(),
         index(
             "idx_connection_sessions_controller_user_id",
@@ -310,11 +312,13 @@ fn indexes() -> Vec<IndexCreateStatement> {
             AuditNonces::Table,
             AuditNonces::ReceivedAt,
         ),
-        index(
-            "idx_login_events_user_id",
-            LoginEvents::Table,
-            LoginEvents::UserId,
-        ),
+        // A user's history, newest first; the leading column also serves the SET NULL.
+        Index::create()
+            .name("idx_login_events_user_created")
+            .table(LoginEvents::Table)
+            .col(LoginEvents::UserId)
+            .col(LoginEvents::CreatedAt)
+            .to_owned(),
         index(
             "idx_login_events_created_at",
             LoginEvents::Table,

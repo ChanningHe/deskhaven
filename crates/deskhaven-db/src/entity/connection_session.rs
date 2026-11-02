@@ -26,7 +26,8 @@ pub struct Model {
     pub peer_name: Option<String>,
     /// Resolved from the audit reference; cleared when the user is deleted.
     pub controller_user_id: Option<i64>,
-    /// 0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal.
+    /// 0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal; unconstrained,
+    /// newer clients may send other values.
     pub conn_type: Option<i32>,
     pub primary_auth: Option<i32>,
     pub two_factor: Option<i32>,

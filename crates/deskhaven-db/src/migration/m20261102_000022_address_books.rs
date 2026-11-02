@@ -2,7 +2,11 @@
 //!
 //! A user has at most one `personal` book: a partial unique index over the owner, which only
 //! covers `kind = 'personal'` rows (PostgreSQL and SQLite both support partial indexes). A
-//! book is owned by exactly one user and is deleted with them. Shares point at a user or a
+//! book's owner becomes NULL when that user is deleted, which leaves a shared book unowned
+//! (admin-managed) with its peers, tags and shares. A personal book must keep its owner
+//! (CHECK) and holds encrypted peer passwords, so the user delete in `deskhaven_core::users`
+//! removes it first; deleting a user row that still has a personal book is refused by the
+//! database. Shares point at a user or a
 //! group through `(subject_type, subject_id)`, so `subject_id` has no foreign key and the
 //! address book service removes shares of deleted subjects. Peers have no foreign key to
 //! `devices`: a book may list devices this server has never seen. Text columns the client
@@ -12,7 +16,9 @@
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::{big_integer, big_pk_auto, boolean, integer, text, text_null};
+use sea_orm_migration::schema::{
+    big_integer, big_integer_null, big_pk_auto, boolean, integer, text, text_null,
+};
 
 use super::{bool_checks, enum_check, foreign_key, index, unique_index};
 
@@ -89,7 +95,7 @@ fn address_books_table() -> TableCreateStatement {
         .col(big_pk_auto(AddressBooks::Id))
         .col(text(AddressBooks::Guid))
         .col(text(AddressBooks::Kind))
-        .col(big_integer(AddressBooks::OwnerUserId))
+        .col(big_integer_null(AddressBooks::OwnerUserId))
         .col(text(AddressBooks::Name))
         .col(text(AddressBooks::Note).default(""))
         .col(big_integer(AddressBooks::CreatedAt))
@@ -99,11 +105,18 @@ fn address_books_table() -> TableCreateStatement {
             AddressBooks::Kind,
             KINDS,
         ))
+        // Only a shared book may be unowned.
+        .check(Check::named(
+            "ck_address_books_personal_owner",
+            Expr::col(AddressBooks::Kind)
+                .ne("personal")
+                .or(Expr::col(AddressBooks::OwnerUserId).is_not_null()),
+        ))
         .foreign_key(&mut foreign_key(
             "fk_address_books_owner",
             (AddressBooks::Table, AddressBooks::OwnerUserId),
             (Users::Table, Users::Id),
-            ForeignKeyAction::Cascade,
+            ForeignKeyAction::SetNull,
         ))
         .to_owned()
 }
@@ -218,7 +231,7 @@ fn indexes() -> Vec<IndexCreateStatement> {
             AddressBooks::Guid,
         ),
         personal_owner_index(),
-        // Shared books of a user, and the owner-delete cascade.
+        // Shared books of a user, and the owner-delete SET NULL.
         index(
             "idx_address_books_owner_user_id",
             AddressBooks::Table,

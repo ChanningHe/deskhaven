@@ -21,8 +21,9 @@ pub struct Model {
     /// UUIDv7 shown to clients.
     pub guid: String,
     pub kind: Kind,
-    /// The book is deleted with its owner.
-    pub owner_user_id: i64,
+    /// `None` for a shared book whose owner was deleted (admin-managed). A personal book
+    /// always has one: the user delete removes it first.
+    pub owner_user_id: Option<i64>,
     pub name: String,
     pub note: String,
     pub created_at: TimestampMs,
@@ -35,7 +36,7 @@ pub enum Relation {
         belongs_to = "super::user::Entity",
         from = "Column::OwnerUserId",
         to = "super::user::Column::Id",
-        on_delete = "Cascade"
+        on_delete = "SetNull"
     )]
     User,
     #[sea_orm(has_many = "super::address_book_share::Entity")]

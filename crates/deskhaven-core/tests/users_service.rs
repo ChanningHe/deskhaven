@@ -15,9 +15,11 @@ use deskhaven_core::users::{
     PolicyViolation, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserQuery,
     UserService,
 };
-use deskhaven_db::entity::user;
+use deskhaven_db::entity::{address_book, address_book_peer, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::EntityTrait;
+use deskhaven_db::time;
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait};
 use serde_json::json;
 use tokio::sync::broadcast::error::TryRecvError;
 
@@ -465,6 +467,81 @@ async fn delete_removes_the_user_and_cascades_memberships() {
         assert!(matches!(svc.get(leo.id).await, Err(UserError::NotFound)));
         assert!(groups.members(group.id).await.unwrap().is_empty());
         assert!(matches!(svc.delete(leo.id).await, Err(UserError::NotFound)));
+    })
+    .await;
+}
+
+async fn insert_book(
+    db: &TestDb,
+    owner: i64,
+    kind: address_book::Kind,
+    guid: &str,
+) -> address_book::Model {
+    let at = time::from_millis(1_700_000_000_123).unwrap();
+    let book = address_book::ActiveModel {
+        guid: Set(guid.to_owned()),
+        kind: Set(kind),
+        owner_user_id: Set(Some(owner)),
+        name: Set(guid.to_owned()),
+        note: Set(String::new()),
+        created_at: Set(at),
+        updated_at: Set(at),
+        ..Default::default()
+    };
+    let book = book.insert(&db.conn).await.unwrap();
+    let peer = address_book_peer::ActiveModel {
+        address_book_id: Set(book.id),
+        rustdesk_id: Set("123".to_owned()),
+        alias: Set(String::new()),
+        note: Set(String::new()),
+        tags: Set("[]".to_owned()),
+        hash: Set(None),
+        password_enc: Set(Some("v1:k1:nonce:ct".to_owned())),
+        username: Set(String::new()),
+        hostname: Set(String::new()),
+        platform: Set(String::new()),
+        force_always_relay: Set(false),
+        rdp_port: Set(String::new()),
+        rdp_username: Set(String::new()),
+        login_name: Set(String::new()),
+        extra: Set("{}".to_owned()),
+        updated_at: Set(at),
+    };
+    peer.insert(&db.conn).await.unwrap();
+    book
+}
+
+#[tokio::test]
+async fn delete_removes_the_personal_book_and_unowns_shared_books() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db).await;
+        let leo = svc.create(local("leo")).await.unwrap();
+        let mia = svc.create(local("mia")).await.unwrap();
+        insert_book(db, leo.id, address_book::Kind::Personal, "p-leo").await;
+        let shared = insert_book(db, leo.id, address_book::Kind::Shared, "s-leo").await;
+        let other = insert_book(db, mia.id, address_book::Kind::Personal, "p-mia").await;
+
+        svc.delete(leo.id).await.unwrap();
+
+        let b = db.backend;
+        let mut books = address_book::Entity::find().all(&db.conn).await.unwrap();
+        books.sort_by_key(|book| book.id);
+        let kept: Vec<_> = books
+            .iter()
+            .map(|book| (book.guid.as_str(), book.owner_user_id))
+            .collect();
+        assert_eq!(
+            kept,
+            vec![("s-leo", None), ("p-mia", Some(mia.id))],
+            "{b}: personal book removed, shared unowned, others untouched"
+        );
+        let peers = address_book_peer::Entity::find()
+            .all(&db.conn)
+            .await
+            .unwrap();
+        let mut peer_books: Vec<_> = peers.iter().map(|p| p.address_book_id).collect();
+        peer_books.sort();
+        assert_eq!(peer_books, vec![shared.id, other.id], "{b}: peers");
     })
     .await;
 }

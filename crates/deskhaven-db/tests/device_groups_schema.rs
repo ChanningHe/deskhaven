@@ -212,6 +212,32 @@ async fn existing_device_checks_survive_the_rebuild() {
     .await;
 }
 
+/// Other tables hold `devices.id` without a foreign key, so an id that was handed out once
+/// must never be handed out again, also across the SQLite table rebuild.
+#[tokio::test]
+async fn upgrade_does_not_reuse_deleted_device_ids() {
+    each_backend(async |db: &TestDb| {
+        let conn = &db.conn;
+        let before_fk = Migrator::migrations()
+            .iter()
+            .position(|m| m.name() == FK_MIGRATION)
+            .unwrap();
+        migrate_steps(conn, Some(before_fk)).await;
+        device_with("1", None, None).insert(conn).await.unwrap();
+        let highest = device_with("2", None, None).insert(conn).await.unwrap();
+        device::Entity::delete_by_id(highest.id)
+            .exec(conn)
+            .await
+            .unwrap();
+
+        migrate_steps(conn, None).await;
+
+        let next = device_with("3", None, None).insert(conn).await.unwrap();
+        assert!(next.id > highest.id, "{}: id reused", db.backend);
+    })
+    .await;
+}
+
 /// Upgrading a database that already holds devices: rows survive the SQLite table rebuild
 /// unchanged, and references that could never have been valid (the tables did not exist
 /// yet) are cleared instead of failing the whole upgrade.

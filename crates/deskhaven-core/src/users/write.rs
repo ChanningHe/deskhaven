@@ -1,6 +1,6 @@
 //! Account writes: create, profile, password, status, role, delete.
 
-use deskhaven_db::entity::user;
+use deskhaven_db::entity::{address_book, user};
 use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, time};
 
@@ -197,13 +197,16 @@ impl UserService {
     }
 
     /// Deletes the account; memberships, sessions, identities and tokens go with it (FK
-    /// cascades). Refused for the last active owner. Emits [`UserEvent::Deleted`].
+    /// cascades), as does the personal address book with its peers (they hold encrypted
+    /// passwords). Shared books the user owned stay, unowned. Refused for the last active
+    /// owner. Emits [`UserEvent::Deleted`].
     pub async fn delete(&self, id: i64) -> Result<(), UserError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
             let owners = lock_active_owners(&tx).await?;
             let current = lock_user(&tx, id).await?;
             ensure_not_last_owner(&current, &owners)?;
+            delete_personal_books(&tx, id).await?;
             user::Entity::delete_by_id(id).exec(&tx).await?;
             tx.commit().await?;
             inner.committed(UserChange::Event(UserEvent::Deleted { user_id: id }));
@@ -238,6 +241,17 @@ fn split_email(email: Option<Email>) -> (Option<String>, Option<String>) {
         Some(Email { value, norm }) => (Some(value), Some(norm)),
         None => (None, None),
     }
+}
+
+/// Removes the personal address book of `user_id` (its peers, tags and shares cascade). Must
+/// run before the user row goes: the database refuses to orphan a personal book.
+async fn delete_personal_books(tx: &DatabaseTransaction, user_id: i64) -> Result<(), DbErr> {
+    address_book::Entity::delete_many()
+        .filter(address_book::Column::OwnerUserId.eq(user_id))
+        .filter(address_book::Column::Kind.eq(address_book::Kind::Personal))
+        .exec(tx)
+        .await
+        .map(|_| ())
 }
 
 /// The user row, locked for the rest of the transaction (PostgreSQL; SQLite's write

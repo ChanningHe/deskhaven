@@ -176,6 +176,17 @@ async fn rebuild_sqlite(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     let copy =
         format!("INSERT INTO {REBUILT} ({insert_columns}) SELECT {select_columns} FROM devices");
     manager.get_connection().execute_unprepared(&copy).await?;
+    // AUTOINCREMENT's high-water mark: ids of deleted devices must not come back (other
+    // tables hold `devices.id` without a foreign key). Only exists once a row was inserted.
+    let carry_sequence = format!(
+        "DELETE FROM sqlite_sequence WHERE name = '{REBUILT}'; \
+         INSERT INTO sqlite_sequence (name, seq) \
+         SELECT '{REBUILT}', seq FROM sqlite_sequence WHERE name = 'devices'"
+    );
+    manager
+        .get_connection()
+        .execute_unprepared(&carry_sequence)
+        .await?;
     manager
         .drop_table(Table::drop().table(Devices::Table).to_owned())
         .await?;
@@ -197,8 +208,13 @@ async fn rebuild_sqlite(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 
 /// PostgreSQL: clear unusable references, then add the constraints in place.
 async fn alter_postgres(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    // Only rows that hold a dangling reference are rewritten.
     let clear = format!(
-        "UPDATE devices SET owner_user_id = {}, device_group_id = {}",
+        "UPDATE devices SET owner_user_id = {}, device_group_id = {} \
+         WHERE (owner_user_id IS NOT NULL AND NOT EXISTS \
+                (SELECT 1 FROM users u WHERE u.id = devices.owner_user_id)) \
+            OR (device_group_id IS NOT NULL AND NOT EXISTS \
+                (SELECT 1 FROM device_groups g WHERE g.id = devices.device_group_id))",
         owner_reference(),
         group_reference()
     );

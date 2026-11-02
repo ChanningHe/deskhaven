@@ -9,7 +9,7 @@ use common::ops::{
     address_book_row, assert_checks, assert_indexes, is_fk_violation, is_unique_violation,
     peer_row, share_row, tag_row,
 };
-use common::{count, user_row};
+use common::{count, exec, user_row};
 use deskhaven_db::entity::address_book::Kind;
 use deskhaven_db::entity::address_book_share::{Rule, SubjectType};
 use deskhaven_db::entity::{
@@ -131,15 +131,13 @@ async fn a_shared_book_may_not_be_turned_into_a_second_personal_one() {
             .await
             .unwrap();
 
-        assert_checks(
-            db,
-            &[(
-                "address_books",
-                "kind = 'personal' WHERE guid = 's'",
-                "kind = 'shared' WHERE guid = 's'",
-            )],
+        let res = exec(
+            conn,
+            "UPDATE address_books SET kind = 'personal' WHERE guid = 's'",
         )
         .await;
+
+        assert!(is_unique_violation(res), "{}", db.backend);
     })
     .await;
 }
@@ -238,37 +236,97 @@ async fn deleting_a_book_removes_its_children_only() {
 }
 
 #[tokio::test]
-async fn deleting_a_user_removes_their_books() {
+async fn deleting_a_user_leaves_their_shared_books_unowned() {
     each_migrated_backend(async |db: &TestDb| {
         let conn = &db.conn;
         let alice = user_row("alice").insert(conn).await.unwrap();
-        let bob = user_row("bob").insert(conn).await.unwrap();
-        let personal = address_book_row(alice.id, Kind::Personal, "p")
+        let shared = address_book_row(alice.id, Kind::Shared, "s")
             .insert(conn)
             .await
             .unwrap();
-        address_book_row(alice.id, Kind::Shared, "s")
+        peer_row(shared.id, "1").insert(conn).await.unwrap();
+        tag_row(shared.id, "red").insert(conn).await.unwrap();
+        share_row(shared.id, SubjectType::Group, 9, Rule::ReadWrite)
             .insert(conn)
             .await
             .unwrap();
-        address_book_row(bob.id, Kind::Personal, "p-bob")
-            .insert(conn)
-            .await
-            .unwrap();
-        peer_row(personal.id, "1").insert(conn).await.unwrap();
 
-        user::Entity::delete_by_id(alice.id)
-            .exec(conn)
+        exec(conn, &format!("DELETE FROM users WHERE id = {}", alice.id))
             .await
             .unwrap();
 
         let b = db.backend;
-        assert_eq!(count::<address_book::Entity>(conn).await, 1, "{b}: books");
+        let books = address_book::Entity::find().all(conn).await.unwrap();
+        assert_eq!(books.len(), 1, "{b}: shared book kept");
+        assert_eq!(books[0].owner_user_id, None, "{b}: unowned");
+        assert_eq!(
+            count::<address_book_peer::Entity>(conn).await,
+            1,
+            "{b}: peers"
+        );
+        assert_eq!(
+            count::<address_book_tag::Entity>(conn).await,
+            1,
+            "{b}: tags"
+        );
+        assert_eq!(
+            count::<address_book_share::Entity>(conn).await,
+            1,
+            "{b}: shares"
+        );
+    })
+    .await;
+}
+
+/// A personal book holds encrypted peer passwords and must not outlive its user, so the
+/// database refuses to orphan it: the user delete fails until the book is gone.
+#[tokio::test]
+async fn a_user_with_a_personal_book_cannot_be_deleted_until_it_is_removed() {
+    each_migrated_backend(async |db: &TestDb| {
+        let conn = &db.conn;
+        let alice = user_row("alice").insert(conn).await.unwrap();
+        let personal = address_book_row(alice.id, Kind::Personal, "p")
+            .insert(conn)
+            .await
+            .unwrap();
+        peer_row(personal.id, "1").insert(conn).await.unwrap();
+        let delete_user = format!("DELETE FROM users WHERE id = {}", alice.id);
+
+        let refused = exec(conn, &delete_user).await;
+        let b = db.backend;
+        assert!(refused.is_err(), "{b}: orphaned a personal book");
+        assert_eq!(count::<user::Entity>(conn).await, 1, "{b}: user kept");
+
+        address_book::Entity::delete_by_id(personal.id)
+            .exec(conn)
+            .await
+            .unwrap();
+        exec(conn, &delete_user).await.unwrap();
+        assert_eq!(count::<user::Entity>(conn).await, 0, "{b}: user deleted");
         assert_eq!(
             count::<address_book_peer::Entity>(conn).await,
             0,
             "{b}: peers"
         );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn only_personal_books_require_an_owner() {
+    each_migrated_backend(async |db: &TestDb| {
+        let conn = &db.conn;
+        let alice = user_row("alice").insert(conn).await.unwrap();
+        let unowned = |kind, guid| address_book::ActiveModel {
+            owner_user_id: sea_orm::Set(None),
+            ..address_book_row(alice.id, kind, guid)
+        };
+
+        let personal = unowned(Kind::Personal, "p").insert(conn).await;
+        let shared = unowned(Kind::Shared, "s").insert(conn).await;
+
+        assert!(personal.is_err(), "{}: unowned personal book", db.backend);
+        assert!(shared.is_ok(), "{}: unowned shared book", db.backend);
     })
     .await;
 }

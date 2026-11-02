@@ -56,9 +56,14 @@ pub async fn assert_checks(db: &TestDb, cases: &[CheckCase]) {
     for (table, bad, good) in cases {
         let bad_sql = format!("UPDATE {table} SET {bad}");
         let good_sql = format!("UPDATE {table} SET {good}");
+        let Err(err) = exec(&db.conn, &bad_sql).await else {
+            panic!("{}: accepted: {bad_sql}", db.backend);
+        };
+        // A constraint of the kind under test, not a uniqueness or reference failure.
         assert!(
-            exec(&db.conn, &bad_sql).await.is_err(),
-            "{}: accepted: {bad_sql}",
+            !matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+                && !deskhaven_db::is_foreign_key_violation(&err),
+            "{}: wrong kind of rejection: {bad_sql}: {err}",
             db.backend
         );
         exec(&db.conn, &good_sql)
@@ -103,7 +108,7 @@ pub fn address_book_row(
         id: NotSet,
         guid: Set(guid.to_owned()),
         kind: Set(kind),
-        owner_user_id: Set(owner_user_id),
+        owner_user_id: Set(Some(owner_user_id)),
         name: Set(guid.to_owned()),
         note: Set(String::new()),
         created_at: Set(ts(T0_MS)),
