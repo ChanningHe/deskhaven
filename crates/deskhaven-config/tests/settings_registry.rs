@@ -51,6 +51,7 @@ const P0_DEFAULTS: &[(&str, &str)] = &[
     ("audit.retention.console", r#""730d""#),
     ("signal.relay_servers", "[]"),
     ("signal.always_use_relay", "false"),
+    ("signal.require_kx_v1", "false"),
     ("signal.acl.default", r#""allow""#),
     ("signal.acl.on_error", r#""deny""#),
 ];

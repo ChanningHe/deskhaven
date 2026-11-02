@@ -6,7 +6,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::{Security, Signal};
-use deskhaven_config::settings::{SIGNAL_ALWAYS_USE_RELAY, SIGNAL_RELAY_SERVERS, Snapshot};
+use deskhaven_config::settings::{
+    SIGNAL_ALWAYS_USE_RELAY, SIGNAL_RELAY_SERVERS, SIGNAL_REQUIRE_KX_V1, Snapshot,
+};
 use deskhaven_core::keys::SignalKeyPair;
 use deskhaven_http::TrustedProxies;
 use deskhaven_signal::{ClientIpResolver, SignalConfig, WsHeaders};
@@ -47,16 +49,18 @@ pub fn secret_key(key: &SignalKeyPair) -> anyhow::Result<sign::SecretKey> {
         .context("the hbbs key pair does not have the libsodium secret key length")
 }
 
-/// The runtime relay settings the signal server follows.
+/// The settings the running signal server follows (relays, KeyExchange policy).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RelaySettings {
+pub struct SignalSettings {
     /// `signal.relay_servers` as `host:port` strings.
     pub servers: Vec<String>,
     /// `signal.always_use_relay`.
     pub always_use_relay: bool,
+    /// `signal.require_kx_v1`.
+    pub require_kx_v1: bool,
 }
 
-impl RelaySettings {
+impl SignalSettings {
     pub fn from_snapshot(snapshot: &Snapshot) -> Self {
         Self {
             servers: snapshot
@@ -65,14 +69,16 @@ impl RelaySettings {
                 .map(ToString::to_string)
                 .collect(),
             always_use_relay: snapshot.get(&SIGNAL_ALWAYS_USE_RELAY),
+            require_kx_v1: snapshot.get(&SIGNAL_REQUIRE_KX_V1),
         }
     }
 
-    /// `base` with these settings as its initial relay configuration.
+    /// `base` with these settings as its initial runtime configuration.
     pub fn apply_to(&self, base: &SignalConfig) -> SignalConfig {
         SignalConfig {
             relay_servers: self.servers.clone(),
             always_use_relay: self.always_use_relay,
+            require_kx_v1: self.require_kx_v1,
             ..base.clone()
         }
     }

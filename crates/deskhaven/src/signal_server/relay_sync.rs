@@ -1,5 +1,5 @@
-//! Settings -> running signal server: `signal.relay_servers` and `signal.always_use_relay`
-//! changes are applied through the server's `SignalHandle`, debounced, one at a time (the
+//! Settings -> running signal server: `signal.relay_servers`, `signal.always_use_relay` and
+//! `signal.require_kx_v1` (M1-07) changes are applied through the server's `SignalHandle`, debounced, one at a time (the
 //! handle requires serialized relay updates), on a task of their own so neither the settings
 //! writer nor the server loop ever waits for relay DNS.
 //!
@@ -19,7 +19,7 @@ use tokio::sync::watch;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
-use super::RelaySettings;
+use super::SignalSettings;
 
 /// Changes arriving within this window are applied together, as the latest snapshot.
 pub(super) const DEBOUNCE: Duration = Duration::from_millis(200);
@@ -29,7 +29,7 @@ pub(super) const RETRY_REJECTED: Duration = Duration::from_secs(30);
 
 /// What the server runs with, and the entries of the last rejected list (retried while set).
 struct State {
-    applied: RelaySettings,
+    applied: SignalSettings,
     rejected: Option<Vec<String>>,
 }
 
@@ -39,7 +39,7 @@ struct State {
 pub(super) async fn run(
     handle: SignalHandle,
     mut settings: watch::Receiver<Arc<Snapshot>>,
-    applied: RelaySettings,
+    applied: SignalSettings,
     stop: CancellationToken,
 ) {
     let mut state = State {
@@ -57,7 +57,7 @@ pub(super) async fn run(
             () = stop.cancelled() => return,
             () = sleep(DEBOUNCE) => {}
         }
-        let wanted = RelaySettings::from_snapshot(&settings.borrow_and_update());
+        let wanted = SignalSettings::from_snapshot(&settings.borrow_and_update());
         state = tokio::select! {
             () = stop.cancelled() => return,
             next = apply(&handle, state, wanted) => match next {
@@ -69,13 +69,20 @@ pub(super) async fn run(
 }
 
 /// Brings the server to `wanted`; `None` once the server has stopped.
-async fn apply(handle: &SignalHandle, state: State, wanted: RelaySettings) -> Option<State> {
+async fn apply(handle: &SignalHandle, state: State, wanted: SignalSettings) -> Option<State> {
     let State { applied, rejected } = state;
     if wanted.always_use_relay != applied.always_use_relay {
         handle.set_always_use_relay(wanted.always_use_relay).ok()?;
         tracing::info!(
             always_use_relay = wanted.always_use_relay,
             "signal always_use_relay applied"
+        );
+    }
+    if wanted.require_kx_v1 != applied.require_kx_v1 {
+        handle.set_require_kx_v1(wanted.require_kx_v1).ok()?;
+        tracing::info!(
+            require_kx_v1 = wanted.require_kx_v1,
+            "signal require_kx_v1 applied"
         );
     }
     if wanted.servers == applied.servers {
@@ -94,7 +101,7 @@ async fn apply(handle: &SignalHandle, state: State, wanted: RelaySettings) -> Op
         }
         Err(SignalError::RelayServersRejected { rejected: entries }) => {
             log_rejection(rejected.as_deref(), &entries);
-            let applied = RelaySettings {
+            let applied = SignalSettings {
                 servers: applied.servers,
                 ..wanted
             };

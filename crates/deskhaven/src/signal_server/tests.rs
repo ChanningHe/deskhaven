@@ -36,7 +36,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::relay_sync::is_new_rejection;
 use super::supervisor::next_delay;
-use super::{Backoff, Launcher, RelaySettings, RunningSignal, base_config, secret_key};
+use super::{Backoff, Launcher, RunningSignal, SignalSettings, base_config, secret_key};
 use crate::http::signal_ready;
 use crate::signal_store::SignalPeerStore;
 
@@ -45,8 +45,8 @@ const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// the same source IP would make the server answer FetchLocalAddr instead of PunchHole
 /// (Linux routes all of 127.0.0.0/8 to `lo`).
 const TARGET_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
-const STEP: Duration = Duration::from_secs(5);
-const POLL: Duration = Duration::from_millis(20);
+pub(super) const STEP: Duration = Duration::from_secs(5);
+pub(super) const POLL: Duration = Duration::from_millis(20);
 const START_ATTEMPTS: usize = 10;
 /// TEST-NET-1 (RFC 5737): resolve without DNS, never pass a health probe.
 const RELAY_1: &str = "192.0.2.1:21117";
@@ -124,7 +124,7 @@ fn signal_key_converts_to_the_same_sodiumoxide_key() {
 }
 
 #[test]
-fn relay_settings_follow_the_snapshot() {
+fn signal_settings_follow_the_snapshot() {
     // Arrange
     let defaults = Snapshot::defaults();
     let changed = with(&[
@@ -133,25 +133,26 @@ fn relay_settings_follow_the_snapshot() {
             json!([RELAY_1, "relay.example.com:21117"]),
         ),
         ("signal.always_use_relay", json!(true)),
+        ("signal.require_kx_v1", json!(true)),
     ]);
 
     // Act
     let (before, after) = (
-        RelaySettings::from_snapshot(&defaults),
-        RelaySettings::from_snapshot(&changed),
+        SignalSettings::from_snapshot(&defaults),
+        SignalSettings::from_snapshot(&changed),
     );
 
     // Assert
-    assert_eq!(before, RelaySettings::default());
+    assert_eq!(before, SignalSettings::default());
     assert_eq!(after.servers, [RELAY_1, "relay.example.com:21117"]);
-    assert!(after.always_use_relay);
+    assert!(after.always_use_relay && after.require_kx_v1);
     let cfg = after.apply_to(&SignalConfig::new(sign::gen_keypair().1));
     assert_eq!(cfg.relay_servers, after.servers);
-    assert!(cfg.always_use_relay);
+    assert!(cfg.always_use_relay && cfg.require_kx_v1);
 }
 
 /// `Snapshot::defaults()` with the given settings applied.
-fn with(changes: &[(&str, Json)]) -> Snapshot {
+pub(super) fn with(changes: &[(&str, Json)]) -> Snapshot {
     let changes: Vec<Change> = changes
         .iter()
         .map(|(key, value)| Change {
@@ -549,7 +550,7 @@ fn defaults() -> watch::Receiver<Arc<Snapshot>> {
     rx
 }
 
-fn memory_store() -> Arc<dyn PeerStore> {
+pub(super) fn memory_store() -> Arc<dyn PeerStore> {
     Arc::new(MemoryPeerStore::new())
 }
 
@@ -593,7 +594,7 @@ async fn start_on_free_port(
 }
 
 /// Starts on fresh free ports, retrying on a lost port race; also returns the licence key.
-async fn start_launcher(
+pub(super) async fn start_launcher(
     settings: watch::Receiver<Arc<Snapshot>>,
     store: Arc<dyn PeerStore>,
     token: &CancellationToken,

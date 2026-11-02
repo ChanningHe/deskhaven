@@ -173,6 +173,11 @@ settings! {
     SIGNAL_ALWAYS_USE_RELAY: bool = "signal.always_use_relay" {
         default: false,
     }
+    /// Refuse the signal KeyExchange of clients from before version 1 (one key for both
+    /// directions); clients that skip the exchange are not affected.
+    SIGNAL_REQUIRE_KX_V1: bool = "signal.require_kx_v1" {
+        default: false,
+    }
     /// Connection ACL decision when no rule matches (P1).
     SIGNAL_ACL_DEFAULT: AclAction = "signal.acl.default" {
         default: AclAction::Allow,

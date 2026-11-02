@@ -321,6 +321,14 @@
     },
     {
       "category": "signal",
+      "default": false,
+      "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected.",
+      "key": "signal.require_kx_v1",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "signal",
       "default": "allow",
       "description": "Connection ACL decision when no rule matches (P1).",
       "key": "signal.acl.default",

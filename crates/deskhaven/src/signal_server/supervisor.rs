@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use super::{RelaySettings, relay_sync};
+use super::{SignalSettings, relay_sync};
 use crate::log_safe;
 
 /// Delay before restarting a failed server: `initial`, doubled after each failure up to
@@ -71,9 +71,9 @@ impl Launcher {
     /// Starts a server on the current settings, with a relay sync task that applies every
     /// later change to it.
     fn launch(&mut self, token: &CancellationToken) -> Attempt {
-        let relays = RelaySettings::from_snapshot(&self.settings.borrow_and_update());
+        let runtime = SignalSettings::from_snapshot(&self.settings.borrow_and_update());
         let server = SignalServer::new(
-            relays.apply_to(&self.base),
+            runtime.apply_to(&self.base),
             Arc::clone(&self.store),
             Arc::clone(&self.control),
         );
@@ -84,7 +84,7 @@ impl Launcher {
         let sync = tokio::spawn(relay_sync::run(
             handle.clone(),
             self.settings.clone(),
-            relays,
+            runtime,
             sync_stop.clone(),
         ));
         Attempt {
