@@ -25,6 +25,11 @@ pub enum SettingsError {
     #[error("settings update did not complete")]
     Aborted,
 
+    /// The batch did not reach commit in time (e.g. another writer held the
+    /// lock); nothing was written.
+    #[error("settings update timed out")]
+    Timeout,
+
     #[error("settings storage failed")]
     Database(#[from] DbErr),
 

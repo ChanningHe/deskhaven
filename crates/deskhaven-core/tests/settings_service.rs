@@ -11,8 +11,10 @@ use deskhaven_config::settings::{self, Change, PinSet};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::settings::{SettingsError, SettingsService, UpdateRequest, value_context};
 use deskhaven_db::entity::{setting, setting_history};
-use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, PaginatorTrait, QueryOrder};
+use deskhaven_db::testing::{Backend, TestDb, each_migrated_backend};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait, PaginatorTrait, QueryOrder,
+};
 use serde_json::{Value as Json, json};
 
 const PLAINTEXT: &str = "smtp-pass-0042";
@@ -148,15 +150,15 @@ async fn pin_overrides_stored_value_and_rejects_updates() {
 async fn stale_version_is_a_conflict() {
     each_migrated_backend(async |db: &TestDb| {
         let svc = service(db, PinSet::empty()).await;
-        let set = |v: i64| request(vec![change("smtp.port", json!(2525), v)]);
+        let set = |port: u32, v: i64| request(vec![change("smtp.port", json!(port), v)]);
 
-        svc.update(set(0)).await.unwrap();
-        let err = svc.update(set(0)).await.unwrap_err();
+        svc.update(set(2525, 0)).await.unwrap();
+        let err = svc.update(set(465, 0)).await.unwrap_err();
         assert!(
             matches!(&err, SettingsError::VersionConflict { keys } if keys == &["smtp.port"]),
             "{err:?}"
         );
-        let next = svc.update(set(1)).await.unwrap();
+        let next = svc.update(set(465, 1)).await.unwrap();
         assert_eq!(next.view("smtp.port").unwrap().version, 2);
     })
     .await;
@@ -396,8 +398,8 @@ async fn moved_or_corrupt_rows_fall_back_with_warnings() {
         .await
         .unwrap();
         let rows = history(db).await;
-        assert_eq!(rows[0].old_value.as_deref(), Some(r#"{"set":false}"#));
-        assert_eq!(rows[1].old_value.as_deref(), Some("not json"));
+        assert_eq!(rows[0].old_value.as_deref(), Some("null"), "unreadable");
+        assert_eq!(rows[1].old_value.as_deref(), Some("null"), "unreadable");
     })
     .await;
 }
@@ -471,6 +473,228 @@ async fn empty_batch_is_a_no_op() {
         let after = svc.update(request(Vec::new())).await.unwrap();
 
         assert!(Arc::ptr_eq(&before, &after));
+        assert_eq!(row_count(db).await, (0, 0));
+    })
+    .await;
+}
+
+/// Writes a row directly, bypassing the service (another writer, a restore).
+async fn write_out_of_band(db: &TestDb, key: &str, value: &str, version: i64) {
+    let row = setting::ActiveModel {
+        key: Set(key.to_owned()),
+        value: Set(value.to_owned()),
+        version: Set(version),
+        updated_by: Set(None),
+        updated_at: Set(deskhaven_db::time::now()),
+    };
+    let exists = setting::Entity::find_by_id(key)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .is_some();
+    match exists {
+        true => row.update(&db.conn).await.map(drop).unwrap(),
+        false => row.insert(&db.conn).await.map(drop).unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn conflict_after_out_of_band_change_publishes_the_fresh_snapshot() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db, PinSet::empty()).await;
+        svc.update(request(vec![change("smtp.port", json!(2525), 0)]))
+            .await
+            .unwrap();
+        write_out_of_band(db, "smtp.port", "2526", 2).await;
+        let rx = svc.subscribe();
+
+        let err = svc
+            .update(request(vec![change("smtp.port", json!(2600), 1)]))
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, SettingsError::VersionConflict { .. }),
+            "{err:?}"
+        );
+        let view = svc.snapshot().view("smtp.port").unwrap();
+        assert_eq!((view.value, view.version), (json!(2526), 2));
+        assert!(rx.has_changed().unwrap(), "fresh snapshot was published");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unchanged_values_are_skipped() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db, PinSet::empty()).await;
+        svc.update(request(vec![change("smtp.port", json!(2525), 0)]))
+            .await
+            .unwrap();
+        let before = svc.snapshot();
+
+        let same = svc
+            .update(request(vec![
+                change("smtp.port", json!("2525"), 1),
+                change("auth.session_ttl", json!("30d"), 0),
+            ]))
+            .await
+            .unwrap();
+
+        assert_eq!(same.view("smtp.port").unwrap().version, 1);
+        assert_eq!(
+            same.view("auth.session_ttl").unwrap().source,
+            Source::Default
+        );
+        assert_eq!(*same, *before);
+        assert_eq!(row_count(db).await, (1, 1), "no version bump, no history");
+
+        // A stale no-op is still a conflict.
+        let stale = svc
+            .update(request(vec![change("smtp.port", json!(2525), 0)]))
+            .await;
+        assert!(
+            matches!(stale, Err(SettingsError::VersionConflict { .. })),
+            "{stale:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn write_skew_across_a_cross_key_rule_is_prevented() {
+    each_migrated_backend(async |db: &TestDb| {
+        let setup = service(db, PinSet::empty()).await;
+        setup
+            .update(request(vec![
+                change("smtp.host", json!("mail.example.com"), 0),
+                change("smtp.from", json!("rd@example.com"), 0),
+            ]))
+            .await
+            .unwrap();
+        let (a, b) = (
+            service(db, PinSet::empty()).await,
+            service(db, PinSet::empty()).await,
+        );
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let enable = {
+            let barrier = Arc::clone(&barrier);
+            tokio::spawn(async move {
+                barrier.wait().await;
+                a.update(request(vec![change(
+                    "auth.email_code.enabled",
+                    json!(true),
+                    0,
+                )]))
+                .await
+            })
+        };
+        let clear = tokio::spawn(async move {
+            barrier.wait().await;
+            b.update(request(vec![change("smtp.host", json!(""), 1)]))
+                .await
+        });
+
+        let results = [enable.await.unwrap(), clear.await.unwrap()];
+
+        let ok = results.iter().filter(|r| r.is_ok()).count();
+        let rejected = results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    Err(SettingsError::Invalid { .. } | SettingsError::VersionConflict { .. })
+                )
+            })
+            .count();
+        assert_eq!((ok, rejected), (1, 1), "{}: {results:?}", db.backend);
+        let fresh = service(db, PinSet::empty()).await.snapshot();
+        assert!(
+            !(fresh.get(&settings::AUTH_EMAIL_CODE_ENABLED)
+                && fresh.get(&settings::SMTP_HOST).is_empty()),
+            "rule violated after concurrent writes"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn load_warnings_persist_until_the_key_is_rewritten() {
+    each_migrated_backend(async |db: &TestDb| {
+        let sealed = crypto()
+            .seal(&value_context("smtp.username"), PLAINTEXT.as_bytes())
+            .unwrap();
+        write_out_of_band(db, "smtp.password", &Json::String(sealed).to_string(), 1).await;
+        write_out_of_band(db, "auth.tfa.enforce", "\"bogus\"", 1).await;
+        let (svc, _) = SettingsService::load(db.conn.clone(), crypto(), PinSet::empty())
+            .await
+            .unwrap();
+        let keys = |svc: &SettingsService| {
+            let mut keys: Vec<String> = svc.load_warnings().into_iter().map(|w| w.key).collect();
+            keys.sort_unstable();
+            keys
+        };
+        assert_eq!(keys(&svc), ["auth.tfa.enforce", "smtp.password"]);
+        assert_eq!(
+            svc.snapshot().get(&settings::AUTH_TFA_ENFORCE),
+            settings::TfaEnforce::Admins,
+            "strict fallback"
+        );
+
+        svc.update(request(vec![change("smtp.port", json!(2525), 0)]))
+            .await
+            .unwrap();
+        assert_eq!(keys(&svc), ["auth.tfa.enforce", "smtp.password"]);
+
+        svc.update(request(vec![change(
+            "auth.tfa.enforce",
+            json!("admins"),
+            1,
+        )]))
+        .await
+        .unwrap();
+        assert_eq!(
+            keys(&svc),
+            ["smtp.password"],
+            "rewriting with the fallback value is not a no-op"
+        );
+
+        svc.update(request(vec![change("smtp.password", json!("new"), 1)]))
+            .await
+            .unwrap();
+        assert!(keys(&svc).is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn waiting_for_another_writer_is_bounded() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db, PinSet::empty()).await;
+        let holder = deskhaven_db::begin_write(&db.conn).await.unwrap();
+        if db.backend == Backend::Postgres {
+            holder
+                .execute_unprepared("LOCK TABLE settings IN EXCLUSIVE MODE")
+                .await
+                .unwrap();
+        }
+        let started = std::time::Instant::now();
+
+        let result = svc
+            .update(request(vec![change("smtp.port", json!(2525), 0)]))
+            .await;
+
+        let elapsed = started.elapsed();
+        holder.rollback().await.unwrap();
+        assert!(
+            matches!(
+                result,
+                Err(SettingsError::Database(_) | SettingsError::Timeout)
+            ),
+            "{}: {result:?}",
+            db.backend
+        );
+        assert!(elapsed < std::time::Duration::from_secs(12), "{elapsed:?}");
         assert_eq!(row_count(db).await, (0, 0));
     })
     .await;

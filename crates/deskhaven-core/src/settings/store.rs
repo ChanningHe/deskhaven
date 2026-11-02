@@ -9,7 +9,7 @@ use deskhaven_db::entity::{setting, setting_history};
 use deskhaven_db::time::TimestampMs;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseTransaction, DbBackend, DbErr, EntityTrait, QueryFilter,
+    DatabaseTransaction, DbBackend, DbErr, EntityTrait, QueryFilter, SqlErr,
 };
 use serde_json::Value as Json;
 
@@ -41,6 +41,7 @@ pub(super) async fn fetch(conn: &impl ConnectionTrait) -> Result<Vec<setting::Mo
 pub(super) async fn lock(tx: &DatabaseTransaction) -> Result<(), DbErr> {
     if tx.get_database_backend() == DbBackend::Postgres {
         tx.execute_unprepared(PG_LOCK_TIMEOUT).await?;
+        tx.execute_unprepared(PG_STATEMENT_TIMEOUT).await?;
         tx.execute_unprepared("LOCK TABLE settings IN EXCLUSIVE MODE")
             .await?;
     }
@@ -49,6 +50,8 @@ pub(super) async fn lock(tx: &DatabaseTransaction) -> Result<(), DbErr> {
 
 /// Matches the SQLite busy timeout (`deskhaven_db::SQLITE_BUSY_TIMEOUT`).
 const PG_LOCK_TIMEOUT: &str = "SET LOCAL lock_timeout = '5s'";
+/// Per statement; the whole batch is bounded by `TX_TIMEOUT` in `mod.rs`.
+const PG_STATEMENT_TIMEOUT: &str = "SET LOCAL statement_timeout = '10s'";
 
 /// Every row becomes a [`Stored`]; one that cannot be read keeps its
 /// version (so it can be overwritten) and is reported as a warning.
@@ -97,12 +100,19 @@ fn open(crypto: &SecretBox, key: &str, value: &Json) -> Option<Json> {
 }
 
 /// Writes one accepted change and its history row. `old` is the current row
-/// (its version was already checked); `old_public` its public JSON form.
+/// (its version was already checked) with the public JSON text of its
+/// previous effective value (`null` when the row was unreadable), which is
+/// what the history records.
+///
+/// Lock order note: once `updated_by` references `users(id)`, these writes
+/// take a key-share lock on the user row after the settings table lock; any
+/// path that deletes users and then writes settings must not hold user row
+/// locks first, or it can deadlock with a settings update.
 pub(super) async fn write(
     tx: &DatabaseTransaction,
     crypto: &SecretBox,
     accepted: &Accepted,
-    old: Option<(&setting::Model, Json)>,
+    old: Option<(&setting::Model, String)>,
     stamp: &Stamp<'_>,
 ) -> Result<(), SettingsError> {
     let key = accepted.key();
@@ -116,18 +126,12 @@ pub(super) async fn write(
     };
     match &old {
         Some((current, _)) => update_row(tx, row, key, current.version).await?,
-        None => {
-            row.insert(tx).await?;
-        }
+        None => insert_row(tx, row, key).await?,
     }
-    let old_value = old.map(|(row, public)| match accepted.setting().is_sensitive() {
-        true => public.to_string(),
-        false => row.value.clone(),
-    });
     let history = setting_history::ActiveModel {
         id: NotSet,
         key: Set(key.to_owned()),
-        old_value: Set(old_value),
+        old_value: Set(old.map(|(_, previous)| previous)),
         new_value: Set(accepted.value().to_json().to_string()),
         version: Set(version),
         updated_by: Set(stamp.by),
@@ -136,6 +140,24 @@ pub(super) async fn write(
     };
     history.insert(tx).await?;
     Ok(())
+}
+
+/// A row that appeared since the locked read (only possible if the lock
+/// is bypassed) is a version conflict, not a storage failure.
+async fn insert_row(
+    tx: &DatabaseTransaction,
+    row: setting::ActiveModel,
+    key: &str,
+) -> Result<(), SettingsError> {
+    match row.insert(tx).await {
+        Ok(_) => Ok(()),
+        Err(err) if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
+            Err(SettingsError::VersionConflict {
+                keys: vec![key.to_owned()],
+            })
+        }
+        Err(err) => Err(err.into()),
+    }
 }
 
 /// Compare-and-set on `version`: defense in depth behind [`lock`].
@@ -169,4 +191,49 @@ fn storage_text(crypto: &SecretBox, accepted: &Accepted) -> Result<String, Setti
         None => accepted.value().to_json(),
     };
     Ok(json.to_string())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use deskhaven_config::settings::{Change, PinSet, prepare};
+    use deskhaven_db::testing::{TestDb, each_migrated_backend};
+    use deskhaven_db::{begin_write, time};
+
+    use super::*;
+    use crate::crypto::MasterKey;
+
+    #[tokio::test]
+    async fn insert_racing_an_existing_row_is_a_version_conflict() {
+        each_migrated_backend(async |db: &TestDb| {
+            let change = Change {
+                key: "smtp.port".to_owned(),
+                value: serde_json::json!(2525),
+                version: 0,
+            };
+            let accepted = prepare(&PinSet::empty(), &[change]).unwrap();
+            let crypto = SecretBox::new(&MasterKey::from_bytes(&[7; 32]));
+            let stamp = Stamp {
+                by: None,
+                at: time::now(),
+                reason: None,
+            };
+            let tx = begin_write(&db.conn).await.unwrap();
+            write(&tx, &crypto, &accepted[0], None, &stamp)
+                .await
+                .unwrap();
+
+            // As if the locked read had missed the row just inserted.
+            let err = write(&tx, &crypto, &accepted[0], None, &stamp)
+                .await
+                .unwrap_err();
+
+            assert!(
+                matches!(&err, SettingsError::VersionConflict { keys } if keys == &["smtp.port"]),
+                "{}: {err:?}",
+                db.backend
+            );
+        })
+        .await;
+    }
 }
