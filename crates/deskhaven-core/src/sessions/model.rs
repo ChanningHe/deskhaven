@@ -45,6 +45,14 @@ pub struct ClientDevice {
 }
 
 impl ClientDevice {
+    /// The checks [`SessionService::create_client`](super::SessionService::create_client)
+    /// applies, for request validation before any work is done:
+    /// [`SessionError::InvalidDevice`] for an empty, over-long or control-character id or
+    /// uuid, or an info that is not a JSON object of at most [`MAX_DEVICE_INFO_LEN`] bytes.
+    pub fn check(&self) -> Result<(), SessionError> {
+        self.validate().map(drop)
+    }
+
     /// Trimmed, non-empty, bounded fields and the serialized info.
     pub(super) fn validate(&self) -> Result<(DeviceBinding, Option<String>), SessionError> {
         let rustdesk_id = device_field("rustdesk_id", &self.rustdesk_id)?;

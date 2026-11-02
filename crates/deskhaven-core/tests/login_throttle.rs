@@ -328,3 +328,31 @@ fn pending_subject_round_trips_through_stored_parts_and_rejects_tampering() {
         );
     }
 }
+
+#[tokio::test]
+async fn rejected_bearer_tokens_spend_the_ip_budget_shared_with_logins() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, clock) = throttle(db).await;
+        let from = client("192.0.2.1");
+
+        for _ in 0..3 {
+            assert_eq!(throttle.on_bearer_rejected(from), Ok(()));
+            assert_eq!(throttle.check_bearer(from), Ok(()), "{}", db.backend);
+        }
+        let attempt = throttle.pre_check(from, "alice").await.unwrap();
+        throttle.on_success(attempt).await.unwrap();
+        let wait = throttle.on_bearer_rejected(from).unwrap_err();
+
+        assert_eq!(wait, Duration::from_secs(15));
+        assert_eq!(
+            throttle.check_bearer(from),
+            Err(wait),
+            "gated before any lookup"
+        );
+        assert_eq!(throttle.check_bearer(client("192.0.2.2")), Ok(()));
+        assert_eq!(retry_after(throttle.pre_check(from, "alice").await), wait);
+        clock.advance(wait);
+        assert_eq!(throttle.check_bearer(from), Ok(()));
+    })
+    .await;
+}

@@ -234,3 +234,89 @@ async fn checks_sweep_periodically_without_an_explicit_call() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn over_limit_reports_a_denied_key_without_taking_a_token() {
+    each_migrated_backend(async |db: &TestDb| {
+        let settings = settings(db).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(2)).await;
+        let clock = clock();
+        let limiter = IpLimiter::new(settings, clock.clone());
+        let a = client("192.0.2.1");
+
+        assert_eq!(allowed(&limiter, "192.0.2.1", 2), 2);
+        // Bucket empty, but no check was denied yet: GCRA offers no peek.
+        assert_eq!(limiter.over_limit(a), None);
+        let wait = limiter.check(a).unwrap_err();
+        assert_eq!(limiter.over_limit(a), Some(wait), "{}", db.backend);
+        // Peeking repeatedly takes nothing and counts down to the same deadline.
+        clock.advance(Duration::from_secs(10));
+        assert_eq!(limiter.over_limit(a), Some(wait - Duration::from_secs(10)));
+        assert_eq!(limiter.over_limit(client("192.0.2.2")), None);
+
+        clock.advance(wait);
+        assert_eq!(limiter.over_limit(a), None);
+        assert!(limiter.check(a).is_ok(), "the peeks took no token");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn over_limit_follows_the_bucket_key_and_the_fallback_bucket() {
+    each_migrated_backend(async |db: &TestDb| {
+        let settings = settings(db).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(1)).await;
+        let limiter = IpLimiter::new(settings, clock());
+        let fallback = |addr: &str| ClientAddr {
+            addr: addr.parse().unwrap(),
+            is_proxy_fallback: true,
+        };
+
+        limiter.check(client("2001:db8:1:2::1")).unwrap();
+        assert!(limiter.check(client("2001:db8:1:2::1")).is_err());
+        for _ in 0..FALLBACK_FACTOR {
+            limiter.check(fallback("10.0.0.1")).unwrap();
+        }
+        assert!(limiter.check(fallback("10.0.0.1")).is_err());
+
+        assert!(
+            limiter.over_limit(client("2001:db8:1:2::ffff")).is_some(),
+            "same /64"
+        );
+        assert!(limiter.over_limit(client("2001:db8:1:3::1")).is_none());
+        assert!(
+            limiter.over_limit(fallback("10.0.0.2")).is_some(),
+            "one fallback bucket"
+        );
+        assert!(limiter.over_limit(client("10.0.0.1")).is_none());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn denials_are_swept_and_dropped_on_reconfiguration() {
+    each_migrated_backend(async |db: &TestDb| {
+        let settings = settings(db).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(1)).await;
+        let clock = clock();
+        let limiter = IpLimiter::new(settings.clone(), clock.clone());
+        let a = client("192.0.2.1");
+        limiter.check(a).unwrap();
+        let _ = limiter.check(a).unwrap_err();
+        assert_eq!(limiter.denied_clients(), 1);
+
+        clock.advance(MINUTE);
+        limiter.sweep();
+        assert_eq!(limiter.denied_clients(), 0, "expired denials are swept");
+
+        limiter.check(a).unwrap();
+        let _ = limiter.check(a).unwrap_err();
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(5)).await;
+        assert_eq!(
+            limiter.over_limit(a),
+            None,
+            "a new quota starts every bucket full"
+        );
+    })
+    .await;
+}

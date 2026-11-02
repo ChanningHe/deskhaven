@@ -57,6 +57,12 @@
 //! - Client `/api/login` and console login: the protocols above.
 //! - 2FA verification: step 2 above, with the **same username key** as the first step.
 //! - OIDC initiation: [`IpLimiter::check`] only (there is no username to count).
+//! - Bearer-authenticated endpoints: [`LoginThrottle::check_bearer`] before the token lookup
+//!   (429 while the IP is over its limit, no database access) and
+//!   [`LoginThrottle::on_bearer_rejected`] when the token does not authenticate (401). Valid
+//!   tokens spend nothing, so steady authenticated traffic never drains the login budget;
+//!   random-token spraying from one network gets a bounded number of lookups: one per
+//!   token, plus one denied lookup per refill (at most twice the per-minute quota).
 //!
 //! **Proxy fallback**: requests whose address resolved to a trusted proxy
 //! (`ClientAddr::is_proxy_fallback`) all share the source `fallback` — and one IP bucket — by
@@ -171,6 +177,18 @@ impl LoginThrottle {
     /// Verification never ran (password hasher busy -> 503): the attempt is not counted.
     pub async fn refund(&self, attempt: Attempt) -> Result<(), DbErr> {
         self.accounts.refund(attempt).await
+    }
+
+    /// Before looking up a presented bearer token: `Err(retry_after)` while `client` is over
+    /// its per-IP limit, so a token-spraying client causes no lookups. Takes no token.
+    pub fn check_bearer(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.ip.over_limit(client).map_or(Ok(()), Err)
+    }
+
+    /// A presented bearer token did not authenticate: spends one token of `client`'s
+    /// per-IP budget, the one logins draw from. `Err(retry_after)` when none was left.
+    pub fn on_bearer_rejected(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.ip.check(client)
     }
 
     /// Admin unlock: clears every counter and lock of `username`; returns rows removed.

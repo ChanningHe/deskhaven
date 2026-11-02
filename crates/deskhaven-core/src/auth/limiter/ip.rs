@@ -12,15 +12,20 @@
 //!   range. The account lockout keys them by source `fallback`.
 //! - Time: [`Clock::elapsed`](crate::clock::Clock::elapsed), monotonic in production, so
 //!   stepping the wall clock neither refills nor drains buckets.
+//! - Peek: [`IpLimiter::over_limit`] answers "is this client over its limit" without taking a
+//!   token, from the deadline its last denied check returned (GCRA has no peek of its own).
+//!   Bearer authentication gates on it before looking a token up.
 //! - Memory: buckets that refilled completely are indistinguishable from absent ones and are
-//!   dropped every [`SWEEP_EVERY`] checks and on [`IpLimiter::sweep`]. The map is therefore
-//!   bounded by the number of distinct clients seen within one minute.
+//!   dropped every [`SWEEP_EVERY`] checks and on [`IpLimiter::sweep`], as are denials whose
+//!   deadline passed. Both maps are therefore bounded by the number of distinct clients seen
+//!   within one minute.
 //! - State is per process and lost on restart (the persistent part is the account lockout).
 
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::num::NonZeroU32;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
@@ -67,11 +72,22 @@ type Buckets =
     RateLimiter<IpAddr, HashMapStateStore<IpAddr>, GovernorClock, NoOpMiddleware<Duration>>;
 type SharedBucket = RateLimiter<NotKeyed, InMemoryState, GovernorClock, NoOpMiddleware<Duration>>;
 
+/// The bucket a check draws from: a client network ([`ip_key`]), or `None` for the shared
+/// proxy-fallback bucket.
+type BucketKey = Option<IpAddr>;
+
+fn bucket_key(client: ClientAddr) -> BucketKey {
+    (!client.is_proxy_fallback).then(|| ip_key(client.addr))
+}
+
 /// The limiters for one quota.
 struct Configured {
     per_minute: u32,
     buckets: Buckets,
     fallback: SharedBucket,
+    /// Per bucket: until when (monotonic) its last denied check said no token is free.
+    /// governor has no side-effect-free peek; this is what [`IpLimiter::over_limit`] reads.
+    denied: Mutex<HashMap<BucketKey, Duration>>,
 }
 
 impl Configured {
@@ -88,7 +104,26 @@ impl Configured {
                 quota(per_minute.saturating_mul(FALLBACK_FACTOR)),
                 clock.clone(),
             ),
+            denied: Mutex::default(),
         }
+    }
+
+    fn denied(&self) -> MutexGuard<'_, HashMap<BucketKey, Duration>> {
+        // Map operations cannot leave it inconsistent; a panic elsewhere must not
+        // disable the limiter.
+        self.denied.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Records a denial at `now` with `wait` until the next token.
+    fn deny(&self, key: BucketKey, now: Duration, wait: Duration) {
+        self.denied().insert(key, now.saturating_add(wait));
+    }
+
+    fn sweep(&self, now: Duration) {
+        sweep(&self.buckets);
+        let mut denied = self.denied();
+        denied.retain(|_, until| *until > now);
+        denied.shrink_to_fit();
     }
 }
 
@@ -116,35 +151,56 @@ impl IpLimiter {
         }
     }
 
-    /// Takes one token for `client`, or returns how long until one is available.
+    /// Takes one token for `client`, or returns how long until one is available (and
+    /// remembers that for [`over_limit`](Self::over_limit)).
     pub fn check(&self, client: ClientAddr) -> Result<(), Duration> {
         let current = self.configured();
         let now = governor::clock::Clock::now(&self.clock);
-        if client.is_proxy_fallback {
-            self.warn_fallback(client.addr, now);
-            return current
-                .fallback
-                .check()
-                .map_err(|not_until| not_until.wait_time_from(now));
+        let key = bucket_key(client);
+        let result = match key {
+            None => {
+                self.warn_fallback(client.addr, now);
+                current.fallback.check()
+            }
+            Some(addr) => current.buckets.check_key(&addr),
         }
-        let result = current
-            .buckets
-            .check_key(&ip_key(client.addr))
-            .map_err(|not_until| not_until.wait_time_from(now));
-        if self.checks.fetch_add(1, Ordering::Relaxed) % SWEEP_EVERY == SWEEP_EVERY - 1 {
-            sweep(&current.buckets);
+        .map_err(|not_until| not_until.wait_time_from(now));
+        if let Err(wait) = result {
+            current.deny(key, now, wait);
+        }
+        if key.is_some()
+            && self.checks.fetch_add(1, Ordering::Relaxed) % SWEEP_EVERY == SWEEP_EVERY - 1
+        {
+            current.sweep(now);
         }
         result
     }
 
-    /// Drops buckets that refilled completely.
+    /// Without taking a token: the time left until `client`'s bucket has a token again,
+    /// if its most recent [`check`](Self::check) was denied and that time has not passed.
+    /// An empty bucket that no check was denied by yet reads as not over the limit, so
+    /// callers that gate on this let at most one request per refill past the quota.
+    pub fn over_limit(&self, client: ClientAddr) -> Option<Duration> {
+        let current = self.configured();
+        let now = governor::clock::Clock::now(&self.clock);
+        let until = current.denied().get(&bucket_key(client)).copied()?;
+        until.checked_sub(now).filter(|left| !left.is_zero())
+    }
+
+    /// Drops buckets that refilled completely and denials that ran out.
     pub fn sweep(&self) {
-        sweep(&self.current.load().buckets);
+        let now = governor::clock::Clock::now(&self.clock);
+        self.current.load().sweep(now);
     }
 
     /// Number of client networks currently tracked (the fallback bucket not included).
     pub fn tracked_clients(&self) -> usize {
         self.current.load().buckets.len()
+    }
+
+    /// Number of buckets with a recorded denial, expired ones not yet swept included.
+    pub fn denied_clients(&self) -> usize {
+        self.current.load().denied().len()
     }
 
     /// Logs the proxy-fallback warning unless one was logged within the interval.
