@@ -1,0 +1,31 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:135",
+    "src/hbbs_http/sync.rs:211-224"
+  ],
+  "description": "A registered id with another device's uuid (devices.verify_uuid, default on): answered exactly like an unknown id, ID_NOT_FOUND, and nothing is written (06 §2).",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/sysinfo",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "cpu": "8/4 cores",
+        "memory": "15.5GB",
+        "os": "ubuntu / Linux 24.04 Ubuntu",
+        "hostname": "spoofed",
+        "version": "1.4.1",
+        "id": "${device_id}",
+        "uuid": "c29tZS1vdGhlci1kZXZpY2UtdXVpZA=="
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": { "contains": "text/plain" } },
+    "body_kind": "text",
+    "text": "ID_NOT_FOUND"
+  }
+}

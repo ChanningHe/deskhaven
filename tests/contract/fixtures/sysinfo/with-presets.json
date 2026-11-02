@@ -1,0 +1,43 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:136-187",
+    "src/hbbs_http/sync.rs:211-220",
+    "libs/base/src/config/keys.rs:79-86",
+    "libs/base/src/config/keys.rs:114-116"
+  ],
+  "description": "First sysinfo of a deployed custom client: every non-empty preset-* option is added to the body, preset-device-username / preset-device-name already replaced username / hostname. Answered SYSINFO_UPDATED; the presets placed the device (owner, device group, strategy, address book entry, note; checked in tests/devices.rs).",
+  "seed": ["registered-device", "device-preset-targets"],
+  "request": {
+    "method": "POST",
+    "path": "/api/sysinfo",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "cpu": "8/4 cores",
+        "memory": "15.5GB",
+        "os": "windows / Windows 11 Pro - 10.0.22631",
+        "hostname": "reception-01",
+        "username": "frontdesk",
+        "version": "1.4.1",
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "preset-address-book-name": "Team",
+        "preset-address-book-tag": "printers",
+        "preset-address-book-alias": "Reception",
+        "preset-address-book-password": "s3cret-pass",
+        "preset-address-book-note": "ground floor",
+        "preset-user-name": "pat",
+        "preset-strategy-name": "Locked",
+        "preset-device-group-name": "Office",
+        "preset-note": "front desk"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": { "contains": "text/plain" } },
+    "body_kind": "text",
+    "text": "SYSINFO_UPDATED"
+  }
+}

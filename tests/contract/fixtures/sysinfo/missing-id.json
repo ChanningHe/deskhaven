@@ -1,0 +1,27 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:211-228"
+  ],
+  "description": "A body without id / uuid is not something the client sends (it always sets both). 400 with the usual error body: anything but SYSINFO_UPDATED / ID_NOT_FOUND makes the client wait 120 s before the next upload (last_uploaded = now), unlike ID_NOT_FOUND which retries every 3 s.",
+  "seed": [],
+  "request": {
+    "method": "POST",
+    "path": "/api/sysinfo",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "cpu": "8/4 cores",
+        "memory": "15.5GB",
+        "os": "ubuntu / Linux 24.04 Ubuntu",
+        "hostname": "office-pc",
+        "version": "1.4.1"
+      }
+    }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody"
+  }
+}

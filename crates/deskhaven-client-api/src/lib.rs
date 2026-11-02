@@ -12,6 +12,7 @@ mod login;
 mod login_options;
 mod oidc;
 mod stack_error;
+mod sysinfo;
 mod user_payload;
 mod version;
 
@@ -30,6 +31,7 @@ pub use oidc::{
     INVALID_LOGIN_MESSAGE as OIDC_INVALID_LOGIN_MESSAGE, PENDING_MESSAGE as OIDC_PENDING_MESSAGE,
 };
 pub use stack_error::render_stack_error;
+pub use sysinfo::MAX_SYSINFO_BODY;
 pub use version::{SOURCE_URL, VERSION};
 
 /// Client API routes, without middleware or state: the server applies the
@@ -45,6 +47,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
         .route("/api/version", get(version::version))
+        .route(
+            "/api/sysinfo",
+            post(sysinfo::sysinfo).layer(DefaultBodyLimit::max(sysinfo::MAX_SYSINFO_BODY)),
+        )
         .merge(oidc::routes())
         .merge(ab::routes())
 }

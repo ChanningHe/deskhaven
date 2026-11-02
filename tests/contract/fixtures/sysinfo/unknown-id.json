@@ -1,0 +1,30 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:211-224"
+  ],
+  "description": "An id the signal server never registered (06 §2: unregistered ids are refused, nothing is written). The client compares with the exact text ID_NOT_FOUND and retries on its next 3 s tick (last_uploaded = None), which picks the device up as soon as its registration is stored.",
+  "seed": [],
+  "request": {
+    "method": "POST",
+    "path": "/api/sysinfo",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "cpu": "8/4 cores",
+        "memory": "15.5GB",
+        "os": "ubuntu / Linux 24.04 Ubuntu",
+        "hostname": "office-pc",
+        "version": "1.4.1",
+        "id": "135792468",
+        "uuid": "Y29udHJhY3QtZGV2aWNlLXV1aWQ="
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": { "contains": "text/plain" } },
+    "body_kind": "text",
+    "text": "ID_NOT_FOUND"
+  }
+}

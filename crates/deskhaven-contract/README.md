@@ -86,6 +86,11 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
      (user `bob` with a personal and an owned shared book; outputs
      `foreign_personal_guid`, `foreign_shared_guid`), `ab-one-peer-max`
      (`addressbook.max_peers` = 1).
+   - Devices (`src/device_seeds.rs`): `registered-device` (device `135792468`
+     registered with uuid `contract-device-uuid`, no sysinfo yet; outputs
+     `device_id`, `device_uuid` = the base64 the client sends),
+     `device-preset-targets` (user `pat`, device group `Office`, strategy
+     `Locked`, admin-managed shared book `Team`: what sysinfo presets name).
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 

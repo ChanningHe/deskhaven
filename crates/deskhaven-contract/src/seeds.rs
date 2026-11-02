@@ -23,8 +23,8 @@ use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{Credential, NewUser, Password, Status};
 
-use crate::ab_seeds;
 use crate::app::DEFAULT_PEER;
+use crate::{ab_seeds, device_seeds};
 
 /// Output name → value, substituted into `${name}` placeholders.
 pub type SeedOutputs = BTreeMap<String, String>;
@@ -56,6 +56,12 @@ const BUILTIN: &[(&str, Seed)] = &[
     ("ab-foreign", |state| Box::pin(ab_seeds::foreign(state))),
     ("ab-one-peer-max", |state| {
         Box::pin(ab_seeds::one_peer_max(state))
+    }),
+    ("registered-device", |state| {
+        Box::pin(device_seeds::registered_device(state))
+    }),
+    ("device-preset-targets", |state| {
+        Box::pin(device_seeds::preset_targets(state))
     }),
 ];
 

@@ -1,0 +1,34 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:126-136",
+    "src/hbbs_http/sync.rs:211-220",
+    "src/common.rs:962-1006",
+    "src/common.rs:1760"
+  ],
+  "description": "A registered device uploads its sysinfo (get_sysinfo + version, id, base64 uuid; no Authorization, Content-Type application/json). The client compares the body with the exact text SYSINFO_UPDATED: only then it stops uploading and sets is_pro (hide_cm etc.). Plain text, no newline.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/sysinfo",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "cpu": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 1.8GHz, 8/4 cores",
+        "memory": "15.5GB",
+        "os": "ubuntu / Linux 24.04 Ubuntu",
+        "hostname": "office-pc",
+        "username": "alice",
+        "version": "1.4.1",
+        "id": "${device_id}",
+        "uuid": "${device_uuid}"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": { "contains": "text/plain" } },
+    "body_kind": "text",
+    "text": "SYSINFO_UPDATED"
+  }
+}
