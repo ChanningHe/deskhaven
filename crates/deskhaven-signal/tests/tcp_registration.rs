@@ -277,9 +277,17 @@ async fn tcp_peer_that_ignores_heartbeats_is_dropped_and_offline() {
 
 /// The server's bound on one send to a stream connection (`STREAM_SEND_TIMEOUT`).
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
-/// RequestRelays sent at a peer that does not read: enough to fill its receive window and the
-/// server's send buffer many times over (each forwarded one is about 400 bytes).
-const FLOOD: usize = 30_000;
+/// RequestRelays sent at a peer that does not read, in batches (each forwarded one is about 400
+/// bytes): enough, repeated, to fill its receive window and the server's send buffer.
+const FLOOD_BATCH: usize = 500;
+/// Virtual time that passes after each batch. The server's built-in self test (`test_hbbs`)
+/// pings its own UDP port on a virtual 1 s tick but gives up after 12 s of *real* time without
+/// a reply, and the tick only runs when the paused clock moves: one long flood on a loaded
+/// machine (a single-threaded runtime shared with the server) between two moves ends the server
+/// with `SelfTest(Timeout of test_hbbs)`. So the flood is short batches with the clock moving
+/// in between, and it stops as soon as the peer is dropped instead of being sized for the
+/// worst case.
+const BATCH_TICK: Duration = Duration::from_millis(500);
 
 /// M1-08 review (M2): a registered peer that stops reading must not pin its connection task.
 /// Upstream-style unbounded sends blocked the task once the socket buffers were full (so the
@@ -298,18 +306,31 @@ async fn registered_peer_that_never_reads_is_dropped_by_the_send_timeout() {
 
     // Act: the peer never reads again while RequestRelays for it keep coming.
     let mut controller = server.tcp().await;
-    for _ in 0..FLOOD {
-        controller.request_relay(req.clone()).await;
+    while is_online(&server, ID).await {
+        assert!(
+            registered.elapsed() < REG_TIMEOUT,
+            "still bound {:?} after registration",
+            registered.elapsed()
+        );
+        for _ in 0..FLOOD_BATCH {
+            controller.request_relay(req.clone()).await;
+        }
+        // Once the peer is gone each further RequestRelay is answered "offline"; read those so
+        // the controller's own socket never backs up.
+        while controller.try_recv(Duration::ZERO).await.is_some() {}
+        tokio::time::advance(BATCH_TICK).await;
     }
-    sleep(SEND_TIMEOUT + Duration::from_secs(2)).await;
 
-    // Assert
-    let offline = !is_online(&server, ID).await;
+    // Assert: gone by the send timeout (a send only gives up after SEND_TIMEOUT), not by
+    // REG_TIMEOUT running out.
     let elapsed = registered.elapsed();
+    assert!(
+        elapsed >= SEND_TIMEOUT,
+        "dropped after {elapsed:?}, before a send could have timed out"
+    );
     assert!(
         elapsed < REG_TIMEOUT,
         "inconclusive: {elapsed:?} since registration"
     );
-    assert!(offline, "still bound after {elapsed:?}");
     server.stop().await;
 }
