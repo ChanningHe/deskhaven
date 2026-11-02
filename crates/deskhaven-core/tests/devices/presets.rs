@@ -188,6 +188,7 @@ async fn presets_after_the_first_sysinfo_are_ignored() {
         c.accept_presets("all").await;
         c.report(report(ID, sysinfo("pc"), Presets::default()))
             .await;
+        c.next_write_window();
 
         // Act
         let outcome = c.report(report(ID, sysinfo("pc-2"), all_presets())).await;
@@ -325,20 +326,18 @@ async fn concurrent_first_sysinfos_apply_one_set_of_presets() {
                 .report_sysinfo(report(ID, sysinfo("from-bob"), as_bob)),
         );
 
-        // Assert
+        // Assert: one is stored (and placed the device), the other is refused by the
+        // per-device write limit; never a mix of both sets.
         let be = db.backend;
-        assert_eq!(
-            (a.unwrap(), b.unwrap()),
-            (SysinfoOutcome::Stored, SysinfoOutcome::Stored)
-        );
+        let (a, b) = (a.unwrap(), b.unwrap());
         let row = c.row(ID).await;
         let assigned = c.strategies.assignment(Target::Device(device_id)).await;
         let assigned = assigned.unwrap();
-        // The first stored upload placed the device; the second overwrote only the sysinfo.
-        let expected = match row.hostname.as_deref() {
-            Some("from-bob") => (Some(t.alice), Some(t.strategy)),
-            Some("from-alice") => (Some(bob), Some(open)),
-            other => panic!("{be}: unexpected hostname {other:?}"),
+        use SysinfoOutcome::{Stored, TooFrequent};
+        let expected = match (a, b, row.hostname.as_deref()) {
+            (Stored, TooFrequent, Some("from-alice")) => (Some(t.alice), Some(t.strategy)),
+            (TooFrequent, Stored, Some("from-bob")) => (Some(bob), Some(open)),
+            other => panic!("{be}: unexpected outcomes {other:?}"),
         };
         assert_eq!((row.owner_user_id, assigned), expected, "{be}");
     })

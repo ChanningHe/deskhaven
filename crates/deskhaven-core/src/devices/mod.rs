@@ -9,12 +9,14 @@
 //! the device endpoints: id + uuid verification, sysinfo with its deployment presets, and the
 //! deletion of devices and device groups.
 
+mod limits;
 mod presence;
 mod preset_book;
 mod presets;
 mod service;
 mod sysinfo;
 
+pub use limits::{SYSINFO_PER_IP_PER_MINUTE, SYSINFO_WRITE_INTERVAL};
 pub use presence::{
     DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
     SWEEP_INTERVAL, Seen,

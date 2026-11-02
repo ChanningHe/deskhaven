@@ -129,9 +129,26 @@ impl Configured {
     }
 }
 
+/// Where the per-minute quota comes from.
+enum QuotaSource {
+    /// `auth.ip_rate_limit.per_minute`, hot-reloaded (login-type endpoints).
+    LoginSetting(SettingsService),
+    /// A constant (other endpoints, each with a limiter of its own).
+    Fixed(u32),
+}
+
+impl QuotaSource {
+    fn per_minute(&self) -> u32 {
+        match self {
+            Self::LoginSetting(settings) => settings.snapshot().get(&AUTH_IP_RATE_LIMIT_PER_MINUTE),
+            Self::Fixed(per_minute) => *per_minute,
+        }
+    }
+}
+
 /// Token bucket per client network. Cheap to share (`&self` everywhere).
 pub struct IpLimiter {
-    settings: SettingsService,
+    quota: QuotaSource,
     clock: GovernorClock,
     current: ArcSwap<Configured>,
     checks: AtomicU64,
@@ -140,12 +157,22 @@ pub struct IpLimiter {
 }
 
 impl IpLimiter {
+    /// The login-type limiter: quota `auth.ip_rate_limit.per_minute`.
     pub fn new(settings: SettingsService, clock: SharedClock) -> Self {
+        Self::with_quota(QuotaSource::LoginSetting(settings), clock)
+    }
+
+    /// A limiter of its own with a constant quota of `per_minute` requests per client
+    /// network (burst = `per_minute`), same keys and fallback bucket as the login limiter.
+    pub fn fixed(per_minute: u32, clock: SharedClock) -> Self {
+        Self::with_quota(QuotaSource::Fixed(per_minute), clock)
+    }
+
+    fn with_quota(quota: QuotaSource, clock: SharedClock) -> Self {
         let clock = GovernorClock(clock);
-        let per_minute = settings.snapshot().get(&AUTH_IP_RATE_LIMIT_PER_MINUTE);
-        let current = ArcSwap::from_pointee(Configured::new(per_minute, &clock));
+        let current = ArcSwap::from_pointee(Configured::new(quota.per_minute(), &clock));
         Self {
-            settings,
+            quota,
             clock,
             current,
             checks: AtomicU64::new(0),
@@ -230,7 +257,7 @@ impl IpLimiter {
         if claimed {
             tracing::warn!(
                 %addr,
-                "login request resolved to a trusted proxy address (misconfigured proxy or a \
+                "rate-limited request resolved to a trusted proxy address (misconfigured proxy or a \
                  client inside trusted_proxies); all such requests share one rate-limit bucket"
             );
         }
@@ -238,7 +265,7 @@ impl IpLimiter {
 
     /// The limiters for the current setting, rebuilt if the setting changed.
     fn configured(&self) -> Arc<Configured> {
-        let want = self.settings.snapshot().get(&AUTH_IP_RATE_LIMIT_PER_MINUTE);
+        let want = self.quota.per_minute();
         let current = self.current.load_full();
         if current.per_minute == want {
             return current;

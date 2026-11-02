@@ -29,16 +29,20 @@ use sea_orm::{
 use subtle::ConstantTimeEq;
 
 use super::DeviceError;
+use super::limits::{SYSINFO_PER_IP_PER_MINUTE, WriteLimit};
 use super::presence::{Identity, Presence};
 use super::preset_book;
 use super::presets::{self, Presets, RowPresets};
 use super::sysinfo::Sysinfo;
 use crate::addressbooks::AddressBookService;
+use crate::auth::limiter::{ClientAddr, IpLimiter};
+use crate::clock::SharedClock;
 use crate::crypto::{SecretBox, b64::KEY_B64};
 use crate::settings::SettingsService;
 use crate::strategies::{self, StrategyService};
 use crate::text::{self, NOTE_MAX_LEN};
 use base64_022::Engine as _;
+use std::time::Duration;
 
 /// Longest device group name, in characters.
 pub const DEVICE_GROUP_NAME_MAX_LEN: usize = 64;
@@ -62,6 +66,10 @@ pub enum SysinfoOutcome {
     Unchanged,
     /// Unknown id, or a uuid that does not match.
     NotFound,
+    /// Changed content, but the device wrote within
+    /// [`SYSINFO_WRITE_INTERVAL`](super::SYSINFO_WRITE_INTERVAL): nothing
+    /// written (see [`limits`](super::limits)).
+    TooFrequent,
 }
 
 /// Device registry operations. Cheap to clone (shared state).
@@ -76,15 +84,18 @@ struct Inner {
     crypto: Arc<SecretBox>,
     strategies: StrategyService,
     presence: Presence,
+    sysinfo_ips: IpLimiter,
+    sysinfo_writes: WriteLimit,
 }
 
 impl DeviceService {
+    /// `presence` and the rate limits run on `clock` (share it with the other services).
     pub fn new(
         db: DatabaseConnection,
         settings: SettingsService,
         crypto: Arc<SecretBox>,
         strategies: StrategyService,
-        presence: Presence,
+        clock: SharedClock,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -92,13 +103,21 @@ impl DeviceService {
                 settings,
                 crypto,
                 strategies,
-                presence,
+                presence: Presence::new(Arc::clone(&clock)),
+                sysinfo_ips: IpLimiter::fixed(SYSINFO_PER_IP_PER_MINUTE, Arc::clone(&clock)),
+                sysinfo_writes: WriteLimit::new(clock),
             }),
         }
     }
 
     pub fn presence(&self) -> &Presence {
         &self.inner.presence
+    }
+
+    /// Takes a token of `client`'s sysinfo bucket, or returns how long until one is free
+    /// ([`SYSINFO_PER_IP_PER_MINUTE`]).
+    pub fn admit_sysinfo(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.inner.sysinfo_ips.check(client)
     }
 
     /// The `devices.id` of `rustdesk_id` if `uuid` (base64) identifies it (see the module
@@ -144,6 +163,9 @@ impl DeviceService {
         if row.sysinfo_hash.as_deref() == Some(hash.as_str()) {
             return Ok(SysinfoOutcome::Unchanged);
         }
+        if !self.inner.sysinfo_writes.try_acquire(&report.rustdesk_id) {
+            return Ok(SysinfoOutcome::TooFrequent);
+        }
         self.detached(move |inner| inner.store_sysinfo(report, hash))
             .await
     }
@@ -166,6 +188,7 @@ impl DeviceService {
             tx.commit().await?;
             inner.strategies.cache().invalidate();
             inner.presence.forget(&row.rustdesk_id);
+            inner.sysinfo_writes.forget(&row.rustdesk_id);
             Ok(true)
         })
         .await

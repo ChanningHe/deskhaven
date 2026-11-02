@@ -11,7 +11,7 @@ use crate::auth::limiter::LoginThrottle;
 use crate::clock::SharedClock;
 use crate::console_audit::ConsoleAuditLog;
 use crate::crypto::SecretBox;
-use crate::devices::{DeviceService, Presence};
+use crate::devices::DeviceService;
 use crate::groups::GroupService;
 use crate::login_events::LoginEventLog;
 use crate::oidc::{OidcService, ReqwestFetch};
@@ -102,7 +102,7 @@ impl AppState {
             settings.clone(),
             Arc::clone(&crypto),
             strategies.clone(),
-            Presence::new(Arc::clone(&clock)),
+            Arc::clone(&clock),
         );
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {

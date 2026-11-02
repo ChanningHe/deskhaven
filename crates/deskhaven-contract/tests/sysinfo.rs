@@ -2,14 +2,17 @@
 //! The client only reads the text; these tests read the registry through the app's state.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
+use deskhaven_client_api::TRY_LATER_MESSAGE;
 use deskhaven_contract::app::TestApp;
 use deskhaven_contract::device_seeds::{
     DEVICE_ID, DEVICE_UUID_B64, PRESET_BOOK, PRESET_DEVICE_GROUP, PRESET_STRATEGY, PRESET_USER,
 };
 use deskhaven_contract::fixture::{Body, Request};
+use deskhaven_contract::mirror::ErrorBody;
+use deskhaven_contract::requests::from;
 use deskhaven_contract::seeds::Seeds;
 use deskhaven_core::addressbooks::{Actor, AddressBookService};
-use deskhaven_core::devices::DeviceRepository;
+use deskhaven_core::devices::{DeviceRepository, SYSINFO_PER_IP_PER_MINUTE};
 use deskhaven_core::pagination::PageRequest;
 use deskhaven_core::strategies::Target;
 use deskhaven_db::entity::device_group;
@@ -200,4 +203,50 @@ async fn an_oversized_body_is_refused() {
 
     // Assert
     assert_eq!(reply.status, 413);
+}
+
+/// A second changing upload within 30 s is answered 429 (not stored): the client's next try
+/// is 120 s later (`sync.rs:221-228`), past the window, so it never loops. Unchanged
+/// uploads stay `SYSINFO_UPDATED`.
+#[tokio::test]
+async fn a_changing_upload_right_after_another_is_answered_429() {
+    // Arrange
+    let app = app_with(&["registered-device"]).await;
+    app.send(&sysinfo_request("one", json!({}))).await.unwrap();
+
+    // Act
+    let changed = app.send(&sysinfo_request("two", json!({}))).await.unwrap();
+    let same = app.send(&sysinfo_request("one", json!({}))).await.unwrap();
+
+    // Assert
+    assert_eq!(changed.status, 429);
+    assert_eq!(
+        changed.json::<ErrorBody>().unwrap().error,
+        TRY_LATER_MESSAGE
+    );
+    assert!(changed.headers.contains_key("retry-after"));
+    assert_eq!((same.status, text(&same)), (200, "SYSINFO_UPDATED"));
+}
+
+/// Requests from one client network beyond the sysinfo quota are answered 429; another
+/// network is unaffected.
+#[tokio::test]
+async fn requests_beyond_the_per_ip_quota_are_answered_429() {
+    // Arrange
+    let app = app_with(&["registered-device"]).await;
+    let request = sysinfo_request("pc", json!({}));
+    for _ in 0..SYSINFO_PER_IP_PER_MINUTE {
+        app.send(&request).await.unwrap();
+    }
+
+    // Act
+    let over = app.send(&request).await.unwrap();
+    let elsewhere = app
+        .send(&from(request.clone(), "198.51.100.9:40000"))
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!(over.status, 429);
+    assert_eq!(text(&elsewhere), "SYSINFO_UPDATED");
 }

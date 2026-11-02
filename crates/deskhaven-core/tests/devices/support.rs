@@ -17,8 +17,8 @@ use deskhaven_core::addressbooks::{
 use deskhaven_core::clock::ManualClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::{
-    DeviceRepository, DeviceService, Presence, Presets, Registration, Sysinfo, SysinfoOutcome,
-    SysinfoReport,
+    DeviceRepository, DeviceService, Presets, Registration, SYSINFO_WRITE_INTERVAL, Sysinfo,
+    SysinfoOutcome, SysinfoReport,
 };
 use deskhaven_core::groups::GroupService;
 use deskhaven_core::pagination::PageRequest;
@@ -72,7 +72,7 @@ pub async fn ctx(db: &TestDb) -> Ctx {
         settings.clone(),
         crypto,
         strategies.clone(),
-        Presence::new(clock.clone()),
+        clock.clone(),
     );
     Ctx {
         conn: db.conn.clone(),
@@ -183,6 +183,11 @@ impl Ctx {
             reason: None,
         };
         self.settings.update(request).await.unwrap();
+    }
+
+    /// Moves the clock past the per-device sysinfo write interval.
+    pub fn next_write_window(&self) {
+        self.clock.advance(SYSINFO_WRITE_INTERVAL);
     }
 
     /// Sets `devices.accept_presets`.

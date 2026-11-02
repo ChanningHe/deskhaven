@@ -2,9 +2,13 @@
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
-use deskhaven_core::devices::{MAX_FIELD_CHARS, Presets, Sysinfo, SysinfoOutcome, SysinfoReport};
+use deskhaven_core::auth::limiter::ClientAddr;
+use deskhaven_core::devices::{
+    MAX_FIELD_CHARS, Presets, SYSINFO_PER_IP_PER_MINUTE, Sysinfo, SysinfoOutcome, SysinfoReport,
+};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 
 use super::support::{ID, b64, ctx, report, sysinfo};
@@ -80,6 +84,7 @@ async fn a_changed_report_replaces_the_fields_and_clears_absent_ones() {
         let c = ctx(db).await;
         c.device(ID).await;
         c.report(plain(sysinfo("office-pc"))).await;
+        c.next_write_window();
         let changed = Sysinfo {
             username: None,
             ..sysinfo("renamed-pc")
@@ -148,6 +153,65 @@ async fn reported_text_is_sanitized_before_it_is_stored() {
         assert_eq!(outcome, SysinfoOutcome::Stored, "{b}");
         assert_eq!(row.hostname.as_deref(), Some("pc[31m"), "{b}");
         assert_eq!(row.os.unwrap().len(), MAX_FIELD_CHARS, "{b}");
+    })
+    .await;
+}
+
+/// At most one changing write per device per interval; unchanged uploads are not limited,
+/// and the next window stores the change.
+#[tokio::test]
+async fn a_second_changing_write_within_the_interval_is_refused() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        c.device(ID).await;
+        c.device("987654321").await;
+        c.report(plain(sysinfo("one"))).await;
+
+        // Act
+        let too_soon = c.report(plain(sysinfo("two"))).await;
+        let unchanged = c.report(plain(sysinfo("one"))).await;
+        let other = c.report(report("987654321", sysinfo("x"), Presets::default()));
+        let other = other.await;
+        let hostname_meanwhile = c.row(ID).await.hostname;
+        c.next_write_window();
+        let later = c.report(plain(sysinfo("two"))).await;
+
+        // Assert
+        let b = db.backend;
+        assert_eq!(too_soon, SysinfoOutcome::TooFrequent, "{b}");
+        assert_eq!(unchanged, SysinfoOutcome::Unchanged, "{b}");
+        assert_eq!(other, SysinfoOutcome::Stored, "{b}: per device");
+        assert_eq!(hostname_meanwhile.as_deref(), Some("one"), "{b}");
+        assert_eq!(later, SysinfoOutcome::Stored, "{b}");
+        assert_eq!(c.row(ID).await.hostname.as_deref(), Some("two"), "{b}");
+    })
+    .await;
+}
+
+/// The per-IP bucket of the sysinfo endpoint has its own quota, not the login budget.
+#[tokio::test]
+async fn sysinfo_requests_are_limited_per_client_network() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        let client = |last: u8| ClientAddr {
+            addr: IpAddr::V4(Ipv4Addr::new(192, 0, 2, last)),
+            is_proxy_fallback: false,
+        };
+
+        // Act
+        let admitted = (0..SYSINFO_PER_IP_PER_MINUTE)
+            .filter(|_| c.devices.admit_sysinfo(client(1)).is_ok())
+            .count();
+        let over = c.devices.admit_sysinfo(client(1));
+        let neighbour = c.devices.admit_sysinfo(client(2));
+
+        // Assert
+        let b = db.backend;
+        assert_eq!(admitted, SYSINFO_PER_IP_PER_MINUTE as usize, "{b}");
+        assert!(over.is_err(), "{b}");
+        assert!(neighbour.is_ok(), "{b}");
     })
     .await;
 }

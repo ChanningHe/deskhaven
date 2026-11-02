@@ -8,6 +8,7 @@
 //! | unknown id, or uuid mismatch | 200 | `ID_NOT_FOUND` (client retries next tick, 3 s) |
 //! | malformed body, missing / oversized `id` or `uuid` | 400 | `{"error": ...}` (client retries in 120 s) |
 //! | body over [`MAX_SYSINFO_BODY`] | 413 | stack renderer |
+//! | over the per-IP quota, or a changing write within 30 s of the last (`deskhaven_core::devices` limits) | 429 + `Retry-After` | `{"error": "Please try later"}` (client retries in 120 s; never loops) |
 //!
 //! The client compares the body with the two texts exactly (`x == "SYSINFO_UPDATED"`), so no
 //! trailing newline.
@@ -16,11 +17,14 @@ use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::State;
-use deskhaven_core::devices::{AddressBookPreset, Presets, Sysinfo, SysinfoOutcome, SysinfoReport};
+use deskhaven_core::devices::{
+    AddressBookPreset, Presets, SYSINFO_WRITE_INTERVAL, Sysinfo, SysinfoOutcome, SysinfoReport,
+};
 use deskhaven_core::state::AppState;
 use serde::Deserialize;
 
 use crate::ClientApiError;
+use crate::client::Client;
 
 /// Largest accepted body (bytes): a real report is well under 1 KiB, presets included.
 pub const MAX_SYSINFO_BODY: usize = 16 * 1024;
@@ -66,18 +70,26 @@ struct Body {
 
 pub async fn sysinfo(
     State(state): State<Arc<AppState>>,
+    Client(client): Client,
     body: Bytes,
 ) -> Result<&'static str, ClientApiError> {
+    state
+        .devices
+        .admit_sysinfo(client)
+        .map_err(|retry_after| ClientApiError::TooManyRequests { retry_after })?;
     let report = parse(&body)?;
     let outcome = state
         .devices
         .report_sysinfo(report)
         .await
         .map_err(ClientApiError::internal)?;
-    Ok(match outcome {
-        SysinfoOutcome::Stored | SysinfoOutcome::Unchanged => UPDATED,
-        SysinfoOutcome::NotFound => ID_NOT_FOUND,
-    })
+    match outcome {
+        SysinfoOutcome::Stored | SysinfoOutcome::Unchanged => Ok(UPDATED),
+        SysinfoOutcome::NotFound => Ok(ID_NOT_FOUND),
+        SysinfoOutcome::TooFrequent => Err(ClientApiError::TooManyRequests {
+            retry_after: SYSINFO_WRITE_INTERVAL,
+        }),
+    }
 }
 
 fn parse(raw: &[u8]) -> Result<SysinfoReport, ClientApiError> {
