@@ -4,7 +4,7 @@
 
 use deskhaven_db::migration::Migrator;
 use deskhaven_db::testing::{TestDb, each_backend};
-use deskhaven_db::{DbError, DbOptions, connect, migrate, migrate_with};
+use deskhaven_db::{DbError, DbOptions, connect, migrate, migrate_with, migration_status};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::big_integer;
@@ -181,6 +181,59 @@ async fn migrate_refuses_db_with_unknown_applied_version() {
         let err = migrate(&db.conn).await.unwrap_err();
 
         assert!(matches!(err, DbError::Migration(_)), "{err:?}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn migration_status_reports_pending_without_creating_tables() {
+    each_backend(async |db: &TestDb| {
+        let status = migration_status(&db.conn).await.unwrap();
+
+        assert_eq!(status.pending, expected_versions(), "{}", db.backend);
+        assert!(status.unknown.is_empty(), "{}", db.backend);
+        assert!(!status.is_current());
+        assert!(
+            !has_table(&db.conn, "seaql_migrations").await,
+            "status must be read-only ({})",
+            db.backend
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn migration_status_is_current_after_migrate() {
+    each_backend(async |db: &TestDb| {
+        migrate(&db.conn).await.unwrap();
+
+        let status = migration_status(&db.conn).await.unwrap();
+
+        assert!(status.is_current(), "{status:?} ({})", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn migration_status_lists_versions_unknown_to_this_binary() {
+    each_backend(async |db: &TestDb| {
+        migrate(&db.conn).await.unwrap();
+        let newer = "m20991231_000003_from_newer_binary";
+        let insert = Query::insert()
+            .into_table(seaql_migrations::Entity)
+            .columns([
+                seaql_migrations::Column::Version,
+                seaql_migrations::Column::AppliedAt,
+            ])
+            .values_panic([newer.into(), 0i64.into()])
+            .to_owned();
+        db.conn.execute(&insert).await.unwrap();
+
+        let status = migration_status(&db.conn).await.unwrap();
+
+        assert!(status.pending.is_empty(), "{}", db.backend);
+        assert_eq!(status.unknown, vec![newer.to_owned()], "{}", db.backend);
+        assert!(!status.is_current());
     })
     .await;
 }

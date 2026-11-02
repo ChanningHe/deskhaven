@@ -5,8 +5,11 @@
 //! needs `sslrootcert=/path/to/ca.pem` in the URL.
 
 use std::fmt;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
+use sea_orm::sqlx::postgres::PgConnectOptions;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
@@ -28,6 +31,10 @@ pub struct DbOptions {
     pub max_connections: u32,
     /// Upper bound for opening (and acquiring) a pooled connection.
     pub connect_timeout: Duration,
+    /// Inspect without writing (`config check`): SQLite opens read-only and never creates
+    /// the file or changes its journal mode; PostgreSQL sessions default to read-only
+    /// transactions (`default_transaction_read_only`).
+    pub read_only: bool,
 }
 
 impl DbOptions {
@@ -36,6 +43,7 @@ impl DbOptions {
             url: url.into(),
             max_connections: DEFAULT_MAX_CONNECTIONS,
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+            read_only: false,
         }
     }
 }
@@ -46,6 +54,7 @@ impl fmt::Debug for DbOptions {
             .field("url", &redact_url(&self.url))
             .field("max_connections", &self.max_connections)
             .field("connect_timeout", &self.connect_timeout)
+            .field("read_only", &self.read_only)
             .finish()
     }
 }
@@ -78,6 +87,17 @@ fn sqlite_tuning(opts: SqliteConnectOptions) -> SqliteConnectOptions {
         .foreign_keys(true)
 }
 
+/// SQLite inspection: an existing file only, no pragma that writes (no `journal_mode`).
+fn sqlite_read_only(opts: SqliteConnectOptions) -> SqliteConnectOptions {
+    opts.read_only(true)
+        .create_if_missing(false)
+        .busy_timeout(SQLITE_BUSY_TIMEOUT)
+}
+
+fn postgres_read_only(opts: PgConnectOptions) -> PgConnectOptions {
+    opts.options([("default_transaction_read_only", "on")])
+}
+
 /// Opens a connection pool. Fails fast if the database is unreachable.
 pub async fn connect(opts: &DbOptions) -> Result<DatabaseConnection, DbError> {
     let scheme = scheme_of(&opts.url)?;
@@ -87,12 +107,26 @@ pub async fn connect(opts: &DbOptions) -> Result<DatabaseConnection, DbError> {
         .connect_timeout(opts.connect_timeout)
         // Per-statement `log` output from sqlx is noise; SeaORM tracing spans remain.
         .sqlx_logging(false);
-    if scheme == Scheme::Sqlite {
-        connect_opts.map_sqlx_sqlite_opts(sqlite_tuning);
-    }
+    match (scheme, opts.read_only) {
+        (Scheme::Sqlite, false) => connect_opts.map_sqlx_sqlite_opts(sqlite_tuning),
+        (Scheme::Sqlite, true) => connect_opts.map_sqlx_sqlite_opts(sqlite_read_only),
+        (Scheme::Postgres, false) => &mut connect_opts,
+        (Scheme::Postgres, true) => connect_opts.map_sqlx_postgres_opts(postgres_read_only),
+    };
     Database::connect(connect_opts)
         .await
         .map_err(DbError::Connect)
+}
+
+/// The database file of a `sqlite:` URL (percent-decoded, query stripped); `None` for
+/// other backends or an unparsable URL.
+pub fn sqlite_file(url: &str) -> Option<PathBuf> {
+    if scheme_of(url).ok()? != Scheme::Sqlite {
+        return None;
+    }
+    SqliteConnectOptions::from_str(url)
+        .ok()
+        .map(|opts| opts.get_filename().to_path_buf())
 }
 
 #[cfg(test)]

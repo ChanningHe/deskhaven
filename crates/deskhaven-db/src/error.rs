@@ -13,4 +13,7 @@ pub enum DbError {
 
     #[error("database migration failed")]
     Migration(#[source] DbErr),
+
+    #[error("failed to read the migration status")]
+    MigrationStatus(#[source] DbErr),
 }

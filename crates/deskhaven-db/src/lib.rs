@@ -11,7 +11,7 @@ pub mod testing;
 pub mod time;
 mod tx;
 
-pub use connect::{DbOptions, SQLITE_BUSY_TIMEOUT, connect};
+pub use connect::{DbOptions, SQLITE_BUSY_TIMEOUT, connect, sqlite_file};
 pub use error::DbError;
-pub use migrate::{migrate, migrate_with};
+pub use migrate::{MigrationStatus, migrate, migrate_with, migration_status};
 pub use tx::begin_write;

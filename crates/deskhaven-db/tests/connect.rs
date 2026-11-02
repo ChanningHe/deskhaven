@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use deskhaven_db::testing::{Backend, TestDb, each_backend};
-use deskhaven_db::{DbError, DbOptions, connect};
+use deskhaven_db::{DbError, DbOptions, connect, sqlite_file};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait};
 
 async fn pragma_i64(conn: &DatabaseConnection, name: &str) -> i64 {
@@ -138,4 +138,73 @@ async fn connect_reports_backend() {
         db.conn.execute_unprepared("SELECT 1").await.unwrap();
     })
     .await;
+}
+
+#[tokio::test]
+async fn read_only_sqlite_never_creates_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut opts, path) = sqlite_options(&dir, "absent.db");
+    opts.read_only = true;
+
+    let res = connect(&opts).await;
+
+    assert!(matches!(res, Err(DbError::Connect(_))), "{res:?}");
+    assert!(
+        !path.exists(),
+        "read-only connect must not create the database"
+    );
+}
+
+#[tokio::test]
+async fn read_only_sqlite_reads_but_refuses_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (opts, _) = sqlite_options(&dir, "ro.db");
+    let writer = connect(&opts).await.unwrap();
+    writer
+        .execute_unprepared("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+        .await
+        .unwrap();
+    let mut ro = opts.clone();
+    ro.read_only = true;
+
+    let reader = connect(&ro).await.unwrap();
+
+    reader.execute_unprepared("SELECT id FROM t").await.unwrap();
+    let write = reader
+        .execute_unprepared("INSERT INTO t (id) VALUES (1)")
+        .await;
+    assert!(write.is_err(), "read-only connection accepted a write");
+}
+
+#[tokio::test]
+async fn read_only_postgres_refuses_writes() {
+    each_backend(async |db: &TestDb| {
+        if db.backend != Backend::Postgres {
+            return;
+        }
+        let mut ro = DbOptions::new(db.url.clone());
+        ro.read_only = true;
+        let reader = connect(&ro).await.unwrap();
+
+        let write = reader
+            .execute_unprepared("CREATE TABLE ro_probe (id BIGINT)")
+            .await;
+
+        assert!(write.is_err(), "read-only session accepted DDL");
+    })
+    .await;
+}
+
+#[test]
+fn sqlite_file_resolves_paths_and_ignores_other_backends() {
+    assert_eq!(
+        sqlite_file("sqlite:///var/lib/dh/deskhaven.db?mode=rwc"),
+        Some(std::path::PathBuf::from("/var/lib/dh/deskhaven.db"))
+    );
+    assert_eq!(
+        sqlite_file("sqlite://data/a%20b.db"),
+        Some(std::path::PathBuf::from("data/a b.db"))
+    );
+    assert_eq!(sqlite_file("postgres://u:p@h/db"), None);
+    assert_eq!(sqlite_file("mysql://h/db"), None);
 }
