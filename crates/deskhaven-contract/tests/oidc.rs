@@ -225,6 +225,7 @@ async fn failed_flows_reach_the_client_and_the_browser_as_their_message() {
         .users
         .create(deskhaven_core::users::NewUser {
             email: Some("dave@example.com".to_owned()),
+            email_verified: true,
             ..deskhaven_core::users::NewUser::new(
                 "dave",
                 deskhaven_core::users::Credential::Local {

@@ -12,10 +12,11 @@ use common::oidc_idp::TokenSpec;
 use common::set;
 use deskhaven_core::groups::{GroupService, NewGroup};
 use deskhaven_core::oidc::{CallbackReport, Failure};
-use deskhaven_core::users::{AuthSource, Role, Status};
-use deskhaven_db::entity::{group_member, user_identity};
+use deskhaven_core::users::{AuthSource, ProfileUpdate, Role, Status};
+use deskhaven_db::entity::{group_member, user, user_identity};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::json;
 
 fn user_id(report: &CallbackReport) -> i64 {
@@ -57,7 +58,8 @@ async fn verified_email_links_the_existing_account_once_then_the_identity_is_use
             (alice.id, env.provider.id)
         );
         assert_eq!(linked[0].subject, "sub-a");
-        assert_eq!(linked[0].email.as_deref(), Some("alice@new.example.com"));
+        // The refresh never stores an unverified address.
+        assert_eq!(linked[0].email, None);
         assert!(!linked[0].email_verified);
         // Still the local account it was.
         let row = env.users.get(alice.id).await.unwrap();
@@ -212,9 +214,9 @@ async fn provisioned_usernames_follow_the_username_rules_and_avoid_existing_acco
         // Never the existing "alice" (case-insensitively), never "Alice-2".
         assert_eq!(name(&clash), "ALICE-3", "{}", db.backend);
         assert_eq!(name(&unicode), "ZoSmithops");
-        // `+` is outside the charset; the email is stored as unverified.
+        // `+` is outside the charset; an unverified email is not stored.
         assert_eq!(name(&from_email), "carolx@example.com");
-        assert!(!from_email.outcome.as_ref().unwrap().user.email_verified);
+        assert_eq!(from_email.outcome.as_ref().unwrap().user.email, None);
         assert_eq!(name(&from_sub), "Abc_123-xyz");
         assert_eq!(name(&long_name), "l".repeat(64));
     })
@@ -318,6 +320,112 @@ async fn a_linked_account_disabled_later_is_refused() {
         let (_, second) = env.login("s-1", |s| s).await;
 
         assert_eq!(failure(&second), Some(Failure::Disabled), "{}", db.backend);
+    })
+    .await;
+}
+
+/// H1: an IdP that lets users set any (unverified) address cannot squat it.
+#[tokio::test]
+async fn an_unverified_email_is_never_stored_so_it_cannot_be_squatted() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+
+        // A: the attacker claims the CEO's address, unverified.
+        let (_, squatter) = env
+            .login("attacker", |s| TokenSpec {
+                preferred_username: Some("mallory".to_owned()),
+                ..s.email("ceo@corp.example", Some(false))
+            })
+            .await;
+        // B: the CEO logs in later with the verified address.
+        let (_, ceo) = env
+            .login("ceo-sub", |s| TokenSpec {
+                preferred_username: Some("ceo".to_owned()),
+                ..s.email("ceo@corp.example", Some(true))
+            })
+            .await;
+
+        let mallory = env.users.get(user_id(&squatter)).await.unwrap();
+        let ceo = env.users.get(user_id(&ceo)).await.unwrap();
+        assert_ne!(mallory.id, ceo.id, "{}", db.backend);
+        assert_eq!(mallory.email, None);
+        assert!(!mallory.email_verified);
+        assert_eq!(ceo.email.as_deref(), Some("ceo@corp.example"));
+        assert!(ceo.email_verified);
+        let rows = identities(db).await;
+        let attacker = rows.iter().find(|i| i.user_id == mallory.id).unwrap();
+        assert_eq!(attacker.email, None);
+        assert!(!attacker.email_verified);
+    })
+    .await;
+}
+
+/// H1: an account whose own address is unverified is never an auto-link target.
+#[tokio::test]
+async fn verified_email_does_not_link_into_an_account_with_an_unverified_address() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let squatter = env.local_user("squatter", Some("ceo@corp.example")).await;
+        let unverify = ProfileUpdate {
+            email_verified: Some(false),
+            ..ProfileUpdate::default()
+        };
+        env.users
+            .update_profile(squatter.id, unverify)
+            .await
+            .unwrap();
+
+        let (_, report) = env
+            .login("ceo-sub", |s| s.email("ceo@corp.example", Some(true)))
+            .await;
+
+        assert_eq!(
+            failure(&report),
+            Some(Failure::NoLinkedAccount),
+            "{}",
+            db.backend
+        );
+        assert!(identities(db).await.is_empty());
+    })
+    .await;
+}
+
+/// M2: an OIDC login must not bypass a local second factor, nor reach a privileged account
+/// by email alone.
+#[tokio::test]
+async fn verified_email_never_links_into_two_factor_admin_or_owner_accounts() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let tina = env.local_user("tina", Some("tina@example.com")).await;
+        let mut row: user::ActiveModel = user::Entity::find_by_id(tina.id)
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        // Enrolled (the seed value is irrelevant here: only "has TOTP" matters).
+        row.totp_secret_enc = Set(Some("v1:placeholder".to_owned()));
+        row.totp_enabled_at = Set(Some(deskhaven_db::time::now()));
+        row.update(&db.conn).await.unwrap();
+        let adam = env.local_user("adam", Some("adam@example.com")).await;
+        env.users.set_role(adam.id, Role::Admin).await.unwrap();
+        let olive = env.local_user("olive", Some("olive@example.com")).await;
+        env.users.set_role(olive.id, Role::Owner).await.unwrap();
+
+        for (sub, email) in [
+            ("s-tina", "tina@example.com"),
+            ("s-adam", "adam@example.com"),
+            ("s-olive", "olive@example.com"),
+        ] {
+            let (_, report) = env.login(sub, |s| s.email(email, Some(true))).await;
+            assert_eq!(
+                failure(&report),
+                Some(Failure::NoLinkedAccount),
+                "{}: {email}",
+                db.backend
+            );
+        }
+        assert!(identities(db).await.is_empty());
     })
     .await;
 }

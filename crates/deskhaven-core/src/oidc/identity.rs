@@ -3,15 +3,27 @@
 //!
 //! 1. A linked identity `(provider, sub)`: its account (the stored email is refreshed).
 //! 2. Otherwise, an account with the asserted email (case-insensitively): linked only when
-//!    `email_verified` is `true` (missing = false) **and** `auth.oidc.link_verified_email` is
-//!    on; else refused ([`Failure::NoLinkedAccount`]: link it from the console). Never
-//!    provisioned alongside it, never matched by username.
-//! 3. Otherwise, with `auto_provision`: a new active `oidc` account (`username` rules), the
-//!    asserted email (if well formed) with its verification state, `admin` when
-//!    `admin_group` is among the group claim's values, and membership in the existing
-//!    UI-managed groups the claim names (groups are never created from claims). The account
-//!    is brand new, so no cached membership view can be stale (no group commit hook needed).
+//!    the token says `email_verified: true` (missing = false), `auth.oidc.link_verified_email`
+//!    is on, **and** the account is a safe target: its own address is verified, it has no
+//!    TOTP (an OIDC login does not ask for it, so linking would bypass it) and its role is
+//!    `user` (no admin or owner reached by email alone). Else refused
+//!    ([`Failure::NoLinkedAccount`]: link it from the console). Never provisioned alongside
+//!    it, never matched by username.
+//! 3. Otherwise, with `auto_provision`: a new active `oidc` account (`username` rules),
+//!    `admin` when `admin_group` is among the group claim's values, and membership in the
+//!    existing UI-managed groups the claim names (groups are never created from claims). The
+//!    account is brand new, so no cached membership view can be stale (no group commit hook
+//!    needed).
 //! 4. Otherwise refused.
+//!
+//! Emails: only an address the IdP asserts verified is ever stored, on the account and on the
+//! identity (also when refreshed). An unverified address could be anything the user typed at
+//! the IdP; stored, it would hold the real owner's address (unique index) and become their
+//! link target later.
+//!
+//! Known, accepted: step 2's refusal versus step 3's provisioning tells someone who can log
+//! in at the IdP whether an address belongs to a deskhaven account (refusing is the clearer
+//! experience for the real owner).
 //!
 //! Linked accounts must be active (disabled / unverified are refused, not linked). Group
 //! mapping and the admin flag apply at provisioning only; later changes are the console's.
@@ -48,13 +60,12 @@ pub(crate) async fn resolve(
         None => None,
     };
     if let Some(account) = by_email {
-        let may_link = asserted.verified_email().is_some()
-            && svc
-                .inner
-                .settings
-                .snapshot()
-                .get(&AUTH_OIDC_LINK_VERIFIED_EMAIL);
-        if !may_link {
+        let enabled = svc
+            .inner
+            .settings
+            .snapshot()
+            .get(&AUTH_OIDC_LINK_VERIFIED_EMAIL);
+        if !(enabled && asserted.verified_email().is_some() && is_link_target(&account)) {
             return Ok(Err(Failure::NoLinkedAccount));
         }
         let account = match active(account) {
@@ -84,15 +95,32 @@ async fn linked_account(
     let Some(identity) = found else {
         return Ok(None);
     };
-    let verified = asserted.email_verified == Some(true);
-    if identity.email != asserted.email || identity.email_verified != verified {
+    let email = stored_email(asserted);
+    if identity.email != email || identity.email_verified != email.is_some() {
         let mut changed: user_identity::ActiveModel = identity.clone().into();
-        changed.email = Set(asserted.email.clone());
-        changed.email_verified = Set(verified);
+        changed.email_verified = Set(email.is_some());
+        changed.email = Set(email);
         changed.update(tx).await?;
     }
     // The foreign key cascades on account deletion, so the account exists.
     Ok(user::Entity::find_by_id(identity.user_id).one(tx).await?)
+}
+
+/// The address deskhaven keeps from a token: only one the IdP asserts verified and the user
+/// service accepts. An unverified one is never stored (anyone may type any address at an
+/// IdP with self-service profiles; stored, it would squat the real owner's address).
+fn stored_email(asserted: &Asserted) -> Option<String> {
+    asserted
+        .verified_email()
+        .filter(|e| is_valid_email(e))
+        .map(str::to_owned)
+}
+
+/// Whether an existing account may be linked by email alone: its own address is verified
+/// (so nobody squatted it), and logging in by OIDC neither skips its second factor nor
+/// reaches an administrator. Others are linked explicitly from the console.
+fn is_link_target(account: &user::Model) -> bool {
+    account.email_verified && account.totp_enabled_at.is_none() && account.role == Role::User
 }
 
 fn active(account: user::Model) -> Resolution {
@@ -114,8 +142,8 @@ async fn link(
         user_id: Set(user_id),
         provider_id: Set(provider_id),
         subject: Set(asserted.subject.clone()),
-        email: Set(asserted.email.clone()),
-        email_verified: Set(asserted.email_verified == Some(true)),
+        email_verified: Set(stored_email(asserted).is_some()),
+        email: Set(stored_email(asserted)),
         created_at: Set(svc.inner.clock.now()),
         ..Default::default()
     }
@@ -134,14 +162,14 @@ async fn provision(
         tracing::warn!(provider = %provider.name, "no free username for a provisioned OIDC account");
         return Ok(Err(Failure::ProvisioningFailed));
     };
-    let email = asserted.email.clone().filter(|e| is_valid_email(e));
+    let email = stored_email(asserted);
     let is_admin = provider
         .admin_group
         .as_ref()
         .is_some_and(|admin| asserted.groups.contains(admin));
     let new = NewUser {
         display_name: display_name(asserted.name.as_deref()),
-        email_verified: email.is_some() && asserted.email_verified == Some(true),
+        email_verified: email.is_some(),
         email,
         role: if is_admin { Role::Admin } else { Role::User },
         ..NewUser::new(username, Credential::Oidc)
