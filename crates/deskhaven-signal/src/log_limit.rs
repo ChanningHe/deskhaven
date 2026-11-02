@@ -35,9 +35,30 @@ impl LogLimit {
     }
 }
 
+/// How a device uuid appears in logs: its length only. The uuid is what device endpoints
+/// accept as proof of identity (deskhaven 06 §2), so logs must never carry it, neither the
+/// one a client sent nor the stored one.
+pub(crate) struct Redacted<'a>(pub(crate) &'a [u8]);
+
+impl std::fmt::Display for Redacted<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{} bytes>", self.0.len())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redacted_shows_only_the_length() {
+        let uuid = b"secret-machine-uid";
+
+        let shown = Redacted(uuid).to_string();
+
+        assert_eq!(shown, "<18 bytes>");
+        assert!(!shown.contains("secret"));
+    }
 
     #[test]
     fn reports_the_first_hit_then_once_per_interval_with_the_count() {

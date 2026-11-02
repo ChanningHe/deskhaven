@@ -344,6 +344,16 @@ impl SignalHandle {
         Ok(())
     }
 
+    /// Re-reads the registration of `id` from the [`PeerStore`](crate::PeerStore), for a
+    /// registry change made behind the server's back: a deleted device is forgotten (its next
+    /// RegisterPk registers it again, as a new device), a changed one takes the stored keys.
+    /// Asynchronous: returns once queued; the store read runs in its own task.
+    pub fn reload_peer(&self, id: &str) -> Result<(), SignalError> {
+        self.tx
+            .send(Data::ReloadPeer(id.to_owned()))
+            .map_err(|_| SignalError::Stopped)
+    }
+
     fn ensure_running(&self) -> Result<(), SignalError> {
         if self.tx.is_closed() {
             return Err(SignalError::Stopped);

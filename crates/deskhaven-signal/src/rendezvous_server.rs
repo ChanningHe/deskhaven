@@ -3,7 +3,7 @@ use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
 use crate::kx::{self, KxState};
-use crate::log_limit::LogLimit;
+use crate::log_limit::{LogLimit, Redacted};
 use crate::peer::*;
 use crate::server::{ClientIpResolver, Ports, SignalConfig, SignalError, Switches};
 use crate::store::PeerStore;
@@ -66,6 +66,9 @@ pub(crate) enum Data {
         accepted: RelayServers,
         rejected: RelayServers,
     },
+    // deskhaven (M2-12): re-read one registration from the store (`SignalHandle::reload_peer`;
+    // a deleted device is forgotten, so its next RegisterPk registers it again).
+    ReloadPeer(String),
     // deskhaven (M1-06): test-only fault injection into the server loop.
     #[cfg(any(test, feature = "testing"))]
     Inject(crate::server::Fault),
@@ -609,6 +612,15 @@ impl RendezvousServer {
                     self.relay_servers.store(Arc::new(rs));
                 }
             }
+            // deskhaven (M2-12): the store read runs in its own task, never on the loop.
+            Data::ReloadPeer(id) => {
+                let pm = self.pm.clone();
+                self.tasks.spawn(async move {
+                    if let Err(err) = pm.reload(&id).await {
+                        log::warn!("peer store: reloading {id} failed: {err:?}");
+                    }
+                });
+            }
             #[cfg(any(test, feature = "testing"))]
             Data::Inject(_) => {} // handled in `io_loop`
             Data::RelayResolved {
@@ -747,10 +759,10 @@ impl RendezvousServer {
                     }
                 } else {
                     log::warn!(
-                        "Peer {} uuid mismatch: {:?} vs {:?}",
+                        "Peer {} uuid mismatch: {} vs stored {}",
                         id,
-                        rk.uuid,
-                        peer.uuid
+                        Redacted(&rk.uuid),
+                        Redacted(&peer.uuid)
                     );
                     drop(peer);
                     return Some(UUID_MISMATCH);

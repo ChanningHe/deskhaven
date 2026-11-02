@@ -650,3 +650,18 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   (the signal crate still knows nothing of deskhaven-core). Behavior on the wire is unchanged.
   Tests: `tests/peer_events.rs` (UDP registration and keep-alives, no event for ids without a
   key, TCP channel online then offline on close, no offline for a replaced channel).
+- 2026-11-03, M2-12 review (MEDIUM), device uuids kept out of logs (`peer.rs` `update_pk`,
+  `rendezvous_server.rs` `register_pk` uuid-mismatch warning; new `log_limit.rs` `Redacted`):
+  upstream logged the uuid a client sent on every `update_pk` (info) and, on a uuid mismatch,
+  both the sent and the **stored** uuid (warn; any client can trigger it for any known id).
+  deskhaven accepts id + uuid as the identity of a device on its API, so both lines now show
+  only the uuid's length (`<N bytes>`); the pk (public) is still logged. Test:
+  `log_limit::tests::redacted_shows_only_the_length`.
+- 2026-11-03, M2-12 review (MEDIUM), `SignalHandle::reload_peer(id)` (`server.rs`; new
+  `Data::ReloadPeer` arm in `rendezvous_server.rs` `handle_data`; `peer.rs` `PeerMap::reload`
+  is now used, its `dead_code` allowance removed): re-reads one registration from the
+  `PeerStore` in a task of its own (never on the server loop). A row deleted out of band is
+  forgotten, so the device's next RegisterPk registers it again as new; before, the server
+  kept answering it as registered until a restart while deskhaven's API answered the device
+  ID_NOT_FOUND. deskhaven calls it after deleting a device. Tests: `tests/reload_peer.rs`
+  (deleted peer forgotten and re-registrable, stored peer kept).

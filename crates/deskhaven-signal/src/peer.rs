@@ -1,5 +1,6 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
+use crate::log_limit::Redacted;
 use crate::persist::{Persist, QueueFull, SaveState, WRITE_QUEUE};
 use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
@@ -114,7 +115,15 @@ impl PeerMap {
         pk: Bytes,
         ip: String,
     ) -> Result<(), QueueFull> {
-        log::info!("update_pk {} {:?} {:?} {:?}", id, addr, uuid, pk);
+        // deskhaven (M2-12 review): the uuid is never logged (proof of identity for the
+        // device endpoints), only its length.
+        log::info!(
+            "update_pk {} {:?} uuid {} {:?}",
+            id,
+            addr,
+            Redacted(&uuid),
+            pk
+        );
         let mut w = peer.write().await;
         // Queued under the peer's lock: the writer reads the peer after this change.
         if let Err(full) = self.persist.enqueue(&id, w.uuid.is_empty()) {
@@ -169,9 +178,8 @@ impl PeerMap {
         self.map.read().await.contains_key(id)
     }
 
-    // deskhaven: invalidation hook for out-of-band registry changes (admin, M2); not wired
-    // here (the writer calls `Persist::reload` on UuidMismatch).
-    #[allow(dead_code)]
+    // deskhaven: invalidation hook for out-of-band registry changes: `SignalHandle::reload_peer`
+    // (M2-12, device deletion); the writer also calls `Persist::reload` on UuidMismatch.
     pub(crate) async fn reload(&self, id: &str) -> Result<(), StoreError> {
         self.persist.reload(id).await
     }
