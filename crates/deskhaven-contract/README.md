@@ -40,6 +40,7 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
      },
      "expect": {
        "status": 200,
+       "headers": {},
        "body_kind": "json",
        "shape": "LoginOptions",
        "json_subset": [],
@@ -72,6 +73,7 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
 | `request.body` | `"empty"` (default), `{"json": <value>}`, `{"text": "..."}` |
 | `request.peer` | TCP peer, default `203.0.113.7:50000` |
 | `expect.status` | exact status |
+| `expect.headers` | response headers by name (names in any case): `"exact value"` or `{"contains": "..."}`; values are case-sensitive, a repeated header is joined with `", "`, a missing one fails (`{"Allow": "GET,HEAD", "content-type": "application/json"}`) |
 | `expect.body_kind` | `empty` (zero bytes), `json`, `text` (UTF-8) |
 | `expect.shape` | (json) mirror type name from `src/shapes.rs` that must parse the raw bytes |
 | `expect.json_subset` | (json) objects: listed keys match, others ignored; arrays: same length, element-wise; scalars: equal |

@@ -88,11 +88,13 @@ impl TestApp {
     pub async fn send(&self, request: &fixture::Request) -> anyhow::Result<Reply> {
         let response = self.router.clone().oneshot(build(request)?).await?;
         let status = response.status().as_u16();
+        let headers = response.headers().clone();
         let body = to_bytes(response.into_body(), MAX_REPLY_BYTES)
             .await
             .context("cannot read the response body")?;
         Ok(Reply {
             status,
+            headers,
             body: body.to_vec(),
         })
     }

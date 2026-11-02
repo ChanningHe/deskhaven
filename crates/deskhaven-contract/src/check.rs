@@ -1,15 +1,22 @@
 //! Compares a response with a fixture's `expect`.
 
+use std::collections::BTreeMap;
+
+use axum::http::HeaderMap;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::fixture::{BodyKind, Expect};
+use crate::fixture::{BodyKind, Expect, HeaderMatch};
 use crate::shapes;
+
+/// Separator for a header sent more than once (RFC 9110 §5.3).
+const HEADER_JOIN: &str = ", ";
 
 /// What the router answered.
 #[derive(Debug)]
 pub struct Reply {
     pub status: u16,
+    pub headers: HeaderMap,
     pub body: Vec<u8>,
 }
 
@@ -29,7 +36,39 @@ pub fn check(expect: &Expect, reply: &Reply) -> Vec<String> {
         BodyKind::Text => check_text(expect, &reply.body),
         BodyKind::Json => check_json(expect, &reply.body),
     };
-    status.into_iter().chain(body).collect()
+    status
+        .into_iter()
+        .chain(check_headers(&expect.headers, &reply.headers))
+        .chain(body)
+        .collect()
+}
+
+/// Names were validated with the fixture; `HeaderMap` lookups ignore case.
+fn check_headers(want: &BTreeMap<String, HeaderMatch>, got: &HeaderMap) -> Vec<String> {
+    want.iter()
+        .filter_map(|(name, rule)| {
+            let name = name.to_ascii_lowercase();
+            let values: Vec<_> = got
+                .get_all(name.as_str())
+                .iter()
+                .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned())
+                .collect();
+            if values.is_empty() {
+                return Some(format!("header {name}: missing"));
+            }
+            let value = values.join(HEADER_JOIN);
+            match rule {
+                HeaderMatch::Exact(exact) if *exact != value => {
+                    Some(format!("header {name}: expected {exact:?}, got {value:?}"))
+                }
+                HeaderMatch::Contains(rule) if !value.contains(&rule.contains) => Some(format!(
+                    "header {name}: expected to contain {:?}, got {value:?}",
+                    rule.contains
+                )),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn check_empty(body: &[u8]) -> Vec<String> {
@@ -102,6 +141,7 @@ fn subset(want: &Value, got: &Value, at: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::HeaderValue;
     use serde_json::json;
 
     use super::*;
@@ -113,8 +153,63 @@ mod tests {
     fn reply(status: u16, body: &str) -> Reply {
         Reply {
             status,
+            headers: HeaderMap::new(),
             body: body.as_bytes().to_vec(),
         }
+    }
+
+    fn with_headers(headers: &[(&'static str, &'static str)]) -> Reply {
+        let mut map = HeaderMap::new();
+        for (name, value) in headers {
+            map.append(*name, HeaderValue::from_static(value));
+        }
+        Reply {
+            headers: map,
+            ..reply(204, "")
+        }
+    }
+
+    #[test]
+    fn headers_match_exactly_or_by_substring_with_any_name_case() {
+        let want = expect(json!({ "status": 204, "body_kind": "empty", "headers": {
+            "Allow": "GET,HEAD",
+            "CONTENT-TYPE": { "contains": "application/json" }
+        } }));
+        let got = with_headers(&[
+            ("allow", "GET,HEAD"),
+            ("content-type", "application/json; charset=utf-8"),
+        ]);
+
+        assert_eq!(check(&want, &got), Vec::<String>::new());
+    }
+
+    #[test]
+    fn header_mismatches_are_reported() {
+        let want = expect(json!({ "status": 204, "body_kind": "empty", "headers": {
+            "allow": "GET",
+            "content-type": { "contains": "json" },
+            "x-missing": "1"
+        } }));
+        let got = with_headers(&[("allow", "GET,HEAD"), ("content-type", "text/plain")]);
+
+        let problems = check(&want, &got);
+
+        assert_eq!(
+            problems,
+            [
+                r#"header allow: expected "GET", got "GET,HEAD""#,
+                r#"header content-type: expected to contain "json", got "text/plain""#,
+                "header x-missing: missing",
+            ]
+        );
+    }
+
+    #[test]
+    fn repeated_headers_are_joined_in_order() {
+        let want =
+            expect(json!({ "status": 204, "body_kind": "empty", "headers": { "vary": "a, b" } }));
+
+        assert!(check(&want, &with_headers(&[("vary", "a"), ("vary", "b")])).is_empty());
     }
 
     #[test]

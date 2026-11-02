@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
-use axum::http::Method;
+use axum::http::{HeaderName, Method};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -70,10 +70,28 @@ pub enum BodyKind {
     Text,
 }
 
+/// An expected response header value: `"exact"` or `{"contains": "..."}`.
+/// Values compare case-sensitively; repeated headers are joined with `", "`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum HeaderMatch {
+    Exact(String),
+    Contains(ContainsRule),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContainsRule {
+    pub contains: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Expect {
     pub status: u16,
+    /// Response headers by name (any case; names are case-insensitive).
+    #[serde(default)]
+    pub headers: BTreeMap<String, HeaderMatch>,
     pub body_kind: BodyKind,
     /// Client mirror type the body must parse as (see [`crate::shapes`]).
     #[serde(default)]
@@ -211,7 +229,36 @@ impl Expect {
             .iter()
             .filter(|p| !p.starts_with('/'))
             .map(|p| format!("json_absent entry {p:?} must be a JSON pointer (\"/key\")"));
-        misplaced.chain(text).chain(shape).chain(pointers).collect()
+        misplaced
+            .chain(text)
+            .chain(shape)
+            .chain(pointers)
+            .chain(self.header_problems())
+            .collect()
+    }
+
+    fn header_problems(&self) -> Vec<String> {
+        let invalid = self
+            .headers
+            .keys()
+            .filter(|name| HeaderName::from_bytes(name.as_bytes()).is_err())
+            .map(|name| format!("expected header name {name:?} is not a valid header name"));
+        let mut lowered: Vec<_> = self
+            .headers
+            .keys()
+            .map(|n| n.to_ascii_lowercase())
+            .collect();
+        lowered.sort_unstable();
+        let duplicates = lowered
+            .windows(2)
+            .filter(|pair| pair[0] == pair[1])
+            .map(|pair| {
+                format!(
+                    "expected header {:?} is listed twice (names ignore case)",
+                    pair[0]
+                )
+            });
+        invalid.chain(duplicates).collect()
     }
 }
 
@@ -369,6 +416,32 @@ mod tests {
         }));
 
         assert_eq!(bad.problems(COMMIT, &Seeds::builtin()).len(), 3);
+    }
+
+    #[test]
+    fn expected_header_names_must_be_valid_and_unique() {
+        let ok = fixture(json!({ "expect": { "headers": {
+            "Allow": "GET,HEAD", "content-type": { "contains": "json" }
+        } } }));
+        let bad = fixture(json!({ "expect": { "headers": {
+            "bad name": "x", "Allow": "GET", "allow": "GET"
+        } } }));
+        let unknown_rule = json!({
+            "upstream_commit": COMMIT, "source": ["a:1"], "description": "d",
+            "request": { "method": "GET", "path": "/" },
+            "expect": { "status": 200, "body_kind": "empty",
+                        "headers": { "allow": { "prefix": "GET" } } }
+        });
+
+        assert!(ok.problems(COMMIT, &Seeds::builtin()).is_empty());
+        let problems = bad.problems(COMMIT, &Seeds::builtin());
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(
+            problems.iter().any(|p| p.contains("\"bad name\"")),
+            "{problems:?}"
+        );
+        assert!(problems.iter().any(|p| p.contains("allow")), "{problems:?}");
+        assert!(Fixture::parse(&unknown_rule.to_string()).is_err());
     }
 
     fn outputs() -> SeedOutputs {
