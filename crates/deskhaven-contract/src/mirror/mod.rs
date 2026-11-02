@@ -20,6 +20,7 @@ mod ab;
 mod account;
 mod device;
 mod hbb;
+mod legacy_ab;
 
 use serde::Deserialize;
 
@@ -30,6 +31,7 @@ pub use account::{
 };
 pub use device::{HeartbeatResponse, StrategyOptions};
 pub use hbb::HbbData;
+pub use legacy_ab::{LegacyAbData, LegacyAbReply};
 
 /// Error body of every client API endpoint (03 §1.3).
 ///

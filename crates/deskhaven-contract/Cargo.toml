@@ -16,6 +16,7 @@ deskhaven-config = { workspace = true }
 deskhaven-core = { workspace = true }
 deskhaven-http = { workspace = true }
 anyhow = { workspace = true }
+flate2 = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

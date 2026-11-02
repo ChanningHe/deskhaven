@@ -154,6 +154,12 @@ utoipa-axum = "0.3"
 # Input validation; every field needs a rule or an explicit skip (02 §5.1).
 garde = { version = "0.23", default-features = false, features = ["derive"] }
 
+# --- legacy address book (M2-17) ---
+# gzip for `GET /api/ab` (the client sends `Accept-Encoding: gzip`, 03 §5.2); pure-Rust
+# miniz_oxide backend, so no C code. Adds flate2, miniz_oxide, adler2, crc32fast and
+# simd-adler32 (all MIT / Apache-2.0 / Zlib).
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

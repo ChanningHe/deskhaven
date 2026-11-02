@@ -2,6 +2,7 @@
 //! (migrated, default settings), the production `client_api` router and the
 //! production middleware stack, called through `tower::ServiceExt::oneshot`.
 
+use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,7 +11,7 @@ use anyhow::Context;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
-use axum::http::{HeaderName, HeaderValue, Method, Request, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Request, header};
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::{Change, PinSet};
@@ -21,6 +22,7 @@ use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{ErrorBodies, apply_middleware, redirect_client_root, single_listener_router};
+use flate2::read::GzDecoder;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -166,6 +168,10 @@ impl TestApp {
         Ok(())
     }
 
+    /// Sends `request` and returns what a client's HTTP stack hands its caller: a body the
+    /// server compressed (`Content-Encoding: gzip`, announced by the request's
+    /// `Accept-Encoding`) is decompressed, as Dart's `HttpClient` does; the headers stay as
+    /// the server sent them, so fixtures can still assert the encoding.
     pub async fn send(&self, request: &fixture::Request) -> anyhow::Result<Reply> {
         let response = self.router.clone().oneshot(build(request)?).await?;
         let status = response.status().as_u16();
@@ -175,10 +181,33 @@ impl TestApp {
             .context("cannot read the response body")?;
         Ok(Reply {
             status,
+            body: decode(&headers, body.to_vec())?,
             headers,
-            body: body.to_vec(),
         })
     }
+}
+
+/// `body` after undoing its `Content-Encoding` (only `gzip` is understood; anything else
+/// is an error, so a fixture never compares compressed bytes by accident).
+fn decode(headers: &HeaderMap, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    let Some(encoding) = headers.get(header::CONTENT_ENCODING) else {
+        return Ok(body);
+    };
+    anyhow::ensure!(
+        encoding.as_bytes().eq_ignore_ascii_case(b"gzip"),
+        "unsupported content-encoding {encoding:?}"
+    );
+    let mut plain = Vec::new();
+    let limit = MAX_REPLY_BYTES as u64 + 1;
+    GzDecoder::new(body.as_slice())
+        .take(limit)
+        .read_to_end(&mut plain)
+        .context("the response is not valid gzip")?;
+    anyhow::ensure!(
+        plain.len() <= MAX_REPLY_BYTES,
+        "the decompressed response is too large"
+    );
+    Ok(plain)
 }
 
 /// `base` with users and sessions on `hasher` (same database, settings and
@@ -226,4 +255,39 @@ fn build(request: &fixture::Request) -> anyhow::Result<Request<Body>> {
         builder = builder.header(header::CONTENT_LENGTH, body.len());
     }
     Ok(builder.body(Body::from(body))?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
+    use super::*;
+
+    fn gzip(plain: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(plain).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn encoded(value: &'static str) -> HeaderMap {
+        HeaderMap::from_iter([(header::CONTENT_ENCODING, HeaderValue::from_static(value))])
+    }
+
+    #[test]
+    fn gzip_bodies_are_decompressed_and_others_pass_through() {
+        let plain = decode(&encoded("GZip"), gzip(b"{\"a\":1}")).unwrap();
+        let untouched = decode(&HeaderMap::new(), b"raw".to_vec()).unwrap();
+
+        assert_eq!(plain, b"{\"a\":1}");
+        assert_eq!(untouched, b"raw");
+    }
+
+    #[test]
+    fn unknown_encodings_and_broken_gzip_are_errors() {
+        assert!(decode(&encoded("br"), b"x".to_vec()).is_err());
+        assert!(decode(&encoded("gzip"), b"not gzip".to_vec()).is_err());
+    }
 }
