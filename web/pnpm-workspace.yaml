@@ -10,3 +10,9 @@ minimumReleaseAgeExclude:
   - i18next@26.7.1
   - react-i18next@17.1.11
   - globals@17.14.0
+
+# esbuild arrives through orval (API client generation, dev only). Its install
+# script only re-checks the platform binary that pnpm already installs as an
+# optional dependency, so it stays disabled.
+allowBuilds:
+  esbuild: false

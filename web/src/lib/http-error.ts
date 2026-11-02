@@ -5,7 +5,7 @@
 export const HTTP_UNAUTHORIZED = 401
 
 export class HttpError extends Error {
-  override readonly name = 'HttpError'
+  override readonly name: string = 'HttpError'
   readonly status: number
 
   constructor(status: number, message = `HTTP ${status}`) {
