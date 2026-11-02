@@ -6,7 +6,23 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Test support only: client-mirror types and the fixture runner. It depends on
+# the server (to replay fixtures through the real router); production crates
+# must never depend on it (enforced by tests/no_production_dependents.rs).
 [dependencies]
+deskhaven = { path = "../deskhaven" }
+deskhaven-config = { workspace = true }
+deskhaven-core = { workspace = true }
+deskhaven-http = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tower = { workspace = true, features = ["util"] }
 
 [lints]
 workspace = true

@@ -1230,6 +1230,21 @@ dependencies = [
 [[package]]
 name = "deskhaven-contract"
 version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "axum",
+ "deskhaven",
+ "deskhaven-config",
+ "deskhaven-core",
+ "deskhaven-http",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tower",
+]
 
 [[package]]
 name = "deskhaven-core"
