@@ -33,11 +33,13 @@ crate = "hbb_common"
 expression = "AGPL-3.0-or-later"
 license-files = []
 
-# rustdesk-org/default_net is a fork of shellrow/default-net (crates.io `default-net`, MIT);
-# the fork ships no license file — MIT inherited from upstream.
+# ASSUMPTION, not a grant: rustdesk-org/default_net (original crate, not a fork; no license
+# file or field as of 78f8f70) is authored by the RustDesk org and only consumed by AGPL-3.0
+# projects (rustdesk client, hbb_common); treated as AGPL-3.0-or-later pending an upstream
+# license statement.
 [[licenses.clarify]]
 crate = "default_net"
-expression = "MIT"
+expression = "AGPL-3.0-or-later"
 license-files = []
 
 [bans]
