@@ -46,6 +46,11 @@ export function mockApi(routes: Record<string, MockResponse | MockHandler>) {
   return spy
 }
 
+/** How many fetch calls went to `pathname`. */
+export function callsTo(spy: ReturnType<typeof mockApi>, pathname: string): number {
+  return spy.mock.calls.filter(([input]) => urlOf(input).pathname === pathname).length
+}
+
 /** The URL of the n-th fetch call, parsed against a dummy origin. */
 export function requestedUrl(spy: ReturnType<typeof mockApi>, index: number): URL {
   const call = spy.mock.calls[index]

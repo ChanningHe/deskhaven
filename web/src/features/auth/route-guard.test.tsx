@@ -2,8 +2,8 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/api-error'
-import { ADMIN_ME, USER_ME } from '@/test/fixtures'
-import { errorEnvelope } from '@/test/mock-api'
+import { ADMIN_ME, OWNER_ME, USER_ME } from '@/test/fixtures'
+import { callsTo, errorEnvelope } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
 import { hasPermission } from './permissions'
@@ -69,10 +69,11 @@ describe('console route guard', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
-  it('forgets the session when any request returns 401', async () => {
+  it('forgets the session and all cached data when any request returns 401', async () => {
     const { queryClient, router } = renderApp('/devices')
     await screen.findByRole('heading', { level: 1, name: '设备' })
     expect(queryClient.getQueryData(ME_QUERY_KEY)).toBeDefined()
+    queryClient.setQueryData(['users', { page: 1 }], { items: ['secret'] })
 
     await expect(
       queryClient.query({
@@ -86,6 +87,52 @@ describe('console route guard', () => {
     })
     expect(router.state.location.search).toEqual({ redirect: '/devices' })
     expect(queryClient.getQueryData(ME_QUERY_KEY)).toBeUndefined()
+    // Data fetched under the old session must not survive into the next one.
+    expect(queryClient.getQueryData(['users', { page: 1 }])).toBeUndefined()
+  })
+
+  it('re-checks the role after any API 403, so a demoted user sees fewer pages', async () => {
+    const session = { current: OWNER_ME }
+    const { queryClient } = renderApp('/devices', {
+      api: { 'GET /admin/api/v1/me': () => ({ body: session.current }) },
+    })
+    await screen.findByRole('heading', { level: 1, name: '设备' })
+    expect(navLabels()).toContain('设置')
+
+    // An owner demoted to admin elsewhere; the next owner-only call is refused.
+    session.current = ADMIN_ME
+    await expect(
+      queryClient.query({
+        queryKey: ['settings'],
+        queryFn: () => Promise.reject(new ApiError(403, { code: 'forbidden' })),
+      }),
+    ).rejects.toThrow()
+
+    await waitFor(() => {
+      expect(navLabels()).not.toContain('设置')
+    })
+  })
+
+  it('shows "access denied" when the session itself is refused, without refetch loops', async () => {
+    const { fetchSpy } = renderApp('/devices', {
+      api: { 'GET /admin/api/v1/me': { status: 403, body: errorEnvelope('forbidden') } },
+    })
+
+    expect(await screen.findByRole('heading', { level: 1, name: '无权访问' })).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(callsTo(fetchSpy, '/admin/api/v1/me')).toBe(1)
+  })
+
+  it('shows the translated reason, not "access denied", for other 403s', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderApp('/devices', {
+      api: { 'GET /admin/api/v1/me': { status: 403, body: errorEnvelope('csrf_failed') } },
+    })
+
+    expect(await screen.findByRole('heading', { level: 1, name: '出错了' })).toBeInTheDocument()
+    expect(screen.getByText('请求校验失败，请刷新页面后重试。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(screen.queryByText('无权访问')).not.toBeInTheDocument()
   })
 })
 

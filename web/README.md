@@ -69,18 +69,23 @@ would make pnpm try to download another version). `pnpm-workspace.yaml` explains
 
 ## Data fetching and errors
 
-- **Retries** (`src/app/query-client.ts`): 4xx responses are never retried. Network errors and 5xx
-  are retried once.
+- **Retries** (`src/app/query-client.ts`): only network errors and 5xx are retried, once. 4xx and
+  a 2xx whose body is not JSON (an `ApiError` with that status) are not.
 - **401**: any query or mutation that fails with 401 calls `onUnauthorized`, which `createApp`
-  (`src/app/create-app.ts`) wires to: forget the cached session, then redirect to
-  `/login?redirect=<current path>`.
+  (`src/app/create-app.ts`) wires to: clear the whole query cache (nothing fetched under the old
+  session survives), then redirect to `/login?redirect=<current path>`. Login and logout (M3-02)
+  must clear the cache the same way. Because 401 always means "no session", endpoints that check
+  a password inside a valid session (e.g. "wrong current password") must answer 400/422, never 401.
+- **403**: any 403 (except from `me` itself) invalidates the `me` query, so a role changed
+  elsewhere is picked up and the navigation converges.
 - **Error messages** come from `errorMessage(error, t)` (`src/api/error-message.ts`): the API
   error `code` maps to `errors.codes.<code>` (exhaustive over the generated `ErrorCode`, so a new
   backend code fails `tsc` until it is translated), 429 with `Retry-After` says how long to wait,
   responses without a known code fall back to their HTTP status, errors without a status read as
   network failures. The server's English `message` is never shown. `<ErrorAlert>` renders one.
 - **Route errors** use the router's `defaultErrorComponent` (translated, with retry and a link
-  home); a 403 renders "access denied" without a retry. Slow routes show
+  home); a missing permission (guard, or API code `forbidden`) renders "access denied" without a
+  retry; other 403s such as `csrf_failed` show their translated message. Slow routes show
   `defaultPendingComponent`. A route only sets its own `errorComponent` when it needs something
   more specific.
 

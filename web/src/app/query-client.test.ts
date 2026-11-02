@@ -63,3 +63,30 @@ describe('createQueryClient onUnauthorized hook', () => {
     await expect(client.query(failingQuery(new HttpError(401)))).rejects.toThrow('HTTP 401')
   })
 })
+
+describe('createQueryClient onForbidden hook', () => {
+  it('passes the failing query key, and undefined for mutations', async () => {
+    const onForbidden = vi.fn()
+    const client = createQueryClient({ onForbidden })
+
+    await expect(
+      client.query({
+        queryKey: ['settings'],
+        queryFn: () => Promise.reject(new HttpError(403)),
+        retry: false,
+      }),
+    ).rejects.toThrow()
+    const mutation = client.getMutationCache().build(client, {
+      mutationFn: () => Promise.reject(new HttpError(403)),
+    })
+    await expect(mutation.execute(undefined)).rejects.toThrow()
+
+    expect(onForbidden.mock.calls).toEqual([[['settings']], [undefined]])
+  })
+})
+
+describe('shouldRetryQuery for statuses below 400', () => {
+  it('does not retry a 2xx that failed to parse', () => {
+    expect(shouldRetryQuery(0, new HttpError(200))).toBe(false)
+  })
+})

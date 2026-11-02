@@ -4,13 +4,15 @@ import type { ErrorComponentProps } from '@tanstack/react-router'
 import { ShieldX, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { errorMessage } from '@/api/error-message'
+import { errorCodeOf, errorMessage } from '@/api/error-message'
 import { EmptyState } from '@/components/common/empty-state'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { HTTP_FORBIDDEN } from '@/features/auth/permissions'
 import { httpStatusOf } from '@/lib/http-error'
 
-/** A 403 (route guard or API): retrying cannot help, so only offer a way out. */
+/**
+ * Missing permission (route guard, or the API's `forbidden`): retrying cannot
+ * help, so only offer a way out. Other 403s (`csrf_failed`) get their message.
+ */
 function Forbidden() {
   const { t } = useTranslation()
   return (
@@ -40,7 +42,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   const router = useRouter()
   const queryErrorBoundary = useQueryErrorResetBoundary()
 
-  if (httpStatusOf(error) === HTTP_FORBIDDEN) return <Forbidden />
+  if (errorCodeOf(error) === 'forbidden') return <Forbidden />
 
   const retry = () => {
     queryErrorBoundary.reset()

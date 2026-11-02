@@ -36,7 +36,9 @@ async function toApiError(response: Response): Promise<ApiError> {
 function requestHeaders(init: RequestInit, method: string): Headers {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
-  if (init.body != null && !headers.has('Content-Type')) {
+  // Only JSON text bodies: FormData / Blob / URLSearchParams carry their own type
+  // (multipart boundary), which the browser sets.
+  if (typeof init.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
   if (needsCsrfHeader(method)) {
@@ -60,7 +62,13 @@ export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<
   })
   if (!response.ok) throw await toApiError(response)
   if (response.status === HTTP_NO_CONTENT) return undefined as T
-  return (await response.json()) as T
+  try {
+    return (await response.json()) as T
+  } catch {
+    // A success without the expected JSON (a proxy page, a truncated body) is a
+    // server fault with a status, not a network error: no retry, no "offline".
+    throw new ApiError(response.status, { message: 'response is not valid JSON' })
+  }
 }
 
 /**

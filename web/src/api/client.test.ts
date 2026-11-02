@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { shouldRetryQuery } from '@/app/query-client'
 import { errorEnvelope, mockApi } from '@/test/mock-api'
 
 import { ApiError } from './api-error'
@@ -108,6 +109,31 @@ describe('apiFetch', () => {
       code: undefined,
       message: 'HTTP 502',
     })
+  })
+
+  it('leaves the Content-Type of FormData and Blob bodies to the browser', async () => {
+    const spy = mockApi({ 'POST /admin/api/v1/import': { body: {} } })
+    const form = new FormData()
+    form.append('file', new Blob(['a,b']), 'users.csv')
+
+    await apiFetch('/admin/api/v1/import', { method: 'POST', body: form })
+    await apiFetch('/admin/api/v1/import', { method: 'POST', body: new Blob(['x']) })
+
+    expect(sentHeaders(spy, 0).has('Content-Type')).toBe(false)
+    expect(sentHeaders(spy, 1).has('Content-Type')).toBe(false)
+  })
+
+  it('reports a success without JSON as a typed error that is not retried', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('<html>portal</html>', { status: 200 }))),
+    )
+
+    const error = await apiFetch('/a').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 200, code: undefined })
+    expect(shouldRetryQuery(0, error)).toBe(false)
   })
 
   it('lets network failures through unchanged (no status)', async () => {
