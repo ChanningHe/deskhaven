@@ -13,6 +13,7 @@ pub mod app;
 pub mod check;
 pub mod fixture;
 pub mod mirror;
+pub mod requests;
 pub mod runner;
 pub mod seeds;
 pub mod shapes;

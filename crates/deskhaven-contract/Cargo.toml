@@ -27,6 +27,9 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 deskhaven-client-api = { workspace = true }
+# Flow tests inspect rows (login_events) and break state behind the services' back.
+deskhaven-db = { workspace = true }
+sea-orm = { workspace = true }
 
 [lints]
 workspace = true

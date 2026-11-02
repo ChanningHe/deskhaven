@@ -11,6 +11,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderName, HeaderValue, Method, Request, header};
+use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::{Change, PinSet};
 use deskhaven_core::clock::{SharedClock, SystemClock};
@@ -45,34 +46,57 @@ pub struct TestApp {
     _data_dir: TempDir,
 }
 
+/// How a [`TestApp`] differs from production; the default is production.
+#[derive(Default)]
+pub struct TestOptions {
+    /// Merged into the client API (test-only routes, same state and middleware).
+    pub routes: Router<Arc<AppState>>,
+    /// Users and sessions rebuilt around this hasher (e.g. one slot, to provoke
+    /// `Busy`). Keep a clone: clones share its concurrency limit.
+    pub hasher: Option<PasswordHasher>,
+    /// `security.trusted_proxies` (a peer inside without `X-Forwarded-For` is a
+    /// proxy-fallback client).
+    pub trusted_proxies: Vec<Cidr>,
+}
+
 impl TestApp {
     /// Production routes only.
     pub async fn start() -> anyhow::Result<Self> {
-        Self::start_with(Router::new()).await
+        Self::start_with_options(TestOptions::default()).await
     }
 
     /// Production routes plus `extra` (test-only routes; they get the same
     /// state and sit behind the same middleware).
     pub async fn start_with(extra: Router<Arc<AppState>>) -> anyhow::Result<Self> {
-        Self::build(extra, None).await
+        Self::start_with_options(TestOptions {
+            routes: extra,
+            ..TestOptions::default()
+        })
+        .await
     }
 
     /// Production routes, with the user and session services rebuilt around
-    /// `hasher` (e.g. one concurrency slot, to provoke `Busy`). Keep a clone
-    /// of `hasher`: clones share its concurrency limit.
+    /// `hasher`.
     pub async fn start_with_hasher(hasher: PasswordHasher) -> anyhow::Result<Self> {
-        Self::build(Router::new(), Some(hasher)).await
+        Self::start_with_options(TestOptions {
+            hasher: Some(hasher),
+            ..TestOptions::default()
+        })
+        .await
     }
 
-    async fn build(
-        extra: Router<Arc<AppState>>,
-        hasher: Option<PasswordHasher>,
-    ) -> anyhow::Result<Self> {
+    pub async fn start_with_options(options: TestOptions) -> anyhow::Result<Self> {
+        let TestOptions {
+            routes: extra,
+            hasher,
+            trusted_proxies,
+        } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
-        let config = Bootstrap {
+        let mut config = Bootstrap {
             data_dir: data_dir.path().to_path_buf(),
             ..Bootstrap::default()
         };
+        config.security.trusted_proxies = trusted_proxies;
         let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&TEST_MASTER_KEY)));
         let base = deskhaven::startup::open_state(
             &config,
