@@ -1,4 +1,5 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
+use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
 use crate::log_limit::LogLimit;
@@ -237,6 +238,8 @@ pub(crate) struct RendezvousServer {
     tcp_punch: Arc<Mutex<HashMap<SocketAddr, Sink>>>,
     // deskhaven (M1-08): peers registered over TCP / websocket, by id.
     stream_peers: Arc<Mutex<HashMap<String, StreamPeerTx>>>,
+    // deskhaven (M1-08): per-connection addresses of websocket clients behind a proxy.
+    ws_addrs: ClaimedAddrs,
     pm: PeerMap,
     tx: Sender,
     // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
@@ -396,6 +399,7 @@ impl RendezvousServer {
         let rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             stream_peers: Default::default(),
+            ws_addrs: Default::default(),
             pm,
             tx,
             relay_servers: Default::default(),
@@ -1399,6 +1403,8 @@ impl RendezvousServer {
         let first_frame = TokioInstant::now() + FIRST_FRAME_TIMEOUT;
         let mut sink;
         let mut reader;
+        // deskhaven (M1-08): held until the connection ends (websocket behind a proxy).
+        let mut _claim: Option<ClaimedAddr> = None;
         if ws {
             use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
             let callback = |req: &Request, response: Response| {
@@ -1431,6 +1437,16 @@ impl RendezvousServer {
                 Some(ws_config()),
             );
             let (a, b) = timeout_at(first_frame, handshake).await??.split();
+            // deskhaven (M1-08): port 0 means the IP came from a proxy header; every client
+            // behind that proxy IP had the same `ip:0` and they overwrote each other in
+            // `tcp_punch` / as registered peers. Each connection holds its own port instead.
+            if addr.port() == 0 {
+                let Some(claim) = self.ws_addrs.claim(addr.ip()) else {
+                    bail!("no free websocket address for {}", addr.ip());
+                };
+                addr = claim.addr();
+                _claim = Some(claim);
+            }
             sink = Some(Sink::Ws(a));
             reader = Reader::Ws(b);
         } else {

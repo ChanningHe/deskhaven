@@ -10,6 +10,8 @@
 //! upstream for now; remove an entry as soon as the code no longer needs it. Non-vendored
 //! modules get the full workspace lints.
 
+mod claimed_addr;
+
 // Vendored upstream code; clean up incrementally.
 #[allow(
     clippy::unwrap_used,

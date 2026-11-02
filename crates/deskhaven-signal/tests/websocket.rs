@@ -9,10 +9,10 @@
 
 mod support;
 
-use hbb_common::tokio;
-use std::net::{IpAddr, SocketAddr};
+use hbb_common::{rendezvous_proto::register_pk_response::Result::OK, tokio};
+use std::net::IpAddr;
 use support::{
-    Conn, Rendezvous, TestServer, WsClient, decode_addr, expect_msg, next_client_ip,
+    Conn, PeerKeys, Rendezvous, TestServer, WsClient, decode_addr, expect_msg, next_client_ip,
     punch_hole_sent, rv,
 };
 
@@ -63,19 +63,20 @@ async fn websocket_punch_hole_round_trip_never_fetches_local_addr() {
 
 /// Where the server's idea of a websocket client's address comes from.
 enum Expect {
-    /// `<ip>:0` taken from a proxy header.
+    /// The IP taken from a proxy header, with a port of the server's choosing.
     Claimed(&'static str),
     /// The real TCP peer address (header absent or unparsable).
     Real,
 }
 
-/// rs:1196-1215: `X-Real-IP`, else `X-Forwarded-For`, is trusted as-is and replaces the client
-/// address with `<ip>:0` (`[<ip>]:0` for IPv6), so TestNat reports port 0 and the PunchHole
-/// carries the claimed address. `X-Real-IP` wins when both are present; a value that does not
-/// parse as a single IP (e.g. the multi-hop form `a, b`) silently falls back to the real
-/// address. M1-08 gives websocket connections a unique key instead of `ip:0`.
+/// Changed in M1-08. rs:1196-1215: `X-Real-IP`, else `X-Forwarded-For`, is trusted as-is and
+/// replaces the client's IP (`X-Real-IP` wins when both are present; a value that does not parse
+/// as a single IP, e.g. the multi-hop form `a, b`, silently falls back to the real address).
+/// Upstream also set the port to 0, so every connection claiming one IP had the same address;
+/// now each connection gets its own non-zero port, which TestNat reports and the PunchHole
+/// carries.
 #[tokio::test]
-async fn websocket_client_addr_is_proxy_header_ip_port_0_upstream_behavior_m1_08_changes_this() {
+async fn websocket_client_addr_takes_the_proxy_header_ip_with_a_unique_port() {
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
@@ -109,13 +110,6 @@ async fn websocket_client_addr_is_proxy_header_ip_port_0_upstream_behavior_m1_08
         let mut nat = WsClient::connect_from(next_client_ip(), server.ws_addr(), headers).await;
         let mut controller =
             WsClient::connect_from(next_client_ip(), server.ws_addr(), headers).await;
-        let (nat_addr, controller_addr) = match expect {
-            Expect::Claimed(ip) => {
-                let claimed = SocketAddr::new(ip.parse::<IpAddr>().unwrap(), 0);
-                (claimed, claimed)
-            }
-            Expect::Real => (nat.local_addr(), controller.local_addr()),
-        };
 
         // Act
         let port = nat.test_nat().await.port;
@@ -125,42 +119,89 @@ async fn websocket_client_addr_is_proxy_header_ip_port_0_upstream_behavior_m1_08
         let ph = expect_msg!(target.recv().await, PunchHole);
 
         // Assert
-        assert_eq!(port, i32::from(nat_addr.port()), "{headers:?}");
-        assert_eq!(decode_addr(&ph.socket_addr), controller_addr, "{headers:?}");
+        let seen = decode_addr(&ph.socket_addr);
+        match expect {
+            Expect::Claimed(ip) => {
+                let ip: IpAddr = ip.parse().unwrap();
+                assert_eq!(seen.ip(), ip, "{headers:?}");
+                assert_ne!(port, 0, "{headers:?}");
+                assert_ne!(seen.port(), 0, "{headers:?}");
+                assert_ne!(i32::from(seen.port()), port, "{headers:?}: shared port");
+            }
+            Expect::Real => {
+                assert_eq!(port, i32::from(nat.local_addr().port()), "{headers:?}");
+                assert_eq!(seen, controller.local_addr(), "{headers:?}");
+            }
+        }
     }
     server.stop().await;
 }
 
-/// rs:531-536 keys `tcp_punch` by the client address, which for websocket clients behind one
-/// proxy IP is the same `<ip>:0`: the second controller's sink replaces the first's, so the
-/// target's answer for the first goes to the second and the first never hears back. M1-08
-/// gives websocket connections a unique key.
+/// Changed in M1-08. rs:531-536 keys `tcp_punch` by the client address, which upstream gave as
+/// the same `<ip>:0` to every websocket client behind one proxy IP: the second controller's
+/// sink replaced the first's, so the target's answer for the first went to the second. With a
+/// port per connection each controller gets its own answer.
 #[tokio::test]
-async fn websocket_controllers_behind_one_proxy_ip_overwrite_each_other_upstream_behavior_m1_08_changes_this()
- {
+async fn websocket_controllers_behind_one_proxy_ip_get_their_own_answers() {
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let headers = [("X-Real-IP", "203.0.113.20")];
     let mut first = WsClient::connect_from(next_client_ip(), server.ws_addr(), &headers).await;
     let mut second = WsClient::connect_from(next_client_ip(), server.ws_addr(), &headers).await;
-
-    // Act: the first request is forwarded before the second is sent.
     first.punch_hole_request(server.punch_req(TARGET)).await;
     let ph_first = expect_msg!(target.recv().await, PunchHole);
     second.punch_hole_request(server.punch_req(TARGET)).await;
     let ph_second = expect_msg!(target.recv().await, PunchHole);
-    let mut target_tcp = server.tcp().await;
-    let sent = punch_hole_sent(&ph_first.socket_addr, TARGET, "");
-    target_tcp.send(&rv(|m| m.set_punch_hole_sent(sent))).await;
+
+    // Act: one answer per connection, as clients send them.
+    for ph in [&ph_first, &ph_second] {
+        let sent = punch_hole_sent(&ph.socket_addr, TARGET, "");
+        let mut target_tcp = server.tcp().await;
+        target_tcp.send(&rv(|m| m.set_punch_hole_sent(sent))).await;
+    }
 
     // Assert
-    assert_eq!(
+    assert_ne!(
         decode_addr(&ph_first.socket_addr),
-        decode_addr(&ph_second.socket_addr),
-        "both controllers look like the same address"
+        decode_addr(&ph_second.socket_addr)
     );
+    expect_msg!(first.recv().await, PunchHoleResponse);
     expect_msg!(second.recv().await, PunchHoleResponse);
     first.assert_silent().await;
+    second.assert_silent().await;
+    server.stop().await;
+}
+
+/// M1-08: two peers registered over websocket behind one proxy IP each get their own punch
+/// holes (registration over websocket and per-connection addresses together).
+#[tokio::test]
+async fn websocket_peers_behind_one_proxy_ip_each_get_their_punch_holes() {
+    // Arrange
+    let server = TestServer::start().await;
+    let headers = [("X-Real-IP", "203.0.113.30")];
+    let mut peers = Vec::new();
+    for id in ["ws-proxied-peer-1", "ws-proxied-peer-2"] {
+        let mut peer = WsClient::connect_from(next_client_ip(), server.ws_addr(), &headers).await;
+        assert_eq!(peer.register_pk(id, &PeerKeys::random()).await, OK);
+        peers.push((id, peer));
+    }
+
+    for (id, peer) in &mut peers {
+        // Act
+        let mut controller = server.tcp().await;
+        controller.punch_hole_request(server.punch_req(id)).await;
+
+        // Assert
+        let ph = expect_msg!(peer.recv().await, PunchHole);
+        assert_eq!(
+            decode_addr(&ph.socket_addr),
+            controller.local_addr(),
+            "{id}"
+        );
+    }
+    for (_, peer) in &mut peers {
+        peer.assert_silent().await;
+    }
     server.stop().await;
 }

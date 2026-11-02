@@ -427,3 +427,19 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
     `register_over_tcp_is_not_supported_upstream_behavior_m1_08_changes_this` is replaced by
     `tests/tcp_registration.rs`; the test clients now answer server heartbeats like RustDesk
     clients and gained stream `register_pk` / `register_peer` helpers.
+- 2026-11-02, M1-08, websocket connection keys (`rendezvous_server.rs` `handle_listener_inner`,
+  new deskhaven module `src/claimed_addr.rs`, not vendored, full workspace lints): a websocket
+  client whose IP comes from `X-Real-IP` / `X-Forwarded-For` (header handling unchanged, still
+  trusted as-is) got the address `<ip>:0` upstream (rs:1211), so every client behind one proxy
+  IP had the same key: in `tcp_punch` the second controller's sink replaced the first's and the
+  first controller's answer went to the second (and, since the TCP registration above, two
+  registered peers would share an address). Each such connection now holds `<ip>:<port>` from
+  `ClaimedAddrs` (per server): ports 1..=65535 in turn, unique among the live connections
+  claiming that IP, released when the connection ends; if all 65535 are held the connection is
+  refused. The IP is unchanged (LAN check, relay choice, logs); TestNatResponse over such a
+  connection now reports the claimed port instead of 0 (clients skip the NAT test in websocket
+  mode). Clients without a header keep their real address. Baseline tests
+  `websocket_client_addr_is_proxy_header_ip_port_0_upstream_behavior_m1_08_changes_this` and
+  `websocket_controllers_behind_one_proxy_ip_overwrite_each_other_upstream_behavior_m1_08_changes_this`
+  became `websocket_client_addr_takes_the_proxy_header_ip_with_a_unique_port` and
+  `websocket_controllers_behind_one_proxy_ip_get_their_own_answers`.
