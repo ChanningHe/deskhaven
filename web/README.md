@@ -1,7 +1,28 @@
 # deskhaven web console
 
-React + TypeScript + Vite single-page app. It is built to `web/dist` and will be embedded into the
-deskhaven binary.
+React + TypeScript + Vite single-page app. It is built to `web/dist` and embedded into the
+deskhaven binary by `crates/deskhaven-web` (rust-embed).
+
+## Embedding and release builds
+
+```sh
+nix develop -c cargo run -p xtask -- dist   # pnpm install + build, then cargo build --release -p deskhaven
+```
+
+- Release builds embed `web/dist`; debug builds read it from disk, so `pnpm -C web build` is enough
+  during development (or use `pnpm -C web dev` with the Vite proxy).
+- `cargo build` works without `web/dist`: the SPA routes then answer 503 with a "web console not
+  built" page. After building the frontend by hand, use `xtask dist` (it drops the stale embed)
+  rather than a bare `cargo build --release`.
+- The server sends a strict Content-Security-Policy (`deskhaven_web::CSP`): scripts and styles must
+  be external files from the same origin. No inline `<script>`/`<style>`, no `style=""` attributes,
+  no `eval`, no `data:` images. Setting styles through the DOM (`el.style.x`, which is what React's
+  `style` prop does) is fine. A change to `index.html` or the build config that breaks this is caught
+  by `crates/deskhaven-web/tests/csp.rs`.
+- Paths under `/api` and `/admin/api` are never answered with `index.html`; a missing file with an
+  extension is a 404.
+- Playwright smoke tests (open the home page against a release binary) are deferred until
+  `deskhaven serve` serves the console (M0-09).
 
 ## Commands
 
