@@ -11,6 +11,7 @@ use deskhaven_admin_api::{AdminRoutes, MAX_CSV_BYTES, MAX_IMPORT_ROWS};
 use deskhaven_core::pagination::PageRequest;
 use deskhaven_core::users::{Password, Role, UserQuery};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
+use sea_orm::ConnectionTrait;
 use serde_json::{Value, json};
 
 const IMPORT: &str = "/admin/api/v1/users/import";
@@ -174,6 +175,47 @@ async fn malformed_files_and_limits_are_refused_as_a_whole() {
         );
         let fields: &Value = &reply.body["error"]["details"]["fields"];
         assert!(fields.get("csv").is_some());
+        assert_eq!(user_count(&h).await, 1);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_file_of_the_maximum_row_count_imports() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        let admin = h.console("adm", Role::Admin).await;
+        let mut csv = String::from("username\n");
+        for i in 0..MAX_IMPORT_ROWS {
+            csv.push_str(&format!("bulk{i}\n"));
+        }
+        let reply = import(&h, &admin, &csv).await;
+        assert_eq!(reply.status, 200, "{}", reply.body);
+        let created = reply.body["created"].as_array().unwrap();
+        assert_eq!(created.len(), MAX_IMPORT_ROWS);
+        assert_eq!(created[7]["user"]["username"], "bulk7");
+        let password = Password::new(created[7]["temporary_password"].as_str().unwrap());
+        let login = h.state.users.authenticate_local("bulk7", &password).await;
+        assert!(login.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_database_failure_during_import_is_a_server_error_not_a_bad_row() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        let admin = h.console("adm", Role::Admin).await;
+        // The accounts insert fine; their audit rows cannot be written.
+        h.state
+            .db
+            .execute_unprepared("ALTER TABLE console_audit RENAME TO console_audit_gone")
+            .await
+            .unwrap();
+
+        let reply = import(&h, &admin, "username\nann\nbob\n").await;
+        assert_eq!((reply.status.as_u16(), reply.code()), (500, "internal"));
+        assert!(reply.body["error"]["details"]["rows"].is_null());
         assert_eq!(user_count(&h).await, 1);
     })
     .await;

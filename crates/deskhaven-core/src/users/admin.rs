@@ -9,6 +9,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, IntoActiveModel, QueryFilter,
     QuerySelect,
 };
+use tokio::task::JoinSet;
 use zeroize::Zeroizing;
 
 use super::events::UserChange;
@@ -16,8 +17,10 @@ use super::normalize::{self, Email};
 use super::write::{
     ValidNew, conflict, ensure_not_last_owner, lock_active_owners, lock_user, split_email,
 };
-use super::{Password, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserService};
-use crate::console_audit::TxGuard;
+use super::{
+    Credential, Password, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserService,
+};
+use crate::console_audit::{GuardError, TxGuard};
 use crate::crypto::fill_random;
 
 /// Most accounts [`UserService::create_batch`] takes at once.
@@ -192,23 +195,29 @@ impl UserService {
         if !errors.is_empty() {
             return Err(BatchError::Rows(errors));
         }
-        let mut hashes = Vec::with_capacity(valid.len());
-        for row in &valid {
-            hashes.push(self.inner.hash_valid(row).await?);
-        }
+        let hashes = self.hash_batch(&valid).await?;
         let rows: Vec<_> = valid.into_iter().zip(hashes).zip(guards).collect();
         let inner = std::sync::Arc::clone(&self.inner);
         let task = async move {
             let tx = begin_write(&inner.db).await.map_err(UserError::from)?;
             let mut created = Vec::with_capacity(rows.len());
             for (index, ((valid, hash), guard)) in rows.into_iter().enumerate() {
+                // A row's own problem (taken meanwhile, refused) rejects the batch with that
+                // row; anything else (database, audit insert) is a failure of the request.
                 let row_error = |error| BatchError::Rows(vec![RowError { index, error }]);
                 let user: User = match inner.new_row(valid, hash).insert(&tx).await {
                     Ok(model) => model.into(),
-                    Err(err) => return Err(row_error(conflict(err))),
+                    Err(err) => match conflict(err) {
+                        conflict @ UserError::Conflict { .. } => return Err(row_error(conflict)),
+                        other => return Err(BatchError::Failed(other)),
+                    },
                 };
-                if let Err(err) = guard.check(&tx, None, Some(&user)).await {
-                    return Err(row_error(err.into()));
+                match guard.check(&tx, None, Some(&user)).await {
+                    Ok(()) => {}
+                    Err(GuardError::Refused(refused)) => {
+                        return Err(row_error(UserError::Refused(refused)));
+                    }
+                    Err(GuardError::Database(db)) => return Err(BatchError::Failed(db.into())),
                 }
                 created.push(user);
             }
@@ -218,6 +227,36 @@ impl UserService {
         tokio::spawn(task)
             .await
             .map_err(|_| BatchError::Failed(UserError::Aborted))?
+    }
+
+    /// The hashes of `rows`' local passwords, in order (`None` for directory accounts),
+    /// computed concurrently: one fewer at a time than the hasher has slots, so a login
+    /// never waits behind a whole import, only behind one computation.
+    async fn hash_batch(&self, rows: &[ValidNew]) -> Result<Vec<Option<String>>, UserError> {
+        let width = self.inner.hasher.max_concurrent().saturating_sub(1).max(1);
+        let passwords = rows.iter().map(|row| match &row.new.credential {
+            Credential::Local { password } => Some(password.clone()),
+            Credential::Ldap | Credential::Oidc => None,
+        });
+        let mut pending = passwords.enumerate();
+        let mut hashes = vec![None; rows.len()];
+        let mut running = JoinSet::new();
+        loop {
+            while running.len() < width {
+                let Some((index, password)) = pending.next() else {
+                    break;
+                };
+                let Some(password) = password else { continue };
+                let hasher = self.inner.hasher.clone();
+                running.spawn(async move { (index, hasher.hash(&password).await) });
+            }
+            let Some(done) = running.join_next().await else {
+                break;
+            };
+            let (index, hash) = done.map_err(|_| UserError::Aborted)?;
+            hashes[index] = Some(hash?);
+        }
+        Ok(hashes)
     }
 
     /// What [`create_batch`](Self::create_batch) would reject in `rows` (sorted by index),

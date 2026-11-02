@@ -21,9 +21,9 @@ use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::tfa::TfaError;
 use deskhaven_core::users::{
-    AccountEdit, AuthSource, BatchError, Credential, HashParams, NewUser, Password, PasswordHasher,
-    ProfileUpdate, Role, Status, TEMPORARY_PASSWORD_LEN, User, UserError, UserQuery, UserSort,
-    UserSortField, check_password_policy,
+    AccountEdit, AuthSource, BatchError, Credential, HashLimits, HashParams, NewUser, Password,
+    PasswordHasher, ProfileUpdate, Role, Status, TEMPORARY_PASSWORD_LEN, User, UserError,
+    UserQuery, UserService, UserSort, UserSortField, check_password_policy,
 };
 use deskhaven_db::entity::console_audit;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
@@ -321,6 +321,46 @@ async fn batch_creation_creates_all_rows_with_one_audit_row_each() {
         let names: Vec<_> = created.iter().map(|u| u.username.as_str()).collect();
         assert_eq!(names, ["a1", "a2", "a3"]);
         assert_eq!(audit_rows(db).await.len(), 3);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn batch_creation_hashes_concurrently_and_keeps_each_rows_password() {
+    each_migrated_backend(async |db: &TestDb| {
+        let state = state(db).await;
+        // Three slots: two hashes at a time, so eight rows refill the window repeatedly.
+        let limits = HashLimits {
+            max_concurrent: 3,
+            acquire_timeout: std::time::Duration::from_secs(5),
+        };
+        let hasher = PasswordHasher::with_limits(FAST, limits).unwrap();
+        let users = UserService::new(db.conn.clone(), state.settings.clone(), hasher);
+        let password = |name: &str| Password::new(format!("pw-{name}-Strong-9"));
+        let names = ["b1", "b2", "b3", "dir", "b4", "b5", "b6", "b7"];
+        let rows = names
+            .map(|name| {
+                let credential = if name == "dir" {
+                    Credential::Ldap
+                } else {
+                    Credential::Local {
+                        password: password(name),
+                    }
+                };
+                (NewUser::new(name, credential), recording(&state, "import"))
+            })
+            .into_iter()
+            .collect();
+        let created = users.create_batch(rows).await.unwrap();
+        assert_eq!(created.len(), names.len());
+        for name in names.iter().filter(|n| **n != "dir") {
+            let own = users.authenticate_local(name, &password(name)).await;
+            assert!(own.is_ok(), "{name}");
+            let other = users.authenticate_local(name, &password("b1x")).await;
+            assert!(other.is_err(), "{name}");
+        }
+        let dir = users.get_by_username("dir").await.unwrap();
+        assert_eq!(dir.auth_source, AuthSource::Ldap);
     })
     .await;
 }

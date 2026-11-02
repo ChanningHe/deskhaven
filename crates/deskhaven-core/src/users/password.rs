@@ -137,6 +137,7 @@ pub enum PasswordError {
 pub struct PasswordHasher {
     params: Arc<Params>,
     permits: Arc<Semaphore>,
+    max_concurrent: usize,
     acquire_timeout: Duration,
 }
 
@@ -172,6 +173,7 @@ impl PasswordHasher {
         Self {
             params: Arc::new(params),
             permits: Arc::new(Semaphore::new(limits.max_concurrent)),
+            max_concurrent: limits.max_concurrent,
             acquire_timeout: limits.acquire_timeout,
         }
     }
@@ -180,6 +182,12 @@ impl PasswordHasher {
     /// tests that need to know a computation is running.
     pub fn available_slots(&self) -> usize {
         self.permits.available_permits()
+    }
+
+    /// Computation slots in total ([`HashLimits::max_concurrent`]): how many computations a
+    /// batch may usefully run at once.
+    pub fn max_concurrent(&self) -> usize {
+        self.max_concurrent
     }
 
     /// A new PHC string for `password`, with a fresh random salt.

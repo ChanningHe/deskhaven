@@ -35,8 +35,10 @@ use crate::{AdminApiError, AuditCtx, Audited, ConsoleUser, ErrorCode, ValidJson}
 
 /// Largest accepted CSV text (bytes).
 pub const MAX_CSV_BYTES: usize = 64 * 1024;
-/// Most accounts one import creates.
-pub const MAX_IMPORT_ROWS: usize = 200;
+/// Most accounts one import creates. Each needs an Argon2id hash (default parameters:
+/// ~19 ms on one core of a 2021 server CPU, so 100 rows ~2 s single-threaded); 100 keeps an
+/// import well inside the request deadline on a CPU ten times slower with a single slot.
+pub const MAX_IMPORT_ROWS: usize = 100;
 const COLUMNS: [&str; 5] = ["username", "display_name", "email", "role", "note"];
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -136,7 +138,7 @@ pub async fn import_users(
             .collect()
     };
     let problems = state.users.check_batch(news(&candidates)).await?;
-    errors.extend(problems.into_iter().map(|e| row_error(&lines, e)));
+    errors.extend(row_errors(&lines, problems)?);
     if !errors.is_empty() {
         return Ok(rejected(errors));
     }
@@ -149,11 +151,7 @@ pub async fn import_users(
         .collect();
     let created = match state.users.create_batch(batch).await {
         Ok(created) => created,
-        Err(BatchError::Rows(errs)) => {
-            return Ok(rejected(
-                errs.into_iter().map(|e| row_error(&lines, e)).collect(),
-            ));
-        }
+        Err(BatchError::Rows(errs)) => return Ok(rejected(row_errors(&lines, errs)?)),
         Err(BatchError::Failed(err)) => return Err(err.into()),
     };
     let created = created
@@ -286,14 +284,21 @@ fn admin_checks(acting: &Acting, rows: &[ParsedRow]) -> (Vec<ImportRowError>, Ve
 }
 
 /// A core row problem, by CSV line.
-fn row_error(lines: &[usize], err: RowError) -> ImportRowError {
+/// A row's own problem as a report line; anything else (the actor no longer an admin, a
+/// database failure) fails the whole request with its own error, not as an `invalid` row.
+fn row_error(lines: &[usize], err: RowError) -> Result<ImportRowError, AdminApiError> {
     let line = lines.get(err.index).copied().unwrap_or(0);
-    match err.error {
-        UserError::Invalid { field, .. } => ImportRowError::new(line, Some(field), "invalid"),
-        UserError::Conflict { field } => ImportRowError::new(line, Some(field), "taken"),
-        UserError::Refused(_) => ImportRowError::new(line, Some("role"), OWNER_REQUIRED),
-        _ => ImportRowError::new(line, None, "invalid"),
-    }
+    let (field, code) = match err.error {
+        UserError::Invalid { field, .. } => (field, "invalid"),
+        UserError::Conflict { field } => (field, "taken"),
+        UserError::Refused(r) if r.code == OWNER_REQUIRED => ("role", OWNER_REQUIRED),
+        other => return Err(other.into()),
+    };
+    Ok(ImportRowError::new(line, Some(field), code))
+}
+
+fn row_errors(lines: &[usize], errs: Vec<RowError>) -> Result<Vec<ImportRowError>, AdminApiError> {
+    errs.into_iter().map(|e| row_error(lines, e)).collect()
 }
 
 fn rejected(mut rows: Vec<ImportRowError>) -> Response {
