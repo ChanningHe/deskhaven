@@ -6,6 +6,9 @@
 //!   change, so "is or becomes an owner" covers promotion, demotion and every other action.
 //! - Nobody can take away the last active owner (core: `UserError::LastOwner`).
 //! - Nobody deletes their own account (checked by the handler: the ids are known up front).
+//! - The rules use the actor's role as committed when the write runs, not the session's:
+//!   [`AuditCtx::admin_guard`] re-reads the acting account in the transaction. The
+//!   handlers' early checks with the session role only save work.
 //!
 //! Audit snapshots carry no secret: the account view has none, and a password reset is
 //! recorded as a `password` member whose value the core log masks anyway.
@@ -50,23 +53,30 @@ impl Acting {
         action: &'static str,
         extra: Option<Value>,
     ) -> TxGuard<User> {
-        let (role, ctx) = (self.role, self.ctx.clone());
-        TxGuard::new(log, move |before: Option<&User>, after: Option<&User>| {
-            check_target(role, before, after)?;
-            let id = after.or(before).map_or(0, |u| u.id);
-            let mut audit = Audit::new(action).target("user", id);
-            if let Some(before) = before {
-                audit = audit.before(&UserSnapshot::from(before));
-            }
-            if let Some(after) = after {
-                audit = audit.after(&with_extra(UserSnapshot::from(after), extra));
-            }
-            Ok(ctx.entry(audit))
-        })
+        let ctx = self.ctx.clone();
+        self.ctx.admin_guard(
+            log,
+            move |role, before: Option<&User>, after: Option<&User>| {
+                check_target(role, before, after)?;
+                let id = after.or(before).map_or(0, |u| u.id);
+                let mut audit = Audit::new(action).target("user", id);
+                if let Some(before) = before {
+                    audit = audit.before(&UserSnapshot::from(before));
+                }
+                if let Some(after) = after {
+                    audit = audit.after(&with_extra(UserSnapshot::from(after), extra));
+                }
+                Ok(ctx.entry(audit))
+            },
+        )
     }
 }
 
-fn check_target(actor: Role, before: Option<&User>, after: Option<&User>) -> Result<(), Refused> {
+pub(crate) fn check_target(
+    actor: Role,
+    before: Option<&User>,
+    after: Option<&User>,
+) -> Result<(), Refused> {
     if actor == Role::Owner {
         return Ok(());
     }

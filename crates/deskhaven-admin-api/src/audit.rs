@@ -30,14 +30,18 @@ use std::sync::Arc;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::response::{IntoResponseParts, ResponseParts};
-use deskhaven_core::console_audit::{Actor, NewConsoleAudit, redact};
+use deskhaven_core::console_audit::{
+    Actor, ConsoleAuditLog, NewConsoleAudit, Refused, TxGuard, redact,
+};
 use deskhaven_core::state::AppState;
+use deskhaven_core::users::Role;
 use deskhaven_http::X_REQUEST_ID;
 use serde::Serialize;
 use serde_json::Value;
 use tracing::Instrument;
 
 use crate::AdminApiError;
+use crate::domain_error::FORBIDDEN;
 use crate::session::{ConsoleUser, client_addr};
 
 /// What an operation changed (or revealed). Every part is optional.
@@ -135,6 +139,28 @@ impl AuditCtx {
     /// The row for `audit`, attributed to this request (an actor set on `audit` wins).
     pub fn entry(&self, audit: Audit) -> NewConsoleAudit {
         entry(audit, self.actor, self.ip, "")
+    }
+
+    /// The [`TxGuard`] of an administrator's write. In the write transaction it re-reads
+    /// this request's account and refuses one that is gone, disabled or no longer an admin
+    /// or owner (the session's role may be stale by then); `decide` applies the
+    /// operation's own rules with the committed role and returns the audit row.
+    pub(crate) fn admin_guard<T: 'static>(
+        &self,
+        log: &ConsoleAuditLog,
+        decide: impl FnOnce(Role, Option<&T>, Option<&T>) -> Result<NewConsoleAudit, Refused>
+        + Send
+        + 'static,
+    ) -> TxGuard<T> {
+        let Actor::User(actor_id) = self.actor else {
+            return TxGuard::new(log, |_, _| Err(Refused::new(FORBIDDEN)));
+        };
+        TxGuard::for_account(log, actor_id, move |role, before, after| {
+            if role == Role::User {
+                return Err(Refused::new(FORBIDDEN));
+            }
+            decide(role, before, after)
+        })
     }
 }
 

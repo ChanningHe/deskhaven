@@ -10,7 +10,7 @@ use std::sync::Arc;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::auth::limiter::{Unlocked, unlock_guarded};
 use deskhaven_core::clock::SystemClock;
-use deskhaven_core::console_audit::{Actor, NewConsoleAudit, Refused, TxGuard};
+use deskhaven_core::console_audit::{ACTOR_INACTIVE, Actor, NewConsoleAudit, Refused, TxGuard};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::groups::{
     GroupError, GroupQuery, GroupSort, GroupSortField, GroupUpdate, Membership, NewGroup,
@@ -550,6 +550,85 @@ async fn guarded_2fa_reset_session_revocation_and_unlock() {
         assert_eq!(actions, ["2fa", "revoke", "unlock"]);
         let count = console_audit::Entity::find().count(&db.conn).await.unwrap();
         assert_eq!(count, 3);
+    })
+    .await;
+}
+
+/// Allows admins and owners (the console's rule), recording `action` as `actor_id`.
+fn as_admin<T: 'static>(state: &AppState, actor_id: i64, action: &str) -> TxGuard<T> {
+    let action = action.to_owned();
+    TxGuard::for_account(&state.console_audit, actor_id, move |role, _, _| {
+        if role == Role::User {
+            return Err(Refused::new("forbidden"));
+        }
+        Ok(NewConsoleAudit {
+            actor: Actor::User(actor_id),
+            action,
+            target_type: "test".to_owned(),
+            target_id: String::new(),
+            before: None,
+            after: None,
+            ip: None,
+        })
+    })
+}
+
+fn refused_code<T>(result: Result<T, UserError>) -> Option<&'static str> {
+    match result {
+        Err(UserError::Refused(r)) => Some(r.code),
+        _ => None,
+    }
+}
+
+fn rename(name: &str) -> AccountEdit {
+    AccountEdit {
+        profile: ProfileUpdate {
+            display_name: Some(name.to_owned()),
+            ..ProfileUpdate::default()
+        },
+        ..AccountEdit::default()
+    }
+}
+
+#[tokio::test]
+async fn account_guards_use_the_actors_committed_role_and_status() {
+    each_migrated_backend(async |db: &TestDb| {
+        let state = state(db).await;
+        let _owner = user(&state, "owner", Role::Owner).await;
+        let admin = user(&state, "admin", Role::Admin).await;
+        let bob = user(&state, "bob", Role::User).await;
+
+        // Still an admin: allowed and recorded.
+        let guard = as_admin(&state, admin.id, "edit");
+        state
+            .users
+            .edit(bob.id, rename("Bob 1"), guard)
+            .await
+            .unwrap();
+        assert_eq!(audit_rows(db).await.len(), 1);
+
+        // Demoted after the request was authorized: the stale principal is refused.
+        state.users.set_role(admin.id, Role::User).await.unwrap();
+        let guard = as_admin(&state, admin.id, "edit");
+        let demoted = state.users.edit(bob.id, rename("Bob 2"), guard).await;
+        assert_eq!(refused_code(demoted), Some("forbidden"));
+
+        // Disabled (role kept) or deleted: refused before any rule runs.
+        state.users.set_role(admin.id, Role::Admin).await.unwrap();
+        state
+            .users
+            .set_status(admin.id, Status::Disabled)
+            .await
+            .unwrap();
+        let guard = as_admin(&state, admin.id, "edit");
+        let disabled = state.users.edit(bob.id, rename("Bob 3"), guard).await;
+        assert_eq!(refused_code(disabled), Some(ACTOR_INACTIVE));
+        let guard = as_admin(&state, 9_999, "delete");
+        let gone = state.users.delete_guarded(bob.id, guard).await;
+        assert_eq!(refused_code(gone), Some(ACTOR_INACTIVE));
+
+        assert_eq!(state.users.get(bob.id).await.unwrap().display_name, "Bob 1");
+        assert_eq!(audit_rows(db).await.len(), 1);
     })
     .await;
 }

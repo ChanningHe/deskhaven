@@ -11,7 +11,7 @@ use deskhaven_core::console_audit::{GuardError, TxGuard};
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{AccountEdit, Status, User};
 
-use super::rules::{Acting, extra};
+use super::rules::{Acting, check_target, extra};
 use super::view::{LockoutCleared, SessionsRevoked, TemporaryPassword, UserView};
 use crate::domain_error::refused;
 use crate::{AdminApiError, Audit, AuditCtx, Audited, ConsoleUser, ValidPath};
@@ -217,12 +217,19 @@ pub async fn unlock(
 }
 
 fn unlock_guard(state: &AppState, acting: &Acting, user: &User) -> TxGuard<Unlocked> {
-    let (ctx, id) = (acting.ctx.clone(), user.id);
-    TxGuard::new(&state.console_audit, move |_, after: Option<&Unlocked>| {
-        let cleared = after.map_or(0, |u| u.cleared);
-        let audit = Audit::new("user.unlock")
-            .target("user", id)
-            .after(&serde_json::json!({ "lockout_entries_cleared": cleared }));
-        Ok(ctx.entry(audit))
-    })
+    let (ctx, target) = (acting.ctx.clone(), user.clone());
+    let id = user.id;
+    acting.ctx.admin_guard(
+        &state.console_audit,
+        move |role, _, after: Option<&Unlocked>| {
+            // Lockout rows are keyed by username, not the account row: the owner rule runs
+            // against the account as read just before (unlocking grants nothing).
+            check_target(role, Some(&target), None)?;
+            let cleared = after.map_or(0, |u| u.cleared);
+            let audit = Audit::new("user.unlock")
+                .target("user", id)
+                .after(&serde_json::json!({ "lockout_entries_cleared": cleared }));
+            Ok(ctx.entry(audit))
+        },
+    )
 }

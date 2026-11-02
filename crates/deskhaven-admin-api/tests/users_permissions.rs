@@ -11,7 +11,10 @@ use axum::http::Method;
 use common::{Console, Harness, harness};
 use deskhaven_admin_api::AdminRoutes;
 use deskhaven_core::users::Role;
+use deskhaven_db::entity::user;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
+use sea_orm::sea_query::Expr;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::json;
 
 #[derive(Clone, Copy, Debug)]
@@ -172,6 +175,65 @@ async fn only_owners_create_owners_or_promote_to_owner() {
             )
             .await;
         assert_eq!(imported.status, 403);
+    })
+    .await;
+}
+
+/// Changes `user_id`'s role behind the services' back: no commit hook runs, so the
+/// session cache keeps the old role, as for a demotion racing an in-flight request.
+async fn demote_quietly(h: &Harness, user_id: i64, role: Role) {
+    user::Entity::update_many()
+        .col_expr(user::Column::Role, Expr::value(role))
+        .filter(user::Column::Id.eq(user_id))
+        .exec(&h.state.db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn writes_recheck_the_actors_role_as_committed_not_the_sessions() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        h.create_user("keeper", Role::Owner).await;
+        let admin = h.console("adm", Role::Admin).await;
+        let owner = h.console("own", Role::Owner).await;
+        let bob = h.create_user("bob", Role::User).await;
+        let boss = h.create_user("boss", Role::Owner).await;
+        let bob_path = format!("/admin/api/v1/users/{bob}");
+        let boss_path = format!("/admin/api/v1/users/{boss}");
+        assert_eq!(h.get(&bob_path, &admin).await.status, 200);
+        assert_eq!(h.get(&boss_path, &owner).await.status, 200);
+
+        demote_quietly(&h, admin.user_id, Role::User).await;
+        demote_quietly(&h, owner.user_id, Role::Admin).await;
+        // The gate still sees the cached session role ...
+        assert_eq!(h.get(&bob_path, &admin).await.status, 200);
+        // ... but every write re-reads the actor in its transaction.
+        let rename = json!({ "display_name": "changed" });
+        let patched = h
+            .write(Method::PATCH, &bob_path, &admin, rename.clone())
+            .await;
+        assert_eq!(
+            (patched.status.as_u16(), patched.code()),
+            (403, "forbidden")
+        );
+        let group = json!({ "name": "ops" });
+        let created = h
+            .write(Method::POST, "/admin/api/v1/groups", &admin, group)
+            .await;
+        assert_eq!(
+            (created.status.as_u16(), created.code()),
+            (403, "forbidden")
+        );
+        let owned = h.write(Method::PATCH, &boss_path, &owner, rename).await;
+        assert_eq!(
+            (owned.status.as_u16(), owned.code()),
+            (403, "owner_required")
+        );
+
+        assert_eq!(h.state.users.get(bob).await.unwrap().display_name, "bob");
+        assert_eq!(h.state.users.get(boss).await.unwrap().display_name, "boss");
+        assert!(h.audit_rows().await.is_empty());
     })
     .await;
 }

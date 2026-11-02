@@ -30,7 +30,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr};
 use serde_json::Value;
 
 pub use deskhaven_db::entity::console_audit::ActorKind;
-pub use guard::{GuardError, Refused, TxGuard};
+pub use guard::{ACTOR_INACTIVE, GuardError, Refused, TxGuard};
 pub use redact::{is_secret_key, redact};
 
 use crate::clock::SharedClock;
