@@ -10,7 +10,8 @@ use common::ab::{bare, env, is_not_found, page, peer};
 use deskhaven_core::addressbooks::{Actor, AddressBookError, Kind, PeerSecret};
 use deskhaven_db::entity::{address_book, address_book_peer};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::{Value, json};
 
 #[tokio::test]
@@ -126,7 +127,16 @@ async fn personal_books_keep_the_hash_and_never_a_password() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(row.hash.as_deref(), Some("h1"));
+        let sealed = row.hash_enc.clone().unwrap();
+        assert!(
+            sealed.starts_with("v1:") && !sealed.contains("h1"),
+            "{sealed}"
+        );
+        let context = format!("address_book_peers.hash_enc:{}:1", book.id);
+        assert_eq!(
+            env.crypto.open(&context, &sealed).unwrap().as_slice(),
+            b"h1"
+        );
         assert_eq!(row.password_enc, None);
         assert!(!row.extra.contains("plain-pw"), "{}", row.extra);
         let listed = env.books.peers(me, &book.guid, page(1, 10)).await.unwrap();
@@ -134,6 +144,46 @@ async fn personal_books_keep_the_hash_and_never_a_password() {
         let out = Value::Object(listed.items[0].to_json());
         assert_eq!(out["hash"], json!("h1"));
         assert!(out.get("password").is_none(), "{out}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn personal_hash_moved_to_another_row_does_not_open_and_empty_clears() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let alice = env.user("alice").await;
+        let book = env.books.personal(alice).await.unwrap();
+        let me = Actor::User(alice);
+        let sent = json!({ "id": "1", "hash": "salted-1" });
+        env.books
+            .add_peer(me, &book.guid, peer(sent))
+            .await
+            .unwrap();
+        env.books.add_peer(me, &book.guid, bare("2")).await.unwrap();
+        let find = async |id: &str| {
+            address_book_peer::Entity::find_by_id((book.id, id.to_owned()))
+                .one(&db.conn)
+                .await
+                .unwrap()
+                .unwrap()
+        };
+
+        // An attacker with database write access copies peer 1's sealed hash to peer 2.
+        let mut moved: address_book_peer::ActiveModel = find("2").await.into();
+        moved.hash_enc = Set(find("1").await.hash_enc);
+        moved.update(&db.conn).await.unwrap();
+        let listed = env.books.peers(me, &book.guid, page(1, 10)).await.unwrap();
+        let clear = json!({ "id": "1", "hash": "" });
+        env.books
+            .update_peer(me, &book.guid, peer(clear))
+            .await
+            .unwrap();
+
+        let secrets: Vec<_> = listed.items.iter().map(|p| p.secret.clone()).collect();
+        let hash = |h: &str| PeerSecret::Hash(h.to_owned());
+        assert_eq!(secrets, [hash("salted-1"), hash("")]);
+        assert_eq!(find("1").await.hash_enc, None);
     })
     .await;
 }

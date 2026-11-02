@@ -17,8 +17,9 @@ pub struct Model {
     pub note: String,
     /// JSON array of tag names.
     pub tags: String,
-    /// Personal books: password hash computed by the client.
-    pub hash: Option<String>,
+    /// Personal books: the client's salted password hash, encrypted. It is a login
+    /// credential (the client sends it as the password), hence sealed (migration 000025).
+    pub hash_enc: Option<String>,
     /// Shared books: encrypted password.
     pub password_enc: Option<String>,
     pub username: String,

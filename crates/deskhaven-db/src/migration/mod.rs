@@ -19,6 +19,7 @@ mod m20261102_000021_devices_foreign_keys;
 mod m20261102_000022_address_books;
 mod m20261102_000023_strategies;
 mod m20261102_000024_audit;
+mod m20261103_000025_address_book_peer_hash_enc;
 
 pub struct Migrator;
 
@@ -37,6 +38,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261102_000022_address_books::Migration),
             Box::new(m20261102_000023_strategies::Migration),
             Box::new(m20261102_000024_audit::Migration),
+            Box::new(m20261103_000025_address_book_peer_hash_enc::Migration),
         ]
     }
 }

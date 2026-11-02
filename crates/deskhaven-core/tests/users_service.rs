@@ -495,7 +495,7 @@ async fn insert_book(
         alias: Set(String::new()),
         note: Set(String::new()),
         tags: Set("[]".to_owned()),
-        hash: Set(None),
+        hash_enc: Set(None),
         password_enc: Set(Some("v1:k1:nonce:ct".to_owned())),
         username: Set(String::new()),
         hostname: Set(String::new()),

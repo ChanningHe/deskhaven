@@ -49,7 +49,7 @@ async fn shared_passwords_are_sealed_at_rest_and_never_store_a_hash() {
         let sealed = stored.password_enc.clone().unwrap();
         assert!(sealed.starts_with("v1:"), "{sealed}");
         assert!(!sealed.contains("s3cret-pw"));
-        assert_eq!(stored.hash, None);
+        assert_eq!(stored.hash_enc, None);
         assert!(!stored.extra.contains("client-hash"), "{}", stored.extra);
         let context = format!("address_book_peers.password_enc:{}:1", book.id);
         let opened = env.crypto.open(&context, &sealed).unwrap();

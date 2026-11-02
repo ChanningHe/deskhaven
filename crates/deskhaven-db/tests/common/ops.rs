@@ -137,7 +137,7 @@ pub fn peer_row(address_book_id: i64, rustdesk_id: &str) -> address_book_peer::A
         alias: Set("desk".to_owned()),
         note: Set(String::new()),
         tags: Set(r#"["office"]"#.to_owned()),
-        hash: Set(None),
+        hash_enc: Set(None),
         password_enc: Set(None),
         username: Set("root".to_owned()),
         hostname: Set("host".to_owned()),

@@ -129,6 +129,16 @@ async fn personal_add_then_read_keeps_the_hash_drops_the_password_and_echoes_ext
         .unwrap();
     assert!(rows.iter().all(|r| r.password_enc.is_none()));
     assert!(rows.iter().all(|r| !r.extra.contains("must-not-be-kept")));
+    // The hash is a login credential: sealed at rest, yet the client reads it back as sent.
+    let sealed = rows
+        .iter()
+        .find(|r| r.rustdesk_id == "444444444")
+        .and_then(|r| r.hash_enc.clone())
+        .unwrap();
+    assert!(
+        sealed.starts_with("v1:") && !sealed.contains("h-444"),
+        "{sealed}"
+    );
 }
 
 #[tokio::test]
@@ -155,7 +165,7 @@ async fn shared_passwords_round_trip_and_are_sealed_in_the_database() {
         "{sealed}"
     );
     assert!(!sealed.contains(SHARED_PASSWORD));
-    assert_eq!(row.hash, None);
+    assert_eq!(row.hash_enc, None);
 }
 
 #[tokio::test]

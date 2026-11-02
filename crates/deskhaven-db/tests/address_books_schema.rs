@@ -470,7 +470,7 @@ async fn peer_round_trips_with_json_and_credentials() {
             .await
             .unwrap();
         let row = address_book_peer::ActiveModel {
-            hash: sea_orm::Set(Some("client-hash".to_owned())),
+            hash_enc: sea_orm::Set(Some("v1:k1:nonce:hash-ct".to_owned())),
             force_always_relay: sea_orm::Set(true),
             extra: sea_orm::Set(r#"{"future-field":[1,2]}"#.to_owned()),
             ..peer_row(book.id, "123")
@@ -483,6 +483,20 @@ async fn peer_round_trips_with_json_and_credentials() {
             .await
             .unwrap();
         assert_eq!(found, Some(inserted), "{}", db.backend);
+    })
+    .await;
+}
+
+/// Migration 000025: the personal-book hash is a credential and lives sealed in `hash_enc`;
+/// the clear `hash` column is gone.
+#[tokio::test]
+async fn peer_hash_column_is_replaced_by_hash_enc() {
+    each_migrated_backend(async |db: &TestDb| {
+        let sealed = exec(&db.conn, "SELECT hash_enc FROM address_book_peers").await;
+        let clear = exec(&db.conn, "SELECT hash FROM address_book_peers").await;
+
+        assert!(sealed.is_ok(), "{}: {sealed:?}", db.backend);
+        assert!(clear.is_err(), "{}: hash still exists", db.backend);
     })
     .await;
 }

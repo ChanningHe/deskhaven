@@ -21,10 +21,31 @@ use crate::pagination::{Page, PageRequest};
 /// Ids deleted per statement (keeps far below SQLite's bound-parameter limit).
 const DELETE_CHUNK: usize = 500;
 
-/// AAD context of a shared peer password (06 §5): the book id has no `:`, so the rest is
-/// the peer id, whatever it contains.
-pub fn password_context(book_id: i64, rustdesk_id: &str) -> String {
-    format!("address_book_peers.password_enc:{book_id}:{rustdesk_id}")
+/// The sealed secret columns of a peer: the personal-book hash (a login credential: the
+/// client sends it as the password) and the shared-book password.
+#[derive(Clone, Copy)]
+enum Secret {
+    Hash,
+    Password,
+}
+
+impl Secret {
+    const fn column(self) -> &'static str {
+        match self {
+            Self::Hash => "hash_enc",
+            Self::Password => "password_enc",
+        }
+    }
+}
+
+/// AAD context of a sealed peer secret (06 §5): `address_book_peers.<column>:<book
+/// id>:<rustdesk id>`. The book id has no `:`, so the rest is the peer id, whatever it
+/// contains.
+fn secret_context(secret: Secret, book_id: i64, rustdesk_id: &str) -> String {
+    format!(
+        "address_book_peers.{}:{book_id}:{rustdesk_id}",
+        secret.column()
+    )
 }
 
 impl AddressBookService {
@@ -133,9 +154,15 @@ impl AddressBookService {
         patch: PeerPatch,
         now: TimestampMs,
     ) -> Result<address_book_peer::ActiveModel, AddressBookError> {
-        let (hash, password_enc) = match book.kind {
-            Kind::Personal => (non_empty(patch.hash), None),
-            Kind::Shared => (None, self.seal(book.id, &patch.id, patch.password)?),
+        let (hash_enc, password_enc) = match book.kind {
+            Kind::Personal => (
+                self.seal(Secret::Hash, book.id, &patch.id, patch.hash)?,
+                None,
+            ),
+            Kind::Shared => {
+                let sealed = self.seal(Secret::Password, book.id, &patch.id, patch.password)?;
+                (None, sealed)
+            }
         };
         Ok(address_book_peer::ActiveModel {
             address_book_id: Set(book.id),
@@ -143,7 +170,7 @@ impl AddressBookService {
             alias: Set(patch.alias.unwrap_or_default()),
             note: Set(patch.note.unwrap_or_default()),
             tags: Set(tags_json(patch.tags.unwrap_or_default())),
-            hash: Set(hash),
+            hash_enc: Set(hash_enc),
             password_enc: Set(password_enc),
             username: Set(patch.username.unwrap_or_default()),
             hostname: Set(patch.hostname.unwrap_or_default()),
@@ -189,9 +216,12 @@ impl AddressBookService {
             row.force_always_relay = Set(relay);
         }
         match book.kind {
-            Kind::Personal if patch.hash.is_some() => row.hash = Set(non_empty(patch.hash)),
+            Kind::Personal if patch.hash.is_some() => {
+                row.hash_enc = Set(self.seal(Secret::Hash, book.id, &patch.id, patch.hash)?);
+            }
             Kind::Shared if patch.password.is_some() => {
-                row.password_enc = Set(self.seal(book.id, &patch.id, patch.password)?);
+                let sealed = self.seal(Secret::Password, book.id, &patch.id, patch.password)?;
+                row.password_enc = Set(sealed);
             }
             _ => {}
         }
@@ -200,19 +230,20 @@ impl AddressBookService {
         Ok(row)
     }
 
-    /// The sealed password, or `None` for no or an empty password.
+    /// The sealed secret, or `None` for no or an empty one.
     fn seal(
         &self,
+        secret: Secret,
         book_id: i64,
         rustdesk_id: &str,
-        password: Option<Zeroizing<String>>,
+        plain: Option<impl AsRef<str>>,
     ) -> Result<Option<String>, AddressBookError> {
-        let Some(password) = password.filter(|p| !p.is_empty()) else {
+        let Some(plain) = plain.filter(|p| !p.as_ref().is_empty()) else {
             return Ok(None);
         };
-        let context = password_context(book_id, rustdesk_id);
+        let context = secret_context(secret, book_id, rustdesk_id);
         self.crypto
-            .seal(&context, password.as_bytes())
+            .seal(&context, plain.as_ref().as_bytes())
             .map(Some)
             .map_err(AddressBookError::Crypto)
     }
@@ -222,8 +253,14 @@ impl AddressBookService {
     /// the whole book.
     fn to_peer(&self, book: &address_book::Model, row: address_book_peer::Model) -> Peer {
         let secret = match book.kind {
-            Kind::Personal => PeerSecret::Hash(row.hash.clone().unwrap_or_default()),
-            Kind::Shared => PeerSecret::Password(self.open(&row)),
+            Kind::Personal => {
+                let hash = self.open(Secret::Hash, &row, row.hash_enc.as_deref());
+                PeerSecret::Hash(hash.as_str().to_owned())
+            }
+            Kind::Shared => {
+                let sealed = row.password_enc.as_deref();
+                PeerSecret::Password(self.open(Secret::Password, &row, sealed))
+            }
         };
         let extra = parse_extra(&row);
         let tags = serde_json::from_str(&row.tags).unwrap_or_else(|err| {
@@ -247,24 +284,26 @@ impl AddressBookService {
         }
     }
 
-    fn open(&self, row: &address_book_peer::Model) -> Zeroizing<String> {
-        let Some(sealed) = row.password_enc.as_deref() else {
+    fn open(
+        &self,
+        secret: Secret,
+        row: &address_book_peer::Model,
+        sealed: Option<&str>,
+    ) -> Zeroizing<String> {
+        let Some(sealed) = sealed else {
             return Zeroizing::default();
         };
-        let context = password_context(row.address_book_id, &row.rustdesk_id);
+        let context = secret_context(secret, row.address_book_id, &row.rustdesk_id);
         let opened = self
             .crypto
             .open(&context, sealed)
             .map(|bytes| Zeroizing::new(String::from_utf8_lossy(&bytes).into_owned()));
         opened.unwrap_or_else(|err| {
-            tracing::warn!(book = row.address_book_id, error = %err, "unreadable peer password");
+            let column = secret.column();
+            tracing::warn!(book = row.address_book_id, column, error = %err, "unreadable peer secret");
             Zeroizing::default()
         })
     }
-}
-
-fn non_empty(value: Option<String>) -> Option<String> {
-    value.filter(|v| !v.is_empty())
 }
 
 fn tags_json(tags: Vec<String>) -> String {

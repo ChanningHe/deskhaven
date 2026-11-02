@@ -8,9 +8,11 @@
 //!   Reads need rule 1, peer and tag writes rule 2, share and book management rule 3; every
 //!   operation checks it here, whatever the caller already checked.
 //! - Peers: personal books keep the client's password `hash` and never a `password`; shared
-//!   books keep the `password` sealed with the master key (AAD context
-//!   `address_book_peers.password_enc:<book id>:<rustdesk id>`) and never a `hash`. Unknown
-//!   peer fields are kept in `extra` and echoed back (see [`PeerPatch`]).
+//!   books keep the `password` and never a `hash`. Both are sealed with the master key (AAD
+//!   context `address_book_peers.<hash_enc|password_enc>:<book id>:<rustdesk id>`): the
+//!   hash is the salted password the client connects with (`src/client.rs:4777-4799`), a
+//!   credential in its own right. Unknown peer fields are kept in `extra` and echoed back
+//!   (see [`PeerPatch`]).
 //! - Capacity: a book holds at most `addressbook.max_peers` peers (read at each add).
 //! - Every write locks the book row, so writes to one book are serialized on both backends.
 //!
