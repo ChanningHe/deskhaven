@@ -25,7 +25,7 @@ allow = [
     "CDLA-Permissive-2.0", # webpki-roots (bundled Mozilla CA roots, via sqlx rustls)
 ]
 
-# RustDesk-authored git crates that declare no license and ship no license file.
+# Git crates that declare no license and ship no license file.
 # hbb_common: covered by rustdesk-server's debian/copyright ("Files: *", AGPL-3.0
 # "or any later version"), which includes the libs/hbb_common submodule.
 [[licenses.clarify]]
@@ -33,11 +33,11 @@ crate = "hbb_common"
 expression = "AGPL-3.0-or-later"
 license-files = []
 
-# default_net (rustdesk-org): no license anywhere in the repo. ASSUMPTION, not a
-# grant: treated like the rest of RustDesk (AGPL-3.0). Needs confirmation upstream.
+# rustdesk-org/default_net is a fork of shellrow/default-net (crates.io `default-net`, MIT);
+# the fork ships no license file — MIT inherited from upstream.
 [[licenses.clarify]]
 crate = "default_net"
-expression = "AGPL-3.0-or-later"
+expression = "MIT"
 license-files = []
 
 [bans]
@@ -73,7 +73,7 @@ ignore = [
     { id = "RUSTSEC-2023-0040", reason = "users 0.11 unmaintained: re-exported by hbb_common, never called (see RUSTSEC-2025-0040)" },
     { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 (fix needs 0.14, semver-incompatible with hbb_common): hbb_common never uses the with_context stream constructors" },
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7.4: Seekable API only; the `seekable` feature is not enabled" },
-    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.4 streaming decoder: only reached via hbb_common::compress::decompress (client address-book/group cache load); deskhaven never calls it" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.4 streaming decoder: only reached via hbb_common::compress::decompress (client address-book/group cache load); deskhaven never calls it; revisit when hbb_common upgrades zstd" },
     { id = "RUSTSEC-2023-0051", reason = "dlopen_derive unmaintained: compile-time proc-macro of dlopen, which hbb_common re-exports but deskhaven does not use" },
     { id = "RUSTSEC-2021-0139", reason = "ansi_term unmaintained: build-time only (clap 2 <- bindgen 0.59 <- machine-uid build script)" },
     { id = "RUSTSEC-2024-0375", reason = "atty unmaintained: build-time only (clap 2 / env_logger 0.9 <- bindgen 0.59 <- machine-uid build script)" },
