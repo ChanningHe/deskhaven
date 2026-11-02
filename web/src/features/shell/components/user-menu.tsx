@@ -6,14 +6,18 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useMe } from '@/features/auth/session'
 
-// Placeholder until sessions exist: no identity, sign-out just links to /login.
+// Sign-out only links to /login until the logout endpoint exists (M3-02).
 export function UserMenu() {
   const { t } = useTranslation()
+  const me = useMe()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -30,12 +34,20 @@ export function UserMenu() {
           <UserRound aria-hidden className="size-4" />
         </span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem disabled>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex flex-col gap-0.5">
+            <span className="truncate text-sm font-medium text-foreground">{me.display_name}</span>
+            <span className="truncate">
+              {me.username} · {t(`roles.${me.role}`)}
+            </span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link to="/me" />}>
           <UserRound aria-hidden />
           {t('user.profile')}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/login" />}>
           <LogOut aria-hidden />
           {t('user.signOut')}

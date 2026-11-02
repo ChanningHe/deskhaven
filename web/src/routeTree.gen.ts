@@ -19,6 +19,7 @@ import { Route as AppClientSetupRouteImport } from './routes/_app/client-setup'
 import { Route as AppDevicesRouteImport } from './routes/_app/devices'
 import { Route as AppGroupsRouteImport } from './routes/_app/groups'
 import { Route as AppIdentityRouteImport } from './routes/_app/identity'
+import { Route as AppMeRouteImport } from './routes/_app/me'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppStrategiesRouteImport } from './routes/_app/strategies'
 import { Route as AppTokensRouteImport } from './routes/_app/tokens'
@@ -73,6 +74,11 @@ const AppIdentityRoute = AppIdentityRouteImport.update({
   path: '/identity',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMeRoute = AppMeRouteImport.update({
+  id: '/me',
+  path: '/me',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/devices': typeof AppDevicesRoute
   '/groups': typeof AppGroupsRoute
   '/identity': typeof AppIdentityRoute
+  '/me': typeof AppMeRoute
   '/settings': typeof AppSettingsRoute
   '/strategies': typeof AppStrategiesRoute
   '/tokens': typeof AppTokensRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/devices': typeof AppDevicesRoute
   '/groups': typeof AppGroupsRoute
   '/identity': typeof AppIdentityRoute
+  '/me': typeof AppMeRoute
   '/settings': typeof AppSettingsRoute
   '/strategies': typeof AppStrategiesRoute
   '/tokens': typeof AppTokensRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/_app/devices': typeof AppDevicesRoute
   '/_app/groups': typeof AppGroupsRoute
   '/_app/identity': typeof AppIdentityRoute
+  '/_app/me': typeof AppMeRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/strategies': typeof AppStrategiesRoute
   '/_app/tokens': typeof AppTokensRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/groups'
     | '/identity'
+    | '/me'
     | '/settings'
     | '/strategies'
     | '/tokens'
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/groups'
     | '/identity'
+    | '/me'
     | '/settings'
     | '/strategies'
     | '/tokens'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/_app/devices'
     | '/_app/groups'
     | '/_app/identity'
+    | '/_app/me'
     | '/_app/settings'
     | '/_app/strategies'
     | '/_app/tokens'
@@ -267,6 +279,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIdentityRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/me': {
+      id: '/_app/me'
+      path: '/me'
+      fullPath: '/me'
+      preLoaderRoute: typeof AppMeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -306,6 +325,7 @@ interface AppRouteChildren {
   AppDevicesRoute: typeof AppDevicesRoute
   AppGroupsRoute: typeof AppGroupsRoute
   AppIdentityRoute: typeof AppIdentityRoute
+  AppMeRoute: typeof AppMeRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStrategiesRoute: typeof AppStrategiesRoute
   AppTokensRoute: typeof AppTokensRoute
@@ -321,6 +341,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevicesRoute: AppDevicesRoute,
   AppGroupsRoute: AppGroupsRoute,
   AppIdentityRoute: AppIdentityRoute,
+  AppMeRoute: AppMeRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStrategiesRoute: AppStrategiesRoute,
   AppTokensRoute: AppTokensRoute,

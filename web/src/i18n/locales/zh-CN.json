@@ -15,16 +15,26 @@
     "identity": "身份认证",
     "clientSetup": "客户端配置",
     "tokens": "API Token",
-    "settings": "设置"
+    "settings": "设置",
+    "me": "我的"
   },
   "shell": {
     "toggleSidebar": "切换侧栏",
     "openNavigation": "打开导航",
     "close": "关闭",
-    "search": "搜索…"
+    "search": "搜索…",
+    "commandPalette": "命令面板",
+    "commandSearch": "搜索页面和操作",
+    "commandPlaceholder": "搜索页面和操作…",
+    "commandEmpty": "没有匹配的结果",
+    "commandHint": "按 Enter 执行高亮项，按 Esc 关闭。",
+    "commandGroupPages": "页面",
+    "commandGroupPreferences": "偏好设置"
   },
   "common": {
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "cancel": "取消",
+    "close": "关闭"
   },
   "errors": {
     "route": {
@@ -32,7 +42,30 @@
       "description": "页面加载失败。请重试，或返回概览。"
     },
     "retry": "重试",
-    "home": "返回概览"
+    "home": "返回概览",
+    "forbidden": {
+      "title": "无权访问",
+      "description": "你的账户没有访问此页面的权限。"
+    },
+    "network": "无法连接到服务器。请检查网络后重试。",
+    "unknown": "发生未知错误，请重试。",
+    "rateLimitedRetry": "请求过于频繁，请在 {{seconds}} 秒后重试。",
+    "codes": {
+      "validation_failed": "提交的内容有误，请检查后重试。",
+      "unauthorized": "登录已失效，请重新登录。",
+      "forbidden": "你没有执行此操作的权限。",
+      "csrf_failed": "请求校验失败，请刷新页面后重试。",
+      "not_found": "请求的对象不存在或已被删除。",
+      "conflict": "该对象已被修改或与现有数据冲突，请刷新后重试。",
+      "rate_limited": "请求过于频繁，请稍后重试。",
+      "unsupported_media_type": "请求格式不受支持。",
+      "internal": "服务器内部错误，请稍后重试。",
+      "bad_request": "请求无效。",
+      "method_not_allowed": "不支持此操作。",
+      "payload_too_large": "提交的内容过大。",
+      "timeout": "服务器响应超时，请稍后重试。",
+      "unavailable": "服务暂时不可用，请稍后重试。"
+    }
   },
   "theme": {
     "label": "主题",
@@ -104,6 +137,11 @@
       "description": "服务器全局设置及每项取值来源。",
       "emptyTitle": "设置暂不可用",
       "emptyDescription": "接入服务器 API 后即可在此编辑设置。"
+    },
+    "me": {
+      "description": "你的账户、密码与双因素认证。",
+      "emptyTitle": "个人中心即将开放",
+      "emptyDescription": "资料、改密、双因素认证和会话管理将在这里提供。"
     }
   },
   "login": {
@@ -117,5 +155,49 @@
     "title": "页面不存在",
     "description": "你访问的页面不存在或已被移动。",
     "back": "返回概览"
+  },
+  "dataTable": {
+    "search": "搜索",
+    "columns": "列",
+    "toggleColumns": "显示列",
+    "selectAll": "选择本页全部行",
+    "selectRow": "选择此行",
+    "selected": "已选择 {{count}} 项",
+    "clearSelection": "取消选择",
+    "noResults": "没有符合条件的结果",
+    "clearFilters": "清除筛选",
+    "loadFailed": "列表加载失败",
+    "pagination": "分页",
+    "pageSummary": "第 {{page}} / {{pages}} 页，共 {{total}} 条",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "pageSize": "每页行数"
+  },
+  "confirm": {
+    "typeToConfirm": "请输入 {{name}} 以确认"
+  },
+  "secret": {
+    "warning": "此内容只显示这一次，关闭后无法再次查看。请立即复制并妥善保存。",
+    "copy": "复制",
+    "copied": "已复制到剪贴板",
+    "copyFailed": "无法访问剪贴板，请手动选中并复制。",
+    "acknowledge": "我已妥善保存",
+    "done": "完成"
+  },
+  "source": {
+    "default": "默认",
+    "modified": "已修改",
+    "locked": "配置锁定",
+    "defaultDetail": "使用默认值",
+    "modifiedDetail": "由 {{by}} 于 {{at}} 修改",
+    "modifiedDetailAnonymous": "已在控制台修改",
+    "fileDetail": "由配置文件 {{path}} 锁定",
+    "fileDetailAnonymous": "由配置文件锁定",
+    "envDetail": "由环境变量 {{name}} 锁定"
+  },
+  "roles": {
+    "owner": "所有者",
+    "admin": "管理员",
+    "user": "用户"
   }
 }

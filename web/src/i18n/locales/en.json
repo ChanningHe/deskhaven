@@ -15,16 +15,26 @@
     "identity": "Identity",
     "clientSetup": "Client setup",
     "tokens": "API tokens",
-    "settings": "Settings"
+    "settings": "Settings",
+    "me": "My account"
   },
   "shell": {
     "toggleSidebar": "Toggle sidebar",
     "openNavigation": "Open navigation",
     "close": "Close",
-    "search": "Search…"
+    "search": "Search…",
+    "commandPalette": "Command palette",
+    "commandSearch": "Search pages and actions",
+    "commandPlaceholder": "Search pages and actions…",
+    "commandEmpty": "No matching results",
+    "commandHint": "Press Enter to run the highlighted item, Esc to close.",
+    "commandGroupPages": "Pages",
+    "commandGroupPreferences": "Preferences"
   },
   "common": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "close": "Close"
   },
   "errors": {
     "route": {
@@ -32,7 +42,30 @@
       "description": "This page failed to load. Try again, or go back to the overview."
     },
     "retry": "Try again",
-    "home": "Back to overview"
+    "home": "Back to overview",
+    "forbidden": {
+      "title": "Access denied",
+      "description": "Your account is not allowed to open this page."
+    },
+    "network": "Cannot reach the server. Check your connection and try again.",
+    "unknown": "Something went wrong. Please try again.",
+    "rateLimitedRetry": "Too many requests. Try again in {{seconds}} s.",
+    "codes": {
+      "validation_failed": "Some fields are invalid. Check them and try again.",
+      "unauthorized": "Your session has ended. Please sign in again.",
+      "forbidden": "You are not allowed to do this.",
+      "csrf_failed": "The request could not be verified. Reload the page and try again.",
+      "not_found": "The requested item does not exist or was deleted.",
+      "conflict": "The item was changed or conflicts with existing data. Reload and try again.",
+      "rate_limited": "Too many requests. Please try again later.",
+      "unsupported_media_type": "The request format is not supported.",
+      "internal": "Internal server error. Please try again later.",
+      "bad_request": "The request is invalid.",
+      "method_not_allowed": "This operation is not supported.",
+      "payload_too_large": "The submitted content is too large.",
+      "timeout": "The server took too long to respond. Please try again later.",
+      "unavailable": "The service is temporarily unavailable. Please try again later."
+    }
   },
   "theme": {
     "label": "Theme",
@@ -104,6 +137,11 @@
       "description": "Server-wide settings and where each value comes from.",
       "emptyTitle": "Settings are not available yet",
       "emptyDescription": "Settings will be editable here once the server API is connected."
+    },
+    "me": {
+      "description": "Your account, password and two-factor authentication.",
+      "emptyTitle": "Your account page is coming soon",
+      "emptyDescription": "Profile, password, two-factor authentication and sessions will be managed here."
     }
   },
   "login": {
@@ -117,5 +155,49 @@
     "title": "Page not found",
     "description": "The page you are looking for does not exist or has moved.",
     "back": "Back to overview"
+  },
+  "dataTable": {
+    "search": "Search",
+    "columns": "Columns",
+    "toggleColumns": "Visible columns",
+    "selectAll": "Select all rows on this page",
+    "selectRow": "Select row",
+    "selected": "{{count}} selected",
+    "clearSelection": "Clear selection",
+    "noResults": "No results match the current filters",
+    "clearFilters": "Clear filters",
+    "loadFailed": "Could not load the list",
+    "pagination": "Pagination",
+    "pageSummary": "Page {{page}} of {{pages}} · {{total}} total",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageSize": "Rows per page"
+  },
+  "confirm": {
+    "typeToConfirm": "Type {{name}} to confirm"
+  },
+  "secret": {
+    "warning": "This is shown only once and cannot be viewed again after you close this dialog. Copy it now and keep it safe.",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "copyFailed": "Clipboard is unavailable. Select the text and copy it manually.",
+    "acknowledge": "I have saved it",
+    "done": "Done"
+  },
+  "source": {
+    "default": "Default",
+    "modified": "Modified",
+    "locked": "Locked by config",
+    "defaultDetail": "Using the default value",
+    "modifiedDetail": "Changed by {{by}} at {{at}}",
+    "modifiedDetailAnonymous": "Changed in the console",
+    "fileDetail": "Locked by config file {{path}}",
+    "fileDetailAnonymous": "Locked by the config file",
+    "envDetail": "Locked by environment variable {{name}}"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "user": "User"
   }
 }

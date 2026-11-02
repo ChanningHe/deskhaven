@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next'
 
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useMe } from '@/features/auth/session'
 import { cn } from '@/lib/utils'
 
-import { NAV_SECTIONS } from '../nav-items'
+import { navSectionsFor } from '../nav-items'
 import type { NavItem } from '../nav-items'
 
 interface SidebarNavProps {
@@ -46,9 +47,10 @@ function SidebarLink({ item, collapsed, onNavigate }: SidebarNavProps & { item: 
 
 export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
   const { t } = useTranslation()
+  const { role } = useMe()
   return (
     <nav aria-label={t('nav.label')} className="flex-1 overflow-y-auto p-2">
-      {NAV_SECTIONS.map((section, index) => (
+      {navSectionsFor(role).map((section, index) => (
         <Fragment key={section[0]?.key ?? index}>
           {index > 0 ? <Separator className="my-2" /> : null}
           <ul className="flex flex-col gap-0.5">
