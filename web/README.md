@@ -96,6 +96,13 @@ would make pnpm try to download another version). `pnpm-workspace.yaml` explains
   UI: the server enforces every permission.
 - Components below `_app` read the user with `useMe()`.
 
+## Command palette
+
+⌘K / Ctrl+K anywhere in the console, or the search button in the top bar, opens the palette
+(Base UI Autocomplete in a Dialog). It lists the pages the role may open plus theme and language
+switches; add entries in `src/features/shell/use-command-groups.ts` (device / user search and
+common actions arrive with their APIs).
+
 ## Lists (DataTable)
 
 Every list uses `DataTable` (`src/components/common/data-table`, 08 §1.5): server-side

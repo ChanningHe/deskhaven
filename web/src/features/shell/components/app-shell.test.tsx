@@ -77,13 +77,6 @@ describe('app shell', () => {
     expect(router.history.length).toBe(1)
   })
 
-  it('keeps the command palette placeholder out of the accessibility tree', async () => {
-    await renderShell()
-
-    expect(screen.getByText('搜索…').closest('[aria-hidden="true"]')).not.toBeNull()
-    expect(screen.queryByRole('button', { name: /搜索/ })).not.toBeInTheDocument()
-  })
-
   it('collapses the sidebar and persists the state', async () => {
     const { user, unmount } = await renderShell()
 
