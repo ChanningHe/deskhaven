@@ -321,11 +321,23 @@ fn mac_is_deterministic_and_bound_to_key_context_and_data() {
 }
 
 #[test]
-fn mac_uses_the_primary_key_after_rotation() {
+fn a_mac_made_under_a_retired_key_still_verifies_after_rotation() {
     let old = MasterKey::from_bytes(&KEY_A);
     let new = MasterKey::from_bytes(&KEY_B);
+    let stored = SecretBox::new(&old).mac(MAC_CTX, b"x");
     let rotated = SecretBox::new(&new).with_previous(&old).unwrap();
 
+    let candidates = rotated.mac_candidates(MAC_CTX, b"x");
+
+    // New values use the new key id; old stored values are still among the candidates.
     assert_eq!(rotated.mac(MAC_CTX, b"x"), boxed(KEY_B).mac(MAC_CTX, b"x"));
     assert!(rotated.mac(MAC_CTX, b"x").starts_with("v1:02b408d5:"));
+    assert_eq!(
+        candidates,
+        [rotated.mac(MAC_CTX, b"x"), stored.clone()],
+        "primary first, then retired keys"
+    );
+    assert!(stored.starts_with("v1:330d29e5:"));
+    assert!(!rotated.mac_candidates(MAC_CTX, b"y").contains(&stored));
+    assert_eq!(boxed(KEY_A).mac_candidates(MAC_CTX, b"x"), [stored]);
 }

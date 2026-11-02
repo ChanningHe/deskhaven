@@ -72,6 +72,37 @@ impl Env {
         }
     }
 
+    /// The same database, settings, users and clock behind a master key rotated from
+    /// `[7; 32]` (now retired, still held) to `[9; 32]`.
+    pub fn rotated(&self, db: &TestDb) -> Self {
+        let old = MasterKey::from_bytes(&[7; 32]);
+        let new = MasterKey::from_bytes(&[9; 32]);
+        let crypto = Arc::new(SecretBox::new(&new).with_previous(&old).unwrap());
+        let tfa = TfaService::new(
+            db.conn.clone(),
+            Arc::clone(&crypto),
+            self.settings.clone(),
+            self.clock.clone(),
+        );
+        Self {
+            settings: self.settings.clone(),
+            users: self.users.clone(),
+            tfa,
+            crypto,
+            clock: self.clock.clone(),
+        }
+    }
+
+    /// A six-digit code matching none of the steps accepted now.
+    pub fn wrong_code(&self, user: &Enrolled) -> String {
+        let window: Vec<String> = (-2..=2).map(|d| self.code_in(user, d)).collect();
+        ["000000", "111111", "222222"]
+            .into_iter()
+            .find(|c| !window.iter().any(|w| w == c))
+            .unwrap()
+            .to_owned()
+    }
+
     pub fn now_ms(&self) -> i64 {
         use deskhaven_core::clock::Clock;
         self.clock.now_ms()

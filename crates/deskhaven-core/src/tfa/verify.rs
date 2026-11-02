@@ -110,7 +110,7 @@ impl Inner {
         Ok(result.rows_affected == 1)
     }
 
-    /// Marks the unused recovery code `code` used.
+    /// Marks the unused recovery code `code` used (stored under any held master key).
     async fn spend_recovery(
         &self,
         txn: &DatabaseTransaction,
@@ -120,15 +120,15 @@ impl Inner {
         let Some(normalized) = recovery::normalize(code) else {
             return Ok(false);
         };
-        let hash = recovery::hash(&self.crypto, user_id, &normalized);
+        let candidates = recovery::candidates(&self.crypto, user_id, &normalized);
         let result = recovery_code::Entity::update_many()
             .col_expr(recovery_code::Column::UsedAt, Expr::value(self.now()))
             .filter(recovery_code::Column::UserId.eq(user_id))
-            .filter(recovery_code::Column::CodeHash.eq(hash))
+            .filter(recovery_code::Column::CodeHash.is_in(candidates))
             .filter(recovery_code::Column::UsedAt.is_null())
             .exec(txn)
             .await?;
-        Ok(result.rows_affected == 1)
+        Ok(result.rows_affected > 0)
     }
 }
 

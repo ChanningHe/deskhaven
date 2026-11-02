@@ -13,7 +13,7 @@ use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::tfa::{
     CHALLENGE_TTL, ChallengeError, MAX_CHALLENGE_ATTEMPTS, Passed, SecondFactorMethod,
 };
-use deskhaven_db::entity::{auth_challenge, user};
+use deskhaven_db::entity::{auth_challenge, recovery_code, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::{EntityTrait, PaginatorTrait};
 use sha2::{Digest, Sha256};
@@ -338,6 +338,53 @@ async fn only_the_secret_hash_is_stored_and_cleanup_drops_finished_challenges() 
                 .await
                 .unwrap(),
             0
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn recovery_codes_and_seeds_survive_a_master_key_rotation() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.enrolled("alice").await;
+        let rotated = env.rotated(db);
+        env.clock.advance(STEP);
+        let code = first_code(&alice.recovery);
+        let b = db.backend;
+
+        let recovery = rotated
+            .verify(&rotated.challenge(&alice).await, "alice", &code)
+            .await;
+        let again = rotated
+            .verify(&rotated.challenge(&alice).await, "alice", &code)
+            .await;
+        let totp = rotated
+            .verify(
+                &rotated.challenge(&alice).await,
+                "alice",
+                &rotated.code(&alice),
+            )
+            .await;
+        rotated
+            .tfa
+            .regenerate_recovery_codes(alice.user_id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            recovery.unwrap().method,
+            SecondFactorMethod::Recovery,
+            "{b}"
+        );
+        assert!(wrong(&again), "{b}: {again:?}");
+        assert!(totp.is_ok(), "{b}: {totp:?}");
+        // Codes issued after the rotation are stored under the new key id.
+        let rows = recovery_code::Entity::find().all(&db.conn).await.unwrap();
+        assert_eq!(rows.len(), deskhaven_core::tfa::RECOVERY_CODE_COUNT);
+        assert!(
+            rows.iter().all(|r| r.code_hash.starts_with("v1:02b408d5:")),
+            "{b}"
         );
     })
     .await;

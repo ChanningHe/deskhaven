@@ -10,9 +10,9 @@
 //! column. The context is not stored; callers recompute it on open.
 //!
 //! [`SecretBox::mac`] is the keyed hash of low-entropy secrets that are looked up by
-//! equality (06 §3.3): `v1:<key_id>:<base64 HMAC-SHA256>` under `k_hmac`, derived from the
-//! **primary** key (`mac.rs`). Values made under a retired key no longer match after a
-//! rotation; their owners regenerate them (recovery codes) or they expire (emailed codes).
+//! equality (06 §3.3): `v1:<key_id>:<base64 HMAC-SHA256>` under the `k_hmac` of the
+//! primary key (`mac.rs`). [`SecretBox::mac_candidates`] gives the value under every held
+//! key, so values stored before a rotation still match while the retired key is held.
 
 use std::fmt;
 
@@ -38,6 +38,8 @@ const TAG_LEN: usize = 16;
 struct Slot {
     id: KeyId,
     cipher: XChaCha20Poly1305,
+    /// `k_hmac` of this key.
+    mac_key: Zeroizing<[u8; MAC_KEY_LEN]>,
 }
 
 impl Slot {
@@ -45,17 +47,29 @@ impl Slot {
         Self {
             id: key.key_id(),
             cipher: XChaCha20Poly1305::new(key.bytes().into()),
+            mac_key: derive_mac_key(key.bytes()),
         }
+    }
+
+    /// `v1:<key_id>:<tag>` of `u64be(len(context)) || context || data` under this key.
+    fn mac(&self, context: &str, data: &[u8]) -> String {
+        let len = u64::try_from(context.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes();
+        let tag = hmac_sha256(&self.mac_key, &[&len, context.as_bytes(), data]);
+        format!(
+            "{}{SEPARATOR}{}",
+            header(self.id),
+            SEALED_B64.encode(tag.as_slice())
+        )
     }
 }
 
 /// Seals with the primary key; opens with any held key (rotation). Cipher
-/// state and the MAC key wipe their key copies on drop.
+/// state and MAC keys wipe their key copies on drop.
 pub struct SecretBox {
     primary: Slot,
     previous: Vec<Slot>,
-    /// `k_hmac` of the primary key.
-    mac_key: Zeroizing<[u8; MAC_KEY_LEN]>,
 }
 
 impl SecretBox {
@@ -63,35 +77,38 @@ impl SecretBox {
         Self {
             primary: Slot::new(primary),
             previous: Vec::new(),
-            mac_key: derive_mac_key(primary.bytes()),
         }
     }
 
-    /// Adds a retired key that can still open existing ciphertexts. Each key
-    /// id may be held once.
+    /// Adds a retired key that can still open existing ciphertexts and match
+    /// existing MACs. Each key id may be held once.
     pub fn with_previous(self, key: &MasterKey) -> Result<Self, CryptoError> {
         if self.slot(key.key_id()).is_some() {
             return Err(CryptoError::DuplicateKeyId);
         }
         let mut previous = self.previous;
         previous.push(Slot::new(key));
-        Ok(Self { previous, ..self })
+        Ok(Self {
+            primary: self.primary,
+            previous,
+        })
     }
 
-    /// `v1:<key_id>:<tag>`: HMAC-SHA256 under `k_hmac` of `u64be(len(context)) || context
-    /// || data`, the tag in unpadded standard base64. Deterministic, so it can be looked up
-    /// by equality. The context names the use, like a sealing context
-    /// (`"<table>.<column>:<row or owner id>"`).
+    /// `v1:<key_id>:<tag>` under the primary key: HMAC-SHA256 under `k_hmac` of
+    /// `u64be(len(context)) || context || data`, the tag in unpadded standard base64.
+    /// Deterministic, so it can be looked up by equality. The context names the use, like
+    /// a sealing context (`"<table>.<column>:<row or owner id>"`). Store this value.
     pub fn mac(&self, context: &str, data: &[u8]) -> String {
-        let len = u64::try_from(context.len())
-            .unwrap_or(u64::MAX)
-            .to_be_bytes();
-        let tag = hmac_sha256(&self.mac_key, &[&len, context.as_bytes(), data]);
-        format!(
-            "{}{SEPARATOR}{}",
-            header(self.primary.id),
-            SEALED_B64.encode(tag.as_slice())
-        )
+        self.primary.mac(context, data)
+    }
+
+    /// [`SecretBox::mac`] under every held key, primary first: look a stored value up with
+    /// `IN (candidates)`, so values made before a rotation still match.
+    pub fn mac_candidates(&self, context: &str, data: &[u8]) -> Vec<String> {
+        std::iter::once(&self.primary)
+            .chain(&self.previous)
+            .map(|slot| slot.mac(context, data))
+            .collect()
     }
 
     pub fn seal(&self, context: &str, plaintext: &[u8]) -> Result<String, CryptoError> {

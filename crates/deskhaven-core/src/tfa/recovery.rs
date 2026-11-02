@@ -2,7 +2,8 @@
 //! [`RECOVERY_CODE_CHARS`] lowercase base32 characters (50 random bits each), shown as
 //! `xxxxx-xxxxx`. Stored as `SecretBox::mac` of the normalized code under the context
 //! `recovery_codes.code_hash:<user id>`, so a database dump cannot be brute-forced offline
-//! and a hash cannot be moved to another user.
+//! and a hash cannot be moved to another user. A presented code is looked up under every
+//! master key the `SecretBox` holds (`mac_candidates`), so a key rotation does not void it.
 //!
 //! Input is normalized before hashing: separators (`-`, spaces) dropped, ASCII lower-cased.
 //! Anything else that is not a well-formed code is rejected without a database lookup.
@@ -66,12 +67,19 @@ pub(crate) fn generate(
     Ok((RecoveryCodes(codes), hashes))
 }
 
-/// The stored hash of a normalized code.
+/// The stored hash of a normalized code (under the primary master key).
 pub(crate) fn hash(crypto: &SecretBox, user_id: i64, normalized: &str) -> String {
-    crypto.mac(
-        &format!("recovery_codes.code_hash:{user_id}"),
-        normalized.as_bytes(),
-    )
+    crypto.mac(&context(user_id), normalized.as_bytes())
+}
+
+/// Every hash a stored code may have: under the primary key and under each retired key
+/// still held, so codes issued before a master-key rotation keep working.
+pub(crate) fn candidates(crypto: &SecretBox, user_id: i64, normalized: &str) -> Vec<String> {
+    crypto.mac_candidates(&context(user_id), normalized.as_bytes())
+}
+
+fn context(user_id: i64) -> String {
+    format!("recovery_codes.code_hash:{user_id}")
 }
 
 /// The canonical form of user input, or `None` when it cannot be a recovery code.
