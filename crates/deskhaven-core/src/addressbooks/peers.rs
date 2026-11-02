@@ -127,13 +127,19 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Removes the peers with these ids; ids not in the book are ignored. Needs rule 2.
+    /// Removes the peers with these ids; ids not in the book are ignored. At most
+    /// `addressbook.max_peers` ids (a book holds no more), else nothing is touched. Needs
+    /// rule 2.
     pub async fn delete_peers(
         &self,
         actor: Actor,
         guid: &str,
         ids: &[String],
     ) -> Result<(), AddressBookError> {
+        let max = self.max_peers();
+        if ids.len() as u64 > u64::from(max) {
+            return Err(invalid("ids", format!("at most {max} per request")));
+        }
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
         for chunk in ids.chunks(DELETE_CHUNK) {

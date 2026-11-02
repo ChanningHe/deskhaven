@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1752-1774"],
+  "description": "A delete list longer than addressbook.max_peers (1 here) cannot name peers a book may hold: 400 before anything is touched, so one request cannot keep the book's write lock busy.",
+  "seed": ["client-session", "ab-personal", "ab-one-peer-max"],
+  "request": {
+    "method": "DELETE",
+    "path": "/api/ab/peer/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": ["111111111", "222222222"] }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Invalid ids: at most 1 per request" } }
+}

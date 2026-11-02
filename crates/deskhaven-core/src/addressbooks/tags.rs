@@ -1,6 +1,8 @@
 //! Tags of a book: list (rule 1), add / update / rename / delete (rule 2). Renaming and
 //! deleting a tag also rewrites the tag lists of the book's peers.
 
+use std::collections::HashSet;
+
 use deskhaven_db::entity::address_book;
 use deskhaven_db::entity::{address_book_peer, address_book_tag};
 use deskhaven_db::{begin_write, time};
@@ -14,7 +16,7 @@ use serde_json::Value;
 use super::access::{Actor, authorize};
 use super::books::touch;
 use super::error::{AddressBookError, invalid};
-use super::peer::check_tag_name;
+use super::peer::{check_tag_name, unique};
 use super::{AddressBookService, Rule, Tag};
 
 /// A tag colour is a 32-bit ARGB value.
@@ -119,25 +121,34 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Deletes these tags from the book and from its peers; unknown names are ignored.
-    /// Needs rule 2.
+    /// Deletes these tags from the book and from its peers; unknown names are ignored. At
+    /// most [`MAX_BOOK_TAGS`] names (a book holds no more), else nothing is touched. Needs
+    /// rule 2.
     pub async fn delete_tags(
         &self,
         actor: Actor,
         guid: &str,
         names: &[String],
     ) -> Result<(), AddressBookError> {
+        if names.len() as u64 > MAX_BOOK_TAGS {
+            return Err(invalid(
+                "tags",
+                format!("at most {MAX_BOOK_TAGS} names per request"),
+            ));
+        }
+        let doomed: HashSet<&str> = names.iter().map(String::as_str).collect();
+        let doomed_list: Vec<&str> = doomed.iter().copied().collect();
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
-        for chunk in names.chunks(DELETE_CHUNK) {
+        for chunk in doomed_list.chunks(DELETE_CHUNK) {
             address_book_tag::Entity::delete_many()
                 .filter(address_book_tag::Column::AddressBookId.eq(book.id))
-                .filter(address_book_tag::Column::Name.is_in(chunk.iter().cloned()))
+                .filter(address_book_tag::Column::Name.is_in(chunk.iter().copied()))
                 .exec(&tx)
                 .await?;
         }
         rewrite_peer_tags(&tx, &book, |tag| {
-            (!names.iter().any(|n| n == tag)).then(|| tag.to_owned())
+            (!doomed.contains(tag)).then(|| tag.to_owned())
         })
         .await?;
         touch(&tx, &book).await?;
@@ -213,12 +224,7 @@ async fn rewrite_peer_tags(
         let Ok(tags) = serde_json::from_str::<Vec<String>>(&stored) else {
             continue;
         };
-        let mut mapped: Vec<String> = Vec::with_capacity(tags.len());
-        for tag in tags.iter().filter_map(|t| map(t)) {
-            if !mapped.contains(&tag) {
-                mapped.push(tag);
-            }
-        }
+        let mapped = unique(tags.iter().filter_map(|t| map(t)));
         if mapped == tags {
             continue;
         }

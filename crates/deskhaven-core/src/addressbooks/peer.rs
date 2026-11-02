@@ -12,6 +12,7 @@
 //!   adds survive a round trip. Known keys never land in `extra`.
 //! - `null` for a known key means "not given".
 
+use std::collections::HashSet;
 use std::fmt;
 
 use serde_json::{Map, Value};
@@ -272,11 +273,17 @@ fn take_tags(map: &mut Map<String, Value>) -> Result<Option<Vec<String>>, Addres
             return Err(invalid(TAGS, "must be a list of strings"));
         };
         check_tag_name(TAGS, &tag)?;
-        if !tags.contains(&tag) {
-            tags.push(tag);
-        }
+        tags.push(tag);
     }
-    Ok(Some(tags))
+    Ok(Some(unique(tags)))
+}
+
+/// `tags` without repeats, first occurrence kept; linear (a hash set, not a list scan).
+pub(crate) fn unique(tags: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    tags.into_iter()
+        .filter(|tag| seen.insert(tag.clone()))
+        .collect()
 }
 
 /// `"true"` / `"false"` as the client sends it; a JSON boolean is accepted too. Another
