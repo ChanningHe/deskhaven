@@ -1,6 +1,7 @@
 //! Domain services. No HTTP and no protobuf types live here.
 
 pub mod crypto;
+pub mod devices;
 pub mod groups;
 pub mod keys;
 pub mod pagination;
