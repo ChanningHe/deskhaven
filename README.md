@@ -15,9 +15,6 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
-Commit messages are a single concise line with a conventional prefix and no body,
-e.g. `feat(config): add bootstrap loader (M0-03)`.
-
 ## License
 
 [AGPL-3.0-only](LICENSE).
