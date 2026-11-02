@@ -22,24 +22,36 @@ pub struct StrategyOptions {
 /// `src/hbbs_http/sync.rs:250-277`: the body is a JSON object; every key is
 /// optional. The client *ignores* a key whose value has the wrong type
 /// (`if let Ok(..)`); the mirror rejects it instead, since an ignored key
-/// is a lost disconnect, strategy or timestamp.
+/// is a lost disconnect, strategy or timestamp. That includes `null`:
+/// `from_value::<T>(null)` fails in the client, so `"strategy": null` is
+/// dropped like any other mistyped value (absent keys are fine).
 #[derive(Debug, Deserialize)]
 pub struct HeartbeatResponse {
     /// Presence is the signal (`rsp.remove("sysinfo").is_some()`), so even
     /// `"sysinfo": null` is `Some`.
     #[serde(default, deserialize_with = "present")]
     pub sysinfo: Option<Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "non_null")]
     pub disconnect: Option<Vec<i32>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "non_null")]
     pub strategy: Option<StrategyOptions>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "non_null")]
     pub modified_at: Option<i64>,
 }
 
 /// `Some` for any present value, `null` included.
 fn present<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Value>, D::Error> {
     Value::deserialize(de).map(Some)
+}
+
+/// A present key must hold a `T` (`null` is not one); absence is `None` via
+/// `#[serde(default)]`.
+fn non_null<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(de).map(Some)
 }
 
 #[cfg(test)]
@@ -70,6 +82,22 @@ mod tests {
     fn sysinfo_presence_counts_even_when_null() {
         assert!(parse(json!({ "sysinfo": null })).unwrap().sysinfo.is_some());
         assert!(parse(json!({})).unwrap().sysinfo.is_none());
+    }
+
+    #[test]
+    fn null_values_are_rejected_except_sysinfo() {
+        // The client's `from_value::<T>(null)` fails and it drops the key.
+        assert!(parse(json!({ "strategy": null })).is_err());
+        assert!(parse(json!({ "disconnect": null })).is_err());
+        assert!(parse(json!({ "modified_at": null })).is_err());
+        assert!(parse(json!({ "sysinfo": null })).is_ok());
+    }
+
+    #[test]
+    fn absent_keys_are_none() {
+        let rsp = parse(json!({})).unwrap();
+
+        assert!(rsp.strategy.is_none() && rsp.disconnect.is_none() && rsp.modified_at.is_none());
     }
 
     #[test]
