@@ -110,18 +110,21 @@ pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejec
     let mut problems = Vec::new();
     let mut accepted = Vec::with_capacity(changes.len());
     for change in changes {
-        let problem = |reason: &str| Problem {
-            key: change.key.clone(),
-            reason: reason.to_owned(),
-        };
         let Some(setting) = lookup(&change.key) else {
-            problems.push(problem("unknown setting"));
+            problems.push(Problem {
+                key: echo_key(&change.key),
+                reason: "unknown setting".to_owned(),
+            });
             continue;
+        };
+        let problem = |reason: &str| Problem {
+            key: setting.key().to_owned(),
+            reason: reason.to_owned(),
         };
         if !seen.insert(setting.key()) {
             problems.push(problem("set more than once in one update"));
         } else if pins.is_pinned(setting.key()) {
-            pinned.push(change.key.clone());
+            pinned.push(setting.key().to_owned());
         } else {
             match setting.coerce(&change.value) {
                 Ok(value) => accepted.push(Accepted {
@@ -140,6 +143,23 @@ pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejec
         true => Ok(accepted),
         false => Err(Rejection::Invalid { problems }),
     }
+}
+
+/// Longest unknown key echoed back in a [`Problem`].
+const MAX_ECHOED_KEY: usize = 64;
+
+/// An unknown, caller-supplied key made safe for logs and responses:
+/// truncated and with control characters escaped.
+fn echo_key(key: &str) -> String {
+    let mut echoed: String = key
+        .chars()
+        .take(MAX_ECHOED_KEY)
+        .flat_map(char::escape_debug)
+        .collect();
+    if key.chars().nth(MAX_ECHOED_KEY).is_some() {
+        echoed.push('…');
+    }
+    echoed
 }
 
 /// Checks the cross-key rules that involve a `changed` key on the

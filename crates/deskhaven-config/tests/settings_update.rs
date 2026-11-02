@@ -5,7 +5,7 @@
 
 use deskhaven_config::Source;
 use deskhaven_config::settings::{
-    self, Change, PinSet, Rejection, Snapshot, Stored, Update, check_rules, prepare,
+    self, Change, PinSet, Rejection, Snapshot, Stored, check_rules, prepare,
 };
 use serde_json::{Value as Json, json};
 
@@ -20,7 +20,7 @@ fn change(key: &str, value: Json) -> Change {
 fn stored(key: &str, value: Json, version: i64) -> Stored {
     Stored {
         key: key.to_owned(),
-        value,
+        value: Some(value),
         version,
         by: Some(7),
         at: 1_700_000_000_000,
@@ -37,16 +37,7 @@ fn invalid_keys(rejection: Rejection) -> Vec<String> {
 /// Applies accepted changes as database updates and checks cross-key rules.
 fn candidate(base: &Snapshot, changes: &[Change]) -> Result<Snapshot, Rejection> {
     let accepted = prepare(&PinSet::empty(), changes)?;
-    let updates = accepted.into_iter().map(|a| Update {
-        key: a.key(),
-        value: a.into_value(),
-        source: Source::Database {
-            version: 1,
-            by: None,
-            at: 0,
-        },
-    });
-    let next = base.with_updates(updates);
+    let next = base.with_accepted(&accepted, None, 0);
     let keys: Vec<&str> = changes.iter().map(|c| c.key.as_str()).collect();
     check_rules(&next, &keys)?;
     Ok(next)
@@ -93,9 +84,28 @@ fn invalid_or_unknown_stored_rows_fall_back_with_warnings() {
 
     let (s, warnings) = Snapshot::build(&PinSet::empty(), rows);
 
-    assert_eq!(s.view("auth.session_ttl").unwrap().source, Source::Default);
-    let keys: Vec<&str> = warnings.iter().map(|w| w.key.as_str()).collect();
+    let ttl = s.view("auth.session_ttl").unwrap();
+    assert_eq!(ttl.source, Source::Default);
+    assert_eq!(ttl.value, json!("30d"));
+    assert_eq!(ttl.version, 2, "kept so the row can be overwritten");
+    let mut keys: Vec<&str> = warnings.iter().map(|w| w.key.as_str()).collect();
+    keys.sort_unstable();
     assert_eq!(keys, ["auth.session_ttl", "legacy.removed"]);
+}
+
+#[test]
+fn unreadable_rows_keep_their_version_without_another_warning() {
+    let row = Stored {
+        value: None,
+        ..stored("smtp.password", json!(null), 4)
+    };
+
+    let (s, warnings) = Snapshot::build(&PinSet::empty(), vec![row]);
+
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let view = s.view("smtp.password").unwrap();
+    assert_eq!((view.source, view.version), (Source::Default, 4));
+    assert_eq!(view.value, json!({ "set": false }));
 }
 
 #[test]
@@ -157,6 +167,16 @@ fn problems_never_echo_submitted_values() {
     let text = format!("{rejection} {rejection:?}");
     assert!(!text.contains("xyzzy"), "{text}");
     assert!(!text.contains("plugh"), "{text}");
+}
+
+#[test]
+fn unknown_keys_are_echoed_truncated_and_escaped() {
+    let long = format!("x\n{}", "k".repeat(200));
+    let rejection = prepare(&PinSet::empty(), &[change(&long, json!(1))]).unwrap_err();
+
+    let keys = invalid_keys(rejection);
+    assert!(keys[0].starts_with("x\\n"), "{keys:?}");
+    assert!(keys[0].chars().count() < 80, "{keys:?}");
 }
 
 #[test]

@@ -111,7 +111,8 @@ impl<T: Bound> Range<T> {
     }
 }
 
-/// Text constraints; control characters are always rejected.
+/// Text constraints; control and invisible formatting characters are
+/// always rejected.
 #[derive(Debug, Clone, Copy)]
 pub struct TextRule {
     max_len: usize,
@@ -126,8 +127,11 @@ impl TextRule {
         if text.chars().count() > self.max_len {
             return Err(format!("must be at most {} characters", self.max_len));
         }
-        if text.chars().any(char::is_control) {
-            return Err("must not contain control characters".to_owned());
+        if text
+            .chars()
+            .any(|c| c.is_control() || is_invisible_format(c))
+        {
+            return Err("must not contain control or invisible formatting characters".to_owned());
         }
         Ok(())
     }
@@ -135,6 +139,22 @@ impl TextRule {
     fn describe(&self) -> Map<String, Json> {
         Map::from_iter([("max_length".to_owned(), Json::from(self.max_len))])
     }
+}
+
+/// Zero-width, bidi-control and line/paragraph separator characters
+/// (Unicode `Cf`/`Zl`/`Zp` members that render invisibly or reorder text).
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{061C}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
 }
 
 /// List constraints.
@@ -416,6 +436,13 @@ mod tests {
         assert!("ok".to_owned().check(&max_len(2)).is_ok());
         assert!("long".to_owned().check(&max_len(2)).is_err());
         assert!("a\nb".to_owned().check(&max_len(9)).is_err());
+        for invisible in ["a\u{202E}b", "a\u{200B}b", "a\u{2028}b", "\u{FEFF}a"] {
+            assert!(
+                invisible.to_owned().check(&max_len(9)).is_err(),
+                "{invisible:?}"
+            );
+        }
+        assert!("Ünïcode ok".to_owned().check(&max_len(20)).is_ok());
         assert!(String::parse(&json!(5)).is_err());
     }
 

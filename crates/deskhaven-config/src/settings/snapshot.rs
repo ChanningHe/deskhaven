@@ -11,6 +11,7 @@ use super::kind::SettingType;
 use super::pins::PinSet;
 use super::registry::{all, lookup};
 use super::rules;
+use super::update::Accepted;
 use super::value::Value;
 use crate::Source;
 
@@ -20,6 +21,7 @@ pub struct Entry {
     value: Value,
     source: Source,
     pinned: bool,
+    version: i64,
 }
 
 impl Entry {
@@ -35,12 +37,11 @@ impl Entry {
         self.pinned
     }
 
-    /// Optimistic-lock version of the stored row; 0 when nothing is stored.
+    /// Optimistic-lock version of the stored row; 0 when no row exists.
+    /// Also set when the row was ignored (unreadable or invalid), so a
+    /// client can overwrite it.
     pub fn version(&self) -> i64 {
-        match self.source {
-            Source::Database { version, .. } => version,
-            _ => 0,
-        }
+        self.version
     }
 }
 
@@ -48,7 +49,9 @@ impl Entry {
 #[derive(Clone, PartialEq)]
 pub struct Stored {
     pub key: String,
-    pub value: Json,
+    /// `None`: the row exists but could not be read (the caller reported
+    /// why); the default applies but the version is kept.
+    pub value: Option<Json>,
     pub version: i64,
     pub by: Option<i64>,
     /// Unix milliseconds.
@@ -63,14 +66,6 @@ impl fmt::Debug for Stored {
             .field("version", &self.version)
             .finish_non_exhaustive()
     }
-}
-
-/// A validated value replacing the effective value of `key`.
-#[derive(Debug, Clone)]
-pub struct Update {
-    pub key: &'static str,
-    pub value: Value,
-    pub source: Source,
 }
 
 /// A stored value that was ignored, or a cross-key rule that does not hold.
@@ -98,10 +93,13 @@ pub struct SettingView {
     pub source: Source,
     pub pinned: bool,
     pub sensitive: bool,
+    /// Send back as [`Change::version`](super::Change) when updating.
     pub version: i64,
 }
 
 /// Every setting's effective value. Immutable; a change builds a new one.
+/// Only [`Snapshot::build`] and [`Snapshot::with_accepted`] create entries,
+/// and both take values coerced by the setting's own declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
     entries: BTreeMap<&'static str, Entry>,
@@ -114,19 +112,20 @@ impl Snapshot {
     }
 
     /// Resolves pin > stored > default for every declared setting. Unknown
-    /// or invalid stored rows are ignored (the default applies) and reported,
-    /// as are cross-key rules that do not hold: a bad row must not keep the
-    /// server, and with it the settings UI, from starting.
+    /// or invalid stored rows are ignored (the default applies, the row's
+    /// version is kept) and reported, as are cross-key rules that do not
+    /// hold: a bad row must not keep the server, and with it the settings
+    /// UI, from starting.
     pub fn build(
         pins: &PinSet,
         stored: impl IntoIterator<Item = Stored>,
     ) -> (Self, Vec<LoadWarning>) {
         let mut warnings = Vec::new();
-        let mut from_db = BTreeMap::new();
+        let mut rows = BTreeMap::new();
         for row in stored {
             match decode(row) {
-                Ok((key, entry)) => {
-                    from_db.insert(key, entry);
+                Ok((key, row)) => {
+                    rows.insert(key, row);
                 }
                 Err(warning) => warnings.push(warning),
             }
@@ -134,11 +133,10 @@ impl Snapshot {
         let entries = all()
             .iter()
             .map(|setting| {
-                let key = setting.key();
-                let entry = pinned(pins, key)
-                    .or_else(|| from_db.remove(key))
-                    .unwrap_or_else(|| default_entry(*setting));
-                (key, entry)
+                (
+                    setting.key(),
+                    resolve(*setting, pins, rows.remove(setting.key()), &mut warnings),
+                )
             })
             .collect();
         let snapshot = Self { entries };
@@ -151,8 +149,8 @@ impl Snapshot {
 
     /// The typed effective value of `setting`.
     pub fn get<T: SettingType>(&self, setting: &Setting<T>) -> T {
-        // Entries are built only from values coerced by the same declaration,
-        // so the fallback is unreachable; it avoids a panic path.
+        // Entries hold only values coerced by the same declaration, so the
+        // fallback is unreachable; it avoids a panic path.
         self.entries
             .get(setting.key())
             .and_then(|entry| T::from_value(&entry.value))
@@ -163,17 +161,21 @@ impl Snapshot {
         self.entries.get(key)
     }
 
-    /// A copy with `updates` applied. Pinned keys keep their pin.
-    pub fn with_updates(&self, updates: impl IntoIterator<Item = Update>) -> Self {
+    /// A copy with `accepted` applied as stored at version
+    /// `expected + 1` by `by` at `at` (unix ms). Pinned keys keep their pin.
+    pub fn with_accepted(&self, accepted: &[Accepted], by: Option<i64>, at: i64) -> Self {
         let mut entries = self.entries.clone();
-        for update in updates {
-            if let Some(entry) = entries.get_mut(update.key).filter(|e| !e.pinned) {
-                *entry = Entry {
-                    value: update.value,
-                    source: update.source,
-                    pinned: false,
-                };
-            }
+        for change in accepted {
+            let Some(entry) = entries.get_mut(change.key()).filter(|e| !e.pinned) else {
+                continue;
+            };
+            let version = change.expected_version() + 1;
+            *entry = Entry {
+                value: change.value().clone(),
+                source: Source::Database { version, by, at },
+                pinned: false,
+                version,
+            };
         }
         Self { entries }
     }
@@ -189,7 +191,7 @@ impl Snapshot {
             source: entry.source.clone(),
             pinned: entry.pinned,
             sensitive: setting.is_sensitive(),
-            version: entry.version(),
+            version: entry.version,
         })
     }
 
@@ -199,45 +201,62 @@ impl Snapshot {
     }
 }
 
-fn pinned(pins: &PinSet, key: &str) -> Option<Entry> {
-    pins.get(key).map(|pin| Entry {
-        value: pin.value.clone(),
-        source: pin.source.clone(),
-        pinned: true,
-    })
-}
-
-fn default_entry(setting: &dyn AnySetting) -> Entry {
-    Entry {
-        value: setting.default_value(),
-        source: Source::Default,
-        pinned: false,
+/// Pin, else a readable valid row, else the default (keeping the row version).
+fn resolve(
+    setting: &dyn AnySetting,
+    pins: &PinSet,
+    row: Option<Stored>,
+    warnings: &mut Vec<LoadWarning>,
+) -> Entry {
+    let version = row.as_ref().map_or(0, |r| r.version);
+    if let Some(pin) = pins.get(setting.key()) {
+        return Entry {
+            value: pin.value.clone(),
+            source: pin.source.clone(),
+            pinned: true,
+            version,
+        };
+    }
+    let stored = row.and_then(|row| {
+        let raw = row.value.as_ref()?;
+        match setting.coerce(raw) {
+            Ok(value) => Some((value, row)),
+            Err(reason) => {
+                warnings.push(LoadWarning {
+                    key: row.key.clone(),
+                    problem: format!("stored value ignored ({reason}); using the default"),
+                });
+                None
+            }
+        }
+    });
+    match stored {
+        Some((value, row)) => Entry {
+            value,
+            source: Source::Database {
+                version: row.version,
+                by: row.by,
+                at: row.at,
+            },
+            pinned: false,
+            version,
+        },
+        None => Entry {
+            value: setting.default_value(),
+            source: Source::Default,
+            pinned: false,
+            version,
+        },
     }
 }
 
-fn decode(row: Stored) -> Result<(&'static str, Entry), LoadWarning> {
-    let warning = |problem: String| LoadWarning {
-        key: row.key.clone(),
-        problem,
-    };
-    let setting = lookup(&row.key)
-        .ok_or_else(|| warning("stored value for an unknown setting ignored".to_owned()))?;
-    let value = setting.coerce(&row.value).map_err(|reason| {
-        warning(format!(
-            "stored value ignored ({reason}); using the default"
-        ))
-    })?;
-    let source = Source::Database {
-        version: row.version,
-        by: row.by,
-        at: row.at,
-    };
-    Ok((
-        setting.key(),
-        Entry {
-            value,
-            source,
-            pinned: false,
-        },
-    ))
+/// Rows of unknown settings are reported and dropped.
+fn decode(row: Stored) -> Result<(&'static str, Stored), LoadWarning> {
+    match lookup(&row.key) {
+        Some(setting) => Ok((setting.key(), row)),
+        None => Err(LoadWarning {
+            key: row.key,
+            problem: "stored value for an unknown setting ignored".to_owned(),
+        }),
+    }
 }

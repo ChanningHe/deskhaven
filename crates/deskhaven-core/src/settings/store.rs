@@ -34,52 +34,60 @@ pub(super) async fn fetch(conn: &impl ConnectionTrait) -> Result<Vec<setting::Mo
 }
 
 /// Serializes settings writers across processes. SQLite already holds the
-/// write lock (`BEGIN IMMEDIATE`); PostgreSQL READ COMMITTED would otherwise
-/// allow write skew across keys of one cross-key rule. Readers are not blocked.
+/// write lock (`BEGIN IMMEDIATE`, bounded by its busy timeout); PostgreSQL
+/// READ COMMITTED would otherwise allow write skew across keys of one
+/// cross-key rule. Readers are not blocked. The wait is bounded so a stuck
+/// transaction elsewhere surfaces as an error instead of a hang.
 pub(super) async fn lock(tx: &DatabaseTransaction) -> Result<(), DbErr> {
     if tx.get_database_backend() == DbBackend::Postgres {
+        tx.execute_unprepared(PG_LOCK_TIMEOUT).await?;
         tx.execute_unprepared("LOCK TABLE settings IN EXCLUSIVE MODE")
             .await?;
     }
     Ok(())
 }
 
-/// Rows that cannot be read become warnings; the snapshot then ignores them.
+/// Matches the SQLite busy timeout (`deskhaven_db::SQLITE_BUSY_TIMEOUT`).
+const PG_LOCK_TIMEOUT: &str = "SET LOCAL lock_timeout = '5s'";
+
+/// Every row becomes a [`Stored`]; one that cannot be read keeps its
+/// version (so it can be overwritten) and is reported as a warning.
 pub(super) fn decode(
     rows: &[setting::Model],
     crypto: &SecretBox,
 ) -> (Vec<Stored>, Vec<LoadWarning>) {
-    let mut stored = Vec::with_capacity(rows.len());
     let mut warnings = Vec::new();
-    for row in rows {
-        match decode_row(row, crypto) {
-            Ok(value) => stored.push(value),
-            Err(warning) => warnings.push(warning),
-        }
-    }
+    let stored = rows
+        .iter()
+        .map(|row| {
+            let value = decode_value(row, crypto)
+                .map_err(|problem| {
+                    warnings.push(LoadWarning {
+                        key: row.key.clone(),
+                        problem: format!("{problem}; using the default"),
+                    })
+                })
+                .ok();
+            Stored {
+                key: row.key.clone(),
+                value,
+                version: row.version,
+                by: row.updated_by,
+                at: row.updated_at.timestamp_millis(),
+            }
+        })
+        .collect();
     (stored, warnings)
 }
 
-fn decode_row(row: &setting::Model, crypto: &SecretBox) -> Result<Stored, LoadWarning> {
-    let warning = |problem: &str| LoadWarning {
-        key: row.key.clone(),
-        problem: format!("{problem}; using the default"),
-    };
+fn decode_value(row: &setting::Model, crypto: &SecretBox) -> Result<Json, &'static str> {
     let value: Json =
-        serde_json::from_str(&row.value).map_err(|_| warning("stored value is not valid JSON"))?;
-    let value = match lookup(&row.key).is_some_and(|s| s.is_sensitive()) {
-        true => open(crypto, &row.key, &value).ok_or_else(|| {
-            warning("stored secret cannot be decrypted (other master key, or moved/tampered)")
-        })?,
-        false => value,
-    };
-    Ok(Stored {
-        key: row.key.clone(),
-        value,
-        version: row.version,
-        by: row.updated_by,
-        at: row.updated_at.timestamp_millis(),
-    })
+        serde_json::from_str(&row.value).map_err(|_| "stored value is not valid JSON")?;
+    match lookup(&row.key).is_some_and(|s| s.is_sensitive()) {
+        true => open(crypto, &row.key, &value)
+            .ok_or("stored secret cannot be decrypted (other master key, or moved/tampered)"),
+        false => Ok(value),
+    }
 }
 
 fn open(crypto: &SecretBox, key: &str, value: &Json) -> Option<Json> {

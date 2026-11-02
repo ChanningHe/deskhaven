@@ -1,7 +1,7 @@
 //! Type-erased setting values and the `host:port` list item.
 
 use std::fmt;
-use std::net::Ipv6Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
 use serde_json::{Value as Json, json};
@@ -50,8 +50,11 @@ impl Value {
 }
 
 const MAX_HOST_LEN: usize = 253;
+const MAX_LABEL_LEN: usize = 63;
 
-/// A relay or server address: DNS name, IPv4 or bracketed IPv6, plus a non-zero port.
+/// A relay or server address: DNS name, IPv4 or bracketed IPv6, plus a
+/// non-zero port. Stored canonically (lowercase name, normalized IP), so
+/// equal addresses compare equal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HostPort {
     host: String,
@@ -79,35 +82,49 @@ impl FromStr for HostPort {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (host, port) = split_host_port(s.trim()).ok_or(HostPortError)?;
-        let port = port
-            .parse::<u16>()
-            .ok()
-            .filter(|p| *p != 0)
-            .ok_or(HostPortError)?;
-        Ok(Self {
-            host: host.to_owned(),
-            port,
-        })
+        let port = parse_port(port).ok_or(HostPortError)?;
+        Ok(Self { host, port })
     }
 }
 
-/// `[v6]:port` or `name:port`; the host part is checked here.
-fn split_host_port(s: &str) -> Option<(&str, &str)> {
+/// `[v6]:port` or `host:port`; returns the canonical host.
+fn split_host_port(s: &str) -> Option<(String, &str)> {
     if let Some(rest) = s.strip_prefix('[') {
         let (host, port) = rest.split_once("]:")?;
-        host.parse::<Ipv6Addr>().ok()?;
-        return Some((host, port));
+        let ip = host.parse::<Ipv6Addr>().ok()?;
+        return Some((ip.to_string(), port));
     }
     let (host, port) = s.rsplit_once(':')?;
-    is_dns_or_ipv4(host).then_some((host, port))
+    Some((canonical_host(host)?, port))
 }
 
-fn is_dns_or_ipv4(host: &str) -> bool {
-    !host.is_empty()
-        && host.len() <= MAX_HOST_LEN
-        && host
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_'))
+/// Digits only (no sign), 1-65535.
+fn parse_port(port: &str) -> Option<u16> {
+    if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    port.parse::<u16>().ok().filter(|p| *p != 0)
+}
+
+/// All-numeric hosts must be valid IPv4; anything else a DNS name.
+fn canonical_host(host: &str) -> Option<String> {
+    if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return host.parse::<Ipv4Addr>().ok().map(|ip| ip.to_string());
+    }
+    is_dns_name(host).then(|| host.to_ascii_lowercase())
+}
+
+/// Labels of 1-63 letters, digits, `-` or `_`, not starting or ending with `-`.
+fn is_dns_name(host: &str) -> bool {
+    host.len() <= MAX_HOST_LEN
+        && host.split('.').all(|label| {
+            (1..=MAX_LABEL_LEN).contains(&label.len())
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
 }
 
 impl fmt::Display for HostPort {
@@ -155,9 +172,35 @@ mod tests {
             "[nothex]:80",
             "a b:80",
             "host:80x",
+            "host:+80",
+            ".:80",
+            "...:80",
+            "-:80",
+            "a..b:80",
+            "-a-:80",
+            "example.com.:80",
+            "999.999.999.999:80",
+            "1.2.3:80",
         ] {
             assert!(input.parse::<HostPort>().is_err(), "{input:?}");
         }
+        let long_label = format!("{}.com:80", "a".repeat(64));
+        assert!(long_label.parse::<HostPort>().is_err());
+    }
+
+    #[test]
+    fn host_port_is_canonical() {
+        let parse = |s: &str| s.parse::<HostPort>().unwrap();
+        assert_eq!(
+            parse("Relay.Example.COM:0080"),
+            parse("relay.example.com:80")
+        );
+        assert_eq!(
+            parse("Relay.Example.COM:80").to_string(),
+            "relay.example.com:80"
+        );
+        assert_eq!(parse("[0:0:0:0:0:0:0:1]:1"), parse("[::1]:1"));
+        assert_eq!(parse("_srv.x-y.example:1").host(), "_srv.x-y.example");
     }
 
     #[test]

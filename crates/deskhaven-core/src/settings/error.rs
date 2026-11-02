@@ -20,6 +20,11 @@ pub enum SettingsError {
     #[error("invalid settings: {}", render(problems))]
     Invalid { problems: Vec<Problem> },
 
+    /// The update task panicked or the runtime is shutting down; whether
+    /// the batch was committed is unknown until the next read.
+    #[error("settings update did not complete")]
+    Aborted,
+
     #[error("settings storage failed")]
     Database(#[from] DbErr),
 

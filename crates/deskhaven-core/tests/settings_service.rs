@@ -381,10 +381,17 @@ async fn moved_or_corrupt_rows_fall_back_with_warnings() {
         assert!(snapshot.get(&settings::SMTP_PASSWORD).is_empty());
         assert_eq!(snapshot.get(&settings::SMTP_PORT), 587);
 
-        // The unreadable rows can still be overwritten at their stored version.
+        // The unreadable rows can be overwritten with the version the read
+        // API reports for them.
+        let version = |key: &str| snapshot.view(key).unwrap().version;
+        assert_eq!((version("smtp.password"), version("smtp.port")), (1, 1));
         svc.update(request(vec![
-            change("smtp.password", json!("fresh-secret"), 1),
-            change("smtp.port", json!(2525), 1),
+            change(
+                "smtp.password",
+                json!("fresh-secret"),
+                version("smtp.password"),
+            ),
+            change("smtp.port", json!(2525), version("smtp.port")),
         ]))
         .await
         .unwrap();
@@ -413,6 +420,44 @@ async fn subscribers_see_the_new_snapshot() {
         let relays = rx.borrow_and_update().get(&settings::SIGNAL_RELAY_SERVERS);
         assert_eq!(relays.len(), 2);
         assert_eq!(relays[0].to_string(), "r1:21117");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn dropped_update_still_commits_and_publishes_together() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db, PinSet::empty()).await;
+        let mut rx = svc.subscribe();
+
+        // Polled once (the batch is handed to its own task), then dropped.
+        let update = svc.update(request(vec![change("smtp.port", json!(2525), 0)]));
+        let dropped = tokio::time::timeout(std::time::Duration::ZERO, update).await;
+        assert!(dropped.is_err(), "expected the caller to give up first");
+
+        rx.changed().await.unwrap();
+        assert_eq!(svc.snapshot().get(&settings::SMTP_PORT), 2525);
+        assert_eq!(row_count(db).await, (1, 1));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn overlong_or_multiline_reason_is_rejected() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db, PinSet::empty()).await;
+        for reason in ["x".repeat(501), "line\nbreak".to_owned()] {
+            let err = svc
+                .update(UpdateRequest {
+                    changes: vec![change("smtp.port", json!(2525), 0)],
+                    actor: None,
+                    reason: Some(reason),
+                })
+                .await
+                .unwrap_err();
+            assert!(matches!(err, SettingsError::Invalid { .. }), "{err:?}");
+        }
+        assert_eq!(row_count(db).await, (0, 0));
     })
     .await;
 }

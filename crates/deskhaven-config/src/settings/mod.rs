@@ -24,7 +24,7 @@ pub use enums::{AclAction, Registration, SmtpTls, TfaEnforce};
 pub use kind::{Bound, ListRule, Range, SettingType, TextRule};
 pub use pins::{PinError, PinProblem, PinSet};
 pub use registry::*;
-pub use snapshot::{Entry, LoadWarning, SettingView, Snapshot, Stored, Update};
+pub use snapshot::{Entry, LoadWarning, SettingView, Snapshot, Stored};
 pub use update::{Accepted, Change, Problem, Rejection, check_rules, prepare};
 pub use value::{HostPort, HostPortError, Value};
 
