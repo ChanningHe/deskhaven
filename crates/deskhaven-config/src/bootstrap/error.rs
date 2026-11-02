@@ -1,6 +1,11 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use figment::error::Kind;
+
+use super::keys::KnownKeys;
+use crate::types::REDACTED;
+
 /// Fatal problems while loading the bootstrap configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -33,11 +38,30 @@ pub enum ConfigError {
     Render(#[from] serde_json::Error),
 }
 
-impl From<figment::Error> for ConfigError {
-    fn from(err: figment::Error) -> Self {
-        let lines: Vec<String> = err.into_iter().map(|e| format!("  - {e}")).collect();
+impl ConfigError {
+    /// Renders figment errors; for secret keys the offending value is
+    /// replaced so it never reaches logs (key and expected type are kept).
+    pub(crate) fn extract(err: figment::Error, known: &KnownKeys) -> Self {
+        let lines: Vec<String> = err
+            .into_iter()
+            .map(|mut e| {
+                if known.is_secret(&e.path.join(".")) {
+                    e.kind = redact(e.kind);
+                }
+                format!("  - {e}")
+            })
+            .collect();
         Self::Extract(lines.join("\n"))
     }
+}
+
+fn redact(kind: Kind) -> Kind {
+    let detail = match kind {
+        Kind::InvalidType(_, expected) => format!("invalid type: expected {expected}"),
+        Kind::InvalidValue(_, expected) => format!("invalid value: expected {expected}"),
+        _ => "invalid value".to_owned(),
+    };
+    Kind::Message(format!("{detail} (value {REDACTED})"))
 }
 
 /// Non-fatal findings returned to the caller; the library never prints.

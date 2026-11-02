@@ -157,7 +157,11 @@ fn env_pin_lands_in_settings_map_with_source() {
 
         let loaded = common::load(jail).map_err(jail_err)?;
 
-        let pin = loaded.config.settings.get("auth.session_ttl");
+        let pin = loaded
+            .config
+            .settings
+            .get("auth.session_ttl")
+            .map(|p| p.value());
         assert_eq!(pin, Some(&serde_json::json!("1d")));
         assert_eq!(
             loaded.source("settings.auth.session_ttl"),

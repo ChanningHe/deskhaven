@@ -20,31 +20,28 @@ pub struct EffectiveEntry {
     pub source: Source,
 }
 
+/// Schema leaves (sources from `figment`), then pins (sources already resolved).
 pub(crate) fn collect(
     figment: &Figment,
     config: &Bootstrap,
     env: &EnvPlan,
 ) -> Result<Vec<EffectiveEntry>, serde_json::Error> {
-    let schema = schema_leaves(serde_json::to_value(config)?);
-    let pins = config.settings.iter().map(|(key, _)| {
-        (
-            format!("{SETTINGS_KEY}.{key}"),
-            serde_json::Value::from(REDACTED),
-        )
-    });
-    let entries = schema
+    let schema = schema_leaves(serde_json::to_value(config)?)
         .into_iter()
-        .chain(pins)
         .map(|(key, value)| {
             let source = source_of(figment, env, &key);
             EffectiveEntry { key, value, source }
-        })
-        .collect();
-    Ok(entries)
+        });
+    let pins = config.settings.iter().map(|(key, pin)| EffectiveEntry {
+        key: format!("{SETTINGS_KEY}.{key}"),
+        value: serde_json::Value::from(REDACTED),
+        source: pin.source().clone(),
+    });
+    Ok(schema.chain(pins).collect())
 }
 
 /// Maps the metadata of the layer that won `path` to a [`Source`].
-fn source_of(figment: &Figment, env: &EnvPlan, path: &str) -> Source {
+pub(crate) fn source_of(figment: &Figment, env: &EnvPlan, path: &str) -> Source {
     let Some(metadata) = figment.find_metadata(path) else {
         return Source::Default;
     };

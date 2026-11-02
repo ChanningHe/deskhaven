@@ -115,6 +115,26 @@ fn check_warns_on_unknown_env_but_succeeds() {
 }
 
 #[test]
+fn print_without_effective_lists_only_explicit_keys() {
+    let dir = workdir("print_explicit");
+    std::fs::write(dir.join("deskhaven.toml"), "[log]\nformat = \"json\"\n").unwrap();
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "print"],
+        &[],
+    );
+
+    let stdout = text(&out.stdout);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        line_for(&stdout, "log.format").contains("# file:"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("# default"), "{stdout}");
+}
+
+#[test]
 fn schema_is_json_and_forbids_unknown_keys() {
     let dir = workdir("schema");
 

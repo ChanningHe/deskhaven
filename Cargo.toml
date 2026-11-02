@@ -39,6 +39,7 @@ bytesize = "2.0"
 url = "2.5"
 clap = { version = "4.6", features = ["derive"] }
 anyhow = "1.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter"] }
 
 
 [workspace.lints.rust]

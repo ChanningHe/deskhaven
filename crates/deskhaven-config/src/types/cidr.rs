@@ -4,7 +4,8 @@ use std::str::FromStr;
 
 use ipnet::IpNet;
 
-/// An IPv4 or IPv6 network in CIDR notation, e.g. `"10.0.0.0/8"`.
+/// An IPv4 or IPv6 network in CIDR notation, e.g. `"10.0.0.0/8"`; a bare
+/// address means a single host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cidr(IpNet);
 
@@ -28,10 +29,16 @@ pub struct CidrError {
 impl FromStr for Cidr {
     type Err = CidrError;
 
+    /// A bare address is a single host (`/32` or `/128`).
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.trim().parse::<IpNet>().map(Self).map_err(|_| CidrError {
-            input: s.to_owned(),
-        })
+        let trimmed = s.trim();
+        trimmed
+            .parse::<IpNet>()
+            .or_else(|_| trimmed.parse::<IpAddr>().map(IpNet::from))
+            .map(Self)
+            .map_err(|_| CidrError {
+                input: s.to_owned(),
+            })
     }
 }
 
@@ -58,8 +65,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bare_ip_and_bad_prefix() {
-        assert!("10.0.0.1".parse::<Cidr>().is_err());
+    fn bare_ip_is_a_host_network() {
+        assert_eq!(
+            "10.0.0.1".parse::<Cidr>().unwrap().to_string(),
+            "10.0.0.1/32"
+        );
+        assert_eq!(
+            " fd00::1 ".parse::<Cidr>().unwrap().to_string(),
+            "fd00::1/128"
+        );
+    }
+
+    #[test]
+    fn rejects_bad_prefix_and_garbage() {
         assert!("10.0.0.0/33".parse::<Cidr>().is_err());
+        assert!("not-an-ip".parse::<Cidr>().is_err());
     }
 }

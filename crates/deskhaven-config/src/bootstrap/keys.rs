@@ -1,37 +1,103 @@
 //! Key paths derived from the schema itself, so there is no hand-kept list.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use figment::value::{Dict, Value};
 use serde_json::Value as Json;
 
 use super::error::ConfigError;
 use super::pins::SETTINGS_KEY;
-use super::schema::Bootstrap;
+use super::schema::{Bootstrap, json_schema};
 
-/// Every schema leaf (dotted path) with its default value.
-pub(crate) struct KnownKeys(BTreeMap<String, Json>);
+const SECRET_REF: &str = "#/$defs/Secret";
+const DEFS_PREFIX: &str = "#/$defs/";
+
+/// Every schema leaf (dotted path) with its default value, plus which leaves
+/// are secrets (taken from the JSON Schema `$ref`s).
+pub(crate) struct KnownKeys {
+    defaults: BTreeMap<String, Json>,
+    secrets: BTreeSet<String>,
+}
 
 impl KnownKeys {
     pub(crate) fn new() -> Result<Self, serde_json::Error> {
         let defaults = serde_json::to_value(Bootstrap::default())?;
-        Ok(Self(schema_leaves(defaults).into_iter().collect()))
+        let schema = json_schema();
+        let mut secrets = BTreeSet::new();
+        collect_secrets(&schema, &schema, "", &mut secrets);
+        Ok(Self {
+            defaults: schema_leaves(defaults).into_iter().collect(),
+            secrets,
+        })
+    }
+
+    pub(crate) fn is_schema_leaf(&self, path: &str) -> bool {
+        self.defaults.contains_key(path)
+    }
+
+    pub(crate) fn is_secret(&self, path: &str) -> bool {
+        self.secrets.contains(path)
     }
 
     /// A schema leaf, or any well-formed key under `settings.` (pins).
     pub(crate) fn contains(&self, path: &str) -> bool {
-        self.0.contains_key(path) || pin_key(path).is_some()
+        self.is_schema_leaf(path) || pin_key(path).is_some()
     }
 
-    /// Converts a raw string (env / file / CLI) into a figment value. String
-    /// keys keep the text verbatim; others use figment's env value syntax.
+    /// The single parser for raw strings from env, `_FILE` and CLI:
+    /// string keys and pins stay verbatim (pins are typed later by the
+    /// settings registry), lists accept `a,b` or `[a, b]`, other keys use
+    /// figment's value syntax.
     pub(crate) fn typed_value(&self, path: &str, raw: &str) -> Value {
-        match self.0.get(path) {
-            Some(Json::String(_)) => Value::from(raw.to_owned()),
-            _ => {
-                let Ok(value) = raw.parse::<Value>();
-                value
+        match self.defaults.get(path) {
+            None | Some(Json::String(_)) => Value::from(raw.to_owned()),
+            Some(Json::Array(_)) => list_value(raw),
+            Some(_) => parse_value(raw),
+        }
+    }
+}
+
+fn parse_value(raw: &str) -> Value {
+    let Ok(value) = raw.parse::<Value>();
+    value
+}
+
+fn list_value(raw: &str) -> Value {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('[') {
+        return parse_value(trimmed);
+    }
+    let items: Vec<Value> = trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| Value::from(item.to_owned()))
+        .collect();
+    Value::from(items)
+}
+
+/// Walks `properties`, following `$defs` refs, collecting Secret-typed paths.
+fn collect_secrets(root: &Json, node: &Json, prefix: &str, out: &mut BTreeSet<String>) {
+    let Some(props) = node.get("properties").and_then(Json::as_object) else {
+        return;
+    };
+    for (key, prop) in props {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        match prop.get("$ref").and_then(Json::as_str) {
+            Some(SECRET_REF) => {
+                out.insert(path);
             }
+            Some(reference) => {
+                let name = reference.strip_prefix(DEFS_PREFIX).unwrap_or(reference);
+                if let Some(def) = root.get("$defs").and_then(|defs| defs.get(name)) {
+                    collect_secrets(root, def, &path, out);
+                }
+            }
+            None => {}
         }
     }
 }
@@ -122,5 +188,15 @@ mod tests {
             keys.typed_value("signal.port", "123"),
             "123".parse::<Value>().unwrap()
         );
+        let pin = keys.typed_value("settings.smtp.password", "0042");
+        assert_eq!(pin, Value::from("0042".to_owned()));
+    }
+
+    #[test]
+    fn secrets_come_from_schema() {
+        let keys = KnownKeys::new().unwrap();
+        let expected =
+            BTreeSet::from(["database.url".to_owned(), "security.master_key".to_owned()]);
+        assert_eq!(keys.secrets, expected);
     }
 }

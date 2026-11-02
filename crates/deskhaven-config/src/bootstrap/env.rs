@@ -1,10 +1,13 @@
 //! Classification of `DESKHAVEN_*` variables and `<KEY>_FILE` indirection.
+//!
+//! Env values never go through figment's own `Env` provider: they are typed
+//! by [`KnownKeys::typed_value`], the single parser shared with `_FILE` and CLI.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use figment::value::Dict;
+use figment::value::{Dict, Value};
 
 use super::error::{ConfigError, Warning};
 use super::keys::{KnownKeys, dict_from};
@@ -12,37 +15,36 @@ use super::keys::{KnownKeys, dict_from};
 pub(crate) const ENV_PREFIX: &str = "DESKHAVEN_";
 pub(crate) const KEY_SEPARATOR: &str = "__";
 pub(crate) const CONFIG_VAR: &str = "DESKHAVEN_CONFIG";
-const FILE_SUFFIX: &str = "_FILE";
+const FILE_SUFFIX: &str = "_file";
 
 /// How every `DESKHAVEN_*` variable is interpreted, keyed by dotted path.
 #[derive(Debug, Default)]
 pub(crate) struct EnvPlan {
-    /// path -> variable carrying the value directly.
-    pub plain: BTreeMap<String, String>,
+    /// path -> (variable, value).
+    pub plain: BTreeMap<String, (String, String)>,
     /// path -> (variable, file to read the value from).
     pub indirect: BTreeMap<String, (String, PathBuf)>,
-    /// `$DESKHAVEN_CONFIG`, if set.
+    /// `$DESKHAVEN_CONFIG`, if set and non-empty.
     pub config_path: Option<PathBuf>,
     pub warnings: Vec<Warning>,
 }
 
 impl EnvPlan {
-    pub(crate) fn plain_paths(&self) -> BTreeSet<String> {
-        self.plain.keys().cloned().collect()
-    }
-
     /// The variable that supplied `path`, for provenance.
     pub(crate) fn var_for(&self, path: &str) -> Option<&str> {
-        self.plain
-            .get(path)
+        let plain = self.plain.get(path).map(|(var, _)| var);
+        plain
+            .or_else(|| self.indirect.get(path).map(|(var, _)| var))
             .map(String::as_str)
-            .or_else(|| self.indirect.get(path).map(|(var, _)| var.as_str()))
     }
 }
 
-/// Classifies variables. A name is a plain key if its full path is known;
-/// otherwise a `_FILE` suffix over a known path is indirection (so
-/// `SIGNAL__KEY_FILE` stays the plain `signal.key_file` key).
+/// The env layers: (plain values, `_FILE` values).
+pub(crate) struct EnvLayers {
+    pub plain: Dict,
+    pub indirect: Dict,
+}
+
 pub(crate) fn plan(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
     known: &KnownKeys,
@@ -63,28 +65,35 @@ pub(crate) fn plan(
     Ok(plan)
 }
 
+/// Schema leaves win (`SIGNAL__KEY_FILE` is the plain `signal.key_file`);
+/// then a `_FILE` suffix over a known key (schema or pin) is indirection;
+/// then any other pin path is a plain pin.
 fn classify(plan: &mut EnvPlan, known: &KnownKeys, var: String, rest: &str, value: &str) {
     if var.eq_ignore_ascii_case(CONFIG_VAR) {
-        plan.config_path = Some(PathBuf::from(value));
+        plan.config_path = (!value.trim().is_empty()).then(|| PathBuf::from(value));
         return;
     }
     let path = to_path(rest);
-    if known.contains(&path) {
-        plan.plain.insert(path, var);
+    if known.is_schema_leaf(&path) {
+        plan.plain.insert(path, (var, value.to_owned()));
         return;
     }
-    let base = strip_suffix_ignore_case(rest, FILE_SUFFIX).map(to_path);
-    match base {
-        Some(base) if known.contains(&base) => {
-            plan.indirect.insert(base, (var, PathBuf::from(value)));
-        }
-        _ => plan.warnings.push(Warning::UnknownEnv { var }),
+    let base = path
+        .strip_suffix(FILE_SUFFIX)
+        .filter(|base| known.contains(base));
+    if let Some(base) = base {
+        plan.indirect
+            .insert(base.to_owned(), (var, PathBuf::from(value)));
+    } else if known.contains(&path) {
+        plan.plain.insert(path, (var, value.to_owned()));
+    } else {
+        plan.warnings.push(Warning::UnknownEnv { var });
     }
 }
 
 fn reject_conflicts(plan: &EnvPlan) -> Result<(), ConfigError> {
     for (path, (file_var, _)) in &plan.indirect {
-        if let Some(var) = plan.plain.get(path) {
+        if let Some((var, _)) = plan.plain.get(path) {
             return Err(ConfigError::EnvConflict {
                 var: var.clone(),
                 file_var: file_var.clone(),
@@ -94,9 +103,24 @@ fn reject_conflicts(plan: &EnvPlan) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Reads every `_FILE` target into a nested dict (one trailing newline is
-/// stripped, as secret files usually end with one).
-pub(crate) fn read_indirect(plan: &EnvPlan, known: &KnownKeys) -> Result<Dict, ConfigError> {
+/// Types plain values and reads `_FILE` targets. Both layers are also checked
+/// together so a pin cannot be shadowed across them (`A` vs `A__B_FILE`).
+pub(crate) fn layers(plan: &EnvPlan, known: &KnownKeys) -> Result<EnvLayers, ConfigError> {
+    let plain: Vec<(String, Value)> = plan
+        .plain
+        .iter()
+        .map(|(path, (_, raw))| (path.clone(), known.typed_value(path, raw)))
+        .collect();
+    let indirect = read_indirect(plan, known)?;
+    dict_from(plain.iter().chain(&indirect).cloned().collect())?;
+    Ok(EnvLayers {
+        plain: dict_from(plain)?,
+        indirect: dict_from(indirect)?,
+    })
+}
+
+/// One trailing newline is stripped, as secret files usually end with one.
+fn read_indirect(plan: &EnvPlan, known: &KnownKeys) -> Result<Vec<(String, Value)>, ConfigError> {
     let mut values = Vec::with_capacity(plan.indirect.len());
     for (path, (var, file)) in &plan.indirect {
         let content = std::fs::read_to_string(file).map_err(|source| ConfigError::EnvFileRead {
@@ -108,7 +132,7 @@ pub(crate) fn read_indirect(plan: &EnvPlan, known: &KnownKeys) -> Result<Dict, C
         let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
         values.push((path.clone(), known.typed_value(path, trimmed)));
     }
-    dict_from(values)
+    Ok(values)
 }
 
 fn strip_prefix_ignore_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -118,12 +142,6 @@ fn strip_prefix_ignore_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
 
 fn to_path(rest: &str) -> String {
     rest.to_ascii_lowercase().replace(KEY_SEPARATOR, ".")
-}
-
-fn strip_suffix_ignore_case<'a>(s: &'a str, suffix: &str) -> Option<&'a str> {
-    let cut = s.len().checked_sub(suffix.len())?;
-    let (head, tail) = (s.get(..cut)?, s.get(cut..)?);
-    tail.eq_ignore_ascii_case(suffix).then_some(head)
 }
 
 #[cfg(test)]

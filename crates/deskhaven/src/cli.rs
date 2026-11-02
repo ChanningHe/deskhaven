@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use deskhaven_config::bootstrap::{CliOverrides, LoadOptions};
 
@@ -18,7 +19,7 @@ pub struct Cli {
 
     /// Overrides `data_dir`
     #[arg(long, global = true, value_name = "PATH")]
-    pub data_dir: Option<String>,
+    pub data_dir: Option<PathBuf>,
 
     /// Overrides `log.level` (tracing EnvFilter syntax)
     #[arg(long, global = true, value_name = "FILTER")]
@@ -41,10 +42,10 @@ pub enum Command {
 pub enum ConfigCommand {
     /// Validate the configuration and exit
     Check,
-    /// Print configuration values
+    /// Print explicitly set keys (secrets redacted) with their source
     Print {
-        /// Every key with its effective value (secrets redacted) and source
-        #[arg(long, required = true)]
+        /// Include keys left at their built-in default
+        #[arg(long)]
         effective: bool,
     },
     /// Print the JSON Schema of the bootstrap configuration file
@@ -53,18 +54,19 @@ pub enum ConfigCommand {
 
 impl Cli {
     /// Load options derived from global flags.
-    pub fn load_options(&self) -> LoadOptions {
-        let overrides = [("data_dir", &self.data_dir), ("log.level", &self.log_level)];
-        let cli = overrides
-            .into_iter()
-            .fold(CliOverrides::default(), |acc, (key, value)| match value {
-                Some(value) => acc.with(key, value.clone()),
-                None => acc,
-            });
-        LoadOptions {
+    pub fn load_options(&self) -> anyhow::Result<LoadOptions> {
+        let mut cli = CliOverrides::default();
+        if let Some(dir) = &self.data_dir {
+            let dir = dir.to_str().context("--data-dir must be valid UTF-8")?;
+            cli = cli.with("data_dir", dir);
+        }
+        if let Some(level) = &self.log_level {
+            cli = cli.with("log.level", level.clone());
+        }
+        Ok(LoadOptions {
             config_path: self.config.clone(),
             cli,
             ..LoadOptions::default()
-        }
+        })
     }
 }

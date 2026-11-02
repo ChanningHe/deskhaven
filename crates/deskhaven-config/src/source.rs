@@ -11,6 +11,7 @@ use serde::Serialize;
 /// database-backed variant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum Source {
     /// Built-in default; no layer set the key.
     Default,

@@ -143,11 +143,11 @@ fn file_pins_accept_dotted_keys_and_env_overrides_them() {
 
         let settings = &loaded.config.settings;
         assert_eq!(
-            settings.get("auth.session_ttl"),
+            settings.get("auth.session_ttl").map(|p| p.value()),
             Some(&serde_json::json!("2d"))
         );
         assert_eq!(
-            settings.get("auth.lockout.max_failures"),
+            settings.get("auth.lockout.max_failures").map(|p| p.value()),
             Some(&serde_json::json!(3))
         );
         let file = jail.directory().join("deskhaven.toml");

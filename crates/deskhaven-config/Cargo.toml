@@ -16,6 +16,7 @@ humantime = { workspace = true }
 ipnet = { workspace = true }
 bytesize = { workspace = true }
 url = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 figment = { workspace = true, features = ["test"] }

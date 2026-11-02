@@ -18,12 +18,13 @@ use std::path::{Path, PathBuf};
 pub use cli::CliOverrides;
 pub use effective::EffectiveEntry;
 pub use error::{ConfigError, Warning};
-pub use pins::Pins;
+pub use pins::{Pin, Pins};
 pub use schema::{Bootstrap, Database, Listen, Log, LogFormat, Security, Signal, json_schema};
 
 use crate::Source;
 use env::CONFIG_VAR;
 use keys::KnownKeys;
+use pins::SETTINGS_KEY;
 
 /// Config file candidates when neither `--config` nor `$DESKHAVEN_CONFIG` is set.
 pub const DEFAULT_SEARCH_PATHS: [&str; 2] = ["deskhaven.toml", "/etc/deskhaven/deskhaven.toml"];
@@ -72,17 +73,6 @@ impl Loaded {
             .find(|e| e.key == key)
             .map(|e| &e.source)
     }
-
-    /// Raw pinned settings (dotted key, value, source) for the settings registry.
-    pub fn pins(&self) -> impl Iterator<Item = (&str, &serde_json::Value, Source)> {
-        self.config.settings.iter().map(|(key, value)| {
-            let source = self
-                .source(&format!("settings.{key}"))
-                .cloned()
-                .unwrap_or(Source::Default);
-            (key, value, source)
-        })
-    }
 }
 
 /// Loads, merges and validates the bootstrap configuration. Reads the process
@@ -90,12 +80,21 @@ impl Loaded {
 pub fn load(options: &LoadOptions) -> Result<Loaded, ConfigError> {
     let known = KnownKeys::new()?;
     let env = env::plan(std::env::vars_os(), &known)?;
+    let env_layers = env::layers(&env, &known)?;
     let cli = options.cli.to_dict(&known)?;
-    let file_values = env::read_indirect(&env, &known)?;
     let config_file = locate(options, env.config_path.as_deref())?;
 
-    let figment = layers::build(config_file.as_deref(), &env, file_values, cli);
-    let config: Bootstrap = figment.extract()?;
+    let figment = layers::build(config_file.as_deref(), env_layers, cli);
+    let extracted: Bootstrap = figment
+        .extract()
+        .map_err(|e| ConfigError::extract(e, &known))?;
+    let settings = extracted
+        .settings
+        .with_sources(|key| effective::source_of(&figment, &env, &format!("{SETTINGS_KEY}.{key}")));
+    let config = Bootstrap {
+        settings,
+        ..extracted
+    };
 
     let (problems, validation_warnings) = validate::validate(&config);
     if !problems.is_empty() {

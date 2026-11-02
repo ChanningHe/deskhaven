@@ -3,6 +3,7 @@
 use std::io::Write;
 
 use anyhow::Context;
+use deskhaven_config::Source;
 use deskhaven_config::bootstrap::{EffectiveEntry, LoadOptions, Loaded, json_schema, load};
 
 /// A readiness check run by `config check` after the configuration loaded.
@@ -39,9 +40,16 @@ pub fn check(options: &LoadOptions) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn print_effective(options: &LoadOptions) -> anyhow::Result<()> {
+/// Prints `key = value  # source`; with `include_defaults` every key, else
+/// only keys some layer set explicitly.
+pub fn print(options: &LoadOptions, include_defaults: bool) -> anyhow::Result<()> {
     let loaded = load_reporting(options)?;
-    let rows: Vec<(String, String)> = loaded.effective().iter().map(render).collect();
+    let rows: Vec<(String, String)> = loaded
+        .effective()
+        .iter()
+        .filter(|e| include_defaults || e.source != Source::Default)
+        .map(render)
+        .collect();
     let width = rows.iter().map(|(left, _)| left.len()).max().unwrap_or(0);
     let mut out = std::io::stdout().lock();
     for (left, source) in rows {

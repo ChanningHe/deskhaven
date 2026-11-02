@@ -1,6 +1,8 @@
 //! Semantic checks that serde types cannot express.
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+use tracing_subscriber::EnvFilter;
 
 use super::error::Warning;
 use super::schema::Bootstrap;
@@ -29,6 +31,7 @@ pub(crate) fn validate(cfg: &Bootstrap) -> (Vec<String>, Vec<Warning>) {
         "listen.admin_public_url",
         &cfg.listen.admin_public_url,
     ));
+    problems.extend(check_log_level(&cfg.log.level));
     problems.extend(check_database(cfg));
     problems.extend(check_signal_port(cfg));
     problems.extend(port_conflicts(&bindings(cfg)));
@@ -43,13 +46,14 @@ pub(crate) fn validate(cfg: &Bootstrap) -> (Vec<String>, Vec<Warning>) {
     (problems, warnings)
 }
 
+/// Never echoes the value: a malformed URL may still carry credentials.
 fn check_url(key: &str, value: &str) -> Option<String> {
     if value.is_empty() {
         return None;
     }
     let url = match url::Url::parse(value) {
         Ok(url) => url,
-        Err(e) => return Some(format!("{key}: invalid URL {value:?}: {e}")),
+        Err(e) => return Some(format!("{key}: invalid URL: {e}")),
     };
     let reason = if !URL_SCHEMES.contains(&url.scheme()) {
         "scheme must be http or https"
@@ -62,7 +66,14 @@ fn check_url(key: &str, value: &str) -> Option<String> {
     } else {
         return None;
     };
-    Some(format!("{key}: {reason} (got {value:?})"))
+    Some(format!("{key}: {reason}"))
+}
+
+fn check_log_level(level: &str) -> Option<String> {
+    EnvFilter::builder()
+        .parse(level)
+        .err()
+        .map(|e| format!("log.level: invalid filter {level:?}: {e}"))
 }
 
 /// Never echoes the URL: it may carry credentials.
@@ -120,15 +131,22 @@ fn bindings(cfg: &Bootstrap) -> Vec<Binding> {
     out
 }
 
-/// Port 0 (OS-assigned) never conflicts. Unspecified addresses overlap all.
+/// Whether binding both addresses on one port can collide. `[::]` may be
+/// dual-stack, so it overlaps everything; `0.0.0.0` overlaps all IPv4.
+fn ips_overlap(a: IpAddr, b: IpAddr) -> bool {
+    let v6_any = |ip: IpAddr| ip.is_ipv6() && ip.is_unspecified();
+    let v4_any_covers =
+        |any: IpAddr, other: IpAddr| any.is_ipv4() && any.is_unspecified() && other.is_ipv4();
+    a == b || v6_any(a) || v6_any(b) || v4_any_covers(a, b) || v4_any_covers(b, a)
+}
+
+/// Port 0 (OS-assigned) never conflicts.
 fn port_conflicts(bindings: &[Binding]) -> Vec<String> {
     let mut problems = Vec::new();
     for (i, a) in bindings.iter().enumerate() {
         for b in bindings.iter().skip(i + 1) {
             let same_port = a.addr.port() == b.addr.port() && a.addr.port() != 0;
-            let overlap = a.addr.ip() == b.addr.ip()
-                || a.addr.ip().is_unspecified()
-                || b.addr.ip().is_unspecified();
+            let overlap = ips_overlap(a.addr.ip(), b.addr.ip());
             if a.proto == b.proto && same_port && overlap {
                 problems.push(format!(
                     "{} ({}) conflicts with {} ({}) on port {}",
@@ -142,4 +160,40 @@ fn port_conflicts(bindings: &[Binding]) -> Vec<String> {
         }
     }
     problems
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn overlap(a: &str, b: &str) -> bool {
+        let (a, b): (IpAddr, IpAddr) = (a.parse().unwrap(), b.parse().unwrap());
+        assert_eq!(ips_overlap(a, b), ips_overlap(b, a), "asymmetric");
+        ips_overlap(a, b)
+    }
+
+    #[test]
+    fn v4_unspecified_overlaps_v4_and_v6_unspecified_only() {
+        assert!(overlap("0.0.0.0", "127.0.0.1"));
+        assert!(overlap("0.0.0.0", "::"));
+        assert!(!overlap("0.0.0.0", "::1"));
+    }
+
+    #[test]
+    fn v6_unspecified_overlaps_everything() {
+        assert!(overlap("::", "::1"));
+        assert!(overlap("::", "10.0.0.1"));
+    }
+
+    #[test]
+    fn specific_addresses_overlap_only_when_equal() {
+        assert!(!overlap("127.0.0.1", "10.0.0.1"));
+        assert!(overlap("127.0.0.1", "127.0.0.1"));
+    }
+
+    #[test]
+    fn accepts_common_log_filters() {
+        assert_eq!(check_log_level("info"), None);
+        assert_eq!(check_log_level("warn,deskhaven=debug"), None);
+    }
 }

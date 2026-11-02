@@ -23,11 +23,13 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli) -> anyhow::Result<()> {
-    let options = cli.load_options();
+    let options = cli.load_options()?;
     match cli.command.as_ref().unwrap_or(&Command::Serve) {
         Command::Serve => serve(&options),
         Command::Config(ConfigCommand::Check) => config_cmd::check(&options),
-        Command::Config(ConfigCommand::Print { .. }) => config_cmd::print_effective(&options),
+        Command::Config(ConfigCommand::Print { effective }) => {
+            config_cmd::print(&options, *effective)
+        }
         Command::Config(ConfigCommand::Schema) => config_cmd::schema(),
     }
 }

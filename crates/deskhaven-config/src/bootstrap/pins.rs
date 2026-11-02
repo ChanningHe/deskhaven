@@ -4,35 +4,99 @@
 //! nested tables; env always produces nested tables. [`NormalizedPins`]
 //! rewrites file pins into nested tables before merging so every layer agrees
 //! on one shape and figment precedence + `find_metadata` work per pin.
+//!
+//! Values from env, `_FILE` and CLI stay raw strings; the settings registry
+//! parses them against each setting's type. Pins whose real name ends in
+//! `_file` cannot be set via env (`<KEY>_FILE` always means indirection).
+//!
+//! Pin values may be sensitive (e.g. `smtp.password`), so `Debug` and
+//! `Serialize` show keys only; read values through [`Pin::value`].
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::fmt;
 
 use figment::value::{Dict, Map, Value};
 use figment::{Error, Metadata, Profile, Provider};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::Source;
+use crate::types::REDACTED;
 
 pub(crate) const SETTINGS_KEY: &str = "settings";
 
-/// Pinned settings flattened to dotted keys, e.g. `auth.session_ttl`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[serde(transparent)]
-pub struct Pins(BTreeMap<String, serde_json::Value>);
+/// One pinned setting with its provenance.
+#[derive(Clone, PartialEq)]
+pub struct Pin {
+    value: serde_json::Value,
+    source: Source,
+}
+
+impl Pin {
+    pub fn value(&self) -> &serde_json::Value {
+        &self.value
+    }
+
+    pub fn source(&self) -> &Source {
+        &self.source
+    }
+}
+
+impl fmt::Debug for Pin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Pin")
+            .field("value", &REDACTED)
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+/// Pinned settings keyed by dotted name, e.g. `auth.session_ttl`.
+#[derive(Clone, Default, PartialEq)]
+pub struct Pins(BTreeMap<String, Pin>);
 
 impl Pins {
-    pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
+    pub fn get(&self, key: &str) -> Option<&Pin> {
         self.0.get(key)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Pin)> {
         self.0.iter().map(|(k, v)| (k.as_str(), v))
     }
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Returns a copy with each pin's source resolved by `source_of(key)`.
+    pub(crate) fn with_sources(self, source_of: impl Fn(&str) -> Source) -> Self {
+        let resolved = self.0.into_iter().map(|(key, pin)| {
+            let source = source_of(&key);
+            (key, Pin { source, ..pin })
+        });
+        Self(resolved.collect())
+    }
 }
 
+impl fmt::Debug for Pins {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.0.iter()).finish()
+    }
+}
+
+/// Keys with redacted values.
+impl Serialize for Pins {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut map = s.serialize_map(Some(self.0.len()))?;
+        for key in self.0.keys() {
+            map.serialize_entry(key, REDACTED)?;
+        }
+        map.end()
+    }
+}
+
+/// Sources start as `Default`; the loader resolves them after merging.
 impl<'de> Deserialize<'de> for Pins {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let nested = BTreeMap::<String, serde_json::Value>::deserialize(d)?;
@@ -44,19 +108,21 @@ impl<'de> Deserialize<'de> for Pins {
     }
 }
 
-fn flatten_into(
-    out: &mut BTreeMap<String, serde_json::Value>,
-    key: String,
-    value: serde_json::Value,
-) {
+fn flatten_into(out: &mut BTreeMap<String, Pin>, key: String, value: serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
             for (k, v) in map {
                 flatten_into(out, format!("{key}.{k}"), v);
             }
         }
-        leaf => {
-            out.insert(key, leaf);
+        value => {
+            out.insert(
+                key,
+                Pin {
+                    value,
+                    source: Source::Default,
+                },
+            );
         }
     }
 }
