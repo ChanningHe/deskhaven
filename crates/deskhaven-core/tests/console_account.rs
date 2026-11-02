@@ -15,6 +15,8 @@ use deskhaven_core::sessions::{
     AccountFlags, ClientDevice, SessionError, SessionKind, SessionService, SessionToken,
 };
 use deskhaven_core::settings::SettingsService;
+use deskhaven_core::tfa::TfaService;
+use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{
     AuthSource, Credential, CredentialStamp, HashParams, NewUser, Password, PasswordHasher,
     ProfileUpdate, UserError, UserService,
@@ -34,14 +36,17 @@ const FAST: HashParams = HashParams {
 struct Env {
     users: UserService,
     sessions: SessionService,
+    tfa: TfaService,
+    clock: Arc<ManualClock>,
 }
 
 impl Env {
     async fn new(db: &TestDb) -> Self {
         let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
-        let (settings, _) = SettingsService::load(db.conn.clone(), crypto, PinSet::empty())
-            .await
-            .unwrap();
+        let (settings, _) =
+            SettingsService::load(db.conn.clone(), Arc::clone(&crypto), PinSet::empty())
+                .await
+                .unwrap();
         let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
         let users = UserService::with_clock(
             db.conn.clone(),
@@ -49,8 +54,20 @@ impl Env {
             PasswordHasher::new(FAST).unwrap(),
             clock.clone(),
         );
-        let sessions = SessionService::new(db.conn.clone(), settings, users.clone(), clock);
-        Self { users, sessions }
+        let tfa = TfaService::new(
+            db.conn.clone(),
+            crypto,
+            settings.clone(),
+            clock.clone(),
+            users.clone(),
+        );
+        let sessions = SessionService::new(db.conn.clone(), settings, users.clone(), clock.clone());
+        Self {
+            users,
+            sessions,
+            tfa,
+            clock,
+        }
     }
 
     async fn user(&self, username: &str) -> (i64, CredentialStamp) {
@@ -90,6 +107,14 @@ impl Env {
             .await
             .unwrap()
             .1
+    }
+
+    async fn flags(&self, token: &SessionToken) -> AccountFlags {
+        self.sessions
+            .authenticate(token.expose(), SessionKind::Console)
+            .await
+            .unwrap()
+            .account
     }
 
     async fn principal(
@@ -331,6 +356,36 @@ async fn rotation_refuses_unknown_and_client_sessions() {
             env.principal(&client, SessionKind::Client).await.is_ok(),
             "{b}"
         );
+    })
+    .await;
+}
+
+/// The cached principal never shows stale account flags after a change that matters to
+/// the console's account-setup gate.
+#[tokio::test]
+async fn account_flag_changes_reach_a_cached_principal_at_once() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (id, stamp) = env.user("alice").await;
+        let (_, token) = env.console(id, &stamp).await;
+        let b = db.backend;
+        // Fills the cache.
+        assert!(!env.flags(&token).await.must_change_password, "{b}");
+
+        let update = ProfileUpdate {
+            must_change_password: Some(true),
+            ..ProfileUpdate::default()
+        };
+        env.users.update_profile(id, update).await.unwrap();
+        assert!(env.flags(&token).await.must_change_password, "{b}");
+
+        let enrolment = env.tfa.begin_enrolment(id).await.unwrap();
+        let secret = TotpSecret::from_base32(&enrolment.secret).unwrap();
+        let code = totp::code_at(&secret, env.clock.now_ms());
+        env.tfa.confirm_enrolment(id, &code).await.unwrap();
+        assert!(env.flags(&token).await.totp_enabled, "{b}: enabled");
+        env.tfa.disable(id).await.unwrap();
+        assert!(!env.flags(&token).await.totp_enabled, "{b}: disabled");
     })
     .await;
 }

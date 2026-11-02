@@ -59,13 +59,18 @@ pub enum UserChange {
     RoleChanged { user_id: i64 },
     /// The status changed to anything but `disabled` (that one is `Event(Disabled)`).
     StatusChanged { user_id: i64 },
+    /// `must_change_password` was set, or TOTP was enabled or disabled (no event): what
+    /// the console's account-setup gate reads from the session principal.
+    AccountChanged { user_id: i64 },
 }
 
 impl UserChange {
     pub fn user_id(&self) -> i64 {
         match *self {
             Self::Event(event) => event.user_id(),
-            Self::RoleChanged { user_id } | Self::StatusChanged { user_id } => user_id,
+            Self::RoleChanged { user_id }
+            | Self::StatusChanged { user_id }
+            | Self::AccountChanged { user_id } => user_id,
         }
     }
 }

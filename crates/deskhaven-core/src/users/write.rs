@@ -114,7 +114,18 @@ impl UserService {
         changes.updated_at = Set(self.inner.now());
         let updated = changes.update(&tx).await.map_err(conflict)?;
         tx.commit().await?;
+        if update.must_change_password.is_some() {
+            self.inner
+                .committed(UserChange::AccountChanged { user_id: id });
+        }
         Ok(updated.into())
+    }
+
+    /// Reports a committed change of the account's second factor (enabled or disabled) to
+    /// the commit hooks, for [`TfaService`](crate::tfa::TfaService), which owns those
+    /// columns.
+    pub(crate) fn second_factor_changed(&self, user_id: i64) {
+        self.inner.committed(UserChange::AccountChanged { user_id });
     }
 
     /// Replaces the local password (policy-checked), sets `must_change_password` and moves

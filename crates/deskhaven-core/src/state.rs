@@ -95,6 +95,7 @@ impl AppState {
             Arc::clone(&crypto),
             settings.clone(),
             Arc::clone(&clock),
+            users.clone(),
         );
         let oidc = OidcService::new(
             db.clone(),

@@ -63,6 +63,7 @@ impl Env {
             Arc::clone(&crypto),
             settings.clone(),
             clock.clone(),
+            users.clone(),
         );
         Self {
             settings,
@@ -84,6 +85,7 @@ impl Env {
             Arc::clone(&crypto),
             self.settings.clone(),
             self.clock.clone(),
+            self.users.clone(),
         );
         Self {
             settings: self.settings.clone(),

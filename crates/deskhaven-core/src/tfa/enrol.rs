@@ -123,6 +123,7 @@ impl TfaService {
         let codes = replace_recovery_codes(&txn, inner, user_id).await?;
         record(&txn, inner, audit).await?;
         txn.commit().await?;
+        inner.users.second_factor_changed(user_id);
         Ok(codes)
     }
 
@@ -143,6 +144,7 @@ impl TfaService {
             .exec(&txn)
             .await?;
         txn.commit().await?;
+        inner.users.second_factor_changed(user_id);
         Ok(())
     }
 

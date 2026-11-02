@@ -58,7 +58,7 @@ pub use verify::{Passed, SecondFactorMethod};
 use crate::clock::SharedClock;
 use crate::crypto::SecretBox;
 use crate::settings::SettingsService;
-use crate::users::{Role, User};
+use crate::users::{Role, User, UserService};
 
 /// `issuer` of provisioning URIs (the account name shown in authenticator apps).
 pub const ISSUER: &str = "deskhaven";
@@ -89,6 +89,8 @@ struct Inner {
     crypto: Arc<SecretBox>,
     settings: SettingsService,
     clock: SharedClock,
+    /// Told when TOTP is enabled or disabled (cached session principals carry it).
+    users: UserService,
 }
 
 impl TfaService {
@@ -97,12 +99,14 @@ impl TfaService {
         crypto: Arc<SecretBox>,
         settings: SettingsService,
         clock: SharedClock,
+        users: UserService,
     ) -> Self {
         let inner = Inner {
             db,
             crypto,
             settings,
             clock,
+            users,
         };
         Self {
             inner: Arc::new(inner),
