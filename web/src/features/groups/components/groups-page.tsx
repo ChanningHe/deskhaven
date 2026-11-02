@@ -1,3 +1,4 @@
+import { keepPreviousData } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Boxes } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
@@ -63,7 +64,9 @@ export function GroupsPage() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/_app/groups' })
   const navigate = useNavigate({ from: '/groups' })
-  const query = useListGroups(toListParams(search))
+  const query = useListGroups(toListParams(search), {
+    query: { placeholderData: keepPreviousData },
+  })
 
   const onSearchChange = useCallback(
     (patch: TableSearch, options?: SearchChangeOptions) => {
@@ -74,12 +77,19 @@ export function GroupsPage() {
     },
     [navigate],
   )
+  // Opening the drawer adds a history entry; closing replaces it (Back never reopens it).
   const openGroup = useCallback(
-    (group: number | undefined) => {
+    (group: number) => {
       void navigate({ search: (previous: GroupsSearch) => ({ ...previous, group }) })
     },
     [navigate],
   )
+  const closeGroup = useCallback(() => {
+    void navigate({
+      search: (previous: GroupsSearch) => ({ ...previous, group: undefined }),
+      replace: true,
+    })
+  }, [navigate])
   const columns = useMemo(() => groupColumns(t, openGroup), [t, openGroup])
 
   return (
@@ -112,12 +122,7 @@ export function GroupsPage() {
           />
         }
       />
-      <GroupDrawer
-        groupId={search.group}
-        onClose={() => {
-          openGroup(undefined)
-        }}
-      />
+      <GroupDrawer groupId={search.group} onClose={closeGroup} />
     </div>
   )
 }

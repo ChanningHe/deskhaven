@@ -16,16 +16,20 @@ import { formatDateTime } from '@/lib/format'
 
 import { canManage } from '../user-rules'
 import { UserActions } from './user-actions'
+import type { UserActionHandlers } from './user-actions'
 import { UserEditForm } from './user-edit-form'
 
 interface UserDrawerProps {
   /** The account to show; undefined closes the drawer. */
   userId: number | undefined
   onClose: () => void
+  /** Page-level password reset (its reveal outlives the drawer). */
+  onResetPassword: UserActionHandlers['onResetPassword']
 }
 
 /** Side drawer of one account: details, edit form, actions, groups and sessions. */
-export function UserDrawer({ userId, onClose }: UserDrawerProps) {
+export function UserDrawer({ userId, onClose, onResetPassword }: UserDrawerProps) {
+  const handlers: UserActionHandlers = { onDeleted: onClose, onResetPassword }
   const { t } = useTranslation()
   return (
     <Sheet
@@ -35,13 +39,13 @@ export function UserDrawer({ userId, onClose }: UserDrawerProps) {
       }}
     >
       <SheetContent closeLabel={t('common.close')} className="w-full overflow-y-auto sm:max-w-md">
-        {userId === undefined ? null : <DrawerBody userId={userId} onDeleted={onClose} />}
+        {userId === undefined ? null : <DrawerBody userId={userId} handlers={handlers} />}
       </SheetContent>
     </Sheet>
   )
 }
 
-function DrawerBody({ userId, onDeleted }: { userId: number; onDeleted: () => void }) {
+function DrawerBody({ userId, handlers }: { userId: number; handlers: UserActionHandlers }) {
   const { t } = useTranslation()
   const query = useGetUser(userId)
   if (query.data === undefined) {
@@ -56,10 +60,10 @@ function DrawerBody({ userId, onDeleted }: { userId: number; onDeleted: () => vo
       </SheetHeader>
     )
   }
-  return <Detail detail={query.data} onDeleted={onDeleted} />
+  return <Detail detail={query.data} handlers={handlers} />
 }
 
-function Detail({ detail, onDeleted }: { detail: UserDetail; onDeleted: () => void }) {
+function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserActionHandlers }) {
   const { t, i18n } = useTranslation()
   const me = useMe()
   const { user } = detail
@@ -85,7 +89,7 @@ function Detail({ detail, onDeleted }: { detail: UserDetail; onDeleted: () => vo
           </p>
         )}
         <UserEditForm key={user.id} user={user} editable={editable} />
-        {editable ? <UserActions user={user} onDeleted={onDeleted} /> : null}
+        {editable ? <UserActions user={user} {...handlers} /> : null}
         <section className="grid gap-2">
           <h3 className="text-sm font-medium">{t('users.drawer.groups')}</h3>
           {detail.groups.length === 0 ? (

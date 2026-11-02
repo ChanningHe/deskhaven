@@ -19,6 +19,7 @@ import {
 import { Label } from '@/components/ui/label'
 
 import { invalidateAccounts } from '../invalidate'
+import { SECRET_MUTATION } from '../secret-mutation'
 import { importRowErrors } from '../import-errors'
 import { ImportRowErrors } from './import-row-errors'
 
@@ -32,7 +33,7 @@ export function ImportUsersButton() {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [csv, setCsv] = useState('')
-  const mutation = useImportUsers()
+  const mutation = useImportUsers(SECRET_MUTATION)
   const rows = importRowErrors(mutation.error)
   const created = mutation.data?.created
   const secret = created?.map((row) => `${row.user.username}\t${row.temporary_password}`).join('\n')
@@ -63,7 +64,13 @@ export function ImportUsersButton() {
         <Upload aria-hidden />
         {t('users.import.action')}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next && !mutation.isPending) mutation.reset()
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('users.import.title')}</DialogTitle>

@@ -1,3 +1,4 @@
+import { keepPreviousData } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Users } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
@@ -13,6 +14,7 @@ import { hasUserFilters, USER_SORTABLE, usersListParams } from '../users-search'
 import type { UsersSearch } from '../users-search'
 import { CreateUserButton } from './create-user-dialog'
 import { ImportUsersButton } from './import-users-dialog'
+import { useResetPasswordReveal } from './reset-password-reveal'
 import { userColumns } from './user-columns'
 import { UserDrawer } from './user-drawer'
 import { UserFilters } from './user-filters'
@@ -21,7 +23,11 @@ export function UsersPage() {
   const { t, i18n } = useTranslation()
   const search = useSearch({ from: '/_app/users' })
   const navigate = useNavigate({ from: '/users' })
-  const query = useListUsers(usersListParams(search, toListParams(search)))
+  // The previous page stays on screen while the next one loads (no flash of the skeleton).
+  const query = useListUsers(usersListParams(search, toListParams(search)), {
+    query: { placeholderData: keepPreviousData },
+  })
+  const { resetPassword, dialog: resetReveal } = useResetPasswordReveal()
 
   const onSearchChange = useCallback(
     (patch: Partial<UsersSearch>, options?: SearchChangeOptions) => {
@@ -32,13 +38,20 @@ export function UsersPage() {
     },
     [navigate],
   )
-  // The drawer is not a filter: opening it keeps the page.
+  // The drawer is not a filter: opening it keeps the page. Opening adds a history entry;
+  // closing (Escape, close button, after a delete) replaces it, so Back never reopens it.
   const openUser = useCallback(
-    (user: number | undefined) => {
+    (user: number) => {
       void navigate({ search: (previous: UsersSearch) => ({ ...previous, user }) })
     },
     [navigate],
   )
+  const closeUser = useCallback(() => {
+    void navigate({
+      search: (previous: UsersSearch) => ({ ...previous, user: undefined }),
+      replace: true,
+    })
+  }, [navigate])
   const columns = useMemo(
     () => userColumns(t, i18n.language, openUser),
     [t, i18n.language, openUser],
@@ -86,12 +99,8 @@ export function UsersPage() {
           />
         }
       />
-      <UserDrawer
-        userId={search.user}
-        onClose={() => {
-          openUser(undefined)
-        }}
-      />
+      <UserDrawer userId={search.user} onClose={closeUser} onResetPassword={resetPassword} />
+      {resetReveal}
     </div>
   )
 }

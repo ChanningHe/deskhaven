@@ -60,6 +60,9 @@ function ConfirmBody({
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // React bubbles synthetic events through portals: never let this submit reach a form
+    // the dialog happens to be rendered in.
+    event.stopPropagation()
     if (!matches || pending) return
     setPending(true)
     onPendingChange(true)

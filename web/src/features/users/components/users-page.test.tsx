@@ -1,50 +1,19 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import type { UserDetail, UserView } from '@/api/generated/model'
 import { ADMIN_ME } from '@/test/fixtures'
 import { callsTo, errorEnvelope, requestedUrl } from '@/test/mock-api'
-import type { MockHandler } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
-function user(id: number, username: string, patch: Partial<UserView> = {}): UserView {
-  return {
-    id,
-    username,
-    display_name: username,
-    email: null,
-    email_verified: false,
-    auth_source: 'local',
-    role: 'user',
-    status: 'active',
-    must_change_password: false,
-    totp_enabled: false,
-    note: '',
-    last_login_at: null,
-    created_at: 1_700_000_000_000,
-    updated_at: 1_700_000_000_000,
-    ...patch,
-  }
-}
+import {
+  pageOf as list,
+  userDetail as detail,
+  userView as user,
+  USERS_PATH as LIST_PATH,
+} from '../test-data'
 
-const LIST_PATH = '/admin/api/v1/users'
 const BOB = user(5, 'bob')
 const BOSS = user(6, 'boss', { role: 'owner' })
-
-function list(items: UserView[], total = items.length): MockHandler {
-  return ({ url }) => ({
-    body: {
-      items,
-      total,
-      page: Number(url.searchParams.get('page') ?? 1),
-      page_size: 20,
-    },
-  })
-}
-
-function detail(target: UserView): UserDetail {
-  return { user: target, groups: [{ id: 3, name: 'ops' }], sessions: [] }
-}
 
 function listRequests(spy: ReturnType<typeof renderApp>['fetchSpy']): URL[] {
   return spy.mock.calls
@@ -59,10 +28,13 @@ describe('users page', () => {
       user: actor,
       fetchSpy,
     } = renderApp('/users?role=admin&page=2&sort=-username', {
-      api: { [`GET ${LIST_PATH}`]: list([BOB], 45) },
+      api: { [`GET ${LIST_PATH}`]: list([BOB]) },
     })
 
-    expect(await screen.findByRole('button', { name: 'bob' })).toBeInTheDocument()
+    // Page 2 of a one-row list: the table settles (keeping the rows it has) on a page that exists.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'bob' })).toBeInTheDocument()
+    })
     const first = listRequests(fetchSpy)[0]
     expect(first?.searchParams.get('role')).toBe('admin')
     expect(first?.searchParams.get('page')).toBe('2')
@@ -109,7 +81,7 @@ describe('users page', () => {
     await actor.click(within(reveal).getByRole('button', { name: '完成' }))
 
     await waitFor(() => {
-      expect(screen.queryByText('Tmp-Secret-123')).not.toBeInTheDocument()
+      expect(screen.queryByDisplayValue('Tmp-Secret-123')).not.toBeInTheDocument()
     })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })

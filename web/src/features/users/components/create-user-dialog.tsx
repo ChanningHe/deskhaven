@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { useMe } from '@/features/auth/session'
 
 import { invalidateAccounts } from '../invalidate'
+import { SECRET_MUTATION } from '../secret-mutation'
 import { assignableRoles } from '../user-rules'
 
 interface Draft {
@@ -62,7 +63,7 @@ export function CreateUserButton() {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<Draft>(EMPTY)
-  const mutation = useCreateUser()
+  const mutation = useCreateUser(SECRET_MUTATION)
   const created = mutation.data
   const set = (patch: Partial<Draft>) => {
     setDraft((previous) => ({ ...previous, ...patch }))
@@ -89,7 +90,18 @@ export function CreateUserButton() {
         <UserPlus aria-hidden />
         {t('users.create.action')}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          // Cancelled: the next opening starts empty, without the last error. A request
+          // still running keeps its result (the reveal shows when it lands).
+          if (!next) {
+            setDraft(EMPTY)
+            if (!mutation.isPending) mutation.reset()
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('users.create.title')}</DialogTitle>

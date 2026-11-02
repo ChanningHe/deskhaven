@@ -103,42 +103,46 @@ function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => vo
     if (saved !== undefined) void invalidateAccounts(queryClient)
   }
 
+  // The confirm dialog is a sibling of the form, never inside it: React bubbles its submit
+  // through the portal, which would also save the form.
   return (
-    <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
-      <Label htmlFor={`${id}-name`}>{t('groups.fields.name')}</Label>
-      <Input
-        id={`${id}-name`}
-        required
-        maxLength={64}
-        value={name}
-        onChange={(e) => {
-          setName(e.target.value)
-        }}
-      />
-      <Label htmlFor={`${id}-note`}>{t('groups.fields.note')}</Label>
-      <Input
-        id={`${id}-note`}
-        value={note}
-        onChange={(e) => {
-          setNote(e.target.value)
-        }}
-      />
-      {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
-          {t('groups.drawer.save')}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          onClick={() => {
-            setConfirming(true)
+    <>
+      <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
+        <Label htmlFor={`${id}-name`}>{t('groups.fields.name')}</Label>
+        <Input
+          id={`${id}-name`}
+          required
+          maxLength={64}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value)
           }}
-        >
-          {t('groups.drawer.delete')}
-        </Button>
-      </div>
+        />
+        <Label htmlFor={`${id}-note`}>{t('groups.fields.note')}</Label>
+        <Input
+          id={`${id}-note`}
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value)
+          }}
+        />
+        {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
+            {t('groups.drawer.save')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              setConfirming(true)
+            }}
+          >
+            {t('groups.drawer.delete')}
+          </Button>
+        </div>
+      </form>
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -152,6 +156,6 @@ function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => vo
           await invalidateAccounts(queryClient)
         }}
       />
-    </form>
+    </>
   )
 }

@@ -50,7 +50,18 @@ export function CreateGroupButton({ onCreated }: { onCreated: (id: number) => vo
         <Plus aria-hidden />
         {t('groups.create.action')}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          // Cancelled: the next opening starts empty, without the last error.
+          if (!next) {
+            setName('')
+            setNote('')
+            if (!mutation.isPending) mutation.reset()
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('groups.create.title')}</DialogTitle>

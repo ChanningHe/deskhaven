@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { GroupView, UserView } from '@/api/generated/model'
@@ -119,27 +119,58 @@ describe('groups page', () => {
     expect(within(drawer).queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('makes the user type the group name before deleting it', async () => {
+  it.each([
+    ['clicking the button', false],
+    ['pressing Enter in the name field', true],
+  ])('deletes after the group name is typed, by %s, and saves nothing', async (_, withEnter) => {
     const ops = group(7, 'ops')
-    const { router, user, fetchSpy } = renderApp('/groups?group=7', {
+    const { router, user, fetchSpy } = renderApp('/groups', {
       api: {
         [`GET ${GROUPS}`]: page([ops]),
         [`GET ${GROUPS}/7`]: { body: ops },
         [`GET ${GROUPS}/7/members`]: page([]),
         [`DELETE ${GROUPS}/7`]: { status: 204 },
+        [`PATCH ${GROUPS}/7`]: { body: ops },
       },
     })
+    await user.click(await screen.findByRole('button', { name: 'ops' }))
     const drawer = await screen.findByRole('dialog', { name: 'ops' })
     await user.click(within(drawer).getByRole('button', { name: '删除用户组' }))
     const confirm = await screen.findByRole('alertdialog', { name: '删除此用户组？' })
     const button = within(confirm).getByRole('button', { name: '删除用户组' })
     expect(button).toBeDisabled()
-    await user.type(within(confirm).getByRole('textbox'), 'ops')
-    await user.click(button)
+    await user.type(within(confirm).getByRole('textbox'), withEnter ? 'ops{Enter}' : 'ops')
+    if (!withEnter) await user.click(button)
     await waitFor(() => {
       expect(router.state.location.search).toEqual({})
     })
-    const deletes = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')
-    expect(deletes).toHaveLength(1)
+    const methods = fetchSpy.mock.calls.map(([, init]) => init?.method ?? 'GET')
+    expect(methods.filter((method) => method === 'DELETE')).toHaveLength(1)
+    expect(methods).not.toContain('PATCH')
+
+    // The drawer was closed without a history entry: Back does not reopen the deleted group.
+    act(() => {
+      router.history.back()
+    })
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({})
+    })
+    expect(screen.queryByRole('dialog', { name: 'ops' })).not.toBeInTheDocument()
+  })
+
+  it('starts the create dialog empty again after a cancel', async () => {
+    const { user } = renderApp('/groups', {
+      api: { [`GET ${GROUPS}`]: page([group(1, 'dev')]) },
+    })
+    await user.click(await screen.findByRole('button', { name: '新建用户组' }))
+    let dialog = await screen.findByRole('dialog', { name: '新建用户组' })
+    await user.type(within(dialog).getByLabelText('名称'), 'ops')
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '新建用户组' })).not.toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '新建用户组' }))
+    dialog = await screen.findByRole('dialog', { name: '新建用户组' })
+    expect(within(dialog).getByLabelText('名称')).toHaveValue('')
   })
 })

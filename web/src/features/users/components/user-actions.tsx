@@ -9,12 +9,10 @@ import {
   resetUser2fa,
   revokeUserSessions,
   unlockUser,
-  useResetUserPassword,
 } from '@/api/generated/users/users'
 import type { UserView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
-import { SecretRevealDialog } from '@/components/common/secret-reveal-dialog'
 import { Button } from '@/components/ui/button'
 import { useMe } from '@/features/auth/session'
 
@@ -24,20 +22,25 @@ import { canDelete } from '../user-rules'
 /** Actions that ask for confirmation first (08 §1.4). */
 type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'delete'
 
-interface UserActionsProps {
-  user: UserView
+/** What the page does for the drawer's actions. */
+export interface UserActionHandlers {
   onDeleted: () => void
+  /** Resets the password; the page shows the temporary one (see `useResetPasswordReveal`). */
+  onResetPassword: (user: UserView) => Promise<unknown>
+}
+
+interface UserActionsProps extends UserActionHandlers {
+  user: UserView
 }
 
 /** Account actions of the drawer; only shown to someone who may manage the account. */
-export function UserActions({ user, onDeleted }: UserActionsProps) {
+export function UserActions({ user, onDeleted, onResetPassword }: UserActionsProps) {
   const { t } = useTranslation()
   const me = useMe()
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState<Confirmed | null>(null)
   const [error, setError] = useState<unknown>(undefined)
   const [unlocked, setUnlocked] = useState(false)
-  const reset = useResetUserPassword()
   const refresh = () => invalidateAccounts(queryClient)
 
   const run = async (action: () => Promise<unknown>) => {
@@ -54,7 +57,7 @@ export function UserActions({ user, onDeleted }: UserActionsProps) {
     disable: async () => disableUser(user.id).then(refresh),
     revoke: async () => revokeUserSessions(user.id).then(refresh),
     reset2fa: async () => resetUser2fa(user.id).then(refresh),
-    resetPassword: async () => reset.mutateAsync({ id: user.id }).then(refresh),
+    resetPassword: async () => onResetPassword(user).then(refresh),
     delete: async () =>
       deleteUser(user.id).then(() => {
         onDeleted()
@@ -129,15 +132,6 @@ export function UserActions({ user, onDeleted }: UserActionsProps) {
         {...(confirming === 'delete' ? { confirmText: user.username } : {})}
         destructive={confirming !== 'resetPassword'}
         onConfirm={confirming === null ? () => undefined : confirmed[confirming]}
-      />
-      <SecretRevealDialog
-        open={reset.data !== undefined}
-        title={t('users.actions.temporaryTitle', { username: user.username })}
-        description={t('users.actions.temporaryDescription')}
-        secret={reset.data?.temporary_password ?? ''}
-        onDone={() => {
-          reset.reset()
-        }}
       />
     </section>
   )
