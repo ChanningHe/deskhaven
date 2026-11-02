@@ -1,0 +1,64 @@
+//! `deskhaven config ...` subcommands.
+
+use std::io::Write;
+
+use anyhow::Context;
+use deskhaven_config::bootstrap::{EffectiveEntry, LoadOptions, Loaded, json_schema, load};
+
+/// A readiness check run by `config check` after the configuration loaded.
+pub struct Check {
+    pub name: &'static str,
+    pub run: fn(&Loaded) -> anyhow::Result<()>,
+}
+
+/// Checks beyond bootstrap validation (which `load` already performs).
+/// Database reachability, port availability and key readability are added
+/// here by the tasks that introduce those subsystems.
+const CHECKS: &[Check] = &[];
+
+/// Loads the configuration and reports warnings on stderr.
+pub fn load_reporting(options: &LoadOptions) -> anyhow::Result<Loaded> {
+    let loaded = load(options).context("failed to load configuration")?;
+    let mut err = std::io::stderr().lock();
+    for warning in &loaded.warnings {
+        writeln!(err, "warning: {warning}")?;
+    }
+    Ok(loaded)
+}
+
+pub fn check(options: &LoadOptions) -> anyhow::Result<()> {
+    let loaded = load_reporting(options)?;
+    for check in CHECKS {
+        (check.run)(&loaded).with_context(|| format!("check `{}` failed", check.name))?;
+    }
+    let file = loaded.config_file.as_ref().map_or_else(
+        || "no file, defaults + env".to_owned(),
+        |p| p.display().to_string(),
+    );
+    writeln!(std::io::stdout().lock(), "configuration OK ({file})")?;
+    Ok(())
+}
+
+pub fn print_effective(options: &LoadOptions) -> anyhow::Result<()> {
+    let loaded = load_reporting(options)?;
+    let rows: Vec<(String, String)> = loaded.effective().iter().map(render).collect();
+    let width = rows.iter().map(|(left, _)| left.len()).max().unwrap_or(0);
+    let mut out = std::io::stdout().lock();
+    for (left, source) in rows {
+        writeln!(out, "{left:<width$}  # {source}")?;
+    }
+    Ok(())
+}
+
+pub fn schema() -> anyhow::Result<()> {
+    let text = serde_json::to_string_pretty(&json_schema())?;
+    writeln!(std::io::stdout().lock(), "{text}")?;
+    Ok(())
+}
+
+fn render(entry: &EffectiveEntry) -> (String, String) {
+    (
+        format!("{} = {}", entry.key, entry.value),
+        entry.source.to_string(),
+    )
+}
