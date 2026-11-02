@@ -23,16 +23,14 @@ use hbb_common::{
     },
 };
 use std::net::SocketAddr;
-use support::{Conn, Recv, Rendezvous, STEP, TestServer, expect_msg};
+use support::{Conn, Recv, Rendezvous, STEP, TestServer, expect_msg, secured_tcp};
 
 /// The server's frame limit (`rendezvous_server.rs` `MAX_FRAME_LEN`).
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// The server's limit for the first frame (`FIRST_FRAME_TIMEOUT`): above the client's 18 s
-/// READ_TIMEOUT with a wide margin (M1-08 review).
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
-/// The client's READ_TIMEOUT: TCP-mode and logged-in clients wait this long for a KeyExchange
-/// before their first frame.
-const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(18);
+/// The server's limit for the first frame (`FIRST_FRAME_TIMEOUT`): 10 s since the server sends
+/// its KeyExchange at accept (M1-07; M1-08 had 30 s, above the client's 18 s READ_TIMEOUT that
+/// logged-in and TCP-mode clients waited out for a KeyExchange that never came).
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
 /// The server's limit between frames (`IDLE_TIMEOUT`).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Slack around a timeout on the paused clock (timers fire exactly; this covers the ticks
@@ -171,8 +169,9 @@ async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, na
 }
 
 /// A connection that sends nothing (websocket: not even the handshake) is closed after
-/// FIRST_FRAME_TIMEOUT (TCP: upstream's 30 s). Upstream never closed a websocket connection that did
-/// not complete its handshake.
+/// FIRST_FRAME_TIMEOUT (TCP: upstream gave 30 s; the main port's KeyExchange offer is read and
+/// discarded). Upstream never closed a websocket connection that did not complete its
+/// handshake.
 #[tokio::test(start_paused = true)]
 async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     // Arrange
@@ -205,20 +204,35 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     server.stop().await;
 }
 
-/// M1-08 review (M3): until M1-07 sends a KeyExchange at once, TCP-mode controlled clients and
-/// logged-in controllers wait out READ_TIMEOUT (18 s) before their first frame; that frame is
-/// still served with seconds to spare. Paused clock.
+/// A first frame shortly before FIRST_FRAME_TIMEOUT is still served. Paused clock.
 #[tokio::test(start_paused = true)]
-async fn first_frame_after_the_clients_read_timeout_is_served() {
+async fn first_frame_within_the_first_frame_timeout_is_served() {
     // Arrange
     let server = TestServer::start().await;
     let mut late = server.tcp().await;
 
     // Act
-    tokio::time::sleep(CLIENT_READ_TIMEOUT + SLACK * 5).await;
+    tokio::time::sleep(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
 
     // Assert
     assert!(late.test_nat().await.port > 0);
+    server.stop().await;
+}
+
+/// M1-07: the KeyExchange reply is a connection's first frame, so a secured client then has
+/// IDLE_TIMEOUT, not FIRST_FRAME_TIMEOUT, for its request. Paused clock.
+#[tokio::test(start_paused = true)]
+async fn request_after_the_key_exchange_gets_the_idle_timeout() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut conn = secured_tcp(&server).await;
+
+    // Act
+    tokio::time::sleep(IDLE_TIMEOUT - SLACK * 5).await;
+
+    // Assert
+    assert!(IDLE_TIMEOUT - SLACK * 5 > FIRST_FRAME_TIMEOUT);
+    assert!(conn.test_nat().await.port > 0);
     server.stop().await;
 }
 

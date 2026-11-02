@@ -180,11 +180,17 @@ static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs
 /// under 512 bytes (pk 32, uuid at most 128, id at most 253). 64 KiB leaves ten times the
 /// room. HttpProxyRequest bodies (M5) may need more.
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// From accept to the first complete frame (websocket: handshake included). Well above the
-/// client's READ_TIMEOUT (18 s): logged-in controllers and every TCP-mode controlled client
-/// first wait that long for a KeyExchange (`secure_tcp`) from a server that sends none (upstream's
-/// 30 s per frame). M1-07 sends the KeyExchange at once and may lower it.
-const FIRST_FRAME_TIMEOUT_MS: u64 = 30_000;
+/// From accept to the first complete frame (websocket: handshake included). Clients send their
+/// first frame right after connecting: logged-in controllers and TCP-mode controlled clients
+/// answer the KeyExchange the server sends at accept (M1-07) within one round trip, others
+/// send their request at once (a controller first waits for its NAT type, 100 ms, and its UDP
+/// NAT test, 400 ms or half the connect time; client.rs `_start_inner`), websocket clients
+/// skip the exchange,
+/// and the NAT test port gets TestNatRequest / OnlineRequest at once. 10 s leaves a wide
+/// margin for slow links while a connection that never speaks holds its task a third as long
+/// as upstream's 30 s per frame. (M1-08 kept 30 s because, without a KeyExchange, those
+/// clients first waited out their 18 s READ_TIMEOUT.)
+const FIRST_FRAME_TIMEOUT_MS: u64 = 10_000;
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(FIRST_FRAME_TIMEOUT_MS);
 /// Between frames after the first (upstream's 30 s per frame).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);

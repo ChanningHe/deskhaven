@@ -578,3 +578,16 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
     (also at runtime); `kx.rs` unit tests. `lifecycle.rs`
     `serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports` now reads past the
     offer before expecting the end of stream.
+- 2026-11-03, M1-07, first-frame timeout (`rendezvous_server.rs` `FIRST_FRAME_TIMEOUT`): 10 s
+  (was 30 s since the M1-08 review; upstream gave every frame 30 s), on the TCP main port, the
+  NAT test port and the websocket port (handshake included). With the KeyExchange sent at
+  accept no client waits before its first frame any more: logged-in controllers and TCP-mode
+  controlled clients answer the offer within one round trip (that reply is the first frame;
+  their request then has IDLE_TIMEOUT), other controllers send their request after at most
+  their NAT type / UDP NAT test wait (100 ms + 400 ms or half the connect time, client.rs
+  `_start_inner`), websocket clients skip the exchange, and NAT test / online queries are sent
+  at once. A connection that never speaks now holds its task for 10 s instead of 30 s. Tests:
+  `limits.rs` `first_frame_after_the_clients_read_timeout_is_served` (the 18 s wait it
+  covered is gone) became `first_frame_within_the_first_frame_timeout_is_served`, new
+  `request_after_the_key_exchange_gets_the_idle_timeout`; the silent-connection expectations
+  follow the new value.
