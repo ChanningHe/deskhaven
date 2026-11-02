@@ -46,6 +46,8 @@ pub(crate) enum KxError {
     V0Refused,
     #[error("KeyExchange reply does not open with this connection's key")]
     Open,
+    #[error("KeyExchange v1 key split failed")]
+    Split,
     #[error("frame does not decrypt")]
     Decrypt,
 }
@@ -118,7 +120,7 @@ impl Offer {
         };
         Encrypt::new_split(key, false, &transcript)
             .map(Some)
-            .map_err(|_| KxError::Open)
+            .map_err(|_| KxError::Split)
     }
 }
 

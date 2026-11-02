@@ -417,6 +417,10 @@ impl SignalServer {
     /// must supervise it (restart it or exit).
     pub async fn run(self, shutdown: CancellationToken) -> Result<(), SignalError> {
         let ports = self.cfg.ports()?;
+        // deskhaven (M1-07 review): libsodium is initialised before any connection generates
+        // KeyExchange keys (thread-safe, idempotent; its RNG is otherwise set up lazily).
+        sodiumoxide::init()
+            .map_err(|()| SignalError::internal("libsodium failed to initialise"))?;
         let stop = shutdown.child_token();
         // Also stops the tasks if this future is dropped instead of awaited to the end.
         let _stop_on_drop = stop.clone().drop_guard();

@@ -509,6 +509,46 @@ async fn heartbeats_on_a_secured_connection_are_plaintext_empty_frames() {
     server.stop().await;
 }
 
+/// An empty payload sealed by the client (a 16-byte frame, e.g. `send_raw(vec![])` on a secured
+/// stream) is opened like any frame: it advances the receiving counter and then counts as an
+/// empty frame (a heartbeat answer from a registered peer), so the connection stays open and
+/// the next sealed frame still opens.
+#[tokio::test]
+async fn sealed_empty_frame_from_a_registered_peer_keeps_the_cipher_in_step() {
+    const TARGET: &str = "kx-sealed-empty";
+    // Arrange
+    let server = TestServer::start().await;
+    let mut target = secured_tcp(&server).await;
+    let keys = PeerKeys::random();
+    assert_eq!(target.register_pk(TARGET, &keys).await, OK);
+
+    // Act
+    target.stream().send_raw(Vec::new()).await.unwrap();
+    let again = target.register_pk(TARGET, &keys).await;
+
+    // Assert
+    assert_eq!(again, OK);
+    server.stop().await;
+}
+
+/// An empty first frame is not a KeyExchange reply: the connection falls back to plain text
+/// and is handled as before M1-07, where an empty frame from an unregistered connection closes
+/// it.
+#[tokio::test]
+async fn empty_first_frame_is_handled_as_plain_text() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut conn = server.tcp().await;
+    read_offer(&mut conn).await;
+
+    // Act
+    conn.stream().send_bytes(Bytes::new()).await.unwrap();
+
+    // Assert
+    conn.assert_closed().await;
+    server.stop().await;
+}
+
 /// No offer on the websocket port (clients skip the exchange there: wss protects it) nor on
 /// the NAT test port (clients never secure it); both are served in plain text as before.
 #[tokio::test]

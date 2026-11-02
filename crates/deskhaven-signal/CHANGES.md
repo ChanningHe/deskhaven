@@ -541,7 +541,8 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
     (`Encrypt::new`), v1 one key per direction (`Encrypt::new_split` as responder, transcript
     C_pk / S_pk as signed / advertised 1 / picked). A reply that fails any check closes the
     connection. Any other first message means a client that skipped the offer (not logged in;
-    clients skip up to two KeyExchange frames, common.rs `get_next_nonkeyexchange_msg`): the
+    common.rs `get_next_nonkeyexchange_msg` reads at most two frames, so it tolerates one
+    KeyExchange frame before the real answer, and the server sends exactly one): the
     connection stays plain text, exactly as before. Only the first frame can be the reply.
   - On a secured connection every non-empty frame is a secretbox with hbb_common's counter
     nonces both ways; a frame that does not open closes the connection. Empty frames stay plain
@@ -554,6 +555,14 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
     sink from `tcp_punch` (PunchHoleResponse after PunchHoleSent / LocalAddr, RelayResponse,
     refusals). The receiving copy stays with the read loop (`kx::KxState`); each copy only uses
     one direction's key and counter.
+  - v0 is inherently weaker: one key and the same counter sequence in both directions, so the
+    first frame each way is sealed under the same (key, nonce). That is the protocol of clients
+    from before v1 and cannot be fixed server-side; `require_kx_v1` (below) refuses it.
+  - Behaviour change for misconfigured logged-in clients: a client whose server key is wrong or
+    missing (an empty key makes the client use RustDesk's public server key, common.rs
+    `get_key`) now fails at once with "Signature mismatch in key exchange" (the offer's
+    signature does not verify) instead of waiting out its 18 s READ_TIMEOUT against a server
+    that sent nothing.
   - `StreamPeer::secured` records the outcome for `ConnectReq::secured` (M5 hooks; logged when
     the connection closes).
   - New `SignalConfig::require_kx_v1` (default false) and `SignalHandle::set_require_kx_v1`:
@@ -621,3 +630,11 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `first_frame_within_the_first_frame_timeout_is_served` (main after 28 s, NAT after 8 s),
   `request_after_the_key_exchange_gets_the_idle_timeout` (offer answered at 28 s, request 25 s
   later still served: the reply counts as the first frame).
+- 2026-11-03, M1-07 review (LOW): `SignalServer::run` calls `sodiumoxide::init()` before
+  binding (an init failure is `SignalError::Internal`); a failed v1 key split is its own
+  `KxError::Split` instead of being reported as a box that does not open; the KeyExchange entry
+  above is corrected (clients tolerate one KeyExchange frame, not two) and notes v0's shared
+  key and nonces and the immediate "Signature mismatch" for clients with a wrong key. New
+  tests: `sealed_empty_frame_from_a_registered_peer_keeps_the_cipher_in_step`,
+  `empty_first_frame_is_handled_as_plain_text`. (deskhaven's settings sync already applies the
+  switches, `require_kx_v1` included, before a relay list update that resolves names.)

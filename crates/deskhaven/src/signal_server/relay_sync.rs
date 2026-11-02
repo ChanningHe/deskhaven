@@ -68,7 +68,10 @@ pub(super) async fn run(
     }
 }
 
-/// Brings the server to `wanted`; `None` once the server has stopped.
+/// Brings the server to `wanted`; `None` once the server has stopped. The switches go first
+/// (M1-07 review): they apply at once, so `require_kx_v1` never waits for the relay list's DNS
+/// in the same update. (A change arriving while an earlier relay update is resolving waits for
+/// that lookup, at most `RESOLVE_TIMEOUT`, 3 s.)
 async fn apply(handle: &SignalHandle, state: State, wanted: SignalSettings) -> Option<State> {
     let State { applied, rejected } = state;
     if wanted.always_use_relay != applied.always_use_relay {
