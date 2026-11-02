@@ -1,25 +1,12 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
-use hbb_common::{
-    ResultType,
-    anyhow::{Context, Result},
-    log,
-};
+use hbb_common::{ResultType, log, tokio::net::lookup_host};
 use std::{
     net::{IpAddr, SocketAddr},
-    time::{Instant, SystemTime},
+    time::Instant,
 };
 
-pub fn parse_bind_address(value: &str) -> Result<Option<IpAddr>> {
-    let value = value.trim();
-    if value.is_empty() {
-        Ok(None)
-    } else {
-        value
-            .parse()
-            .with_context(|| format!("Invalid bind address: {value}"))
-            .map(Some)
-    }
-}
+// deskhaven: `parse_bind_address` (only used by upstream `main.rs`) removed; the module is
+// crate-private since M1-03.
 
 pub async fn listen_tcp(
     bind_addr: Option<IpAddr>,
@@ -42,46 +29,39 @@ pub(crate) fn get_expired_time() -> Instant {
         .unwrap_or(now)
 }
 
-#[allow(dead_code)]
-pub(crate) fn test_if_valid_server(host: &str, name: &str) -> ResultType<SocketAddr> {
-    use std::net::ToSocketAddrs;
-    let res = if host.contains(':') {
-        host.to_socket_addrs()?.next().context("")
-    } else {
-        format!("{}:{}", host, 0)
-            .to_socket_addrs()?
-            .next()
-            .context("")
-    };
-    if res.is_err() {
-        log::error!("Invalid {} {}: {:?}", name, host, res);
+// deskhaven: async replacement for upstream `test_if_valid_server` / `get_servers`, whose
+// blocking `ToSocketAddrs` lookups ran on the server loop. Same acceptance rule: `host:port`
+// as given, a bare host with port 0; empty entries are dropped silently. Returns
+// `(accepted, rejected)` in input order.
+pub(crate) async fn resolve_servers(servers: &[String], tag: &str) -> (Vec<String>, Vec<String>) {
+    let mut accepted = Vec::new();
+    let mut rejected = Vec::new();
+    for host in servers.iter().filter(|x| !x.is_empty()) {
+        if resolves(host).await {
+            accepted.push(host.clone());
+        } else {
+            log::error!("Invalid {} {}", tag, host);
+            rejected.push(host.clone());
+        }
     }
-    res
+    log::info!("{}={:?}", tag, accepted);
+    (accepted, rejected)
 }
 
-// deskhaven: takes a list instead of a comma-separated string.
-#[allow(dead_code)]
-pub(crate) fn get_servers(s: &[String], tag: &str) -> Vec<String> {
-    let servers: Vec<String> = s
-        .iter()
-        .filter(|x| !x.is_empty() && test_if_valid_server(x, tag).is_ok())
-        .cloned()
-        .collect();
-    log::info!("{}={:?}", tag, servers);
-    servers
+async fn resolves(host: &str) -> bool {
+    let target = if host.contains(':') {
+        host.to_owned()
+    } else {
+        format!("{host}:0")
+    };
+    lookup_host(target)
+        .await
+        .is_ok_and(|mut addrs| addrs.next().is_some())
 }
 
 // deskhaven: `arg_name` / `set_arg` / `get_arg_opt` / `get_arg` / `get_arg_or` (arguments read
 // from process environment variables) removed; configuration comes from `SignalConfig`.
-
-#[allow(dead_code)]
-#[inline]
-pub fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|x| x.as_secs())
-        .unwrap_or_default()
-}
+// `now` (unused) removed.
 
 // deskhaven: `gen_sk` and its key-file helpers (read/create `id_ed25519` + `.pub` in the CWD)
 // removed: the key is injected via `SignalConfig::secret_key` and the key file belongs to
@@ -92,21 +72,7 @@ pub fn now() -> u64 {
 mod tests {
     use super::*;
     use hbb_common::tokio;
-    use std::net::{Ipv4Addr, Ipv6Addr};
-
-    #[test]
-    fn parses_bind_address() {
-        assert_eq!(parse_bind_address("").unwrap(), None);
-        assert_eq!(
-            parse_bind_address("127.0.0.1").unwrap(),
-            Some(IpAddr::V4(Ipv4Addr::LOCALHOST))
-        );
-        assert_eq!(
-            parse_bind_address("::1").unwrap(),
-            Some(IpAddr::V6(Ipv6Addr::LOCALHOST))
-        );
-        assert!(parse_bind_address("not-an-ip").is_err());
-    }
+    use std::net::Ipv4Addr;
 
     #[hbb_common::tokio::test]
     async fn tcp_listener_uses_bind_address() {
@@ -115,19 +81,18 @@ mod tests {
         assert_eq!(listener.local_addr().unwrap().ip(), bind_addr);
     }
 
-    // deskhaven: replaces the upstream `set_arg` / `get_arg` test; the list form keeps the
-    // filtering of empty and unresolvable entries.
-    #[test]
-    fn servers_drop_empty_and_invalid_entries() {
+    // deskhaven: replaces the upstream `set_arg` / `get_arg` test. No DNS needed: literals
+    // resolve locally and the rejected entry has an invalid port.
+    #[hbb_common::tokio::test]
+    async fn resolve_servers_splits_accepted_and_rejected() {
         let servers = [
             "10.0.0.1:21117".to_owned(),
             String::new(),
             "10.0.0.2".to_owned(),
             "not a host:x".to_owned(),
         ];
-        assert_eq!(
-            get_servers(&servers, "relay-servers"),
-            ["10.0.0.1:21117", "10.0.0.2"]
-        );
+        let (accepted, rejected) = resolve_servers(&servers, "relay-servers").await;
+        assert_eq!(accepted, ["10.0.0.1:21117", "10.0.0.2"]);
+        assert_eq!(rejected, ["not a host:x"]);
     }
 }

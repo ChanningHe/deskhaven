@@ -14,7 +14,7 @@ use hbb_common::{
         stream::{SplitSink, StreamExt},
     },
     log,
-    protobuf::{Message as _, MessageField},
+    protobuf::Message as _,
     rendezvous_proto::{
         register_pk_response::Result::{TOO_FREQUENT, UUID_MISMATCH},
         *,
@@ -44,10 +44,12 @@ use std::{
 #[derive(Clone, Debug)]
 pub(crate) enum Data {
     Msg(Box<RendezvousMessage>, SocketAddr),
-    // deskhaven: a list (from `SignalHandle::set_relay_servers`) instead of the console's
-    // comma-separated string.
+    // deskhaven: an already resolved list (from `SignalHandle::set_relay_servers`) instead of
+    // the console's comma-separated string.
     RelayServers0(RelayServers),
-    RelayServers(RelayServers),
+    // deskhaven: (list the health check ran on, healthy subset); applied only while that
+    // list is still current.
+    RelayServers(Arc<RelayServers>, RelayServers),
 }
 
 const REG_TIMEOUT: i64 = 30_000;
@@ -113,8 +115,8 @@ async fn record_punch_req(max: usize, from_ip: String, to_ip: String, to_id: Str
 
 #[derive(Clone)]
 struct Inner {
-    serial: i32,
-    // deskhaven: `version` / `software_url` (deprecated `-u`, SoftwareUpdate answers) removed.
+    // deskhaven: `serial` removed with the loopback ConfigureUpdate backdoor (see handle_udp);
+    // `version` / `software_url` (deprecated `-u`, SoftwareUpdate answers) removed.
     mask: Option<Ipv4Network>,
     local_ip: String,
     // deskhaven: always present, injected through `SignalConfig::secret_key`.
@@ -129,7 +131,7 @@ pub(crate) struct RendezvousServer {
     tx: Sender,
     relay_servers: Arc<RelayServers>,
     relay_servers0: Arc<RelayServers>,
-    rendezvous_servers: Arc<Vec<String>>,
+    // deskhaven: `rendezvous_servers` removed with the ConfigureUpdate backdoor.
     inner: Arc<Inner>,
     always_use_relay: Arc<AtomicBool>,
     tasks: Tasks,
@@ -222,7 +224,9 @@ impl RendezvousServer {
 
     // deskhaven: construction split out of `start_with_bind`; configuration comes from
     // `SignalConfig` instead of env vars. The deprecated `-s` serial and `-R`
-    // rendezvous-servers start at 0 / empty (a loopback ConfigureUpdate can still set them).
+    // rendezvous-servers are gone. The initial relay list is resolved asynchronously here,
+    // before the server loop starts; unresolvable entries are dropped and logged (upstream).
+    // An empty `local_ip` means auto-detect, like upstream `get_arg_or`.
     async fn new(
         cfg: &SignalConfig,
         tx: Sender,
@@ -231,22 +235,21 @@ impl RendezvousServer {
     ) -> ResultType<Self> {
         let pm = PeerMap::new().await?;
         let mask = cfg.mask;
-        let local_ip = match (&mask, &cfg.local_ip) {
+        let local_ip = match (&mask, cfg.local_ip.as_deref().filter(|ip| !ip.is_empty())) {
             (None, _) => "".to_owned(),
-            (Some(_), Some(local_ip)) => local_ip.clone(),
+            (Some(_), Some(local_ip)) => local_ip.to_owned(),
             (Some(_), None) => local_ip_address::local_ip()
                 .map(|x| x.to_string())
                 .unwrap_or_default(),
         };
+        let (relay_servers, _rejected) = resolve_servers(&cfg.relay_servers, "relay-servers").await;
         let mut rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             pm,
             tx,
             relay_servers: Default::default(),
             relay_servers0: Default::default(),
-            rendezvous_servers: Default::default(),
             inner: Arc::new(Inner {
-                serial: 0,
                 sk: cfg.secret_key.clone(),
                 mask,
                 local_ip,
@@ -257,7 +260,7 @@ impl RendezvousServer {
         };
         log::info!("mask: {:?}", rs.inner.mask);
         log::info!("local-ip: {:?}", rs.inner.local_ip);
-        rs.parse_relay_servers(&cfg.relay_servers);
+        rs.apply_relay_servers(relay_servers);
         Ok(rs)
     }
 
@@ -274,6 +277,8 @@ impl RendezvousServer {
         loop {
             tokio::select! {
                 _ = timer_check_relay.tick() => {
+                    // deskhaven: IP_BLOCKER pruning (upstream only pruned from console `ib`).
+                    prune_ip_blocks(&mut *IP_BLOCKER.lock().await, Instant::now());
                     if self.relay_servers0.len() > 1 {
                         let rs = self.relay_servers0.clone();
                         let tx = self.tx.clone();
@@ -349,10 +354,14 @@ impl RendezvousServer {
                 allow_err!(socket.send(msg.as_ref(), addr).await);
             }
             Data::RelayServers0(rs) => {
-                self.parse_relay_servers(&rs);
+                self.apply_relay_servers(rs);
             }
-            Data::RelayServers(rs) => {
-                self.relay_servers = Arc::new(rs);
+            // deskhaven: only apply a health-check result computed from the current list, so
+            // a check still in flight when the list is replaced cannot restore old servers.
+            Data::RelayServers(checked, rs) => {
+                if Arc::ptr_eq(&checked, &self.relay_servers0) {
+                    self.relay_servers = Arc::new(rs);
+                }
             }
         }
     }
@@ -372,15 +381,8 @@ impl RendezvousServer {
                     if !rp.id.is_empty() && rp.id.len() <= MAX_PEER_ID_LEN {
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
-                        if self.inner.serial > rp.serial {
-                            let mut msg_out = RendezvousMessage::new();
-                            msg_out.set_configure_update(ConfigUpdate {
-                                serial: self.inner.serial,
-                                rendezvous_servers: (*self.rendezvous_servers).clone(),
-                                ..Default::default()
-                            });
-                            socket.send(&msg_out, addr).await?;
-                        }
+                        // deskhaven: the ConfigUpdate push (serial / rendezvous servers set by
+                        // the removed loopback ConfigureUpdate) is gone.
                     }
                 }
                 Some(rendezvous_message::Union::RegisterPk(rk)) => {
@@ -395,7 +397,7 @@ impl RendezvousServer {
                         return send_rk_res(socket, addr, TOO_FREQUENT).await;
                     }
                     let peer = self.pm.get_or(&id).await;
-                    let (changed, ip_changed) = {
+                    let (changed, _ip_changed) = {
                         let peer = peer.read().await;
                         if peer.uuid.is_empty() {
                             (true, false)
@@ -439,25 +441,7 @@ impl RendezvousServer {
                     req_pk.0 += 1;
                     req_pk.1 = Instant::now();
                     peer.write().await.reg_pk = req_pk;
-                    if ip_changed {
-                        let mut lock = IP_CHANGES.lock().await;
-                        if let Some((tm, ips)) = lock.get_mut(&id) {
-                            if tm.elapsed().as_secs() > IP_CHANGE_DUR {
-                                *tm = Instant::now();
-                                ips.clear();
-                                ips.insert(ip.clone(), 1);
-                            } else if let Some(v) = ips.get_mut(&ip) {
-                                *v += 1;
-                            } else {
-                                ips.insert(ip.clone(), 1);
-                            }
-                        } else {
-                            lock.insert(
-                                id.clone(),
-                                (Instant::now(), HashMap::from([(ip.clone(), 1)])),
-                            );
-                        }
-                    }
+                    // deskhaven: IP_CHANGES bookkeeping removed (only read by console `ic`).
                     if changed {
                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
                     }
@@ -478,27 +462,10 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::LocalAddr(_la)) => {
                     // UDP LocalAddr is intentionally unsupported to avoid UDP reflection/amplification
                 }
-                Some(rendezvous_message::Union::ConfigureUpdate(mut cu)) => {
-                    if try_into_v4(addr).ip().is_loopback() && cu.serial > self.inner.serial {
-                        let mut inner: Inner = (*self.inner).clone();
-                        inner.serial = cu.serial;
-                        self.inner = Arc::new(inner);
-                        self.rendezvous_servers = Arc::new(
-                            cu.rendezvous_servers
-                                .drain(..)
-                                .filter(|x| {
-                                    !x.is_empty()
-                                        && test_if_valid_server(x, "rendezvous-server").is_ok()
-                                })
-                                .collect(),
-                        );
-                        log::info!(
-                            "configure updated: serial={} rendezvous-servers={:?}",
-                            self.inner.serial,
-                            self.rendezvous_servers
-                        );
-                    }
-                }
+                // deskhaven: ConfigureUpdate arm removed. It let any local process (UDP from
+                // loopback, unauthenticated) set the serial and rendezvous-server list pushed to
+                // every client, a backdoor like the removed console; it also did blocking DNS on
+                // the server loop. Such config will come from the control plane.
                 // deskhaven: SoftwareUpdate arm removed with the deprecated `-u` software-url
                 // option (it only answered when that option was set).
                 _ => {}
@@ -566,18 +533,13 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::LocalAddr(la)) => {
                     allow_err!(self.handle_local_addr(la, addr, None).await);
                 }
-                Some(rendezvous_message::Union::TestNatRequest(tar)) => {
+                Some(rendezvous_message::Union::TestNatRequest(_tar)) => {
                     let mut msg_out = RendezvousMessage::new();
-                    let mut res = TestNatResponse {
+                    // deskhaven: no `cu` (ConfigUpdate) any more; see handle_udp.
+                    let res = TestNatResponse {
                         port: addr.port() as _,
                         ..Default::default()
                     };
-                    if self.inner.serial > tar.serial {
-                        let mut cu = ConfigUpdate::new();
-                        cu.serial = self.inner.serial;
-                        cu.rendezvous_servers = (*self.rendezvous_servers).clone();
-                        res.cu = MessageField::from_option(Some(cu));
-                    }
                     msg_out.set_test_nat_response(res);
                     Self::send_to_sink(sink, msg_out).await;
                 }
@@ -914,6 +876,7 @@ impl RendezvousServer {
         Ok(())
     }
 
+    // NOTE: `prune_ip_blocks` (free function below the impl) bounds this map.
     async fn check_ip_blocker(&self, ip: &str, id: &str) -> bool {
         let mut lock = IP_BLOCKER.lock().await;
         let now = Instant::now();
@@ -944,12 +907,12 @@ impl RendezvousServer {
         true
     }
 
-    // deskhaven: takes a list (config / `SignalHandle`) instead of a comma-separated string.
-    // The loopback console (`check_cmd`) that followed here was removed: unauthenticated, and
-    // its `aur` command overwrote the relay list with "Y"/"N".
-    fn parse_relay_servers(&mut self, relay_servers: &[String]) {
-        let rs = get_servers(relay_servers, "relay-servers");
-        self.relay_servers0 = Arc::new(rs);
+    // deskhaven: was `parse_relay_servers(&str)`. Takes a list that is already resolved and
+    // validated (`resolve_servers`, off the server loop) instead of a comma-separated string
+    // resolved with blocking DNS here. The loopback console (`check_cmd`) that followed here
+    // was removed: unauthenticated, and its `aur` command overwrote the relay list with "Y"/"N".
+    fn apply_relay_servers(&mut self, relay_servers: RelayServers) {
+        self.relay_servers0 = Arc::new(relay_servers);
         self.relay_servers = self.relay_servers0.clone();
     }
 
@@ -1134,8 +1097,19 @@ async fn check_relay_servers(rs0: Arc<RelayServers>, tx: Sender) {
     log::debug!("check_relay_servers");
     let rs = std::mem::take(&mut *rs.lock().await);
     if !rs.is_empty() {
-        tx.send(Data::RelayServers(rs)).ok();
+        tx.send(Data::RelayServers(rs0, rs)).ok();
     }
+}
+
+// deskhaven: upstream pruned IP_BLOCKER only from the removed console command `ib`, so it grew
+// by one entry per client IP forever. Same predicate as `ib` (keep while the 60 s register
+// counter or the daily id set is live), now run on the relay-check timer; `now` is a parameter
+// for testing.
+fn prune_ip_blocks(map: &mut IpBlockMap, now: Instant) {
+    map.retain(|_, (counter, ids)| {
+        now.saturating_duration_since(counter.1).as_secs() <= IP_BLOCK_DUR
+            || now.saturating_duration_since(ids.1).as_secs() <= DAY_SECONDS
+    });
 }
 
 // deskhaven: upstream spawned this and exited the process on failure (TEST_HBBS=no
@@ -1315,6 +1289,7 @@ mod tests {
     struct Fixture {
         rs: RendezvousServer,
         handle: crate::SignalHandle,
+        tx: Sender,
         rx: Receiver,
         socket: FramedSocket,
         key: String,
@@ -1330,7 +1305,7 @@ mod tests {
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
         let handle = crate::SignalHandle::new(tx.clone(), always_use_relay.clone());
         let tasks = crate::tasks::Tasks::new(Default::default());
-        let rs = RendezvousServer::new(&cfg, tx, always_use_relay, tasks)
+        let rs = RendezvousServer::new(&cfg, tx.clone(), always_use_relay, tasks)
             .await
             .unwrap();
         let socket = create_udp_listener(Some(IpAddr::V4(Ipv4Addr::LOCALHOST)), 0, 0)
@@ -1340,6 +1315,7 @@ mod tests {
         Fixture {
             rs,
             handle,
+            tx,
             rx,
             socket,
             key,
@@ -1392,6 +1368,7 @@ mod tests {
 
         f.handle
             .set_relay_servers(vec![RELAY_A.to_owned(), String::new(), RELAY_B.to_owned()])
+            .await
             .unwrap();
         f.pump().await;
 
@@ -1410,7 +1387,7 @@ mod tests {
         assert_eq!(to, Some(peer_addr));
         assert!(expected.contains(&ph.relay_server), "{}", ph.relay_server);
 
-        f.handle.set_relay_servers(Vec::new()).unwrap();
+        f.handle.set_relay_servers(Vec::new()).await.unwrap();
         f.pump().await;
         assert_eq!(f.rs.get_relay_server(ip, ip), "");
     }
@@ -1426,7 +1403,7 @@ mod tests {
             "no forced relay by default"
         );
 
-        f.handle.set_always_use_relay(true);
+        f.handle.set_always_use_relay(true).unwrap();
         let (ph, _) = f.punch().await;
         assert_eq!(
             ph.nat_type,
@@ -1434,8 +1411,106 @@ mod tests {
             "SYMMETRIC forces relay"
         );
 
-        f.handle.set_always_use_relay(false);
+        f.handle.set_always_use_relay(false).unwrap();
         let (ph, _) = f.punch().await;
         assert_eq!(ph.nat_type, NatType::ASYMMETRIC.into());
+    }
+
+    fn picks(rs: &RendezvousServer) -> std::collections::HashSet<String> {
+        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        (0..4).map(|_| rs.get_relay_server(ip, ip)).collect()
+    }
+
+    fn set_of(servers: &[&str]) -> std::collections::HashSet<String> {
+        servers.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    // deskhaven (M1-03): a health-check result computed from a list that has since been
+    // replaced must not resurrect the old servers.
+    #[hbb_common::tokio::test]
+    async fn stale_health_check_result_is_ignored() {
+        let mut f = fixture().await;
+        f.handle
+            .set_relay_servers(vec![RELAY_A.to_owned(), RELAY_B.to_owned()])
+            .await
+            .unwrap();
+        f.pump().await;
+        let checked = f.rs.relay_servers0.clone(); // a check of [A, B] starts
+
+        const RELAY_C: &str = "10.0.0.3:21117";
+        const RELAY_D: &str = "10.0.0.4:21117";
+        f.handle
+            .set_relay_servers(vec![RELAY_C.to_owned(), RELAY_D.to_owned()])
+            .await
+            .unwrap();
+        f.tx.send(Data::RelayServers(checked, vec![RELAY_A.to_owned()]))
+            .unwrap();
+        f.pump().await;
+        assert_eq!(
+            picks(&f.rs),
+            set_of(&[RELAY_C, RELAY_D]),
+            "A/B never come back"
+        );
+
+        // A result for the current list still applies.
+        let current = f.rs.relay_servers0.clone();
+        f.tx.send(Data::RelayServers(current, vec![RELAY_D.to_owned()]))
+            .unwrap();
+        f.pump().await;
+        assert_eq!(picks(&f.rs), set_of(&[RELAY_D]));
+    }
+
+    // deskhaven (M1-03): an empty `local_ip` means auto-detect, like upstream `get_arg_or`.
+    #[hbb_common::tokio::test]
+    async fn empty_local_ip_falls_back_to_detected_ip() {
+        async fn local_ip(local_ip: Option<&str>) -> String {
+            let cfg = crate::SignalConfig {
+                mask: Some("192.168.0.0/16".parse().unwrap()),
+                local_ip: local_ip.map(str::to_owned),
+                ..crate::SignalConfig::new(sign::gen_keypair().1)
+            };
+            let (tx, _rx) = mpsc::unbounded_channel();
+            let tasks = crate::tasks::Tasks::new(Default::default());
+            let rs = RendezvousServer::new(&cfg, tx, Default::default(), tasks)
+                .await
+                .unwrap();
+            rs.inner.local_ip.clone()
+        }
+        let detected = local_ip_address::local_ip()
+            .map(|x| x.to_string())
+            .unwrap_or_default();
+        assert_eq!(local_ip(Some("")).await, detected);
+        assert_eq!(local_ip(None).await, detected);
+        assert_eq!(local_ip(Some("10.1.1.1")).await, "10.1.1.1");
+    }
+
+    // deskhaven (M1-03): IP_BLOCKER entries are pruned with upstream's `ib` predicate (kept
+    // while either the 60 s register counter or the daily id set is still live).
+    #[test]
+    fn ip_blocks_pruned_once_both_windows_expired() {
+        let t0 = Instant::now();
+        let entry =
+            |counter_at: Instant, ids_at: Instant| ((1, counter_at), (Default::default(), ids_at));
+        let day = Duration::from_secs(DAY_SECONDS);
+        let later = t0 + day;
+        let mut map: IpBlockMap = HashMap::new();
+        map.insert("idle".to_owned(), entry(t0, t0));
+        map.insert("counter-live".to_owned(), entry(later, t0));
+        map.insert("ids-live".to_owned(), entry(t0, later));
+
+        prune_ip_blocks(&mut map, t0 + day);
+        assert_eq!(map.len(), 3, "the daily id window is still live for all");
+
+        prune_ip_blocks(&mut map, later + Duration::from_secs(1));
+        let mut kept: Vec<_> = map.keys().cloned().collect();
+        kept.sort();
+        assert_eq!(
+            kept,
+            ["counter-live", "ids-live"],
+            "idle: both windows expired"
+        );
+
+        prune_ip_blocks(&mut map, later + day + Duration::from_secs(1));
+        assert!(map.is_empty(), "both windows expired for all");
     }
 }

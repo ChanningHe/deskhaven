@@ -22,8 +22,8 @@
     clippy::useless_borrows_in_formatting
 )]
 mod rendezvous_server;
-// Vendored upstream code; trips no clippy lints.
-pub mod common;
+// Vendored upstream code; trips no clippy lints. Crate-private since M1-03.
+mod common;
 mod database;
 // Vendored upstream code; clean up incrementally.
 #[allow(clippy::unwrap_used)]

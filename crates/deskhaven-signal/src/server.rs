@@ -2,6 +2,7 @@
 //! of the signal server. Replaces upstream's command line, environment variables, process
 //! signal handling and loopback console.
 
+use crate::common::resolve_servers;
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
 use crate::tasks::Tasks;
 use hbb_common::{
@@ -43,11 +44,13 @@ pub struct SignalConfig {
     pub rmem: usize,
     /// LAN range (upstream `--mask`): peers inside it are handed `local_ip` as relay.
     pub mask: Option<Ipv4Network>,
-    /// Relay address for LAN peers when `mask` is set (upstream `LOCAL_IP`). `None`: the
-    /// detected local IP. A string because it stands in for a `relay_servers` entry.
+    /// Relay address for LAN peers when `mask` is set (upstream `LOCAL_IP`). `None` or empty:
+    /// the detected local IP. A string because it stands in for a `relay_servers` entry.
     pub local_ip: Option<String>,
-    /// Initial relay servers, `host[:port]` (upstream `-r`); entries that are empty or do not
-    /// resolve are dropped. Change at runtime with [`SignalHandle::set_relay_servers`].
+    /// Initial relay servers, `host[:port]` (upstream `-r`), resolved asynchronously when `run`
+    /// starts; entries that are empty or do not resolve are dropped (and logged) so a transient
+    /// DNS failure cannot prevent startup. Change at runtime with
+    /// [`SignalHandle::set_relay_servers`].
     pub relay_servers: Vec<String>,
     /// Force relayed connections (upstream `ALWAYS_USE_RELAY`). Change at runtime with
     /// [`SignalHandle::set_always_use_relay`].
@@ -102,24 +105,44 @@ pub(crate) struct Ports {
     pub(crate) ws: u16,
 }
 
+/// Why the server could not start, stopped serving, or rejected a handle call. Every error
+/// returned by [`SignalServer::run`] is terminal: the server is gone and nothing restarts it, so
+/// the embedding process must supervise it (restart or exit).
 #[derive(Debug, thiserror::Error)]
 pub enum SignalError {
+    /// [`SignalConfig::port`] leaves no room for the derived NAT test / websocket ports.
     #[error(
         "invalid signal port {0}: must be within {MIN_PORT}..={MAX_PORT} \
          (TCP port-1 serves NAT tests, TCP port+2 websocket)"
     )]
     InvalidPort(u16),
+    /// A listener could not be bound, at startup or when re-created after an accept / receive
+    /// failure (e.g. the port is taken).
     #[error("cannot listen on {proto} port {port}")]
     Bind {
+        /// `"tcp"` or `"udp"`.
         proto: &'static str,
+        /// The port that could not be bound.
         port: u16,
+        /// The underlying bind error.
         #[source]
         source: BoxError,
     },
+    /// The periodic UDP self-test got no answer from the server's own port for 12 s
+    /// (upstream's guard against a wedged UDP socket; upstream exited the process).
     #[error("UDP self-test failed")]
     SelfTest(#[source] BoxError),
+    /// Unexpected internal failure (e.g. reading a listener's local address).
     #[error("signal server failed")]
     Internal(#[source] BoxError),
+    /// [`SignalHandle::set_relay_servers`] got entries that do not resolve; nothing was applied.
+    #[error("relay servers do not resolve: {}", rejected.join(", "))]
+    RelayServersRejected {
+        /// The offending entries, in input order.
+        rejected: Vec<String>,
+    },
+    /// The server behind a [`SignalHandle`] is not running any more: its `run` future finished
+    /// or was dropped, or its [`SignalServer`] was dropped without running.
     #[error("signal server is not running")]
     Stopped,
 }
@@ -143,6 +166,10 @@ impl SignalError {
 }
 
 /// Runtime control of a server; replaces upstream's loopback console commands `rs` and `aur`.
+///
+/// Calls fail with [`SignalError::Stopped`] once the server's `run` future has finished or been
+/// dropped. Updates travel to the server loop over an unbounded channel; that is fine because
+/// they are rare, admin-driven events.
 #[derive(Clone, Debug)]
 pub struct SignalHandle {
     tx: Sender,
@@ -157,19 +184,38 @@ impl SignalHandle {
         }
     }
 
-    /// Replaces the relay list (same filtering as [`SignalConfig::relay_servers`]). Applied by
-    /// the server loop; connections accepted afterwards use it. `Err(Stopped)` once `run` has
-    /// returned.
-    pub fn set_relay_servers(&self, servers: Vec<String>) -> Result<(), SignalError> {
+    /// Replaces the relay list (`host[:port]`). Every entry is resolved here, on the caller's
+    /// task, never on the server loop; empty entries are dropped. If any entry does not resolve
+    /// nothing is applied and [`SignalError::RelayServersRejected`] names them; otherwise the
+    /// accepted list is returned and connections accepted afterwards use it.
+    pub async fn set_relay_servers(
+        &self,
+        servers: Vec<String>,
+    ) -> Result<Vec<String>, SignalError> {
+        self.ensure_running()?;
+        let (accepted, rejected) = resolve_servers(&servers, "relay-servers").await;
+        if !rejected.is_empty() {
+            return Err(SignalError::RelayServersRejected { rejected });
+        }
         self.tx
-            .send(Data::RelayServers0(servers))
-            .map_err(|_| SignalError::Stopped)
+            .send(Data::RelayServers0(accepted.clone()))
+            .map_err(|_| SignalError::Stopped)?;
+        Ok(accepted)
     }
 
     /// Takes effect immediately for every connection.
-    pub fn set_always_use_relay(&self, on: bool) {
+    pub fn set_always_use_relay(&self, on: bool) -> Result<(), SignalError> {
+        self.ensure_running()?;
         self.always_use_relay.store(on, Ordering::SeqCst);
-        log::info!("ALWAYS_USE_RELAY={}", if on { "Y" } else { "N" });
+        log::debug!("ALWAYS_USE_RELAY={}", if on { "Y" } else { "N" });
+        Ok(())
+    }
+
+    fn ensure_running(&self) -> Result<(), SignalError> {
+        if self.tx.is_closed() {
+            return Err(SignalError::Stopped);
+        }
+        Ok(())
     }
 }
 
@@ -181,6 +227,7 @@ pub struct SignalServer {
 }
 
 impl SignalServer {
+    /// Prepares a server; nothing is bound or resolved until [`SignalServer::run`].
     pub fn new(cfg: SignalConfig) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
@@ -191,13 +238,18 @@ impl SignalServer {
         }
     }
 
+    /// A handle for changing relay settings while the server runs; take it before `run`.
     pub fn handle(&self) -> SignalHandle {
         self.handle.clone()
     }
 
-    /// Serves on the caller's runtime until `shutdown` is cancelled (`Ok`) or a listener cannot
-    /// be (re)created or the UDP self-test fails (`Err`). When it returns, every listener is
-    /// closed and every task it spawned has finished.
+    /// Resolves the initial relay list, binds, then serves on the caller's runtime until
+    /// `shutdown` is cancelled (`Ok`) or a listener cannot be (re)created or the UDP self-test
+    /// fails (`Err`). When it returns, every listener is closed and every task it spawned has
+    /// finished.
+    ///
+    /// Errors are terminal: the server does not restart itself, and the embedding process
+    /// must supervise it (restart it or exit).
     pub async fn run(self, shutdown: CancellationToken) -> Result<(), SignalError> {
         let ports = self.cfg.ports()?;
         let stop = shutdown.child_token();
@@ -219,6 +271,7 @@ impl SignalServer {
         let serve =
             RendezvousServer::serve(cfg, ports, handle.tx, rx, handle.always_use_relay, tasks);
         tokio::select! {
+            biased;
             res = serve => res,
             () = shutdown.cancelled() => {
                 log::info!("signal server stopped");

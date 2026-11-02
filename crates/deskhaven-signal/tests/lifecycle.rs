@@ -5,10 +5,12 @@
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use deskhaven_signal::{SignalConfig, SignalError, SignalServer, run};
+use deskhaven_signal::{SignalConfig, SignalError, SignalHandle, SignalServer, run};
 use hbb_common::{
     protobuf::Message as _,
-    rendezvous_proto::{RegisterPeer, RendezvousMessage, TestNatRequest, rendezvous_message},
+    rendezvous_proto::{
+        ConfigUpdate, RegisterPeer, RendezvousMessage, TestNatRequest, rendezvous_message,
+    },
     tcp::FramedStream,
     tokio::{
         self,
@@ -27,6 +29,10 @@ const STEP: Duration = Duration::from_secs(5);
 const STEP_MS: u64 = 5_000;
 const READY_POLL: Duration = Duration::from_millis(20);
 const START_ATTEMPTS: usize = 10;
+/// How long to wait for a datagram that must NOT arrive.
+const QUIET: Duration = Duration::from_millis(500);
+/// Upper bound for an `.invalid` lookup to fail (resolver timeouts on offline hosts).
+const DNS_STEP: Duration = Duration::from_secs(30);
 
 fn config(port: u16) -> SignalConfig {
     SignalConfig {
@@ -67,6 +73,7 @@ fn free_base_port() -> u16 {
 
 struct Running {
     port: u16,
+    handle: SignalHandle,
     shutdown: CancellationToken,
     task: JoinHandle<Result<(), SignalError>>,
 }
@@ -99,10 +106,13 @@ async fn start() -> Running {
     for _ in 0..START_ATTEMPTS {
         let port = free_base_port();
         let shutdown = CancellationToken::new();
-        let task = tokio::spawn(run(config(port), shutdown.clone()));
+        let server = SignalServer::new(config(port));
+        let handle = server.handle();
+        let task = tokio::spawn(server.run(shutdown.clone()));
         if wait_until_ready(port, &task).await {
             return Running {
                 port,
+                handle,
                 shutdown,
                 task,
             };
@@ -116,45 +126,69 @@ async fn start() -> Running {
     panic!("could not start the signal server");
 }
 
+async fn stop(server: Running) {
+    server.shutdown.cancel();
+    let res = timeout(STEP, server.task)
+        .await
+        .expect("run returns promptly");
+    assert!(matches!(res, Ok(Ok(()))), "run returns Ok: {res:?}");
+}
+
 fn test_nat_request() -> RendezvousMessage {
     let mut msg = RendezvousMessage::new();
     msg.set_test_nat_request(TestNatRequest::default());
     msg
 }
 
-/// Sends a TestNatRequest over TCP and returns the port the server saw us on.
-async fn test_nat(port: u16) -> i32 {
+/// Sends a TestNatRequest over TCP and returns the server's answer.
+async fn test_nat_response(port: u16) -> hbb_common::rendezvous_proto::TestNatResponse {
     let mut stream = FramedStream::new(addr(port), None, STEP_MS).await.unwrap();
     stream.send(&test_nat_request()).await.unwrap();
     let bytes = stream.next_timeout(STEP_MS).await.unwrap().unwrap();
     match RendezvousMessage::parse_from_bytes(&bytes).unwrap().union {
-        Some(rendezvous_message::Union::TestNatResponse(res)) => res.port,
+        Some(rendezvous_message::Union::TestNatResponse(res)) => res,
         other => panic!("expected TestNatResponse, got {other:?}"),
     }
+}
+
+/// Sends a TestNatRequest over TCP and returns the port the server saw us on.
+async fn test_nat(port: u16) -> i32 {
+    test_nat_response(port).await.port
+}
+
+async fn send_udp(socket: &UdpSocket, port: u16, msg: &RendezvousMessage) {
+    socket
+        .send_to(&msg.write_to_bytes().unwrap(), addr(port))
+        .await
+        .unwrap();
+}
+
+/// The next datagram within `wait`, if any.
+async fn recv_udp(socket: &UdpSocket, wait: Duration) -> Option<RendezvousMessage> {
+    let mut buf = [0u8; 1024];
+    let (n, _) = timeout(wait, socket.recv_from(&mut buf))
+        .await
+        .ok()?
+        .unwrap();
+    Some(RendezvousMessage::parse_from_bytes(&buf[..n]).unwrap())
+}
+
+fn register_peer(serial: i32) -> RendezvousMessage {
+    let mut msg = RendezvousMessage::new();
+    msg.set_register_peer(RegisterPeer {
+        id: "m103-udp-test".to_owned(),
+        serial,
+        ..Default::default()
+    });
+    msg
 }
 
 /// Sends a RegisterPeer datagram and returns the server's `request_pk` answer.
 async fn register_peer_udp(port: u16) -> bool {
     let socket = UdpSocket::bind(addr(0)).await.unwrap();
-    let mut msg = RendezvousMessage::new();
-    msg.set_register_peer(RegisterPeer {
-        id: "m103-udp-test".to_owned(),
-        ..Default::default()
-    });
-    socket
-        .send_to(&msg.write_to_bytes().unwrap(), addr(port))
-        .await
-        .unwrap();
-    let mut buf = [0u8; 1024];
-    let (n, _) = timeout(STEP, socket.recv_from(&mut buf))
-        .await
-        .unwrap()
-        .unwrap();
-    match RendezvousMessage::parse_from_bytes(&buf[..n])
-        .unwrap()
-        .union
-    {
-        Some(rendezvous_message::Union::RegisterPeerResponse(res)) => res.request_pk,
+    send_udp(&socket, port, &register_peer(0)).await;
+    match recv_udp(&socket, STEP).await.map(|m| m.union) {
+        Some(Some(rendezvous_message::Union::RegisterPeerResponse(res))) => res.request_pk,
         other => panic!("expected RegisterPeerResponse, got {other:?}"),
     }
 }
@@ -177,14 +211,8 @@ async fn serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports() {
         "unknown peer is asked for its pk"
     );
 
-    // Act: cancel.
-    server.shutdown.cancel();
-    let res = timeout(STEP, server.task)
-        .await
-        .expect("run returns promptly");
-
-    // Assert
-    assert!(matches!(res, Ok(Ok(()))), "run returns Ok: {res:?}");
+    // Act + Assert: cancel.
+    stop(server).await;
     assert!(ports_free(port), "all ports are released");
     let mut buf = [0u8; 16];
     let read = timeout(STEP, idle.read(&mut buf))
@@ -194,6 +222,78 @@ async fn serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports() {
         matches!(read, Ok(0)) || read.is_err(),
         "connection task ended with run"
     );
+}
+
+/// Upstream accepted a ConfigureUpdate datagram from loopback and then pushed its serial and
+/// rendezvous servers to every client (RegisterPeer, TestNatResponse): an unauthenticated
+/// local backdoor like the removed console.
+#[tokio::test]
+async fn loopback_configure_update_has_no_effect() {
+    // Arrange
+    let server = start().await;
+    let port = server.port;
+    let socket = UdpSocket::bind(addr(0)).await.unwrap();
+    let mut attack = RendezvousMessage::new();
+    attack.set_configure_update(ConfigUpdate {
+        serial: 99,
+        rendezvous_servers: vec!["10.0.0.66:21116".to_owned()],
+        ..Default::default()
+    });
+
+    // Act
+    send_udp(&socket, port, &attack).await;
+    send_udp(&socket, port, &register_peer(0)).await;
+
+    // Assert: exactly one RegisterPeerResponse, no ConfigureUpdate pushed.
+    let first = recv_udp(&socket, STEP).await.map(|m| m.union);
+    assert!(
+        matches!(
+            first,
+            Some(Some(rendezvous_message::Union::RegisterPeerResponse(_)))
+        ),
+        "{first:?}"
+    );
+    let extra = recv_udp(&socket, QUIET).await;
+    assert!(extra.is_none(), "unexpected datagram: {extra:?}");
+    assert!(
+        test_nat_response(port).await.cu.is_none(),
+        "TestNatResponse carries no config"
+    );
+    stop(server).await;
+}
+
+#[tokio::test]
+async fn relay_update_resolves_off_the_server_loop() {
+    // Arrange
+    let server = start().await;
+    let port = server.port;
+    let handle = server.handle.clone();
+
+    // Act: an unresolvable name is being looked up while a client talks to the server.
+    let update = tokio::spawn(async move {
+        handle
+            .set_relay_servers(vec!["10.0.0.1".to_owned(), "relay.invalid".to_owned()])
+            .await
+    });
+    let answered = register_peer_udp(port).await;
+    let res = timeout(DNS_STEP, update).await.unwrap().unwrap();
+
+    // Assert
+    assert!(answered, "the server loop keeps serving");
+    match res {
+        Err(SignalError::RelayServersRejected { rejected }) => {
+            assert_eq!(rejected, ["relay.invalid"]);
+        }
+        other => panic!("expected RelayServersRejected, got {other:?}"),
+    }
+    let accepted = server
+        .handle
+        .set_relay_servers(vec!["10.0.0.1".to_owned(), String::new()])
+        .await
+        .unwrap();
+    assert_eq!(accepted, ["10.0.0.1"], "empty entries are dropped");
+    assert!(register_peer_udp(port).await);
+    stop(server).await;
 }
 
 #[tokio::test]
@@ -242,8 +342,11 @@ async fn handle_reports_stopped_once_run_has_returned() {
     // Assert
     assert!(res.is_ok(), "{res:?}");
     assert!(matches!(
-        handle.set_relay_servers(vec!["10.0.0.1".to_owned()]),
+        handle.set_relay_servers(vec!["10.0.0.1".to_owned()]).await,
         Err(SignalError::Stopped)
     ));
-    handle.set_always_use_relay(true); // never fails
+    assert!(matches!(
+        handle.set_always_use_relay(true),
+        Err(SignalError::Stopped)
+    ));
 }

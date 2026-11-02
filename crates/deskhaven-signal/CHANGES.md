@@ -165,3 +165,45 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   commit: rustfmt 2024 style edition (import order only) and three nested `if let` collapsed
   into let-chains because clippy `collapsible_if` fires under 2024 (`send_to_sink`,
   `handle_listener2`, websocket loop in `handle_listener_inner`); same evaluation order.
+- 2026-11-02, M1-03, security (review): the loopback UDP `ConfigureUpdate` arm of `handle_udp`
+  is removed. Any local process could send it unauthenticated to set the serial and the
+  rendezvous-server list that the server then pushed to every client, a backdoor equivalent
+  to the removed console. Removed with it: `Inner.serial`, `RendezvousServer.rendezvous_servers`,
+  the `ConfigUpdate` sent after `RegisterPeer` when the client's serial was lower, and the
+  `cu` field filled in `TestNatResponse` (`handle_tcp`). This supersedes the earlier M1-03
+  note that the ConfigureUpdate path was kept. If clients ever need a ConfigUpdate it will come
+  from the control plane via configuration.
+- 2026-11-02, M1-03, no blocking DNS on the server loop (review): `common::test_if_valid_server`
+  and `common::get_servers` (blocking `ToSocketAddrs`) are replaced by async
+  `common::resolve_servers` (tokio `lookup_host`, same rule: `host:port` as given, bare host
+  with port 0, empty entries dropped), returning accepted and rejected entries.
+  `SignalHandle::set_relay_servers` is now `async` and resolves on the caller's task: if any
+  entry does not resolve, nothing is applied and `SignalError::RelayServersRejected { rejected }`
+  is returned; otherwise the accepted list is sent (`Data::RelayServers0`, already validated)
+  and returned. The initial `SignalConfig::relay_servers` are resolved asynchronously in
+  `RendezvousServer::new`, before the loop starts; unresolvable entries are dropped and
+  logged as upstream did, so a transient DNS failure cannot prevent startup.
+  `parse_relay_servers(&[String])` became `apply_relay_servers(Vec<String>)`, which no longer
+  resolves anything.
+- 2026-11-02, M1-03, relay health-check race (review): `Data::RelayServers` now carries the list
+  the check ran on (`Arc<RelayServers>`) besides the healthy subset, and `handle_data` applies
+  it only if `Arc::ptr_eq` with the current `relay_servers0`. Before, a check of an old list
+  still in flight when the list was replaced could bring the old servers back.
+- 2026-11-02, M1-03, unbounded state (review): `IP_BLOCKER` is pruned on the existing 3 s
+  relay-check timer by the new `prune_ip_blocks`, with upstream's predicate from the removed
+  `ib` command (keep an entry while its 60 s register counter or its daily id set is live);
+  upstream pruned it only from that command, so it grew by one entry per client IP. The
+  write-only `IP_CHANGES` (with `IpChangesMap`, `IP_CHANGE_DUR` and the bookkeeping in the
+  `RegisterPk` arm) is removed; it was only read by the console command `ic`. `IpBlockMap` is
+  `pub(crate)`. Remaining statics: `ROTATION_RELAY_SERVER`, `PUNCH_REQS`,
+  `peer::{IP_BLOCKER, USER_STATUS}`.
+- 2026-11-02, M1-03, API polish (review): `SignalHandle::set_always_use_relay` returns
+  `Result<(), SignalError>` (`Err(Stopped)` once the server has stopped, like
+  `set_relay_servers`) and logs at debug level. `Err(Stopped)` starts when the `run` future
+  finishes or is dropped. The handle's unbounded channel is documented (rare admin-driven
+  updates). `SignalConfig::local_ip: Some("")` now means auto-detect, like upstream
+  `get_arg_or`. `SignalServer::run` documents that errors are terminal and the embedding
+  process must supervise. `serve_until` uses a `biased` `select!` (the serve result wins over
+  cancellation). `///` docs added for `SignalServer::{new, handle}` and every `SignalError`
+  variant. `common` is now a private module; its unused `parse_bind_address` (with its test)
+  and `now` are removed, and the unused `MessageField` import is dropped.
