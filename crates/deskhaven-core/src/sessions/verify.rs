@@ -4,21 +4,27 @@
 use deskhaven_db::entity::session;
 use deskhaven_db::entity::user::{self, Status};
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter};
 
 use super::model::binding;
 use super::{
-    CacheGeneration, CachedSession, Core, SessionError, SessionPrincipal, SessionService,
-    TOUCH_INTERVAL, TokenHash, millis, timestamp,
+    CacheGeneration, CachedSession, Core, SessionError, SessionKind, SessionPrincipal,
+    SessionService, TOUCH_INTERVAL, TokenHash, millis, timestamp,
 };
 
 impl SessionService {
-    /// The principal of a presented token.
+    /// The principal of a presented token, which must belong to a session of `expected`
+    /// kind (a console token is no client credential, and vice versa).
     ///
     /// Unauthenticated outcomes (see [`SessionError::is_unauthenticated`]): malformed or
-    /// unknown token, revoked, absolutely or idle expired, owner not active or deleted.
-    /// Database failures are [`SessionError::Database`].
-    pub async fn authenticate(&self, token: &str) -> Result<SessionPrincipal, SessionError> {
+    /// unknown token, wrong kind, revoked, absolutely or idle expired, owner not active or
+    /// deleted. Database failures reading the session are [`SessionError::Database`]; a
+    /// failed `last_used_at` touch is only logged.
+    pub async fn authenticate(
+        &self,
+        token: &str,
+        expected: SessionKind,
+    ) -> Result<SessionPrincipal, SessionError> {
         let hash = TokenHash::of_presented(token).ok_or(SessionError::InvalidToken)?;
         let core = &self.core;
         let now = core.now_ms();
@@ -38,6 +44,9 @@ impl SessionService {
         }
         if let Some(seen) = fill {
             core.cache.insert(hash.clone(), session.clone(), seen, now);
+        }
+        if session.principal.kind != expected {
+            return Err(SessionError::InvalidToken);
         }
         core.touch_if_due(&hash, &session, now).await?;
         Ok(session.principal)
@@ -79,7 +88,9 @@ impl Core {
     }
 
     /// Writes `last_used_at = now` when the recorded use is at least [`TOUCH_INTERVAL`] old.
-    /// The update only matches an unrevoked row, so it doubles as a revocation re-check.
+    /// The update only matches an unrevoked row, so it doubles as a revocation re-check: no
+    /// row is [`SessionError::Revoked`]. A failed write is logged and the request allowed
+    /// (the session was just validated; the next request retries the touch).
     async fn touch_if_due(
         &self,
         hash: &TokenHash,
@@ -89,17 +100,30 @@ impl Core {
         if now.saturating_sub(session.last_used_at_ms) < millis(TOUCH_INTERVAL) {
             return Ok(());
         }
+        let session_id = session.principal.session_id;
+        match self.touch(session_id, now).await {
+            Ok(0) => {
+                self.cache.invalidate_token(hash);
+                Err(SessionError::Revoked)
+            }
+            Ok(_) => {
+                self.cache.mark_used(hash, now);
+                Ok(())
+            }
+            Err(err) => {
+                tracing::warn!(session_id, error = %err, "cannot record session use; allowing the request");
+                Ok(())
+            }
+        }
+    }
+
+    async fn touch(&self, session_id: i64, now: i64) -> Result<u64, DbErr> {
         let result = session::Entity::update_many()
             .col_expr(session::Column::LastUsedAt, Expr::value(timestamp(now)?))
-            .filter(session::Column::Id.eq(session.principal.session_id))
+            .filter(session::Column::Id.eq(session_id))
             .filter(session::Column::RevokedAt.is_null())
             .exec(&self.db)
             .await?;
-        if result.rows_affected == 0 {
-            self.cache.invalidate_token(hash);
-            return Err(SessionError::Revoked);
-        }
-        self.cache.mark_used(hash, now);
-        Ok(())
+        Ok(result.rows_affected)
     }
 }

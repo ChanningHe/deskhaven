@@ -15,8 +15,9 @@ use deskhaven_contract::app::TestApp;
 use deskhaven_contract::fixture::Request;
 use deskhaven_contract::mirror::ErrorBody;
 use deskhaven_contract::runner::{Setup, run_dir_with};
-use deskhaven_contract::seeds::{SEED_RUSTDESK_ID, SEED_UUID, Seeds};
+use deskhaven_contract::seeds::{SEED_PASSWORD, SEED_RUSTDESK_ID, SEED_UUID, Seeds};
 use deskhaven_core::state::AppState;
+use deskhaven_core::users::{Credential, NewUser, Password};
 use serde_json::{Value, json};
 
 const COMMIT_FILE: &str = "UPSTREAM_COMMIT";
@@ -180,4 +181,29 @@ async fn logout_through_the_service_turns_the_next_request_into_a_401() {
         status_and_error(&app, Some(bearer)).await,
         (401, Some(UNAUTHORIZED_MESSAGE.to_owned()))
     );
+}
+
+#[tokio::test]
+async fn a_console_session_token_is_no_client_credential() {
+    let app = TestApp::start_with(routes()).await.unwrap();
+    let password = Password::new(SEED_PASSWORD);
+    let users = &app.state.users;
+    users
+        .create(NewUser::new("carol", Credential::Local { password }))
+        .await
+        .unwrap();
+    let login = users
+        .authenticate_local("carol", &Password::new(SEED_PASSWORD))
+        .await
+        .unwrap();
+    let (_, console) = app
+        .state
+        .sessions
+        .create_console(login.user.id, &login.stamp, None, None)
+        .await
+        .unwrap();
+
+    let reply = status_and_error(&app, Some(format!("Bearer {}", console.expose()))).await;
+
+    assert_eq!(reply, (401, Some(UNAUTHORIZED_MESSAGE.to_owned())));
 }

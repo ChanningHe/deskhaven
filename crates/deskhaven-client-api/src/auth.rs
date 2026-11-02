@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, header};
-use deskhaven_core::sessions::SessionPrincipal;
+use deskhaven_core::sessions::{SessionKind, SessionPrincipal};
 use deskhaven_core::state::AppState;
 
 use crate::ClientApiError;
@@ -17,9 +17,10 @@ pub const UNAUTHORIZED_MESSAGE: &str = "Unauthorized";
 
 const SCHEME: &str = "bearer";
 
-/// The session behind a valid bearer token. As a handler argument it rejects with
+/// The client session behind a valid bearer token. As a handler argument it rejects with
 /// 401 `{"error": "Unauthorized"}` when the header is missing or malformed, or the token
-/// is unknown, revoked, expired or belongs to an inactive user; storage failures are a 500
+/// is unknown, a console token, revoked, expired or belongs to an inactive user; storage
+/// failures are a 500
 /// (never a 401, which would log the client out).
 #[derive(Clone, Debug)]
 pub struct BearerUser(pub SessionPrincipal);
@@ -32,7 +33,11 @@ impl FromRequestParts<Arc<AppState>> for BearerUser {
         state: &Arc<AppState>,
     ) -> Result<Self, Self::Rejection> {
         let token = bearer_token(&parts.headers).ok_or_else(unauthorized)?;
-        match state.sessions.authenticate(token).await {
+        match state
+            .sessions
+            .authenticate(token, SessionKind::Client)
+            .await
+        {
             Ok(principal) => Ok(Self(principal)),
             Err(err) if err.is_unauthenticated() => {
                 tracing::debug!(reason = %err, "bearer token rejected");

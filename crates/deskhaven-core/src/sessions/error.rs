@@ -11,7 +11,7 @@ use crate::users::UserError;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SessionError {
-    /// Malformed token, or no session has it.
+    /// Malformed token, no session has it, or the session is of another kind.
     #[error("invalid session token")]
     InvalidToken,
 

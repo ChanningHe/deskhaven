@@ -6,8 +6,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use deskhaven_config::settings::PinSet;
@@ -19,13 +19,13 @@ use deskhaven_core::sessions::{
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::users::{
     Credential, CredentialStamp, HashParams, NewUser, Password, PasswordHasher, Role, Status,
-    UserEvent, UserService,
+    UserChange, UserEvent, UserService,
 };
 use deskhaven_db::entity::{session, user};
-use deskhaven_db::testing::{TestDb, each_migrated_backend};
+use deskhaven_db::testing::{Backend, TestDb, each_migrated_backend};
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
@@ -40,7 +40,6 @@ const DAY: Duration = Duration::from_secs(24 * 3600);
 /// Defaults of `auth.session_ttl` / `auth.session_idle_ttl`.
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 const IDLE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
-const EVENT_WAIT: Duration = Duration::from_secs(5);
 
 struct Env {
     users: UserService,
@@ -56,10 +55,12 @@ impl Env {
         let (settings, _) = SettingsService::load(db.conn.clone(), crypto, PinSet::empty())
             .await
             .unwrap();
-        let users = UserService::new(
+        let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
+        let users = UserService::with_clock(
             db.conn.clone(),
             settings.clone(),
             PasswordHasher::new(FAST).unwrap(),
+            clock.clone(),
         );
         let queries = Arc::new(AtomicUsize::new(0));
         let mut counted = db.conn.clone();
@@ -67,7 +68,6 @@ impl Env {
         counted.set_metric_callback(move |_| {
             counter.fetch_add(1, Ordering::SeqCst);
         });
-        let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
         let sessions = SessionService::new(counted, settings, users.clone(), clock.clone());
         Self {
             users,
@@ -106,25 +106,33 @@ impl Env {
         self.queries.load(Ordering::SeqCst)
     }
 
+    /// Authenticates a client token; the owner's id.
     async fn auth(&self, token: &SessionToken) -> Result<i64, SessionError> {
+        self.auth_as(token, SessionKind::Client).await
+    }
+
+    async fn auth_console(&self, token: &SessionToken) -> Result<i64, SessionError> {
+        self.auth_as(token, SessionKind::Console).await
+    }
+
+    async fn auth_as(&self, token: &SessionToken, kind: SessionKind) -> Result<i64, SessionError> {
         self.sessions
-            .authenticate(token.expose())
+            .authenticate(token.expose(), kind)
             .await
             .map(|p| p.user_id)
     }
 
-    /// Polls until `token` stops authenticating (user events are applied asynchronously).
-    async fn rejected_eventually(&self, token: &SessionToken) -> SessionError {
-        let deadline = tokio::time::Instant::now() + EVENT_WAIT;
-        loop {
-            match self.sessions.authenticate(token.expose()).await {
-                Err(err) => return err,
-                Ok(_) if tokio::time::Instant::now() > deadline => {
-                    panic!("token still accepted after {EVENT_WAIT:?}")
-                }
-                Ok(_) => tokio::time::sleep(Duration::from_millis(10)).await,
-            }
-        }
+    /// Records, from a commit hook registered after the session service's own, how many
+    /// sessions are still cached at each committed change: hooks run before the event is
+    /// broadcast, so the event consumer cannot have touched the cache yet.
+    fn observe_cache_at_commit(&self) -> Arc<Mutex<Vec<usize>>> {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (cache, sink) = (self.sessions.cache().clone(), Arc::clone(&seen));
+        self.users
+            .register_commit_hook(Arc::new(move |_: &UserChange| {
+                sink.lock().unwrap().push(cache.len());
+            }));
+        seen
     }
 }
 
@@ -193,12 +201,12 @@ async fn created_sessions_authenticate_as_their_owner_and_device() {
 
         let as_client = env
             .sessions
-            .authenticate(client_token.expose())
+            .authenticate(client_token.expose(), SessionKind::Client)
             .await
             .unwrap();
         let as_console = env
             .sessions
-            .authenticate(console_token.expose())
+            .authenticate(console_token.expose(), SessionKind::Console)
             .await
             .unwrap();
 
@@ -228,9 +236,15 @@ async fn unknown_and_malformed_tokens_are_rejected_without_a_query_for_malformed
         let unknown = "A".repeat(43);
 
         let before = env.queries();
-        let malformed = env.sessions.authenticate("not a token").await;
+        let malformed = env
+            .sessions
+            .authenticate("not a token", SessionKind::Client)
+            .await;
         let after_malformed = env.queries();
-        let missing = env.sessions.authenticate(&unknown).await;
+        let missing = env
+            .sessions
+            .authenticate(&unknown, SessionKind::Client)
+            .await;
 
         assert!(matches!(malformed, Err(SessionError::InvalidToken)));
         assert_eq!(after_malformed, before);
@@ -401,7 +415,7 @@ async fn revoke_by_id_and_for_a_user_leave_other_users_alone() {
             .unwrap();
         let (_, second_token) = env
             .sessions
-            .create_console(alice, &stamp, None, None)
+            .create_client(alice, &stamp, &device(), None)
             .await
             .unwrap();
         let (_, third_token) = env
@@ -410,9 +424,10 @@ async fn revoke_by_id_and_for_a_user_leave_other_users_alone() {
             .await
             .unwrap();
         let (bob, bob_token) = env.client_session("bob").await;
-        for token in [&first_token, &second_token, &third_token, &bob_token] {
+        for token in [&first_token, &second_token, &bob_token] {
             env.auth(token).await.unwrap();
         }
+        env.auth_console(&third_token).await.unwrap();
 
         assert!(env.sessions.revoke(first.id).await.unwrap());
         assert!(!env.sessions.revoke(first.id).await.unwrap());
@@ -428,7 +443,7 @@ async fn revoke_by_id_and_for_a_user_leave_other_users_alone() {
             Err(SessionError::Revoked)
         ));
         assert!(matches!(
-            env.auth(&third_token).await,
+            env.auth_console(&third_token).await,
             Err(SessionError::Revoked)
         ));
         assert_eq!(env.auth(&bob_token).await.unwrap(), bob);
@@ -593,7 +608,9 @@ async fn a_revocation_racing_a_cache_fill_never_leaves_a_stale_entry() {
             .map(|_| {
                 let sessions = env.sessions.clone();
                 let token = token.expose().to_owned();
-                tokio::spawn(async move { sessions.authenticate(&token).await })
+                tokio::spawn(
+                    async move { sessions.authenticate(&token, SessionKind::Client).await },
+                )
             })
             .collect();
         env.sessions.revoke_token(token.expose()).await.unwrap();
@@ -657,25 +674,32 @@ async fn a_user_deleted_behind_the_services_back_is_rejected_after_the_cache_ttl
     .await;
 }
 
+async fn unrevoked_sessions_of(db: &TestDb, user_id: i64) -> usize {
+    session::Entity::find()
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .all(&db.conn)
+        .await
+        .unwrap()
+        .len()
+}
+
 #[tokio::test]
-async fn disabling_revokes_durably_and_evicts_cached_sessions() {
+async fn disabling_rejects_a_cached_token_on_the_very_next_request() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let (alice, token) = env.client_session("alice").await;
         env.auth(&token).await.unwrap();
+        let at_commit = env.observe_cache_at_commit();
 
         env.users.set_status(alice, Status::Disabled).await.unwrap();
-        let revoked_in_tx = session::Entity::find()
-            .filter(session::Column::UserId.eq(alice))
-            .filter(session::Column::RevokedAt.is_null())
-            .all(&db.conn)
-            .await
-            .unwrap();
-        let rejected = env.rejected_eventually(&token).await;
+        let next = env.auth(&token).await;
+        let unrevoked = unrevoked_sessions_of(db, alice).await;
         env.users.set_status(alice, Status::Active).await.unwrap();
 
-        assert!(revoked_in_tx.is_empty());
-        assert!(rejected.is_unauthenticated(), "{rejected:?}");
+        assert_eq!(at_commit.lock().unwrap()[0], 0, "evicted synchronously");
+        assert!(matches!(next, Err(SessionError::Revoked)), "{next:?}");
+        assert_eq!(unrevoked, 0, "revoked in the same transaction");
         assert!(
             matches!(env.auth(&token).await, Err(SessionError::Revoked)),
             "re-enabling must not resurrect the session"
@@ -685,44 +709,200 @@ async fn disabling_revokes_durably_and_evicts_cached_sessions() {
 }
 
 #[tokio::test]
-async fn a_password_change_revokes_durably_and_evicts_cached_sessions() {
+async fn a_password_change_rejects_a_cached_token_on_the_very_next_request() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let (alice, token) = env.client_session("alice").await;
         env.auth(&token).await.unwrap();
+        let at_commit = env.observe_cache_at_commit();
 
         env.users
             .set_password(alice, &Password::new("another-Phrase-7"), false)
             .await
             .unwrap();
-        let active = session::Entity::find()
-            .filter(session::Column::UserId.eq(alice))
-            .filter(session::Column::RevokedAt.is_null())
-            .all(&db.conn)
-            .await
-            .unwrap();
-        let rejected = env.rejected_eventually(&token).await;
+        let next = env.auth(&token).await;
 
-        assert!(active.is_empty());
-        assert!(matches!(rejected, SessionError::Revoked), "{rejected:?}");
+        assert_eq!(*at_commit.lock().unwrap(), [0], "evicted synchronously");
+        assert!(matches!(next, Err(SessionError::Revoked)), "{next:?}");
+        assert_eq!(unrevoked_sessions_of(db, alice).await, 0);
     })
     .await;
 }
 
 #[tokio::test]
-async fn deleting_a_user_evicts_cached_sessions() {
+async fn deleting_rejects_a_cached_token_on_the_very_next_request() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let (alice, token) = env.client_session("alice").await;
         env.auth(&token).await.unwrap();
+        let at_commit = env.observe_cache_at_commit();
 
         env.users.delete(alice).await.unwrap();
+        let next = env.auth(&token).await;
 
-        let rejected = env.rejected_eventually(&token).await;
+        assert_eq!(*at_commit.lock().unwrap(), [0], "evicted synchronously");
+        assert!(matches!(next, Err(SessionError::InvalidToken)), "{next:?}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn role_and_status_changes_apply_on_the_very_next_request() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (alice, token) = env.client_session("alice").await;
+        let (bob, bob_token) = env.client_session("bob").await;
+        env.auth(&token).await.unwrap();
+        env.auth(&bob_token).await.unwrap();
+
+        env.users.set_role(alice, Role::Admin).await.unwrap();
+        let promoted = env
+            .sessions
+            .authenticate(token.expose(), SessionKind::Client)
+            .await
+            .unwrap();
+        env.users.set_status(bob, Status::Unverified).await.unwrap();
+        let unverified = env.auth(&bob_token).await;
+
+        assert_eq!(promoted.role, Role::Admin);
         assert!(
-            matches!(rejected, SessionError::InvalidToken),
-            "{rejected:?}"
+            matches!(unverified, Err(SessionError::UserInactive)),
+            "{unverified:?}"
         );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_token_only_authenticates_as_its_own_kind() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (alice, stamp) = env.login("alice").await;
+        let (_, client) = env
+            .sessions
+            .create_client(alice, &stamp, &device(), None)
+            .await
+            .unwrap();
+        let (_, console) = env
+            .sessions
+            .create_console(alice, &stamp, None, None)
+            .await
+            .unwrap();
+
+        // Twice each: from the database, then from the cache.
+        for _ in 0..2 {
+            assert!(matches!(
+                env.auth_console(&client).await,
+                Err(SessionError::InvalidToken)
+            ));
+            assert!(matches!(
+                env.auth(&console).await,
+                Err(SessionError::InvalidToken)
+            ));
+            assert_eq!(env.auth(&client).await.unwrap(), alice);
+            assert_eq!(env.auth_console(&console).await.unwrap(), alice);
+        }
+    })
+    .await;
+}
+
+/// Makes every `UPDATE ... SET last_used_at` on `sessions` fail.
+async fn break_touches(db: &TestDb) {
+    let statements: &[&str] = match db.backend {
+        Backend::Sqlite => &[
+            "CREATE TRIGGER fail_touch BEFORE UPDATE OF last_used_at ON sessions \
+             BEGIN SELECT RAISE(ABORT, 'induced touch failure'); END",
+        ],
+        Backend::Postgres => &[
+            "CREATE FUNCTION fail_touch() RETURNS trigger LANGUAGE plpgsql AS \
+             $$ BEGIN RAISE EXCEPTION 'induced touch failure'; END $$",
+            "CREATE TRIGGER fail_touch BEFORE UPDATE OF last_used_at ON sessions \
+             FOR EACH ROW EXECUTE FUNCTION fail_touch()",
+        ],
+    };
+    for sql in statements {
+        db.conn.execute_unprepared(sql).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_failing_touch_is_logged_and_the_request_allowed() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (user_id, stamp) = env.login("alice").await;
+        let (session, token) = env
+            .sessions
+            .create_client(user_id, &stamp, &device(), None)
+            .await
+            .unwrap();
+        break_touches(db).await;
+        env.clock.advance(MINUTE);
+        let before = env.queries();
+
+        let from_db = env.auth(&token).await;
+        let from_cache = env.auth(&token).await;
+        let attempts = env.queries() - before;
+
+        assert_eq!(from_db.unwrap(), user_id);
+        assert_eq!(from_cache.unwrap(), user_id);
+        // SELECT + failed UPDATE, then (still not recorded) another failed UPDATE.
+        assert_eq!(attempts, 3);
+        let stored = row(db, session.id).await.unwrap();
+        assert_eq!(stored.last_used_at, session.last_used_at);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_touch_that_finds_the_row_revoked_rejects_the_cached_token() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (_, token) = env.client_session("alice").await;
+        // Cached at +59s; revoked directly (no invalidation); touched at +60s.
+        env.clock.advance(Duration::from_secs(59));
+        env.auth(&token).await.unwrap();
+        session::Entity::update_many()
+            .col_expr(session::Column::RevokedAt, Expr::value(env.clock.now()))
+            .exec(&db.conn)
+            .await
+            .unwrap();
+        env.clock.advance(Duration::from_secs(1));
+
+        let result = env.auth(&token).await;
+
+        assert!(matches!(result, Err(SessionError::Revoked)), "{result:?}");
+        assert!(env.sessions.cache().is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn user_timestamps_come_from_the_injected_clock() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (alice, _token) = env.client_session("alice").await;
+        env.clock.advance(DAY);
+        let changed_at = env.clock.now();
+
+        env.users
+            .set_password(alice, &Password::new("another-Phrase-7"), false)
+            .await
+            .unwrap();
+
+        let stored = user::Entity::find_by_id(alice)
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap();
+        let revoked = session::Entity::find()
+            .filter(session::Column::UserId.eq(alice))
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.password_changed_at, Some(changed_at));
+        assert_eq!(stored.updated_at, changed_at);
+        assert_eq!(revoked.revoked_at, Some(changed_at));
     })
     .await;
 }
