@@ -1,3 +1,4 @@
+// Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
 use crate::database;
 use hbb_common::{
@@ -71,24 +72,11 @@ pub(crate) struct PeerMap {
 
 impl PeerMap {
     pub(crate) async fn new() -> ResultType<Self> {
-        let db = get_arg_opt("DB_URL").unwrap_or_else(|| {
-            let mut db = "db_v2.sqlite3".to_owned();
-            #[cfg(all(windows, not(debug_assertions)))]
-            {
-                if let Some(path) = hbb_common::config::Config::icon_path().parent() {
-                    db = format!("{}\\{}", path.to_str().unwrap_or("."), db);
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                db = format!("./{db}");
-            }
-            db
-        });
-        log::info!("DB_URL={}", db);
+        // deskhaven: upstream resolved DB_URL and opened SQLite here; the in-memory stub
+        // (database.rs) needs neither.
         let pm = Self {
             map: Default::default(),
-            db: database::Database::new(&db).await?,
+            db: database::Database::default(),
         };
         Ok(pm)
     }

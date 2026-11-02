@@ -1,3 +1,4 @@
+// Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
 use crate::peer::*;
 use hbb_common::{

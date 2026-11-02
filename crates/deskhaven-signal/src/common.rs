@@ -1,3 +1,4 @@
+// Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use hbb_common::{
     anyhow::{Context, Result},
     log, ResultType,

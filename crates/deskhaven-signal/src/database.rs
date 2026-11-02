@@ -1,7 +1,11 @@
 //! In-memory stand-in for upstream `database.rs` (sqlx 0.6 + deadpool, not vendored).
 //!
-//! Keeps the exact signatures `peer.rs` calls so the vendored code compiles unchanged.
-//! Nothing survives a restart. M1-05 replaces this module with the `PeerStore` trait.
+//! Keeps the query signatures `peer.rs` calls. Nothing survives a restart. M1-05 replaces this
+//! module with the persistent `PeerStore` trait.
+
+// SECURITY: because uuid/pk are lost on restart, the first device to register an id after a
+// restart owns it: the UUID_MISMATCH check (anti id-hijack) only covers ids registered since
+// the last start. Do not wire this stub into `deskhaven serve`; M1-05 must replace it first.
 
 use hbb_common::{anyhow::anyhow, tokio::sync::Mutex, ResultType};
 use std::{collections::HashMap, sync::Arc};
@@ -22,11 +26,6 @@ pub struct Database {
 }
 
 impl Database {
-    /// `_url` is accepted for signature compatibility and ignored.
-    pub async fn new(_url: &str) -> ResultType<Database> {
-        Ok(Self::default())
-    }
-
     pub async fn get_peer(&self, id: &str) -> ResultType<Option<Peer>> {
         Ok(self.peers.lock().await.get(id).cloned())
     }
@@ -93,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_get_update_round_trip() {
-        let db = Database::new("ignored").await.unwrap();
+        let db = Database::default();
         assert!(db.get_peer("a").await.unwrap().is_none());
 
         let guid = db.insert_peer("a", b"uuid", b"pk1", "{}").await.unwrap();
@@ -112,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_rejects_taken_id_and_ignores_unknown_guid() {
-        let db = Database::new("ignored").await.unwrap();
+        let db = Database::default();
         let guid_a = db.insert_peer("a", b"", b"", "").await.unwrap();
         db.insert_peer("b", b"", b"", "").await.unwrap();
 
