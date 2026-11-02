@@ -1,0 +1,335 @@
+{
+  "rules": [
+    {
+      "keys": [
+        "auth.email_code.enabled",
+        "smtp.host",
+        "smtp.from"
+      ],
+      "message": "auth.email_code.enabled requires smtp.host and smtp.from to be set"
+    },
+    {
+      "keys": [
+        "auth.session_idle_ttl",
+        "auth.session_ttl"
+      ],
+      "message": "auth.session_idle_ttl must not exceed auth.session_ttl"
+    }
+  ],
+  "settings": [
+    {
+      "category": "auth",
+      "default": "30d",
+      "description": "Absolute lifetime of client and console sessions.",
+      "key": "auth.session_ttl",
+      "max": "365d",
+      "min": "5m",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": "7d",
+      "description": "Sliding idle timeout of client and console sessions.",
+      "key": "auth.session_idle_ttl",
+      "max": "365d",
+      "min": "5m",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": 10,
+      "description": "Minimum password length (the maximum is fixed at 256).",
+      "key": "auth.password.min_length",
+      "max": 256,
+      "min": 8,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": 5,
+      "description": "Failed logins per account within the window before it is locked.",
+      "key": "auth.lockout.max_failures",
+      "max": 100,
+      "min": 1,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": "15m",
+      "description": "Window in which failed logins are counted.",
+      "key": "auth.lockout.window",
+      "max": "1d",
+      "min": "1m",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": "15m",
+      "description": "Base lockout duration (exponential backoff is capped at 24h).",
+      "key": "auth.lockout.duration",
+      "max": "1d",
+      "min": "1m",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": 20,
+      "description": "Requests per minute per IP on login-type endpoints.",
+      "key": "auth.ip_rate_limit.per_minute",
+      "max": 10000,
+      "min": 1,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
+      "default": "disabled",
+      "description": "Self-service registration mode.",
+      "key": "auth.registration",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "disabled",
+        "invite",
+        "open"
+      ]
+    },
+    {
+      "category": "auth",
+      "default": "off",
+      "description": "Which users must enroll a second factor.",
+      "key": "auth.tfa.enforce",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "off",
+        "admins",
+        "all"
+      ]
+    },
+    {
+      "category": "auth",
+      "default": false,
+      "description": "Allow email one-time codes as a second factor (requires SMTP).",
+      "key": "auth.email_code.enabled",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "auth",
+      "default": true,
+      "description": "Link OIDC logins to existing users by email only when `email_verified` is true.",
+      "key": "auth.oidc.link_verified_email",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "smtp",
+      "default": "",
+      "description": "SMTP server host name; empty = SMTP not configured.",
+      "key": "smtp.host",
+      "max_length": 254,
+      "sensitive": false,
+      "type": "string"
+    },
+    {
+      "category": "smtp",
+      "default": 587,
+      "description": "SMTP server port.",
+      "key": "smtp.port",
+      "max": 65535,
+      "min": 1,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "smtp",
+      "default": "starttls",
+      "description": "SMTP transport security.",
+      "key": "smtp.tls",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "starttls",
+        "tls",
+        "none"
+      ]
+    },
+    {
+      "category": "smtp",
+      "default": "",
+      "description": "SMTP user name; empty = no authentication.",
+      "key": "smtp.username",
+      "max_length": 254,
+      "sensitive": false,
+      "type": "string"
+    },
+    {
+      "category": "smtp",
+      "default": null,
+      "description": "SMTP password.",
+      "key": "smtp.password",
+      "max_length": 255,
+      "sensitive": true,
+      "type": "secret"
+    },
+    {
+      "category": "smtp",
+      "default": "",
+      "description": "Sender address of outgoing mail.",
+      "key": "smtp.from",
+      "max_length": 254,
+      "sensitive": false,
+      "type": "string"
+    },
+    {
+      "category": "devices",
+      "default": true,
+      "description": "Device endpoints check that id and uuid match the registered device.",
+      "key": "devices.verify_uuid",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "devices",
+      "default": false,
+      "description": "Devices that were not deployed get `NOT_DEPLOYED` (P1).",
+      "key": "devices.require_deploy",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "devices",
+      "default": "1m",
+      "description": "Interval for batch-writing device last-seen times.",
+      "key": "devices.last_seen_flush",
+      "max": "1h",
+      "min": "5s",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": false
+    },
+    {
+      "category": "addressbook",
+      "default": 1000,
+      "description": "Maximum peers per address book returned to clients (`max_peer_one_ab`).",
+      "key": "addressbook.max_peers",
+      "max": 100000,
+      "min": 1,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "audit",
+      "default": "365d",
+      "description": "Retention of connection audit records; 0 = forever.",
+      "key": "audit.retention.connection",
+      "max": "3650d",
+      "min": "1d",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": true
+    },
+    {
+      "category": "audit",
+      "default": "365d",
+      "description": "Retention of file-transfer audit records; 0 = forever.",
+      "key": "audit.retention.file",
+      "max": "3650d",
+      "min": "1d",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": true
+    },
+    {
+      "category": "audit",
+      "default": "365d",
+      "description": "Retention of alarm audit records; 0 = forever.",
+      "key": "audit.retention.alarm",
+      "max": "3650d",
+      "min": "1d",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": true
+    },
+    {
+      "category": "audit",
+      "default": "180d",
+      "description": "Retention of login audit records; 0 = forever.",
+      "key": "audit.retention.login",
+      "max": "3650d",
+      "min": "1d",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": true
+    },
+    {
+      "category": "audit",
+      "default": "730d",
+      "description": "Retention of console audit records; 0 = forever.",
+      "key": "audit.retention.console",
+      "max": "3650d",
+      "min": "1d",
+      "sensitive": false,
+      "type": "duration",
+      "zero_allowed": true
+    },
+    {
+      "category": "signal",
+      "default": [],
+      "description": "Relay servers handed to clients by the signal server.",
+      "item": "host:port",
+      "key": "signal.relay_servers",
+      "max_items": 32,
+      "sensitive": false,
+      "type": "host_port_list"
+    },
+    {
+      "category": "signal",
+      "default": false,
+      "description": "Force all connections through a relay.",
+      "key": "signal.always_use_relay",
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "signal",
+      "default": "allow",
+      "description": "Connection ACL decision when no rule matches (P1).",
+      "key": "signal.acl.default",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "allow",
+        "deny"
+      ]
+    },
+    {
+      "category": "signal",
+      "default": "deny",
+      "description": "Connection ACL decision when the control plane fails (P1; fail closed).",
+      "key": "signal.acl.on_error",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "allow",
+        "deny"
+      ]
+    }
+  ]
+}

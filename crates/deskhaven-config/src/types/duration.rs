@@ -36,9 +36,32 @@ impl FromStr for Duration {
     }
 }
 
+/// Whole units from days down to seconds; humantime's own formatter uses
+/// fractional months/years (`180d` -> `5months 27days 22h 30m 36s`).
+const UNITS: [(&str, u64); 4] = [("d", 86_400), ("h", 3_600), ("m", 60), ("s", 1)];
+const SUBSEC_UNITS: [(&str, u32); 3] = [("ms", 1_000_000), ("us", 1_000), ("ns", 1)];
+
+/// Exact and compact (`"30d"`, `"1h30m"`, `"1m"`, `"0s"`); parses back to the same value.
 impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", humantime::format_duration(self.0))
+        if self.0.is_zero() {
+            return f.write_str("0s");
+        }
+        let mut secs = self.0.as_secs();
+        for (unit, size) in UNITS {
+            if secs >= size {
+                write!(f, "{}{unit}", secs / size)?;
+                secs %= size;
+            }
+        }
+        let nanos = self.0.subsec_nanos();
+        match SUBSEC_UNITS
+            .iter()
+            .find(|(_, size)| nanos.is_multiple_of(*size))
+        {
+            Some((unit, size)) if nanos > 0 => write!(f, "{}{unit}", nanos / size),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -98,5 +121,23 @@ mod tests {
     fn display_round_trips() {
         let d: Duration = "1h30m".parse().unwrap();
         assert_eq!(d.to_string().parse::<Duration>().unwrap(), d);
+    }
+
+    #[test]
+    fn display_is_compact_and_exact() {
+        for (input, shown) in [
+            ("30d", "30d"),
+            ("180d", "180d"),
+            ("60s", "1m"),
+            ("1h30m", "1h30m"),
+            ("1d 1s", "1d1s"),
+            ("1500ms", "1s500ms"),
+            ("2us", "2us"),
+            ("0", "0s"),
+        ] {
+            let d: Duration = input.parse().unwrap();
+            assert_eq!(d.to_string(), shown, "{input}");
+            assert_eq!(shown.parse::<Duration>().unwrap(), d, "{input}");
+        }
     }
 }

@@ -1,6 +1,7 @@
 //! Bootstrap configuration (file, env, CLI) and the runtime settings registry.
 
 pub mod bootstrap;
+pub mod settings;
 mod source;
 mod types;
 
