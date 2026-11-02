@@ -72,6 +72,11 @@ sha2 = "0.10"
 base64_022 = { package = "base64", version = "0.22" }
 # Safe O_NOFOLLOW open and geteuid for key-file hardening (already in the tree via tempfile).
 rustix = { version = "1.1", features = ["fs", "process"] }
+# --- settings (M0-05) ---
+# Lock-free hot snapshot of runtime settings (05-config §3.3).
+# (tokio, serde_json, sea-orm, thiserror: reused from the db/config blocks; tokio's `sync`
+# feature for `watch` is enabled by the consuming crate.)
+arc-swap = "1.9"
 
 # --- signal lib (M1-03) ---
 # (thiserror: reused from the db block.)

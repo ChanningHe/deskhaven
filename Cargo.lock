@@ -122,6 +122,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "380962b3d93b99642e50b9febf72c071e97e8b32d86eae9cf4ef582bb960ae6e"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1195,14 +1204,19 @@ version = "0.1.0-dev"
 name = "deskhaven-core"
 version = "0.1.0-dev"
 dependencies = [
+ "arc-swap",
  "base64 0.22.1",
  "chacha20poly1305",
  "deskhaven-config",
+ "deskhaven-db",
  "ed25519-dalek",
  "rustix 1.1.6",
+ "sea-orm",
+ "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "zeroize",
 ]
 
