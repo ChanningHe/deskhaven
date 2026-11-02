@@ -127,3 +127,93 @@ impl StrategyCache {
             .unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::clock::ManualClock;
+
+    const T0_MS: i64 = 1_000_000;
+
+    fn cache() -> (StrategyCache, Arc<ManualClock>) {
+        let clock = Arc::new(ManualClock::at(T0_MS));
+        (StrategyCache::new(clock.clone()), clock)
+    }
+
+    fn miss(cache: &StrategyCache) -> Ticket {
+        match cache.lookup() {
+            Lookup::Miss(ticket) => ticket,
+            Lookup::Hit(_) => panic!("expected a miss"),
+        }
+    }
+
+    #[test]
+    fn a_snapshot_read_before_an_invalidation_is_not_kept() {
+        let (cache, _) = cache();
+        let ticket = miss(&cache);
+
+        cache.invalidate();
+        cache.store(ticket, &Arc::new(Snapshot::default()));
+
+        assert!(!cache.is_loaded());
+        assert!(matches!(cache.lookup(), Lookup::Miss(_)));
+    }
+
+    #[test]
+    fn a_snapshot_read_after_the_last_invalidation_is_kept_and_served() {
+        let (cache, _) = cache();
+        cache.invalidate();
+        let ticket = miss(&cache);
+
+        cache.store(ticket, &Arc::new(Snapshot::default()));
+
+        assert!(cache.is_loaded());
+        assert!(matches!(cache.lookup(), Lookup::Hit(_)));
+        assert_eq!(cache.loads(), 1);
+    }
+
+    #[test]
+    fn invalidating_drops_a_kept_snapshot() {
+        let (cache, _) = cache();
+        cache.store(miss(&cache), &Arc::new(Snapshot::default()));
+        assert!(cache.is_loaded());
+
+        cache.invalidate();
+
+        assert!(!cache.is_loaded());
+    }
+
+    #[test]
+    fn a_stale_ticket_cannot_overwrite_a_newer_snapshot() {
+        let (cache, _) = cache();
+        let stale = miss(&cache);
+        cache.invalidate();
+        let fresh = miss(&cache);
+        let kept = Arc::new(Snapshot::default());
+        cache.store(fresh, &kept);
+
+        cache.store(stale, &Arc::new(Snapshot::default()));
+
+        match cache.lookup() {
+            Lookup::Hit(held) => assert!(Arc::ptr_eq(&held, &kept)),
+            Lookup::Miss(_) => panic!("snapshot lost"),
+        }
+    }
+
+    #[test]
+    fn the_version_starts_at_the_clock_and_only_grows() {
+        let (cache, clock) = cache();
+        assert_eq!(cache.version(), T0_MS);
+
+        cache.invalidate();
+        assert_eq!(cache.version(), T0_MS + 1);
+        clock.advance(Duration::from_secs(1));
+        cache.invalidate();
+        assert_eq!(cache.version(), T0_MS + 1_000);
+        clock.set(T0_MS - 10_000);
+        cache.invalidate();
+        assert_eq!(cache.version(), T0_MS + 1_001);
+    }
+}
