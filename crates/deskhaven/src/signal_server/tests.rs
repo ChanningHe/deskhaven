@@ -15,8 +15,8 @@ use deskhaven_core::keys::SignalKeyPair;
 use deskhaven_core::settings::{SettingsService, UpdateRequest};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_signal::{
-    AllowAll, ControlPlane, MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, SignalConfig,
-    StoreError,
+    AllowAll, ControlPlane, Fault, MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert,
+    SignalConfig, StoreError,
 };
 use hbb_common::bytes_codec::BytesCodec;
 use hbb_common::futures_util::SinkExt as _;
@@ -33,6 +33,8 @@ use tokio::sync::watch;
 use tokio::time::{Instant, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
+use super::relay_sync::is_new_rejection;
+use super::supervisor::next_delay;
 use super::{Backoff, Launcher, RelaySettings, RunningSignal, base_config, secret_key};
 use crate::http::signal_ready;
 use crate::signal_store::SignalPeerStore;
@@ -317,7 +319,164 @@ async fn shutdown_during_backoff_stops_the_supervisor_promptly() {
     assert_eq!(store.attempts().len(), 1, "no restart after shutdown");
 }
 
+#[test]
+fn next_delay_doubles_up_to_max_and_resets_after_a_long_run() {
+    let b = Backoff::DEFAULT;
+    let secs = Duration::from_secs;
+    let quick = Duration::from_millis(10);
+
+    assert_eq!(next_delay(b, None, quick), secs(1), "first failure");
+    assert_eq!(next_delay(b, None, secs(3600)), secs(1));
+    let mut delay = None;
+    let waited: Vec<Duration> = (0..8)
+        .map(|_| {
+            let next = next_delay(b, delay, quick);
+            delay = Some(next);
+            next
+        })
+        .collect();
+    let expected = [1, 2, 4, 8, 16, 32, 60, 60].map(secs);
+    assert_eq!(waited, expected, "doubling, capped at max");
+    assert_eq!(
+        next_delay(b, Some(secs(60)), secs(59)),
+        secs(60),
+        "short of max"
+    );
+    assert_eq!(
+        next_delay(b, Some(secs(60)), secs(60)),
+        secs(1),
+        "ran max: reset"
+    );
+    assert_eq!(next_delay(b, Some(secs(8)), secs(61)), secs(1));
+}
+
+/// M1-06 acceptance, real path: a server that served longer than `max` and then fails is
+/// restarted after the initial delay, even when earlier quick failures had raised it.
+#[tokio::test]
+async fn long_running_server_failure_restarts_after_the_initial_delay() {
+    // Arrange
+    let backoff = REAL_PATH;
+    let store = Arc::new(FlakyStore::failing(0));
+    let token = CancellationToken::new();
+    let (running, _, _) = start_launcher_with(defaults(), store.clone(), backoff, &token).await;
+    let first = fail_and_measure_restart(&running, &store).await;
+    let second = fail_and_measure_restart(&running, &store).await;
+
+    // Act: serve past `max`, then fail.
+    sleep(backoff.max + backoff.initial).await;
+    let after_long_run = fail_and_measure_restart(&running, &store).await;
+
+    // Assert
+    assert!(first >= backoff.initial, "{first:?}");
+    assert!(second >= backoff.initial * 2, "raised: {second:?}");
+    assert!(
+        after_long_run >= backoff.initial && after_long_run < backoff.initial * 3,
+        "reset to the initial delay, got {after_long_run:?}"
+    );
+    token.cancel();
+    timeout(STEP, running.task).await.unwrap().unwrap();
+}
+
+/// A server that keeps failing shortly after serving waits longer before each restart.
+#[tokio::test]
+async fn quickly_failing_server_backs_off_further() {
+    // Arrange
+    let backoff = REAL_PATH;
+    let store = Arc::new(FlakyStore::failing(0));
+    let token = CancellationToken::new();
+    let (running, _, _) = start_launcher_with(defaults(), store.clone(), backoff, &token).await;
+
+    // Act
+    let mut gaps = Vec::new();
+    for _ in 0..3 {
+        gaps.push(fail_and_measure_restart(&running, &store).await);
+    }
+
+    // Assert
+    let minimum = [backoff.initial, backoff.initial * 2, backoff.max];
+    for (gap, min) in gaps.iter().zip(minimum) {
+        assert!(*gap >= min, "gaps {gaps:?} below {minimum:?}");
+    }
+    token.cancel();
+    timeout(STEP, running.task).await.unwrap().unwrap();
+}
+
+/// M2: when the supervisor is gone (here aborted, as a panic would drop it), its server is
+/// detached, not stopped; `SignalStatus::stopped` (what `serve` awaits before closing the
+/// database) still waits until that server drained its in-flight registration write.
+#[tokio::test]
+async fn status_stopped_waits_for_a_detached_server_to_drain() {
+    // Arrange
+    let store = Arc::new(SlowStore::default());
+    let token = CancellationToken::new();
+    let (running, port, _) = start_launcher(defaults(), store.clone(), &token).await;
+    Target::register(port).await;
+    wait_until(|| store.started.load(Ordering::SeqCst) == 1).await;
+    running.task.abort();
+    assert!(running.task.await.unwrap_err().is_cancelled());
+
+    // Act
+    token.cancel();
+    timeout(STEP, running.status.stopped()).await.unwrap();
+
+    // Assert
+    assert_eq!(store.finished.load(Ordering::SeqCst), 1, "drained first");
+    assert!(!running.status.is_serving());
+}
+
+#[test]
+fn rejected_relay_list_warns_once_per_distinct_list() {
+    let a = vec!["a.invalid:21117".to_owned()];
+    let b = vec!["b.invalid:21117".to_owned()];
+    assert!(is_new_rejection(None, &a));
+    assert!(!is_new_rejection(Some(&a), &a), "retry of the same list");
+    assert!(is_new_rejection(Some(&a), &b));
+}
+
 // --- helpers -------------------------------------------------------------------------------
+
+/// Small enough for tests, far enough apart to tell reset (initial) from growth.
+const REAL_PATH: Backoff = Backoff {
+    initial: Duration::from_millis(100),
+    max: Duration::from_millis(400),
+};
+
+/// Makes the current (serving) server fail and returns the time until the next launch.
+async fn fail_and_measure_restart(running: &RunningSignal, store: &FlakyStore) -> Duration {
+    wait_until(|| running.status.is_serving()).await;
+    let launches = store.attempts().len();
+    let failed_at = Instant::now();
+    running.status.handle().inject_fault(Fault::Error).unwrap();
+    wait_until(|| store.attempts().len() > launches).await;
+    store.attempts()[launches] - failed_at
+}
+
+/// Every write takes `SLOW_WRITE`; counts writes started and finished.
+#[derive(Default)]
+struct SlowStore {
+    started: AtomicUsize,
+    finished: AtomicUsize,
+}
+
+const SLOW_WRITE: Duration = Duration::from_millis(1000);
+
+#[async_trait]
+impl PeerStore for SlowStore {
+    async fn load_page(&self, _: Option<&str>, _: usize) -> Result<Vec<PeerRecord>, StoreError> {
+        Ok(Vec::new())
+    }
+
+    async fn get(&self, _: &str) -> Result<Option<PeerRecord>, StoreError> {
+        Ok(None)
+    }
+
+    async fn upsert_pk(&self, _: &PeerUpsert) -> Result<(), StoreError> {
+        self.started.fetch_add(1, Ordering::SeqCst);
+        sleep(SLOW_WRITE).await;
+        self.finished.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
 
 fn crypto() -> Arc<SecretBox> {
     Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])))
@@ -399,12 +558,21 @@ async fn start_launcher(
     store: Arc<dyn PeerStore>,
     token: &CancellationToken,
 ) -> (RunningSignal, u16, String) {
+    start_launcher_with(settings, store, FAST, token).await
+}
+
+async fn start_launcher_with(
+    settings: watch::Receiver<Arc<Snapshot>>,
+    store: Arc<dyn PeerStore>,
+    backoff: Backoff,
+    token: &CancellationToken,
+) -> (RunningSignal, u16, String) {
     for _ in 0..START_ATTEMPTS {
         let port = free_base_port();
         let cfg = local_config(port);
         let key = cfg.licence_key();
         let launcher = Launcher::new(cfg, Arc::clone(&store), allow_all(), settings.clone());
-        match timeout(STEP, super::start(launcher, FAST, token))
+        match timeout(STEP, super::start(launcher, backoff, token))
             .await
             .unwrap()
         {

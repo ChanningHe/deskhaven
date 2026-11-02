@@ -35,6 +35,8 @@ base64_022 = { workspace = true }
 tempfile = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
 hbb_common = { workspace = true }
+# Fault injection for the supervisor tests (`SignalHandle::inject_fault`).
+deskhaven-signal = { workspace = true, features = ["testing"] }
 
 # umask, flock on the instance lock; tests also send signals with it.
 [target.'cfg(unix)'.dependencies]

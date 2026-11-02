@@ -17,6 +17,7 @@ use deskhaven_http::ServeError;
 use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+use crate::signal_server::SignalStatus;
 use crate::startup::{self, Prepared, Started};
 use crate::{http, log_safe, logging, shutdown};
 
@@ -103,7 +104,8 @@ async fn serve_until_shutdown(
         lock: _lock,
     } = started;
     let (signal_status, mut signal_task) = signal.map(|s| (s.status, s.task)).unzip();
-    let apps = http::apps(Arc::clone(&state), &token, signal_status);
+    let apps = http::apps(Arc::clone(&state), &token, signal_status.clone());
+    let signal_status = signal_status.as_ref();
     let mut serving = tokio::spawn({
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }
@@ -113,14 +115,17 @@ async fn serve_until_shutdown(
     tokio::select! {
         joined = &mut serving => {
             token.cancel();
-            let _ = tokio::time::timeout(DRAIN_TIMEOUT, join_signal(signal_task)).await;
+            let stop = stop_signal(signal_task, signal_status);
+            let _ = tokio::time::timeout(DRAIN_TIMEOUT, stop).await;
             close_db(&state).await;
             return Err(stopped_early(joined));
         }
         joined = signal_ended(&mut signal_task) => {
-            // The supervisor only returns after cancellation: it panicked.
+            // The supervisor only returns after cancellation: it panicked. Its server is
+            // detached, not gone: wait for it to drain before closing the database.
             token.cancel();
-            let _ = tokio::time::timeout(DRAIN_TIMEOUT, serving).await;
+            let stop = async { tokio::join!(serving, stop_signal(None, signal_status)) };
+            let _ = tokio::time::timeout(DRAIN_TIMEOUT, stop).await;
             close_db(&state).await;
             return Err(match joined {
                 Ok(()) => anyhow!("signal server supervisor stopped unexpectedly"),
@@ -131,7 +136,7 @@ async fn serve_until_shutdown(
     }
 
     let finish = async {
-        let (joined, ()) = tokio::join!(serving, join_signal(signal_task));
+        let (joined, ()) = tokio::join!(serving, stop_signal(signal_task, signal_status));
         close_db(&state).await;
         joined
     };
@@ -156,11 +161,17 @@ async fn signal_ended(task: &mut Option<JoinHandle<()>>) -> Result<(), JoinError
     }
 }
 
-/// Waits for the supervisor (and so the signal server) to stop.
-async fn join_signal(task: Option<JoinHandle<()>>) {
-    let Some(task) = task else { return };
-    if let Err(err) = task.await {
+/// Waits for the supervisor and for the current signal server to stop and drain; the latter
+/// also when the supervisor is gone (it panicked), so the database never closes while a
+/// registration writer may still flush.
+async fn stop_signal(task: Option<JoinHandle<()>>, status: Option<&SignalStatus>) {
+    if let Some(task) = task
+        && let Err(err) = task.await
+    {
         tracing::warn!(error = %err, "signal server supervisor failed");
+    }
+    if let Some(status) = status {
+        status.stopped().await;
     }
 }
 

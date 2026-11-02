@@ -34,10 +34,14 @@ impl Backoff {
         initial: Duration::from_secs(1),
         max: Duration::from_secs(60),
     };
+}
 
-    /// The delay after `current`.
-    fn next(self, current: Duration) -> Duration {
-        current.saturating_mul(2).min(self.max)
+/// The delay before restarting an attempt that ran for `ran` (launch to failure), given the
+/// delay waited before it (`None`: it was the first attempt).
+pub(super) fn next_delay(backoff: Backoff, previous: Option<Duration>, ran: Duration) -> Duration {
+    match previous {
+        Some(previous) if ran < backoff.max => previous.saturating_mul(2).min(backoff.max),
+        _ => backoff.initial,
     }
 }
 
@@ -126,6 +130,20 @@ impl SignalStatus {
     pub fn is_serving(&self) -> bool {
         self.0.borrow().is_serving()
     }
+
+    /// Waits until the current server (the last one launched) has stopped and drained,
+    /// even if its supervisor is gone (a panic drops the supervisor's join handle, not the
+    /// server, which then stops on the shutdown token): close the database only after this.
+    pub async fn stopped(&self) {
+        let current = self.0.borrow().clone();
+        current.stopped().await;
+    }
+
+    /// The current server's handle.
+    #[cfg(test)]
+    pub(super) fn handle(&self) -> SignalHandle {
+        self.0.borrow().clone()
+    }
 }
 
 /// A supervised signal server.
@@ -189,10 +207,11 @@ async fn supervise(
     token: CancellationToken,
 ) {
     let mut attempt = first;
-    let mut delay = backoff.initial;
+    let mut previous = None;
     loop {
-        let ran = attempt.launched.elapsed();
+        let launched = attempt.launched;
         let res = attempt.finish().await;
+        let ran = launched.elapsed();
         if token.is_cancelled() {
             if let Err(err) = res {
                 tracing::warn!(error = %log_safe::render(&err), "signal server stopped with an error");
@@ -200,9 +219,7 @@ async fn supervise(
             return;
         }
         let err = res.err().unwrap_or_else(|| anyhow!("stopped unexpectedly"));
-        if ran >= backoff.max {
-            delay = backoff.initial;
-        }
+        let delay = next_delay(backoff, previous, ran);
         tracing::error!(
             error = %log_safe::render(&err),
             retry_in = ?delay,
@@ -212,7 +229,7 @@ async fn supervise(
             () = token.cancelled() => return,
             () = tokio::time::sleep(delay) => {}
         }
-        delay = backoff.next(delay);
+        previous = Some(delay);
         attempt = launcher.launch(&token);
         status.send_replace(attempt.handle.clone());
     }
