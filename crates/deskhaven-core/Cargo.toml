@@ -31,6 +31,12 @@ data-encoding = { workspace = true }
 subtle = { workspace = true }
 # Address book guids are UUIDv7 strings (04 §1).
 uuid = { workspace = true, features = ["v7"] }
+openidconnect = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+rustls-platform-verifier = { workspace = true }
+url = { workspace = true }
+serde = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true }
@@ -39,7 +45,7 @@ rustix = { workspace = true }
 tempfile = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
-serde = { workspace = true }
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

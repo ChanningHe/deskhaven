@@ -160,6 +160,23 @@ garde = { version = "0.23", default-features = false, features = ["derive"] }
 # simd-adler32 (all MIT / Apache-2.0 / Zlib).
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 
+# --- oidc (M2-10) ---
+# (url, serde, serde_json, tokio, rustls, tracing: reused from earlier blocks.)
+# Relying-party protocol (discovery, PKCE, code exchange, ID token signature and claims).
+# No default features: its `reqwest` feature pins reqwest 0.12 with aws-lc; deskhaven plugs
+# its own `AsyncHttpClient` over reqwest 0.13 instead (02 §5.1). `accept-string-booleans`:
+# some IdPs (AWS Cognito) send `email_verified` as "true"/"false"; without it such ID tokens
+# fail to parse at all.
+openidconnect = { version = "4.1.0", default-features = false, features = ["accept-string-booleans"] }
+# Outbound HTTP to admin-configured IdPs. `rustls-no-provider`: rustls without aws-lc; the
+# TLS config is built explicitly on ring with the platform verifier. No http2, no
+# system-proxy, no decompression, no cookies: a JSON fetcher with a size cap.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+# OS root store for those TLS connections; the same version reqwest's rustls path uses.
+rustls-platform-verifier = "0.6.2"
+# Mock IdP (discovery, JWKS, token endpoint) for the OIDC tests. Dev only.
+wiremock = "0.6.5"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

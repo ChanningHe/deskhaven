@@ -86,6 +86,11 @@ ignore = [
     { id = "RUSTSEC-2023-0051", reason = "dlopen_derive unmaintained: compile-time proc-macro of dlopen, which hbb_common re-exports but deskhaven does not use" },
     { id = "RUSTSEC-2021-0139", reason = "ansi_term unmaintained: build-time only (clap 2 <- bindgen 0.59 <- machine-uid build script)" },
     { id = "RUSTSEC-2024-0375", reason = "atty unmaintained: build-time only (clap 2 / env_logger 0.9 <- bindgen 0.59 <- machine-uid build script)" },
+    # rsa 0.9 via openidconnect 4.1 (M2-10). The Marvin attack leaks timing of operations
+    # with the RSA *private* key (decryption, signing). deskhaven holds no RSA private key:
+    # it only verifies IdP ID token signatures with public JWKS keys (RS*/PS*), which the
+    # advisory does not affect. Only the OIDC tests sign, with throwaway fixture keys.
+    { id = "RUSTSEC-2023-0071", reason = "rsa: only public-key signature verification of ID tokens in production; Marvin concerns private-key operations" },
 ]
 
 [sources]
