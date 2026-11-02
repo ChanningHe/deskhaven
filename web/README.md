@@ -129,6 +129,19 @@ const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placehold
 - **Not found**: unknown URLs render inside the shell (`_app/$.tsx` passes them to the `_app`
   layout's `notFoundComponent`). The root `notFoundComponent` is the shell-less fallback.
 
+## Common components
+
+- `ConfirmDialog`: dangerous actions (08 §1.4). Pass `description` (the impact) and, for
+  deletes and revocations, `confirmText` (the target's name, typed to enable the button).
+  `onConfirm` may return a promise: the dialog cannot be dismissed while it runs, closes on
+  success and shows the translated error on failure.
+- `SecretRevealDialog`: show-once secrets (API tokens, recovery codes, setup links). Copy button
+  (falls back to selecting the text without clipboard access); only "Done" after ticking "I have
+  saved it" closes it, Escape and outside clicks do not. Drop the secret in `onDone`.
+- `SourceBadge`: where a value comes from: `default` (grey), `modified` (blue, who/when),
+  `file` / `env` (amber, locked by config). The detail is the tooltip and the accessible name.
+- `EmptyState`, `PageHeader`, `ErrorAlert`.
+
 ## Layout
 
 ```

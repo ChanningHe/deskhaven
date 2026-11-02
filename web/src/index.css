@@ -60,6 +60,9 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  /* Status hues for badges: info (blue, "modified"), warning (amber, "locked"). */
+  --info: oklch(0.546 0.245 262.881);
+  --warning: oklch(0.555 0.163 48.998);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -92,6 +95,8 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --info: oklch(0.707 0.165 254.624);
+  --warning: oklch(0.828 0.189 84.429);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -128,6 +133,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -161,4 +168,16 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }
+}
+
+/*
+ * Base UI would inject this rule as a <style> element (ScrollArea, Select),
+ * which the strict CSP blocks. The app sets <CSPProvider disableStyleElements>
+ * (app/providers.tsx) and ships the rule here instead.
+ */
+.base-ui-disable-scrollbar {
+  scrollbar-width: none;
+}
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+  display: none;
 }
