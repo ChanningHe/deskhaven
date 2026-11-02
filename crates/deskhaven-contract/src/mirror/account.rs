@@ -123,11 +123,24 @@ pub struct LoginResponse {
     pub user: Option<ClientUserPayload>,
 }
 
+/// `POST /api/oidc/auth` response (03 §3.5).
+///
+/// `src/hbbs_http/account.rs:24-28`: both required; `url` is a `url::Url`,
+/// so it must be an absolute URL. Read through `HbbHttpResponse`
+/// (`:160-177`), hence the shape is `HbbData<OidcAuthUrl>`.
+#[derive(Debug, Deserialize)]
+pub struct OidcAuthUrl {
+    pub code: String,
+    pub url: url::Url,
+}
+
 /// Completed OIDC login, read by the Rust client (03 §3.6).
 ///
 /// `src/hbbs_http/account.rs:99-108`: `access_token`, `type` and `user`
 /// required; `tfa_type` and `secret` default to `""` when missing, but a
 /// `null` fails the whole body (the client then polls until it times out).
+/// Read through `HbbHttpResponse` (`:179-198`), hence the shape is
+/// `HbbData<AuthBody>`.
 #[derive(Debug, Deserialize)]
 pub struct AuthBody {
     pub access_token: String,

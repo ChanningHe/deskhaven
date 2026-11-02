@@ -2,7 +2,7 @@
   "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
   "source": [
     "flutter/lib/models/user_model.dart:243-251",
-    "src/hbbs_http.rs:25-32"
+    "src/hbbs_http.rs:24-39"
   ],
   "description": "The client only ever GETs this path. Documents the router: another method is a 405 with the stack error body {\"error\": \"method not allowed\"}, which both clients read as an error, never a 404 (a 404 would be indistinguishable from an old server).",
   "request": {

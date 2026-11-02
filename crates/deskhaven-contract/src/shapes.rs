@@ -5,20 +5,23 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::mirror::{
-    AbPeer, AuthBody, ClientUserPayload, ErrorBody, HeartbeatResponse, LoginOptions, LoginResponse,
-    PagedResponse,
+    AbPeer, AuthBody, ClientUserPayload, ErrorBody, HbbData, HeartbeatResponse, LoginOptions,
+    LoginResponse, OidcAuthUrl, PagedResponse,
 };
 
 /// Parses a response body; `Err` is serde's message (with line/column).
 pub type ShapeCheck = fn(&[u8]) -> Result<(), String>;
 
+/// Types the Rust client reads through `HbbHttpResponse` are registered as
+/// `HbbData<T>` (object only, no top-level `error` key).
 const SHAPES: &[(&str, ShapeCheck)] = &[
-    ("AuthBody", object::<AuthBody>),
+    ("AuthBody", parse::<HbbData<AuthBody>>),
     ("ClientUserPayload", object::<ClientUserPayload>),
     ("ErrorBody", object::<ErrorBody>),
     ("HeartbeatResponse", object::<HeartbeatResponse>),
     ("LoginOptions", parse::<LoginOptions>),
     ("LoginResponse", object::<LoginResponse>),
+    ("OidcAuthUrl", parse::<HbbData<OidcAuthUrl>>),
     ("PagedResponse<AbPeer>", object::<PagedResponse<AbPeer>>),
     (
         "PagedResponse<ClientUserPayload>",
@@ -77,6 +80,60 @@ mod tests {
         assert_eq!(heartbeat(b"{}"), Ok(()));
         assert!(heartbeat(b"[]").is_err());
         assert!(error(br#"["denied"]"#).is_err());
+    }
+
+    const USER: &str = r#"{"name":"alice","info":{}}"#;
+
+    fn auth_body(extra: &str) -> Vec<u8> {
+        format!(r#"{{"access_token":"t","type":"access_token","user":{USER}{extra}}}"#).into_bytes()
+    }
+
+    #[test]
+    fn hbb_shapes_reject_any_top_level_error_key() {
+        // HbbHttpResponse::parse: an `error` key, whatever its value, makes
+        // the body an error and the data is never read.
+        let auth = lookup("AuthBody").unwrap();
+        let oidc = lookup("OidcAuthUrl").unwrap();
+        let url = r#"{"code":"c1","url":"https://idp.example/auth?x=1""#;
+
+        assert_eq!(auth(&auth_body("")), Ok(()));
+        for error in [r#""""#, r#""denied""#, "null", "1", "{}"] {
+            let extra = format!(r#","error":{error}"#);
+            assert!(
+                auth(&auth_body(&extra)).is_err(),
+                "AuthBody with error {error}"
+            );
+            let body = format!("{url}{extra}}}");
+            assert!(
+                oidc(body.as_bytes()).is_err(),
+                "OidcAuthUrl with error {error}"
+            );
+        }
+        assert_eq!(oidc(format!("{url}}}").as_bytes()), Ok(()));
+    }
+
+    #[test]
+    fn oidc_auth_url_requires_code_and_an_absolute_url() {
+        let oidc = lookup("OidcAuthUrl").unwrap();
+
+        assert!(oidc(br#"{"code":"c1","url":"/relative"}"#).is_err());
+        assert!(oidc(br#"{"url":"https://idp.example/"}"#).is_err());
+        assert!(oidc(br#"[["c1","https://idp.example/"]]"#).is_err());
+    }
+
+    #[test]
+    fn error_body_takes_the_error_only_as_a_string() {
+        let error = lookup("ErrorBody").unwrap();
+
+        assert_eq!(error(br#"{"error":"denied"}"#), Ok(()));
+        for body in [
+            r#"{"error":null}"#,
+            r#"{"error":1}"#,
+            r#"{"error":{}}"#,
+            r#"{"error":[]}"#,
+        ] {
+            assert!(error(body.as_bytes()).is_err(), "{body}");
+        }
     }
 
     #[test]

@@ -19,19 +19,22 @@
 mod ab;
 mod account;
 mod device;
+mod hbb;
 
 use serde::Deserialize;
 
 pub use ab::{AbPeer, PagedResponse};
 pub use account::{
     AuthBody, ClientUserPayload, ClientUserStatus, DeviceInfo, LoginOptions, LoginResponse,
-    UserInfo, WhitelistItem,
+    OidcAuthUrl, UserInfo, WhitelistItem,
 };
 pub use device::{HeartbeatResponse, StrategyOptions};
+pub use hbb::HbbData;
 
 /// Error body of every client API endpoint (03 §1.3).
 ///
-/// - `src/hbbs_http.rs:25-32`: `error` must be a string, else `ErrorFormat`.
+/// - `src/hbbs_http.rs:24-39`: `error` must be a string (`null` included in
+///   the failures), else `ErrorFormat`.
 /// - `flutter/lib/models/user_model.dart:209-214` (`RequestException` takes a
 ///   `String`), `flutter/lib/models/ab_model.dart:1457-1461`: `body['error']`
 ///   is shown to the user as is.
