@@ -12,6 +12,10 @@
 //!   still NULL: single use, also against concurrent requests), refuses when an owner
 //!   already exists, creates the active local owner, retires every other token and records
 //!   the caller's audit row. Any failure rolls all of it back.
+//! - **Serialization**: issue and completion run one at a time across processes (SQLite:
+//!   the `BEGIN IMMEDIATE` write lock; PostgreSQL: a transaction-scoped advisory lock), so
+//!   a CLI `create-setup-link` racing a starting server cannot leave two live tokens, and
+//!   two completions can never both see "no owner yet".
 
 use std::fmt;
 use std::time::Duration;
@@ -23,8 +27,8 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    DbBackend, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
 };
 use subtle::ConstantTimeEq;
 
@@ -180,7 +184,7 @@ impl SetupService {
         // Hashed before the write lock is taken.
         let prepared = self.users.prepare(&new).await?;
         let now = self.now()?;
-        let tx = begin_write(&self.db).await?;
+        let tx = begin_setup(&self.db).await?;
         let token_id = matching_live_token(&tx, &hash, now).await?;
         if owner_exists(&tx).await? {
             return Err(SetupError::OwnerExists);
@@ -213,7 +217,7 @@ pub async fn issue(db: &DatabaseConnection, now_ms: i64) -> Result<SetupToken, S
     let token = SessionToken::generate().map_err(SetupError::Random)?;
     let ttl = i64::try_from(SETUP_TOKEN_TTL.as_millis()).unwrap_or(i64::MAX);
     let expires_at = timestamp(now_ms.saturating_add(ttl))?;
-    let tx = begin_write(db).await?;
+    let tx = begin_setup(db).await?;
     if owner_exists(&tx).await? {
         return Err(SetupError::OwnerExists);
     }
@@ -229,6 +233,20 @@ pub async fn issue(db: &DatabaseConnection, now_ms: i64) -> Result<SetupToken, S
     .await?;
     tx.commit().await?;
     Ok(SetupToken { token, expires_at })
+}
+
+/// Transaction-scoped PostgreSQL advisory lock key serializing setup writes (ASCII
+/// "dhsetup!").
+const PG_SETUP_LOCK_KEY: i64 = 0x6468_7365_7475_7021;
+
+/// A write transaction holding the setup lock until it ends (see the module docs).
+async fn begin_setup(db: &DatabaseConnection) -> Result<DatabaseTransaction, DbErr> {
+    let tx = begin_write(db).await?;
+    if tx.get_database_backend() == DbBackend::Postgres {
+        let sql = format!("SELECT pg_advisory_xact_lock({PG_SETUP_LOCK_KEY})");
+        tx.execute_unprepared(&sql).await?;
+    }
+    Ok(tx)
 }
 
 /// The id of the live token whose hash equals `hash`, compared in constant time.

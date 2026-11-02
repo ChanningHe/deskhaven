@@ -15,11 +15,12 @@ use deskhaven_core::setup::{
 use deskhaven_core::users::{
     Credential, HashParams, NewUser, Password, PasswordHasher, Role, User, UserError, UserService,
 };
-use deskhaven_db::entity::{console_audit, setup_token};
+use deskhaven_db::entity::{console_audit, setup_token, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{EntityTrait, PaginatorTrait};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
 const PASSWORD: &str = "tundra-Lamp-42";
+const RACERS: usize = 8;
 const FAST: HashParams = HashParams {
     memory_kib: 1024,
     iterations: 1,
@@ -244,6 +245,66 @@ async fn a_refused_account_leaves_the_token_usable() {
             "{b}: {bad_name:?}"
         );
         assert!(ok.is_ok(), "{b}: {ok:?}");
+    })
+    .await;
+}
+
+/// Startup and `create-setup-link` racing each other leave exactly one live token.
+#[tokio::test]
+async fn concurrent_issues_leave_one_live_token() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let b = db.backend;
+
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..RACERS {
+            let setup = env.setup.clone();
+            set.spawn(async move { setup.issue().await.map(|t| t.expires_at) });
+        }
+        let issued = set.join_all().await;
+
+        assert!(issued.iter().all(Result::is_ok), "{b}: {issued:?}");
+        let live = setup_token::Entity::find()
+            .filter(setup_token::Column::UsedAt.is_null())
+            .count(&db.conn)
+            .await
+            .unwrap();
+        assert_eq!(live, 1, "{b}");
+    })
+    .await;
+}
+
+/// Concurrent completions with the same token create exactly one owner.
+#[tokio::test]
+async fn concurrent_completions_create_one_owner() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let token = env.issued().await.expose().to_owned();
+        let b = db.backend;
+
+        let mut set = tokio::task::JoinSet::new();
+        for n in 0..RACERS {
+            let setup = env.setup.clone();
+            let token = token.clone();
+            set.spawn(async move {
+                let owner = NewOwner {
+                    username: format!("root{n}"),
+                    display_name: String::new(),
+                    email: None,
+                    password: Password::new(PASSWORD),
+                };
+                setup.complete(&token, owner, |u| audit(u.id)).await.is_ok()
+            });
+        }
+        let done = set.join_all().await;
+
+        assert_eq!(done.iter().filter(|ok| **ok).count(), 1, "{b}: {done:?}");
+        let owners = user::Entity::find()
+            .filter(user::Column::Role.eq(Role::Owner))
+            .count(&db.conn)
+            .await
+            .unwrap();
+        assert_eq!(owners, 1, "{b}");
     })
     .await;
 }
