@@ -30,15 +30,42 @@ export function useMe(): Me {
 
 export const LOGIN_PATH = '/login'
 
+const DEL = 0x7f
+const FIRST_PRINTABLE = 0x20
+
 /**
- * Where the login page may send the user back to: a same-origin path only
- * (no `//host`, no `/\host`, no scheme), and never the login page itself.
+ * Control characters and backslashes never belong in a redirect: URL parsers
+ * strip TAB/CR/LF and read `\` as `/`, which turns `/\t/evil` or `/\evil` into
+ * a protocol-relative URL to another host.
  */
-export function safeRedirectTarget(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !value.startsWith('/')) return undefined
-  if (value.startsWith('//') || value.startsWith('/\\')) return undefined
-  if (value === LOGIN_PATH || value.startsWith(`${LOGIN_PATH}?`)) return undefined
-  return value
+function hasUnsafeCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    if (code < FIRST_PRINTABLE || code === DEL || char === '\\') return true
+  }
+  return false
+}
+
+/**
+ * Where the login page may send the user back to: a path on this origin
+ * (checked by actually resolving it, not by prefix), never the login page
+ * itself. Returns the normalised `path?query#hash`.
+ */
+export function safeRedirectTarget(
+  value: unknown,
+  origin: string = window.location.origin,
+): string | undefined {
+  if (typeof value !== 'string' || !value.startsWith('/') || hasUnsafeCharacter(value)) {
+    return undefined
+  }
+  let url: URL
+  try {
+    url = new URL(value, origin)
+  } catch {
+    return undefined
+  }
+  if (url.origin !== origin || url.pathname === LOGIN_PATH) return undefined
+  return `${url.pathname}${url.search}${url.hash}`
 }
 
 /** A router redirect to the login page that comes back to `href` afterwards. */

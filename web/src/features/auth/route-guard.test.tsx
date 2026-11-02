@@ -90,17 +90,43 @@ describe('console route guard', () => {
 })
 
 describe('login redirect target', () => {
-  it('accepts same-origin paths only', () => {
+  it('accepts same-origin paths with query and hash', () => {
     expect(safeRedirectTarget('/devices?page=2')).toBe('/devices?page=2')
-    for (const bad of ['//evil.example', '/\\evil.example', 'https://evil.example', 'devices']) {
-      expect(safeRedirectTarget(bad)).toBeUndefined()
+    expect(safeRedirectTarget('/users?q=a%20b#row-3')).toBe('/users?q=a%20b#row-3')
+    // An encoded tab stays an encoded path character, still on this origin.
+    expect(safeRedirectTarget('/%09/x')).toBe('/%09/x')
+  })
+
+  it('rejects anything that can leave the origin', () => {
+    for (const bad of [
+      '//evil.example',
+      '/\\evil.example',
+      // URL parsers strip TAB/CR/LF: these would resolve to https://evil.example.
+      '/\t/evil.example',
+      '/\n/evil.example',
+      '/\r\\evil.example',
+      '/\n\\evil.example',
+      '/\u0000x',
+      '/\u007fx',
+      'https://evil.example',
+      'javascript:alert(1)',
+      'devices',
+      '',
+    ]) {
+      expect(safeRedirectTarget(bad), JSON.stringify(bad)).toBeUndefined()
     }
     expect(safeRedirectTarget('/login?redirect=/x')).toBeUndefined()
     expect(safeRedirectTarget(42)).toBeUndefined()
   })
 
-  it('drops an unsafe redirect from the login URL', async () => {
-    const { router } = renderApp('/login?redirect=%2F%2Fevil.example', { me: null })
+  it.each([
+    ['%2F%2Fevil.example'],
+    ['%2F%09%2Fevil.example'],
+    ['%2F%0A%2Fevil.example'],
+    ['%2F%5Cevil.example'],
+    ['javascript%3Aalert(1)'],
+  ])('drops an unsafe redirect from the login URL (%s)', async (encoded) => {
+    const { router } = renderApp(`/login?redirect=${encoded}`, { me: null })
 
     await screen.findByRole('heading', { name: '登录 deskhaven' })
     // The page reads the validated search of its match, not the raw URL.
