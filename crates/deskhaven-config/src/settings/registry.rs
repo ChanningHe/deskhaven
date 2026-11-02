@@ -28,6 +28,13 @@ const MAX_RETENTION: Duration = days(3650);
 const SMTP_TEXT: TextRule = max_len(254);
 const MAX_RELAYS: usize = 32;
 
+/// The login lockout's per-username global row locks after this many times
+/// `auth.lockout.max_failures` (deskhaven-core `auth::limiter`). The cross-key rule
+/// `auth.lockout.window <= LOCKOUT_GLOBAL_FACTOR × auth.lockout.duration` keeps a single
+/// source, which is locked out for at least `duration` after each burst, from ever reaching
+/// that threshold within one window on its own.
+pub const LOCKOUT_GLOBAL_FACTOR: u32 = 4;
+
 settings! {
     /// Absolute lifetime of client and console sessions.
     AUTH_SESSION_TTL: Duration = "auth.session_ttl" {

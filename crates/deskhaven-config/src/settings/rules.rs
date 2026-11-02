@@ -4,7 +4,8 @@ use serde_json::{Value as Json, json};
 
 use super::def::AnySetting;
 use super::registry::{
-    AUTH_EMAIL_CODE_ENABLED, AUTH_SESSION_IDLE_TTL, AUTH_SESSION_TTL, SMTP_FROM, SMTP_HOST,
+    AUTH_EMAIL_CODE_ENABLED, AUTH_LOCKOUT_DURATION, AUTH_LOCKOUT_WINDOW, AUTH_SESSION_IDLE_TTL,
+    AUTH_SESSION_TTL, LOCKOUT_GLOBAL_FACTOR, SMTP_FROM, SMTP_HOST,
 };
 use super::snapshot::Snapshot;
 use super::update::Problem;
@@ -27,6 +28,12 @@ static RULES: &[Rule] = &[
         message: "auth.session_idle_ttl must not exceed auth.session_ttl",
         holds: idle_ttl_within_session_ttl,
     },
+    Rule {
+        keys: &[&AUTH_LOCKOUT_WINDOW, &AUTH_LOCKOUT_DURATION],
+        message: "auth.lockout.window must not exceed 4 × auth.lockout.duration (otherwise a \
+                  single source can trip the per-username global lockout)",
+        holds: lockout_window_within_global_reach,
+    },
 ];
 
 fn email_code_has_smtp(s: &Snapshot) -> bool {
@@ -36,6 +43,11 @@ fn email_code_has_smtp(s: &Snapshot) -> bool {
 
 fn idle_ttl_within_session_ttl(s: &Snapshot) -> bool {
     s.get(&AUTH_SESSION_IDLE_TTL) <= s.get(&AUTH_SESSION_TTL)
+}
+
+fn lockout_window_within_global_reach(s: &Snapshot) -> bool {
+    let duration = s.get(&AUTH_LOCKOUT_DURATION).as_std();
+    s.get(&AUTH_LOCKOUT_WINDOW).as_std() <= duration.saturating_mul(LOCKOUT_GLOBAL_FACTOR)
 }
 
 /// Rules that do not hold on `snapshot`; with `changed`, only rules that

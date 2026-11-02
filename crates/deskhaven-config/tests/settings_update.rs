@@ -233,6 +233,29 @@ fn idle_ttl_must_not_exceed_session_ttl() {
 }
 
 #[test]
+fn lockout_window_must_not_exceed_four_durations() {
+    let base = Snapshot::defaults();
+    assert_eq!(settings::LOCKOUT_GLOBAL_FACTOR, 4);
+
+    let at_limit = candidate(&base, &[change("auth.lockout.window", json!("1h"))]);
+    assert!(at_limit.is_ok(), "{at_limit:?}");
+    let too_long = candidate(&base, &[change("auth.lockout.window", json!("61m"))]).unwrap_err();
+    assert_eq!(invalid_keys(too_long), ["auth.lockout.window"]);
+
+    let short_duration =
+        candidate(&base, &[change("auth.lockout.duration", json!("3m"))]).unwrap_err();
+    assert_eq!(invalid_keys(short_duration), ["auth.lockout.window"]);
+    let both = candidate(
+        &base,
+        &[
+            change("auth.lockout.duration", json!("1m")),
+            change("auth.lockout.window", json!("4m")),
+        ],
+    );
+    assert!(both.is_ok(), "{both:?}");
+}
+
+#[test]
 fn sensitive_values_are_reported_as_set_only() {
     let base = Snapshot::defaults();
     let next = candidate(&base, &[change("smtp.password", json!("hunter2-0042"))]).unwrap();

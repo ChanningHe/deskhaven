@@ -14,6 +14,13 @@
         "auth.session_ttl"
       ],
       "message": "auth.session_idle_ttl must not exceed auth.session_ttl"
+    },
+    {
+      "keys": [
+        "auth.lockout.window",
+        "auth.lockout.duration"
+      ],
+      "message": "auth.lockout.window must not exceed 4 × auth.lockout.duration (otherwise a single source can trip the per-username global lockout)"
     }
   ],
   "settings": [
