@@ -15,30 +15,24 @@ impl Size {
     }
 }
 
-/// Parse failure for [`Size`].
+/// Parse failure for [`Size`]. Never includes the input (it may be a secret
+/// given to the wrong key).
 #[derive(Debug, thiserror::Error)]
-#[error("invalid size {input:?}: {reason} (expected e.g. \"10MiB\")")]
-pub struct SizeError {
-    input: String,
-    reason: String,
-}
+#[error("invalid size: expected a number with a unit, e.g. \"10MiB\"")]
+pub struct SizeError;
 
 impl FromStr for Size {
     type Err = SizeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let err = |reason: String| SizeError {
-            input: s.to_owned(),
-            reason,
-        };
         let trimmed = s.trim();
         if trimmed.chars().all(|c| c.is_ascii_digit()) {
-            return Err(err("a unit is required".into()));
+            return Err(SizeError);
         }
         trimmed
             .parse::<bytesize::ByteSize>()
             .map(|b| Self(b.as_u64()))
-            .map_err(err)
+            .map_err(|_| SizeError)
     }
 }
 

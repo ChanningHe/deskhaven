@@ -1,12 +1,14 @@
 //! The raw `[settings]` table: pinned runtime settings, not interpreted here.
 //!
 //! Files may write pins as dotted keys (`"auth.session_ttl" = "30d"`) or as
-//! nested tables; env always produces nested tables. [`NormalizedPins`]
+//! nested tables; env always produces nested tables. [`normalize_root`]
 //! rewrites file pins into nested tables before merging so every layer agrees
-//! on one shape and figment precedence + `find_metadata` work per pin.
+//! on one shape and figment precedence + `find_metadata` work per pin. An
+//! empty pin table is an error rather than silently dropped.
 //!
-//! Values from env, `_FILE` and CLI stay raw strings; the settings registry
-//! parses them against each setting's type. Pins whose real name ends in
+//! Values from env, `_FILE` and CLI stay raw strings while TOML pins keep
+//! their TOML types; the settings registry coerces both against each
+//! setting's type. Pins whose real name ends in
 //! `_file` cannot be set via env (`<KEY>_FILE` always means indirection).
 //!
 //! Pin values may be sensitive (e.g. `smtp.password`), so `Debug` and
@@ -16,8 +18,7 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
 
-use figment::value::{Dict, Map, Value};
-use figment::{Error, Metadata, Profile, Provider};
+use figment::value::{Dict, Value};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -127,27 +128,8 @@ fn flatten_into(out: &mut BTreeMap<String, Pin>, key: String, value: serde_json:
     }
 }
 
-/// Wraps a file provider and nests dotted keys inside its `[settings]` table.
-pub(crate) struct NormalizedPins<P>(pub P);
-
-impl<P: Provider> Provider for NormalizedPins<P> {
-    /// Errors name the plain dotted key (`listen.typo`, not `default.listen.typo`).
-    fn metadata(&self) -> Metadata {
-        self.0
-            .metadata()
-            .interpolater(|_: &Profile, keys: &[&str]| keys.join("."))
-    }
-
-    fn data(&self) -> Result<Map<Profile, Dict>, Error> {
-        let mut out = Map::new();
-        for (profile, dict) in self.0.data()? {
-            out.insert(profile, normalize_root(dict).map_err(Error::from)?);
-        }
-        Ok(out)
-    }
-}
-
-fn normalize_root(mut root: Dict) -> Result<Dict, String> {
+/// Nests dotted keys inside a parsed file's `[settings]` table.
+pub(crate) fn normalize_root(mut root: Dict) -> Result<Dict, String> {
     let normalized = match root.remove(SETTINGS_KEY) {
         Some(Value::Dict(tag, table)) => Value::Dict(tag, nest_dotted(table, "")?),
         // A non-table `settings` is left for extraction to report as a type error.
@@ -166,6 +148,9 @@ fn nest_dotted(table: Dict, prefix: &str) -> Result<Dict, String> {
             return Err(format!("invalid settings key `{path}`: empty segment"));
         }
         let value = match value {
+            Value::Dict(_, inner) if inner.is_empty() => {
+                return Err(format!("settings key `{path}` is an empty table"));
+            }
             Value::Dict(tag, inner) => Value::Dict(tag, nest_dotted(inner, &path)?),
             leaf => leaf,
         };

@@ -141,10 +141,14 @@ fn rejects_admin_port_overlapping_client_api() {
 }
 
 #[test]
-fn rejects_malformed_cidr_naming_value() {
+fn rejects_malformed_cidr_naming_key_not_value() {
     let err = load_error("[security]\ntrusted_proxies = [\"10.0.0.0/33\"]\n");
     assert!(matches!(err, ConfigError::Extract(_)), "{err}");
-    assert!(err.to_string().contains("10.0.0.0/33"), "{err}");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("trusted_proxies") && !msg.contains("10.0.0.0/33"),
+        "{msg}"
+    );
 }
 
 #[test]

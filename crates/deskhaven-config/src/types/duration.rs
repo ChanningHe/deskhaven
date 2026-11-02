@@ -21,13 +21,10 @@ impl From<Duration> for std::time::Duration {
     }
 }
 
-/// Parse failure for [`Duration`].
+/// Parse failure for [`Duration`]. Never includes the input.
 #[derive(Debug, thiserror::Error)]
-#[error("invalid duration {input:?}: {reason} (expected e.g. \"15m\", \"7d\", \"1h30m\")")]
-pub struct DurationError {
-    input: String,
-    reason: String,
-}
+#[error("invalid duration: expected a number with units, e.g. \"15m\", \"7d\", \"1h30m\"")]
+pub struct DurationError;
 
 impl FromStr for Duration {
     type Err = DurationError;
@@ -35,10 +32,7 @@ impl FromStr for Duration {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         humantime::parse_duration(s.trim())
             .map(Self)
-            .map_err(|e| DurationError {
-                input: s.to_owned(),
-                reason: e.to_string(),
-            })
+            .map_err(|_| DurationError)
     }
 }
 

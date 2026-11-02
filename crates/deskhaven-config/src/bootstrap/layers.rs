@@ -2,23 +2,22 @@
 
 use std::path::Path;
 
-use figment::providers::{Format, Toml};
 use figment::value::{Dict, Map};
 use figment::{Error, Figment, Metadata, Profile, Provider};
 
 use super::env::{ENV_PREFIX, EnvLayers, KEY_SEPARATOR};
-use super::pins::NormalizedPins;
 
+pub(crate) const FILE_LAYER: &str = "TOML file";
 pub(crate) const ENV_LAYER: &str = "DESKHAVEN_* environment variable";
 pub(crate) const ENV_FILE_LAYER: &str = "DESKHAVEN_*_FILE environment variable";
 pub(crate) const CLI_LAYER: &str = "command-line flag";
 
 /// Merges all layers: file < env < env `_FILE` < CLI. Defaults come from
 /// serde, so a key absent from every layer has no metadata (= default).
-pub(crate) fn build(file: Option<&Path>, env: EnvLayers, cli: Dict) -> Figment {
+pub(crate) fn build(file: Option<(&Path, Dict)>, env: EnvLayers, cli: Dict) -> Figment {
     let mut figment = Figment::new();
-    if let Some(path) = file {
-        figment = figment.merge(NormalizedPins(Toml::file_exact(path)));
+    if let Some((path, values)) = file {
+        figment = figment.merge(Layer::new(values, file_metadata(path)));
     }
     figment
         .merge(Layer::new(env.plain, env_metadata(ENV_LAYER, "")))
@@ -27,6 +26,12 @@ pub(crate) fn build(file: Option<&Path>, env: EnvLayers, cli: Dict) -> Figment {
             env_metadata(ENV_FILE_LAYER, "_FILE"),
         ))
         .merge(Layer::new(cli, Metadata::named(CLI_LAYER)))
+}
+
+/// Error messages name the plain dotted key (`listen.typo`) and the file.
+fn file_metadata(path: &Path) -> Metadata {
+    Metadata::from(FILE_LAYER, figment::Source::File(path.to_owned()))
+        .interpolater(|_: &Profile, keys: &[&str]| keys.join("."))
 }
 
 /// Error messages name the variable (`DESKHAVEN_LISTEN__ADMIN`), not a path.

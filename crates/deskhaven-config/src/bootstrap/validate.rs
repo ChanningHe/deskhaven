@@ -69,11 +69,12 @@ fn check_url(key: &str, value: &str) -> Option<String> {
     Some(format!("{key}: {reason}"))
 }
 
+/// The parser's message can quote the directive, so neither is echoed.
 fn check_log_level(level: &str) -> Option<String> {
-    EnvFilter::builder()
-        .parse(level)
-        .err()
-        .map(|e| format!("log.level: invalid filter {level:?}: {e}"))
+    EnvFilter::builder().parse(level).err().map(|_| {
+        "log.level: not a valid tracing filter (e.g. \"info\" or \"warn,deskhaven=debug\")"
+            .to_owned()
+    })
 }
 
 /// Never echoes the URL: it may carry credentials.
@@ -148,13 +149,13 @@ fn port_conflicts(bindings: &[Binding]) -> Vec<String> {
             let same_port = a.addr.port() == b.addr.port() && a.addr.port() != 0;
             let overlap = ips_overlap(a.addr.ip(), b.addr.ip());
             if a.proto == b.proto && same_port && overlap {
+                // Port numbers only: they are already validated u16 values.
                 problems.push(format!(
-                    "{} ({}) conflicts with {} ({}) on port {}",
+                    "{} conflicts with {} on port {}/{:?}",
                     a.name,
-                    a.addr,
                     b.name,
-                    b.addr,
-                    a.addr.port()
+                    a.addr.port(),
+                    a.proto
                 ));
             }
         }

@@ -1,6 +1,6 @@
 //! Key paths derived from the schema itself, so there is no hand-kept list.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use figment::value::{Dict, Value};
 use serde_json::Value as Json;
@@ -8,35 +8,33 @@ use serde_json::Value as Json;
 use super::error::ConfigError;
 use super::pins::SETTINGS_KEY;
 use super::schema::{Bootstrap, json_schema};
+use super::schema_facts::SchemaFacts;
 
-const SECRET_REF: &str = "#/$defs/Secret";
-const DEFS_PREFIX: &str = "#/$defs/";
-
-/// Every schema leaf (dotted path) with its default value, plus which leaves
-/// are secrets (taken from the JSON Schema `$ref`s).
+/// Every schema leaf (dotted path, from the serialized defaults) plus type
+/// facts from the JSON Schema.
 pub(crate) struct KnownKeys {
-    defaults: BTreeMap<String, Json>,
-    secrets: BTreeSet<String>,
+    leaves: BTreeSet<String>,
+    facts: SchemaFacts,
 }
 
 impl KnownKeys {
     pub(crate) fn new() -> Result<Self, serde_json::Error> {
         let defaults = serde_json::to_value(Bootstrap::default())?;
-        let schema = json_schema();
-        let mut secrets = BTreeSet::new();
-        collect_secrets(&schema, &schema, "", &mut secrets);
         Ok(Self {
-            defaults: schema_leaves(defaults).into_iter().collect(),
-            secrets,
+            leaves: schema_leaves(defaults)
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect(),
+            facts: SchemaFacts::from_schema(&json_schema()),
         })
     }
 
     pub(crate) fn is_schema_leaf(&self, path: &str) -> bool {
-        self.defaults.contains_key(path)
+        self.leaves.contains(path)
     }
 
     pub(crate) fn is_secret(&self, path: &str) -> bool {
-        self.secrets.contains(path)
+        self.facts.is_secret(path)
     }
 
     /// A schema leaf, or any well-formed key under `settings.` (pins).
@@ -44,15 +42,18 @@ impl KnownKeys {
         self.is_schema_leaf(path) || pin_key(path).is_some()
     }
 
-    /// The single parser for raw strings from env, `_FILE` and CLI:
-    /// string keys and pins stay verbatim (pins are typed later by the
-    /// settings registry), lists accept `a,b` or `[a, b]`, other keys use
+    /// The single parser for raw strings from env, `_FILE` and CLI. Shape
+    /// comes from the schema `type` (so `Option<Vec<_>>` is still a list):
+    /// lists accept `a,b` or `[a, b]`; string keys and pins stay verbatim
+    /// (pins are typed later by the settings registry); other keys use
     /// figment's value syntax.
     pub(crate) fn typed_value(&self, path: &str, raw: &str) -> Value {
-        match self.defaults.get(path) {
-            None | Some(Json::String(_)) => Value::from(raw.to_owned()),
-            Some(Json::Array(_)) => list_value(raw),
-            Some(_) => parse_value(raw),
+        if !self.is_schema_leaf(path) || self.facts.is_text(path) && !self.facts.is_list(path) {
+            Value::from(raw.to_owned())
+        } else if self.facts.is_list(path) {
+            list_value(raw)
+        } else {
+            parse_value(raw)
         }
     }
 }
@@ -74,32 +75,6 @@ fn list_value(raw: &str) -> Value {
         .map(|item| Value::from(item.to_owned()))
         .collect();
     Value::from(items)
-}
-
-/// Walks `properties`, following `$defs` refs, collecting Secret-typed paths.
-fn collect_secrets(root: &Json, node: &Json, prefix: &str, out: &mut BTreeSet<String>) {
-    let Some(props) = node.get("properties").and_then(Json::as_object) else {
-        return;
-    };
-    for (key, prop) in props {
-        let path = if prefix.is_empty() {
-            key.clone()
-        } else {
-            format!("{prefix}.{key}")
-        };
-        match prop.get("$ref").and_then(Json::as_str) {
-            Some(SECRET_REF) => {
-                out.insert(path);
-            }
-            Some(reference) => {
-                let name = reference.strip_prefix(DEFS_PREFIX).unwrap_or(reference);
-                if let Some(def) = root.get("$defs").and_then(|defs| defs.get(name)) {
-                    collect_secrets(root, def, &path, out);
-                }
-            }
-            None => {}
-        }
-    }
 }
 
 /// Builds a nested dict from `(dotted path, value)` pairs. A path that is both
@@ -195,8 +170,17 @@ mod tests {
     #[test]
     fn secrets_come_from_schema() {
         let keys = KnownKeys::new().unwrap();
-        let expected =
-            BTreeSet::from(["database.url".to_owned(), "security.master_key".to_owned()]);
-        assert_eq!(keys.secrets, expected);
+        assert!(keys.is_secret("database.url") && keys.is_secret("security.master_key"));
+        assert!(!keys.is_secret("public_url") && !keys.is_secret("database.max_connections"));
+    }
+
+    #[test]
+    fn list_detection_uses_schema_type() {
+        let keys = KnownKeys::new().unwrap();
+        let expected = Value::from(vec![Value::from("10.0.0.0/8".to_owned())]);
+        assert_eq!(
+            keys.typed_value("security.trusted_proxies", "10.0.0.0/8"),
+            expected
+        );
     }
 }

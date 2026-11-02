@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use figment::error::Kind;
+use figment::error::{Actual, Kind};
 
 use super::keys::KnownKeys;
 use crate::types::REDACTED;
@@ -12,8 +12,28 @@ pub enum ConfigError {
     #[error("config file {} (from {origin}) does not exist or is not a regular file", path.display())]
     ConfigFileNotFound { path: PathBuf, origin: &'static str },
 
+    #[error("cannot read config file {}", path.display())]
+    ConfigFileRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Position and short reason only; the source line is never quoted.
+    #[error("TOML syntax error at {line}:{column} in {}: {reason}", path.display())]
+    TomlSyntax {
+        path: PathBuf,
+        line: usize,
+        column: usize,
+        reason: String,
+    },
+
     #[error("both {var} and {file_var} are set; use only one")]
     EnvConflict { var: String, file_var: String },
+
+    /// Two variables whose names differ only by case (names sorted).
+    #[error("environment variables {first} and {second} set the same key; keep only one")]
+    EnvDuplicate { first: String, second: String },
 
     #[error("cannot read file {} referenced by {var}", path.display())]
     EnvFileRead {
@@ -39,15 +59,15 @@ pub enum ConfigError {
 }
 
 impl ConfigError {
-    /// Renders figment errors; for secret keys the offending value is
-    /// replaced so it never reaches logs (key and expected type are kept).
+    /// Renders figment errors without any found value, for every key: only
+    /// key path, expected type, the found value's shape and the source remain.
+    /// Secret keys additionally lose free-form messages.
     pub(crate) fn extract(err: figment::Error, known: &KnownKeys) -> Self {
         let lines: Vec<String> = err
             .into_iter()
             .map(|mut e| {
-                if known.is_secret(&e.path.join(".")) {
-                    e.kind = redact(e.kind);
-                }
+                let is_secret = known.is_secret(&e.path.join("."));
+                e.kind = without_value(e.kind, is_secret);
                 format!("  - {e}")
             })
             .collect();
@@ -55,13 +75,56 @@ impl ConfigError {
     }
 }
 
-fn redact(kind: Kind) -> Kind {
-    let detail = match kind {
-        Kind::InvalidType(_, expected) => format!("invalid type: expected {expected}"),
-        Kind::InvalidValue(_, expected) => format!("invalid value: expected {expected}"),
-        _ => "invalid value".to_owned(),
+fn without_value(kind: Kind, is_secret: bool) -> Kind {
+    let message = match kind {
+        Kind::InvalidType(found, expected) => {
+            format!(
+                "invalid type: expected {expected} (found {})",
+                shape(&found)
+            )
+        }
+        Kind::InvalidValue(found, expected) => {
+            format!(
+                "invalid value: expected {expected} (found {})",
+                shape(&found)
+            )
+        }
+        Kind::UnknownVariant(_, expected) => {
+            format!(
+                "unknown variant: expected one of `{}`",
+                expected.join("`, `")
+            )
+        }
+        Kind::ISizeOutOfRange(_) | Kind::USizeOutOfRange(_) => "number out of range".to_owned(),
+        Kind::Unsupported(found) => format!("unsupported value (found {})", shape(&found)),
+        Kind::UnsupportedKey(found, expected) => {
+            format!(
+                "unsupported key: expected {expected} (found {})",
+                shape(&found)
+            )
+        }
+        Kind::Message(_) if is_secret => format!("invalid value ({REDACTED})"),
+        // Field names and lengths carry no values; our own types' messages
+        // never include their input.
+        other => return other,
     };
-    Kind::Message(format!("{detail} (value {REDACTED})"))
+    Kind::Message(message)
+}
+
+/// The kind of a found value, never its content.
+fn shape(found: &Actual) -> &'static str {
+    match found {
+        Actual::Bool(_) => "a boolean",
+        Actual::Unsigned(_) | Actual::Signed(_) => "an integer",
+        Actual::Float(_) => "a float",
+        Actual::Char(_) => "a character",
+        Actual::Str(_) => "a string",
+        Actual::Bytes(_) => "bytes",
+        Actual::Seq => "a list",
+        Actual::Map => "a table",
+        Actual::Unit | Actual::Option => "an empty value",
+        _ => "a value",
+    }
 }
 
 /// Non-fatal findings returned to the caller; the library never prints.

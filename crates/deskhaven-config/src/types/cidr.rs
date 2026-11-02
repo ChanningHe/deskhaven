@@ -19,12 +19,10 @@ impl Cidr {
     }
 }
 
-/// Parse failure for [`Cidr`].
+/// Parse failure for [`Cidr`]. Never includes the input.
 #[derive(Debug, thiserror::Error)]
-#[error("invalid CIDR {input:?} (expected e.g. \"10.0.0.0/8\" or \"fd00::/8\")")]
-pub struct CidrError {
-    input: String,
-}
+#[error("invalid CIDR: expected e.g. \"10.0.0.0/8\", \"fd00::/8\" or a bare address")]
+pub struct CidrError;
 
 impl FromStr for Cidr {
     type Err = CidrError;
@@ -36,9 +34,7 @@ impl FromStr for Cidr {
             .parse::<IpNet>()
             .or_else(|_| trimmed.parse::<IpAddr>().map(IpNet::from))
             .map(Self)
-            .map_err(|_| CidrError {
-                input: s.to_owned(),
-            })
+            .map_err(|_| CidrError)
     }
 }
 

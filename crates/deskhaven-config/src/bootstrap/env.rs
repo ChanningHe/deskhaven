@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fmt;
 use std::path::PathBuf;
 
 use figment::value::{Dict, Value};
@@ -18,7 +19,7 @@ pub(crate) const CONFIG_VAR: &str = "DESKHAVEN_CONFIG";
 const FILE_SUFFIX: &str = "_file";
 
 /// How every `DESKHAVEN_*` variable is interpreted, keyed by dotted path.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct EnvPlan {
     /// path -> (variable, value).
     pub plain: BTreeMap<String, (String, String)>,
@@ -26,7 +27,26 @@ pub(crate) struct EnvPlan {
     pub indirect: BTreeMap<String, (String, PathBuf)>,
     /// `$DESKHAVEN_CONFIG`, if set and non-empty.
     pub config_path: Option<PathBuf>,
+    /// The variable name that carried the config path (even if empty).
+    config_var: Option<String>,
     pub warnings: Vec<Warning>,
+}
+
+/// Variable names and file paths only; plain values may be secrets.
+impl fmt::Debug for EnvPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let plain: BTreeMap<&str, &str> = self
+            .plain
+            .iter()
+            .map(|(path, (var, _))| (path.as_str(), var.as_str()))
+            .collect();
+        f.debug_struct("EnvPlan")
+            .field("plain", &plain)
+            .field("indirect", &self.indirect)
+            .field("config_path", &self.config_path)
+            .field("warnings", &self.warnings)
+            .finish()
+    }
 }
 
 impl EnvPlan {
@@ -59,7 +79,7 @@ pub(crate) fn plan(
             plan.warnings.push(Warning::NonUnicodeEnv { var });
             continue;
         };
-        classify(&mut plan, known, var, &rest, value);
+        classify(&mut plan, known, var, &rest, value)?;
     }
     reject_conflicts(&plan)?;
     Ok(plan)
@@ -67,27 +87,66 @@ pub(crate) fn plan(
 
 /// Schema leaves win (`SIGNAL__KEY_FILE` is the plain `signal.key_file`);
 /// then a `_FILE` suffix over a known key (schema or pin) is indirection;
-/// then any other pin path is a plain pin.
-fn classify(plan: &mut EnvPlan, known: &KnownKeys, var: String, rest: &str, value: &str) {
+/// then any other pin path is a plain pin. Names that differ only by case
+/// map to the same key and are rejected.
+fn classify(
+    plan: &mut EnvPlan,
+    known: &KnownKeys,
+    var: String,
+    rest: &str,
+    value: &str,
+) -> Result<(), ConfigError> {
     if var.eq_ignore_ascii_case(CONFIG_VAR) {
+        if let Some(other) = &plan.config_var {
+            return Err(duplicate(other, &var));
+        }
         plan.config_path = (!value.trim().is_empty()).then(|| PathBuf::from(value));
-        return;
+        plan.config_var = Some(var);
+        return Ok(());
     }
     let path = to_path(rest);
-    if known.is_schema_leaf(&path) {
-        plan.plain.insert(path, (var, value.to_owned()));
-        return;
-    }
     let base = path
         .strip_suffix(FILE_SUFFIX)
         .filter(|base| known.contains(base));
-    if let Some(base) = base {
-        plan.indirect
-            .insert(base.to_owned(), (var, PathBuf::from(value)));
-    } else if known.contains(&path) {
-        plan.plain.insert(path, (var, value.to_owned()));
-    } else {
-        plan.warnings.push(Warning::UnknownEnv { var });
+    match base {
+        _ if known.is_schema_leaf(&path) => {
+            insert_unique(&mut plan.plain, path, var, value.to_owned())
+        }
+        Some(base) => insert_unique(
+            &mut plan.indirect,
+            base.to_owned(),
+            var,
+            PathBuf::from(value),
+        ),
+        None if known.contains(&path) => {
+            insert_unique(&mut plan.plain, path, var, value.to_owned())
+        }
+        None => {
+            plan.warnings.push(Warning::UnknownEnv { var });
+            Ok(())
+        }
+    }
+}
+
+fn insert_unique<V>(
+    map: &mut BTreeMap<String, (String, V)>,
+    path: String,
+    var: String,
+    value: V,
+) -> Result<(), ConfigError> {
+    if let Some((other, _)) = map.get(&path) {
+        return Err(duplicate(other, &var));
+    }
+    map.insert(path, (var, value));
+    Ok(())
+}
+
+/// Deterministic regardless of environment iteration order.
+fn duplicate(a: &str, b: &str) -> ConfigError {
+    let (first, second) = if a <= b { (a, b) } else { (b, a) };
+    ConfigError::EnvDuplicate {
+        first: first.to_owned(),
+        second: second.to_owned(),
     }
 }
 
@@ -187,6 +246,18 @@ mod tests {
                 var: "DESKHAVEN_NOPE".into()
             }]
         );
+    }
+
+    #[test]
+    fn debug_shows_variable_names_not_values() {
+        let known = KnownKeys::new().unwrap();
+        let plan = plan(
+            vars(&[("DESKHAVEN_SECURITY__MASTER_KEY", "HUNTER2")]),
+            &known,
+        )
+        .unwrap();
+        let debug = format!("{plan:?}");
+        assert!(debug.contains("DESKHAVEN_SECURITY__MASTER_KEY") && !debug.contains("HUNTER2"));
     }
 
     #[test]

@@ -7,10 +7,12 @@ mod cli;
 mod effective;
 mod env;
 mod error;
+mod file;
 mod keys;
 mod layers;
 mod pins;
 mod schema;
+mod schema_facts;
 mod validate;
 
 use std::path::{Path, PathBuf};
@@ -84,7 +86,11 @@ pub fn load(options: &LoadOptions) -> Result<Loaded, ConfigError> {
     let cli = options.cli.to_dict(&known)?;
     let config_file = locate(options, env.config_path.as_deref())?;
 
-    let figment = layers::build(config_file.as_deref(), env_layers, cli);
+    let file = match &config_file {
+        Some(path) => Some((path.as_path(), file::read(path)?)),
+        None => None,
+    };
+    let figment = layers::build(file, env_layers, cli);
     let extracted: Bootstrap = figment
         .extract()
         .map_err(|e| ConfigError::extract(e, &known))?;

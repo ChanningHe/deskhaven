@@ -79,7 +79,7 @@ fn secret_type_error_in_file_never_echoes_value() {
 }
 
 #[test]
-fn non_secret_type_error_still_shows_value() {
+fn non_secret_type_error_names_var_and_expected_type_only() {
     Jail::expect_with(|jail| {
         jail.clear_env();
         jail.set_env("DESKHAVEN_SIGNAL__PORT", "abc");
@@ -87,7 +87,7 @@ fn non_secret_type_error_still_shows_value() {
         let msg = load_error(jail).to_string();
 
         assert!(
-            msg.contains("abc") && msg.contains("DESKHAVEN_SIGNAL__PORT"),
+            !msg.contains("abc") && msg.contains("DESKHAVEN_SIGNAL__PORT") && msg.contains("u16"),
             "{msg}"
         );
         Ok(())
