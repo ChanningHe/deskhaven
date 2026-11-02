@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use deskhaven_admin_api::AdminRoutes;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::SystemClock;
@@ -43,6 +44,8 @@ pub struct Started {
     pub state: Arc<AppState>,
     pub listeners: Listeners,
     pub http: HttpConfig,
+    /// The admin API route set, assembled (and its permissions checked) before binding.
+    pub admin_routes: AdminRoutes,
     /// The supervised signal server; `None` with `[signal] enabled = false`.
     pub signal: Option<RunningSignal>,
     /// Held until the process exits.
@@ -90,6 +93,9 @@ pub async fn start(
     drain_timeout: Duration,
     token: &CancellationToken,
 ) -> anyhow::Result<Started> {
+    // An unguarded admin route (no permission declared) must stop startup before any port
+    // is bound or the database is touched.
+    let admin_routes = deskhaven_admin_api::api_routes()?;
     let http = http::http_config(config, drain_timeout);
     http.validate()?;
     let listeners = Listeners::bind(&http::listen_config(&config.listen)).await?;
@@ -112,6 +118,7 @@ pub async fn start(
         state,
         listeners,
         http,
+        admin_routes,
         signal,
         lock,
     })

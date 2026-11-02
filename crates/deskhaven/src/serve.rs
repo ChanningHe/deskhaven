@@ -100,11 +100,17 @@ async fn serve_until_shutdown(
         state,
         listeners,
         http: http_config,
+        admin_routes,
         signal,
         lock: _lock,
     } = started;
     let (signal_status, mut signal_task) = signal.map(|s| (s.status, s.task)).unzip();
-    let apps = http::apps(Arc::clone(&state), &token, signal_status.clone());
+    let apps = http::apps(
+        Arc::clone(&state),
+        admin_routes,
+        &token,
+        signal_status.clone(),
+    );
     let signal_status = signal_status.as_ref();
     let mut serving = tokio::spawn({
         let token = token.clone();

@@ -11,6 +11,7 @@ publish.workspace = true
 # must never depend on it (enforced by tests/no_production_dependents.rs).
 [dependencies]
 deskhaven = { path = "../deskhaven" }
+deskhaven-admin-api = { workspace = true }
 deskhaven-config = { workspace = true }
 deskhaven-core = { workspace = true }
 deskhaven-http = { workspace = true }

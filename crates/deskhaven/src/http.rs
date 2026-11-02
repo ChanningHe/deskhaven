@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::http::HeaderValue;
+use deskhaven_admin_api::AdminRoutes;
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::{Bootstrap, Listen};
 use deskhaven_core::state::AppState;
@@ -56,17 +57,22 @@ pub fn listen_config(listen: &Listen) -> ListenConfig {
 }
 
 /// Routers of both sides with the API error renderers. Health routes are on
-/// both, so a split admin listener can be probed on its own. `signal` is the
-/// signal server readiness follows (`None`: not running in this process).
+/// both, so a split admin listener can be probed on its own. `admin_routes`:
+/// the admin API (`deskhaven_admin_api::api_routes`). `signal` is the signal
+/// server readiness follows (`None`: not running in this process).
 pub fn apps(
     state: Arc<AppState>,
+    admin_routes: AdminRoutes,
     shutdown: &CancellationToken,
     signal: Option<SignalStatus>,
 ) -> Apps {
     let readiness = readiness(state.db.clone(), shutdown.clone(), signal);
     Apps {
-        client_api: client_api_router(state, readiness.clone()),
-        admin: admin_router(readiness),
+        admin: admin_router(
+            admin_routes.into_router(Arc::clone(&state)),
+            readiness.clone(),
+        ),
+        client_api: client_api_router(state, readiness),
         errors: ErrorBodies {
             client_api: deskhaven_client_api::render_stack_error,
             admin: deskhaven_admin_api::render_stack_error,
@@ -79,10 +85,12 @@ fn client_api_router(state: Arc<AppState>, readiness: impl ReadinessCheck) -> Ro
     health_routes(readiness).merge(deskhaven_client_api::router().with_state(state))
 }
 
-/// `/admin/api/*` joins here. The console serves every other path through
-/// its fallback, so it must stay the only router with a fallback.
-fn admin_router(readiness: impl ReadinessCheck) -> Router {
-    health_routes(readiness).merge(deskhaven_web::router())
+/// `/admin/api/v1/*` plus the console. The console serves every other path
+/// through its fallback, so it must stay the only router with a fallback.
+fn admin_router(admin_api: Router, readiness: impl ReadinessCheck) -> Router {
+    health_routes(readiness)
+        .merge(admin_api)
+        .merge(deskhaven_web::router())
 }
 
 /// `/readyz`: the database answers a ping, the process is not shutting down,

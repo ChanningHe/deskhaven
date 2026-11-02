@@ -114,7 +114,12 @@ impl TestApp {
             None => base,
         });
         let shutdown = CancellationToken::new();
-        let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown, None);
+        let apps = deskhaven::http::apps(
+            Arc::clone(&state),
+            deskhaven_admin_api::api_routes()?,
+            &shutdown,
+            None,
+        );
         let client_api = apps.client_api.merge(extra.with_state(Arc::clone(&state)));
         let http = deskhaven::http::http_config(&config, DRAIN);
         let (client_api, errors) = match listen {
