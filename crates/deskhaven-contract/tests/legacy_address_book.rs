@@ -430,48 +430,93 @@ async fn refused_pushes_leave_the_book_as_it_was() {
 }
 
 #[tokio::test]
-async fn the_peer_cap_applies_to_distinct_peers_and_keeps_the_book() {
+async fn the_peer_cap_counts_the_peers_as_sent_and_keeps_the_book() {
     let (app, out) = app_with(&["client-session", "ab-personal", "ab-one-peer-max"]).await;
     let (token, guid) = (&out["session_token"], &out["personal_guid"]);
     let before = new_api(&app, token, guid).await;
-
     let two = document(
         &[],
         vec![legacy_peer("1", "", &[], ""), legacy_peer("2", "", &[], "")],
     );
-    let refused = push_document(&app, token, &two).await;
+    // Repeated ids still count: the read stops at the cap, it does not deduplicate first.
     let repeated = document(
         &[],
         vec![
-            legacy_peer("9", "first", &[], ""),
-            legacy_peer("9", "second", &[], ""),
+            legacy_peer("9", "a", &[], ""),
+            legacy_peer("9", "b", &[], ""),
         ],
     );
-    let accepted = push_document(&app, token, &repeated).await;
+    let one = document(&[], vec![legacy_peer("9", "only", &[], "")]);
 
-    assert_eq!(assert_refused(&refused, 400), FULL_MESSAGE);
+    for refused in [two, repeated] {
+        let reply = push_document(&app, token, &refused).await;
+        assert_eq!(assert_refused(&reply, 400), FULL_MESSAGE);
+    }
+    let unchanged = new_api(&app, token, guid).await;
+    let accepted = push_document(&app, token, &one).await;
+
+    assert_eq!(unchanged, before);
     assert_done(&accepted);
     let (peers, _) = new_api(&app, token, guid).await;
-    assert_eq!(before.0.len(), 1);
     assert_eq!(peers.len(), 1);
-    assert_eq!(
-        (peers[0]["id"].as_str(), peers[0]["alias"].as_str()),
-        (Some("9"), Some("first"))
-    );
+    assert_eq!(peers[0]["id"], "9");
 }
 
 #[tokio::test]
-async fn oversized_pushes_are_refused_before_parsing() {
+async fn a_push_with_a_huge_peer_list_is_refused_at_the_cap() {
     let (app, out) = app_with(&["client-session", "ab-personal"]).await;
     let (token, guid) = (&out["session_token"], &out["personal_guid"]);
     let before = new_api(&app, token, guid).await;
-    let note = "x".repeat(MAX_LEGACY_AB_BODY);
-    let doc = document(&[], vec![json!({ "id": "1", "note": note })]);
+    let list: Vec<String> = (0..50_000).map(|i| format!(r#"{{"id":"{i}"}}"#)).collect();
+    let data = format!(r#"{{"tags":[],"peers":[{}]}}"#, list.join(","));
+    assert!(data.len() < MAX_LEGACY_AB_BODY, "{}", data.len());
 
-    let reply = push_document(&app, token, &doc).await;
+    let reply = push_raw(&app, token, &data).await;
 
-    assert!(!assert_refused(&reply, 413).is_empty());
+    assert_eq!(assert_refused(&reply, 400), FULL_MESSAGE);
     assert_eq!(new_api(&app, token, guid).await, before);
+}
+
+/// A `data` string for one peer `keep`, padded with an ignored key until the whole request
+/// body (`{"data":"..."}`) is exactly `body_len` bytes.
+fn padded_data(body_len: usize) -> String {
+    let data = |pad: usize| {
+        format!(
+            r#"{{"pad":"{}","peers":[{{"id":"keep"}}]}}"#,
+            "x".repeat(pad)
+        )
+    };
+    let bare = json!({ "data": data(0) }).to_string().len();
+    let padded = data(body_len - bare);
+    assert_eq!(json!({ "data": padded }).to_string().len(), body_len);
+    padded
+}
+
+#[tokio::test]
+async fn push_bodies_are_limited_by_the_stacks_limit_not_the_per_item_one() {
+    use deskhaven_client_api::MAX_AB_BODY;
+    let (app, out) = app_with(&["client-session", "ab-personal"]).await;
+    let (token, guid) = (&out["session_token"], &out["personal_guid"]);
+    let before = new_api(&app, token, guid).await;
+
+    // Above the per-item routes' limit, so the legacy route has a limit of its own.
+    let above_item_limit = push_raw(&app, token, &padded_data(MAX_AB_BODY + 1)).await;
+    // Exactly at the effective limit: the global one (2 MiB), which the route limit equals.
+    let at_limit = push_raw(&app, token, &padded_data(MAX_LEGACY_AB_BODY)).await;
+    let (stored, _) = new_api(&app, token, guid).await;
+    let over = push_raw(&app, token, &padded_data(MAX_LEGACY_AB_BODY + 1)).await;
+
+    assert_done(&above_item_limit);
+    assert_done(&at_limit);
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0]["id"], "keep");
+    assert!(!assert_refused(&over, 413).is_empty());
+    assert_eq!(
+        new_api(&app, token, guid).await.0,
+        stored,
+        "413 changed nothing"
+    );
+    assert_ne!(before.0, stored);
 }
 
 #[tokio::test]

@@ -57,9 +57,14 @@ pub fn is_plain(headers: &HeaderMap) -> bool {
 
 /// A `200` JSON reply, gzipped when `gzip`. `Vary` always names the header the choice
 /// depends on, so a cache never hands a compressed body to a client that did not ask.
-pub fn json_reply(body: String, gzip: bool) -> Result<Response, ClientApiError> {
+/// Compressing a large book takes long enough to stall an async worker, so it runs on the
+/// blocking pool.
+pub async fn json_reply(body: String, gzip: bool) -> Result<Response, ClientApiError> {
     let mut response = if gzip {
-        let compressed = compress(body.as_bytes()).map_err(ClientApiError::internal)?;
+        let compressed = tokio::task::spawn_blocking(move || compress(body.as_bytes()))
+            .await
+            .map_err(ClientApiError::internal)?
+            .map_err(ClientApiError::internal)?;
         let mut response = (StatusCode::OK, compressed).into_response();
         response
             .headers_mut()
@@ -145,10 +150,10 @@ mod tests {
         assert!(!is_plain(&headers));
     }
 
-    #[test]
-    fn replies_are_labelled_and_the_gzip_one_inflates_to_the_body() {
-        let plain = json_reply("[1,2]".to_owned(), false).unwrap();
-        let zipped = json_reply("[1,2]".to_owned(), true).unwrap();
+    #[tokio::test]
+    async fn replies_are_labelled_and_the_gzip_one_inflates_to_the_body() {
+        let plain = json_reply("[1,2]".to_owned(), false).await.unwrap();
+        let zipped = json_reply("[1,2]".to_owned(), true).await.unwrap();
 
         assert!(plain.headers().get(header::CONTENT_ENCODING).is_none());
         assert_eq!(zipped.headers()[header::CONTENT_ENCODING], "gzip");
@@ -156,9 +161,10 @@ mod tests {
             assert_eq!(reply.headers()[header::VARY], "Accept-Encoding");
             assert_eq!(reply.headers()[header::CONTENT_TYPE], JSON);
         }
-        let bytes = compress(b"[1,2]").unwrap();
+        let (_, body) = zipped.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let mut inflated = String::new();
-        GzDecoder::new(bytes.as_slice())
+        GzDecoder::new(&bytes[..])
             .read_to_string(&mut inflated)
             .unwrap();
         assert_eq!(inflated, "[1,2]");
