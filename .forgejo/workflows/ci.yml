@@ -11,10 +11,12 @@
 # line below. Jobs run inside the `container:` image, so the runner only needs
 # Docker access (label must map to a docker-capable runner).
 #
-# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage.
+# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage;
+# the web console job runs in parallel with all of it.
 # The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
-# Network egress needed: git host, crates.io, Debian mirrors, Docker Hub, and
-# github.com (cargo-deny fetches the RustSec advisory DB from GitHub).
+# Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
+# github.com (cargo-deny fetches the RustSec advisory DB from GitHub) and
+# registry.npmjs.org (web job).
 
 name: ci
 
@@ -31,6 +33,9 @@ env:
   # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_LLVM_COV_VERSION: "0.9.1"
+  # The pnpm of the Nix devshell (flake.lock); web/package.json deliberately has no
+  # packageManager field (see web/README.md).
+  PNPM_VERSION: "12.9.0"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
@@ -54,6 +59,41 @@ jobs:
       # Toolchain only (rustfmt); no apt packages needed.
       - run: CI_SKIP_APT=1 .forgejo/ci-setup.sh
       - run: cargo fmt --all -- --check
+
+  # Web console (web/): lint + format, types, translations, tests, generated-code
+  # drift and the production build. Needs nothing from the Rust jobs: the API client
+  # is generated from the committed openapi.json, whose own drift test-sqlite checks.
+  web:
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    # Major version only: web/package.json requires node >= 24 (engine-strict).
+    container: node:24-bookworm
+    steps:
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - name: pnpm
+        run: |
+          npm install -g --no-fund --no-audit "pnpm@$PNPM_VERSION"
+          node --version
+          pnpm --version
+      # Same as `xtask dist`: dependency install scripts never run.
+      - run: pnpm -C web install --frozen-lockfile --ignore-scripts
+      - run: pnpm -C web lint
+      - run: pnpm -C web typecheck
+      # Fails on a key missing from a locale or {{placeholders}} that differ.
+      - run: pnpm -C web i18n:check
+      - run: pnpm -C web test
+      - name: generated API client matches openapi.json
+        run: |
+          pnpm -C web gen:api
+          git status --porcelain -- web/src/api/generated
+          test -z "$(git status --porcelain -- web/src/api/generated)"
+      - name: build (and the committed route tree is current)
+        run: |
+          pnpm -C web build
+          git diff --exit-code -- web/src/routeTree.gen.ts
 
   clippy:
     needs: fmt

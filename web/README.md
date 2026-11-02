@@ -42,6 +42,7 @@ pnpm -C web typecheck    # tsc --noEmit (app + node configs)
 pnpm -C web lint         # eslint (type-aware) + prettier --check
 pnpm -C web test         # vitest + Testing Library (jsdom)
 pnpm -C web i18n:check   # fails on keys missing from a locale or {{placeholders}} that differ
+pnpm -C web gen:api      # regenerate src/api/generated from the admin API openapi.json (orval)
 pnpm -C web format       # prettier --write
 ```
 
