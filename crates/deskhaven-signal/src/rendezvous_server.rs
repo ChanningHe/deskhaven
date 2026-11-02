@@ -180,18 +180,19 @@ static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs
 /// under 512 bytes (pk 32, uuid at most 128, id at most 253). 64 KiB leaves ten times the
 /// room. HttpProxyRequest bodies (M5) may need more.
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// From accept to the first complete frame (websocket: handshake included). Clients send their
-/// first frame right after connecting: logged-in controllers and TCP-mode controlled clients
-/// answer the KeyExchange the server sends at accept (M1-07) within one round trip, others
-/// send their request at once (a controller first waits for its NAT type, 100 ms, and its UDP
-/// NAT test, 400 ms or half the connect time; client.rs `_start_inner`), websocket clients
-/// skip the exchange,
-/// and the NAT test port gets TestNatRequest / OnlineRequest at once. 10 s leaves a wide
-/// margin for slow links while a connection that never speaks holds its task a third as long
-/// as upstream's 30 s per frame. (M1-08 kept 30 s because, without a KeyExchange, those
-/// clients first waited out their 18 s READ_TIMEOUT.)
-const FIRST_FRAME_TIMEOUT_MS: u64 = 10_000;
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(FIRST_FRAME_TIMEOUT_MS);
+/// From accept to the first complete frame on the main and websocket ports (websocket:
+/// handshake included); upstream's 30 s per frame. Logged-in controllers and TCP-mode
+/// controlled clients answer the KeyExchange sent at accept (M1-07) within a round trip, but a
+/// controller that is not logged in first waits for its NAT type (100 ms) and its UDP NAT test,
+/// up to half its connect time, and that connect time covers DNS and every address that failed
+/// before (hbb_common tcp.rs: up to 18 s each), so it can approach 9 s with a blackholed AAAA
+/// record and blocked UDP, more with a retransmit or slow DNS (client.rs `_start_inner`; M1-07
+/// review). Kept at 30 s for that margin.
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// The same on the NAT test port (port - 1), whose clients send TestNatRequest / OnlineRequest
+/// right after connecting (M1-07; upstream: 30 s): a connection that never speaks holds its
+/// task a third as long.
+const NAT_FIRST_FRAME_TIMEOUT_MS: u64 = 10_000;
 /// Between frames after the first (upstream's 30 s per frame).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -1441,12 +1442,12 @@ impl RendezvousServer {
         // deskhaven: loopback connections are no longer diverted to the removed console; they
         // get the same NAT test / online query handling as everyone else.
         let mut stream = FramedStream::from(stream, addr);
-        // deskhaven (M1-08): same frame and first-frame limits as the main port (was 30 s and
-        // no size limit).
+        // deskhaven (M1-08): same frame limit as the main port (was no size limit); M1-07: its
+        // own, shorter first-frame limit (was 30 s).
         stream.codec_mut().set_max_packet_length(MAX_FRAME_LEN);
         self.tasks.spawn(async move {
             let mut stream = stream;
-            if let Some(Ok(bytes)) = stream.next_timeout(FIRST_FRAME_TIMEOUT_MS).await
+            if let Some(Ok(bytes)) = stream.next_timeout(NAT_FIRST_FRAME_TIMEOUT_MS).await
                 && let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes)
             {
                 match msg_in.union {

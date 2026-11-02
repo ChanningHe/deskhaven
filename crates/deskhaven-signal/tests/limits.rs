@@ -4,7 +4,8 @@
 //! 1 GiB its header can declare; tungstenite's defaults allow 64 MiB messages), gave every frame
 //! 30 s and the websocket handshake no time limit at all. Now a frame over [`MAX_FRAME_LEN`]
 //! closes the connection as soon as its header is read, the first frame (websocket: handshake
-//! included) must arrive within [`FIRST_FRAME_TIMEOUT`] and later ones within
+//! included) must arrive within [`FIRST_FRAME_TIMEOUT`] ([`NAT_FIRST_FRAME_TIMEOUT`] on the NAT
+//! test port) and later ones within
 //! [`IDLE_TIMEOUT`] of the previous one. The timeout tests run on tokio's paused clock, which
 //! jumps ahead whenever the runtime idles, so they take no real time.
 
@@ -23,14 +24,16 @@ use hbb_common::{
     },
 };
 use std::net::SocketAddr;
-use support::{Conn, Recv, Rendezvous, STEP, TestServer, expect_msg, secured_tcp};
+use support::{Conn, KxClient, Recv, Rendezvous, STEP, TestServer, expect_msg, secure};
 
 /// The server's frame limit (`rendezvous_server.rs` `MAX_FRAME_LEN`).
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// The server's limit for the first frame (`FIRST_FRAME_TIMEOUT`): 10 s since the server sends
-/// its KeyExchange at accept (M1-07; M1-08 had 30 s, above the client's 18 s READ_TIMEOUT that
-/// logged-in and TCP-mode clients waited out for a KeyExchange that never came).
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
+/// The server's limit for the first frame on the main and websocket ports
+/// (`FIRST_FRAME_TIMEOUT`, upstream's 30 s per frame).
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// The same on the NAT test port (`NAT_FIRST_FRAME_TIMEOUT`, M1-07): clients send their
+/// TestNatRequest / OnlineRequest right after connecting.
+const NAT_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
 /// The server's limit between frames (`IDLE_TIMEOUT`).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Slack around a timeout on the paused clock (timers fire exactly; this covers the ticks
@@ -168,30 +171,31 @@ async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, na
     assert_around(Some(started.elapsed()), IDLE_TIMEOUT, name);
 }
 
-/// A connection that sends nothing (websocket: not even the handshake) is closed after
-/// FIRST_FRAME_TIMEOUT (TCP: upstream gave 30 s; the main port's KeyExchange offer is read and
-/// discarded). Upstream never closed a websocket connection that did not complete its
+/// A connection that sends nothing (websocket: not even the handshake) is closed after its
+/// port's first-frame limit: FIRST_FRAME_TIMEOUT on the main and websocket ports (upstream's
+/// 30 s; the main port's KeyExchange offer is read and discarded), NAT_FIRST_FRAME_TIMEOUT on
+/// the NAT test port. Upstream never closed a websocket connection that did not complete its
 /// handshake.
 #[tokio::test(start_paused = true)]
 async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     // Arrange
     let server = TestServer::start().await;
-    let ports: [(SocketAddr, &str); 3] = [
-        (server.main_addr(), "main"),
-        (server.nat_addr(), "nat"),
-        (server.ws_addr(), "ws without handshake"),
+    let ports: [(SocketAddr, Duration, &str); 3] = [
+        (server.main_addr(), FIRST_FRAME_TIMEOUT, "main"),
+        (server.nat_addr(), NAT_FIRST_FRAME_TIMEOUT, "nat"),
+        (
+            server.ws_addr(),
+            FIRST_FRAME_TIMEOUT,
+            "ws without handshake",
+        ),
     ];
 
-    for (addr, name) in ports {
+    for (addr, limit, name) in ports {
         // Act
         let mut stream = TcpStream::connect(addr).await.unwrap();
 
         // Assert
-        assert_around(
-            closed_within(&mut stream, NEVER).await,
-            FIRST_FRAME_TIMEOUT,
-            name,
-        );
+        assert_around(closed_within(&mut stream, NEVER).await, limit, name);
     }
     let mut ws = server.ws().await;
     let started = Instant::now();
@@ -204,34 +208,41 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     server.stop().await;
 }
 
-/// A first frame shortly before FIRST_FRAME_TIMEOUT is still served. Paused clock.
+/// A first frame shortly before its port's limit is still served: on the main port after
+/// 28 s (an unlogged controller's first frame can take half its whole connect time, DNS and
+/// failed addresses included; M1-07 review), on the NAT test port after 8 s. Paused clock.
 #[tokio::test(start_paused = true)]
 async fn first_frame_within_the_first_frame_timeout_is_served() {
     // Arrange
     let server = TestServer::start().await;
-    let mut late = server.tcp().await;
+    let mut main = server.tcp().await;
+    let mut nat = server.nat().await;
 
-    // Act
-    tokio::time::sleep(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
-
-    // Assert
-    assert!(late.test_nat().await.port > 0);
+    // Act + Assert
+    tokio::time::sleep(NAT_FIRST_FRAME_TIMEOUT - SLACK * 2).await;
+    assert!(nat.test_nat().await.port > 0, "nat");
+    tokio::time::sleep(FIRST_FRAME_TIMEOUT - NAT_FIRST_FRAME_TIMEOUT).await;
+    assert!(main.test_nat().await.port > 0, "main");
     server.stop().await;
 }
 
-/// M1-07: the KeyExchange reply is a connection's first frame, so a secured client then has
-/// IDLE_TIMEOUT, not FIRST_FRAME_TIMEOUT, for its request. Paused clock.
+/// M1-07: the KeyExchange reply is a connection's first frame, so a client that answers the
+/// offer late still has IDLE_TIMEOUT from then on for its request, well past
+/// FIRST_FRAME_TIMEOUT from the accept. Paused clock.
 #[tokio::test(start_paused = true)]
 async fn request_after_the_key_exchange_gets_the_idle_timeout() {
     // Arrange
     let server = TestServer::start().await;
-    let mut conn = secured_tcp(&server).await;
+    let mut conn = server.tcp().await;
+    tokio::time::sleep(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
+    secure(&mut conn, &server.public_key, KxClient::Current)
+        .await
+        .unwrap();
 
     // Act
     tokio::time::sleep(IDLE_TIMEOUT - SLACK * 5).await;
 
     // Assert
-    assert!(IDLE_TIMEOUT - SLACK * 5 > FIRST_FRAME_TIMEOUT);
     assert!(conn.test_nat().await.port > 0);
     server.stop().await;
 }

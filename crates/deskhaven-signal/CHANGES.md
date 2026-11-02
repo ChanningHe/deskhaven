@@ -610,3 +610,14 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `full_queue_accepts_bound_peers_and_refuses_only_new_ids` (no entry left; was "untouched
   entry"), `full_write_queue_answers_server_error_over_udp_and_tcp` (punch hole: ID_NOT_EXIST;
   PunchHoleSent naming the refused id: empty pk).
+- 2026-11-03, M1-07 review (MEDIUM), first-frame timeouts: supersedes the 10 s entry above.
+  `FIRST_FRAME_TIMEOUT` is 30 s again on the main and websocket ports: a controller that is not
+  logged in sends its first frame after its NAT type (100 ms) and UDP NAT test wait, up to half
+  its connect time, which includes DNS and every address that failed first (hbb_common tcp.rs,
+  up to 18 s each): about 9 s with a blackholed AAAA record and blocked UDP, more with one
+  retransmit or slow DNS. The NAT test port gets its own `NAT_FIRST_FRAME_TIMEOUT_MS` of 10 s
+  (clients send TestNatRequest / OnlineRequest right after connecting; upstream: 30 s). Tests:
+  `silent_connection_is_closed_after_the_first_frame_timeout` (per-port limits),
+  `first_frame_within_the_first_frame_timeout_is_served` (main after 28 s, NAT after 8 s),
+  `request_after_the_key_exchange_gets_the_idle_timeout` (offer answered at 28 s, request 25 s
+  later still served: the reply counts as the first frame).
