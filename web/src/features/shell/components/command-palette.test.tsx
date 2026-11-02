@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { ADMIN_ME } from '@/test/fixtures'
 import { renderApp } from '@/test/render-app'
 
+import { isPaletteShortcut } from '../command-shortcut'
+
 async function renderConsole(options: Parameters<typeof renderApp>[1] = {}) {
   const app = renderApp('/', options)
   await screen.findByRole('heading', { level: 1, name: '概览' })
@@ -76,6 +78,27 @@ describe('command palette', () => {
     expect(options).toContain('设备')
     expect(options).toContain('我的')
     expect(options).not.toContain('设置')
+  })
+
+  it('does not open on top of another dialog', async () => {
+    const { user } = await renderConsole()
+
+    await user.click(screen.getByRole('button', { name: '打开导航' }))
+    await screen.findByRole('dialog')
+    await user.keyboard('{Control>}k{/Control}')
+
+    expect(screen.queryByRole('dialog', { name: '命令面板' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  })
+
+  it('matches the physical K key, whatever the keyboard layout', () => {
+    const press = (init: KeyboardEventInit) => isPaletteShortcut(new KeyboardEvent('keydown', init))
+
+    expect(press({ key: 'k', code: 'KeyK', ctrlKey: true })).toBe(true)
+    expect(press({ key: 'л', code: 'KeyK', metaKey: true })).toBe(true)
+    expect(press({ key: 'k', code: 'KeyK', ctrlKey: true, altKey: true })).toBe(false)
+    expect(press({ key: 'k', code: 'KeyK' })).toBe(false)
+    expect(press({ key: 'k', code: 'KeyJ', ctrlKey: true })).toBe(false)
   })
 
   it('closes with Escape and returns focus to the trigger', async () => {

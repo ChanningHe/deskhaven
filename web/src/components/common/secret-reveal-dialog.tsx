@@ -22,7 +22,9 @@ export interface SecretRevealDialogProps {
   secret: string
   /**
    * Called when the user confirmed they saved it; the only way to close. Drop
-   * the secret from memory here: it must not be shown again.
+   * every copy of the secret here: it must not be shown again. When it came from
+   * a mutation, call `mutation.reset()` (the mutation cache keeps `data`
+   * otherwise), or create the secret with `gcTime: 0`; clear any state holding it.
    */
   onDone: () => void
 }

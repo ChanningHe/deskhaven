@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { IS_APPLE_PLATFORM, isPaletteShortcut } from '../command-shortcut'
+import { IS_APPLE_PLATFORM, isOtherDialogOpen, isPaletteShortcut } from '../command-shortcut'
 import { useCommandGroups } from '../use-command-groups'
 import type { CommandGroup, CommandItem } from '../use-command-groups'
 
@@ -70,14 +70,16 @@ export function CommandPalette() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isPaletteShortcut(event)) return
+      // Never stack on top of another modal (a confirmation, the mobile drawer).
+      if (!open && isOtherDialogOpen()) return
       event.preventDefault()
-      setOpen((previous) => !previous)
+      setOpen(!open)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [])
+  }, [open])
 
   const run = (item: CommandItem) => {
     setOpen(false)

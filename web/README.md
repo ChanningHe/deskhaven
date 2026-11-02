@@ -155,7 +155,9 @@ const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placehold
   success and shows the translated error on failure.
 - `SecretRevealDialog`: show-once secrets (API tokens, recovery codes, setup links). Copy button
   (falls back to selecting the text without clipboard access); only "Done" after ticking "I have
-  saved it" closes it, Escape and outside clicks do not. Drop the secret in `onDone`.
+  saved it" closes it, Escape and outside clicks do not. `onDone` must drop every copy of the
+  secret: call `mutation.reset()` on the mutation that returned it (its cached `data` would
+  otherwise keep the secret in memory) and clear any state holding it.
 - `SourceBadge`: where a value comes from: `default` (grey), `modified` (blue, who/when),
   `file` / `env` (amber, locked by config). The detail is the tooltip and the accessible name.
 - `EmptyState`, `PageHeader`, `ErrorAlert`.
