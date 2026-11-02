@@ -11,6 +11,7 @@ mod login;
 mod login_options;
 mod stack_error;
 mod user_payload;
+mod version;
 
 use std::sync::Arc;
 
@@ -23,6 +24,7 @@ pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use login::MAX_LOGIN_BODY;
 pub use stack_error::render_stack_error;
+pub use version::{SOURCE_URL, VERSION};
 
 /// Client API routes, without middleware or state: the server applies the
 /// stack and provides the state (`with_state`) when composing. Handlers that
@@ -36,4 +38,5 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
+        .route("/api/version", get(version::version))
 }
