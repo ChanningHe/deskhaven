@@ -734,6 +734,7 @@ async fn list_paginates_and_filters() {
             role,
             status,
             page: page(1, 50),
+            ..UserQuery::default()
         };
         let users = svc
             .list(&query(None, Some(Role::User), None))

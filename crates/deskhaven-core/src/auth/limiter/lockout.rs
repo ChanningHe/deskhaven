@@ -46,6 +46,7 @@ use sea_orm::{
 use super::key::{LIKE_ESCAPE, Subject, global_key_of, name_of, username_pattern};
 use super::policy::{Policy, Reservation, State, millis};
 use crate::clock::SharedClock;
+use crate::console_audit::{GuardError, TxGuard};
 use crate::settings::SettingsService;
 
 /// How long a successful login makes its source a known source of the username.
@@ -260,16 +261,13 @@ impl AccountLockout {
     /// Clears every row of `username` (global and all sources, known ones included);
     /// returns how many. For the admin unlock (M3-04).
     pub async fn unlock(&self, username: &str) -> Result<u64, DbErr> {
-        let name = name_of(username);
-        let txn = begin_write(&self.db).await?;
-        lock_username(&txn, &name).await?;
-        let pattern = LikeExpr::new(username_pattern(&name)).escape(LIKE_ESCAPE);
-        let result = auth_lockout::Entity::delete_many()
-            .filter(Column::Key.like(pattern))
-            .exec(&txn)
-            .await?;
-        txn.commit().await?;
-        Ok(result.rows_affected)
+        unlock_guarded(&self.db, username, TxGuard::none())
+            .await
+            .map_err(|err| match err {
+                GuardError::Database(db) => db,
+                // `TxGuard::none` never refuses.
+                GuardError::Refused(refused) => DbErr::Custom(refused.to_string()),
+            })
     }
 
     /// Deletes `name`'s global row, then resets each source row to a known source.
@@ -297,6 +295,41 @@ impl AccountLockout {
         }
         txn.commit().await
     }
+}
+
+/// What an unlock cleared, as its guard sees it (`after`; there is no `before`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unlocked {
+    /// As given (not normalized).
+    pub username: String,
+    /// Lockout rows deleted (0: nothing was locked or counted).
+    pub cleared: u64,
+}
+
+/// Clears every row of `username` (global and all sources, known ones included) in one
+/// transaction with `guard`; returns how many. The admin unlock of the console and of
+/// `deskhaven user unlock` (no settings needed, so the CLI can call it on a bare
+/// connection).
+pub async fn unlock_guarded(
+    db: &DatabaseConnection,
+    username: &str,
+    guard: TxGuard<Unlocked>,
+) -> Result<u64, GuardError> {
+    let name = name_of(username);
+    let txn = begin_write(db).await?;
+    lock_username(&txn, &name).await?;
+    let pattern = LikeExpr::new(username_pattern(&name)).escape(LIKE_ESCAPE);
+    let result = auth_lockout::Entity::delete_many()
+        .filter(Column::Key.like(pattern))
+        .exec(&txn)
+        .await?;
+    let unlocked = Unlocked {
+        username: username.to_owned(),
+        cleared: result.rows_affected,
+    };
+    guard.check(&txn, None, Some(&unlocked)).await?;
+    txn.commit().await?;
+    Ok(result.rows_affected)
 }
 
 /// PostgreSQL advisory lock namespace of the per-username lock (ASCII "dhlk"). The two-key

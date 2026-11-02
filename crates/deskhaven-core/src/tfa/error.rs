@@ -2,6 +2,7 @@
 
 use sea_orm::DbErr;
 
+use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 
 /// Enrolment and management errors.
@@ -25,8 +26,20 @@ pub enum TfaError {
     Corrupt,
     #[error(transparent)]
     Crypto(#[from] CryptoError),
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change.
+    #[error(transparent)]
+    Refused(#[from] Refused),
     #[error(transparent)]
     Db(#[from] DbErr),
+}
+
+impl From<GuardError> for TfaError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Db(db),
+        }
+    }
 }
 
 /// Why the second login step failed. `Invalid` and `WrongCode` are what the client may

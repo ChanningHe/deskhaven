@@ -96,7 +96,7 @@ pub use ip::{FALLBACK_FACTOR, FALLBACK_WARN_INTERVAL, IpLimiter, SWEEP_EVERY, ip
 pub use key::{LOCKOUT_IPV6_PREFIX, Subject, source_prefix};
 pub use lockout::{
     AccountLockout, Attempt, KNOWN_SOURCE_RETENTION, LockStatus, MAX_LOCKOUT_ROWS, PendingSubject,
-    Reserved,
+    Reserved, Unlocked, unlock_guarded,
 };
 pub use policy::{GLOBAL_FACTOR, LEVEL_DECAY, MAX_LOCK};
 

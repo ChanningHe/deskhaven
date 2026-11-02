@@ -14,3 +14,21 @@ pub(crate) fn problem(raw: &str, max: usize, multiline: bool) -> Option<String> 
         .any(bad)
         .then(|| "must not contain control characters".to_owned())
 }
+
+/// Escape character of `LIKE` patterns built from user input.
+const LIKE_ESCAPE: char = '\\';
+
+/// A `LIKE` pattern matching any value that contains `needle` literally (`%`, `_` and the
+/// escape character in it are escaped). Lowercase both sides for a case-insensitive match.
+pub(crate) fn contains_pattern(needle: &str) -> sea_orm::sea_query::LikeExpr {
+    let mut pattern = String::with_capacity(needle.len() + 2);
+    pattern.push('%');
+    for c in needle.chars() {
+        if matches!(c, '%' | '_' | LIKE_ESCAPE) {
+            pattern.push(LIKE_ESCAPE);
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    sea_orm::sea_query::LikeExpr::new(pattern).escape(LIKE_ESCAPE)
+}

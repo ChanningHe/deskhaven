@@ -4,22 +4,24 @@
 //! here but every mutation (rename, delete, membership) is refused with
 //! [`GroupError::ManagedByConfig`]. Membership changes are idempotent.
 
+mod list;
+mod write;
+
 use std::future::Future;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use deskhaven_db::entity::{group, group_member, user};
+use deskhaven_db::is_foreign_key_violation;
 use deskhaven_db::time::TimestampMs;
-use deskhaven_db::{begin_write, is_foreign_key_violation, time};
-use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    ModelTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr, TryInsertResult,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter,
+    QueryOrder, QuerySelect, SqlErr,
 };
 
 pub use deskhaven_db::entity::managed_by::ManagedBy;
+pub use list::{GroupQuery, GroupSort, GroupSortField, GroupSummary};
 
-use crate::addressbooks;
-use crate::strategies;
+use crate::console_audit::{GuardError, Refused};
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::User;
 
@@ -93,6 +95,10 @@ pub enum GroupError {
     #[error("the group is managed by the configuration file")]
     ManagedByConfig,
 
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
+
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.
     #[error("group operation did not complete")]
@@ -105,6 +111,34 @@ pub enum GroupError {
 impl From<DbErr> for GroupError {
     fn from(err: DbErr) -> Self {
         Self::Database(err)
+    }
+}
+
+impl From<GuardError> for GroupError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
+    }
+}
+
+/// A user's membership in a group, as a guard of a membership change sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Membership {
+    pub group: Group,
+    pub user_id: i64,
+    /// `None` when the user is unknown (removing a non-member that does not exist).
+    pub username: Option<String>,
+}
+
+impl Membership {
+    fn of(group: group::Model, user: &user::Model) -> Self {
+        Self {
+            group: group.into(),
+            user_id: user.id,
+            username: Some(user.username.clone()),
+        }
     }
 }
 
@@ -153,22 +187,6 @@ impl GroupService {
         }
     }
 
-    pub async fn create(&self, new: NewGroup) -> Result<Group, GroupError> {
-        let name = validate_name(&new.name)?;
-        let note = validate_note(&new.note)?;
-        let now = time::now();
-        let model = group::ActiveModel {
-            name: Set(name),
-            note: Set(note),
-            managed_by: Set(ManagedBy::Ui),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let created = model.insert(&self.db).await.map_err(name_conflict)?;
-        Ok(created.into())
-    }
-
     pub async fn get(&self, id: i64) -> Result<Group, GroupError> {
         Ok(find_group(&self.db, id).await?.into())
     }
@@ -180,85 +198,6 @@ impl GroupService {
             .all(&self.db)
             .await?;
         Ok(groups.into_iter().map(Group::from).collect())
-    }
-
-    pub async fn update(&self, id: i64, update: GroupUpdate) -> Result<Group, GroupError> {
-        let name = update.name.as_deref().map(validate_name).transpose()?;
-        let note = update.note.as_deref().map(validate_note).transpose()?;
-        let tx = begin_write(&self.db).await?;
-        let current = writable_group(&tx, id).await?;
-        let mut changes: group::ActiveModel = current.into();
-        if let Some(name) = name {
-            changes.name = Set(name);
-        }
-        if let Some(note) = note {
-            changes.note = Set(note);
-        }
-        changes.updated_at = Set(time::now());
-        let updated = changes.update(&tx).await.map_err(name_conflict)?;
-        tx.commit().await?;
-        Ok(updated.into())
-    }
-
-    /// Deletes the group, its memberships (cascade), the address book shares naming it and
-    /// its strategy assignment (same transaction: neither has a foreign key to the group).
-    pub async fn delete(&self, id: i64) -> Result<(), GroupError> {
-        self.detached(move |svc| async move {
-            let tx = begin_write(&svc.db).await?;
-            let current = writable_group(&tx, id).await?;
-            addressbooks::forget_group(&tx, id).await?;
-            strategies::forget_group(&tx, id).await?;
-            current.delete(&tx).await?;
-            tx.commit().await?;
-            svc.committed(GroupChange::Deleted { group_id: id });
-            Ok(())
-        })
-        .await
-    }
-
-    /// Adds `user_id` to the group; already a member is not an error (and reaches no hook).
-    pub async fn add_member(&self, group_id: i64, user_id: i64) -> Result<(), GroupError> {
-        self.detached(move |svc| async move {
-            let tx = begin_write(&svc.db).await?;
-            writable_group(&tx, group_id).await?;
-            find_user(&tx, user_id).await?;
-            let member = group_member::ActiveModel {
-                group_id: Set(group_id),
-                user_id: Set(user_id),
-                created_at: Set(time::now()),
-            };
-            let inserted = group_member::Entity::insert(member)
-                .on_conflict_do_nothing_on([
-                    group_member::Column::GroupId,
-                    group_member::Column::UserId,
-                ])
-                .exec_without_returning(&tx)
-                .await
-                .map_err(missing_reference)?;
-            tx.commit().await?;
-            if matches!(inserted, TryInsertResult::Inserted(n) if n > 0) {
-                svc.committed(GroupChange::MembershipChanged { group_id, user_id });
-            }
-            Ok(())
-        })
-        .await
-    }
-
-    /// Removes `user_id` from the group; not a member is not an error (and reaches no hook).
-    pub async fn remove_member(&self, group_id: i64, user_id: i64) -> Result<(), GroupError> {
-        self.detached(move |svc| async move {
-            let tx = begin_write(&svc.db).await?;
-            writable_group(&tx, group_id).await?;
-            let removed = group_member::Entity::delete_by_id((group_id, user_id))
-                .exec(&tx)
-                .await?;
-            tx.commit().await?;
-            if removed.rows_affected > 0 {
-                svc.committed(GroupChange::MembershipChanged { group_id, user_id });
-            }
-            Ok(())
-        })
-        .await
     }
 
     /// Runs `op` to completion in its own task: dropping the caller's future can then

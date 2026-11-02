@@ -1,6 +1,7 @@
 //! Revocation, listing and cleanup.
 
-use deskhaven_db::entity::session;
+use deskhaven_db::begin_write;
+use deskhaven_db::entity::{session, user};
 use deskhaven_db::time::TimestampMs;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -9,6 +10,8 @@ use sea_orm::{
 };
 
 use super::{Core, Session, SessionError, SessionService, TokenHash, detached, timestamp};
+use crate::console_audit::TxGuard;
+use crate::users::User;
 
 /// Rows deleted per statement by [`SessionService::cleanup`] (short write locks).
 const CLEANUP_BATCH: u64 = 500;
@@ -72,6 +75,24 @@ impl SessionService {
     pub async fn revoke_all_for_user(&self, user_id: i64) -> Result<u64, SessionError> {
         let core = self.core.clone();
         detached(async move { Ok(core.revoke_all_for_user(user_id).await?) }).await
+    }
+
+    /// [`revoke_all_for_user`](Self::revoke_all_for_user) by an administrator, in one
+    /// transaction over the locked user row, with `guard` deciding on the account (the same
+    /// account as `before` and `after`). [`SessionError::UserNotFound`] for an unknown user.
+    pub async fn revoke_all_for_user_guarded(
+        &self,
+        user_id: i64,
+        guard: TxGuard<User>,
+    ) -> Result<u64, SessionError> {
+        let core = self.core.clone();
+        detached(async move {
+            core.cache.invalidate_user(user_id);
+            let revoked = core.revoke_all_guarded(user_id, guard).await;
+            core.cache.invalidate_user(user_id);
+            revoked
+        })
+        .await
     }
 
     /// The user's usable sessions (unrevoked, within both expiries), most recently used
@@ -141,6 +162,23 @@ impl Core {
             .await;
         self.cache.invalidate_user(user_id);
         revoked
+    }
+
+    async fn revoke_all_guarded(
+        &self,
+        user_id: i64,
+        guard: TxGuard<User>,
+    ) -> Result<u64, SessionError> {
+        let tx = begin_write(&self.db).await?;
+        let found = user::Entity::find_by_id(user_id)
+            .lock_exclusive()
+            .one(&tx)
+            .await?;
+        let target = User::from(found.ok_or(SessionError::UserNotFound)?);
+        guard.check(&tx, Some(&target), Some(&target)).await?;
+        let revoked = revoke_user_sessions(&tx, user_id, timestamp(self.now_ms())?).await?;
+        tx.commit().await?;
+        Ok(revoked)
     }
 
     /// Sessions last used at or before this instant are idle-expired.

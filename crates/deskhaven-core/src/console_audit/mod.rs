@@ -18,6 +18,7 @@
 //!
 //! `null` stays `null` under either layer: whether a secret is set is not itself secret.
 
+mod guard;
 pub mod redact;
 
 use std::net::IpAddr;
@@ -29,6 +30,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr};
 use serde_json::Value;
 
 pub use deskhaven_db::entity::console_audit::ActorKind;
+pub use guard::{GuardError, Refused, TxGuard};
 pub use redact::{is_secret_key, redact};
 
 use crate::clock::SharedClock;

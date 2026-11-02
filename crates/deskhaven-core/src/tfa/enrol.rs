@@ -18,7 +18,8 @@ use zeroize::Zeroizing;
 
 use super::totp::{self, TotpSecret};
 use super::{ISSUER, Inner, RecoveryCodes, TfaError, TfaService, recovery, seed_context};
-use crate::console_audit::{self, NewConsoleAudit};
+use crate::console_audit::{self, NewConsoleAudit, TxGuard};
+use crate::users::User;
 
 /// A pending enrolment, to show its owner once (as text and as a QR code of `uri`).
 /// `Debug` never shows the seed.
@@ -130,9 +131,27 @@ impl TfaService {
     /// Turns TOTP off (or cancels a pending enrolment): forgets the seed, deletes the
     /// recovery codes and every unconsumed login challenge of the user. Idempotent.
     pub async fn disable(&self, user_id: i64) -> Result<(), TfaError> {
+        self.disable_guarded(user_id, TxGuard::none()).await
+    }
+
+    /// [`disable`](Self::disable) by an administrator ("reset 2FA"), with `guard` deciding
+    /// on the account before and after.
+    pub async fn disable_guarded(
+        &self,
+        user_id: i64,
+        guard: TxGuard<User>,
+    ) -> Result<(), TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
-        locked_user(&txn, user_id).await?;
+        let current = locked_user(&txn, user_id).await?;
+        let cleared = user::Model {
+            totp_secret_enc: None,
+            totp_enabled_at: None,
+            totp_last_step: None,
+            ..current.clone()
+        };
+        let (before, after) = (User::from(current), User::from(cleared));
+        guard.check(&txn, Some(&before), Some(&after)).await?;
         set_totp(&txn, inner, user_id, None, None, None).await?;
         recovery_code::Entity::delete_many()
             .filter(recovery_code::Column::UserId.eq(user_id))

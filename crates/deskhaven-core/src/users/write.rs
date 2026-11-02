@@ -1,44 +1,71 @@
-//! Account writes: create, profile, password, status, role, delete.
+//! Account writes: create, password (administrative reset and self-service change), delete;
+//! profile, role and status go through [`UserService::edit`] (`admin`). Each `*_guarded`
+//! variant runs a [`TxGuard`] inside its write transaction (authorization against the
+//! locked row, plus the console audit row); the plain variants are the same writes without
+//! one.
 
 use deskhaven_db::entity::user;
 use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, time};
 
 use super::events::UserChange;
-use sea_orm::ActiveValue::{self, Set};
+use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, SqlErr,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
 use super::normalize::{self, Email};
 use super::{
-    AuthSource, Credential, CredentialStamp, Inner, MAX_PASSWORD_LEN, NewUser, Password,
-    PasswordError, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserService,
+    AccountEdit, AuthSource, Credential, CredentialStamp, Inner, MAX_PASSWORD_LEN, NewUser,
+    Password, PasswordError, ProfileUpdate, Role, Status, User, UserError, UserEvent, UserService,
     check_password_policy,
 };
 use crate::addressbooks;
-use crate::console_audit::{self, NewConsoleAudit};
+use crate::console_audit::{self, NewConsoleAudit, TxGuard};
 use crate::sessions::revoke_user_sessions;
 use crate::strategies;
+
+/// A [`NewUser`] whose fields passed validation (the password is checked, not yet hashed).
+pub(super) struct ValidNew {
+    pub new: NewUser,
+    pub username_norm: String,
+    pub email: Option<Email>,
+    pub display_name: String,
+    pub note: String,
+}
 
 impl UserService {
     /// Creates an account. Local accounts need a password that passes the policy.
     pub async fn create(&self, new: NewUser) -> Result<User, UserError> {
-        let prepared = self.prepare(&new).await?;
-        let created = self.insert_prepared(&self.inner.db, prepared).await?;
-        Ok(created.into())
+        self.create_guarded(new, TxGuard::none()).await
+    }
+
+    /// [`create`](Self::create), with `guard` deciding on the new account (no `before`).
+    pub async fn create_guarded(
+        &self,
+        new: NewUser,
+        guard: TxGuard<User>,
+    ) -> Result<User, UserError> {
+        let valid = self.inner.validate_new(new)?;
+        let hash = self.inner.hash_valid(&valid).await?;
+        self.detached(move |inner| async move {
+            let model = inner.new_row(valid, hash);
+            let tx = begin_write(&inner.db).await?;
+            let created: User = model.insert(&tx).await.map_err(conflict)?.into();
+            guard.check(&tx, None, Some(&created)).await?;
+            tx.commit().await?;
+            Ok(created)
+        })
+        .await
     }
 
     /// Validates `new` and hashes its local password (before any write lock is taken),
     /// for [`insert_prepared`](Self::insert_prepared) inside the caller's transaction.
     pub(crate) async fn prepare(&self, new: &NewUser) -> Result<PreparedUser, UserError> {
-        let mut model = validated(new)?;
-        if let Credential::Local { password } = &new.credential {
-            let hash = self.inner.hash_new_password(password).await?;
-            model.password_hash = Set(Some(hash));
-        }
-        Ok(PreparedUser(model))
+        let valid = self.inner.validate_new(new.clone())?;
+        let hash = self.inner.hash_valid(&valid).await?;
+        Ok(PreparedUser { valid, hash })
     }
 
     /// Inserts a prepared account on `conn`.
@@ -47,7 +74,8 @@ impl UserService {
         conn: &C,
         prepared: PreparedUser,
     ) -> Result<user::Model, UserError> {
-        self.insert(conn, prepared.0).await
+        let model = self.inner.new_row(prepared.valid, prepared.hash);
+        model.insert(conn).await.map_err(conflict)
     }
 
     /// Creates an external (LDAP / OIDC) account on `conn`, typically inside the caller's
@@ -64,61 +92,19 @@ impl UserService {
                 reason: "an external account has no local password".to_owned(),
             });
         }
-        self.insert(conn, validated(new)?).await
-    }
-
-    async fn insert<C: ConnectionTrait>(
-        &self,
-        conn: &C,
-        mut model: user::ActiveModel,
-    ) -> Result<user::Model, UserError> {
-        let now = self.inner.now();
-        if matches!(&model.password_hash, ActiveValue::Set(Some(_))) {
-            model.password_changed_at = Set(Some(now));
-        }
-        model.created_at = Set(now);
-        model.updated_at = Set(now);
+        let valid = self.inner.validate_new(new.clone())?;
+        let model = self.inner.new_row(valid, None);
         model.insert(conn).await.map_err(conflict)
     }
 
+    /// Changes profile fields (and `must_change_password`); a set `must_change_password`
+    /// reaches commit hooks as [`UserChange::AccountChanged`] (cached principals drop it).
     pub async fn update_profile(&self, id: i64, update: ProfileUpdate) -> Result<User, UserError> {
-        let email = match &update.email {
-            Some(email) => Some(email.as_deref().map(normalize::email).transpose()?),
-            None => None,
+        let edit = AccountEdit {
+            profile: update,
+            ..AccountEdit::default()
         };
-        let note = update.note.as_deref().map(normalize::note).transpose()?;
-        let tx = begin_write(&self.inner.db).await?;
-        let current = lock_user(&tx, id).await?;
-        let mut changes: user::ActiveModel = current.clone().into();
-        if let Some(name) = &update.display_name {
-            changes.display_name = Set(normalize::display_name(name, &current.username)?);
-        }
-        if let Some(email) = email {
-            let moved = email.as_ref().map(|e| e.norm.as_str()) != current.email_norm.as_deref();
-            if moved {
-                changes.email_verified = Set(false);
-            }
-            let (email, email_norm) = split_email(email);
-            changes.email = Set(email);
-            changes.email_norm = Set(email_norm);
-        }
-        if let Some(verified) = update.email_verified {
-            changes.email_verified = Set(verified);
-        }
-        if let Some(must_change) = update.must_change_password {
-            changes.must_change_password = Set(must_change);
-        }
-        if let Some(note) = note {
-            changes.note = Set(note);
-        }
-        changes.updated_at = Set(self.inner.now());
-        let updated = changes.update(&tx).await.map_err(conflict)?;
-        tx.commit().await?;
-        if update.must_change_password.is_some() {
-            self.inner
-                .committed(UserChange::AccountChanged { user_id: id });
-        }
-        Ok(updated.into())
+        self.edit(id, edit, TxGuard::none()).await
     }
 
     /// Reports a committed change of the account's second factor (enabled or disabled) to
@@ -126,6 +112,28 @@ impl UserService {
     /// columns.
     pub(crate) fn second_factor_changed(&self, user_id: i64) {
         self.inner.committed(UserChange::AccountChanged { user_id });
+    }
+
+    /// Changes the status. Leaving `active` is refused for the last active owner; entering
+    /// `disabled` revokes every session of the user in the same transaction and emits
+    /// [`UserEvent::Disabled`]; other transitions reach commit hooks only. Setting the
+    /// current status is a no-op.
+    pub async fn set_status(&self, id: i64, status: Status) -> Result<User, UserError> {
+        let edit = AccountEdit {
+            status: Some(status),
+            ..AccountEdit::default()
+        };
+        self.edit(id, edit, TxGuard::none()).await
+    }
+
+    /// Changes the role; demoting the last active owner is refused. Reaches commit hooks
+    /// (no event).
+    pub async fn set_role(&self, id: i64, role: Role) -> Result<User, UserError> {
+        let edit = AccountEdit {
+            role: Some(role),
+            ..AccountEdit::default()
+        };
+        self.edit(id, edit, TxGuard::none()).await
     }
 
     /// Replaces the local password (policy-checked), sets `must_change_password` and moves
@@ -138,6 +146,18 @@ impl UserService {
         password: &Password,
         must_change: bool,
     ) -> Result<(), UserError> {
+        self.set_password_guarded(id, password, must_change, TxGuard::none())
+            .await
+    }
+
+    /// [`set_password`](Self::set_password), with `guard` deciding on the account.
+    pub async fn set_password_guarded(
+        &self,
+        id: i64,
+        password: &Password,
+        must_change: bool,
+        guard: TxGuard<User>,
+    ) -> Result<(), UserError> {
         let target = user::Entity::find_by_id(id).one(&self.inner.db).await?;
         let target = target.ok_or(UserError::NotFound)?;
         if target.auth_source != AuthSource::Local {
@@ -145,19 +165,30 @@ impl UserService {
         }
         // Hashed before any write lock is taken: it takes tens of milliseconds.
         let hash = self.inner.hash_new_password(password).await?;
-        let change = PasswordChange {
-            id,
-            hash,
-            previous: target.password_changed_at,
-            must_change,
-            replaces: None,
-            audit: None,
-        };
-        // Deleted (or no longer local) since it was read.
-        self.detached(move |inner| async move { inner.replace_password(change).await })
-            .await?
-            .ok_or(UserError::NotFound)
-            .map(drop)
+        self.detached(move |inner| async move {
+            let tx = begin_write(&inner.db).await?;
+            // Deleted (or no longer local) since it was read: as if it never existed.
+            let current = lock_user(&tx, id).await?;
+            if current.auth_source != AuthSource::Local {
+                return Err(UserError::NotFound);
+            }
+            let now = inner.now();
+            let mut next = current.clone();
+            next.password_hash = Some(hash);
+            next.password_changed_at = Some(after(current.password_changed_at, now));
+            next.must_change_password = must_change;
+            next.updated_at = now;
+            let (before, after_view) = (User::from(current), User::from(next.clone()));
+            guard.check(&tx, Some(&before), Some(&after_view)).await?;
+            next.into_active_model().reset_all().update(&tx).await?;
+            revoke_user_sessions(&tx, id, now).await?;
+            tx.commit().await?;
+            inner.committed(UserChange::Event(UserEvent::PasswordChanged {
+                user_id: id,
+            }));
+            Ok(())
+        })
+        .await
     }
 
     /// Re-authentication before a sensitive self-service change (console TOTP enrolment):
@@ -205,9 +236,8 @@ impl UserService {
             id,
             hash,
             previous: target.password_changed_at,
-            must_change: false,
-            replaces: Some(stored),
-            audit: Some(audit.clone()),
+            replaces: stored,
+            audit: audit.clone(),
         };
         let changed_at = self
             .detached(move |inner| async move { inner.replace_password(change).await })
@@ -219,74 +249,24 @@ impl UserService {
         ))
     }
 
-    /// Changes the status. Leaving `active` is refused for the last active owner; entering
-    /// `disabled` revokes every session of the user in the same transaction and emits
-    /// [`UserEvent::Disabled`]; other transitions reach commit hooks only. Setting the
-    /// current status is a no-op.
-    pub async fn set_status(&self, id: i64, status: Status) -> Result<User, UserError> {
-        self.detached(move |inner| async move {
-            let tx = begin_write(&inner.db).await?;
-            let owners = lock_active_owners(&tx).await?;
-            let current = lock_user(&tx, id).await?;
-            if current.status == status {
-                return Ok(current.into());
-            }
-            if status != Status::Active {
-                ensure_not_last_owner(&current, &owners)?;
-            }
-            let now = inner.now();
-            let mut changes: user::ActiveModel = current.into();
-            changes.status = Set(status);
-            changes.updated_at = Set(now);
-            let updated = changes.update(&tx).await?;
-            if status == Status::Disabled {
-                // Durable: re-enabling the account must not resurrect old sessions.
-                revoke_user_sessions(&tx, id, now).await?;
-            }
-            tx.commit().await?;
-            inner.committed(match status {
-                Status::Disabled => UserChange::Event(UserEvent::Disabled { user_id: id }),
-                _ => UserChange::StatusChanged { user_id: id },
-            });
-            Ok(updated.into())
-        })
-        .await
-    }
-
-    /// Changes the role; demoting the last active owner is refused. Reaches commit hooks
-    /// (no event).
-    pub async fn set_role(&self, id: i64, role: Role) -> Result<User, UserError> {
-        self.detached(move |inner| async move {
-            let tx = begin_write(&inner.db).await?;
-            let owners = lock_active_owners(&tx).await?;
-            let current = lock_user(&tx, id).await?;
-            if current.role == role {
-                return Ok(current.into());
-            }
-            if role != Role::Owner {
-                ensure_not_last_owner(&current, &owners)?;
-            }
-            let mut changes: user::ActiveModel = current.into();
-            changes.role = Set(role);
-            changes.updated_at = Set(inner.now());
-            let updated = changes.update(&tx).await?;
-            tx.commit().await?;
-            inner.committed(UserChange::RoleChanged { user_id: id });
-            Ok(updated.into())
-        })
-        .await
-    }
-
     /// Deletes the account; memberships, sessions, identities and tokens go with it (FK
     /// cascades), as do the personal address book with its peers and the address book
     /// shares naming the user (`addressbooks::forget_user`, same transaction). Shared books
     /// the user owned stay, unowned. Refused for the last active owner. Emits
     /// [`UserEvent::Deleted`].
     pub async fn delete(&self, id: i64) -> Result<(), UserError> {
+        self.delete_guarded(id, TxGuard::none()).await
+    }
+
+    /// [`delete`](Self::delete), with `guard` deciding on the account (no `after`).
+    pub async fn delete_guarded(&self, id: i64, guard: TxGuard<User>) -> Result<(), UserError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
             let owners = lock_active_owners(&tx).await?;
             let current = lock_user(&tx, id).await?;
+            guard
+                .check(&tx, Some(&current.clone().into()), None)
+                .await?;
             ensure_not_last_owner(&current, &owners)?;
             addressbooks::forget_user(&tx, id).await?;
             strategies::forget_user(&tx, id).await?;
@@ -299,18 +279,20 @@ impl UserService {
     }
 }
 
-/// A validated account row, its local password hashed.
-pub(crate) struct PreparedUser(user::ActiveModel);
+/// A validated account, its local password hashed.
+pub(crate) struct PreparedUser {
+    valid: ValidNew,
+    hash: Option<String>,
+}
 
-/// A password replacement, ready to write.
+/// A self-service password change, ready to write.
 struct PasswordChange {
     id: i64,
     hash: String,
     previous: Option<TimestampMs>,
-    must_change: bool,
-    /// Only replace this stored hash (self-service change: the one just verified).
-    replaces: Option<String>,
-    audit: Option<NewConsoleAudit>,
+    /// Only replace this stored hash (the one just verified).
+    replaces: String,
+    audit: NewConsoleAudit,
 }
 
 impl Inner {
@@ -344,9 +326,10 @@ impl Inner {
         }
     }
 
-    /// Writes the new hash, revokes every session of the user and records the audit row,
-    /// in one transaction. The new `password_changed_at`, or `None` when no row matched
-    /// (deleted, no longer local, or the hash to replace is gone).
+    /// Writes the new hash (clearing `must_change_password`), revokes every session of the
+    /// user and records the audit row, in one transaction. The new `password_changed_at`,
+    /// or `None` when no row matched (deleted, no longer local, or the hash to replace is
+    /// gone).
     async fn replace_password(
         &self,
         change: PasswordChange,
@@ -356,30 +339,89 @@ impl Inner {
         let changes = user::ActiveModel {
             password_hash: Set(Some(change.hash)),
             password_changed_at: Set(Some(changed_at)),
-            must_change_password: Set(change.must_change),
+            must_change_password: Set(false),
             updated_at: Set(now),
             ..Default::default()
         };
         let tx = begin_write(&self.db).await?;
-        let mut update = user::Entity::update_many()
+        let updated = user::Entity::update_many()
             .set(changes)
             .filter(user::Column::Id.eq(change.id))
-            .filter(user::Column::AuthSource.eq(AuthSource::Local));
-        if let Some(replaces) = change.replaces {
-            update = update.filter(user::Column::PasswordHash.eq(replaces));
-        }
-        if update.exec(&tx).await?.rows_affected == 0 {
+            .filter(user::Column::AuthSource.eq(AuthSource::Local))
+            .filter(user::Column::PasswordHash.eq(change.replaces))
+            .exec(&tx)
+            .await?;
+        if updated.rows_affected == 0 {
             return Ok(None);
         }
         revoke_user_sessions(&tx, change.id, now).await?;
-        if let Some(entry) = &change.audit {
-            console_audit::insert(&tx, entry, now.timestamp_millis()).await?;
-        }
+        console_audit::insert(&tx, &change.audit, now.timestamp_millis()).await?;
         tx.commit().await?;
         self.committed(UserChange::Event(UserEvent::PasswordChanged {
             user_id: change.id,
         }));
         Ok(Some(changed_at))
+    }
+
+    /// Every field of `new` checked and normalized; a local password against the policy.
+    pub(super) fn validate_new(&self, new: NewUser) -> Result<ValidNew, UserError> {
+        let username_norm = normalize::username(&new.username)?;
+        let email = new.email.as_deref().map(normalize::email).transpose()?;
+        let display_name = normalize::display_name(&new.display_name, &new.username)?;
+        let note = normalize::note(&new.note)?;
+        if let Credential::Local { password } = &new.credential {
+            check_password_policy(password, self.min_password_length())
+                .map_err(|reason| UserError::PolicyViolation { reason })?;
+        }
+        Ok(ValidNew {
+            new,
+            username_norm,
+            email,
+            display_name,
+            note,
+        })
+    }
+
+    /// The hash of a validated local password; `None` for directory accounts.
+    pub(super) async fn hash_valid(&self, valid: &ValidNew) -> Result<Option<String>, UserError> {
+        match &valid.new.credential {
+            Credential::Local { password } => Ok(Some(self.hasher.hash(password).await?)),
+            Credential::Ldap | Credential::Oidc => Ok(None),
+        }
+    }
+
+    pub(super) fn new_row(
+        &self,
+        valid: ValidNew,
+        password_hash: Option<String>,
+    ) -> user::ActiveModel {
+        let ValidNew {
+            new,
+            username_norm,
+            email,
+            display_name,
+            note,
+        } = valid;
+        let (email, email_norm) = split_email(email);
+        let now = self.now();
+        user::ActiveModel {
+            username: Set(new.username),
+            username_norm: Set(username_norm),
+            display_name: Set(display_name),
+            email: Set(email),
+            email_norm: Set(email_norm),
+            email_verified: Set(new.email_verified),
+            password_changed_at: Set(password_hash.as_ref().map(|_| now)),
+            password_hash: Set(password_hash),
+            auth_source: Set(new.credential.auth_source()),
+            role: Set(new.role),
+            status: Set(new.status),
+            must_change_password: Set(new.must_change_password),
+            note: Set(note),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
     }
 }
 
@@ -394,33 +436,7 @@ fn after(previous: Option<TimestampMs>, now: TimestampMs) -> TimestampMs {
     }
 }
 
-/// The row of a new account, every input validated and normalized; no password and no
-/// timestamps yet.
-fn validated(new: &NewUser) -> Result<user::ActiveModel, UserError> {
-    let username_norm = normalize::username(&new.username)?;
-    let email = new.email.as_deref().map(normalize::email).transpose()?;
-    let display_name = normalize::display_name(&new.display_name, &new.username)?;
-    let note = normalize::note(&new.note)?;
-    let (email, email_norm) = split_email(email);
-    Ok(user::ActiveModel {
-        username: Set(new.username.clone()),
-        username_norm: Set(username_norm),
-        display_name: Set(display_name),
-        email: Set(email),
-        email_norm: Set(email_norm),
-        email_verified: Set(new.email_verified),
-        password_hash: Set(None),
-        password_changed_at: Set(None),
-        auth_source: Set(new.credential.auth_source()),
-        role: Set(new.role),
-        status: Set(new.status),
-        must_change_password: Set(new.must_change_password),
-        note: Set(note),
-        ..Default::default()
-    })
-}
-
-fn split_email(email: Option<Email>) -> (Option<String>, Option<String>) {
+pub(super) fn split_email(email: Option<Email>) -> (Option<String>, Option<String>) {
     match email {
         Some(Email { value, norm }) => (Some(value), Some(norm)),
         None => (None, None),
@@ -429,7 +445,7 @@ fn split_email(email: Option<Email>) -> (Option<String>, Option<String>) {
 
 /// The user row, locked for the rest of the transaction (PostgreSQL; SQLite's write
 /// transaction already excludes other writers).
-async fn lock_user(tx: &DatabaseTransaction, id: i64) -> Result<user::Model, UserError> {
+pub(super) async fn lock_user(tx: &DatabaseTransaction, id: i64) -> Result<user::Model, UserError> {
     let found = user::Entity::find_by_id(id)
         .lock_exclusive()
         .one(tx)
@@ -439,7 +455,7 @@ async fn lock_user(tx: &DatabaseTransaction, id: i64) -> Result<user::Model, Use
 
 /// Ids of all active owners, locked in id order (a consistent order, so concurrent
 /// owner-affecting transactions queue instead of deadlocking).
-async fn lock_active_owners(tx: &DatabaseTransaction) -> Result<Vec<i64>, DbErr> {
+pub(super) async fn lock_active_owners(tx: &DatabaseTransaction) -> Result<Vec<i64>, DbErr> {
     user::Entity::find()
         .select_only()
         .column(user::Column::Id)
@@ -453,7 +469,10 @@ async fn lock_active_owners(tx: &DatabaseTransaction) -> Result<Vec<i64>, DbErr>
 }
 
 /// Refuses to take `user` out of the active owners when no other active owner remains.
-fn ensure_not_last_owner(user: &user::Model, active_owners: &[i64]) -> Result<(), UserError> {
+pub(super) fn ensure_not_last_owner(
+    user: &user::Model,
+    active_owners: &[i64],
+) -> Result<(), UserError> {
     let is_active_owner = user.role == Role::Owner && user.status == Status::Active;
     let has_other = active_owners.iter().any(|&owner| owner != user.id);
     if is_active_owner && !has_other {
@@ -464,7 +483,7 @@ fn ensure_not_last_owner(user: &user::Model, active_owners: &[i64]) -> Result<()
 
 /// Maps unique-index violations on the normalized columns to [`UserError::Conflict`].
 /// Both backends name the column (SQLite) or the index (PostgreSQL) in the message.
-fn conflict(err: DbErr) -> UserError {
+pub(super) fn conflict(err: DbErr) -> UserError {
     let field = match err.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(msg)) if msg.contains("email_norm") => Some("email"),
         Some(SqlErr::UniqueConstraintViolation(msg)) if msg.contains("username_norm") => {

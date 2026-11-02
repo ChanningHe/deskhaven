@@ -45,7 +45,8 @@ pub struct AppState {
     pub console_audit: ConsoleAuditLog,
     /// OIDC providers and logins.
     pub oidc: OidcService,
-    /// User groups (membership changes invalidate the strategy cache).
+    /// User groups: the one instance everything shares (admin API included), so the
+    /// strategy cache's commit hooks fire for every membership change.
     pub groups: GroupService,
     /// Strategies and the effective-strategy cache, watching `users` and `groups`.
     pub strategies: StrategyService,

@@ -10,6 +10,7 @@
 //! inside its write transaction, so two concurrent demotions cannot both pass the check and
 //! do not deadlock on PostgreSQL (SQLite's `BEGIN IMMEDIATE` serializes them anyway).
 
+mod admin;
 mod auth;
 mod error;
 mod events;
@@ -24,31 +25,32 @@ use std::future::Future;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use deskhaven_config::settings::AUTH_PASSWORD_MIN_LENGTH;
-use deskhaven_db::entity::user;
+use deskhaven_db::entity::{group_member, user};
 use deskhaven_db::time::TimestampMs;
-use sea_orm::sea_query::{Expr, ExprTrait, Func, LikeExpr};
+use sea_orm::sea_query::{Expr, ExprTrait, Func};
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, Order, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait,
 };
 use tokio::sync::broadcast;
 
+pub use admin::{AccountEdit, BatchError, MAX_BATCH, RowError, TEMPORARY_PASSWORD_LEN};
 pub use auth::{Authenticated, CredentialStamp};
 pub use deskhaven_db::entity::user::{AuthSource, Role, Status};
 pub use error::{AuthError, UserError};
 pub use events::{CommitHook, UserChange, UserEvent};
-pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery};
+pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery, UserSort, UserSortField};
 pub use password::{HashLimits, HashParams, Password, PasswordError, PasswordHasher};
 pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
-// Also keys the login lockout (`auth::limiter::LockoutKey`); OIDC derives usernames by it.
-pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char, username_norm};
+// Also keys the login lockout (`auth::limiter::LockoutKey`) and checks `deskhaven user
+// unlock` input; OIDC derives usernames by it.
+pub use normalize::username_norm;
+pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char};
 
 use crate::clock::{SharedClock, SystemClock};
 use crate::pagination::Page;
 use crate::settings::SettingsService;
-
-/// Escape character of `LIKE` patterns built from user input.
-const LIKE_ESCAPE: char = '\\';
+use crate::text::contains_pattern;
 
 /// Manages user accounts. Cheap to clone (shared state).
 #[derive(Clone)]
@@ -134,11 +136,32 @@ impl UserService {
         if let Some(role) = query.role {
             select = select.filter(user::Column::Role.eq(role));
         }
+        if let Some(source) = query.auth_source {
+            select = select.filter(user::Column::AuthSource.eq(source));
+        }
+        if let Some(group_id) = query.group_id {
+            let members = group_member::Entity::find()
+                .select_only()
+                .column(group_member::Column::UserId)
+                .filter(group_member::Column::GroupId.eq(group_id))
+                .into_query();
+            select = select.filter(user::Column::Id.in_subquery(members));
+        }
         if let Some(q) = query.q.as_deref().filter(|q| !q.is_empty()) {
             select = select.filter(matches_text(q));
         }
+        let mut tie = Order::Asc;
+        if let Some(sort) = query.sort {
+            let order = if sort.descending {
+                Order::Desc
+            } else {
+                Order::Asc
+            };
+            select = select.order_by(sort.field.column(), order.clone());
+            tie = order;
+        }
         let paginator = select
-            .order_by_asc(user::Column::Id)
+            .order_by(user::Column::Id, tie)
             .paginate(&self.inner.db, query.page.page_size);
         let total = paginator.num_items().await?;
         let items = paginator.fetch_page(index).await?;
@@ -203,22 +226,10 @@ impl Inner {
 /// Case-insensitive literal substring match on username, email and display name. SQLite's
 /// `lower()` folds ASCII only, so non-ASCII display names match case-sensitively there.
 fn matches_text(q: &str) -> Condition {
-    let pattern = format!("%{}%", escape_like(&q.to_lowercase()));
-    let like = || LikeExpr::new(pattern.clone()).escape(LIKE_ESCAPE);
+    let like = || contains_pattern(&q.to_lowercase());
     let display_name = Expr::expr(Func::lower(Expr::col(user::Column::DisplayName)));
     Condition::any()
         .add(user::Column::UsernameNorm.like(like()))
         .add(user::Column::EmailNorm.like(like()))
         .add(display_name.like(like()))
-}
-
-fn escape_like(raw: &str) -> String {
-    let mut escaped = String::with_capacity(raw.len());
-    for c in raw.chars() {
-        if matches!(c, '%' | '_') || c == LIKE_ESCAPE {
-            escaped.push(LIKE_ESCAPE);
-        }
-        escaped.push(c);
-    }
-    escaped
 }

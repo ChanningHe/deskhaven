@@ -1,6 +1,7 @@
 use sea_orm::DbErr;
 
 use super::{PasswordError, PolicyViolation};
+use crate::console_audit::{GuardError, Refused};
 
 /// Why a user operation failed. Variants are stable for API error mapping; messages never
 /// contain passwords, and database details stay in the source chain.
@@ -36,6 +37,13 @@ pub enum UserError {
     #[error("password hashing failed")]
     Password(#[source] PasswordError),
 
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
+
+    #[error("the operating system random number generator failed")]
+    Random,
+
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.
     #[error("user operation did not complete")]
@@ -54,6 +62,15 @@ impl From<DbErr> for UserError {
 impl From<PasswordError> for UserError {
     fn from(err: PasswordError) -> Self {
         Self::Password(err)
+    }
+}
+
+impl From<GuardError> for UserError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
     }
 }
 

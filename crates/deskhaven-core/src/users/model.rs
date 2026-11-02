@@ -117,10 +117,45 @@ pub struct ProfileUpdate {
 
 /// Filters of [`UserService::list`](super::UserService::list). `q` matches a substring of
 /// the username, email or display name, case-insensitively and literally (no wildcards).
+/// Results are ordered by `sort` (if any), then by id (in the same direction).
 #[derive(Clone, Debug, Default)]
 pub struct UserQuery {
     pub status: Option<Status>,
     pub role: Option<Role>,
+    pub auth_source: Option<AuthSource>,
+    /// Members of this group only.
+    pub group_id: Option<i64>,
     pub q: Option<String>,
+    pub sort: Option<UserSort>,
     pub page: PageRequest,
+}
+
+/// Columns a user list can be ordered by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserSortField {
+    Username,
+    DisplayName,
+    Role,
+    Status,
+    CreatedAt,
+    LastLoginAt,
+}
+
+impl UserSortField {
+    pub(super) fn column(self) -> user::Column {
+        match self {
+            Self::Username => user::Column::UsernameNorm,
+            Self::DisplayName => user::Column::DisplayName,
+            Self::Role => user::Column::Role,
+            Self::Status => user::Column::Status,
+            Self::CreatedAt => user::Column::CreatedAt,
+            Self::LastLoginAt => user::Column::LastLoginAt,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserSort {
+    pub field: UserSortField,
+    pub descending: bool,
 }

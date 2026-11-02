@@ -31,7 +31,7 @@ pub(crate) fn is_username_char(c: char) -> bool {
 }
 
 /// `Some(username_norm)` when `raw` is a well-formed username.
-pub(crate) fn username_norm(raw: &str) -> Option<String> {
+pub fn username_norm(raw: &str) -> Option<String> {
     let well_formed =
         !raw.is_empty() && raw.len() <= USERNAME_MAX_LEN && raw.chars().all(is_username_char);
     well_formed.then(|| raw.to_ascii_lowercase())
