@@ -8,6 +8,7 @@ use std::fmt;
 
 use serde_json::{Map, Value as Json};
 
+use super::text::{TextRule, max_len};
 use super::value::{HostPort, Value};
 use crate::{Duration, Secret};
 
@@ -111,52 +112,6 @@ impl<T: Bound> Range<T> {
     }
 }
 
-/// Text constraints; control and invisible formatting characters are
-/// always rejected.
-#[derive(Debug, Clone, Copy)]
-pub struct TextRule {
-    max_len: usize,
-}
-
-pub const fn max_len(max_len: usize) -> TextRule {
-    TextRule { max_len }
-}
-
-impl TextRule {
-    fn check(&self, text: &str) -> Result<(), String> {
-        if text.chars().count() > self.max_len {
-            return Err(format!("must be at most {} characters", self.max_len));
-        }
-        if text
-            .chars()
-            .any(|c| c.is_control() || is_invisible_format(c))
-        {
-            return Err("must not contain control or invisible formatting characters".to_owned());
-        }
-        Ok(())
-    }
-
-    fn describe(&self) -> Map<String, Json> {
-        Map::from_iter([("max_length".to_owned(), Json::from(self.max_len))])
-    }
-}
-
-/// Zero-width, bidi-control and line/paragraph separator characters
-/// (Unicode `Cf`/`Zl`/`Zp` members that render invisibly or reorder text).
-fn is_invisible_format(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{061C}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{2028}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{FEFF}'
-    )
-}
-
 /// List constraints.
 #[derive(Debug, Clone, Copy)]
 pub struct ListRule {
@@ -170,6 +125,14 @@ pub const fn max_items(max_items: usize) -> ListRule {
 const DEFAULT_TEXT_RULE: TextRule = max_len(255);
 const DEFAULT_LIST_RULE: ListRule = max_items(32);
 const EXPECTED_STRING: &str = "expected a string";
+
+/// ASCII digits only: no sign, no blanks (`u32::from_str` accepts `+5`).
+fn parse_digits(s: &str) -> Option<u32> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
 
 fn as_text(raw: &Json) -> Result<&str, String> {
     raw.as_str().ok_or_else(|| EXPECTED_STRING.to_owned())
@@ -220,7 +183,7 @@ impl SettingType for u32 {
     fn parse(raw: &Json) -> Result<Self, String> {
         let parsed = match raw {
             Json::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
-            Json::String(s) => s.trim().parse::<u32>().ok(),
+            Json::String(s) => parse_digits(s.trim()),
             _ => None,
         };
         parsed.ok_or_else(|| "expected a whole number".to_owned())
@@ -352,11 +315,10 @@ impl SettingType for Vec<HostPort> {
     fn parse(raw: &Json) -> Result<Self, String> {
         let items: Vec<&str> = match raw {
             Json::Array(items) => items.iter().map(as_text).collect::<Result<_, _>>()?,
-            Json::String(s) => s
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .collect(),
+            // Blank text is the empty list (an env var can clear the list);
+            // otherwise every comma-separated item counts, empty ones too.
+            Json::String(s) if s.trim().is_empty() => Vec::new(),
+            Json::String(s) => s.split(',').map(str::trim).collect(),
             _ => return Err("expected a list of host:port".to_owned()),
         };
         items
@@ -432,23 +394,23 @@ mod tests {
     }
 
     #[test]
-    fn text_rejects_control_characters_and_overlong() {
-        assert!("ok".to_owned().check(&max_len(2)).is_ok());
-        assert!("long".to_owned().check(&max_len(2)).is_err());
+    fn u32_text_is_digits_only() {
+        assert!(u32::parse(&json!("+5")).is_err());
+        assert!(u32::parse(&json!("")).is_err());
+        assert_eq!(u32::parse(&json!(" 7 ")), Ok(7));
+    }
+
+    #[test]
+    fn text_is_trimmed_and_checked() {
+        assert_eq!(String::parse(&json!(" a ")), Ok("a".to_owned()));
         assert!("a\nb".to_owned().check(&max_len(9)).is_err());
-        for invisible in ["a\u{202E}b", "a\u{200B}b", "a\u{2028}b", "\u{FEFF}a"] {
-            assert!(
-                invisible.to_owned().check(&max_len(9)).is_err(),
-                "{invisible:?}"
-            );
-        }
-        assert!("Ünïcode ok".to_owned().check(&max_len(20)).is_ok());
         assert!(String::parse(&json!(5)).is_err());
     }
 
     #[test]
     fn host_port_list_accepts_array_or_comma_text() {
-        let from_text = Vec::<HostPort>::parse(&json!(" a:1 , b:2 ,")).unwrap();
+        assert!(Vec::<HostPort>::parse(&json!("a:1,")).is_err());
+        let from_text = Vec::<HostPort>::parse(&json!(" a:1 , b:2 ")).unwrap();
         let from_array = Vec::<HostPort>::parse(&json!(["a:1", "b:2"])).unwrap();
         assert_eq!(from_text, from_array);
         assert_eq!(Vec::<HostPort>::parse(&json!("")).unwrap(), vec![]);

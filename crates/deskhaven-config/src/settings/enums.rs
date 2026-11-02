@@ -27,11 +27,11 @@ macro_rules! setting_enum {
                 }
             }
 
+            /// ASCII case-insensitive; the result is the declared variant.
             fn from_name(name: &str) -> Option<Self> {
-                match name {
-                    $( $text => Some(Self::$variant), )+
-                    _ => None,
-                }
+                [$( Self::$variant ),+]
+                    .into_iter()
+                    .find(|v| v.as_str().eq_ignore_ascii_case(name))
             }
         }
 
@@ -103,17 +103,17 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn parses_wire_names_only() {
+    fn parses_wire_names_case_insensitively() {
         assert_eq!(
             Registration::parse(&json!("invite")),
             Ok(Registration::Invite)
         );
         assert_eq!(
-            Registration::parse(&json!(" open ")),
+            Registration::parse(&json!(" OPEN ")),
             Ok(Registration::Open)
         );
         assert_eq!(
-            Registration::parse(&json!("Invite")),
+            Registration::parse(&json!("invites")),
             Err("expected one of: disabled, invite, open".to_owned())
         );
         assert!(SmtpTls::parse(&json!(1)).is_err());

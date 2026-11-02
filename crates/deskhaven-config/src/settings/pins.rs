@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use super::registry::lookup;
+use super::update::echo_key;
 use super::value::Value;
 use crate::Source;
 use crate::bootstrap::Pins;
@@ -34,7 +35,7 @@ impl PinSet {
         let mut problems = Vec::new();
         for (key, pin) in raw.iter() {
             let problem = |reason: String| PinProblem {
-                key: key.to_owned(),
+                key: echo_key(key),
                 source: pin.source().clone(),
                 reason,
             };

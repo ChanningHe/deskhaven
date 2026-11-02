@@ -22,9 +22,16 @@ pub struct Entry {
     source: Source,
     pinned: bool,
     version: i64,
+    fallback: bool,
 }
 
 impl Entry {
+    /// A stored row exists but could not be used; the value is the
+    /// setting's bad-row fallback (strict for security-relevant settings).
+    pub fn is_fallback(&self) -> bool {
+        self.fallback
+    }
+
     pub fn value(&self) -> &Value {
         &self.value
     }
@@ -112,10 +119,10 @@ impl Snapshot {
     }
 
     /// Resolves pin > stored > default for every declared setting. Unknown
-    /// or invalid stored rows are ignored (the default applies, the row's
-    /// version is kept) and reported, as are cross-key rules that do not
-    /// hold: a bad row must not keep the server, and with it the settings
-    /// UI, from starting.
+    /// or invalid stored rows are ignored (the setting's bad-row fallback
+    /// applies, the row's version is kept) and reported, as are cross-key
+    /// rules that do not hold: a bad row must not keep the server, and with
+    /// it the settings UI, from starting.
     pub fn build(
         pins: &PinSet,
         stored: impl IntoIterator<Item = Stored>,
@@ -140,10 +147,7 @@ impl Snapshot {
             })
             .collect();
         let snapshot = Self { entries };
-        warnings.extend(rules::violations(&snapshot, None).map(|p| LoadWarning {
-            key: p.key,
-            problem: p.reason,
-        }));
+        warnings.extend(snapshot.rule_warnings());
         (snapshot, warnings)
     }
 
@@ -175,9 +179,20 @@ impl Snapshot {
                 source: Source::Database { version, by, at },
                 pinned: false,
                 version,
+                fallback: false,
             };
         }
         Self { entries }
+    }
+
+    /// Cross-key rules that do not hold (also part of [`Snapshot::build`]'s warnings).
+    pub fn rule_warnings(&self) -> Vec<LoadWarning> {
+        rules::violations(self, None)
+            .map(|p| LoadWarning {
+                key: p.key,
+                problem: p.reason,
+            })
+            .collect()
     }
 
     pub fn view(&self, key: &str) -> Option<SettingView> {
@@ -201,7 +216,8 @@ impl Snapshot {
     }
 }
 
-/// Pin, else a readable valid row, else the default (keeping the row version).
+/// Pin, else a readable valid row, else the bad-row fallback (row exists
+/// but is unusable; keeps the row version), else the default.
 fn resolve(
     setting: &dyn AnySetting,
     pins: &PinSet,
@@ -209,44 +225,37 @@ fn resolve(
     warnings: &mut Vec<LoadWarning>,
 ) -> Entry {
     let version = row.as_ref().map_or(0, |r| r.version);
+    let entry = |value, source, pinned, fallback| Entry {
+        value,
+        source,
+        pinned,
+        version,
+        fallback,
+    };
     if let Some(pin) = pins.get(setting.key()) {
-        return Entry {
-            value: pin.value.clone(),
-            source: pin.source.clone(),
-            pinned: true,
-            version,
-        };
+        return entry(pin.value.clone(), pin.source.clone(), true, false);
     }
-    let stored = row.and_then(|row| {
-        let raw = row.value.as_ref()?;
-        match setting.coerce(raw) {
-            Ok(value) => Some((value, row)),
-            Err(reason) => {
-                warnings.push(LoadWarning {
-                    key: row.key.clone(),
-                    problem: format!("stored value ignored ({reason}); using the default"),
-                });
-                None
-            }
-        }
-    });
-    match stored {
-        Some((value, row)) => Entry {
-            value,
-            source: Source::Database {
+    let Some(row) = row else {
+        return entry(setting.default_value(), Source::Default, false, false);
+    };
+    match row.value.as_ref().map(|raw| setting.coerce(raw)) {
+        Some(Ok(value)) => {
+            let source = Source::Database {
                 version: row.version,
                 by: row.by,
                 at: row.at,
-            },
-            pinned: false,
-            version,
-        },
-        None => Entry {
-            value: setting.default_value(),
-            source: Source::Default,
-            pinned: false,
-            version,
-        },
+            };
+            entry(value, source, false, false)
+        }
+        Some(Err(reason)) => {
+            warnings.push(LoadWarning {
+                key: row.key,
+                problem: format!("stored value ignored ({reason})"),
+            });
+            entry(setting.bad_row_value(), Source::Default, false, true)
+        }
+        // Unreadable; the caller already reported why.
+        None => entry(setting.bad_row_value(), Source::Default, false, true),
     }
 }
 

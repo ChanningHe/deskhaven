@@ -2,9 +2,10 @@
 //! (05-config §3.6). Defaults, validation, the exported schema and the read
 //! APIs all derive from these declarations.
 
-use super::def::{AnySetting, Setting, settings};
+use super::def::{AnySetting, Setting, settings, strict};
 use super::enums::{AclAction, Registration, SmtpTls, TfaEnforce};
-use super::kind::{SettingType, max_items, max_len, range};
+use super::kind::{SettingType, max_items, range};
+use super::text::{TextRule, max_len};
 use super::value::HostPort;
 use crate::{Duration, Secret};
 
@@ -24,7 +25,7 @@ const fn days(n: u64) -> Duration {
 /// Upper bound for audit retention; `0` keeps records forever.
 const MAX_RETENTION: Duration = days(3650);
 /// RFC 5321 limits: 255-octet domain, 254-octet path.
-const SMTP_TEXT: super::kind::TextRule = max_len(254);
+const SMTP_TEXT: TextRule = max_len(254);
 const MAX_RELAYS: usize = 32;
 
 settings! {
@@ -66,10 +67,13 @@ settings! {
     /// Self-service registration mode.
     AUTH_REGISTRATION: Registration = "auth.registration" {
         default: Registration::Disabled,
+        on_bad_row: strict(Registration::Disabled),
     }
     /// Which users must enroll a second factor.
     AUTH_TFA_ENFORCE: TfaEnforce = "auth.tfa.enforce" {
         default: TfaEnforce::Off,
+        // Stricter than `off` without forcing every user to enroll at once.
+        on_bad_row: strict(TfaEnforce::Admins),
     }
     /// Allow email one-time codes as a second factor (requires SMTP).
     AUTH_EMAIL_CODE_ENABLED: bool = "auth.email_code.enabled" {
@@ -82,7 +86,7 @@ settings! {
     /// SMTP server host name; empty = SMTP not configured.
     SMTP_HOST: String = "smtp.host" {
         default: "",
-        rule: SMTP_TEXT,
+        rule: SMTP_TEXT.host(),
     }
     /// SMTP server port.
     SMTP_PORT: u32 = "smtp.port" {
@@ -105,11 +109,12 @@ settings! {
     /// Sender address of outgoing mail.
     SMTP_FROM: String = "smtp.from" {
         default: "",
-        rule: SMTP_TEXT,
+        rule: SMTP_TEXT.email(),
     }
     /// Device endpoints check that id and uuid match the registered device.
     DEVICES_VERIFY_UUID: bool = "devices.verify_uuid" {
         default: true,
+        on_bad_row: strict(true),
     }
     /// Devices that were not deployed get `NOT_DEPLOYED` (P1).
     DEVICES_REQUIRE_DEPLOY: bool = "devices.require_deploy" {
@@ -162,10 +167,12 @@ settings! {
     /// Connection ACL decision when no rule matches (P1).
     SIGNAL_ACL_DEFAULT: AclAction = "signal.acl.default" {
         default: AclAction::Allow,
+        on_bad_row: strict(AclAction::Deny),
     }
     /// Connection ACL decision when the control plane fails (P1; fail closed).
     SIGNAL_ACL_ON_ERROR: AclAction = "signal.acl.on_error" {
         default: AclAction::Deny,
+        on_bad_row: strict(AclAction::Deny),
     }
 }
 

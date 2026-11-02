@@ -53,10 +53,6 @@ impl Accepted {
         &self.value
     }
 
-    pub fn into_value(self) -> Value {
-        self.value
-    }
-
     /// The version the caller expects the stored row to have.
     pub fn expected_version(&self) -> i64 {
         self.version
@@ -150,7 +146,7 @@ const MAX_ECHOED_KEY: usize = 64;
 
 /// An unknown, caller-supplied key made safe for logs and responses:
 /// truncated and with control characters escaped.
-fn echo_key(key: &str) -> String {
+pub(crate) fn echo_key(key: &str) -> String {
     let mut echoed: String = key
         .chars()
         .take(MAX_ECHOED_KEY)

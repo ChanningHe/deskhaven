@@ -245,3 +245,140 @@ fn sensitive_values_are_reported_as_set_only() {
     assert!(!all.contains("hunter2"), "{all}");
     assert!(!format!("{next:?}").contains("hunter2"));
 }
+
+fn accepted_json(key: &str, value: Json) -> Result<Json, Rejection> {
+    let accepted = prepare(&PinSet::empty(), &[change(key, value)])?;
+    Ok(accepted[0].value().to_json())
+}
+
+#[test]
+fn enums_are_case_insensitive_and_canonical() {
+    assert_eq!(
+        accepted_json("auth.registration", json!("Invite")),
+        Ok(json!("invite"))
+    );
+    assert_eq!(
+        accepted_json("smtp.tls", json!(" STARTTLS ")),
+        Ok(json!("starttls"))
+    );
+    assert!(accepted_json("auth.registration", json!("invites")).is_err());
+}
+
+#[test]
+fn u32_text_must_be_plain_digits() {
+    assert_eq!(accepted_json("smtp.port", json!("0465")), Ok(json!(465)));
+    for bad in ["+465", "-1", "4 65", ""] {
+        assert!(accepted_json("smtp.port", json!(bad)).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn comma_lists_reject_empty_items_like_arrays() {
+    assert_eq!(
+        accepted_json("signal.relay_servers", json!("")),
+        Ok(json!([]))
+    );
+    assert_eq!(
+        accepted_json("signal.relay_servers", json!(" a:1 , b:2 ")),
+        Ok(json!(["a:1", "b:2"]))
+    );
+    for bad in [json!("a:1,,b:2"), json!("a:1,"), json!(["a:1", ""])] {
+        assert!(
+            accepted_json("signal.relay_servers", bad.clone()).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn relays_reject_unspecified_and_broadcast_addresses() {
+    for bad in ["0.0.0.0:21117", "255.255.255.255:21117", "[::]:21117"] {
+        assert!(
+            accepted_json("signal.relay_servers", json!([bad])).is_err(),
+            "{bad}"
+        );
+    }
+    assert!(accepted_json("signal.relay_servers", json!(["10.0.0.1:21117"])).is_ok());
+}
+
+#[test]
+fn smtp_host_must_be_a_hostname_or_ip() {
+    for ok in ["", "mail.example.com", "10.0.0.25", "2001:db8::25"] {
+        assert!(accepted_json("smtp.host", json!(ok)).is_ok(), "{ok:?}");
+    }
+    for bad in [
+        "mail example.com",
+        "mail..example.com",
+        "-mail.example.com",
+        "mail.example.com:25",
+    ] {
+        assert!(accepted_json("smtp.host", json!(bad)).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn smtp_from_must_look_like_an_address() {
+    for ok in ["", "rd@example.com", "Desk.Haven+ops@mail.example.org"] {
+        assert!(accepted_json("smtp.from", json!(ok)).is_ok(), "{ok:?}");
+    }
+    for bad in [
+        "rd",
+        "@example.com",
+        "rd@",
+        "a@b@c",
+        "rd @example.com",
+        "rd@exa mple.com",
+    ] {
+        assert!(accepted_json("smtp.from", json!(bad)).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn security_relevant_settings_fall_back_strictly_on_bad_rows() {
+    let bad = |key: &str| stored(key, json!("garbage-value"), 2);
+    let unreadable = |key: &str| Stored {
+        value: None,
+        ..stored(key, json!(null), 3)
+    };
+    let rows = vec![
+        bad("auth.tfa.enforce"),
+        bad("signal.acl.default"),
+        unreadable("signal.acl.on_error"),
+        bad("auth.registration"),
+        bad("devices.verify_uuid"),
+        bad("auth.session_ttl"),
+    ];
+
+    let (s, _) = Snapshot::build(&PinSet::empty(), rows);
+
+    assert_eq!(
+        s.get(&settings::AUTH_TFA_ENFORCE),
+        settings::TfaEnforce::Admins
+    );
+    assert_eq!(
+        s.get(&settings::SIGNAL_ACL_DEFAULT),
+        settings::AclAction::Deny
+    );
+    assert_eq!(
+        s.get(&settings::SIGNAL_ACL_ON_ERROR),
+        settings::AclAction::Deny
+    );
+    assert_eq!(
+        s.get(&settings::AUTH_REGISTRATION),
+        settings::Registration::Disabled
+    );
+    assert!(s.get(&settings::DEVICES_VERIFY_UUID));
+    // No strict policy: plain default.
+    assert_eq!(
+        s.get(&settings::AUTH_SESSION_TTL).as_std().as_secs(),
+        30 * 86_400
+    );
+    let tfa = s.entry("auth.tfa.enforce").unwrap();
+    assert!(tfa.is_fallback());
+    assert_eq!((tfa.source(), tfa.version()), (&Source::Default, 2));
+    // Without a bad row the declared default applies.
+    assert_eq!(
+        Snapshot::defaults().get(&settings::AUTH_TFA_ENFORCE),
+        settings::TfaEnforce::Off
+    );
+}

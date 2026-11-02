@@ -91,11 +91,21 @@ impl FromStr for HostPort {
 fn split_host_port(s: &str) -> Option<(String, &str)> {
     if let Some(rest) = s.strip_prefix('[') {
         let (host, port) = rest.split_once("]:")?;
-        let ip = host.parse::<Ipv6Addr>().ok()?;
-        return Some((ip.to_string(), port));
+        return Some((canonical_ipv6(host)?, port));
     }
     let (host, port) = s.rsplit_once(':')?;
     Some((canonical_host(host)?, port))
+}
+
+/// A host clients can connect to: DNS name, IPv4 or unbracketed IPv6.
+pub(crate) fn is_host(host: &str) -> bool {
+    canonical_host(host).is_some() || canonical_ipv6(host).is_some()
+}
+
+/// `::` is not a destination.
+fn canonical_ipv6(host: &str) -> Option<String> {
+    let ip = host.parse::<Ipv6Addr>().ok()?;
+    (!ip.is_unspecified()).then(|| ip.to_string())
 }
 
 /// Digits only (no sign), 1-65535.
@@ -106,10 +116,12 @@ fn parse_port(port: &str) -> Option<u16> {
     port.parse::<u16>().ok().filter(|p| *p != 0)
 }
 
-/// All-numeric hosts must be valid IPv4; anything else a DNS name.
+/// All-numeric hosts must be valid IPv4 (not `0.0.0.0` or the broadcast
+/// address, which are not destinations); anything else a DNS name.
 fn canonical_host(host: &str) -> Option<String> {
     if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
-        return host.parse::<Ipv4Addr>().ok().map(|ip| ip.to_string());
+        let ip = host.parse::<Ipv4Addr>().ok()?;
+        return (!ip.is_unspecified() && !ip.is_broadcast()).then(|| ip.to_string());
     }
     is_dns_name(host).then(|| host.to_ascii_lowercase())
 }

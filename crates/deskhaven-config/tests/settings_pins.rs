@@ -177,6 +177,25 @@ fn unknown_pin_keys_are_listed() {
 }
 
 #[test]
+fn unknown_pin_keys_are_sanitized_in_errors() {
+    Jail::expect_with(|jail| {
+        jail.clear_env();
+        let long = "k".repeat(200);
+        jail.create_file(
+            "deskhaven.toml",
+            &format!("[settings]\n\"smtp.ho\\u0007st\" = \"x\"\n\"{long}.x\" = 1\n"),
+        )?;
+
+        let err = pins(jail).unwrap_err();
+
+        assert!(err.contains("smtp.ho\\u{7}st"), "{err}");
+        assert!(!err.contains('\u{7}'), "{err}");
+        assert!(!err.contains(&long), "{err}");
+        Ok(())
+    });
+}
+
+#[test]
 fn updates_to_pinned_keys_are_rejected() {
     Jail::expect_with(|jail| {
         jail.clear_env();

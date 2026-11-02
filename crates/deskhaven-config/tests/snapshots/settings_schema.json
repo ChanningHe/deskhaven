@@ -99,6 +99,7 @@
       "default": "disabled",
       "description": "Self-service registration mode.",
       "key": "auth.registration",
+      "on_bad_row": "disabled",
       "sensitive": false,
       "type": "enum",
       "variants": [
@@ -112,6 +113,7 @@
       "default": "off",
       "description": "Which users must enroll a second factor.",
       "key": "auth.tfa.enforce",
+      "on_bad_row": "admins",
       "sensitive": false,
       "type": "enum",
       "variants": [
@@ -140,6 +142,7 @@
       "category": "smtp",
       "default": "",
       "description": "SMTP server host name; empty = SMTP not configured.",
+      "format": "host",
       "key": "smtp.host",
       "max_length": 254,
       "sensitive": false,
@@ -191,6 +194,7 @@
       "category": "smtp",
       "default": "",
       "description": "Sender address of outgoing mail.",
+      "format": "email",
       "key": "smtp.from",
       "max_length": 254,
       "sensitive": false,
@@ -201,6 +205,7 @@
       "default": true,
       "description": "Device endpoints check that id and uuid match the registered device.",
       "key": "devices.verify_uuid",
+      "on_bad_row": true,
       "sensitive": false,
       "type": "bool"
     },
@@ -312,6 +317,7 @@
       "default": "allow",
       "description": "Connection ACL decision when no rule matches (P1).",
       "key": "signal.acl.default",
+      "on_bad_row": "deny",
       "sensitive": false,
       "type": "enum",
       "variants": [
@@ -324,6 +330,7 @@
       "default": "deny",
       "description": "Connection ACL decision when the control plane fails (P1; fail closed).",
       "key": "signal.acl.on_error",
+      "on_bad_row": "deny",
       "sensitive": false,
       "type": "enum",
       "variants": [
