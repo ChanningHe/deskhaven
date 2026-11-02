@@ -1161,6 +1161,7 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "clap 4.6.7",
  "deskhaven-admin-api",
  "deskhaven-client-api",

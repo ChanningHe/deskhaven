@@ -125,9 +125,12 @@ impl Server {
         }
     }
 
+    /// The bound address of `listener`, once requests are served (listeners
+    /// bind before the database opens; until `ready` requests only queue).
     fn listening(&mut self, listener: &str) -> SocketAddr {
         let fields =
             self.wait_for_event(|f| f["message"] == "listening" && f["listener"] == listener);
+        self.wait_for_event(|f| f["message"] == "ready");
         fields["addr"].as_str().unwrap().parse().unwrap()
     }
 
@@ -206,6 +209,55 @@ fn read_trimmed(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap().trim().to_owned()
 }
 
+/// Forms of the hbbs private key that must never be logged: the file
+/// (base64 of seed + public key) and the base64 of the 32-byte seed alone.
+fn hbbs_secrets(dir: &Path) -> [String; 2] {
+    use base64_022::Engine as _;
+    use base64_022::engine::general_purpose::STANDARD;
+
+    let file = read_trimmed(&dir.join("data/id_ed25519"));
+    let pair = STANDARD.decode(&file).unwrap();
+    let seed = STANDARD.encode(&pair[..32]);
+    [file, seed]
+}
+
+fn assert_no_hbbs_secret(dir: &Path, logs: &str) {
+    for secret in hbbs_secrets(dir) {
+        assert!(!logs.contains(&secret), "hbbs secret key leaked");
+    }
+}
+
+fn mode_of(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+fn side_file(db: &Path, suffix: &str) -> PathBuf {
+    let mut name = db.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
+}
+
+/// Size and mtime of the database file and its WAL side files.
+fn fingerprint(db: &Path) -> Vec<Option<(u64, std::time::SystemTime)>> {
+    ["", "-wal", "-shm"]
+        .iter()
+        .map(|suffix| {
+            let meta = std::fs::metadata(side_file(db, suffix)).ok()?;
+            Some((meta.len(), meta.modified().unwrap()))
+        })
+        .collect()
+}
+
+fn config_check(dir: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_deskhaven"))
+        .args(["--config", "deskhaven.toml", "config", "check"])
+        .env_clear()
+        .current_dir(dir)
+        .output()
+        .unwrap()
+}
+
 #[test]
 fn serves_health_and_shuts_down_cleanly_on_sigterm() {
     let dir = workdir("lifecycle");
@@ -226,11 +278,99 @@ fn serves_health_and_shuts_down_cleanly_on_sigterm() {
     assert!(took < SHUTDOWN_LIMIT, "{took:?}");
     assert!(logs.contains("shutdown complete"), "{logs}");
     assert!(!logs.contains(&master), "master key leaked:\n{logs}");
-    let signal_secret = read_trimmed(&dir.join("data/id_ed25519"));
-    assert!(!logs.contains(&signal_secret), "hbbs secret key leaked");
+    assert_no_hbbs_secret(&dir, &logs);
     assert!(
         !dir.join("data/master.key").exists(),
         "a configured master key must not be written to disk"
+    );
+}
+
+/// Review M3: umask 0077, so the database (and any side file) is owner-only.
+#[test]
+fn database_files_are_owner_only() {
+    let dir = workdir("umask");
+    let mut server = start(&dir, &config(&dir, ""), &[]);
+    let addr = server.listening("client_api");
+    wait_ready(addr);
+
+    let db = dir.join("data/deskhaven.db");
+    for path in [db.clone(), side_file(&db, "-wal"), side_file(&db, "-shm")] {
+        if path.exists() {
+            assert_eq!(mode_of(&path), 0o600, "{}", path.display());
+        }
+    }
+    assert_eq!(mode_of(&db), 0o600);
+    assert_eq!(mode_of(&dir.join("data")), 0o700);
+    let (status, _) = server.terminate();
+    assert_eq!(status.code(), Some(0), "{}", server.logs());
+}
+
+/// Review M1: one process per data_dir (advisory lock).
+#[test]
+fn second_instance_on_the_same_data_dir_is_refused() {
+    let dir = workdir("second-instance");
+    let mut first = start(&dir, &config(&dir, ""), &[]);
+    first.listening("client_api");
+
+    let second_dir = dir.join("second");
+    std::fs::create_dir_all(&second_dir).unwrap();
+    let mut second = start(&second_dir, &config(&dir, ""), &[]);
+    let (status, _) = second.wait_exit(SHUTDOWN_LIMIT);
+
+    let logs = second.logs();
+    assert!(!status.success(), "{logs}");
+    assert!(
+        logs.contains("another deskhaven instance is using"),
+        "{logs}"
+    );
+    let (status, _) = first.terminate();
+    assert_eq!(status.code(), Some(0), "{}", first.logs());
+}
+
+/// Review M1: listeners are bound before the database is opened, so an
+/// instance that cannot bind never creates or migrates a database.
+#[test]
+fn occupied_port_fails_before_the_database_is_touched() {
+    let dir = workdir("port-taken");
+    let taken = TcpListener::bind("127.0.0.1:0").unwrap();
+    let config = config(&dir, "").replace(
+        "client_api = \"127.0.0.1:0\"",
+        &format!("client_api = \"{}\"", taken.local_addr().unwrap()),
+    );
+    let mut server = start(&dir, &config, &[]);
+
+    let (status, _) = server.wait_exit(SHUTDOWN_LIMIT);
+
+    let logs = server.logs();
+    assert!(!status.success(), "{logs}");
+    assert!(logs.contains("cannot bind client_api listener"), "{logs}");
+    assert!(!dir.join("data/deskhaven.db").exists(), "{logs}");
+}
+
+/// Review H1: `config check` on a stopped server's WAL database creates no
+/// `-wal`/`-shm` files and changes nothing.
+#[test]
+fn config_check_leaves_a_stopped_server_database_untouched() {
+    let dir = workdir("check-after-stop");
+    let mut server = start(&dir, &config(&dir, ""), &[]);
+    server.listening("client_api");
+    let (status, _) = server.terminate();
+    assert_eq!(status.code(), Some(0), "{}", server.logs());
+    let db = dir.join("data/deskhaven.db");
+    let before = fingerprint(&db);
+    assert_eq!(before[1..], [None, None], "server left WAL side files");
+
+    let out = config_check(&dir);
+
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fingerprint(&db),
+        before,
+        "config check changed the database files"
     );
 }
 
@@ -254,10 +394,9 @@ fn second_start_reuses_key_material() {
     assert_eq!(status.code(), Some(0), "{second_logs}");
     assert_eq!(first_key, second_key);
     assert_eq!(read_trimmed(&dir.join("data/master.key")), master);
-    let signal_secret = read_trimmed(&dir.join("data/id_ed25519"));
     for logs in [first_logs, second_logs] {
         assert!(!logs.contains(&master), "master key leaked:\n{logs}");
-        assert!(!logs.contains(&signal_secret), "hbbs secret key leaked");
+        assert_no_hbbs_secret(&dir, &logs);
     }
 }
 
@@ -273,9 +412,22 @@ fn split_admin_listener_serves_health_and_client_root_redirects() {
     let client = server.listening("client_api");
     let admin = server.listening("admin");
     assert_eq!(admin.port(), admin_port);
-    assert_eq!(get(admin, "/healthz").0, 200);
+    let (status, admin_health) = get(admin, "/healthz");
+    assert_eq!(status, 200);
     wait_ready(admin);
-    assert_eq!(get(client, "/healthz").0, 200);
+    let (status, client_health) = get(client, "/healthz");
+    assert_eq!(status, 200);
+    // HSTS per listener: admin follows admin_public_url (https), client_api
+    // follows public_url (unset).
+    assert!(
+        header(&admin_health, "strict-transport-security").is_some(),
+        "{admin_health}"
+    );
+    assert_eq!(
+        header(&client_health, "strict-transport-security"),
+        None,
+        "{client_health}"
+    );
     let (status, response) = get(client, "/");
     assert_eq!(status, 302, "{response}");
     assert!(
@@ -299,6 +451,15 @@ fn header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
+/// The `<title>` line of the built `web/dist/index.html`.
+fn index_html_title() -> String {
+    let index = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist/index.html");
+    let html = std::fs::read_to_string(index).unwrap();
+    let start = html.find("<title>").unwrap();
+    let end = html[start..].find("</title>").unwrap() + start;
+    html[start..end].to_owned()
+}
+
 #[test]
 fn single_listener_serves_the_console_with_csp_and_keeps_api_404s() {
     let dir = workdir("console");
@@ -306,13 +467,17 @@ fn single_listener_serves_the_console_with_csp_and_keeps_api_404s() {
     let addr = server.listening("client_api");
 
     // index.html with a built web/dist, the 503 "not built" page without one.
+    // Local runs usually lack web/dist; CI builds it before testing (M4-06),
+    // so both branches are exercised there and here.
+    let (expected_status, marker) = if deskhaven_web::is_built() {
+        (200, index_html_title())
+    } else {
+        (503, "web console not built".to_owned())
+    };
     for path in ["/", "/devices"] {
         let (status, response) = get(addr, path);
-        assert!(matches!(status, 200 | 503), "{path}: {response}");
-        assert!(
-            response.to_ascii_lowercase().contains("<html"),
-            "{path}: {response}"
-        );
+        assert_eq!(status, expected_status, "{path}: {response}");
+        assert!(response.contains(&marker), "{path}: {response}");
         assert_eq!(
             header(&response, "content-security-policy"),
             Some(deskhaven_web::CSP),
@@ -347,7 +512,8 @@ fn unreachable_postgres_fails_startup_without_leaking_the_url() {
     assert!(logs.contains("failed to connect to the database"), "{logs}");
     assert!(!logs.contains(password), "password leaked:\n{logs}");
     assert!(!logs.contains("postgres://"), "URL leaked:\n{logs}");
-    assert!(!logs.contains("\"listening\""), "{logs}");
+    // Listeners bind first (review M1); serving never starts.
+    assert!(!logs.contains("\"ready\""), "{logs}");
 }
 
 #[test]

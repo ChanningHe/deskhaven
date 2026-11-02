@@ -45,6 +45,12 @@ pub async fn connect(options: &DbOptions) -> anyhow::Result<DatabaseConnection> 
     })
 }
 
+/// An in-memory SQLite database (`sqlite::memory:`, `mode=memory`): gone
+/// when the process exits.
+pub fn is_in_memory(url: &str) -> bool {
+    url.starts_with("sqlite:") && (url.contains(":memory:") || url.contains("mode=memory"))
+}
+
 /// Backend name, the only part of a database URL that may be logged.
 pub fn backend(url: &str) -> &'static str {
     if url.starts_with("sqlite:") {
@@ -99,6 +105,14 @@ mod tests {
         assert_eq!(url, "postgres://u:p@h/db");
         assert_eq!(backend(&url), "postgres");
         assert_eq!(backend("sqlite::memory:"), "sqlite");
+    }
+
+    #[test]
+    fn detects_in_memory_sqlite() {
+        assert!(is_in_memory("sqlite::memory:"));
+        assert!(is_in_memory("sqlite://file:x?mode=memory&cache=shared"));
+        assert!(!is_in_memory("sqlite:///var/lib/dh/deskhaven.db"));
+        assert!(!is_in_memory("postgres://h/db?application_name=:memory:"));
     }
 
     #[test]

@@ -24,20 +24,25 @@ pub const HSTS: &str = "max-age=31536000";
 pub const READY_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const HTTPS_PREFIX: &str = "https://";
 
-/// Stack settings: proxies, CSP of the console, HSTS when `public_url` is
-/// https, and the drain share of the shutdown budget.
+/// Stack settings: proxies, CSP of the console, HSTS per listener (the
+/// client API, or the single listener, follows `public_url`; a split admin
+/// listener follows `admin_public_url`), and the drain share of the shutdown
+/// budget.
 pub fn http_config(config: &Bootstrap, drain_timeout: Duration) -> HttpConfig {
-    let is_https = config
-        .public_url
-        .get(..HTTPS_PREFIX.len())
-        .is_some_and(|scheme| scheme.eq_ignore_ascii_case(HTTPS_PREFIX));
     HttpConfig {
         trusted_proxies: TrustedProxies::new(config.security.trusted_proxies.iter().map(Cidr::net)),
         drain_timeout,
         content_security_policy: Some(HeaderValue::from_static(deskhaven_web::CSP)),
-        strict_transport_security: is_https.then(|| HeaderValue::from_static(HSTS)),
+        strict_transport_security: hsts_for(&config.public_url),
+        admin_strict_transport_security: hsts_for(&config.listen.admin_public_url),
         ..HttpConfig::default()
     }
+}
+
+fn hsts_for(url: &str) -> Option<HeaderValue> {
+    url.get(..HTTPS_PREFIX.len())
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case(HTTPS_PREFIX))
+        .then(|| HeaderValue::from_static(HSTS))
 }
 
 pub fn listen_config(listen: &Listen) -> ListenConfig {
@@ -74,9 +79,11 @@ fn admin_router(readiness: impl ReadinessCheck) -> Router {
 }
 
 /// `/readyz`: the database answers a ping, and the process is not shutting
-/// down. Migrations are applied by construction (listeners are only bound
+/// down. Migrations are applied by construction (requests are only served
 /// after `migrate` succeeded). Settings load warnings do not count: the
 /// service runs on safe fallbacks, and a restart would not fix a bad row.
+/// The ping uses the shared pool, so a saturated pool (no connection within
+/// [`READY_PROBE_TIMEOUT`]) also reports not ready.
 pub fn readiness(
     db: DatabaseConnection,
     shutdown: CancellationToken,
@@ -124,6 +131,17 @@ mod tests {
         assert!(upper.strict_transport_security.is_some());
         assert!(http.strict_transport_security.is_none());
         assert!(none.strict_transport_security.is_none());
+    }
+
+    #[test]
+    fn admin_hsts_follows_admin_public_url() {
+        let mut config = with_public_url("http://rd.example.com");
+        config.listen.admin_public_url = "https://console.example.com".into();
+
+        let http = http_config(&config, DRAIN);
+
+        assert!(http.strict_transport_security.is_none());
+        assert_eq!(http.admin_strict_transport_security.unwrap(), HSTS);
     }
 
     #[test]

@@ -13,11 +13,18 @@ use deskhaven_core::keys::{
 use deskhaven_core::settings::SettingsService;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 
+use crate::instance_lock::{self, InstanceLock};
 use crate::state::AppState;
 use crate::{data_dir, database, http};
 
+/// Files this process creates (data_dir, database and its side files, keys,
+/// lock file) are owner-only.
+#[cfg(unix)]
+const UMASK: u32 = 0o077;
+
 /// Results of the synchronous steps, consumed by [`start`].
 pub struct Prepared {
+    lock: InstanceLock,
     pins: PinSet,
     crypto: Arc<SecretBox>,
     signal_public_key: String,
@@ -28,16 +35,21 @@ pub struct Started {
     pub state: Arc<AppState>,
     pub listeners: Listeners,
     pub http: HttpConfig,
+    /// Held until the process exits.
+    pub lock: InstanceLock,
 }
 
 /// Steps that need no runtime: pins (first, so a rejected configuration
-/// writes nothing), the descriptor limit, data_dir, key material.
+/// writes nothing), umask, the descriptor limit, data_dir, the instance lock,
+/// key material.
 pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     let pins = PinSet::from_bootstrap(&config.settings)?;
+    restrict_umask();
     log_nofile(raise_nofile_limit());
     if let Some(loose) = data_dir::prepare(&config.data_dir)? {
         tracing::warn!("{loose}");
     }
+    let lock = instance_lock::acquire(&config.data_dir)?;
 
     let master = load_or_generate_master_key(&config.security.master_key, &config.data_dir)?;
     log_key_warnings(&master.warnings);
@@ -51,18 +63,30 @@ pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     tracing::info!(public_key = %signal_public_key, "hbbs key pair loaded");
 
     Ok(Prepared {
+        lock,
         pins,
         crypto,
         signal_public_key,
     })
 }
 
-/// Database, migrations, settings, listeners.
+/// Listeners first (an instance that cannot bind never touches the
+/// database), then database, migrations, settings. Until serving starts,
+/// connections wait in the listen backlog.
 pub async fn start(
     config: &Bootstrap,
     prepared: Prepared,
     drain_timeout: Duration,
 ) -> anyhow::Result<Started> {
+    let http = http::http_config(config, drain_timeout);
+    http.validate()?;
+    let listeners = Listeners::bind(&http::listen_config(&config.listen)).await?;
+    let client_api = listeners.client_api_addr();
+    tracing::info!(listener = "client_api", addr = %client_api, "listening");
+    if let Some(admin) = listeners.admin_addr() {
+        tracing::info!(listener = "admin", addr = %admin, "listening");
+    }
+
     let url = database::url(config)?;
     let backend = database::backend(&url);
     let db = database::connect(&database::options(config, url)).await?;
@@ -76,15 +100,6 @@ pub async fn start(
         tracing::warn!("{warning}");
     }
 
-    let http = http::http_config(config, drain_timeout);
-    http.validate()?;
-    let listeners = Listeners::bind(&http::listen_config(&config.listen)).await?;
-    let client_api = listeners.client_api_addr();
-    tracing::info!(listener = "client_api", addr = %client_api, "listening");
-    if let Some(admin) = listeners.admin_addr() {
-        tracing::info!(listener = "admin", addr = %admin, "listening");
-    }
-
     let state = Arc::new(AppState {
         db,
         settings,
@@ -95,8 +110,21 @@ pub async fn start(
         state,
         listeners,
         http,
+        lock: prepared.lock,
     })
 }
+
+#[cfg(unix)]
+fn restrict_umask() {
+    let previous = rustix::process::umask(rustix::fs::Mode::from_raw_mode(UMASK));
+    tracing::debug!(
+        previous = format!("{:04o}", previous.bits()),
+        "umask set to 0077"
+    );
+}
+
+#[cfg(not(unix))]
+fn restrict_umask() {}
 
 fn log_nofile(info: NofileInfo) {
     tracing::info!(

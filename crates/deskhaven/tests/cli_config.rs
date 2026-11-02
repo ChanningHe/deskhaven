@@ -231,6 +231,58 @@ fn check_rejects_invalid_pin_without_echoing_the_value() {
     assert!(!stderr.contains("SECRETISH"), "{stderr}");
 }
 
+/// Review M4: every check runs and reports, not just the first failure.
+#[test]
+fn check_reports_every_failed_check() {
+    let dir = workdir("all_checks");
+    let taken = TcpListener::bind("127.0.0.1:0").unwrap();
+    let config = format!(
+        "data_dir = \"{}\"\n[listen]\nclient_api = \"{}\"\n",
+        dir.join("data").display(),
+        taken.local_addr().unwrap()
+    );
+    std::fs::write(dir.join("deskhaven.toml"), config).unwrap();
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[("DESKHAVEN_SETTINGS__AUTH__SESSION_TTL", "nope")],
+    );
+
+    assert!(!out.status.success());
+    let stderr = text(&out.stderr);
+    for name in ["settings pins", "listen ports"] {
+        assert!(
+            stderr.contains(&format!("check `{name}` failed")),
+            "{stderr}"
+        );
+    }
+    // The checks in between and after still ran.
+    assert!(stderr.contains("back up"), "{stderr}");
+    assert!(stderr.contains("created on first start"), "{stderr}");
+    assert!(stderr.contains("2 of 4 checks failed"), "{stderr}");
+    assert!(text(&out.stdout).is_empty());
+}
+
+#[test]
+fn check_names_an_in_memory_database() {
+    let dir = workdir("db_memory");
+    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
+
+    let out = run(
+        &dir,
+        &["--config", "deskhaven.toml", "config", "check"],
+        &[("DESKHAVEN_DATABASE__URL", "sqlite::memory:")],
+    );
+
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).contains("in-memory database"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
 #[test]
 fn check_inspects_the_database_read_only() {
     let dir = workdir("db_read_only");

@@ -34,6 +34,10 @@ pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
 /// The database is reachable over a read-only connection, and its schema is
 /// not newer than this binary. A missing SQLite file is fine (created on
 /// first start); pending migrations are reported, not applied.
+///
+/// PgBouncer in transaction-pool mode rejects the read-only startup parameter
+/// (`default_transaction_read_only`) unless it is listed in
+/// `ignore_startup_parameters`: this check then fails while `serve` works.
 pub fn database(loaded: &Loaded) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -44,6 +48,9 @@ pub fn database(loaded: &Loaded) -> anyhow::Result<()> {
 
 async fn database_status(config: &Bootstrap) -> anyhow::Result<()> {
     let url = database::url(config)?;
+    if database::is_in_memory(&url) {
+        return note("database.url is an in-memory database; nothing to check");
+    }
     if let Some(file) = deskhaven_db::sqlite_file(&url)
         && !file.exists()
     {

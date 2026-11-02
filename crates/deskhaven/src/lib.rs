@@ -9,6 +9,7 @@ pub mod config_cmd;
 pub mod data_dir;
 pub mod database;
 pub mod http;
+pub mod instance_lock;
 pub mod key_cmd;
 pub mod log_safe;
 pub mod logging;

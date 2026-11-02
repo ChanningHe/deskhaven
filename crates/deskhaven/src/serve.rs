@@ -18,14 +18,17 @@ use crate::startup::{self, Prepared, Started};
 use crate::state::AppState;
 use crate::{http, log_safe, logging, shutdown};
 
-/// Whole shutdown budget, counted from the signal.
+/// Hard bound from the signal to process exit (02 §7), split into
+/// [`DRAIN_TIMEOUT`] + [`DB_CLOSE_TIMEOUT`] + [`RUNTIME_SHUTDOWN_GRACE`].
 pub const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
-/// Kept back from the HTTP drain for closing the database pool.
-const DB_CLOSE_RESERVE: Duration = Duration::from_secs(2);
-/// HTTP drain share of [`SHUTDOWN_DEADLINE`].
-pub const DRAIN_TIMEOUT: Duration = SHUTDOWN_DEADLINE.saturating_sub(DB_CLOSE_RESERVE);
 /// Blocking tasks still running when the runtime is dropped get this long.
 const RUNTIME_SHUTDOWN_GRACE: Duration = Duration::from_millis(500);
+/// Closing the database pool.
+const DB_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Inside the runtime: HTTP drain plus database close.
+const IN_RUNTIME_DEADLINE: Duration = SHUTDOWN_DEADLINE.saturating_sub(RUNTIME_SHUTDOWN_GRACE);
+/// HTTP drain share of the deadline.
+pub const DRAIN_TIMEOUT: Duration = IN_RUNTIME_DEADLINE.saturating_sub(DB_CLOSE_TIMEOUT);
 
 pub fn run(options: &LoadOptions) -> ExitCode {
     let loaded = match load(options).context("failed to load configuration") {
@@ -88,6 +91,7 @@ async fn serve_until_shutdown(
         state,
         listeners,
         http: http_config,
+        lock: _lock,
     } = started;
     let apps = http::apps(&state, &token);
     let mut serving = tokio::spawn({
@@ -109,7 +113,7 @@ async fn serve_until_shutdown(
         close_db(&state).await;
         joined
     };
-    match tokio::time::timeout(SHUTDOWN_DEADLINE, finish).await {
+    match tokio::time::timeout(IN_RUNTIME_DEADLINE, finish).await {
         Ok(joined) => {
             joined.context("HTTP server task failed")??;
             tracing::info!("shutdown complete");
@@ -131,11 +135,28 @@ fn stopped_early(joined: Result<Result<(), ServeError>, JoinError>) -> anyhow::E
     }
 }
 
+/// Closes the pool within [`DB_CLOSE_TIMEOUT`] (both the shutdown and the
+/// early-stop path); failures are logged only, the process is exiting.
 async fn close_db(state: &AppState) {
-    match state.db.close_by_ref().await {
-        Ok(()) => tracing::info!("database closed"),
-        Err(err) => {
+    match tokio::time::timeout(DB_CLOSE_TIMEOUT, state.db.close_by_ref()).await {
+        Ok(Ok(())) => tracing::info!("database closed"),
+        Ok(Err(err)) => {
             tracing::warn!(error = %log_safe::render_error(&err), "closing the database failed")
         }
+        Err(_) => tracing::warn!(timeout = ?DB_CLOSE_TIMEOUT, "closing the database timed out"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shutdown_budget_adds_up_to_the_deadline() {
+        assert_eq!(
+            DRAIN_TIMEOUT + DB_CLOSE_TIMEOUT + RUNTIME_SHUTDOWN_GRACE,
+            SHUTDOWN_DEADLINE
+        );
+        assert!(!DRAIN_TIMEOUT.is_zero());
     }
 }
