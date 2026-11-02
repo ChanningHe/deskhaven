@@ -94,6 +94,9 @@ jobs:
       - run: .forgejo/ci-setup.sh
       # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
       - run: cargo test --workspace --all-targets
+      # The committed admin API OpenAPI document must match the code (the console's
+      # types are generated from it). Reuses the test build; only xtask itself links.
+      - run: cargo xtask gen-openapi --check
 
   test-postgres:
     needs: [clippy, deny]

@@ -14,8 +14,20 @@ pub enum XtaskError {
         step: &'static str,
         status: ExitStatus,
     },
+    #[error("cannot generate the OpenAPI document")]
+    OpenApi(#[from] deskhaven_admin_api::OpenApiError),
+    #[error("{0} is out of date; run `cargo xtask gen-openapi` and commit the result")]
+    OpenApiDrift(String),
+    #[error("cannot access {path}")]
+    Io {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("unknown task `{0}`")]
     UnknownTask(String),
+    #[error("unknown argument `{0}`")]
+    UnknownArgument(String),
     #[error("no task given")]
     NoTask,
 }

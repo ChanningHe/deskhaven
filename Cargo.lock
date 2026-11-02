@@ -5803,6 +5803,8 @@ dependencies = [
 name = "xtask"
 version = "0.1.0-dev"
 dependencies = [
+ "deskhaven-admin-api",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

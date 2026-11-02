@@ -1,0 +1,3 @@
+[alias]
+# `cargo xtask <task>`: development tasks (xtask/src/main.rs).
+xtask = "run --quiet --package xtask --"

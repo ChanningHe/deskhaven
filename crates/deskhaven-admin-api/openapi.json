@@ -1,0 +1,187 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "deskhaven admin API",
+    "description": "Backs the deskhaven web console. Authenticated operations need the console session cookie; their security requirement names the role they need (self: any console user, admin: admin or owner, owner: owner). Every state-changing request (not GET, HEAD or OPTIONS) must also send the `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie. Errors are `{\"error\": {\"code\", \"message\", \"details\"?}}` with a stable `code`.",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    },
+    "version": "0.1.0-dev"
+  },
+  "paths": {
+    "/admin/api/v1/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The signed-in console user.",
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "The signed-in user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or a state-changing request without the matching CSRF header (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "details": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Machine-readable context, e.g. `{\"fields\": {\"<path>\": [\"<problem>\"]}}` for\n`validation_failed`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable, English; the console translates by `code`."
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "Stable wire codes. Renaming one is a breaking API change.",
+        "enum": [
+          "validation_failed",
+          "unauthorized",
+          "forbidden",
+          "csrf_failed",
+          "not_found",
+          "conflict",
+          "rate_limited",
+          "unsupported_media_type",
+          "internal",
+          "bad_request",
+          "method_not_allowed",
+          "payload_too_large",
+          "timeout",
+          "unavailable"
+        ]
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "The error body of every admin API failure (08-web-console §6).",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "description": "The signed-in user's own account.",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "must_change_password",
+          "totp_enabled"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "must_change_password": {
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RoleView"
+          },
+          "totp_enabled": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "RoleView": {
+        "type": "string",
+        "description": "Console role (06 §4.1).",
+        "enum": [
+          "owner",
+          "admin",
+          "user"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "console_session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-deskhaven_session",
+        "description": "Console session token (HttpOnly; set by the console login)."
+      }
+    }
+  }
+}
