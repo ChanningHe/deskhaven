@@ -53,19 +53,36 @@ pub trait HttpFetch: Send + Sync {
 }
 
 /// [`HttpFetch`] over reqwest 0.13 (rustls + ring).
-#[derive(Default)]
 pub struct ReqwestFetch {
     client: OnceCell<reqwest::Client>,
+    connect_timeout: Duration,
+    request_timeout: Duration,
+}
+
+impl Default for ReqwestFetch {
+    fn default() -> Self {
+        Self::with_timeouts(CONNECT_TIMEOUT, REQUEST_TIMEOUT)
+    }
 }
 
 impl ReqwestFetch {
+    /// [`CONNECT_TIMEOUT`] and [`REQUEST_TIMEOUT`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Other budgets (tests).
+    pub fn with_timeouts(connect_timeout: Duration, request_timeout: Duration) -> Self {
+        Self {
+            client: OnceCell::new(),
+            connect_timeout,
+            request_timeout,
+        }
+    }
+
     async fn client(&self) -> Result<&reqwest::Client, FetchError> {
         self.client
-            .get_or_try_init(|| async { build_client() })
+            .get_or_try_init(|| async { build_client(self.connect_timeout, self.request_timeout) })
             .await
     }
 }
@@ -79,7 +96,7 @@ impl HttpFetch for ReqwestFetch {
     }
 }
 
-fn build_client() -> Result<reqwest::Client, FetchError> {
+fn build_client(connect: Duration, request: Duration) -> Result<reqwest::Client, FetchError> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = rustls_platform_verifier::Verifier::new(Arc::clone(&provider))
         .map_err(|err| FetchError::Tls(err.to_string()))?;
@@ -94,8 +111,8 @@ fn build_client() -> Result<reqwest::Client, FetchError> {
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .referer(false)
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(connect)
+        .timeout(request)
         .build()
         .map_err(FetchError::Transport)
 }
