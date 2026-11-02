@@ -1,18 +1,96 @@
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Users } from 'lucide-react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useListUsers } from '@/api/generated/users/users'
+import { applyTableSearch, DataTable, toListParams } from '@/components/common/data-table'
+import type { SearchChangeOptions } from '@/components/common/data-table'
 import { EmptyState } from '@/components/common/empty-state'
 import { PageHeader } from '@/components/common/page-header'
 
+import { hasUserFilters, USER_SORTABLE, usersListParams } from '../users-search'
+import type { UsersSearch } from '../users-search'
+import { CreateUserButton } from './create-user-dialog'
+import { ImportUsersButton } from './import-users-dialog'
+import { userColumns } from './user-columns'
+import { UserDrawer } from './user-drawer'
+import { UserFilters } from './user-filters'
+
 export function UsersPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const search = useSearch({ from: '/_app/users' })
+  const navigate = useNavigate({ from: '/users' })
+  const query = useListUsers(usersListParams(search, toListParams(search)))
+
+  const onSearchChange = useCallback(
+    (patch: Partial<UsersSearch>, options?: SearchChangeOptions) => {
+      void navigate({
+        search: (previous: UsersSearch) => applyTableSearch(previous, patch),
+        replace: options?.replace ?? false,
+      })
+    },
+    [navigate],
+  )
+  // The drawer is not a filter: opening it keeps the page.
+  const openUser = useCallback(
+    (user: number | undefined) => {
+      void navigate({ search: (previous: UsersSearch) => ({ ...previous, user }) })
+    },
+    [navigate],
+  )
+  const columns = useMemo(
+    () => userColumns(t, i18n.language, openUser),
+    [t, i18n.language, openUser],
+  )
+
   return (
     <div className="space-y-6">
-      <PageHeader title={t('nav.users')} description={t('pages.users.description')} />
-      <EmptyState
-        icon={Users}
-        title={t('pages.users.emptyTitle')}
-        description={t('pages.users.emptyDescription')}
+      <PageHeader
+        title={t('nav.users')}
+        description={t('pages.users.description')}
+        actions={
+          <>
+            <ImportUsersButton />
+            <CreateUserButton />
+          </>
+        }
+      />
+      <DataTable
+        id="users"
+        label={t('nav.users')}
+        columns={columns}
+        sortable={USER_SORTABLE}
+        data={query.data}
+        getRowId={(user) => String(user.id)}
+        search={search}
+        onSearchChange={onSearchChange}
+        error={query.error ?? undefined}
+        onRetry={() => void query.refetch()}
+        searchPlaceholder={t('users.search')}
+        filters={<UserFilters search={search} onChange={onSearchChange} />}
+        isFiltered={hasUserFilters(search)}
+        onClearFilters={() => {
+          onSearchChange({
+            q: undefined,
+            role: undefined,
+            status: undefined,
+            auth_source: undefined,
+          })
+        }}
+        emptyState={
+          <EmptyState
+            icon={Users}
+            title={t('pages.users.emptyTitle')}
+            description={t('pages.users.emptyDescription')}
+          />
+        }
+      />
+      <UserDrawer
+        userId={search.user}
+        onClose={() => {
+          openUser(undefined)
+        }}
       />
     </div>
   )

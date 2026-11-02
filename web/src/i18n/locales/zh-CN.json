@@ -283,6 +283,171 @@
     "fileDetailAnonymous": "由配置文件锁定",
     "envDetail": "由环境变量 {{name}} 锁定"
   },
+  "groups": {
+    "description": "用于策略、地址簿共享与访问控制的用户组。设备组随设备管理一起提供。",
+    "tableLabel": "用户组",
+    "search": "搜索用户组",
+    "columns": {
+      "name": "名称",
+      "members": "成员数",
+      "source": "来源",
+      "note": "备注"
+    },
+    "fields": {
+      "name": "名称",
+      "note": "备注"
+    },
+    "create": {
+      "action": "新建用户组",
+      "title": "新建用户组",
+      "submit": "创建用户组"
+    },
+    "drawer": {
+      "title": "用户组",
+      "members": "{{count}} 名成员",
+      "readOnly": "由配置文件定义，在此处只读。",
+      "save": "保存修改",
+      "delete": "删除用户组"
+    },
+    "confirmDelete": {
+      "title": "删除此用户组？",
+      "description": "{{name}} 及其成员关系、地址簿共享和策略分配都将被删除，用户本身保留。",
+      "confirm": "删除用户组"
+    },
+    "members": {
+      "title": "成员",
+      "empty": "暂无成员。",
+      "remove": "移除 {{username}}",
+      "removeShort": "移除",
+      "add": "添加 {{username}}",
+      "addShort": "添加",
+      "addSearch": "查找要添加的用户",
+      "noCandidates": "组外没有匹配的用户。",
+      "confirmTitle": "从用户组移除？",
+      "confirmDescription": "{{username}} 将失去该用户组授予的权限（共享、策略）。"
+    }
+  },
+  "users": {
+    "search": "搜索用户名、名称或邮箱",
+    "never": "从未",
+    "tfaOn": "已启用 2FA",
+    "tfaOff": "未启用 2FA",
+    "columns": {
+      "username": "用户名",
+      "displayName": "名称",
+      "role": "角色",
+      "source": "来源",
+      "tfa": "2FA",
+      "status": "状态",
+      "lastLogin": "最后登录"
+    },
+    "sources": {
+      "local": "本地",
+      "ldap": "LDAP",
+      "oidc": "OIDC"
+    },
+    "statuses": {
+      "active": "正常",
+      "disabled": "已禁用",
+      "unverified": "未验证"
+    },
+    "filters": {
+      "role": "全部角色",
+      "status": "全部状态",
+      "source": "全部来源"
+    },
+    "fields": {
+      "username": "用户名",
+      "displayName": "显示名称",
+      "email": "邮箱",
+      "role": "角色",
+      "password": "初始密码",
+      "note": "备注"
+    },
+    "create": {
+      "action": "新建用户",
+      "title": "新建用户",
+      "description": "创建本地账户。不填写密码时会生成临时密码，首次登录必须修改。",
+      "setPassword": "由我设置初始密码",
+      "generatedHint": "将生成临时密码，且只显示一次。",
+      "submit": "创建用户",
+      "secretTitle": "{{username}} 的临时密码",
+      "secretDescription": "请通过安全渠道告知用户，首次登录时必须修改。"
+    },
+    "import": {
+      "action": "导入 CSV",
+      "title": "导入用户",
+      "description": "列：username（必填）、display_name、email、role、note。不接受密码列：每个账户都会获得临时密码。要么全部创建，要么一个都不创建。",
+      "file": "CSV 文件",
+      "text": "CSV 文本",
+      "submit": "导入",
+      "secretTitle": "临时密码（{{count}} 个账户）",
+      "secretDescription": "每行一个账户：用户名、制表符、临时密码。首次登录时必须修改。",
+      "rejected": "未导入任何账户。请修正以下行后重试：",
+      "line": "第 {{line}} 行",
+      "fieldProblem": "{{field}}：{{problem}}",
+      "codes": {
+        "columns": "列数不正确",
+        "invalid": "取值无效",
+        "taken": "已被其他账户或前面的行使用",
+        "owner_required": "只有所有者可以导入所有者"
+      }
+    },
+    "drawer": {
+      "title": "用户",
+      "ownerReadOnly": "所有者账户只能由所有者修改。",
+      "groups": "用户组",
+      "noGroups": "未加入任何用户组。",
+      "sessions": "会话",
+      "noSessions": "没有有效会话。",
+      "sessionKinds": {
+        "client": "客户端",
+        "console": "控制台"
+      },
+      "save": "保存修改",
+      "saved": "已保存"
+    },
+    "actions": {
+      "title": "操作",
+      "resetPassword": "重置密码",
+      "reset2fa": "重置 2FA",
+      "revoke": "吊销会话",
+      "unlock": "解除登录锁定",
+      "unlocked": "已解除登录锁定。",
+      "disable": "禁用",
+      "enable": "启用",
+      "delete": "删除",
+      "temporaryTitle": "{{username}} 的新临时密码",
+      "temporaryDescription": "所有会话均已退出，用户下次登录时必须修改此密码。"
+    },
+    "confirm": {
+      "disable": {
+        "title": "禁用此账户？",
+        "description": "{{username}} 将在所有位置退出登录，重新启用前无法登录。",
+        "confirm": "禁用"
+      },
+      "revoke": {
+        "title": "吊销全部会话？",
+        "description": "{{username}} 的所有客户端与控制台会话都将结束，需要重新登录。",
+        "confirm": "吊销会话"
+      },
+      "reset2fa": {
+        "title": "重置双因素认证？",
+        "description": "{{username}} 的验证器与恢复码将失效，之后可以重新绑定。",
+        "confirm": "重置 2FA"
+      },
+      "resetPassword": {
+        "title": "重置密码？",
+        "description": "{{username}} 的当前密码将被临时密码替换，所有会话都会退出。",
+        "confirm": "重置密码"
+      },
+      "delete": {
+        "title": "删除此账户？",
+        "description": "{{username}} 及其会话、用户组成员关系和个人地址簿都将被删除，且无法恢复。",
+        "confirm": "删除账户"
+      }
+    }
+  },
   "roles": {
     "owner": "所有者",
     "admin": "管理员",

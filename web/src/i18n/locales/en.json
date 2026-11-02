@@ -283,6 +283,171 @@
     "fileDetailAnonymous": "Locked by the config file",
     "envDetail": "Locked by environment variable {{name}}"
   },
+  "groups": {
+    "description": "User groups for policies, address book sharing and access. Device groups come with device management.",
+    "tableLabel": "User groups",
+    "search": "Search groups",
+    "columns": {
+      "name": "Name",
+      "members": "Members",
+      "source": "Source",
+      "note": "Note"
+    },
+    "fields": {
+      "name": "Name",
+      "note": "Note"
+    },
+    "create": {
+      "action": "New group",
+      "title": "New user group",
+      "submit": "Create group"
+    },
+    "drawer": {
+      "title": "Group",
+      "members": "{{count}} members",
+      "readOnly": "Defined in the configuration file; read-only here.",
+      "save": "Save changes",
+      "delete": "Delete group"
+    },
+    "confirmDelete": {
+      "title": "Delete this group?",
+      "description": "{{name}} is deleted with its memberships, address book shares and strategy assignment. The users stay.",
+      "confirm": "Delete group"
+    },
+    "members": {
+      "title": "Members",
+      "empty": "No members yet.",
+      "remove": "Remove {{username}}",
+      "removeShort": "Remove",
+      "add": "Add {{username}}",
+      "addShort": "Add",
+      "addSearch": "Find a user to add",
+      "noCandidates": "No matching users outside the group.",
+      "confirmTitle": "Remove from the group?",
+      "confirmDescription": "{{username}} loses what the group grants (shares, policies)."
+    }
+  },
+  "users": {
+    "search": "Search username, name or email",
+    "never": "Never",
+    "tfaOn": "2FA on",
+    "tfaOff": "2FA off",
+    "columns": {
+      "username": "Username",
+      "displayName": "Name",
+      "role": "Role",
+      "source": "Source",
+      "tfa": "2FA",
+      "status": "Status",
+      "lastLogin": "Last login"
+    },
+    "sources": {
+      "local": "Local",
+      "ldap": "LDAP",
+      "oidc": "OIDC"
+    },
+    "statuses": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "unverified": "Unverified"
+    },
+    "filters": {
+      "role": "All roles",
+      "status": "All statuses",
+      "source": "All sources"
+    },
+    "fields": {
+      "username": "Username",
+      "displayName": "Display name",
+      "email": "Email",
+      "role": "Role",
+      "password": "Initial password",
+      "note": "Note"
+    },
+    "create": {
+      "action": "New user",
+      "title": "New user",
+      "description": "A local account. Without a password, a temporary one is generated and must be changed at first sign-in.",
+      "setPassword": "Set the initial password myself",
+      "generatedHint": "A temporary password will be generated and shown once.",
+      "submit": "Create user",
+      "secretTitle": "Temporary password for {{username}}",
+      "secretDescription": "Give it to the user over a safe channel. They must change it at first sign-in."
+    },
+    "import": {
+      "action": "Import CSV",
+      "title": "Import users",
+      "description": "Columns: username (required), display_name, email, role, note. Passwords are not accepted: every account gets a temporary password. Either every row is created or none.",
+      "file": "CSV file",
+      "text": "CSV text",
+      "submit": "Import",
+      "secretTitle": "Temporary passwords ({{count}} accounts)",
+      "secretDescription": "One line per account: username, tab, temporary password. Each must be changed at first sign-in.",
+      "rejected": "Nothing was imported. Fix these rows and try again:",
+      "line": "Line {{line}}",
+      "fieldProblem": "{{field}}: {{problem}}",
+      "codes": {
+        "columns": "wrong number of columns",
+        "invalid": "invalid value",
+        "taken": "already used by another account or an earlier row",
+        "owner_required": "only an owner can import owners"
+      }
+    },
+    "drawer": {
+      "title": "User",
+      "ownerReadOnly": "Owner accounts can only be changed by an owner.",
+      "groups": "Groups",
+      "noGroups": "Not in any group.",
+      "sessions": "Sessions",
+      "noSessions": "No active sessions.",
+      "sessionKinds": {
+        "client": "Client",
+        "console": "Console"
+      },
+      "save": "Save changes",
+      "saved": "Saved"
+    },
+    "actions": {
+      "title": "Actions",
+      "resetPassword": "Reset password",
+      "reset2fa": "Reset 2FA",
+      "revoke": "Revoke sessions",
+      "unlock": "Unlock sign-in",
+      "unlocked": "Sign-in lockout cleared.",
+      "disable": "Disable",
+      "enable": "Enable",
+      "delete": "Delete",
+      "temporaryTitle": "New temporary password for {{username}}",
+      "temporaryDescription": "All sessions were signed out. The user must change this password at next sign-in."
+    },
+    "confirm": {
+      "disable": {
+        "title": "Disable this account?",
+        "description": "{{username}} is signed out everywhere and cannot sign in until enabled again.",
+        "confirm": "Disable"
+      },
+      "revoke": {
+        "title": "Revoke all sessions?",
+        "description": "Every client and console session of {{username}} ends; they must sign in again.",
+        "confirm": "Revoke sessions"
+      },
+      "reset2fa": {
+        "title": "Reset two-factor authentication?",
+        "description": "The authenticator and recovery codes of {{username}} stop working. They can enrol again.",
+        "confirm": "Reset 2FA"
+      },
+      "resetPassword": {
+        "title": "Reset the password?",
+        "description": "A temporary password replaces the current one of {{username}}, and every session is signed out.",
+        "confirm": "Reset password"
+      },
+      "delete": {
+        "title": "Delete this account?",
+        "description": "{{username}}, their sessions, group memberships and personal address book are deleted. This cannot be undone.",
+        "confirm": "Delete account"
+      }
+    }
+  },
   "roles": {
     "owner": "Owner",
     "admin": "Admin",
