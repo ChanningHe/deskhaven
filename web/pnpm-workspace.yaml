@@ -1,3 +1,9 @@
+# pnpm 12 refuses to install package versions younger than its minimumReleaseAge
+# (a supply-chain guard against freshly published, possibly compromised
+# releases). The versions below were pinned within that window when the console
+# was scaffolded (2026-11, M0-08), so pnpm recorded them as explicit exceptions.
+# Remove each entry once that version is older than minimumReleaseAge (or when
+# the dependency is bumped); `pnpm install --frozen-lockfile` must still pass.
 minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.105.1'
   - '@tanstack/react-query@5.105.1'
