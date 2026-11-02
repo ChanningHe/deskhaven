@@ -100,6 +100,10 @@ impl PeerMap {
     // touching the peer, only for an id that is not bound yet when the queue is full; the
     // caller then refuses the registration. Upstream awaited the database and ignored the
     // result.
+    // deskhaven (M1-07 review, H1): a refused id also loses the default entry `get_or` made
+    // for it, so no peer without a key stays behind (it answered punch holes as OFFLINE and
+    // had its empty pk signed). Removed under the peer's lock (lock order peer -> map; nothing
+    // waits for a peer while holding the map), and only if the entry is still this peer.
     #[inline]
     pub(crate) async fn update_pk(
         &mut self,
@@ -113,7 +117,13 @@ impl PeerMap {
         log::info!("update_pk {} {:?} {:?} {:?}", id, addr, uuid, pk);
         let mut w = peer.write().await;
         // Queued under the peer's lock: the writer reads the peer after this change.
-        self.persist.enqueue(&id, w.uuid.is_empty())?;
+        if let Err(full) = self.persist.enqueue(&id, w.uuid.is_empty()) {
+            let mut map = self.map.write().await;
+            if w.uuid.is_empty() && map.get(&id).is_some_and(|p| Arc::ptr_eq(p, &peer)) {
+                map.remove(&id);
+            }
+            return Err(full);
+        }
         w.socket_addr = addr;
         w.uuid = uuid;
         w.pk = pk;

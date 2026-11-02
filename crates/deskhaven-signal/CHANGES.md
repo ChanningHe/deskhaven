@@ -591,3 +591,22 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   covered is gone) became `first_frame_within_the_first_frame_timeout_is_served`, new
   `request_after_the_key_exchange_gets_the_idle_timeout`; the silent-connection expectations
   follow the new value.
+- 2026-11-03, M1-07 review (HIGH), signing oracle (`rendezvous_server.rs` `get_pk`, new
+  `signed_id_pk`; `peer.rs` `PeerMap::update_pk`): upstream signed `IdPk{id, pk}` with the
+  hbbs key for whatever pk the peer entry held, and RegisterPk inserted a default entry with an
+  empty pk (`get_or`) before registering it; when the registration then failed (since M1-05: a
+  full write queue, SERVER_ERROR) that entry stayed. `IdPk{id: 30 bytes, pk: ""}` encodes to
+  exactly 32 bytes (`0a 1e` and the id), and both client generations accept a server-signed
+  32-byte message as the key of a KeyExchange offer (`keys[0]`, empty `signed_params`, bit 255
+  clear). So whoever got such a signature (register any id, take a punch hole for it and answer
+  with a PunchHoleSent naming the empty-pk id: the controller's PunchHoleResponse carries the
+  signed IdPk) could forge offers accepted by every logged-in client of this server, for as long
+  as the key lives. Now `signed_id_pk` signs only ed25519-sized pks (32 bytes, as RegisterPk
+  requires; anything else is answered empty, like an unknown id), so a signed IdPk is at least
+  36 bytes; and a registration refused for a full queue removes the default entry again (under
+  the peer's lock, only if the map still holds that entry), so a punch hole for that id finds no
+  such id (ID_NOT_EXIST) instead of an offline one. Tests:
+  `signed_id_pk_is_never_a_32_byte_message` (ids of 0..=64 bytes, pks of 0 / 1 / 31 / 33 bytes),
+  `full_queue_accepts_bound_peers_and_refuses_only_new_ids` (no entry left; was "untouched
+  entry"), `full_write_queue_answers_server_error_over_udp_and_tcp` (punch hole: ID_NOT_EXIST;
+  PunchHoleSent naming the refused id: empty pk).

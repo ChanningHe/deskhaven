@@ -411,8 +411,11 @@ async fn full_queue_accepts_bound_peers_and_refuses_only_new_ids() {
     let bound_in_flight = accept(&mut pm, "peer-a", UUID, PK2).await;
 
     assert!(new_id.is_err(), "new id refused");
-    let d = pm.get("peer-d").await.expect("entry created by get_or");
-    assert!(d.read().await.uuid.is_empty(), "untouched");
+    // M1-07 review (H1): the default entry `get_or` created is dropped, no empty-pk peer stays.
+    assert!(
+        pm.get("peer-d").await.is_none(),
+        "refused new id leaves no entry"
+    );
     assert!(
         bound_queued.is_ok() && bound_in_flight.is_ok(),
         "bound peers accepted"

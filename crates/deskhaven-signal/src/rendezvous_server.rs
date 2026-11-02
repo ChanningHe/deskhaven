@@ -1635,17 +1635,7 @@ impl RendezvousServer {
             match self.pm.get(&id).await {
                 Some(peer) => {
                     let pk = peer.read().await.pk.clone();
-                    sign::sign(
-                        &hbb_common::rendezvous_proto::IdPk {
-                            id,
-                            pk,
-                            ..Default::default()
-                        }
-                        .write_to_bytes()
-                        .unwrap_or_default(),
-                        &self.inner.sk,
-                    )
-                    .into()
+                    signed_id_pk(id, pk, &self.inner.sk)
                 }
                 _ => Bytes::new(),
             }
@@ -1769,6 +1759,26 @@ async fn test_hbbs(addr: SocketAddr) -> ResultType<()> {
           }
         }
     }
+}
+
+// deskhaven (M1-07 review, H1): `IdPk{id, pk}` signed with the hbbs key, split out of
+// `get_pk`; empty (what upstream answers for an unknown id) unless `pk` is a real,
+// ed25519-sized key. Upstream signed whatever the peer held, including the empty pk of an entry
+// `get_or` created for a registration that then failed: `IdPk{id: 30 bytes, pk: ""}` encodes to
+// exactly 32 bytes, so a PunchHoleSent naming such an id got the server's signature over a
+// 32-byte message, which every client accepts as the signed key of a KeyExchange offer
+// (`keys[0]`, without signed_params and bit 255 clear): a forgeable offer for all logged-in
+// clients of this server. With a 32-byte pk an IdPk is at least 36 bytes.
+fn signed_id_pk(id: String, pk: Bytes, sk: &sign::SecretKey) -> Bytes {
+    if pk.len() != REGISTER_PK_LEN {
+        return Bytes::new();
+    }
+    let id_pk = hbb_common::rendezvous_proto::IdPk {
+        id,
+        pk,
+        ..Default::default()
+    };
+    sign::sign(&id_pk.write_to_bytes().unwrap_or_default(), sk).into()
 }
 
 // deskhaven (M1-08): refusal texts of RelayResponse. Clients show `refuse_reason` as the error
@@ -2330,5 +2340,27 @@ mod tests {
 
         map.remove("2.2.2.2"); // pruning frees a slot
         assert!(check_ip_block(&mut map, "3.3.3.3", "id3", CAP));
+    }
+
+    // deskhaven (M1-07 review, H1): `IdPk{id, pk: ""}` encodes to 32 bytes for a 30-byte id,
+    // which clients would accept as a signed KeyExchange key. Only real (ed25519-sized) pks
+    // are signed, and a signed IdPk is then never 32 bytes, whatever the id length.
+    #[test]
+    fn signed_id_pk_is_never_a_32_byte_message() {
+        let (server_pk, server_sk) = sign::gen_keypair();
+        for id_len in 0..=64 {
+            let id = "i".repeat(id_len);
+            for pk_len in [0, 1, REGISTER_PK_LEN - 1, REGISTER_PK_LEN + 1] {
+                let pk = Bytes::from(vec![7; pk_len]);
+                assert!(
+                    signed_id_pk(id.clone(), pk, &server_sk).is_empty(),
+                    "id {id_len}, pk {pk_len}"
+                );
+            }
+            let pk = Bytes::from(vec![7; REGISTER_PK_LEN]);
+            let signed = signed_id_pk(id.clone(), pk, &server_sk);
+            let msg = sign::verify(&signed, &server_pk).unwrap();
+            assert_ne!(msg.len(), sign::PUBLICKEYBYTES, "id {id_len}");
+        }
     }
 }

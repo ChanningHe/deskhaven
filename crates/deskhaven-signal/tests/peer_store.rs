@@ -13,7 +13,10 @@ use deskhaven_signal::{
     MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, SignalConfig, SignalError, run,
 };
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{OK, SERVER_ERROR, UUID_MISMATCH},
+    rendezvous_proto::{
+        punch_hole_response::Failure::ID_NOT_EXIST,
+        register_pk_response::Result::{OK, SERVER_ERROR, UUID_MISMATCH},
+    },
     tokio::{
         self,
         time::{Duration, Instant, sleep, timeout},
@@ -29,7 +32,7 @@ use std::{
 };
 use support::{
     Conn, PeerKeys, Rendezvous, STEP, TestServer, allow_all, config, decode_addr, expect_msg,
-    free_base_port, online_bits, ports_free,
+    free_base_port, online_bits, ports_free, punch_hole_sent, rv,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -431,7 +434,8 @@ async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
         .await
         .register_pk("queued-over-tcp", &PeerKeys::random())
         .await;
-    let bound = server.udp().await.register_pk("queued-0", &first).await;
+    let mut target = server.udp().await;
+    let bound = target.register_pk("queued-0", &first).await;
 
     // Assert
     let refused_at = refused_at.expect("the write queue never filled up");
@@ -444,6 +448,28 @@ async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
         .online_request(&["queued-over-tcp"])
         .await;
     assert_eq!(online_bits(&online.states, 1), [false], "not registered");
+    // M1-07 review (H1): the refused id left no entry behind (a punch hole finds no such id,
+    // not an offline one), and a PunchHoleSent naming it gets no signed `IdPk{id, pk: ""}`
+    // (which encodes to 32 bytes for a 30-byte id: a forgeable KeyExchange key).
+    let mut controller = server.tcp().await;
+    controller
+        .punch_hole_request(server.punch_req("queued-over-tcp"))
+        .await;
+    let res = expect_msg!(controller.recv().await, PunchHoleResponse);
+    assert_eq!(res.failure.enum_value(), Ok(ID_NOT_EXIST), "no entry left");
+    let mut controller = server.tcp().await;
+    controller
+        .punch_hole_request(server.punch_req("queued-0"))
+        .await;
+    let ph = expect_msg!(target.recv().await, PunchHole);
+    let sent = punch_hole_sent(&ph.socket_addr, "queued-over-tcp", "");
+    server
+        .tcp()
+        .await
+        .send(&rv(|m| m.set_punch_hole_sent(sent)))
+        .await;
+    let res = expect_msg!(controller.recv().await, PunchHoleResponse);
+    assert!(res.pk.is_empty(), "signed {} bytes", res.pk.len());
     store.stall_upserts.store(false, Ordering::SeqCst);
     server.stop().await;
 }
