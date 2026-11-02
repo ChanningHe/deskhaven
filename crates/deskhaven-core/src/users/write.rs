@@ -18,6 +18,7 @@ use super::{
 };
 use crate::addressbooks;
 use crate::sessions::revoke_user_sessions;
+use crate::strategies;
 
 impl UserService {
     /// Creates an account. Local accounts need a password that passes the policy.
@@ -209,6 +210,7 @@ impl UserService {
             let current = lock_user(&tx, id).await?;
             ensure_not_last_owner(&current, &owners)?;
             addressbooks::forget_user(&tx, id).await?;
+            strategies::forget_user(&tx, id).await?;
             user::Entity::delete_by_id(id).exec(&tx).await?;
             tx.commit().await?;
             inner.committed(UserChange::Event(UserEvent::Deleted { user_id: id }));

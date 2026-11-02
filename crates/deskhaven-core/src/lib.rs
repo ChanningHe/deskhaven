@@ -13,6 +13,7 @@ pub mod pagination;
 pub mod sessions;
 pub mod settings;
 pub mod state;
+pub mod strategies;
 mod text;
 pub mod tfa;
 pub mod users;

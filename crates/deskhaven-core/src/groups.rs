@@ -4,6 +4,8 @@
 //! here but every mutation (rename, delete, membership) is refused with
 //! [`GroupError::ManagedByConfig`]. Membership changes are idempotent.
 
+use std::sync::{Arc, PoisonError, RwLock};
+
 use deskhaven_db::entity::{group, group_member, user};
 use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, is_foreign_key_violation, time};
@@ -16,6 +18,7 @@ use sea_orm::{
 pub use deskhaven_db::entity::managed_by::ManagedBy;
 
 use crate::addressbooks;
+use crate::strategies;
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::User;
 
@@ -99,15 +102,48 @@ impl From<DbErr> for GroupError {
     }
 }
 
-/// Manages groups and membership. Cheap to clone.
+/// A committed change that cached views of group membership must drop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GroupChange {
+    /// The group, its memberships and its strategy assignment are gone.
+    Deleted { group_id: i64 },
+    /// `add_member` / `remove_member` committed (also when nothing changed).
+    MembershipChanged { group_id: i64, user_id: i64 },
+}
+
+/// Called synchronously after each committed [`GroupChange`], before the writing call
+/// returns. Must be fast and must not block or panic.
+pub type GroupCommitHook = Arc<dyn Fn(&GroupChange) + Send + Sync>;
+
+/// Manages groups and membership. Cheap to clone (clones share the hooks).
 #[derive(Clone)]
 pub struct GroupService {
     db: DatabaseConnection,
+    hooks: Arc<RwLock<Vec<GroupCommitHook>>>,
 }
 
 impl GroupService {
     pub fn new(db: DatabaseConnection) -> Self {
-        Self { db }
+        Self {
+            db,
+            hooks: Arc::default(),
+        }
+    }
+
+    /// Calls `hook` after every later committed [`GroupChange`].
+    pub fn register_commit_hook(&self, hook: GroupCommitHook) {
+        self.hooks
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(hook);
+    }
+
+    fn committed(&self, change: GroupChange) {
+        let hooks = self.hooks.read().unwrap_or_else(PoisonError::into_inner);
+        for hook in hooks.iter() {
+            hook(&change);
+        }
     }
 
     pub async fn create(&self, new: NewGroup) -> Result<Group, GroupError> {
@@ -157,14 +193,16 @@ impl GroupService {
         Ok(updated.into())
     }
 
-    /// Deletes the group, its memberships (cascade) and the address book shares naming it
-    /// (same transaction: shares have no foreign key to their subject).
+    /// Deletes the group, its memberships (cascade), the address book shares naming it and
+    /// its strategy assignment (same transaction: neither has a foreign key to the group).
     pub async fn delete(&self, id: i64) -> Result<(), GroupError> {
         let tx = begin_write(&self.db).await?;
         let current = writable_group(&tx, id).await?;
         addressbooks::forget_group(&tx, id).await?;
+        strategies::forget_group(&tx, id).await?;
         current.delete(&tx).await?;
         tx.commit().await?;
+        self.committed(GroupChange::Deleted { group_id: id });
         Ok(())
     }
 
@@ -187,6 +225,7 @@ impl GroupService {
             .await
             .map_err(missing_reference)?;
         tx.commit().await?;
+        self.committed(GroupChange::MembershipChanged { group_id, user_id });
         Ok(())
     }
 
@@ -198,6 +237,7 @@ impl GroupService {
             .exec(&tx)
             .await?;
         tx.commit().await?;
+        self.committed(GroupChange::MembershipChanged { group_id, user_id });
         Ok(())
     }
 
