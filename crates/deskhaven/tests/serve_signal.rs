@@ -359,11 +359,18 @@ impl Tcp {
             .unwrap();
     }
 
+    /// The next message, skipping the server's KeyExchange offer like a client that does not
+    /// secure the connection (main port, M1-07).
     async fn recv(&mut self) -> RendezvousMessage {
-        let frame = tokio::time::timeout(NET_TIMEOUT, self.0.next())
-            .await
-            .unwrap();
-        RendezvousMessage::parse_from_bytes(&frame.unwrap().unwrap()).unwrap()
+        loop {
+            let frame = tokio::time::timeout(NET_TIMEOUT, self.0.next())
+                .await
+                .unwrap();
+            let msg = RendezvousMessage::parse_from_bytes(&frame.unwrap().unwrap()).unwrap();
+            if !msg.has_key_exchange() {
+                return msg;
+            }
+        }
     }
 }
 
