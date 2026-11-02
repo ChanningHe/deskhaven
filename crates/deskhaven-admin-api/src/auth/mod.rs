@@ -65,7 +65,8 @@ pub(crate) fn routes() -> Result<AdminRoutes, RouteError> {
 }
 
 /// The answer of a sign-in step.
-#[derive(Debug, Serialize, ToSchema)]
+// Not `Debug`: it may carry a challenge secret.
+#[derive(Serialize, ToSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LoginResponse {
     /// Signed in: the session and CSRF cookies are set. When `user.setup_required` is set,

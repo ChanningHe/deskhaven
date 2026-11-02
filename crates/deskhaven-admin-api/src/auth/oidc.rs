@@ -65,7 +65,8 @@ pub struct OidcStartRequest {
 }
 
 /// Where to send the browser.
-#[derive(Debug, Serialize, ToSchema)]
+// Not `Debug`: the URL carries the flow's state.
+#[derive(Serialize, ToSchema)]
 pub struct OidcStart {
     /// The IdP's authorization URL.
     pub url: String,

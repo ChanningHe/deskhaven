@@ -36,7 +36,8 @@ use crate::{AdminApiError, ErrorCode, ValidJson};
 const MAX_CODE_INPUT: usize = 16;
 
 /// A pending enrolment, shown once.
-#[derive(Debug, Serialize, ToSchema)]
+// Not `Debug`: it carries the seed.
+#[derive(Serialize, ToSchema)]
 pub struct TotpEnrolment {
     /// The seed in base32, for manual entry.
     pub secret: String,
@@ -55,7 +56,8 @@ pub struct TotpConfirm {
 }
 
 /// TOTP is enabled: the recovery codes (shown once) and the user.
-#[derive(Debug, Serialize, ToSchema)]
+// Not `Debug`: it carries the recovery codes.
+#[derive(Serialize, ToSchema)]
 pub struct TotpEnabled {
     pub recovery_codes: Vec<String>,
     pub user: Me,
