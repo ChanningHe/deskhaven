@@ -19,6 +19,9 @@ pub struct Model {
     /// Backoff level of the latest lock: it lasted `duration × 2^lock_level` (capped).
     pub lock_level: i32,
     pub updated_at: TimestampMs,
+    /// Source rows only: last successful login of this username from this source. Within
+    /// the known-source retention it lets the source bypass the global row.
+    pub last_success_at: Option<TimestampMs>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -21,6 +21,7 @@ fn row(key: &str, failures: i32, lock_level: i32) -> auth_lockout::ActiveModel {
         locked_until: Set(Some(t0)),
         lock_level: Set(lock_level),
         updated_at: Set(t0),
+        last_success_at: Set(Some(t0)),
     }
 }
 
@@ -49,6 +50,21 @@ async fn entity_round_trips() {
             .unwrap();
 
         assert_eq!(found, Some(inserted), "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn last_success_at_is_nullable() {
+    each_migrated_backend(async |db: &TestDb| {
+        let row = auth_lockout::ActiveModel {
+            last_success_at: Set(None),
+            ..row("user:bob|192.0.2.1", 0, 0)
+        };
+
+        let inserted = row.insert(&db.conn).await.unwrap();
+
+        assert_eq!(inserted.last_success_at, None, "{}", db.backend);
     })
     .await;
 }

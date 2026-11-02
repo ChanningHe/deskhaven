@@ -4,7 +4,8 @@
 //! to `users`: unknown usernames are counted exactly like existing ones, so the table never
 //! tells whether an account exists. Rows are written in short read-modify-write
 //! transactions by `deskhaven_core::auth::limiter`; `updated_at` is indexed for the
-//! periodic cleanup of rows that no longer affect any decision.
+//! periodic cleanup of rows that no longer affect any decision. `last_success_at` marks a
+//! source row as a known-good source of its username (it bypasses the global row).
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_integer_null, integer, text};
@@ -23,6 +24,7 @@ enum AuthLockouts {
     LockedUntil,
     LockLevel,
     UpdatedAt,
+    LastSuccessAt,
 }
 
 fn auth_lockouts_table() -> TableCreateStatement {
@@ -34,6 +36,7 @@ fn auth_lockouts_table() -> TableCreateStatement {
         .col(big_integer_null(AuthLockouts::LockedUntil))
         .col(integer(AuthLockouts::LockLevel))
         .col(big_integer(AuthLockouts::UpdatedAt))
+        .col(big_integer_null(AuthLockouts::LastSuccessAt))
         .check(Check::named(
             "ck_auth_lockouts_failures",
             Expr::col(AuthLockouts::Failures).gte(0),
