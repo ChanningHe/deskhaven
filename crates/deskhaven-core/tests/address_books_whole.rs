@@ -91,7 +91,9 @@ async fn replacing_stores_peers_and_tags_and_contents_reads_them_back() {
         let rows = address_book_peer::Entity::find().all(&db.conn).await.unwrap();
         assert!(rows.iter().all(|r| r.password_enc.is_none()));
         let sealed = rows.iter().find_map(|r| r.hash_enc.clone()).unwrap();
-        assert!(sealed.starts_with("v1:") && !sealed.contains("h2"), "{sealed}");
+        // No substring check against the 2-byte plaintext: random base64 contains it ~1% of
+        // the time. The `v1:` sealed format is what shows it is not stored in clear.
+        assert!(sealed.starts_with("v1:"), "{sealed}");
         let after = env.books.personal(alice).await.unwrap();
         assert!(after.updated_at.0 >= book.updated_at.0);
     })

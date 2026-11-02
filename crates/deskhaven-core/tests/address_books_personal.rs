@@ -128,10 +128,9 @@ async fn personal_books_keep_the_hash_and_never_a_password() {
             .unwrap()
             .unwrap();
         let sealed = row.hash_enc.clone().unwrap();
-        assert!(
-            sealed.starts_with("v1:") && !sealed.contains("h1"),
-            "{sealed}"
-        );
+        // A substring check against a 2-byte plaintext would hit random base64 ~1% of the
+        // time; opening it under the row's context below is what proves it is sealed.
+        assert!(sealed.starts_with("v1:"), "{sealed}");
         let context = format!("address_book_peers.hash_enc:{}:1", book.id);
         assert_eq!(
             env.crypto.open(&context, &sealed).unwrap().as_slice(),
