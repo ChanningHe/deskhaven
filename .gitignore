@@ -1,0 +1,18 @@
+# Local design docs and task tracking (not versioned)
+/dev/
+
+# Rust
+/target/
+
+# Web
+/web/node_modules/
+/web/dist/
+
+# Nix
+/result
+/.direnv/
+
+# Local data
+/data/
+*.sqlite3
+.env

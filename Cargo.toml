@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/deskhaven"]
+
+[workspace.package]
+version = "0.1.0-dev"
+edition = "2024"
+rust-version = "1.94"
+license = "AGPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+deskhaven-config = { path = "crates/deskhaven-config" }
+deskhaven-db = { path = "crates/deskhaven-db" }
+deskhaven-core = { path = "crates/deskhaven-core" }
+deskhaven-client-api = { path = "crates/deskhaven-client-api" }
+deskhaven-admin-api = { path = "crates/deskhaven-admin-api" }
+deskhaven-web = { path = "crates/deskhaven-web" }
+deskhaven-signal = { path = "crates/deskhaven-signal" }
+deskhaven-contract = { path = "crates/deskhaven-contract" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
