@@ -2,8 +2,7 @@
 name = "deskhaven-signal"
 version.workspace = true
 # Vendored upstream hbbs is edition 2021. Edition 2024 changes the drop scope of temporaries
-# in `if let` scrutinees and tail expressions (lock guards here), and makes `std::env::set_var`
-# unsafe while the workspace denies unsafe_code (`set_arg` uses it until M1-03). Migrate later.
+# in `if let` scrutinees and tail expressions (lock guards here); see CHANGES.md (M1-03).
 edition = "2021"
 rust-version.workspace = true
 license.workspace = true
@@ -11,7 +10,6 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
-chrono.workspace = true
 hbb_common.workspace = true
 ipnetwork.workspace = true
 lazy_static.workspace = true
@@ -21,8 +19,9 @@ serde.workspace = true
 serde_derive.workspace = true
 serde_json.workspace = true
 sodiumoxide.workspace = true
-tempfile.workspace = true
+thiserror.workspace = true
 tokio-tungstenite.workspace = true
+tokio-util.workspace = true
 tungstenite.workspace = true
 uuid.workspace = true
 

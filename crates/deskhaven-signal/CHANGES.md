@@ -83,3 +83,75 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `headers`, `jsonwebtoken`, `bcrypt`, `minreq`, `machine-uid`, `mac_address`, `whoami`, `flate2`,
   `regex`, `clap`, `rust-ini`, `flexi_logger`, `reqwest`, `async-speed-limit`, `dns-lookup`,
   `ping` (unused by the vendored hbbs files, or used only by removed code).
+- 2026-11-02, M1-03, library embedding: new deskhaven modules `src/server.rs` and `src/tasks.rs`
+  (not vendored, full workspace lints) provide the public API: `SignalConfig` (+ `new`,
+  `licence_key`), `SignalServer::{new, handle, run}`, `run(cfg, shutdown)`,
+  `SignalHandle::{set_relay_servers, set_always_use_relay}`, `SignalError`,
+  `DEFAULT_PUNCH_REQ_MAX`. `lib.rs` no longer re-exports `rendezvous_server::*`;
+  `RendezvousServer` is crate-private.
+- 2026-11-02, M1-03, `rendezvous_server.rs`: `start` / `start_with_bind` (with
+  `#[tokio::main(flavor = "multi_thread")]`) replaced by crate-private `RendezvousServer::new` +
+  `serve`, which run on the caller's runtime. Configuration comes only from `SignalConfig`
+  (`bind`, `port`, `rmem`, `mask`, `local_ip`, `relay_servers`, `always_use_relay`,
+  `punch_req_max`, `secret_key`); removed the env reads of `rendezvous-servers`,
+  `software-url`, `mask`, `local-ip`, `relay-servers`, `TEST_HBBS`, `ALWAYS_USE_RELAY`,
+  `MAX_PUNCH_REQUESTS`, and `set_var("PORT_FOR_API")`. Deprecated upstream options dropped:
+  `-s` serial (starts at 0), `-R` rendezvous-servers (start empty; the loopback
+  `ConfigureUpdate` path that can change both is unchanged), `-u` software-url (with
+  `Inner.version` / `Inner.software_url` and the `SoftwareUpdate` arm, which only answered
+  when `-u` was set).
+- 2026-11-02, M1-03, shutdown: own SIGTERM/INT/QUIT handling (`common::listen_signal`) removed;
+  `SignalServer::run` returns `Ok` when its `CancellationToken` is cancelled. Every task the
+  server spawns (per connection, relay health check, `send_to_tcp`) goes through `Tasks`
+  (tokio-util `TaskTracker` + child token) instead of `tokio::spawn`, and `run` waits for
+  them, so nothing outlives `run`. `check_relay_servers` probes are joined futures instead of
+  detached `tokio::spawn` tasks (still concurrent). The `rx` branch of `io_loop` moved
+  verbatim into `handle_data` (testable).
+- 2026-11-02, M1-03, `std::process::exit(1)` removed: the `test_hbbs` UDP self-test now always
+  runs against the main listener (`TEST_HBBS=no` / `TEST_HBBS=<addr>` gone) inside `serve`
+  (`run_self_test`, same IPv6-unspecified -> IPv4 retry), and a failure ends `run` with
+  `SignalError::SelfTest`. Bind failures at startup or when a listener is re-created after an
+  accept/recv error return `SignalError::Bind { proto, port }` (`bind_udp` / `bind_tcp`
+  wrappers). The main port must be 3..=65533 (`SignalError::InvalidPort`): TCP port-1 is the
+  NAT test port, TCP port+2 the websocket port (upstream `main.rs` rejected ports below 3).
+- 2026-11-02, M1-03, loopback console removed (unauthenticated): `check_cmd` (commands `h`, `rs`,
+  `ib`, `ic`, `pr`, `aur`, `tg`), the loopback diversion in `handle_listener2` (loopback
+  connections to the NAT port now get the normal TestNat / OnlineRequest handling), the
+  dedicated console listener (`common::{console_addr, listen_console, accept_or_pending}`,
+  `LoopFailure::ConsoleListener`) and `peer::IP_CHANGE_DUR_X2`. `rs` / `aur` are replaced by
+  `SignalHandle::set_relay_servers` (sends `Data::RelayServers0`, now a `Vec<String>` instead
+  of a comma-separated string, through the same `io_loop` path) and
+  `SignalHandle::set_always_use_relay`; the upstream `aur` bug (it also sent "Y"/"N" as the
+  new relay list) is not reproduced. `ib` / `ic` / `pr` / `tg` have no replacement, so the
+  punch-request log is write-only for now (`PunchReqEntry.to_ip` gets `#[allow(dead_code)]`).
+- 2026-11-02, M1-03: the `ALWAYS_USE_RELAY` static became the per-instance
+  `RendezvousServer.always_use_relay: Arc<AtomicBool>`, shared with `SignalHandle` (same
+  `SeqCst` loads/stores, immediately visible to all connections like the static). The
+  `PUNCH_REQ_MAX` static (env `MAX_PUNCH_REQUESTS`, default 100000) is gone: `record_punch_req`
+  takes the bound from `SignalConfig::punch_req_max` (default `DEFAULT_PUNCH_REQ_MAX` =
+  100000; 0 disables). Upstream test `punch_reqs_bounded` adapted to pass the bound (and also
+  checks 0).
+- 2026-11-02, M1-03, key: `get_server_sk` removed (it accepted `-k` as a base64 secret key, an
+  arbitrary string, or `-` / `_` / empty = `common::gen_sk` reading or creating `id_ed25519` /
+  `id_ed25519.pub` in the working directory). The key is injected as
+  `SignalConfig::secret_key`; the licence key clients must present is always its base64
+  public key (`SignalConfig::licence_key`, = upstream default `-k -`). Not supported any
+  more: an arbitrary licence string without a signing key, and an empty key (no licence
+  check). `Inner.sk` is no longer optional, so `get_pk` lost its `unwrap`. `common.rs`:
+  `gen_sk` and its key-file helpers (`resolve_key_path`, `create_private_key_file`,
+  `set_private_key_permissions`, `missing_public_key_path`, `publish_public_key`,
+  `write_public_key`) and their tests removed, with the test module's
+  `#[allow(unsafe_code)]`; the key file belongs to deskhaven's key material (M0-06).
+- 2026-11-02, M1-03, `common.rs`: environment-argument helpers removed (`arg_name`, `set_arg`,
+  `get_arg_opt`, `get_arg`, `get_arg_or`) with the upstream test
+  `argument_names_ignore_case_and_separator` (replaced by
+  `servers_drop_empty_and_invalid_entries`); console tests removed. `get_servers` takes
+  `&[String]` instead of a comma-separated string (same filtering of empty / unresolvable
+  entries, same log line).
+- 2026-11-02, M1-03, remaining process-wide statics (one server per process assumed):
+  `ROTATION_RELAY_SERVER` (round-robin cursor), `PUNCH_REQS` (punch-request log),
+  `peer::{IP_BLOCKER, IP_CHANGES, USER_STATUS}` (`USER_STATUS` is unused upstream).
+- 2026-11-02, M1-03, dependencies: added `thiserror` and `tokio-util` (`CancellationToken`,
+  `TaskTracker`); dropped `chrono` (only used by the console `pr` command) and `tempfile`
+  (only used by the key-file code). flexi_logger and `check_software_update` were already
+  gone since M1-02; none remain.

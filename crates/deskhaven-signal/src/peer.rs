@@ -21,7 +21,7 @@ lazy_static::lazy_static! {
     pub(crate) static ref IP_CHANGES: Mutex<IpChangesMap> = Default::default();
 }
 pub const IP_CHANGE_DUR: u64 = 180;
-pub const IP_CHANGE_DUR_X2: u64 = IP_CHANGE_DUR * 2;
+// deskhaven: IP_CHANGE_DUR_X2 removed (only used by the removed console command `ic`).
 pub const DAY_SECONDS: u64 = 3600 * 24;
 pub const IP_BLOCK_DUR: u64 = 60;
 // Same bound as the Pro server: a longer id is not a normal RustDesk id or hostname,

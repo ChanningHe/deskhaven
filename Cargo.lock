@@ -1122,7 +1122,6 @@ name = "deskhaven-signal"
 version = "0.1.0-dev"
 dependencies = [
  "base64 0.13.1",
- "chrono",
  "hbb_common",
  "ipnetwork",
  "lazy_static",
@@ -1132,8 +1131,9 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sodiumoxide",
- "tempfile",
+ "thiserror 2.0.21",
  "tokio-tungstenite",
+ "tokio-util",
  "tungstenite",
  "uuid",
 ]

@@ -50,8 +50,8 @@ hbb_common = { git = "https://github.com/rustdesk/hbb_common", rev = "fae47e024d
 # Same fork and rev as hbb_common's, so Cargo unifies both into a single copy.
 tokio-tungstenite = { git = "https://github.com/rustdesk-org/tokio-tungstenite", rev = "c241b11b03de4881faf1ecd2fe6e867c92f3013b", version = "0.29" }
 tungstenite = "0.29"
-# Upstream hbbs version, kept for identical key parsing (0.13 `decode` tolerates missing
-# padding, 0.22 STANDARD rejects it). Do not use in new code.
+# Upstream hbbs version. Since M1-03 only `encode` (licence key from the public key) remains;
+# key-file parsing moved out of the crate (M0-06). Do not use in new code.
 base64 = "0.13"
 ipnetwork = "0.20"
 lazy_static = "1.5"
@@ -72,6 +72,11 @@ sha2 = "0.10"
 base64_022 = { package = "base64", version = "0.22" }
 # Safe O_NOFOLLOW open and geteuid for key-file hardening (already in the tree via tempfile).
 rustix = { version = "1.1", features = ["fs", "process"] }
+
+# --- signal lib (M1-03) ---
+# (thiserror: reused from the db block.)
+# CancellationToken (public `run` API) and TaskTracker (`rt`); same 0.7 line hbb_common uses.
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
