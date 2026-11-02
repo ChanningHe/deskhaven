@@ -87,6 +87,30 @@ pub async fn start(
         tracing::info!(listener = "admin", addr = %admin, "listening");
     }
 
+    let Prepared {
+        lock,
+        pins,
+        crypto,
+        signal_public_key,
+    } = prepared;
+    let state = Arc::new(open_state(config, pins, crypto, signal_public_key).await?);
+    Ok(Started {
+        state,
+        listeners,
+        http,
+        lock,
+    })
+}
+
+/// Database, migrations, settings: the [`AppState`] the routers serve.
+/// Also the entry point of in-process harnesses (deskhaven-contract), which
+/// build the state without listeners, umask or instance lock.
+pub async fn open_state(
+    config: &Bootstrap,
+    pins: PinSet,
+    crypto: Arc<SecretBox>,
+    signal_public_key: String,
+) -> anyhow::Result<AppState> {
     let url = database::url(config)?;
     let backend = database::backend(&url);
     let db = database::connect(&database::options(config, url)).await?;
@@ -94,23 +118,16 @@ pub async fn start(
     deskhaven_db::migrate(&db).await?;
     tracing::info!("database migrations applied");
 
-    let (settings, warnings) =
-        SettingsService::load(db.clone(), Arc::clone(&prepared.crypto), prepared.pins).await?;
+    let (settings, warnings) = SettingsService::load(db.clone(), Arc::clone(&crypto), pins).await?;
     for warning in &warnings {
         tracing::warn!("{warning}");
     }
 
-    let state = Arc::new(AppState {
+    Ok(AppState {
         db,
         settings,
-        crypto: prepared.crypto,
-        signal_public_key: prepared.signal_public_key,
-    });
-    Ok(Started {
-        state,
-        listeners,
-        http,
-        lock: prepared.lock,
+        crypto,
+        signal_public_key,
     })
 }
 
