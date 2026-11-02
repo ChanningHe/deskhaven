@@ -44,15 +44,15 @@ const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// The target registers from another loopback address than the controller connects from:
 /// the same source IP would make the server answer FetchLocalAddr instead of PunchHole
 /// (Linux routes all of 127.0.0.0/8 to `lo`).
-const TARGET_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
+pub(super) const TARGET_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
 pub(super) const STEP: Duration = Duration::from_secs(5);
 pub(super) const POLL: Duration = Duration::from_millis(20);
 const START_ATTEMPTS: usize = 10;
 /// TEST-NET-1 (RFC 5737): resolve without DNS, never pass a health probe.
 const RELAY_1: &str = "192.0.2.1:21117";
 const RELAY_2: &str = "192.0.2.2:21117";
-const TARGET: &str = "123456789";
-const FAST: Backoff = Backoff {
+pub(super) const TARGET: &str = "123456789";
+pub(super) const FAST: Backoff = Backoff {
     initial: Duration::from_millis(50),
     max: Duration::from_millis(200),
 };
@@ -399,7 +399,8 @@ async fn long_running_server_failure_restarts_after_the_initial_delay() {
     let backoff = REAL_PATH;
     let store = Arc::new(FlakyStore::failing(0));
     let token = CancellationToken::new();
-    let (running, _, _) = start_launcher_with(defaults(), store.clone(), backoff, &token).await;
+    let (running, _, _) =
+        start_launcher_with(defaults(), store.clone(), allow_all(), backoff, &token).await;
     let first = fail_and_measure_restart(&running, &store).await;
     let second = fail_and_measure_restart(&running, &store).await;
 
@@ -425,7 +426,8 @@ async fn quickly_failing_server_backs_off_further() {
     let backoff = REAL_PATH;
     let store = Arc::new(FlakyStore::failing(0));
     let token = CancellationToken::new();
-    let (running, _, _) = start_launcher_with(defaults(), store.clone(), backoff, &token).await;
+    let (running, _, _) =
+        start_launcher_with(defaults(), store.clone(), allow_all(), backoff, &token).await;
 
     // Act
     let mut gaps = Vec::new();
@@ -599,12 +601,14 @@ pub(super) async fn start_launcher(
     store: Arc<dyn PeerStore>,
     token: &CancellationToken,
 ) -> (RunningSignal, u16, String) {
-    start_launcher_with(settings, store, FAST, token).await
+    start_launcher_with(settings, store, allow_all(), FAST, token).await
 }
 
-async fn start_launcher_with(
+/// [`start_launcher`] with the given control plane and backoff.
+pub(super) async fn start_launcher_with(
     settings: watch::Receiver<Arc<Snapshot>>,
     store: Arc<dyn PeerStore>,
+    control: Arc<dyn ControlPlane>,
     backoff: Backoff,
     token: &CancellationToken,
 ) -> (RunningSignal, u16, String) {
@@ -612,7 +616,12 @@ async fn start_launcher_with(
         let port = free_base_port();
         let cfg = local_config(port);
         let key = cfg.licence_key();
-        let launcher = Launcher::new(cfg, Arc::clone(&store), allow_all(), settings.clone());
+        let launcher = Launcher::new(
+            cfg,
+            Arc::clone(&store),
+            Arc::clone(&control),
+            settings.clone(),
+        );
         match timeout(STEP, super::start(launcher, backoff, token))
             .await
             .unwrap()
@@ -625,7 +634,7 @@ async fn start_launcher_with(
     panic!("could not start the signal server");
 }
 
-async fn wait_until(cond: impl Fn() -> bool) {
+pub(super) async fn wait_until(cond: impl Fn() -> bool) {
     let deadline = Instant::now() + STEP;
     while !cond() {
         assert!(Instant::now() < deadline, "condition never held");
@@ -640,10 +649,10 @@ fn rv(set: impl FnOnce(&mut RendezvousMessage)) -> RendezvousMessage {
 }
 
 /// A controlled peer: registered over UDP, receives the forwarded PunchHoles.
-struct Target(UdpSocket);
+pub(super) struct Target(UdpSocket);
 
 impl Target {
-    async fn register(port: u16) -> Self {
+    pub(super) async fn register(port: u16) -> Self {
         let socket = UdpSocket::bind((TARGET_IP, 0)).await.unwrap();
         socket.connect((LOCALHOST, port)).await.unwrap();
         let mut target = Self(socket);

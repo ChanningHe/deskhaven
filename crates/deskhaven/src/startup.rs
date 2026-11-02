@@ -18,11 +18,10 @@ use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::users::PasswordHasher;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
-use deskhaven_signal::AllowAll;
 use tokio_util::sync::CancellationToken;
 
 use crate::instance_lock::{self, InstanceLock};
-use crate::signal_server::{self, Backoff, Launcher, RunningSignal};
+use crate::signal_server::{self, Backoff, CoreControl, Launcher, RunningSignal};
 use crate::signal_store::SignalPeerStore;
 use crate::{data_dir, database, http};
 
@@ -142,7 +141,7 @@ async fn start_signal(
         Arc::new(SignalPeerStore::new(DeviceRepository::new(
             state.db.clone(),
         ))),
-        Arc::new(AllowAll::new()),
+        Arc::new(CoreControl::new(state.devices.presence().clone())),
         state.settings.subscribe(),
     );
     let running = signal_server::start(launcher, Backoff::DEFAULT, token).await?;
