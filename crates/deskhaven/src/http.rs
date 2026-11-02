@@ -67,9 +67,9 @@ pub fn apps(state: &AppState, shutdown: &CancellationToken) -> Apps {
     }
 }
 
-/// `/api/*` (RustDesk client contract) joins here.
+/// `/api/*` (RustDesk client contract), plus the health routes.
 fn client_api_router(readiness: impl ReadinessCheck) -> Router {
-    health_routes(readiness)
+    health_routes(readiness).merge(deskhaven_client_api::router())
 }
 
 /// `/admin/api/*` joins here. The console serves every other path through

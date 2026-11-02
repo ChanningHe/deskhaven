@@ -1,0 +1,18 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:240-264",
+    "src/hbbs_http/account.rs:149-158"
+  ],
+  "description": "No OIDC provider configured: 200 with an empty JSON array of strings. Sent without Authorization (the client sends no headers here) and also used by the Rust client as a TLS probe, so it must always answer 200.",
+  "request": {
+    "method": "GET",
+    "path": "/api/login-options"
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "LoginOptions",
+    "json_subset": []
+  }
+}
