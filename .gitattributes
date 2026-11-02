@@ -1,0 +1,2 @@
+# Vendored upstream sources must stay byte-for-byte identical: no EOL conversion, no whitespace checks.
+crates/deskhaven-signal/upstream-src/** -text -whitespace

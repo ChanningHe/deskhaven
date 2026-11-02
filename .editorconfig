@@ -13,3 +13,12 @@ indent_size = 2
 
 [Makefile]
 indent_style = tab
+
+# Vendored upstream sources: keep bytes verbatim (must come last so it overrides the rules above).
+[crates/deskhaven-signal/upstream-src/**]
+charset = unset
+end_of_line = unset
+indent_style = unset
+indent_size = unset
+trim_trailing_whitespace = false
+insert_final_newline = false
