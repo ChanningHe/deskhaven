@@ -134,7 +134,7 @@ async fn start_signal(
         return Ok(None);
     }
     let launcher = Launcher::new(
-        signal_server::base_config(&config.signal, key)?,
+        signal_server::base_config(&config.signal, &config.security, key)?,
         Arc::new(SignalPeerStore::new(DeviceRepository::new(
             state.db.clone(),
         ))),

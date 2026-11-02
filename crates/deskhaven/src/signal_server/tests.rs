@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use deskhaven_config::bootstrap::Security;
 use deskhaven_config::settings::{self, Change, PinSet, Snapshot};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::DeviceRepository;
@@ -16,7 +17,7 @@ use deskhaven_core::settings::{SettingsService, UpdateRequest};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_signal::{
     AllowAll, ControlPlane, Fault, MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert,
-    SignalConfig, StoreError,
+    SignalConfig, StoreError, WsHeaders,
 };
 use hbb_common::bytes_codec::BytesCodec;
 use hbb_common::futures_util::SinkExt as _;
@@ -58,6 +59,45 @@ const FAST: Backoff = Backoff {
 
 // --- configuration -------------------------------------------------------------------------
 
+/// M1-08 review (HIGH-1): the websocket port honours `X-Forwarded-For` only from
+/// `security.trusted_proxies`, with the HTTP API's rule; with none configured (the default) the
+/// client is always the socket peer.
+#[test]
+fn websocket_proxy_headers_follow_security_trusted_proxies() {
+    // Arrange
+    let pair = SignalKeyPair::generate().unwrap();
+    let security = Security {
+        trusted_proxies: vec!["10.0.0.0/8".parse().unwrap()],
+        ..Default::default()
+    };
+    let mut headers = WsHeaders::new();
+    headers.insert("x-forwarded-for", "203.0.113.5".parse().unwrap());
+    headers.insert("x-real-ip", "198.51.100.7".parse().unwrap());
+    let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+
+    // Act
+    let trusting = base_config(&Default::default(), &security, &pair).unwrap();
+    let default = base_config(&Default::default(), &Default::default(), &pair).unwrap();
+
+    // Assert
+    let resolve = |cfg: &SignalConfig, peer: &str| cfg.ws_client_ip.client_ip(ip(peer), &headers);
+    assert_eq!(
+        resolve(&trusting, "10.1.2.3"),
+        ip("203.0.113.5"),
+        "trusted proxy"
+    );
+    assert_eq!(
+        resolve(&trusting, "11.0.0.1"),
+        ip("11.0.0.1"),
+        "untrusted peer"
+    );
+    assert_eq!(
+        resolve(&default, "10.1.2.3"),
+        ip("10.1.2.3"),
+        "default trusts none"
+    );
+}
+
 #[test]
 fn signal_key_converts_to_the_same_sodiumoxide_key() {
     // Arrange
@@ -66,7 +106,7 @@ fn signal_key_converts_to_the_same_sodiumoxide_key() {
 
     // Act
     let sk = secret_key(&pair).unwrap();
-    let cfg = base_config(&Default::default(), &pair).unwrap();
+    let cfg = base_config(&Default::default(), &Default::default(), &pair).unwrap();
 
     // Assert
     assert_eq!(sk.public_key().0, pair.public_key());

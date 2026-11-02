@@ -50,7 +50,7 @@ pub use {
     flows::*,
     msg::*,
     net::*,
-    server::{TestServer, allow_all, config, memory_store, wait_until_ready},
+    server::{TestServer, TrustXff, allow_all, config, memory_store, trusting, wait_until_ready},
     tcp::TcpClient,
     udp::UdpClient,
     ws::WsClient,

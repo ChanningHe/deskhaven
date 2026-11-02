@@ -77,6 +77,31 @@ pub struct SignalConfig {
     /// key as licence key (upstream default `-k -`). Loading/generating the key file is the
     /// caller's job.
     pub secret_key: sign::SecretKey,
+    /// Who a websocket client is when a reverse proxy sits in front of the websocket port
+    /// (`X-Forwarded-For` and the like): the server never trusts those headers itself. The
+    /// default, [`SocketPeerIp`], ignores them.
+    pub ws_client_ip: Arc<dyn ClientIpResolver>,
+}
+
+/// The handshake headers of a websocket connection.
+pub type WsHeaders = tungstenite::http::HeaderMap;
+
+/// Decides a websocket client's IP from the socket peer and the handshake headers. The IP
+/// feeds per-IP registration limits, the anti id-hijack IP check, LAN detection and relay
+/// choice, so only headers from trusted proxies may change it.
+pub trait ClientIpResolver: std::fmt::Debug + Send + Sync + 'static {
+    /// The client's IP: `peer` itself unless `peer` is a trusted proxy.
+    fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr;
+}
+
+/// Trusts no header: the client is the socket peer.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SocketPeerIp;
+
+impl ClientIpResolver for SocketPeerIp {
+    fn client_ip(&self, peer: IpAddr, _headers: &WsHeaders) -> IpAddr {
+        peer
+    }
 }
 
 impl SignalConfig {
@@ -93,6 +118,7 @@ impl SignalConfig {
             punch_req_max: DEFAULT_PUNCH_REQ_MAX,
             peer_preload_timeout: DEFAULT_PEER_PRELOAD_TIMEOUT,
             secret_key,
+            ws_client_ip: Arc::new(SocketPeerIp),
         }
     }
 

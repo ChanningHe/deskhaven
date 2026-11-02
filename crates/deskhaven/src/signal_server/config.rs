@@ -1,20 +1,43 @@
 //! `SignalConfig` from the bootstrap configuration, the hbbs key pair and the settings.
 
+use std::net::IpAddr;
+use std::sync::Arc;
+
 use anyhow::Context;
-use deskhaven_config::bootstrap::Signal;
+use deskhaven_config::Cidr;
+use deskhaven_config::bootstrap::{Security, Signal};
 use deskhaven_config::settings::{SIGNAL_ALWAYS_USE_RELAY, SIGNAL_RELAY_SERVERS, Snapshot};
 use deskhaven_core::keys::SignalKeyPair;
-use deskhaven_signal::SignalConfig;
+use deskhaven_http::TrustedProxies;
+use deskhaven_signal::{ClientIpResolver, SignalConfig, WsHeaders};
 use sodiumoxide::crypto::sign;
 
 /// The server configuration of `[signal]`, before relay settings: upstream defaults, all
-/// interfaces, the configured port and the hbbs key.
-pub fn base_config(signal: &Signal, key: &SignalKeyPair) -> anyhow::Result<SignalConfig> {
+/// interfaces, the configured port, the hbbs key, and `security.trusted_proxies` for the
+/// websocket port's proxy headers.
+pub fn base_config(
+    signal: &Signal,
+    security: &Security,
+    key: &SignalKeyPair,
+) -> anyhow::Result<SignalConfig> {
+    let trusted = TrustedProxies::new(security.trusted_proxies.iter().map(Cidr::net));
     Ok(SignalConfig {
         bind: None,
         port: signal.port,
+        ws_client_ip: Arc::new(ProxyHeaders(trusted)),
         ..SignalConfig::new(secret_key(key)?)
     })
+}
+
+/// The HTTP API's real-IP rule (`X-Forwarded-For` from `security.trusted_proxies` only) for
+/// the signal server's websocket port.
+#[derive(Debug)]
+struct ProxyHeaders(TrustedProxies);
+
+impl ClientIpResolver for ProxyHeaders {
+    fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr {
+        self.0.resolve(peer, headers).addr
+    }
 }
 
 /// The pair in sodiumoxide's `sign::SecretKey` layout (seed || public key, as upstream's

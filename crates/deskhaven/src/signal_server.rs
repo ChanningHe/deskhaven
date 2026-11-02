@@ -4,7 +4,9 @@
 //!   converted to sodiumoxide's layout, relay settings from the settings snapshot at each
 //!   (re)start. Listeners bind all interfaces (IPv6 dual-stack, else IPv4) like upstream
 //!   without `--bind`: the client API address is no guide, it is often loopback behind a
-//!   reverse proxy, while the signal ports (raw TCP/UDP) must face clients directly.
+//!   reverse proxy, while the signal ports (raw TCP/UDP) must face clients directly. The
+//!   websocket port honours `X-Forwarded-For` only from `security.trusted_proxies`, by the
+//!   HTTP API's rule (`deskhaven_http::TrustedProxies`).
 //! - Registrations persist through [`SignalPeerStore`](crate::signal_store::SignalPeerStore);
 //!   policy is [`AllowAll`](deskhaven_signal::AllowAll) until M5.
 //! - Relay settings follow `signal.relay_servers` / `signal.always_use_relay` at runtime

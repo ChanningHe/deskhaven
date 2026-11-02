@@ -4,7 +4,7 @@ use crate::common::*;
 use crate::control::ControlPlane;
 use crate::log_limit::LogLimit;
 use crate::peer::*;
-use crate::server::{Ports, SignalConfig, SignalError};
+use crate::server::{ClientIpResolver, Ports, SignalConfig, SignalError};
 use crate::store::PeerStore;
 use crate::tasks::Tasks;
 use arc_swap::ArcSwap;
@@ -240,6 +240,8 @@ pub(crate) struct RendezvousServer {
     stream_peers: Arc<Mutex<HashMap<String, StreamPeerTx>>>,
     // deskhaven (M1-08): per-connection addresses of websocket clients behind a proxy.
     ws_addrs: ClaimedAddrs,
+    // deskhaven (M1-08 review): decides whether a websocket client's proxy headers are trusted.
+    ws_client_ip: Arc<dyn ClientIpResolver>,
     pm: PeerMap,
     tx: Sender,
     // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
@@ -400,6 +402,7 @@ impl RendezvousServer {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             stream_peers: Default::default(),
             ws_addrs: Default::default(),
+            ws_client_ip: cfg.ws_client_ip.clone(),
             pm,
             tx,
             relay_servers: Default::default(),
@@ -1401,27 +1404,19 @@ impl RendezvousServer {
         let mut _claim: Option<ClaimedAddr> = None;
         if ws {
             use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+            // deskhaven (M1-08 review): upstream trusted X-Real-IP / X-Forwarded-For from
+            // anyone who reached this port (https://github.com/rustdesk/rustdesk-server/issues/634),
+            // so any client could pick its IP (per-IP limits, the anti id-hijack IP check,
+            // loopback exemptions). The embedder's resolver decides now (deskhaven:
+            // `security.trusted_proxies` with the HTTP API's X-Forwarded-For rule); by default
+            // headers are ignored. A header-derived IP gets port 0, replaced by a claimed port
+            // below.
+            let resolver = self.ws_client_ip.clone();
+            let peer = addr;
             let callback = |req: &Request, response: Response| {
-                let headers = req.headers();
-                // X-Real-IP / X-Forwarded-For are trusted as-is so that the real
-                // client IP is preserved when the WebSocket port runs behind a
-                // reverse proxy (WSS). They are NOT validated: anyone who can reach
-                // this port directly can spoof an arbitrary IP, bypassing IP-based
-                // rate limiting / blocking and corrupting logged IPs. Do not expose
-                // the WebSocket port directly to untrusted networks; only the
-                // reverse proxy, which overwrites these headers, should be able to
-                // connect to it.
-                // https://github.com/rustdesk/rustdesk-server/issues/634
-                let real_ip = headers
-                    .get("X-Real-IP")
-                    .or_else(|| headers.get("X-Forwarded-For"))
-                    .and_then(|header_value| header_value.to_str().ok());
-                if let Some(ip) = real_ip {
-                    if ip.contains('.') {
-                        addr = format!("{ip}:0").parse().unwrap_or(addr);
-                    } else {
-                        addr = format!("[{ip}]:0").parse().unwrap_or(addr);
-                    }
+                let ip = resolver.client_ip(peer.ip(), req.headers());
+                if ip != peer.ip() && ip != peer.ip().to_canonical() {
+                    addr = SocketAddr::new(ip, 0);
                 }
                 Ok(response)
             };

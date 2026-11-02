@@ -2,8 +2,8 @@
 
 use super::{PeerKeys, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, msg};
 use deskhaven_signal::{
-    AllowAll, ControlPlane, MemoryPeerStore, PeerStore, SignalConfig, SignalError, SignalHandle,
-    SignalServer,
+    AllowAll, ClientIpResolver, ControlPlane, MemoryPeerStore, PeerStore, SignalConfig,
+    SignalError, SignalHandle, SignalServer, WsHeaders,
 };
 use hbb_common::{
     rendezvous_proto::{PunchHoleRequest, register_pk_response},
@@ -15,7 +15,10 @@ use hbb_common::{
     },
 };
 use sodiumoxide::crypto::sign;
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 const READY_POLL: Duration = Duration::from_millis(20);
@@ -54,6 +57,37 @@ pub async fn wait_until_ready(port: u16, task: &RunTask) -> bool {
         sleep(READY_POLL).await;
     }
     panic!("signal server on port {port} did not become ready");
+}
+
+/// Trusts the last `X-Forwarded-For` entry of websocket connections from `proxies` (what
+/// deskhaven's `security.trusted_proxies` does for a single proxy hop); other peers' headers
+/// are ignored.
+#[derive(Debug)]
+pub struct TrustXff(pub Vec<IpAddr>);
+
+impl ClientIpResolver for TrustXff {
+    fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr {
+        if !self.0.contains(&peer.to_canonical()) {
+            return peer;
+        }
+        headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .next_back()
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.rsplit(',').next())
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(peer)
+    }
+}
+
+/// A config whose websocket port trusts `X-Forwarded-For` from `proxies` ([`TrustXff`]).
+pub fn trusting(proxies: &[IpAddr]) -> impl Fn(SignalConfig) -> SignalConfig {
+    let proxies = proxies.to_vec();
+    move |cfg| SignalConfig {
+        ws_client_ip: Arc::new(TrustXff(proxies.clone())),
+        ..cfg
+    }
 }
 
 /// A fresh, empty, non-persistent store.

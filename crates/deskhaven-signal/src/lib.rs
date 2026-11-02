@@ -49,7 +49,7 @@ pub use hbb_common::rendezvous_proto::{
 #[doc(hidden)]
 pub use server::Fault;
 pub use server::{
-    DEFAULT_PEER_PRELOAD_TIMEOUT, DEFAULT_PUNCH_REQ_MAX, SignalConfig, SignalError, SignalHandle,
-    SignalServer, run,
+    ClientIpResolver, DEFAULT_PEER_PRELOAD_TIMEOUT, DEFAULT_PUNCH_REQ_MAX, SignalConfig,
+    SignalError, SignalHandle, SignalServer, SocketPeerIp, WsHeaders, run,
 };
 pub use store::{MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, StoreError};

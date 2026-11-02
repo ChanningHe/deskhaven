@@ -462,3 +462,26 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   from building its answer with `register_peer_response`. Test
   `register_peer_over_tcp_requests_the_pk_until_it_is_known` became
   `register_peer_over_a_stream_never_binds_or_moves_the_peer`.
+- 2026-11-03, M1-08 review (HIGH / M1), websocket proxy headers (`server.rs`,
+  `rendezvous_server.rs` `handle_listener_inner`): upstream trusted `X-Real-IP`, else
+  `X-Forwarded-For`, from anyone who reached the websocket port (upstream issue #634), so a
+  client could choose its IP for the per-IP registration limits (`check_ip_block`), the
+  anti id-hijack IP / pk check of RegisterPk and the loopback exemption of the IP-change check.
+  The header handling is replaced by a new public `SignalConfig::ws_client_ip:
+  Arc<dyn ClientIpResolver>` (`ClientIpResolver::client_ip(peer, &WsHeaders) -> IpAddr`;
+  `WsHeaders` = the handshake's `http::HeaderMap`), decided by the embedder; the default
+  `SocketPeerIp` trusts no header. deskhaven passes `security.trusted_proxies` through
+  `deskhaven_http::TrustedProxies::resolve`, the HTTP API's rule: only `X-Forwarded-For`, only
+  from a trusted peer, walked right to left; `X-Real-IP` is no longer used (reverse proxies
+  must set `X-Forwarded-For`, as for the HTTP API). A resolved IP other than the socket peer's
+  gets a claimed port as before. Tests: `untrusted_websocket_proxy_headers_are_ignored`,
+  `rotating_headers_from_an_untrusted_peer_do_not_bypass_the_per_ip_limit`,
+  `untrusted_header_cannot_claim_a_devices_ip_to_change_its_pk`,
+  `websocket_client_addr_takes_a_trusted_proxys_header_ip_with_a_unique_port` (replaces
+  `websocket_client_addr_takes_the_proxy_header_ip_with_a_unique_port`); the proxy tests run
+  with a trusting test resolver (`support::TrustXff`).
+- 2026-11-03, M1-08, known limitations (no change): a claimed websocket port is unique among
+  websocket connections claiming that IP but can equal the source port of a direct TCP
+  connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in
+  turn, O(n) in the live claims of one IP in the worst case; without a bind address the
+  listeners fall back from IPv6 dual-stack to IPv4 only when the IPv6 bind fails, as upstream.
