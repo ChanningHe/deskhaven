@@ -42,17 +42,18 @@ fn relays(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// rs:541-554: RequestRelay for a peer in memory is passed on over UDP unchanged except for
-/// socket_addr (the controller's address), i.e. including the controller's `token` and
-/// `licence_key`, in clear (07 §2.4, P0). The controller gets no direct answer. M1-08 clears
-/// both fields before forwarding.
+/// Changed in M1-08. Upstream (rs:541-554) passed a RequestRelay for a peer in memory on over
+/// UDP unchanged except for socket_addr (the controller's address), i.e. including the
+/// controller's `token` and `licence_key`, in clear (07 §2.4, P0). Both are now cleared before
+/// forwarding; everything else is passed on as before. The controller gets no direct answer.
 #[tokio::test]
-async fn request_relay_forwards_token_and_licence_key_upstream_behavior_m1_08_changes_this() {
+async fn request_relay_is_forwarded_without_token_and_licence_key() {
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let mut controller = server.tcp().await;
     let req = request_relay(TARGET, &server.licence_key);
+    assert!(!req.token.is_empty() && !req.licence_key.is_empty());
 
     // Act
     controller.request_relay(req.clone()).await;
@@ -60,10 +61,12 @@ async fn request_relay_forwards_token_and_licence_key_upstream_behavior_m1_08_ch
 
     // Assert
     assert_eq!(decode_addr(&fwd.socket_addr), controller.local_addr());
-    assert_eq!(fwd.token, req.token);
-    assert_eq!(fwd.licence_key, server.licence_key);
+    assert_eq!(fwd.token, "");
+    assert_eq!(fwd.licence_key, "");
     let expected = RequestRelay {
         socket_addr: fwd.socket_addr.clone(),
+        token: String::new(),
+        licence_key: String::new(),
         ..req
     };
     assert_eq!(fwd, expected);

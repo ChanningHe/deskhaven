@@ -661,6 +661,10 @@ impl RendezvousServer {
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
+                        // deskhaven (M1-08): the controller's credentials are for this server
+                        // only; upstream forwarded them to the target, in clear over UDP.
+                        rf.token.clear();
+                        rf.licence_key.clear();
                         msg_out.set_request_relay(rf);
                         let peer_addr = peer.read().await.socket_addr;
                         self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();

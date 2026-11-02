@@ -338,3 +338,9 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   every entry that resolves and retries the others on the timer (M1-03), while a runtime
   update through `SignalHandle::set_relay_servers` is all or nothing (one unresolvable entry
   rejects the update and the previous list stays). The embedder retries a rejected update.
+- 2026-11-02, M1-08, RequestRelay secrets (`rendezvous_server.rs` `handle_tcp`, 07 §2.4, P0):
+  the controller's `token` and `licence_key` are cleared before the RequestRelay is forwarded
+  to the target. Upstream (rs:546-551) passed both on unchanged, in clear over UDP, so every
+  target learned the controller's API token. Every other field is forwarded as before. The
+  M1-04 baseline test `request_relay_forwards_token_and_licence_key_upstream_behavior_m1_08_changes_this`
+  became `request_relay_is_forwarded_without_token_and_licence_key`.

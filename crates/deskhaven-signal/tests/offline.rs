@@ -93,6 +93,8 @@ async fn request_relay_still_forwarded_to_stale_peer_upstream_behavior_m1_08_cha
     assert_eq!(decode_addr(&fwd.socket_addr), controller.local_addr());
     let expected = RequestRelay {
         socket_addr: fwd.socket_addr.clone(),
+        token: String::new(),
+        licence_key: String::new(),
         ..req
     };
     assert_eq!(fwd, expected);
