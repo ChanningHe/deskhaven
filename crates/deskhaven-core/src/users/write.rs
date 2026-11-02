@@ -14,6 +14,7 @@ use super::{
     AuthSource, Credential, Inner, NewUser, Password, ProfileUpdate, Role, Status, User, UserError,
     UserEvent, UserService, check_password_policy,
 };
+use crate::sessions::revoke_user_sessions;
 
 impl UserService {
     /// Creates an account. Local accounts need a password that passes the policy.
@@ -89,7 +90,8 @@ impl UserService {
 
     /// Replaces the local password (policy-checked), sets `must_change_password` and moves
     /// `password_changed_at` forward, so credential stamps taken before no longer match.
-    /// Emits [`UserEvent::PasswordChanged`].
+    /// Revokes every session of the user in the same transaction (durable even if the
+    /// event is lost). Emits [`UserEvent::PasswordChanged`].
     pub async fn set_password(
         &self,
         id: i64,
@@ -113,16 +115,19 @@ impl UserService {
                 updated_at: Set(now),
                 ..Default::default()
             };
+            let tx = begin_write(&inner.db).await?;
             let result = user::Entity::update_many()
                 .set(changes)
                 .filter(user::Column::Id.eq(id))
                 .filter(user::Column::AuthSource.eq(AuthSource::Local))
-                .exec(&inner.db)
+                .exec(&tx)
                 .await?;
             // Deleted (or no longer local) since it was read.
             if result.rows_affected == 0 {
                 return Err(UserError::NotFound);
             }
+            revoke_user_sessions(&tx, id, now).await?;
+            tx.commit().await?;
             inner.emit(UserEvent::PasswordChanged { user_id: id });
             Ok(())
         })
@@ -130,7 +135,8 @@ impl UserService {
     }
 
     /// Changes the status. Leaving `active` is refused for the last active owner; entering
-    /// `disabled` emits [`UserEvent::Disabled`]. Setting the current status is a no-op.
+    /// `disabled` revokes every session of the user in the same transaction and emits
+    /// [`UserEvent::Disabled`]. Setting the current status is a no-op.
     pub async fn set_status(&self, id: i64, status: Status) -> Result<User, UserError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
@@ -142,10 +148,15 @@ impl UserService {
             if status != Status::Active {
                 ensure_not_last_owner(&current, &owners)?;
             }
+            let now = time::now();
             let mut changes: user::ActiveModel = current.into();
             changes.status = Set(status);
-            changes.updated_at = Set(time::now());
+            changes.updated_at = Set(now);
             let updated = changes.update(&tx).await?;
+            if status == Status::Disabled {
+                // Durable: re-enabling the account must not resurrect old sessions.
+                revoke_user_sessions(&tx, id, now).await?;
+            }
             tx.commit().await?;
             if status == Status::Disabled {
                 inner.emit(UserEvent::Disabled { user_id: id });

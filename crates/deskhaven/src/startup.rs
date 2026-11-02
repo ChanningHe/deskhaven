@@ -6,12 +6,15 @@ use std::time::Duration;
 
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
+use deskhaven_core::clock::SystemClock;
 use deskhaven_core::crypto::SecretBox;
 use deskhaven_core::keys::{
     KeyWarning, SignalKeyPaths, load_or_generate_master_key, load_or_generate_signal_key,
 };
+use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::AppState;
+use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 
 use crate::instance_lock::{self, InstanceLock};
@@ -123,11 +126,21 @@ pub async fn open_state(
         tracing::warn!("{warning}");
     }
 
+    let users = UserService::new(db.clone(), settings.clone(), PasswordHasher::default());
+    let sessions = SessionService::new(
+        db.clone(),
+        settings.clone(),
+        users.clone(),
+        Arc::new(SystemClock),
+    );
+
     Ok(AppState {
         db,
         settings,
         crypto,
         signal_public_key,
+        users,
+        sessions,
     })
 }
 
