@@ -4,13 +4,14 @@
 
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use deskhaven_client_api::ClientApiError;
+use deskhaven_client_api::{ClientApiError, TRY_LATER_MESSAGE};
 use deskhaven_http::{ErrorBodies, HttpConfig, X_REQUEST_ID, apply_middleware};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -47,6 +48,32 @@ async fn user_facing_errors_map_to_status_and_message() {
         assert_eq!(err.status(), status);
         let got = json_of(err.into_response()).await;
         assert_eq!(got, (status, json!({ "error": message })));
+    }
+}
+
+#[tokio::test]
+async fn retry_errors_carry_retry_after_in_whole_seconds_rounded_up() {
+    let cases = [
+        (
+            ClientApiError::TooManyRequests {
+                retry_after: Duration::from_millis(14_001),
+            },
+            StatusCode::TOO_MANY_REQUESTS,
+            "15",
+        ),
+        (
+            ClientApiError::Unavailable {
+                retry_after: Duration::ZERO,
+            },
+            StatusCode::SERVICE_UNAVAILABLE,
+            "1",
+        ),
+    ];
+    for (err, status, seconds) in cases {
+        let res = err.into_response();
+        assert_eq!(res.headers()[header::RETRY_AFTER], seconds);
+        let got = json_of(res).await;
+        assert_eq!(got, (status, json!({ "error": TRY_LATER_MESSAGE })));
     }
 }
 
