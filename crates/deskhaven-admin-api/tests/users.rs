@@ -97,12 +97,14 @@ async fn list_paginates_filters_and_sorts() {
         );
 
         let in_group = format!("group={}", group.id);
+        let outside = format!("not_group={}&sort=username", group.id);
         let cases = [
             ("q=AL", vec!["alice"]),
             ("role=admin", vec!["alice"]),
             ("status=disabled", vec!["bob"]),
             ("auth_source=ldap", vec!["carol"]),
             (in_group.as_str(), vec!["carol"]),
+            (outside.as_str(), vec!["alice", "bob", "root"]),
             ("sort=role", vec!["alice", "root", "bob", "carol"]),
         ];
         for (query, expected) in cases {

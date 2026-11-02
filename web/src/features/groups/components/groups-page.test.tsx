@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { GroupView, UserView } from '@/api/generated/model'
-import { callsTo } from '@/test/mock-api'
+import { callsTo, requestedUrl } from '@/test/mock-api'
 import type { MockHandler } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
@@ -45,6 +45,38 @@ function page(items: unknown[]): MockHandler {
 }
 
 describe('groups page', () => {
+  it('pages through the members and shows their total', async () => {
+    const big = group(7, 'big', { member_count: 120 })
+    const everyone = Array.from({ length: 120 }, (_, i) =>
+      member(100 + i, `m${String(i).padStart(3, '0')}`),
+    )
+    const { user, fetchSpy } = renderApp('/groups?group=7', {
+      api: {
+        [`GET ${GROUPS}`]: page([big]),
+        [`GET ${GROUPS}/7`]: { body: big },
+        [`GET ${GROUPS}/7/members`]: ({ url }) => {
+          const at = Number(url.searchParams.get('page') ?? 1)
+          const size = Number(url.searchParams.get('page_size'))
+          const items = everyone.slice((at - 1) * size, at * size)
+          return { body: { items, total: everyone.length, page: at, page_size: size } }
+        },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'big' })
+    expect(await within(drawer).findByText('m000')).toBeInTheDocument()
+    expect(within(drawer).getByText('共 120 名')).toBeInTheDocument()
+    expect(within(drawer).getByText('第 1 / 3 页')).toBeInTheDocument()
+
+    await user.click(within(drawer).getByRole('button', { name: '下一页' }))
+    expect(await within(drawer).findByText('m050')).toBeInTheDocument()
+    expect(within(drawer).queryByText('m000')).not.toBeInTheDocument()
+    const pages = fetchSpy.mock.calls
+      .map((_, index) => requestedUrl(fetchSpy, index))
+      .filter((url) => url.pathname === `${GROUPS}/7/members`)
+      .map((url) => url.searchParams.get('page'))
+    expect(pages).toContain('2')
+  })
+
   it('creates a group and opens it', async () => {
     let posted: unknown
     const ops = group(7, 'ops')
@@ -77,7 +109,8 @@ describe('groups page', () => {
         [`GET ${GROUPS}`]: page([ops]),
         [`GET ${GROUPS}/7`]: { body: ops },
         [`GET ${GROUPS}/7/members`]: page([member(5, 'bob')]),
-        'GET /admin/api/v1/users': page([member(5, 'bob'), member(6, 'carol')]),
+        // The server leaves the members out (`not_group`).
+        'GET /admin/api/v1/users': page([member(6, 'carol'), member(8, 'dave')]),
         [`POST ${GROUPS}/7/members`]: ({ init }) => {
           added = JSON.parse(init.body as string)
           return { status: 204 }
@@ -86,12 +119,27 @@ describe('groups page', () => {
       },
     })
     const drawer = await screen.findByRole('dialog', { name: 'ops' })
-    await user.type(within(drawer).getByRole('textbox', { name: '查找要添加的用户' }), 'a')
-    await user.click(await within(drawer).findByRole('button', { name: '添加 carol' }))
-    expect(within(drawer).queryByRole('button', { name: '添加 bob' })).not.toBeInTheDocument()
+    const search = within(drawer).getByRole('combobox', { name: '查找要添加的用户' })
+    await user.type(search, 'da')
+    const listbox = await within(drawer).findByRole('listbox', { name: '组外用户' })
+    expect(within(drawer).getByRole('status')).toHaveTextContent('组外有 2 个匹配用户')
+    // Debounced: one request for the whole term, with the members left out by the server.
+    const requests = fetchSpy.mock.calls
+      .map((_, index) => requestedUrl(fetchSpy, index))
+      .filter((url) => url.pathname === '/admin/api/v1/users')
+    expect(requests.map((url) => url.searchParams.get('q'))).toEqual(['da'])
+    expect(requests[0]?.searchParams.get('not_group')).toBe('7')
+
+    // Keyboard: the first suggestion is highlighted; ArrowDown moves on, Enter adds it.
+    expect(within(listbox).getByRole('option', { name: /carol/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await user.keyboard('{ArrowDown}{Enter}')
     await waitFor(() => {
-      expect(added).toEqual({ user_id: 6 })
+      expect(added).toEqual({ user_id: 8 })
     })
+    expect(search).toHaveValue('')
 
     await user.click(within(drawer).getByRole('button', { name: '移除 bob' }))
     const confirm = await screen.findByRole('alertdialog', { name: '从用户组移除？' })
@@ -117,6 +165,7 @@ describe('groups page', () => {
     expect(within(drawer).queryByRole('button', { name: '删除用户组' })).not.toBeInTheDocument()
     expect(within(drawer).queryByRole('button', { name: '移除 bob' })).not.toBeInTheDocument()
     expect(within(drawer).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole('combobox')).not.toBeInTheDocument()
   })
 
   it.each([

@@ -2,6 +2,7 @@ export { createDataTableColumnHelper } from './columns'
 export type { DataTableColumnDef, DataTableColumnMeta } from './columns'
 export { DataTable } from './data-table'
 export type { DataTableProps, SearchChangeOptions } from './data-table'
+export { SEARCH_DEBOUNCE_MS } from './data-table-toolbar'
 export {
   applyTableSearch,
   DEFAULT_PAGE_SIZE,

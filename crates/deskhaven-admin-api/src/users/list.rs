@@ -50,6 +50,9 @@ pub struct UserFilter {
     /// Members of this group only.
     #[garde(skip)]
     pub group: Option<i64>,
+    /// Accounts outside this group (the candidates to add to it).
+    #[garde(skip)]
+    pub not_group: Option<i64>,
 }
 
 impl UserFilter {
@@ -59,6 +62,7 @@ impl UserFilter {
             role: self.role.map(Into::into),
             auth_source: self.auth_source.map(Into::into),
             group_id: self.group,
+            not_group_id: self.not_group,
             q: self
                 .q
                 .map(|q| q.trim().to_owned())

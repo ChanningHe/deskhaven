@@ -989,6 +989,16 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "not_group",
+            "in": "query",
+            "description": "Accounts outside this group (the candidates to add to it).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         ],
         "responses": {
@@ -1787,6 +1797,16 @@
             "name": "group",
             "in": "query",
             "description": "Members of this group only.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "not_group",
+            "in": "query",
+            "description": "Accounts outside this group (the candidates to add to it).",
             "required": false,
             "schema": {
               "type": "integer",

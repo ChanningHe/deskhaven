@@ -125,6 +125,8 @@ pub struct UserQuery {
     pub auth_source: Option<AuthSource>,
     /// Members of this group only.
     pub group_id: Option<i64>,
+    /// Accounts that are not members of this group (candidates to add).
+    pub not_group_id: Option<i64>,
     pub q: Option<String>,
     pub sort: Option<UserSort>,
     pub page: PageRequest,

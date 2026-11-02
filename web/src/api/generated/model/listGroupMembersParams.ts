@@ -35,4 +35,8 @@ export type ListGroupMembersParams = {
    * Members of this group only.
    */
   group?: number
+  /**
+   * Accounts outside this group (the candidates to add to it).
+   */
+  not_group?: number
 }

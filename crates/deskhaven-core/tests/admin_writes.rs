@@ -407,6 +407,11 @@ async fn user_list_filters_by_source_and_group_and_sorts() {
             ..base.clone()
         };
         assert_eq!(names(members).await, ["bob", "carol"]);
+        let outside = UserQuery {
+            not_group_id: Some(group.id),
+            ..base.clone()
+        };
+        assert_eq!(names(outside).await, ["alice"]);
         let by_name_desc = UserQuery {
             sort: Some(UserSort {
                 field: UserSortField::Username,

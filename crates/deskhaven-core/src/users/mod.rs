@@ -140,12 +140,10 @@ impl UserService {
             select = select.filter(user::Column::AuthSource.eq(source));
         }
         if let Some(group_id) = query.group_id {
-            let members = group_member::Entity::find()
-                .select_only()
-                .column(group_member::Column::UserId)
-                .filter(group_member::Column::GroupId.eq(group_id))
-                .into_query();
-            select = select.filter(user::Column::Id.in_subquery(members));
+            select = select.filter(user::Column::Id.in_subquery(member_ids(group_id)));
+        }
+        if let Some(group_id) = query.not_group_id {
+            select = select.filter(user::Column::Id.not_in_subquery(member_ids(group_id)));
         }
         if let Some(q) = query.q.as_deref().filter(|q| !q.is_empty()) {
             select = select.filter(matches_text(q));
@@ -221,6 +219,15 @@ impl Inner {
             let _ = self.events.send(event);
         }
     }
+}
+
+/// `SELECT user_id FROM group_member WHERE group_id = ?`, for (not) in-group filters.
+fn member_ids(group_id: i64) -> sea_orm::sea_query::SelectStatement {
+    group_member::Entity::find()
+        .select_only()
+        .column(group_member::Column::UserId)
+        .filter(group_member::Column::GroupId.eq(group_id))
+        .into_query()
 }
 
 /// Case-insensitive literal substring match on username, email and display name. SQLite's
