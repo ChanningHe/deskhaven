@@ -12,9 +12,9 @@ use deskhaven_core::state::AppState;
 use deskhaven_core::users::{AccountEdit, Status, User};
 
 use super::rules::{Acting, check_target, extra};
-use super::view::{LockoutCleared, SessionsRevoked, TemporaryPassword, UserView};
+use super::view::{LockoutCleared, SessionsRevoked, ShownSecret, TemporaryPassword, UserView};
 use crate::domain_error::refused;
-use crate::{AdminApiError, Audit, AuditCtx, Audited, ConsoleUser, ValidPath};
+use crate::{AdminApiError, Audit, AuditCtx, Audited, ConsoleUser, ErrorCode, ValidPath};
 
 type Problem = crate::ErrorEnvelope<'static>;
 
@@ -108,6 +108,10 @@ pub async fn reset_password(
     ValidPath(id): ValidPath<i64>,
 ) -> Result<(Audited, Json<TemporaryPassword>), AdminApiError> {
     let acting = Acting::new(&principal, ctx);
+    // The owner rule first (with the session role; the guard re-checks in the write), so
+    // a refused caller learns nothing about the account's source and costs no hash.
+    let target = state.users.get(id).await?;
+    acting.may_manage(&target).map_err(refused)?;
     let password = state.users.temporary_password()?;
     let audit_extra = extra("password", "reset");
     let guard = acting.user_guard(&state.console_audit, "user.reset_password", audit_extra);
@@ -116,13 +120,14 @@ pub async fn reset_password(
         .set_password_guarded(id, &password, true, guard)
         .await?;
     let shown = TemporaryPassword {
-        temporary_password: password.expose().to_owned(),
+        temporary_password: ShownSecret::new(&password),
     };
     Ok((Audited, Json(shown)))
 }
 
 /// Turns two-factor authentication off: seed, recovery codes and pending challenges are
-/// deleted; the user can enrol again (audited `user.reset_2fa`).
+/// deleted; the user can enrol again (audited `user.reset_2fa`). Not for one's own account:
+/// that is self-service with re-authentication (`/me`).
 #[utoipa::path(
     post,
     path = "/users/{id}/reset-2fa",
@@ -134,6 +139,7 @@ pub async fn reset_password(
         (status = 204, description = "2FA is off"),
         (status = 403, description = "Owner accounts need an owner (`owner_required`)", body = Problem),
         (status = 404, description = "No such user", body = Problem),
+        (status = 409, description = "Own account: use the account page (`self_service`)", body = Problem),
     )
 )]
 pub async fn reset_2fa(
@@ -143,6 +149,13 @@ pub async fn reset_2fa(
     ValidPath(id): ValidPath<i64>,
 ) -> Result<(Audited, StatusCode), AdminApiError> {
     let acting = Acting::new(&principal, ctx);
+    if id == acting.user_id {
+        // Turning one's own 2FA off needs the password again: the account page's job.
+        return Err(AdminApiError::new(
+            ErrorCode::SelfService,
+            "reset your own two-factor authentication from your account page (/me)",
+        ));
+    }
     let guard = acting.user_guard(&state.console_audit, "user.reset_2fa", None);
     state.tfa.disable_guarded(id, guard).await?;
     Ok((Audited, StatusCode::NO_CONTENT))

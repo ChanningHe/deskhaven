@@ -2511,7 +2511,7 @@
         "tags": [
           "users"
         ],
-        "summary": "Turns two-factor authentication off: seed, recovery codes and pending challenges are\ndeleted; the user can enrol again (audited `user.reset_2fa`).",
+        "summary": "Turns two-factor authentication off: seed, recovery codes and pending challenges are\ndeleted; the user can enrol again (audited `user.reset_2fa`). Not for one's own account:\nthat is self-service with re-authentication (`/me`).",
         "operationId": "reset_user_2fa",
         "parameters": [
           {
@@ -2560,6 +2560,16 @@
           },
           "404": {
             "description": "No such user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Own account: use the account page (`self_service`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2946,6 +2956,7 @@
           "owner_required",
           "last_owner",
           "self_delete",
+          "self_service",
           "managed_by_config",
           "not_local_account"
         ]

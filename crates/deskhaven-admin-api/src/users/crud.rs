@@ -12,7 +12,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use super::rules::Acting;
-use super::view::{UserCreated, UserDetail, UserView};
+use super::view::{ShownSecret, UserCreated, UserDetail, UserView};
 use crate::{
     AdminApiError, AuditCtx, Audited, ConsoleUser, ErrorCode, RoleView, ValidJson, ValidPath,
 };
@@ -21,7 +21,7 @@ type Problem = crate::ErrorEnvelope<'static>;
 
 /// A new local account. Without `password` the server generates a temporary one, returns
 /// it once and requires a change at first login.
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[derive(Deserialize, Validate, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewUserBody {
     /// 1-64 characters of `A-Z a-z 0-9 . _ @ -`, unique case-insensitively.
@@ -47,6 +47,21 @@ pub struct NewUserBody {
     #[serde(default = "default_true")]
     #[garde(skip)]
     pub must_change_password: bool,
+}
+
+/// By hand: the chosen `password` prints as `<redacted>` (or `None`).
+impl std::fmt::Debug for NewUserBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewUserBody")
+            .field("username", &self.username)
+            .field("display_name", &self.display_name)
+            .field("email", &self.email)
+            .field("role", &self.role)
+            .field("note", &self.note)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("must_change_password", &self.must_change_password)
+            .finish()
+    }
 }
 
 fn default_role() -> RoleView {
@@ -125,7 +140,7 @@ pub async fn create_user(
         Some(chosen) => (Password::new(chosen), false),
         None => (state.users.temporary_password()?, true),
     };
-    let shown = generated.then(|| password.expose().to_owned());
+    let shown = generated.then(|| ShownSecret::new(&password));
     let new = NewUser {
         display_name: body.display_name,
         email: body.email.filter(|e| !e.is_empty()),

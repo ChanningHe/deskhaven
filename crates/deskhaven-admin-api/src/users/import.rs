@@ -29,7 +29,7 @@ use utoipa::ToSchema;
 
 use super::csv::{self, Record};
 use super::rules::Acting;
-use super::view::UserView;
+use super::view::{ShownSecret, UserView};
 use crate::domain_error::{OWNER_REQUIRED, invalid_field};
 use crate::{AdminApiError, AuditCtx, Audited, ConsoleUser, ErrorCode, ValidJson};
 
@@ -56,7 +56,8 @@ pub struct ImportedUser {
     /// Line of the row in the CSV text.
     pub line: usize,
     pub user: UserView,
-    pub temporary_password: String,
+    #[schema(value_type = String)]
+    pub temporary_password: ShownSecret,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -161,7 +162,7 @@ pub async fn import_users(
         .map(|((user, line), password)| ImportedUser {
             line,
             user: user.into(),
-            temporary_password: password.expose().to_owned(),
+            temporary_password: ShownSecret::new(password),
         })
         .collect();
     Ok((Audited, Json(ImportResult { created })).into_response())

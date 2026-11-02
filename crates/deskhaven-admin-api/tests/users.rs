@@ -492,3 +492,45 @@ async fn the_last_owner_cannot_be_demoted_or_disabled() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn nobody_resets_their_own_2fa_through_the_admin_route() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, owner) = setup(db).await;
+        let own = format!("/admin/api/v1/users/{}/reset-2fa", owner.user_id);
+        let reply = h.act(Method::POST, &own, &owner).await;
+        assert_eq!((reply.status.as_u16(), reply.code()), (409, "self_service"));
+        assert!(h.audit_rows().await.is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn reset_password_applies_the_owner_rule_before_looking_at_the_source() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, _owner) = setup(db).await;
+        let admin = h.console("adm", Role::Admin).await;
+        let ldap_owner = NewUser {
+            role: Role::Owner,
+            ..NewUser::new("dir-owner", Credential::Ldap)
+        };
+        let target = h.state.users.create(ldap_owner).await.unwrap();
+        let path = format!("/admin/api/v1/users/{}/reset-password", target.id);
+
+        // An admin is refused as for any owner: no hint that it has no local password.
+        let reply = h.act(Method::POST, &path, &admin).await;
+        assert_eq!(
+            (reply.status.as_u16(), reply.code()),
+            (403, "owner_required")
+        );
+        // An owner gets the real answer.
+        let owner = h.console("own2", Role::Owner).await;
+        let reply = h.act(Method::POST, &path, &owner).await;
+        assert_eq!(
+            (reply.status.as_u16(), reply.code()),
+            (409, "not_local_account")
+        );
+        assert!(h.audit_rows().await.is_empty());
+    })
+    .await;
+}

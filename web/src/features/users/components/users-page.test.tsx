@@ -173,8 +173,8 @@ describe('users page', () => {
     expect(roles.map((option) => option.textContent)).toEqual(['用户', '管理员'])
   })
 
-  it('never offers to delete your own account', async () => {
-    const self = user(1, 'owner', { role: 'owner' })
+  it('never offers to delete your own account or reset your own 2FA here', async () => {
+    const self = user(1, 'owner', { role: 'owner', totp_enabled: true })
     renderApp('/users?user=1', {
       api: {
         [`GET ${LIST_PATH}`]: list([self]),
@@ -184,6 +184,7 @@ describe('users page', () => {
     const drawer = await screen.findByRole('dialog', { name: 'owner' })
     expect(within(drawer).getByRole('button', { name: '禁用' })).toBeInTheDocument()
     expect(within(drawer).queryByRole('button', { name: '删除' })).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: '重置 2FA' })).not.toBeInTheDocument()
   })
 
   it('lists every rejected import row and imports nothing', async () => {

@@ -75,7 +75,7 @@ export function UserActions({ user, onDeleted }: UserActionsProps) {
             {t('users.actions.resetPassword')}
           </Button>
         ) : null}
-        {user.totp_enabled ? (
+        {user.totp_enabled && user.id !== me.id ? (
           <Button variant="outline" size="sm" onClick={ask('reset2fa')}>
             {t('users.actions.reset2fa')}
           </Button>

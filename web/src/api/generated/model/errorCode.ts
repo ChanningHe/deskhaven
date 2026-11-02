@@ -37,6 +37,7 @@ export const ErrorCode = {
   owner_required: 'owner_required',
   last_owner: 'last_owner',
   self_delete: 'self_delete',
+  self_service: 'self_service',
   managed_by_config: 'managed_by_config',
   not_local_account: 'not_local_account',
 } as const

@@ -40,6 +40,7 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   owner_required: 'errors.codes.owner_required',
   last_owner: 'errors.codes.last_owner',
   self_delete: 'errors.codes.self_delete',
+  self_service: 'errors.codes.self_service',
   managed_by_config: 'errors.codes.managed_by_config',
   not_local_account: 'errors.codes.not_local_account',
 }

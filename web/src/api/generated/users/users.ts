@@ -880,7 +880,8 @@ export const getResetUser2faUrl = (id: number) => {
 
 /**
  * @summary Turns two-factor authentication off: seed, recovery codes and pending challenges are
-deleted; the user can enrol again (audited `user.reset_2fa`).
+deleted; the user can enrol again (audited `user.reset_2fa`). Not for one's own account:
+that is self-service with re-authentication (`/me`).
  */
 export const resetUser2fa = async (
   id: number,
@@ -937,7 +938,8 @@ export type ResetUser2faMutationVariables = { id: number }
 
 /**
  * @summary Turns two-factor authentication off: seed, recovery codes and pending challenges are
-deleted; the user can enrol again (audited `user.reset_2fa`).
+deleted; the user can enrol again (audited `user.reset_2fa`). Not for one's own account:
+that is self-service with re-authentication (`/me`).
  */
 export const useResetUser2fa = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {

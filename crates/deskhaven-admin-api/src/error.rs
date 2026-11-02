@@ -68,6 +68,9 @@ pub enum ErrorCode {
     LastOwner,
     /// Deleting one's own account.
     SelfDelete,
+    /// An action on one's own account that belongs on the account page (`/me`), behind
+    /// re-authentication (resetting one's own 2FA).
+    SelfService,
     /// The resource is defined in the configuration file and read-only in the console.
     ManagedByConfig,
     /// The account has no local password or local second factor (OIDC sign-in; LDAP and
@@ -104,6 +107,7 @@ impl ErrorCode {
             Self::SetupCompleted
             | Self::LastOwner
             | Self::SelfDelete
+            | Self::SelfService
             | Self::ManagedByConfig
             | Self::NotLocalAccount => StatusCode::CONFLICT,
         }
@@ -139,6 +143,7 @@ impl ErrorCode {
             Self::OwnerRequired => "owner_required",
             Self::LastOwner => "last_owner",
             Self::SelfDelete => "self_delete",
+            Self::SelfService => "self_service",
             Self::ManagedByConfig => "managed_by_config",
             Self::NotLocalAccount => "not_local_account",
         }

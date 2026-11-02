@@ -2,7 +2,7 @@
 
 use deskhaven_core::groups::Group;
 use deskhaven_core::sessions::{Session, SessionKind};
-use deskhaven_core::users::{AuthSource, Status, User};
+use deskhaven_core::users::{AuthSource, Password, Status, User};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -167,18 +167,38 @@ pub struct UserDetail {
     pub sessions: Vec<SessionView>,
 }
 
+/// A secret a response shows once (a temporary password): serialized as the plain string,
+/// but `Debug` prints `<redacted>`, so a logged response or error never carries it.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct ShownSecret(String);
+
+impl ShownSecret {
+    pub fn new(password: &Password) -> Self {
+        Self(password.expose().to_owned())
+    }
+}
+
+impl std::fmt::Debug for ShownSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
 /// A created account; `temporary_password` only when the server generated one (shown once).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct UserCreated {
     pub user: UserView,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub temporary_password: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub temporary_password: Option<ShownSecret>,
 }
 
 /// A generated temporary password, shown once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct TemporaryPassword {
-    pub temporary_password: String,
+    #[schema(value_type = String)]
+    pub temporary_password: ShownSecret,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -191,4 +211,26 @@ pub struct SessionsRevoked {
 pub struct LockoutCleared {
     /// Lockout counters removed (0: nothing was locked or counted).
     pub cleared: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn shown_secrets_serialize_plainly_but_never_debug_print() {
+        let secret = ShownSecret::new(&Password::new("Tmp-Secret-123"));
+        let reset = TemporaryPassword {
+            temporary_password: secret.clone(),
+        };
+        let json = serde_json::to_value(&reset).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "temporary_password": "Tmp-Secret-123" })
+        );
+        assert!(!format!("{reset:?}").contains("Tmp-Secret"));
+        assert_eq!(format!("{:?}", Some(secret)), "Some(<redacted>)");
+    }
 }

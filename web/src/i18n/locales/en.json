@@ -79,6 +79,7 @@
       "owner_required": "Only an owner can manage owner accounts or grant the owner role.",
       "last_owner": "The last active owner cannot be demoted, disabled or deleted.",
       "self_delete": "You cannot delete your own account.",
+      "self_service": "Manage this for your own account on your account page.",
       "managed_by_config": "This item is managed by the configuration file and is read-only here.",
       "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there."
     }
