@@ -3,6 +3,7 @@
 //! Every endpoint is contract-tested by fixtures in `tests/contract`
 //! (crate `deskhaven-contract`, which this crate must never depend on).
 
+mod ab;
 mod account;
 mod auth;
 mod client;
@@ -20,6 +21,7 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use deskhaven_core::state::AppState;
 
+pub use ab::MAX_AB_BODY;
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use login::MAX_LOGIN_BODY;
@@ -39,4 +41,5 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
         .route("/api/version", get(version::version))
+        .merge(ab::routes())
 }
