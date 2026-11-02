@@ -23,11 +23,13 @@
 //! waits for it instead of changing the row mid-transaction. Either way no attempt is lost,
 //! and every lock cycle grants at most `threshold` attempts.
 //!
-//! **Lock order** (PostgreSQL deadlock freedom): every transaction that locks rows of a
-//! username locks its global row (`user:<name>|*`) before any of its source rows, one
-//! statement per row. `reserve`, `release`, `complete`, `refund` and `unlock` follow it.
-//! `cleanup` never waits for a row lock at all (`FOR UPDATE SKIP LOCKED`), so it cannot be
-//! part of a deadlock either.
+//! **Deadlock freedom** (PostgreSQL): every write transaction on a username's rows
+//! (`reserve`, `release`, `complete`, `refund`, `unlock`) first takes a transaction-scoped
+//! advisory lock on that username, so they run one after another and never hold row locks
+//! the others wait for. Ordering row locks alone is not enough: a row that does not exist
+//! yet (a deleted global row) cannot be locked first. Each transaction touches a single
+//! username, so there is no cross-username cycle either. `cleanup` never waits for a row
+//! lock at all (`FOR UPDATE SKIP LOCKED`).
 
 use std::time::Duration;
 
@@ -37,8 +39,8 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::sea_query::{Expr, LikeExpr, OnConflict, Query};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbErr,
-    EntityTrait, QueryFilter, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    DbBackend, DbErr, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
 
 use super::key::{LIKE_ESCAPE, Subject, global_key_of, name_of, username_pattern};
@@ -175,7 +177,7 @@ impl AccountLockout {
         let now_ms = now.timestamp_millis();
 
         let txn = begin_write(&self.db).await?;
-        // Lock order: global row first (see module docs).
+        lock_username(&txn, subject.name()).await?;
         let global_row = upsert(&txn, &global_key, now_ms).await?;
         let source_row = upsert(&txn, &source_key, now_ms).await?;
         if let Some(retry_after) = blocking(Some(&source_row), Some(&global_row), now_ms) {
@@ -236,6 +238,7 @@ impl AccountLockout {
     pub async fn refund(&self, attempt: Attempt) -> Result<(), DbErr> {
         let now = self.clock.now();
         let txn = begin_write(&self.db).await?;
+        lock_username(&txn, attempt.subject.name()).await?;
         let rows = [
             (attempt.subject.global_key(), attempt.global),
             (attempt.subject.source_key(), attempt.source),
@@ -259,13 +262,7 @@ impl AccountLockout {
     pub async fn unlock(&self, username: &str) -> Result<u64, DbErr> {
         let name = name_of(username);
         let txn = begin_write(&self.db).await?;
-        // Global row first (lock order), then the rest in scan order: every other writer
-        // already holds or waits for the global row, so none can hold a source row we need
-        // while waiting for us.
-        auth_lockout::Entity::find_by_id(global_key_of(&name))
-            .lock_exclusive()
-            .one(&txn)
-            .await?;
+        lock_username(&txn, &name).await?;
         let pattern = LikeExpr::new(username_pattern(&name)).escape(LIKE_ESCAPE);
         let result = auth_lockout::Entity::delete_many()
             .filter(Column::Key.like(pattern))
@@ -280,6 +277,7 @@ impl AccountLockout {
         let now = self.clock.now();
         let now_ms = now.timestamp_millis();
         let txn = begin_write(&self.db).await?;
+        lock_username(&txn, name).await?;
         auth_lockout::Entity::delete_by_id(global_key_of(name))
             .exec(&txn)
             .await?;
@@ -299,6 +297,29 @@ impl AccountLockout {
         }
         txn.commit().await
     }
+}
+
+/// PostgreSQL advisory lock namespace of the per-username lock (ASCII "dhlk"). The two-key
+/// form lives apart from single-`bigint` keys such as the migration lock.
+const PG_USERNAME_LOCK_NS: i32 = 0x6468_6c6b;
+
+/// Serializes the write transactions of one username (see module docs). PostgreSQL: a
+/// transaction-scoped advisory lock, released at commit or rollback. SQLite: nothing to do,
+/// `BEGIN IMMEDIATE` already serializes all writers. A hash collision only makes two
+/// usernames wait for each other.
+async fn lock_username(txn: &DatabaseTransaction, name: &str) -> Result<(), DbErr> {
+    if txn.get_database_backend() != DbBackend::Postgres {
+        return Ok(());
+    }
+    let sql = "SELECT pg_advisory_xact_lock($1, hashtext($2))";
+    let values = [PG_USERNAME_LOCK_NS.into(), name.into()];
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        values,
+    ))
+    .await?;
+    Ok(())
 }
 
 /// How long the source and global rows block an attempt at `now`; the global row does not
