@@ -775,14 +775,17 @@ impl RendezvousServer {
         // deskhaven: the store write is queued, not awaited; refusing an unbound id
         // on a full queue is the only failure seen here (upstream ignored
         // update_pk's result). A store outage never reaches this path.
-        if changed
-            && self
+        if changed {
+            if self
                 .pm
-                .update_pk(id, peer, addr, rk.uuid, rk.pk, ip)
+                .update_pk(id.clone(), peer, addr, rk.uuid, rk.pk, ip)
                 .await
                 .is_err()
-        {
-            return Some(SERVER_ERROR);
+            {
+                return Some(SERVER_ERROR);
+            }
+            // deskhaven (M2-12): update_pk refreshed the registration time.
+            self.control.peer_online(&id, addr.ip());
         }
         Some(register_pk_response::Result::OK)
     }
@@ -972,6 +975,11 @@ impl RendezvousServer {
         } else {
             (true, None)
         };
+        // deskhaven (M2-12): the registration time was refreshed above (after the peer's lock
+        // is released).
+        if !request_pk {
+            self.control.peer_online(&id, socket_addr.ip());
+        }
         if let Some(old) = ip_change {
             log::info!("IP change of {} from {} to {}", id, old, socket_addr);
         }
@@ -991,9 +999,13 @@ impl RendezvousServer {
             self.unbind_stream_peer(&old, addr).await;
         }
         if let Some(peer) = self.pm.get_in_memory(&id).await {
-            let mut w = peer.write().await;
-            w.socket_addr = addr;
-            w.last_reg_time = Instant::now();
+            {
+                let mut w = peer.write().await;
+                w.socket_addr = addr;
+                w.last_reg_time = Instant::now();
+            }
+            // deskhaven (M2-12)
+            self.control.peer_online(&id, addr.ip());
         }
         let tx = conn
             .outbox
@@ -1011,9 +1023,17 @@ impl RendezvousServer {
     // RegisterPeer over UDP.
     async fn touch_stream_peer(&self, id: &str, addr: SocketAddr) {
         if let Some(peer) = self.pm.get_in_memory(id).await {
-            let mut w = peer.write().await;
-            if w.socket_addr == addr {
-                w.last_reg_time = Instant::now();
+            let refreshed = {
+                let mut w = peer.write().await;
+                let current = w.socket_addr == addr;
+                if current {
+                    w.last_reg_time = Instant::now();
+                }
+                current
+            };
+            // deskhaven (M2-12)
+            if refreshed {
+                self.control.peer_online(id, addr.ip());
             }
         }
     }
@@ -1029,9 +1049,17 @@ impl RendezvousServer {
             }
         }
         if let Some(peer) = self.pm.get_in_memory(id).await {
-            let mut w = peer.write().await;
-            if w.socket_addr == addr {
-                w.last_reg_time = get_expired_time();
+            let expired = {
+                let mut w = peer.write().await;
+                let current = w.socket_addr == addr;
+                if current {
+                    w.last_reg_time = get_expired_time();
+                }
+                current
+            };
+            // deskhaven (M2-12)
+            if expired {
+                self.control.peer_offline(id);
             }
         }
     }

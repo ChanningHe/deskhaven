@@ -638,3 +638,15 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   tests: `sealed_empty_frame_from_a_registered_peer_keeps_the_cipher_in_step`,
   `empty_first_frame_is_handled_as_plain_text`. (deskhaven's settings sync already applies the
   switches, `require_kx_v1` included, before a relay list update that resolves names.)
+- 2026-11-03, M2-12, liveness notifications (`control.rs`, `rendezvous_server.rs`): new
+  `ControlPlane::peer_online(id, ip)` / `peer_offline(id)` with no-op defaults (`AllowAll`
+  unchanged). The server calls `peer_online` after every refresh of a registered peer's
+  `last_reg_time`: `update_addr` (UDP RegisterPeer from a peer whose key is known, no IP change),
+  `register_pk` after a successful `update_pk` (the id is now cloned for that call),
+  `bind_stream_peer` and `touch_stream_peer` (TCP / websocket channel bound or answering a
+  heartbeat while it is the peer's address); and `peer_offline` from `unbind_stream_peer` when
+  it expires the peer (its channel closed while being its address). Each call is made after
+  the peer's lock is released. deskhaven feeds its in-memory device presence table from them
+  (the signal crate still knows nothing of deskhaven-core). Behavior on the wire is unchanged.
+  Tests: `tests/peer_events.rs` (UDP registration and keep-alives, no event for ids without a
+  key, TCP channel online then offline on close, no offline for a replaced channel).

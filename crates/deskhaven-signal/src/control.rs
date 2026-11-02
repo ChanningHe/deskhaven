@@ -3,7 +3,9 @@
 //! injected into [`SignalServer::new`](crate::SignalServer::new). [`AllowAll`] reproduces the
 //! OSS behavior.
 //!
-//! Wired today: [`ControlPlane::pick_relay`] (every relay choice). The other hooks are defined
+//! Wired today: [`ControlPlane::pick_relay`] (every relay choice) and the liveness
+//! notifications [`ControlPlane::peer_online`] / [`ControlPlane::peer_offline`] (M2-12: they
+//! feed deskhaven's device presence table; no-ops by default). The other hooks are defined
 //! so M5 can implement them, but the server does not call them yet; their insertion points
 //! are marked `ControlPlane hook (M5)` in `rendezvous_server.rs`.
 
@@ -106,6 +108,20 @@ pub trait ControlPlane: Send + Sync + 'static {
     /// in configuration order. `None` hands out none (clients fall back to their own relay
     /// setting). Called on every relay choice; must not block.
     fn pick_relay(&self, a: IpAddr, b: IpAddr, relays: &[String]) -> Option<String>;
+
+    /// Registered peer `id` showed it is online at `ip`, i.e. the server just refreshed its
+    /// registration time (what OnlineRequest and punch holes compare with REG_TIMEOUT): a
+    /// RegisterPeer from its known address, an accepted RegisterPk that changed its entry, or
+    /// its TCP / websocket channel being bound or answering a heartbeat. Ids the server does
+    /// not hold a key for never get here. Called inline on the UDP loop and connection tasks,
+    /// for every registered peer every few seconds: must return at once (memory only, no
+    /// awaiting). Default: ignored.
+    fn peer_online(&self, _id: &str, _ip: IpAddr) {}
+
+    /// The TCP / websocket channel of peer `id` closed while it was the peer's address: the
+    /// server now treats the peer as offline until it registers again. Same constraints as
+    /// [`peer_online`](Self::peer_online). Default: ignored.
+    fn peer_offline(&self, _id: &str) {}
 }
 
 /// The OSS behavior: everything is allowed, relays rotate round-robin.
