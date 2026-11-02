@@ -28,7 +28,10 @@ use hbb_common::{
         self,
         net::{TcpListener, TcpStream},
         sync::{Mutex, mpsc, watch},
-        time::{Duration, Instant as TokioInstant, interval, timeout_at},
+        time::{
+            Duration, Instant as TokioInstant, MissedTickBehavior, interval, interval_at,
+            timeout_at,
+        },
     },
     tokio_util::codec::Framed,
     try_into_v4,
@@ -72,6 +75,41 @@ type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungsteni
 enum Sink {
     TcpStream(TcpStreamSink),
     Ws(WsSink),
+}
+
+// deskhaven (M1-08): a controlled peer registered over a TCP / websocket connection (TCP-mode
+// clients: proxy, websocket, UDP disabled). The connection task owns the sink; other tasks
+// queue the peer's PunchHole / FetchLocalAddr / RequestRelay for it.
+type StreamOutbox = (
+    mpsc::Sender<RendezvousMessage>,
+    mpsc::Receiver<RendezvousMessage>,
+);
+/// Connection-side state: the id registered over this connection and its queue.
+#[derive(Default)]
+struct StreamPeer {
+    id: Option<String>,
+    outbox: Option<StreamOutbox>,
+}
+/// Server-side entry (`stream_peers`, by id): where the connection is and its queue.
+struct StreamPeerTx {
+    addr: SocketAddr,
+    tx: mpsc::Sender<RendezvousMessage>,
+}
+/// Messages waiting for one peer connection; a peer gets a few per connection attempt.
+const STREAM_OUTBOX_LEN: usize = 32;
+/// Heartbeat (empty frame) period on a registered connection. TCP-mode clients send nothing
+/// once registered but answer each empty frame with one (rendezvous_mediator.rs `start_tcp`);
+/// the answers keep the peer online (REG_TIMEOUT 30 s: three per period) and the connection
+/// within IDLE_TIMEOUT, and the heartbeats keep the client's own timeout (1.5 x its 60 s
+/// keep-alive) and reverse proxies' read timeouts (nginx: 60 s) from closing it.
+const STREAM_HEARTBEAT: Duration = Duration::from_secs(10);
+
+/// The next message queued for this connection's peer; pending while none is registered.
+async fn next_outbound(outbox: &mut Option<StreamOutbox>) -> Option<RendezvousMessage> {
+    match outbox {
+        Some((_, rx)) => rx.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 // deskhaven (M1-08): the read half of a stream connection, so TCP and websocket share one read
@@ -197,6 +235,8 @@ struct Inner {
 #[derive(Clone)]
 pub(crate) struct RendezvousServer {
     tcp_punch: Arc<Mutex<HashMap<SocketAddr, Sink>>>,
+    // deskhaven (M1-08): peers registered over TCP / websocket, by id.
+    stream_peers: Arc<Mutex<HashMap<String, StreamPeerTx>>>,
     pm: PeerMap,
     tx: Sender,
     // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
@@ -355,6 +395,7 @@ impl RendezvousServer {
             .collect();
         let rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
+            stream_peers: Default::default(),
             pm,
             tx,
             relay_servers: Default::default(),
@@ -558,102 +599,11 @@ impl RendezvousServer {
                     }
                 }
                 Some(rendezvous_message::Union::RegisterPk(rk)) => {
-                    if rk.uuid.is_empty() || rk.pk.is_empty() {
-                        return Ok(());
+                    // deskhaven (M1-08): checks and registration moved to `register_pk`, shared
+                    // with TCP / websocket.
+                    if let Some(res) = self.register_pk(rk, addr).await {
+                        send_rk_res(socket, addr, res).await?;
                     }
-                    // deskhaven: malformed keys are ignored like missing ones (above), before
-                    // memory or the store see them: a RustDesk pk is an ed25519 public key, and
-                    // an oversized uuid would only bloat every cached and stored row. Not
-                    // UUID_MISMATCH: that makes a real client give up its id.
-                    // Known limit (cf. 07 §2.4): RegisterPk is unauthenticated UDP, so a
-                    // spoofed source can still register (and persist) unclaimed ids; admission
-                    // (require_deploy / ControlPlane, M5) addresses that.
-                    if rk.pk.len() != REGISTER_PK_LEN || rk.uuid.len() > MAX_REGISTER_UUID_LEN {
-                        if let Some(n) = MALFORMED_PK_LOG.hit(Instant::now()) {
-                            log::debug!(
-                                "dropped {n} malformed RegisterPk (last: {addr}, pk {} bytes, \
-                                 uuid {} bytes)",
-                                rk.pk.len(),
-                                rk.uuid.len()
-                            );
-                        }
-                        return Ok(());
-                    }
-                    let id = rk.id;
-                    let ip = addr.ip().to_string();
-                    if id.len() < 6 || id.len() > MAX_PEER_ID_LEN {
-                        return send_rk_res(socket, addr, UUID_MISMATCH).await;
-                    } else if !self.check_ip_blocker(&ip, &id).await {
-                        return send_rk_res(socket, addr, TOO_FREQUENT).await;
-                    }
-                    // ControlPlane hook (M5): `control.register_pk(&RegisterInfo { id, uuid,
-                    // pk, ip, no_register_device })` goes here (inline, memory only): NotDeployed
-                    // -> NOT_DEPLOYED, UuidMismatch -> UUID_MISMATCH, before memory or the store
-                    // change. AllowAll answers Ok, so it is not called yet.
-                    let peer = self.pm.get_or(&id).await;
-                    let (changed, _ip_changed) = {
-                        let peer = peer.read().await;
-                        if peer.uuid.is_empty() {
-                            (true, false)
-                        } else {
-                            if peer.uuid == rk.uuid {
-                                if peer.info.ip != ip && peer.pk != rk.pk {
-                                    log::warn!(
-                                        "Peer {} ip/pk mismatch: {}/{:?} vs {}/{:?}",
-                                        id,
-                                        ip,
-                                        rk.pk,
-                                        peer.info.ip,
-                                        peer.pk,
-                                    );
-                                    drop(peer);
-                                    return send_rk_res(socket, addr, UUID_MISMATCH).await;
-                                }
-                            } else {
-                                log::warn!(
-                                    "Peer {} uuid mismatch: {:?} vs {:?}",
-                                    id,
-                                    rk.uuid,
-                                    peer.uuid
-                                );
-                                drop(peer);
-                                return send_rk_res(socket, addr, UUID_MISMATCH).await;
-                            }
-                            let ip_changed = peer.info.ip != ip;
-                            (
-                                peer.uuid != rk.uuid || peer.pk != rk.pk || ip_changed,
-                                ip_changed,
-                            )
-                        }
-                    };
-                    let mut req_pk = peer.read().await.reg_pk;
-                    if req_pk.1.elapsed().as_secs() > 6 {
-                        req_pk.0 = 0;
-                    } else if req_pk.0 > 2 {
-                        return send_rk_res(socket, addr, TOO_FREQUENT).await;
-                    }
-                    req_pk.0 += 1;
-                    req_pk.1 = Instant::now();
-                    peer.write().await.reg_pk = req_pk;
-                    // deskhaven: IP_CHANGES bookkeeping removed (only read by console `ic`).
-                    // deskhaven: the store write is queued, not awaited; refusing an unbound id
-                    // on a full queue is the only failure seen here (upstream ignored
-                    // update_pk's result). A store outage never reaches this path.
-                    if changed
-                        && self
-                            .pm
-                            .update_pk(id, peer, addr, rk.uuid, rk.pk, ip)
-                            .await
-                            .is_err()
-                    {
-                        return send_rk_res(socket, addr, SERVER_ERROR).await;
-                    }
-                    let mut msg_out = RendezvousMessage::new();
-                    msg_out.set_register_pk_response(RegisterPkResponse {
-                        result: register_pk_response::Result::OK.into(),
-                        ..Default::default()
-                    });
-                    socket.send(&msg_out, addr).await?
                 }
                 Some(rendezvous_message::Union::PunchHoleRequest(_ph)) => {
                     // UDP PunchHoleRequest is intentionally unsupported.
@@ -677,6 +627,107 @@ impl RendezvousServer {
         Ok(())
     }
 
+    // deskhaven (M1-08): the RegisterPk checks and registration, moved out of `handle_udp` so
+    // RegisterPk over TCP / websocket gets the same ones. `None`: dropped without an answer;
+    // otherwise the result to answer (upstream answered each case itself, over UDP).
+    async fn register_pk(
+        &mut self,
+        rk: RegisterPk,
+        addr: SocketAddr,
+    ) -> Option<register_pk_response::Result> {
+        if rk.uuid.is_empty() || rk.pk.is_empty() {
+            return None;
+        }
+        // deskhaven: malformed keys are ignored like missing ones (above), before
+        // memory or the store see them: a RustDesk pk is an ed25519 public key, and
+        // an oversized uuid would only bloat every cached and stored row. Not
+        // UUID_MISMATCH: that makes a real client give up its id.
+        // Known limit (cf. 07 §2.4): RegisterPk is unauthenticated UDP, so a
+        // spoofed source can still register (and persist) unclaimed ids; admission
+        // (require_deploy / ControlPlane, M5) addresses that.
+        if rk.pk.len() != REGISTER_PK_LEN || rk.uuid.len() > MAX_REGISTER_UUID_LEN {
+            if let Some(n) = MALFORMED_PK_LOG.hit(Instant::now()) {
+                log::debug!(
+                    "dropped {n} malformed RegisterPk (last: {addr}, pk {} bytes, \
+                     uuid {} bytes)",
+                    rk.pk.len(),
+                    rk.uuid.len()
+                );
+            }
+            return None;
+        }
+        let id = rk.id;
+        let ip = addr.ip().to_string();
+        if id.len() < 6 || id.len() > MAX_PEER_ID_LEN {
+            return Some(UUID_MISMATCH);
+        } else if !self.check_ip_blocker(&ip, &id).await {
+            return Some(TOO_FREQUENT);
+        }
+        // ControlPlane hook (M5): `control.register_pk(&RegisterInfo { id, uuid,
+        // pk, ip, no_register_device })` goes here (inline, memory only): NotDeployed
+        // -> NOT_DEPLOYED, UuidMismatch -> UUID_MISMATCH, before memory or the store
+        // change. AllowAll answers Ok, so it is not called yet.
+        let peer = self.pm.get_or(&id).await;
+        let (changed, _ip_changed) = {
+            let peer = peer.read().await;
+            if peer.uuid.is_empty() {
+                (true, false)
+            } else {
+                if peer.uuid == rk.uuid {
+                    if peer.info.ip != ip && peer.pk != rk.pk {
+                        log::warn!(
+                            "Peer {} ip/pk mismatch: {}/{:?} vs {}/{:?}",
+                            id,
+                            ip,
+                            rk.pk,
+                            peer.info.ip,
+                            peer.pk,
+                        );
+                        drop(peer);
+                        return Some(UUID_MISMATCH);
+                    }
+                } else {
+                    log::warn!(
+                        "Peer {} uuid mismatch: {:?} vs {:?}",
+                        id,
+                        rk.uuid,
+                        peer.uuid
+                    );
+                    drop(peer);
+                    return Some(UUID_MISMATCH);
+                }
+                let ip_changed = peer.info.ip != ip;
+                (
+                    peer.uuid != rk.uuid || peer.pk != rk.pk || ip_changed,
+                    ip_changed,
+                )
+            }
+        };
+        let mut req_pk = peer.read().await.reg_pk;
+        if req_pk.1.elapsed().as_secs() > 6 {
+            req_pk.0 = 0;
+        } else if req_pk.0 > 2 {
+            return Some(TOO_FREQUENT);
+        }
+        req_pk.0 += 1;
+        req_pk.1 = Instant::now();
+        peer.write().await.reg_pk = req_pk;
+        // deskhaven: IP_CHANGES bookkeeping removed (only read by console `ic`).
+        // deskhaven: the store write is queued, not awaited; refusing an unbound id
+        // on a full queue is the only failure seen here (upstream ignored
+        // update_pk's result). A store outage never reaches this path.
+        if changed
+            && self
+                .pm
+                .update_pk(id, peer, addr, rk.uuid, rk.pk, ip)
+                .await
+                .is_err()
+        {
+            return Some(SERVER_ERROR);
+        }
+        Some(register_pk_response::Result::OK)
+    }
+
     #[inline]
     async fn handle_tcp(
         &mut self,
@@ -685,6 +736,7 @@ impl RendezvousServer {
         addr: SocketAddr,
         key: &str,
         ws: bool,
+        conn: &mut StreamPeer,
     ) -> bool {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
@@ -728,8 +780,9 @@ impl RendezvousServer {
                     // only; upstream forwarded them to the target, in clear over UDP.
                     rf.token.clear();
                     rf.licence_key.clear();
+                    let id = rf.id.clone();
                     msg_out.set_request_relay(rf);
-                    self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
+                    self.send_to_peer(&id, msg_out, peer_addr).await.ok();
                     return true;
                 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
@@ -768,14 +821,33 @@ impl RendezvousServer {
                     msg_out.set_test_nat_response(res);
                     Self::send_to_sink(sink, msg_out).await;
                 }
-                Some(rendezvous_message::Union::RegisterPk(_)) => {
-                    let res = register_pk_response::Result::NOT_SUPPORT;
-                    let mut msg_out = RendezvousMessage::new();
-                    msg_out.set_register_pk_response(RegisterPkResponse {
-                        result: res.into(),
-                        ..Default::default()
-                    });
-                    Self::send_to_sink(sink, msg_out).await;
+                // deskhaven (M1-08): registration over TCP / websocket, for clients in proxy,
+                // websocket or UDP-disabled mode (upstream answered RegisterPk with NOT_SUPPORT
+                // and ignored RegisterPeer). Same checks and answers as over UDP; once
+                // registered, the connection stays open as the peer's channel (heartbeats,
+                // deliveries; see `handle_listener_inner`). A dropped RegisterPk (malformed)
+                // or RegisterPeer (bad id) closes the connection.
+                Some(rendezvous_message::Union::RegisterPk(rk)) => {
+                    let id = rk.id.clone();
+                    let Some(res) = self.register_pk(rk, addr).await else {
+                        return false;
+                    };
+                    if res == register_pk_response::Result::OK {
+                        self.bind_stream_peer(id, addr, conn).await;
+                    }
+                    Self::send_to_sink(sink, rk_response(res)).await;
+                    return true;
+                }
+                Some(rendezvous_message::Union::RegisterPeer(rp)) => {
+                    if rp.id.is_empty() || rp.id.len() > MAX_PEER_ID_LEN {
+                        return false;
+                    }
+                    let request_pk = self.refresh_peer(rp.id.clone(), addr).await;
+                    if !request_pk {
+                        self.bind_stream_peer(rp.id, addr, conn).await;
+                    }
+                    Self::send_to_sink(sink, register_peer_response(request_pk)).await;
+                    return true;
                 }
                 // ControlPlane hooks (M5): an `HttpProxyRequest` arm (`control.http_proxy`, only
                 // on KeyExchange-secured connections, M1-07) and a `Hc` / HealthCheck arm
@@ -794,6 +866,15 @@ impl RendezvousServer {
         socket_addr: SocketAddr,
         socket: &mut FramedSocket,
     ) -> ResultType<()> {
+        let request_pk = self.refresh_peer(id, socket_addr).await;
+        socket
+            .send(&register_peer_response(request_pk), socket_addr)
+            .await
+    }
+
+    // deskhaven (M1-08): upstream `update_addr` without its UDP answer, shared with RegisterPeer
+    // over TCP / websocket; returns the answer's `request_pk`.
+    async fn refresh_peer(&mut self, id: String, socket_addr: SocketAddr) -> bool {
         let (request_pk, ip_change) = if let Some(old) = self.pm.get_in_memory(&id).await {
             let mut old = old.write().await;
             let ip = socket_addr.ip();
@@ -823,12 +904,90 @@ impl RendezvousServer {
         if let Some(old) = ip_change {
             log::info!("IP change of {} from {} to {}", id, old, socket_addr);
         }
-        let mut msg_out = RendezvousMessage::new();
-        msg_out.set_register_peer_response(RegisterPeerResponse {
-            request_pk,
-            ..Default::default()
-        });
-        socket.send(&msg_out, socket_addr).await
+        request_pk
+    }
+
+    // deskhaven (M1-08): makes this stream connection the channel of peer `id`, now at `addr`:
+    // the peer's address and liveness are refreshed (an unchanged RegisterPk skips
+    // `update_pk`, and TCP-mode clients send no RegisterPeer), and deliveries to it go through
+    // the connection (`send_to_peer`). A connection serves one id; a new one replaces it.
+    async fn bind_stream_peer(&self, id: String, addr: SocketAddr, conn: &mut StreamPeer) {
+        if let Some(old) = conn.id.take()
+            && old != id
+        {
+            self.unbind_stream_peer(&old, addr).await;
+        }
+        if let Some(peer) = self.pm.get_in_memory(&id).await {
+            let mut w = peer.write().await;
+            w.socket_addr = addr;
+            w.last_reg_time = Instant::now();
+        }
+        let tx = conn
+            .outbox
+            .get_or_insert_with(|| mpsc::channel(STREAM_OUTBOX_LEN))
+            .0
+            .clone();
+        self.stream_peers
+            .lock()
+            .await
+            .insert(id.clone(), StreamPeerTx { addr, tx });
+        conn.id = Some(id);
+    }
+
+    // deskhaven (M1-08): a heartbeat answer from the peer's connection keeps it online, like a
+    // RegisterPeer over UDP.
+    async fn touch_stream_peer(&self, id: &str, addr: SocketAddr) {
+        if let Some(peer) = self.pm.get_in_memory(id).await {
+            let mut w = peer.write().await;
+            if w.socket_addr == addr {
+                w.last_reg_time = Instant::now();
+            }
+        }
+    }
+
+    // deskhaven (M1-08): the peer's connection closed: no more deliveries through it, and the
+    // peer is offline at once while that connection is its address (it re-registers on a new
+    // connection; nothing reaches it at the old address meanwhile).
+    async fn unbind_stream_peer(&self, id: &str, addr: SocketAddr) {
+        {
+            let mut peers = self.stream_peers.lock().await;
+            if peers.get(id).is_some_and(|p| p.addr == addr) {
+                peers.remove(id);
+            }
+        }
+        if let Some(peer) = self.pm.get_in_memory(id).await {
+            let mut w = peer.write().await;
+            if w.socket_addr == addr {
+                w.last_reg_time = get_expired_time();
+            }
+        }
+    }
+
+    // deskhaven (M1-08): delivers to peer `id` through its TCP / websocket connection while that
+    // is its current address, otherwise over UDP like upstream (`Data::Msg`). A full or closed
+    // connection queue drops the message (logged), as a lost datagram would be.
+    async fn send_to_peer(
+        &self,
+        id: &str,
+        msg: RendezvousMessage,
+        peer_addr: SocketAddr,
+    ) -> ResultType<()> {
+        let stream = self
+            .stream_peers
+            .lock()
+            .await
+            .get(id)
+            .filter(|p| p.addr == peer_addr)
+            .map(|p| p.tx.clone());
+        match stream {
+            Some(tx) => {
+                if let Err(err) = tx.try_send(msg) {
+                    log::debug!("message to {id} over its connection dropped: {err}");
+                }
+            }
+            None => self.tx.send(Data::Msg(msg.into(), peer_addr))?,
+        }
+        Ok(())
     }
 
     #[inline]
@@ -1050,15 +1209,25 @@ impl RendezvousServer {
 
     #[inline]
     async fn send_to_sink(sink: &mut Option<Sink>, msg: RendezvousMessage) {
-        if let Some(sink) = sink.as_mut()
-            && let Ok(bytes) = msg.write_to_bytes()
-        {
+        if let Ok(bytes) = msg.write_to_bytes() {
+            Self::send_bytes_to_sink(sink, Bytes::from(bytes)).await;
+        }
+    }
+
+    // deskhaven (M1-08): an empty frame (websocket: empty binary message) to a registered peer.
+    async fn send_heartbeat(sink: &mut Option<Sink>) {
+        Self::send_bytes_to_sink(sink, Bytes::new()).await;
+    }
+
+    // deskhaven (M1-08): the sending half of `send_to_sink`, split out for `send_heartbeat`.
+    async fn send_bytes_to_sink(sink: &mut Option<Sink>, bytes: Bytes) {
+        if let Some(sink) = sink.as_mut() {
             match sink {
                 Sink::TcpStream(s) => {
-                    allow_err!(s.send(Bytes::from(bytes)).await);
+                    allow_err!(s.send(bytes).await);
                 }
                 Sink::Ws(ws) => {
-                    allow_err!(ws.send(tungstenite::Message::Binary(bytes.into())).await);
+                    allow_err!(ws.send(tungstenite::Message::Binary(bytes)).await);
                 }
             }
         }
@@ -1083,9 +1252,11 @@ impl RendezvousServer {
         key: &str,
         ws: bool,
     ) -> ResultType<()> {
+        let id = ph.id.clone();
         let (msg, to_addr) = self.handle_punch_hole_request(addr, ph, key, ws).await?;
         if let Some(addr) = to_addr {
-            self.tx.send(Data::Msg(msg.into(), addr))?;
+            // deskhaven (M1-08): through the target's connection if it registered over one.
+            self.send_to_peer(&id, msg, addr).await?;
         } else {
             self.send_to_tcp_sync(msg, addr).await?;
         }
@@ -1270,13 +1441,38 @@ impl RendezvousServer {
             reader = Reader::Tcp(b);
         }
         let mut deadline = first_frame;
-        while let Ok(Some(frame)) = timeout_at(deadline, reader.next()).await {
-            deadline = TokioInstant::now() + IDLE_TIMEOUT;
-            if let Some(bytes) = frame
-                && !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await
-            {
-                break;
+        // deskhaven (M1-08): a peer registered over this connection (`conn`) gets heartbeats
+        // and the messages queued for it; an empty frame from it answers a heartbeat.
+        let mut conn = StreamPeer::default();
+        let mut heartbeat = interval_at(first_frame, STREAM_HEARTBEAT);
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                res = timeout_at(deadline, reader.next()) => {
+                    let Ok(Some(frame)) = res else { break };
+                    deadline = TokioInstant::now() + IDLE_TIMEOUT;
+                    let Some(bytes) = frame else { continue };
+                    if bytes.is_empty()
+                        && let Some(id) = &conn.id
+                    {
+                        self.touch_stream_peer(id, addr).await;
+                    } else if !self
+                        .handle_tcp(&bytes, &mut sink, addr, key, ws, &mut conn)
+                        .await
+                    {
+                        break;
+                    }
+                }
+                Some(msg) = next_outbound(&mut conn.outbox) => {
+                    Self::send_to_sink(&mut sink, msg).await;
+                }
+                _ = heartbeat.tick(), if conn.id.is_some() => {
+                    Self::send_heartbeat(&mut sink).await;
+                }
             }
+        }
+        if let Some(id) = &conn.id {
+            self.unbind_stream_peer(id, addr).await;
         }
         if sink.is_none() {
             self.tcp_punch.lock().await.remove(&try_into_v4(addr));
@@ -1452,12 +1648,27 @@ async fn send_rk_res(
     addr: SocketAddr,
     res: register_pk_response::Result,
 ) -> ResultType<()> {
+    socket.send(&rk_response(res), addr).await
+}
+
+// deskhaven (M1-08): the answers `send_rk_res` / `update_addr` send over UDP, as messages that
+// TCP / websocket connections send too.
+fn rk_response(res: register_pk_response::Result) -> RendezvousMessage {
     let mut msg_out = RendezvousMessage::new();
     msg_out.set_register_pk_response(RegisterPkResponse {
         result: res.into(),
         ..Default::default()
     });
-    socket.send(&msg_out, addr).await
+    msg_out
+}
+
+fn register_peer_response(request_pk: bool) -> RendezvousMessage {
+    let mut msg_out = RendezvousMessage::new();
+    msg_out.set_register_peer_response(RegisterPeerResponse {
+        request_pk,
+        ..Default::default()
+    });
+    msg_out
 }
 
 // deskhaven (M1-08): `reuse = false` (upstream `true` set SO_REUSEPORT and SO_REUSEADDR, so a

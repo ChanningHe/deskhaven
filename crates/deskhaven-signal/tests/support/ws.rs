@@ -73,12 +73,16 @@ impl Conn for WsClient {
         self.send_frame(Message::Binary(bytes.into())).await;
     }
 
-    /// Skips control frames.
+    /// Skips control frames; answers server heartbeats (empty binary messages) with an empty
+    /// one, like a RustDesk client in websocket mode.
     async fn recv_within(&mut self, wait: Duration) -> Recv {
         let deadline = Instant::now() + wait;
         loop {
             match timeout_at(deadline, self.ws.next()).await {
                 Err(_) => return Recv::Quiet,
+                Ok(Some(Ok(Message::Binary(bytes)))) if bytes.is_empty() => {
+                    self.ws.send(Message::Binary(bytes)).await.ok();
+                }
                 Ok(Some(Ok(Message::Binary(bytes)))) => {
                     return Recv::parse(&bytes);
                 }

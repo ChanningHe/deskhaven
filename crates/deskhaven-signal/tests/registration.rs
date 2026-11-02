@@ -11,7 +11,7 @@
 mod support;
 
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{NOT_SUPPORT, OK, UUID_MISMATCH},
+    rendezvous_proto::register_pk_response::Result::{OK, UUID_MISMATCH},
     tokio,
 };
 use support::{
@@ -263,25 +263,5 @@ async fn register_pk_same_uuid_changing_only_pk_or_only_ip_is_ok() {
     controller.punch_hole_request(server.punch_req(ID)).await;
     expect_msg!(moved.recv().await, PunchHole);
     owner.assert_silent().await;
-    server.stop().await;
-}
-
-/// rs:596-604: RegisterPk over TCP answers NOT_SUPPORT, and RegisterPeer over TCP is ignored
-/// (the connection is closed without an answer). M1-08 implements both over TCP.
-#[tokio::test]
-async fn register_over_tcp_is_not_supported_upstream_behavior_m1_08_changes_this() {
-    // Arrange
-    let server = TestServer::start().await;
-    let mut pk_conn = server.tcp().await;
-    let mut peer_conn = server.tcp().await;
-
-    // Act
-    pk_conn.send(&register_pk(ID, &PeerKeys::random())).await;
-    peer_conn.send(&register_peer(ID)).await;
-
-    // Assert
-    let res = expect_msg!(pk_conn.recv().await, RegisterPkResponse);
-    assert_eq!(res.result.enum_value(), Ok(NOT_SUPPORT));
-    peer_conn.assert_closed().await;
     server.stop().await;
 }

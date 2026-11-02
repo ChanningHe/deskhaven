@@ -3,6 +3,7 @@
 
 use super::{Conn, Recv, Rendezvous, STEP_MS, next_client_ip};
 use hbb_common::{
+    bytes::Bytes,
     rendezvous_proto::{KeyExchange, RendezvousMessage, rendezvous_message},
     tcp::FramedStream,
     tokio::time::{Duration, Instant, timeout_at},
@@ -18,6 +19,8 @@ pub struct TcpClient {
     key_exchanges: Vec<KeyExchange>,
     /// A non-KeyExchange message arrived: later KeyExchange frames are ordinary messages.
     past_handshake: bool,
+    /// Server heartbeats answered.
+    heartbeats: usize,
 }
 
 impl TcpClient {
@@ -45,6 +48,7 @@ impl TcpClient {
             stream,
             key_exchanges: Vec::new(),
             past_handshake: false,
+            heartbeats: 0,
         }
     }
 
@@ -69,11 +73,23 @@ impl TcpClient {
         &self.key_exchanges
     }
 
-    async fn next_frame(&mut self, deadline: Instant) -> Recv {
+    /// Server heartbeats (empty frames) answered so far.
+    pub fn heartbeats(&self) -> usize {
+        self.heartbeats
+    }
+
+    /// `None` for a server heartbeat (an empty frame), answered with an empty frame like a
+    /// RustDesk client in TCP mode does (rendezvous_mediator.rs `start_tcp`).
+    async fn next_frame(&mut self, deadline: Instant) -> Option<Recv> {
         match timeout_at(deadline, self.stream.next()).await {
-            Err(_) => Recv::Quiet,
-            Ok(Some(Ok(bytes))) => Recv::parse(&bytes),
-            Ok(Some(Err(_)) | None) => Recv::Closed,
+            Err(_) => Some(Recv::Quiet),
+            Ok(Some(Ok(bytes))) if bytes.is_empty() => {
+                self.heartbeats += 1;
+                self.stream.send_bytes(Bytes::new()).await.ok();
+                None
+            }
+            Ok(Some(Ok(bytes))) => Some(Recv::parse(&bytes)),
+            Ok(Some(Err(_)) | None) => Some(Recv::Closed),
         }
     }
 
@@ -102,8 +118,9 @@ impl Conn for TcpClient {
         let deadline = Instant::now() + wait;
         loop {
             match self.next_frame(deadline).await {
-                Recv::Msg(msg) if self.capture_kx(&msg) => {}
-                other => return other,
+                None => {}
+                Some(Recv::Msg(msg)) if self.capture_kx(&msg) => {}
+                Some(other) => return other,
             }
         }
     }

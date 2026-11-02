@@ -389,3 +389,41 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   client's 18 s READ_TIMEOUT, which logged-in controllers and TCP-mode controlled clients wait
   for a server KeyExchange before sending (it can drop once M1-07 always sends one).
   HttpProxyRequest bodies (M5) may need a larger limit on secured connections.
+- 2026-11-02, M1-08, registration over TCP / websocket (`rendezvous_server.rs`; 07 §2.4): clients
+  in TCP mode (proxy, websocket, UDP disabled; client rendezvous_mediator.rs `start_tcp`) keep
+  one connection open, send RegisterPk on it until answered OK (again after UUID_MISMATCH),
+  never RegisterPeer, receive PunchHole / FetchLocalAddr / RequestRelay on it and answer empty
+  frames with empty frames. Upstream answered RegisterPk over TCP with NOT_SUPPORT and closed on
+  RegisterPeer (rs:596-604), so such clients never came online. Now:
+  - The RegisterPk checks and registration moved unchanged from the UDP arm of `handle_udp`
+    into `register_pk` (returns the result to answer, `None` = drop), used by UDP and by the
+    new TCP / websocket arm, so both get the same validation, rate limits, write-behind
+    persistence and SERVER_ERROR. Likewise upstream `update_addr` minus its UDP send became
+    `refresh_peer` (returns `request_pk`), used by UDP RegisterPeer and the new TCP / websocket
+    RegisterPeer arm; `rk_response` / `register_peer_response` build the answers (`send_rk_res`
+    uses the former).
+  - Over a stream every RegisterPk / RegisterPeer is answered on the connection, which stays
+    open (`handle_tcp` returns true); a malformed RegisterPk or a RegisterPeer with a bad id
+    (both ignored over UDP) closes it. On RegisterPk OK (or RegisterPeer without `request_pk`)
+    `bind_stream_peer` makes the connection the peer's channel: the peer's address becomes the
+    connection's and its liveness is refreshed (an unchanged RegisterPk skips `update_pk`),
+    and the id is entered in the new `stream_peers` map (id -> connection address + bounded
+    queue, `STREAM_OUTBOX_LEN` 32).
+  - `send_to_peer` replaces the two UDP deliveries to a target (`handle_tcp_punch_hole_request`,
+    RequestRelay forwarding): through the target's connection while its registered address is
+    that connection, otherwise over UDP as before; a full queue drops the message (logged).
+  - `handle_listener_inner` selects over reading, the connection's queue and, once a peer is
+    registered, a heartbeat every `STREAM_HEARTBEAT` (10 s: empty frame / empty binary
+    message, `send_heartbeat`). An empty frame from a registered connection answers it and
+    refreshes the peer's liveness (`touch_stream_peer`, like RegisterPeer over UDP); from any
+    other connection it still closes it, as upstream. When the connection ends,
+    `unbind_stream_peer` drops the map entry and marks the peer offline at once if the
+    connection is still its address.
+  - Heartbeat sizing: TCP-mode clients send nothing once registered; their answers every 10 s
+    keep the peer online (REG_TIMEOUT 30 s) and the connection inside IDLE_TIMEOUT, and the
+    heartbeats keep the client's own timeout (1.5 x its 60 s keep-alive) and reverse-proxy read
+    timeouts (nginx default 60 s) from firing.
+  - `send_to_sink` split into encoding and `send_bytes_to_sink`. The M1-04 baseline test
+    `register_over_tcp_is_not_supported_upstream_behavior_m1_08_changes_this` is replaced by
+    `tests/tcp_registration.rs`; the test clients now answer server heartbeats like RustDesk
+    clients and gained stream `register_pk` / `register_peer` helpers.

@@ -1,11 +1,11 @@
 //! Transport-independent client surface.
 
-use super::{QUIET, STEP, msg::rv};
+use super::{PeerKeys, QUIET, STEP, msg, msg::rv};
 use hbb_common::{
     protobuf::Message as _,
     rendezvous_proto::{
-        OnlineRequest, OnlineResponse, PunchHoleRequest, RendezvousMessage, RequestRelay,
-        TestNatRequest, TestNatResponse,
+        OnlineRequest, OnlineResponse, PunchHoleRequest, RegisterPeerResponse, RendezvousMessage,
+        RequestRelay, TestNatRequest, TestNatResponse, register_pk_response,
     },
     tokio::time::Duration,
 };
@@ -79,6 +79,19 @@ pub trait Rendezvous: Conn {
     /// Controller asks hbbs to pass a relay request on to `req.id` (no direct answer).
     async fn request_relay(&mut self, req: RequestRelay) {
         self.send(&rv(|m| m.set_request_relay(req))).await;
+    }
+
+    /// A controlled peer in TCP / websocket mode registering its key (M1-08).
+    async fn register_pk(&mut self, id: &str, keys: &PeerKeys) -> register_pk_response::Result {
+        self.send(&msg::register_pk(id, keys)).await;
+        let res = expect_msg!(self.recv().await, RegisterPkResponse);
+        res.result.enum_value().unwrap()
+    }
+
+    /// RegisterPeer over a stream (M1-08; RustDesk clients only send it over UDP).
+    async fn register_peer(&mut self, id: &str) -> RegisterPeerResponse {
+        self.send(&msg::register_peer(id)).await;
+        expect_msg!(self.recv().await, RegisterPeerResponse)
     }
 
     async fn test_nat(&mut self) -> TestNatResponse {
