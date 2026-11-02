@@ -1,0 +1,159 @@
+# Forgejo Actions CI for deskhaven (Forgejo 15, git.homielab.cc).
+#
+# Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}`.
+# To change it, set the repository/org variable CI_RUNNER_LABEL (Settings ->
+# Actions -> Variables) or replace the 'docker' default in every `runs-on`
+# line below. Jobs run inside the `container:` image, so the runner only needs
+# Docker access (label must map to a docker-capable runner).
+#
+# Pipeline: fmt -> clippy -> deny -> test {sqlite, postgres-16, postgres-17} -> coverage.
+# Toolchain comes from rust-toolchain.toml; the image tag below must match its channel.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - run: .forgejo/ci-setup.sh
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    needs: fmt
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: clippy-
+      - run: .forgejo/ci-setup.sh
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  deny:
+    needs: fmt
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            /usr/local/cargo/bin/cargo-deny
+          key: deny-${{ hashFiles('rust-toolchain.toml') }}-cargo-deny-0.20.2
+      - run: .forgejo/ci-setup.sh cargo-deny@0.20.2
+      - run: cargo deny check
+
+  test-sqlite:
+    needs: [clippy, deny]
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: test-sqlite-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: test-sqlite-
+      - run: .forgejo/ci-setup.sh
+      # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
+      - run: cargo test --workspace --all-targets
+
+  test-postgres:
+    needs: [clippy, deny]
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: deskhaven
+          POSTGRES_PASSWORD: deskhaven
+          POSTGRES_DB: deskhaven_test
+        options: >-
+          --health-cmd "pg_isready -U deskhaven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Throwaway CI-only credentials for the service container above.
+      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
+      # The DB test helper panics (instead of skipping PG) if the URL is missing.
+      DESKHAVEN_TEST_REQUIRE_PG: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: test-pg${{ matrix.pg }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: test-pg${{ matrix.pg }}-
+      - run: .forgejo/ci-setup.sh
+      - run: cargo test --workspace --all-targets
+
+  coverage:
+    needs: [test-sqlite, test-postgres]
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    container: rust:1.99.1-bookworm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: deskhaven
+          POSTGRES_PASSWORD: deskhaven
+          POSTGRES_DB: deskhaven_test
+        options: >-
+          --health-cmd "pg_isready -U deskhaven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
+      DESKHAVEN_TEST_REQUIRE_PG: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            /usr/local/cargo/bin/cargo-llvm-cov
+            target
+          key: coverage-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: coverage-
+      - run: .forgejo/ci-setup.sh cargo-llvm-cov
+      # Report only until the end of M2. To enforce the gate, append
+      # `--fail-under-lines 80` to the command below.
+      - run: cargo llvm-cov --workspace --all-targets --summary-only # --fail-under-lines 80
