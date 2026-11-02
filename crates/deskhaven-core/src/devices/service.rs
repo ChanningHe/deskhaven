@@ -15,7 +15,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use deskhaven_config::settings::DEVICES_VERIFY_UUID;
+use deskhaven_config::settings::{AcceptPresets, DEVICES_VERIFY_UUID};
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::device::{self, Entity as Devices};
 use deskhaven_db::entity::device_group;
@@ -30,6 +30,7 @@ use subtle::ConstantTimeEq;
 
 use super::DeviceError;
 use super::presence::{Identity, Presence};
+use super::preset_book;
 use super::presets::{self, Presets, RowPresets};
 use super::sysinfo::Sysinfo;
 use crate::addressbooks::AddressBookService;
@@ -247,6 +248,7 @@ impl Inner {
         report: SysinfoReport,
         hash: String,
     ) -> Result<SysinfoOutcome, DeviceError> {
+        let scope = presets::scope(&self.settings.snapshot());
         let tx = begin_write(&self.db).await?;
         let found = Devices::find()
             .filter(device::Column::RustdeskId.eq(&report.rustdesk_id))
@@ -260,7 +262,8 @@ impl Inner {
         if row.sysinfo_hash.as_deref() == Some(hash.as_str()) {
             return Ok(SysinfoOutcome::Unchanged);
         }
-        let first = row.sysinfo_hash.is_none();
+        // Decided under the row lock: of concurrent first uploads, one applies its presets.
+        let first = row.sysinfo_hash.is_none() && scope != AcceptPresets::Off;
         let placed = match first {
             true => presets::resolve_row(&tx, &report.presets, &row).await?,
             false => RowPresets::default(),
@@ -271,23 +274,29 @@ impl Inner {
             self.strategies.cache().invalidate();
         }
         if first {
-            self.apply_late_presets(&stored, &report.presets).await;
+            self.apply_late_presets(&stored, &report.presets, scope)
+                .await;
         }
         Ok(SysinfoOutcome::Stored)
     }
 
-    /// The presets applied after the sysinfo commit (strategy, address book entry).
-    async fn apply_late_presets(&self, device: &device::Model, presets: &Presets) {
-        if let Some(name) = &presets.strategy_name {
+    /// The presets applied after the sysinfo commit: the strategy, and with
+    /// [`AcceptPresets::All`] the address book entry.
+    async fn apply_late_presets(&self, device: &device::Model, p: &Presets, scope: AcceptPresets) {
+        if let Some(name) = &p.strategy_name {
             presets::apply_strategy(&self.strategies, device, name).await;
         }
-        if let Some(preset) = &presets.address_book {
+        let book = p
+            .address_book
+            .as_ref()
+            .filter(|_| scope == AcceptPresets::All);
+        if let Some(preset) = book {
             let books = AddressBookService::new(
                 self.db.clone(),
                 self.settings.clone(),
                 Arc::clone(&self.crypto),
             );
-            presets::apply_address_book(&books, device, preset).await;
+            preset_book::apply(&books, device, preset).await;
         }
     }
 }

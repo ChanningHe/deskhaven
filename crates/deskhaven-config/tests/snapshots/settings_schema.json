@@ -236,6 +236,20 @@
       "zero_allowed": false
     },
     {
+      "category": "devices",
+      "default": "off",
+      "description": "Apply the `preset-*` fields of a device's first sysinfo: `row` = owner, device group, note and strategy; `all` = also the address book entry (written as the owner). Presets let a device choose its own placement: enable only for controlled custom-client rollouts. Never applied while `devices.verify_uuid` is off.",
+      "key": "devices.accept_presets",
+      "on_bad_row": "off",
+      "sensitive": false,
+      "type": "enum",
+      "variants": [
+        "off",
+        "row",
+        "all"
+      ]
+    },
+    {
       "category": "addressbook",
       "default": 1000,
       "description": "Maximum peers per address book returned to clients (`max_peer_one_ab`).",

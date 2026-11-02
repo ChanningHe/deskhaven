@@ -11,7 +11,9 @@ use std::sync::Arc;
 use base64_022::Engine as _;
 use base64_022::engine::general_purpose::STANDARD;
 use deskhaven_config::settings::{Change, PinSet};
-use deskhaven_core::addressbooks::{AddressBookService, Book, NewSharedBook};
+use deskhaven_core::addressbooks::{
+    Actor, AddressBookService, Book, NewSharedBook, Peer, Rule, Subject,
+};
 use deskhaven_core::clock::ManualClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::{
@@ -19,15 +21,18 @@ use deskhaven_core::devices::{
     SysinfoReport,
 };
 use deskhaven_core::groups::GroupService;
+use deskhaven_core::pagination::PageRequest;
 use deskhaven_core::settings::{SettingsService, UpdateRequest};
 use deskhaven_core::strategies::{NewStrategy, Options, Strategy, StrategyService};
 use deskhaven_core::users::{
     Credential, HashParams, NewUser, Password, PasswordHasher, User, UserService,
 };
+use deskhaven_db::entity::address_book_tag;
 use deskhaven_db::entity::device;
 use deskhaven_db::testing::TestDb;
 use deskhaven_db::time;
 use sea_orm::DatabaseConnection;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
 
 pub const T0_MS: i64 = 1_700_000_000_123;
 pub const ID: &str = "123456789";
@@ -179,4 +184,72 @@ impl Ctx {
         };
         self.settings.update(request).await.unwrap();
     }
+
+    /// Sets `devices.accept_presets`.
+    pub async fn accept_presets(&self, mode: &str) {
+        self.set("devices.accept_presets", serde_json::json!(mode))
+            .await;
+    }
+
+    /// User `alice`, device group `Office`, strategy `Locked`, admin-managed shared book
+    /// `Team`: what [`all_presets`](super::presets::all_presets) names.
+    pub async fn targets(&self) -> Targets {
+        Targets {
+            alice: self.user("alice").await.id,
+            group: self.devices.create_group("Office", "").await.unwrap(),
+            strategy: self.strategy("Locked").await.id,
+            book: self.shared_book("Team").await.guid,
+        }
+    }
+
+    /// Grants `user` `rule` on book `guid`.
+    pub async fn grant(&self, guid: &str, user: i64, rule: Rule) {
+        self.books
+            .set_share(Actor::Admin, guid, Subject::User(user), rule)
+            .await
+            .unwrap();
+    }
+
+    pub async fn book_peers(&self, guid: &str) -> Vec<Peer> {
+        let page = self.books.peers(Actor::Admin, guid, PageRequest::default());
+        page.await.unwrap().items
+    }
+
+    /// Owner, device group and note of device [`ID`], set directly (the console's job).
+    pub async fn preassign(&self, owner: i64, group: i64) {
+        let mut row = self.row(ID).await.into_active_model();
+        row.owner_user_id = Set(Some(owner));
+        row.device_group_id = Set(Some(group));
+        row.note = Set(Some("set by admin".to_owned()));
+        row.update(&self.conn).await.unwrap();
+    }
+
+    /// Fills book `guid` up to its tag limit.
+    pub async fn fill_tags(&self, guid: &str) {
+        let book_id = self.books.find_shared_by_name("Tagged").await.unwrap().id;
+        assert_eq!(
+            self.books.find_shared_by_name("Tagged").await.unwrap().guid,
+            guid
+        );
+        let rows = (0..MAX_BOOK_TAGS).map(|i| address_book_tag::ActiveModel {
+            address_book_id: Set(book_id),
+            name: Set(format!("tag-{i}")),
+            color: Set(0),
+        });
+        address_book_tag::Entity::insert_many(rows)
+            .exec(&self.conn)
+            .await
+            .unwrap();
+    }
 }
+
+/// The rows [`Ctx::targets`] creates.
+pub struct Targets {
+    pub alice: i64,
+    pub group: i64,
+    pub strategy: i64,
+    pub book: String,
+}
+
+/// `addressbooks::tags::MAX_BOOK_TAGS`.
+const MAX_BOOK_TAGS: u64 = 1000;

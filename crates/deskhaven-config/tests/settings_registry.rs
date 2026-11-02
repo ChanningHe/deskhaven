@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use deskhaven_config::settings::{
-    self, AclAction, HostPort, Registration, SmtpTls, Snapshot, TfaEnforce,
+    self, AcceptPresets, AclAction, HostPort, Registration, SmtpTls, Snapshot, TfaEnforce,
 };
 use deskhaven_config::{Duration, Source};
 use serde_json::{Value as Json, json};
@@ -43,6 +43,7 @@ const P0_DEFAULTS: &[(&str, &str)] = &[
     ("devices.verify_uuid", "true"),
     ("devices.require_deploy", "false"),
     ("devices.last_seen_flush", r#""1m""#),
+    ("devices.accept_presets", r#""off""#),
     ("addressbook.max_peers", "1000"),
     ("audit.retention.connection", r#""365d""#),
     ("audit.retention.file", r#""365d""#),
@@ -138,6 +139,7 @@ fn typed_access_returns_defaults() {
     );
     assert_eq!(s.get(&settings::SIGNAL_ACL_DEFAULT), AclAction::Allow);
     assert_eq!(s.get(&settings::SIGNAL_ACL_ON_ERROR), AclAction::Deny);
+    assert_eq!(s.get(&settings::DEVICES_ACCEPT_PRESETS), AcceptPresets::Off);
     assert_eq!(s.get(&settings::AUDIT_RETENTION_LOGIN), d("180d"));
 }
 

@@ -45,16 +45,52 @@ fn text(reply: &deskhaven_contract::check::Reply) -> &str {
     std::str::from_utf8(&reply.body).unwrap()
 }
 
-#[tokio::test]
-async fn presets_of_the_first_sysinfo_place_the_device() {
-    // Arrange
-    let app = app_with(&["registered-device", "device-preset-targets"]).await;
-    let presets = json!({
+fn every_preset() -> Value {
+    json!({
         "preset-address-book-name": PRESET_BOOK, "preset-address-book-tag": "printers",
         "preset-address-book-alias": "Reception", "preset-address-book-password": "s3cret-pass",
         "preset-user-name": PRESET_USER, "preset-strategy-name": PRESET_STRATEGY,
         "preset-device-group-name": PRESET_DEVICE_GROUP, "preset-note": "front desk",
-    });
+    })
+}
+
+/// `devices.accept_presets` is off by default: presets are self-reported, so the reply is
+/// the same and nothing is placed.
+#[tokio::test]
+async fn presets_are_ignored_unless_accepted() {
+    // Arrange
+    let app = app_with(&["registered-device", "device-preset-targets"]).await;
+
+    // Act
+    let reply = app
+        .send(&sysinfo_request("reception-01", every_preset()))
+        .await
+        .unwrap();
+
+    // Assert
+    assert_eq!((reply.status, text(&reply)), (200, "SYSINFO_UPDATED"));
+    let row = DeviceRepository::new(app.state.db.clone())
+        .find_by_rustdesk_id(DEVICE_ID)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.hostname.as_deref(), Some("reception-01"));
+    let placed = (row.owner_user_id, row.device_group_id, row.note);
+    assert_eq!(placed, (None, None, None));
+    let assigned = app.state.strategies.assignment(Target::Device(row.id));
+    assert_eq!(assigned.await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn presets_of_the_first_sysinfo_place_the_device() {
+    // Arrange
+    let seeds = [
+        "registered-device",
+        "device-preset-targets",
+        "device-presets-accepted",
+    ];
+    let app = app_with(&seeds).await;
+    let presets = every_preset();
 
     // Act
     let reply = app

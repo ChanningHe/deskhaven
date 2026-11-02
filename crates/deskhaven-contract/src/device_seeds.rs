@@ -4,9 +4,12 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-use deskhaven_core::addressbooks::{AddressBookService, NewSharedBook};
+use anyhow::Context;
+use deskhaven_config::settings::{Change, DEVICES_ACCEPT_PRESETS};
+use deskhaven_core::addressbooks::{Actor, AddressBookService, NewSharedBook, Rule, Subject};
 use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::devices::{DeviceRepository, Registration};
+use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
 use deskhaven_core::strategies::{NewStrategy, Options};
 use deskhaven_core::users::{Credential, NewUser, Password};
@@ -45,11 +48,11 @@ pub async fn registered_device(state: &AppState) -> anyhow::Result<SeedOutputs> 
 }
 
 /// User [`PRESET_USER`], device group [`PRESET_DEVICE_GROUP`], strategy [`PRESET_STRATEGY`]
-/// and admin-managed shared book [`PRESET_BOOK`]. No outputs.
+/// and admin-managed shared book [`PRESET_BOOK`], on which the user holds rule 2. No outputs.
 pub async fn preset_targets(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let password = Password::new(SEED_PASSWORD);
     let user = NewUser::new(PRESET_USER, Credential::Local { password });
-    state.users.create(user).await?;
+    let user = state.users.create(user).await?;
     state.devices.create_group(PRESET_DEVICE_GROUP, "").await?;
     let options: Options = [("enable-file-transfer".to_owned(), "N".to_owned())]
         .into_iter()
@@ -66,6 +69,33 @@ pub async fn preset_targets(state: &AppState) -> anyhow::Result<SeedOutputs> {
         note: String::new(),
         owner_user_id: None,
     };
-    books.create_shared(book).await?;
+    let book = books.create_shared(book).await?;
+    let subject = Subject::User(user.id);
+    books
+        .set_share(Actor::Admin, &book.guid, subject, Rule::ReadWrite)
+        .await?;
+    Ok(SeedOutputs::new())
+}
+
+/// Sets `devices.accept_presets` to `all` (off by default). No outputs.
+pub async fn presets_accepted(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let key = DEVICES_ACCEPT_PRESETS.key();
+    let version = state
+        .settings
+        .snapshot()
+        .view(key)
+        .with_context(|| format!("unknown setting {key:?}"))?
+        .version;
+    let change = Change {
+        key: key.to_owned(),
+        value: serde_json::json!("all"),
+        version,
+    };
+    let request = UpdateRequest {
+        changes: vec![change],
+        actor: None,
+        reason: None,
+    };
+    state.settings.update(request).await?;
     Ok(SeedOutputs::new())
 }

@@ -2,12 +2,21 @@
 //! `src/hbbs_http/sync.rs:146-188`), set by the custom client's built-in options or its
 //! config, to place a freshly installed device without an administrator.
 //!
+//! Presets are **self-reported**: whoever registers an id with a uuid of their choosing can
+//! send any of them. They therefore only apply when an administrator opted in:
+//!
+//! - `devices.accept_presets` (default `off`): `row` applies owner, device group, note and
+//!   strategy; `all` also the address book entry.
+//! - Never while `devices.verify_uuid` is off: anyone knowing an id could then send the first
+//!   sysinfo of a device that registered but never reported (e.g. every device migrated
+//!   from an OSS hbbs).
+//! - TODO(M5): with `devices.require_deploy`, accept them only from deployed devices.
+//!
 //! **When**: only with the first sysinfo a device row ever stores (`sysinfo_hash` was
-//! `NULL`), i.e. when the device is new to deskhaven. Later uploads never apply them again,
-//! so an administrator's change (console, `--assign`) is never undone by the device, and a
-//! device that is already placed cannot be moved by whoever learns its id and uuid (a weak
-//! secret, 06 §2). Presets that could not be applied then (unknown name) stay unapplied;
-//! place the device by `--assign` or in the console instead.
+//! `NULL`), decided under the row lock, so concurrent first uploads apply one set. Later
+//! uploads never apply them again: an administrator's change (console, `--assign`) is never
+//! undone by the device. Presets that could not be applied then (unknown name) stay
+//! unapplied; place the device by `--assign` or in the console instead.
 //!
 //! **What**, each only where nothing is set yet (never replacing a value):
 //!
@@ -17,25 +26,24 @@
 //! | `preset-device-group-name` | device group = the group with exactly that name |
 //! | `preset-note` | device note |
 //! | `preset-strategy-name` | device-level strategy assignment = the strategy with that name |
-//! | `preset-address-book-name` (+ `-tag`, `-alias`, `-password`, `-note`) | a peer entry for the device in the shared book of that name (case-insensitive, unique), unless the book already lists it; the tag is created in the book if missing |
+//! | `preset-address-book-*` | see [`preset_book`](super::preset_book): a peer entry written **as the device's owner** |
 //!
-//! Unknown or ambiguous names, invalid values and full books are skipped (logged); they never
-//! fail the sysinfo upload. Owner, device group and note are written in the sysinfo
-//! transaction; the strategy and the address book entry right after it commits (best effort:
-//! a crash in between loses them, like an unknown name would).
+//! Unknown or ambiguous names, invalid values, missing rights and full books are skipped
+//! (logged); they never fail the sysinfo upload. Owner, device group and note are written in
+//! the sysinfo transaction; the strategy and the address book entry right after it commits
+//! (best effort: a crash in between loses them, like an unknown name would).
 
+use deskhaven_config::settings::{
+    AcceptPresets, DEVICES_ACCEPT_PRESETS, DEVICES_VERIFY_UUID, Snapshot,
+};
 use deskhaven_db::entity::{device, device_group, user};
+use sea_orm::sea_query::LockType;
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QuerySelect};
-use serde_json::{Map, Value, json};
 use zeroize::Zeroizing;
 
-use crate::addressbooks::{Actor, AddressBookError, AddressBookService, PeerPatch, Tag};
 use crate::strategies::{StrategyError, StrategyService, Target};
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::username_norm;
-
-/// Colour of a tag a preset creates: the client's `Colors.grey` (ARGB), its neutral choice.
-pub const PRESET_TAG_COLOR: i64 = 0xFF9E_9E9E;
 
 /// The presets of one sysinfo upload. Empty strings count as absent (the client only sends
 /// non-empty values).
@@ -70,6 +78,14 @@ impl std::fmt::Debug for AddressBookPreset {
     }
 }
 
+/// Which presets the current settings let through (see the module documentation).
+pub(super) fn scope(settings: &Snapshot) -> AcceptPresets {
+    match settings.get(&DEVICES_VERIFY_UUID) {
+        true => settings.get(&DEVICES_ACCEPT_PRESETS),
+        false => AcceptPresets::Off,
+    }
+}
+
 /// What the sysinfo transaction writes into the device row (`None`: leave as is).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct RowPresets {
@@ -85,8 +101,9 @@ impl RowPresets {
     }
 }
 
-/// The row presets that apply to `row`, read in `tx`. The user and group found stay locked
-/// until `tx` ends, so they cannot vanish before the row points at them.
+/// The row presets that apply to `row`, read in `tx`. The user and group found stay
+/// key-share locked until `tx` ends, so they cannot vanish before the row points at them
+/// (PostgreSQL; SQLite's write transaction excludes other writers).
 pub(super) async fn resolve_row(
     tx: &impl ConnectionTrait,
     presets: &Presets,
@@ -119,7 +136,7 @@ async fn find_user(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>,
     };
     let found = user::Entity::find()
         .filter(user::Column::UsernameNorm.eq(norm))
-        .lock_shared()
+        .lock(LockType::KeyShare)
         .one(tx)
         .await?;
     Ok(found.map(|u| u.id))
@@ -128,7 +145,7 @@ async fn find_user(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>,
 async fn find_device_group(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>, DbErr> {
     let found = device_group::Entity::find()
         .filter(device_group::Column::Name.eq(name.trim()))
-        .lock_shared()
+        .lock(LockType::KeyShare)
         .one(tx)
         .await?;
     Ok(found.map(|g| g.id))
@@ -177,65 +194,6 @@ pub(super) async fn apply_strategy(
     }
 }
 
-/// `preset-address-book-*`, after the sysinfo commit.
-pub(super) async fn apply_address_book(
-    books: &AddressBookService,
-    device: &device::Model,
-    preset: &AddressBookPreset,
-) {
-    let id = device.rustdesk_id.as_str();
-    let book = match books.find_shared_by_name(&preset.name).await {
-        Ok(book) => book,
-        Err(AddressBookError::NotFound | AddressBookError::AmbiguousName) => {
-            tracing::info!(
-                rustdesk_id = id,
-                "preset-address-book-name names no single shared address book; ignored"
-            );
-            return;
-        }
-        Err(err) => return log_failure(id, "preset-address-book-name", &err),
-    };
-    if let Some(tag) = &preset.tag {
-        let tag = Tag {
-            name: tag.clone(),
-            color: PRESET_TAG_COLOR,
-        };
-        if let Err(err) = books.add_tag(Actor::Admin, &book.guid, tag).await {
-            return log_failure(id, "preset-address-book-tag", &err);
-        }
-    }
-    let patch = match PeerPatch::from_json(peer_json(device, preset)) {
-        Ok(patch) => patch,
-        Err(err) => return log_failure(id, "preset-address-book-*", &err),
-    };
-    match books.add_peer(Actor::Admin, &book.guid, patch).await {
-        Ok(()) | Err(AddressBookError::PeerExists) => {}
-        Err(err) => log_failure(id, "preset-address-book-name", &err),
-    }
-}
-
-/// The peer entry as the client would send it (validated by [`PeerPatch::from_json`]).
-fn peer_json(device: &device::Model, preset: &AddressBookPreset) -> Value {
-    let mut peer = Map::new();
-    peer.insert("id".to_owned(), json!(device.rustdesk_id));
-    let optional = [
-        ("alias", preset.alias.as_deref()),
-        ("note", preset.note.as_deref()),
-        ("password", preset.password.as_deref().map(String::as_str)),
-        ("hostname", device.hostname.as_deref()),
-        ("username", device.username.as_deref()),
-    ];
-    for (key, value) in optional {
-        if let Some(value) = value {
-            peer.insert(key.to_owned(), json!(value));
-        }
-    }
-    if let Some(tag) = &preset.tag {
-        peer.insert("tags".to_owned(), json!([tag]));
-    }
-    Value::Object(peer)
-}
-
-fn log_failure(rustdesk_id: &str, preset: &str, err: &dyn std::error::Error) {
+pub(super) fn log_failure(rustdesk_id: &str, preset: &str, err: &dyn std::error::Error) {
     tracing::warn!(rustdesk_id, preset, error = %err, "device preset not applied");
 }

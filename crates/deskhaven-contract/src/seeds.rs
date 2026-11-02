@@ -60,6 +60,9 @@ const BUILTIN: &[(&str, Seed)] = &[
     ("registered-device", |state| {
         Box::pin(device_seeds::registered_device(state))
     }),
+    ("device-presets-accepted", |state| {
+        Box::pin(device_seeds::presets_accepted(state))
+    }),
     ("device-preset-targets", |state| {
         Box::pin(device_seeds::preset_targets(state))
     }),

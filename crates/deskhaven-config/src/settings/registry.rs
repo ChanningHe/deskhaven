@@ -3,7 +3,7 @@
 //! APIs all derive from these declarations.
 
 use super::def::{AnySetting, Setting, settings, strict};
-use super::enums::{AclAction, Registration, SmtpTls, TfaEnforce};
+use super::enums::{AcceptPresets, AclAction, Registration, SmtpTls, TfaEnforce};
 use super::kind::{SettingType, max_items, range};
 use super::text::{TextRule, max_len};
 use super::value::HostPort;
@@ -133,6 +133,14 @@ settings! {
     DEVICES_LAST_SEEN_FLUSH: Duration = "devices.last_seen_flush" {
         default: secs(60),
         rule: range(secs(5), hours(1)),
+    }
+    /// Apply the `preset-*` fields of a device's first sysinfo: `row` = owner, device group,
+    /// note and strategy; `all` = also the address book entry (written as the owner). Presets
+    /// let a device choose its own placement: enable only for controlled custom-client
+    /// rollouts. Never applied while `devices.verify_uuid` is off.
+    DEVICES_ACCEPT_PRESETS: AcceptPresets = "devices.accept_presets" {
+        default: AcceptPresets::Off,
+        on_bad_row: strict(AcceptPresets::Off),
     }
     /// Maximum peers per address book returned to clients (`max_peer_one_ab`).
     ADDRESSBOOK_MAX_PEERS: u32 = "addressbook.max_peers" {

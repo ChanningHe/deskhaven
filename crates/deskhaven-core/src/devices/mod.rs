@@ -10,6 +10,7 @@
 //! deletion of devices and device groups.
 
 mod presence;
+mod preset_book;
 mod presets;
 mod service;
 mod sysinfo;
@@ -18,7 +19,8 @@ pub use presence::{
     DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
     SWEEP_INTERVAL, Seen,
 };
-pub use presets::{AddressBookPreset, PRESET_TAG_COLOR, Presets};
+pub use preset_book::PRESET_TAG_COLOR;
+pub use presets::{AddressBookPreset, Presets};
 pub use service::{DEVICE_GROUP_NAME_MAX_LEN, DeviceService, SysinfoOutcome, SysinfoReport};
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
 

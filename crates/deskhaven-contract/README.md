@@ -90,7 +90,9 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
      registered with uuid `contract-device-uuid`, no sysinfo yet; outputs
      `device_id`, `device_uuid` = the base64 the client sends),
      `device-preset-targets` (user `pat`, device group `Office`, strategy
-     `Locked`, admin-managed shared book `Team`: what sysinfo presets name).
+     `Locked`, admin-managed shared book `Team` with `pat` at rule 2: what
+     sysinfo presets name), `device-presets-accepted`
+     (`devices.accept_presets` = `all`; presets are off by default).
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 

@@ -93,6 +93,12 @@ setting_enum! {
 }
 
 setting_enum! {
+    /// Which `preset-*` fields of a device's first sysinfo are applied: none, the device's own
+    /// placement (owner, device group, note, strategy), or that plus address book entries.
+    AcceptPresets { Off = "off", Row = "row", All = "all" }
+}
+
+setting_enum! {
     /// Outcome of a connection ACL decision.
     AclAction { Allow = "allow", Deny = "deny" }
 }
