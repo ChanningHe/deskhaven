@@ -3,13 +3,16 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
+use axum::Router;
+use deskhaven_core::state::AppState;
 
 use crate::app::TestApp;
 use crate::check::{Reply, check};
 use crate::fixture::Fixture;
-use crate::seeds;
+use crate::seeds::Seeds;
 
 /// Part of a reply body quoted in a failure.
 const BODY_EXCERPT: usize = 512;
@@ -34,9 +37,29 @@ pub struct Outcome {
     pub failures: Vec<Failure>,
 }
 
-/// Runs `<dir>/fixtures/**/*.json` whose relative path contains `filter`.
-/// Fixture problems are failures; only an unreadable layout is an `Err`.
+/// What the app is built with besides production code.
+#[derive(Clone, Default)]
+pub struct Setup {
+    /// Seed registry (the built-ins by default).
+    pub seeds: Seeds,
+    /// Merged into the client API before the middleware. Runner self-tests
+    /// add an echo route here; the real fixtures run with none.
+    pub routes: Router<Arc<AppState>>,
+}
+
+/// Runs `<dir>/fixtures/**/*.json` whose relative path contains `filter`,
+/// against production code only.
 pub async fn run_dir(dir: &Path, filter: Option<&str>) -> anyhow::Result<Outcome> {
+    run_dir_with(dir, filter, &Setup::default()).await
+}
+
+/// [`run_dir`] with extra seeds and routes. Fixture problems are failures;
+/// only an unreadable layout is an `Err`.
+pub async fn run_dir_with(
+    dir: &Path,
+    filter: Option<&str>,
+    setup: &Setup,
+) -> anyhow::Result<Outcome> {
     let upstream = std::fs::read_to_string(dir.join("UPSTREAM_COMMIT"))
         .with_context(|| format!("cannot read {}/UPSTREAM_COMMIT", dir.display()))?;
     let root = dir.join("fixtures");
@@ -47,7 +70,7 @@ pub async fn run_dir(dir: &Path, filter: Option<&str>) -> anyhow::Result<Outcome
         if filter.is_some_and(|f| !file.contains(f)) {
             continue;
         }
-        match run_file(&path, upstream.trim()).await {
+        match run_file(&path, upstream.trim(), setup).await {
             Ok(()) => outcome.passed.push(file),
             Err(failure) => outcome.failures.push(Failure { file, ..failure }),
         }
@@ -55,7 +78,7 @@ pub async fn run_dir(dir: &Path, filter: Option<&str>) -> anyhow::Result<Outcome
     Ok(outcome)
 }
 
-async fn run_file(path: &Path, upstream: &str) -> Result<(), Failure> {
+async fn run_file(path: &Path, upstream: &str, setup: &Setup) -> Result<(), Failure> {
     let fail = |source: Vec<String>, problems: Vec<String>, body| Failure {
         file: String::new(),
         source,
@@ -65,11 +88,11 @@ async fn run_file(path: &Path, upstream: &str) -> Result<(), Failure> {
     let text =
         std::fs::read_to_string(path).map_err(|err| fail(vec![], vec![err.to_string()], None))?;
     let fixture = Fixture::parse(&text).map_err(|err| fail(vec![], vec![err], None))?;
-    let problems = fixture.problems(upstream);
+    let problems = fixture.problems(upstream, &setup.seeds);
     if !problems.is_empty() {
         return Err(fail(fixture.source, problems, None));
     }
-    let reply = replay(&fixture)
+    let reply = replay(&fixture, setup)
         .await
         .map_err(|err| fail(fixture.source.clone(), vec![format!("{err:#}")], None))?;
     let problems = check(&fixture.expect, &reply);
@@ -79,15 +102,16 @@ async fn run_file(path: &Path, upstream: &str) -> Result<(), Failure> {
     Err(fail(fixture.source, problems, Some(excerpt(&reply))))
 }
 
-async fn replay(fixture: &Fixture) -> anyhow::Result<Reply> {
-    let app = TestApp::start().await.context("cannot start the app")?;
-    for name in &fixture.seed {
-        let seed = seeds::lookup(name).with_context(|| format!("unknown seed {name:?}"))?;
-        seed(&app.state)
-            .await
-            .with_context(|| format!("seed {name:?} failed"))?;
-    }
-    app.send(&fixture.request).await
+async fn replay(fixture: &Fixture, setup: &Setup) -> anyhow::Result<Reply> {
+    let app = TestApp::start_with(setup.routes.clone())
+        .await
+        .context("cannot start the app")?;
+    let outputs = setup.seeds.apply(&fixture.seed, &app.state).await?;
+    let request = fixture
+        .request
+        .resolve(&outputs)
+        .map_err(|err| anyhow!(err))?;
+    app.send(&request).await
 }
 
 fn fixture_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {

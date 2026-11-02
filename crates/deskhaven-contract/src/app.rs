@@ -42,7 +42,14 @@ pub struct TestApp {
 }
 
 impl TestApp {
+    /// Production routes only.
     pub async fn start() -> anyhow::Result<Self> {
+        Self::start_with(Router::new()).await
+    }
+
+    /// Production routes plus `extra` (test-only routes; they get the same
+    /// state and sit behind the same middleware).
+    pub async fn start_with(extra: Router<Arc<AppState>>) -> anyhow::Result<Self> {
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let config = Bootstrap {
             data_dir: data_dir.path().to_path_buf(),
@@ -61,11 +68,12 @@ impl TestApp {
         );
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown);
+        let client_api = apps.client_api.merge(extra.with_state(Arc::clone(&state)));
         // As served on a split client_api listener (deskhaven_http::serve);
         // single-listener mode routes `/api/*` identically.
         let http = deskhaven::http::http_config(&config, DRAIN);
         let router = apply_middleware(
-            apps.client_api,
+            client_api,
             &http,
             ErrorBodies::uniform(apps.errors.client_api),
         );

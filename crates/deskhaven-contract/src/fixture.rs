@@ -8,7 +8,8 @@ use axum::http::Method;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{seeds, shapes};
+use crate::seeds::{SeedOutputs, Seeds};
+use crate::shapes;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,7 +30,11 @@ pub struct Fixture {
 
 /// Sent exactly as written: no implicit headers besides `content-length`
 /// (set from the body when a body is sent or the method carries one).
-#[derive(Debug, Deserialize)]
+///
+/// `${name}` in `path`, header values and body strings (text, or any string
+/// inside a JSON body) is replaced by the seed output `name` before sending;
+/// an unknown name fails the fixture. There is no escape for a literal `${`.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub method: String,
@@ -45,7 +50,7 @@ pub struct Request {
 }
 
 /// `"empty"`, `{"json": <value>}` (serialized compactly) or `{"text": "..."}`.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Body {
     #[default]
@@ -91,14 +96,14 @@ impl Fixture {
     }
 
     /// Everything wrong with the fixture itself, before it is run.
-    pub fn problems(&self, upstream_commit: &str) -> Vec<String> {
+    pub fn problems(&self, upstream_commit: &str, seeds: &Seeds) -> Vec<String> {
         [
             self.provenance_problems(upstream_commit),
             self.request.problems(),
             self.expect.problems(),
             self.seed
                 .iter()
-                .filter(|name| seeds::lookup(name).is_none())
+                .filter(|name| seeds.lookup(name).is_none())
                 .map(|name| format!("unknown seed {name:?}"))
                 .collect(),
         ]
@@ -137,6 +142,38 @@ impl Fixture {
 }
 
 impl Request {
+    /// No headers, no body, default peer (multi-step tests set the rest).
+    pub fn new(method: &str, path: &str) -> Self {
+        Self {
+            method: method.to_owned(),
+            path: path.to_owned(),
+            headers: BTreeMap::new(),
+            body: Body::Empty,
+            peer: None,
+        }
+    }
+
+    /// A copy with every `${name}` replaced from `outputs`.
+    pub fn resolve(&self, outputs: &SeedOutputs) -> Result<Self, String> {
+        let headers = self
+            .headers
+            .iter()
+            .map(|(name, value)| Ok((name.clone(), substitute(value, outputs)?)))
+            .collect::<Result<_, String>>()?;
+        let body = match &self.body {
+            Body::Empty => Body::Empty,
+            Body::Json(value) => Body::Json(substitute_json(value, outputs)?),
+            Body::Text(text) => Body::Text(substitute(text, outputs)?),
+        };
+        Ok(Self {
+            method: self.method.clone(),
+            path: substitute(&self.path, outputs)?,
+            headers,
+            body,
+            peer: self.peer,
+        })
+    }
+
     fn problems(&self) -> Vec<String> {
         let method = Method::from_bytes(self.method.as_bytes())
             .is_err()
@@ -176,6 +213,53 @@ impl Expect {
             .map(|p| format!("json_absent entry {p:?} must be a JSON pointer (\"/key\")"));
         misplaced.chain(text).chain(shape).chain(pointers).collect()
     }
+}
+
+const PLACEHOLDER_OPEN: &str = "${";
+const PLACEHOLDER_CLOSE: char = '}';
+
+/// `text` with each `${name}` replaced by `outputs[name]`.
+fn substitute(text: &str, outputs: &SeedOutputs) -> Result<String, String> {
+    let mut resolved = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(PLACEHOLDER_OPEN) {
+        let after = &rest[start + PLACEHOLDER_OPEN.len()..];
+        let end = after
+            .find(PLACEHOLDER_CLOSE)
+            .ok_or_else(|| format!("unterminated placeholder in {text:?}"))?;
+        let name = &after[..end];
+        let value = outputs.get(name).ok_or_else(|| {
+            let known: Vec<_> = outputs.keys().map(String::as_str).collect();
+            format!(
+                "placeholder ${{{name}}} has no seed output (outputs: [{}])",
+                known.join(", ")
+            )
+        })?;
+        resolved.push_str(&rest[..start]);
+        resolved.push_str(value);
+        rest = &after[end + 1..];
+    }
+    resolved.push_str(rest);
+    Ok(resolved)
+}
+
+/// Substitutes inside every string of a JSON value (keys stay as written).
+fn substitute_json(value: &Value, outputs: &SeedOutputs) -> Result<Value, String> {
+    Ok(match value {
+        Value::String(text) => Value::String(substitute(text, outputs)?),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| substitute_json(item, outputs))
+                .collect::<Result<_, _>>()?,
+        ),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, item)| Ok((key.clone(), substitute_json(item, outputs)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        scalar => scalar.clone(),
+    })
 }
 
 /// `path:12` or `path:12-30`, path without whitespace.
@@ -224,7 +308,10 @@ mod tests {
 
     #[test]
     fn valid_fixture_has_no_problems() {
-        assert_eq!(fixture(json!({})).problems(COMMIT), Vec::<String>::new());
+        assert_eq!(
+            fixture(json!({})).problems(COMMIT, &Seeds::builtin()),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -255,9 +342,9 @@ mod tests {
         let bad = fixture(json!({ "source": ["user_model.dart", "a b:1", "x:1-"] }));
         let none = fixture(json!({ "source": [] }));
 
-        assert_eq!(stale.problems(COMMIT).len(), 1);
-        assert_eq!(bad.problems(COMMIT).len(), 3);
-        assert_eq!(none.problems(COMMIT).len(), 1);
+        assert_eq!(stale.problems(COMMIT, &Seeds::builtin()).len(), 1);
+        assert_eq!(bad.problems(COMMIT, &Seeds::builtin()).len(), 3);
+        assert_eq!(none.problems(COMMIT, &Seeds::builtin()).len(), 1);
     }
 
     #[test]
@@ -268,10 +355,10 @@ mod tests {
         let text_on_json = fixture(json!({ "expect": { "text": "x" } }));
 
         // shape + json_subset are both misplaced on a text body.
-        assert_eq!(text_with_shape.problems(COMMIT).len(), 2);
-        assert!(unknown_shape.problems(COMMIT)[0].contains("LoginOptions"));
-        assert_eq!(bad_pointer.problems(COMMIT).len(), 1);
-        assert_eq!(text_on_json.problems(COMMIT).len(), 1);
+        assert_eq!(text_with_shape.problems(COMMIT, &Seeds::builtin()).len(), 2);
+        assert!(unknown_shape.problems(COMMIT, &Seeds::builtin())[0].contains("LoginOptions"));
+        assert_eq!(bad_pointer.problems(COMMIT, &Seeds::builtin()).len(), 1);
+        assert_eq!(text_on_json.problems(COMMIT, &Seeds::builtin()).len(), 1);
     }
 
     #[test]
@@ -281,6 +368,57 @@ mod tests {
             "request": { "method": "G ET", "path": "api/x" }
         }));
 
-        assert_eq!(bad.problems(COMMIT).len(), 3);
+        assert_eq!(bad.problems(COMMIT, &Seeds::builtin()).len(), 3);
+    }
+
+    fn outputs() -> SeedOutputs {
+        SeedOutputs::from([
+            ("token".to_owned(), "t1".to_owned()),
+            ("id".to_owned(), "42".to_owned()),
+        ])
+    }
+
+    #[test]
+    fn substitutes_every_placeholder() {
+        let resolved = substitute("/api/x?id=${id}&t=${token}${id}", &outputs());
+
+        assert_eq!(resolved.as_deref(), Ok("/api/x?id=42&t=t142"));
+        assert_eq!(
+            substitute("no placeholder $ { }", &outputs()).as_deref(),
+            Ok("no placeholder $ { }")
+        );
+    }
+
+    #[test]
+    fn unknown_or_unterminated_placeholders_are_errors() {
+        let unknown = substitute("Bearer ${nope}", &outputs()).unwrap_err();
+        let open = substitute("Bearer ${token", &outputs()).unwrap_err();
+
+        assert!(
+            unknown.contains("${nope}") && unknown.contains("id, token"),
+            "{unknown}"
+        );
+        assert!(open.contains("unterminated"), "{open}");
+    }
+
+    #[test]
+    fn resolve_covers_path_headers_and_json_strings_only() {
+        let request = fixture(json!({ "request": {
+            "path": "/api/x/${id}",
+            "headers": { "authorization": "Bearer ${token}" },
+            "body": { "json": { "${id}": ["${token}", 1, { "n": "${id}" }] } }
+        } }))
+        .request;
+
+        let resolved = request.resolve(&outputs()).unwrap();
+
+        assert_eq!(resolved.path, "/api/x/42");
+        assert_eq!(resolved.headers["authorization"], "Bearer t1");
+        let Body::Json(body) = resolved.body else {
+            panic!("json body expected");
+        };
+        assert_eq!(body, json!({ "${id}": ["t1", 1, { "n": "42" }] }));
+        // The original is untouched.
+        assert_eq!(request.path, "/api/x/${id}");
     }
 }

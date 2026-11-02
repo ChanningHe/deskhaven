@@ -1,5 +1,6 @@
 //! Compares a response with a fixture's `expect`.
 
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::fixture::{BodyKind, Expect};
@@ -10,6 +11,13 @@ use crate::shapes;
 pub struct Reply {
     pub status: u16,
     pub body: Vec<u8>,
+}
+
+impl Reply {
+    /// The body as a client mirror type (multi-step tests).
+    pub fn json<T: DeserializeOwned>(&self) -> serde_json::Result<T> {
+        serde_json::from_slice(&self.body)
+    }
 }
 
 /// Every mismatch, each a self-contained sentence. Empty = pass.

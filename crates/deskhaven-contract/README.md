@@ -53,8 +53,13 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
    `file:line`, the client's optionality and types, unknown fields ignored)
    with unit tests from the 03 example, then register its name in `SHAPES`.
 4. If the request needs prior state (user, session, device, settings): add a
-   seed to `src/seeds.rs` that writes it through the real services with fixed
-   values (e.g. a known session token) and list its name under `"seed"`.
+   seed to `src/seeds.rs` that writes it through the real services of the
+   app's `AppState` (the same instance the handlers serve) and list its name
+   under `"seed"`. A seed returns named outputs (e.g. `session_token` → the
+   token the real login service issued); refer to them as `${session_token}`
+   in `request.path`, header values and body strings. Seeds run in order; an
+   output name defined twice, or a placeholder without an output, fails the
+   fixture. There is no escape for a literal `${`.
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 
@@ -74,6 +79,35 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
 | `expect.text` | (text) exact body |
 
 Unknown keys are errors, so a typo cannot silently drop an assertion.
+
+## Multi-step flows
+
+A fixture is one request. Flows whose meaning is the *sequence* (logout then
+401, the 2FA two-step login, OIDC polling, heartbeat nonce dedupe, expiry) are
+Rust tests on `TestApp`, decoding each reply with the mirror types, as the
+client would. `tests/flows.rs` is the template:
+
+```rust
+#[tokio::test]
+async fn login_options_still_answers_after_a_rejected_method() {
+    let app = TestApp::start().await.unwrap(); // one database, one AppState
+
+    let rejected = app.send(&Request::new("POST", "/api/login-options")).await.unwrap();
+    let options = app.send(&Request::new("GET", "/api/login-options")).await.unwrap();
+
+    assert_eq!(rejected.status, 405);
+    assert_eq!(rejected.json::<ErrorBody>().unwrap().error, "method not allowed");
+    assert!(options.json::<LoginOptions>().unwrap().is_empty());
+}
+```
+
+Prepare state with the same seeds (`Seeds::builtin().apply(&names,
+&app.state)`) or directly through `app.state`'s services, set
+`Request::headers`/`body` for the client's exact request, and carry values
+from one reply into the next request in plain Rust.
+
+Time: there is no clock control yet, so expiry cannot be tested without
+waiting. M2-05 introduces an injectable clock; expiry tests start there.
 
 ## Provenance rules
 
