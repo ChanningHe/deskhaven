@@ -21,7 +21,8 @@ use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::{AppState, StateConfig};
-use deskhaven_core::users::{Credential, NewUser, Password, PasswordHasher, Role};
+use deskhaven_core::users::{Credential, HashParams, NewUser, Password, PasswordHasher, Role};
+use deskhaven_db::entity::console_audit;
 use deskhaven_db::testing::TestDb;
 use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
 use serde_json::Value;
@@ -31,6 +32,12 @@ pub mod login;
 pub mod probe;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
+/// Cheap Argon2id parameters: tests create many accounts.
+const FAST: HashParams = HashParams {
+    memory_kib: 1024,
+    iterations: 1,
+    parallelism: 1,
+};
 /// `deskhaven_admin_api::CSRF_HEADER` as a static string.
 pub const CSRF_HEADER_NAME: &str = "x-deskhaven-csrf";
 /// TEST-NET-3 peer, not a trusted proxy.
@@ -71,7 +78,7 @@ pub async fn harness(db: &TestDb, extra: AdminRoutes) -> Harness {
         settings,
         crypto,
         "test-signal-key".to_owned(),
-        PasswordHasher::default(),
+        PasswordHasher::new(FAST).unwrap(),
         Arc::new(SystemClock),
         &StateConfig::default(),
     ));
@@ -133,6 +140,7 @@ impl Harness {
         format!("{SESSION_COOKIE}={}", token.expose())
     }
 
+    /// Creates an active local user of `role` (password [`PASSWORD`]); returns its id.
     pub async fn create_user(&self, username: &str, role: Role) -> i64 {
         let credential = Credential::Local {
             password: Password::new(PASSWORD),
@@ -182,6 +190,22 @@ impl Harness {
     pub async fn write(&self, method: Method, path: &str, console: &Console, body: Value) -> Reply {
         let (cookie, csrf) = (Some(console.cookie.as_str()), Some(console.csrf.as_str()));
         self.send(method, path, cookie, csrf, Some(body)).await
+    }
+
+    /// A body-less state-changing request (`POST` action, `DELETE`) as `console`.
+    pub async fn act(&self, method: Method, path: &str, console: &Console) -> Reply {
+        let (cookie, csrf) = (Some(console.cookie.as_str()), Some(console.csrf.as_str()));
+        self.send(method, path, cookie, csrf, None).await
+    }
+
+    /// Every console audit row, oldest first.
+    pub async fn audit_rows(&self) -> Vec<console_audit::Model> {
+        use sea_orm::{EntityTrait, QueryOrder};
+        console_audit::Entity::find()
+            .order_by_asc(console_audit::Column::Id)
+            .all(&self.state.db)
+            .await
+            .unwrap()
     }
 
     pub async fn raw(&self, request: Request<Body>) -> Reply {

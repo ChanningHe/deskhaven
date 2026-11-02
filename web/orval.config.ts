@@ -25,7 +25,9 @@ export default defineConfig({
         ],
         mutator: { path: 'src/api/client.ts', name: 'apiFetch' },
         fetch: { includeHttpResponseReturnType: false },
-        query: { useQuery: true, signal: true },
+        // Orval's default split: GET operations get query hooks, every other method
+        // a mutation hook.
+        query: { signal: true },
       },
     },
   },

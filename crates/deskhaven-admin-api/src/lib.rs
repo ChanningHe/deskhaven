@@ -13,9 +13,11 @@ mod account;
 pub mod account_setup;
 pub mod audit;
 mod auth;
+mod domain_error;
 mod error;
 mod extract;
 mod gate;
+mod groups;
 mod me;
 mod openapi;
 mod origin;
@@ -26,6 +28,7 @@ pub mod session;
 mod setup;
 mod stack_error;
 pub mod transport;
+mod users;
 
 use std::sync::Arc;
 
@@ -35,7 +38,7 @@ use utoipa_axum::routes;
 
 pub use audit::{Audit, AuditCtx, Audited};
 pub use error::{AdminApiError, BoxError, ErrorBody, ErrorCode, ErrorEnvelope};
-pub use extract::{MAX_REASON_CHARS, ValidJson, ValidQuery};
+pub use extract::{MAX_REASON_CHARS, ValidJson, ValidPath, ValidQuery};
 pub use me::{Me, RoleView};
 pub use openapi::{OpenApiError, SPEC_PATH, openapi_json};
 pub use origin::TrustedOrigins;
@@ -47,6 +50,7 @@ pub use session::{
     csrf_token, session_cookies,
 };
 pub use stack_error::render_stack_error;
+pub use users::{MAX_CSV_BYTES, MAX_IMPORT_ROWS};
 
 pub use account::{PasswordChange, QrCode, TotpConfirm, TotpEnabled, TotpEnrolment};
 pub use account_setup::SetupStep;
@@ -59,11 +63,13 @@ pub use setup::{SetupRequest, SetupStatus};
 /// Every production admin API route. Fails when an operation declares no valid
 /// permission, so the server cannot start with an unguarded route.
 pub fn api_routes() -> Result<AdminRoutes, RouteError> {
-    AdminRoutes::new()
+    let routes = AdminRoutes::new()
         .routes(routes!(me::get_me))?
         .merge(auth::routes()?)?
         .merge(account::routes()?)?
-        .merge(setup::routes()?)
+        .merge(setup::routes()?)?;
+    let routes = users::routes(routes)?;
+    groups::routes(routes)
 }
 
 /// The production routes behind their gates, for the admin listener.

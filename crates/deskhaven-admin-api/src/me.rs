@@ -8,7 +8,7 @@ use axum::extract::State;
 use deskhaven_core::sessions::AccountFlags;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{Role, User, UserError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::AdminApiError;
@@ -16,7 +16,7 @@ use crate::account_setup::{SetupStep, pending_step};
 use crate::session::ConsoleUser;
 
 /// Console role (06 §4.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RoleView {
     Owner,
@@ -30,6 +30,16 @@ impl From<Role> for RoleView {
             Role::Owner => Self::Owner,
             Role::Admin => Self::Admin,
             Role::User => Self::User,
+        }
+    }
+}
+
+impl From<RoleView> for Role {
+    fn from(role: RoleView) -> Self {
+        match role {
+            RoleView::Owner => Self::Owner,
+            RoleView::Admin => Self::Admin,
+            RoleView::User => Self::User,
         }
     }
 }

@@ -76,7 +76,11 @@
       "invalid_setup_token": "This setup link is invalid, expired or already used.",
       "setup_completed": "This server is already set up. Sign in instead.",
       "oidc_failed": "Single sign-on failed. Try again.",
-      "not_local_account": "This account signs in through single sign-on; its password and second factor are managed there."
+      "owner_required": "Only an owner can manage owner accounts or grant the owner role.",
+      "last_owner": "The last active owner cannot be demoted, disabled or deleted.",
+      "self_delete": "You cannot delete your own account.",
+      "managed_by_config": "This item is managed by the configuration file and is read-only here.",
+      "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there."
     }
   },
   "theme": {

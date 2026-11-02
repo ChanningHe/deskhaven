@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use axum::Json;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::{FromRequest, FromRequestParts, Query, Request};
+use axum::extract::{FromRequest, FromRequestParts, Path, Query, Request};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use garde::{Report, Validate};
@@ -61,6 +61,25 @@ where
             .await
             .map_err(query_rejection)?;
         validated(value).map(Self)
+    }
+}
+
+/// Typed path parameters (ids). A parameter that does not parse names no resource: 404.
+#[derive(Debug, Clone)]
+pub struct ValidPath<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ValidPath<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + Send,
+{
+    type Rejection = AdminApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let Path(value) = Path::<T>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AdminApiError::not_found("no such resource"))?;
+        Ok(Self(value))
     }
 }
 

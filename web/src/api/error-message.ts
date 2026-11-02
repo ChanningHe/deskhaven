@@ -37,6 +37,10 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   invalid_setup_token: 'errors.codes.invalid_setup_token',
   setup_completed: 'errors.codes.setup_completed',
   oidc_failed: 'errors.codes.oidc_failed',
+  owner_required: 'errors.codes.owner_required',
+  last_owner: 'errors.codes.last_owner',
+  self_delete: 'errors.codes.self_delete',
+  managed_by_config: 'errors.codes.managed_by_config',
   not_local_account: 'errors.codes.not_local_account',
 }
 

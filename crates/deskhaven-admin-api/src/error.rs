@@ -61,7 +61,17 @@ pub enum ErrorCode {
     SetupCompleted,
     /// A console OIDC login failed (`details.reason`).
     OidcFailed,
-    /// The account has no local password or local second factor (OIDC sign-in).
+    // Account and group rules (06 §4.1, 05 §4.1).
+    /// Only an owner may create, change or delete an owner, or promote to owner.
+    OwnerRequired,
+    /// The change would leave no active owner.
+    LastOwner,
+    /// Deleting one's own account.
+    SelfDelete,
+    /// The resource is defined in the configuration file and read-only in the console.
+    ManagedByConfig,
+    /// The account has no local password or local second factor (OIDC sign-in; LDAP and
+    /// OIDC accounts for a password reset).
     NotLocalAccount,
 }
 
@@ -89,8 +99,13 @@ impl ErrorCode {
             | Self::InsecureTransport
             | Self::SetupRequired
             | Self::InvalidSetupToken
-            | Self::OidcFailed => StatusCode::FORBIDDEN,
-            Self::SetupCompleted | Self::NotLocalAccount => StatusCode::CONFLICT,
+            | Self::OidcFailed
+            | Self::OwnerRequired => StatusCode::FORBIDDEN,
+            Self::SetupCompleted
+            | Self::LastOwner
+            | Self::SelfDelete
+            | Self::ManagedByConfig
+            | Self::NotLocalAccount => StatusCode::CONFLICT,
         }
     }
 
@@ -121,6 +136,10 @@ impl ErrorCode {
             Self::InvalidSetupToken => "invalid_setup_token",
             Self::SetupCompleted => "setup_completed",
             Self::OidcFailed => "oidc_failed",
+            Self::OwnerRequired => "owner_required",
+            Self::LastOwner => "last_owner",
+            Self::SelfDelete => "self_delete",
+            Self::ManagedByConfig => "managed_by_config",
             Self::NotLocalAccount => "not_local_account",
         }
     }
