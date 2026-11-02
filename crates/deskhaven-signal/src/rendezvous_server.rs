@@ -173,10 +173,11 @@ static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs
 /// under 512 bytes (pk 32, uuid at most 128, id at most 253). 64 KiB leaves ten times the
 /// room. HttpProxyRequest bodies (M5) may need more.
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// From accept to the first complete frame (websocket: handshake included). Above the
+/// From accept to the first complete frame (websocket: handshake included). Well above the
 /// client's READ_TIMEOUT (18 s): logged-in controllers and every TCP-mode controlled client
-/// first wait that long for a KeyExchange (`secure_tcp`) from a server that sends none.
-const FIRST_FRAME_TIMEOUT_MS: u64 = 20_000;
+/// first wait that long for a KeyExchange (`secure_tcp`) from a server that sends none (upstream's
+/// 30 s per frame). M1-07 sends the KeyExchange at once and may lower it.
+const FIRST_FRAME_TIMEOUT_MS: u64 = 30_000;
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(FIRST_FRAME_TIMEOUT_MS);
 /// Between frames after the first (upstream's 30 s per frame).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -1512,7 +1513,9 @@ impl RendezvousServer {
         // deskhaven (M1-08): a peer registered over this connection (`conn`) gets heartbeats
         // and the messages queued for it; an empty frame from it answers a heartbeat.
         let mut conn = StreamPeer::default();
-        let mut heartbeat = interval_at(first_frame, STREAM_HEARTBEAT);
+        // First tick one period after the accept (not tied to FIRST_FRAME_TIMEOUT, which may
+        // exceed IDLE_TIMEOUT - STREAM_HEARTBEAT); a peer registered later gets one at once.
+        let mut heartbeat = interval_at(TokioInstant::now() + STREAM_HEARTBEAT, STREAM_HEARTBEAT);
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {

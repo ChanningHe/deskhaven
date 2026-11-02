@@ -27,8 +27,12 @@ use support::{Conn, Recv, Rendezvous, STEP, TestServer, expect_msg};
 
 /// The server's frame limit (`rendezvous_server.rs` `MAX_FRAME_LEN`).
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// The server's limit for the first frame (`FIRST_FRAME_TIMEOUT`).
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(20);
+/// The server's limit for the first frame (`FIRST_FRAME_TIMEOUT`): above the client's 18 s
+/// READ_TIMEOUT with a wide margin (M1-08 review).
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// The client's READ_TIMEOUT: TCP-mode and logged-in clients wait this long for a KeyExchange
+/// before their first frame.
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(18);
 /// The server's limit between frames (`IDLE_TIMEOUT`).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Slack around a timeout on the paused clock (timers fire exactly; this covers the ticks
@@ -151,7 +155,7 @@ async fn quiet_for(conn: &mut impl Conn, wait: Duration) -> bool {
     }
 }
 
-/// Punches an unknown id over `conn`, then checks it is still open after FIRST_FRAME_TIMEOUT
+/// Punches an unknown id over `conn`, then checks it is still open shortly before IDLE_TIMEOUT
 /// and closed once silent for IDLE_TIMEOUT.
 async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, name: &str) {
     conn.punch_hole_request(server.punch_req("idle-unknown"))
@@ -159,7 +163,7 @@ async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, na
     expect_id_not_exist(conn).await;
     let started = Instant::now();
     assert!(
-        quiet_for(conn, FIRST_FRAME_TIMEOUT + SLACK * 5).await,
+        quiet_for(conn, IDLE_TIMEOUT - SLACK * 5).await,
         "{name}: closed early"
     );
     assert!(!quiet_for(conn, NEVER).await, "{name}: never closed");
@@ -167,8 +171,8 @@ async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, na
 }
 
 /// A connection that sends nothing (websocket: not even the handshake) is closed after
-/// FIRST_FRAME_TIMEOUT. Upstream gave TCP 30 s and never closed a websocket connection that
-/// did not complete its handshake.
+/// FIRST_FRAME_TIMEOUT (TCP: upstream's 30 s). Upstream never closed a websocket connection that did
+/// not complete its handshake.
 #[tokio::test(start_paused = true)]
 async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     // Arrange
@@ -201,9 +205,25 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     server.stop().await;
 }
 
-/// After a first frame that keeps the connection open, it stays open past FIRST_FRAME_TIMEOUT
-/// and is closed once silent for IDLE_TIMEOUT (upstream's 30 s per frame), on TCP and
-/// websocket.
+/// M1-08 review (M3): until M1-07 sends a KeyExchange at once, TCP-mode controlled clients and
+/// logged-in controllers wait out READ_TIMEOUT (18 s) before their first frame; that frame is
+/// still served with seconds to spare. Paused clock.
+#[tokio::test(start_paused = true)]
+async fn first_frame_after_the_clients_read_timeout_is_served() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut late = server.tcp().await;
+
+    // Act
+    tokio::time::sleep(CLIENT_READ_TIMEOUT + SLACK * 5).await;
+
+    // Assert
+    assert!(late.test_nat().await.port > 0);
+    server.stop().await;
+}
+
+/// After a first frame that keeps the connection open, it stays open until it has been silent
+/// for IDLE_TIMEOUT (upstream's 30 s per frame), on TCP and websocket.
 #[tokio::test(start_paused = true)]
 async fn idle_connection_is_closed_after_the_idle_timeout() {
     // Arrange

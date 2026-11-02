@@ -232,7 +232,10 @@ async fn heartbeats_keep_a_tcp_peer_online_past_reg_timeout() {
 
     // Act: listen (answering heartbeats) for twice REG_TIMEOUT.
     while started.elapsed() < REG_TIMEOUT * 2 {
-        target.assert_silent().await;
+        match target.recv_within(support::QUIET).await {
+            support::Recv::Quiet => {}
+            other => panic!("after {:?}: {other:?}", started.elapsed()),
+        }
     }
 
     // Assert

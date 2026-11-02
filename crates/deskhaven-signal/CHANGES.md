@@ -495,6 +495,16 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `registered_peer_that_never_reads_is_dropped_by_the_send_timeout` (paused clock; the test
   client gets a minimal receive buffer, `TcpClient::connect_small_buffer`) and
   `forwarded_strings_over_their_bounds_are_dropped`.
+- 2026-11-03, M1-08 review (M3): `FIRST_FRAME_TIMEOUT` is 30 s (was 20 s), upstream's per-frame
+  value: 20 s left about 2 s over the client's 18 s READ_TIMEOUT, which TCP-mode controlled
+  clients and logged-in controllers wait out before their first frame while the server sends
+  no KeyExchange. M1-07 sends the KeyExchange at once and may lower it. The heartbeat timer of
+  a connection now starts one `STREAM_HEARTBEAT` after the accept instead of at the first-frame
+  deadline: at 30 s the first heartbeat would come only when IDLE_TIMEOUT closes a peer
+  registered right away. Test `first_frame_after_the_clients_read_timeout_is_served`;
+  `limits.rs` expectations follow; `heartbeats_keep_a_tcp_peer_online_past_reg_timeout` now
+  fails on a closed connection instead of spinning (a closed stream answers at once and the
+  paused clock never advanced).
 - 2026-11-03, M1-08, known limitations (no change): a claimed websocket port is unique among
   websocket connections claiming that IP but can equal the source port of a direct TCP
   connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in
