@@ -25,6 +25,12 @@ pub enum ErrorCode {
     NotFound,
     Conflict,
     Internal,
+    // Produced by the HTTP stack (see `render_stack_error`).
+    BadRequest,
+    MethodNotAllowed,
+    PayloadTooLarge,
+    Timeout,
+    Unavailable,
 }
 
 impl ErrorCode {
@@ -36,6 +42,10 @@ impl ErrorCode {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict => StatusCode::CONFLICT,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BadRequest => StatusCode::BAD_REQUEST,
+            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::Timeout | Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -47,6 +57,11 @@ impl ErrorCode {
             Self::NotFound => "not_found",
             Self::Conflict => "conflict",
             Self::Internal => "internal",
+            Self::BadRequest => "bad_request",
+            Self::MethodNotAllowed => "method_not_allowed",
+            Self::PayloadTooLarge => "payload_too_large",
+            Self::Timeout => "timeout",
+            Self::Unavailable => "unavailable",
         }
     }
 }

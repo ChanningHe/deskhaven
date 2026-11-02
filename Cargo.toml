@@ -82,8 +82,10 @@ tokio-util = { version = "0.7", features = ["rt"] }
 # (tokio, tokio-util, serde, serde_json, thiserror, ipnet, url, tracing-subscriber, uuid: reused from earlier blocks.)
 deskhaven-http = { path = "crates/deskhaven-http" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "tracing"] }
+hyper = { version = "1.12", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["http1", "server", "server-graceful", "service", "tokio"] }
 tower = { version = "0.5.3", default-features = false }
-tower-http = { version = "0.7.1", default-features = false, features = ["catch-panic", "limit", "set-header", "timeout", "trace"] }
+tower-http = { version = "0.7.1", default-features = false, features = ["catch-panic", "limit", "trace"] }
 tracing = "0.1.44"
 proptest = "1.7"
 

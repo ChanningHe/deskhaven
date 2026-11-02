@@ -11,8 +11,11 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
+use crate::conn::serve_listener;
 use crate::middleware::{HttpConfig, apply_middleware};
+use crate::stack_error::ErrorBodies;
 
 const CLIENT_API: &str = "client_api";
 const ADMIN: &str = "admin";
@@ -25,17 +28,23 @@ pub struct ListenConfig {
     /// `Some` = admin console/API on its own listener.
     pub admin: Option<SocketAddr>,
     /// Split mode only: client_api `GET /` redirects (302) here; `None` = 404.
+    /// Must be an absolute http(s) URL. Ignored (with a warning) when not split.
     pub admin_public_url: Option<String>,
 }
 
 /// Bare routers (no middleware): [`Listeners::serve`] applies the stack.
 ///
 /// Single listener: requests not matched by `client_api` fall through to
-/// `admin` (any fallback on `client_api` is replaced). Split: each router is
-/// served on its own listener.
+/// `admin`, so a path defined in both is served by `client_api` (any fallback
+/// on `client_api` is replaced). Keep the APIs on disjoint prefixes:
+/// `/api/*` (client) and `/admin/api/*` + console (admin).
+/// Split: each router is served on its own listener.
 pub struct Apps {
     pub client_api: Router,
     pub admin: Router,
+    /// Bodies for stack-generated errors. Single listener: chosen by path;
+    /// split: each listener uses its own API's renderer for every path.
+    pub errors: ErrorBodies,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,14 +56,8 @@ pub enum ServeError {
         #[source]
         source: io::Error,
     },
-    #[error("listen.admin_public_url is not a valid Location header value")]
+    #[error("listen.admin_public_url must be an absolute http(s) URL")]
     InvalidAdminPublicUrl,
-    #[error("{name} listener failed")]
-    Serve {
-        name: &'static str,
-        #[source]
-        source: io::Error,
-    },
 }
 
 struct Bound {
@@ -81,12 +84,22 @@ pub struct Listeners {
 
 impl Listeners {
     pub async fn bind(cfg: &ListenConfig) -> Result<Self, ServeError> {
-        let client_api = bind_one(CLIENT_API, cfg.client_api).await?;
+        let url = cfg.admin_public_url.as_deref().filter(|u| !u.is_empty());
         let admin = match cfg.admin {
+            None => {
+                if url.is_some() {
+                    tracing::warn!("listen.admin_public_url is ignored: admin is not split");
+                }
+                None
+            }
+            Some(addr) => Some((addr, redirect_target(url)?)),
+        };
+        let client_api = bind_one(CLIENT_API, cfg.client_api).await?;
+        let admin = match admin {
             None => None,
-            Some(addr) => Some(AdminListener {
-                redirect: redirect_target(cfg.admin_public_url.as_deref())?,
+            Some((addr, redirect)) => Some(AdminListener {
                 bound: bind_one(ADMIN, addr).await?,
+                redirect,
             }),
         };
         Ok(Self { client_api, admin })
@@ -101,18 +114,14 @@ impl Listeners {
         self.admin.as_ref().map(|a| a.bound.addr)
     }
 
-    /// Serve until `shutdown` is cancelled, then drain in-flight requests.
-    /// If one listener stops, the other is shut down too.
-    pub async fn serve(
-        self,
-        apps: Apps,
-        cfg: &HttpConfig,
-        shutdown: CancellationToken,
-    ) -> Result<(), ServeError> {
-        let shutdown = shutdown.child_token();
+    /// Serve until `shutdown` is cancelled, then drain (see [`HttpConfig`]).
+    /// Accept errors are logged and retried, so this only returns on shutdown.
+    pub async fn serve(self, apps: Apps, cfg: &HttpConfig, shutdown: CancellationToken) {
         let Some(admin) = self.admin else {
-            let router = apply_middleware(apps.client_api.fallback_service(apps.admin), cfg);
-            return serve_one(CLIENT_API, self.client_api.listener, router, shutdown).await;
+            let router = apps.client_api.fallback_service(apps.admin);
+            let router = apply_middleware(router, cfg, apps.errors);
+            return serve_listener(CLIENT_API, self.client_api.listener, router, cfg, shutdown)
+                .await;
         };
         let client_router = match admin.redirect {
             Some(location) => apps.client_api.layer(axum::middleware::from_fn(
@@ -120,28 +129,41 @@ impl Listeners {
             )),
             None => apps.client_api,
         };
-        let (client, admin) = tokio::join!(
-            serve_one(
+        let client_errors = ErrorBodies::uniform(apps.errors.client_api);
+        let admin_errors = ErrorBodies::uniform(apps.errors.admin);
+        tokio::join!(
+            serve_listener(
                 CLIENT_API,
                 self.client_api.listener,
-                apply_middleware(client_router, cfg),
+                apply_middleware(client_router, cfg, client_errors),
+                cfg,
                 shutdown.clone(),
             ),
-            serve_one(
+            serve_listener(
                 ADMIN,
                 admin.bound.listener,
-                apply_middleware(apps.admin, cfg),
-                shutdown
+                apply_middleware(apps.admin, cfg, admin_errors),
+                cfg,
+                shutdown,
             ),
         );
-        client.and(admin)
     }
 }
 
+/// An absolute http(s) URL that is also a valid header value (the raw input is
+/// checked too: the URL parser silently drops tabs and newlines).
 fn redirect_target(url: Option<&str>) -> Result<Option<HeaderValue>, ServeError> {
-    url.filter(|u| !u.is_empty())
-        .map(|u| HeaderValue::from_str(u).map_err(|_| ServeError::InvalidAdminPublicUrl))
-        .transpose()
+    let Some(raw) = url else {
+        return Ok(None);
+    };
+    HeaderValue::from_str(raw).map_err(|_| ServeError::InvalidAdminPublicUrl)?;
+    let parsed = Url::parse(raw).map_err(|_| ServeError::InvalidAdminPublicUrl)?;
+    if !matches!(parsed.scheme(), "http" | "https") || !parsed.has_host() {
+        return Err(ServeError::InvalidAdminPublicUrl);
+    }
+    HeaderValue::from_str(parsed.as_str())
+        .map(Some)
+        .map_err(|_| ServeError::InvalidAdminPublicUrl)
 }
 
 async fn redirect_root(location: HeaderValue, req: Request, next: Next) -> Response {
@@ -151,19 +173,4 @@ async fn redirect_root(location: HeaderValue, req: Request, next: Next) -> Respo
         return (StatusCode::FOUND, [(header::LOCATION, location)]).into_response();
     }
     next.run(req).await
-}
-
-async fn serve_one(
-    name: &'static str,
-    listener: TcpListener,
-    router: Router,
-    shutdown: CancellationToken,
-) -> Result<(), ServeError> {
-    let service = router.into_make_service_with_connect_info::<SocketAddr>();
-    let result = axum::serve(listener, service)
-        .with_graceful_shutdown(shutdown.clone().cancelled_owned())
-        .await;
-    // Whatever ended this listener, stop its sibling as well.
-    shutdown.cancel();
-    result.map_err(|source| ServeError::Serve { name, source })
 }

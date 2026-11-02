@@ -1,11 +1,14 @@
-//! `x-request-id`: keep a well-formed incoming id, otherwise generate a UUIDv4;
-//! visible to inner layers (tracing span) and echoed on every response.
+//! `x-request-id`: keep a well-formed incoming id only when the peer is a trusted
+//! proxy, otherwise generate a UUIDv4; visible to inner layers (tracing span) and
+//! echoed on every response.
 
 use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use uuid::Uuid;
+
+use crate::real_ip::{TrustedProxies, request_peer};
 
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
@@ -28,13 +31,19 @@ fn generate() -> HeaderValue {
     HeaderValue::from_str(id).unwrap_or(HeaderValue::from_static("invalid-request-id"))
 }
 
-pub(crate) async fn propagate(mut req: Request, next: Next) -> Response {
-    let id = req
-        .headers()
+fn incoming_id(req: &Request, trusted: &TrustedProxies) -> Option<HeaderValue> {
+    let (peer, _) = request_peer(req.extensions())?;
+    if !trusted.is_trusted(peer.ip()) {
+        return None;
+    }
+    req.headers()
         .get(X_REQUEST_ID)
         .filter(|v| is_acceptable(v))
         .cloned()
-        .unwrap_or_else(generate);
+}
+
+pub(crate) async fn propagate(trusted: TrustedProxies, mut req: Request, next: Next) -> Response {
+    let id = incoming_id(&req, &trusted).unwrap_or_else(generate);
     req.headers_mut().insert(X_REQUEST_ID, id.clone());
     let mut res = next.run(req).await;
     res.headers_mut().insert(X_REQUEST_ID, id);

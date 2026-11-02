@@ -11,7 +11,7 @@ use axum::http::{Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use deskhaven_client_api::ClientApiError;
-use deskhaven_http::{HttpConfig, X_REQUEST_ID, apply_middleware};
+use deskhaven_http::{ErrorBodies, HttpConfig, X_REQUEST_ID, apply_middleware};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -90,20 +90,18 @@ async fn internal_error_detail_is_logged_with_request_id() {
         "/fail",
         get(|| async { Err::<(), _>(ClientApiError::internal(io::Error::other("disk on fire"))) }),
     );
-    let req = Request::get("/fail")
-        .header(X_REQUEST_ID, "req-42")
-        .body(Body::empty())
-        .unwrap();
-    let res = apply_middleware(routes, &HttpConfig::default())
+    let req = Request::get("/fail").body(Body::empty()).unwrap();
+    let res = apply_middleware(routes, &HttpConfig::default(), ErrorBodies::default())
         .oneshot(req)
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let id = res.headers()[X_REQUEST_ID].to_str().unwrap().to_owned();
 
     let text = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     let line = text
         .lines()
         .find(|l| l.contains("disk on fire"))
         .unwrap_or_else(|| panic!("detail not logged: {text}"));
-    assert!(line.contains("request_id=req-42"), "{line}");
+    assert!(line.contains(&format!("request_id={id}")), "{line}");
 }
