@@ -131,6 +131,15 @@ impl SignalStatus {
         self.0.borrow().is_serving()
     }
 
+    /// Makes the current server re-read `id` from the peer store (a deleted device is
+    /// forgotten). A server between restarts reloads everything when it starts anyway, so a
+    /// stopped one is only logged.
+    pub fn reload_peer(&self, id: &str) {
+        if let Err(err) = self.0.borrow().reload_peer(id) {
+            tracing::debug!(error = %err, "signal server not running; peer reload skipped");
+        }
+    }
+
     /// Waits until the current server (the last one launched) has stopped and drained,
     /// even if its supervisor is gone (a panic drops the supervisor's join handle, not the
     /// server, which then stops on the shutdown token): close the database only after this.

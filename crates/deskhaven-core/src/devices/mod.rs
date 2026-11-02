@@ -23,7 +23,9 @@ pub use presence::{
 };
 pub use preset_book::PRESET_TAG_COLOR;
 pub use presets::{AddressBookPreset, Presets};
-pub use service::{DEVICE_GROUP_NAME_MAX_LEN, DeviceService, SysinfoOutcome, SysinfoReport};
+pub use service::{
+    DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceService, SysinfoOutcome, SysinfoReport,
+};
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
 
 use std::net::IpAddr;

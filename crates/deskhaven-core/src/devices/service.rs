@@ -13,7 +13,7 @@
 //! interrupt a commit nor lose the invalidation that follows it.
 
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use deskhaven_config::settings::{AcceptPresets, DEVICES_VERIFY_UUID};
 use deskhaven_db::begin_write;
@@ -72,6 +72,10 @@ pub enum SysinfoOutcome {
     TooFrequent,
 }
 
+/// Called with the RustDesk id of each deleted device, after the commit (see
+/// [`DeviceService::on_device_deleted`]). Must be cheap and must not panic.
+pub type DeletedHook = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Device registry operations. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct DeviceService {
@@ -86,6 +90,7 @@ struct Inner {
     presence: Presence,
     sysinfo_ips: IpLimiter,
     sysinfo_writes: WriteLimit,
+    deleted_hooks: RwLock<Vec<DeletedHook>>,
 }
 
 impl DeviceService {
@@ -106,12 +111,25 @@ impl DeviceService {
                 presence: Presence::new(Arc::clone(&clock)),
                 sysinfo_ips: IpLimiter::fixed(SYSINFO_PER_IP_PER_MINUTE, Arc::clone(&clock)),
                 sysinfo_writes: WriteLimit::new(clock),
+                deleted_hooks: RwLock::default(),
             }),
         }
     }
 
     pub fn presence(&self) -> &Presence {
         &self.inner.presence
+    }
+
+    /// Runs `hook` after every committed device deletion. `serve` uses it to make the signal
+    /// server forget the id (`SignalHandle::reload_peer`), so the device re-registers as new
+    /// at once instead of being answered `ID_NOT_FOUND` until a restart.
+    pub fn on_device_deleted(&self, hook: DeletedHook) {
+        let mut hooks = self
+            .inner
+            .deleted_hooks
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        hooks.push(hook);
     }
 
     /// Takes a token of `client`'s sysinfo bucket, or returns how long until one is free
@@ -172,8 +190,7 @@ impl DeviceService {
     }
 
     /// Deletes device `device_id` (`devices.id`) and its strategy assignment; `false` if it
-    /// did not exist. The signal server keeps its in-memory registration of the id until it
-    /// restarts.
+    /// did not exist. Then runs the [`on_device_deleted`](Self::on_device_deleted) hooks.
     pub async fn delete(&self, device_id: i64) -> Result<bool, DeviceError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
@@ -190,6 +207,7 @@ impl DeviceService {
             inner.strategies.cache().invalidate();
             inner.presence.forget(&row.rustdesk_id);
             inner.sysinfo_writes.forget(&row.rustdesk_id);
+            inner.run_deleted_hooks(&row.rustdesk_id);
             Ok(true)
         })
         .await
@@ -248,6 +266,16 @@ impl DeviceService {
 }
 
 impl Inner {
+    fn run_deleted_hooks(&self, rustdesk_id: &str) {
+        let hooks = self
+            .deleted_hooks
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        for hook in hooks.iter() {
+            hook(rustdesk_id);
+        }
+    }
+
     async fn find(&self, rustdesk_id: &str) -> Result<Option<device::Model>, DbErr> {
         Devices::find()
             .filter(device::Column::RustdeskId.eq(rustdesk_id))

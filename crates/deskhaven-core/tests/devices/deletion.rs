@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::{Arc, Mutex};
 
 use deskhaven_core::devices::DeviceError;
 use deskhaven_core::strategies::Target;
@@ -118,6 +119,31 @@ async fn device_group_names_are_validated_and_unique() {
         );
         assert!(matches!(blank, Err(DeviceError::Invalid { .. })), "{b}");
         assert!(matches!(control, Err(DeviceError::Invalid { .. })), "{b}");
+    })
+    .await;
+}
+
+/// Deletion hooks (the signal server's `reload_peer` in `serve`) run once per committed
+/// deletion, with the RustDesk id; never for a missing device.
+#[tokio::test]
+async fn deletion_hooks_run_once_per_deleted_device_with_its_rustdesk_id() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        let device_id = c.device(ID).await;
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let record = seen.clone();
+        c.devices.on_device_deleted(Arc::new(move |id: &str| {
+            record.lock().unwrap().push(id.to_owned());
+        }));
+
+        // Act
+        c.devices.delete(device_id).await.unwrap();
+        c.devices.delete(device_id).await.unwrap();
+
+        // Assert
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen, [ID.to_owned()], "{}", db.backend);
     })
     .await;
 }

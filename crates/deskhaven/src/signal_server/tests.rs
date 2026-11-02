@@ -23,8 +23,8 @@ use hbb_common::bytes_codec::BytesCodec;
 use hbb_common::futures_util::SinkExt as _;
 use hbb_common::protobuf::Message as _;
 use hbb_common::rendezvous_proto::{
-    NatType, PunchHole, PunchHoleRequest, RegisterPk, RendezvousMessage, register_pk_response,
-    rendezvous_message,
+    NatType, PunchHole, PunchHoleRequest, RegisterPeer, RegisterPk, RendezvousMessage,
+    register_pk_response, rendezvous_message,
 };
 use hbb_common::tokio_util::codec::Framed;
 use serde_json::{Value as Json, json};
@@ -673,6 +673,22 @@ impl Target {
             other => panic!("expected RegisterPkResponse, got {other:?}"),
         }
         target
+    }
+
+    /// Sends a RegisterPeer (the UDP keep-alive); `request_pk` of the answer (`true`: the
+    /// server holds no key for the id).
+    pub(super) async fn register_peer(&mut self) -> bool {
+        let msg = rv(|m| {
+            m.set_register_peer(RegisterPeer {
+                id: TARGET.to_owned(),
+                ..Default::default()
+            })
+        });
+        self.send(&msg).await;
+        match self.recv().await.union {
+            Some(rendezvous_message::Union::RegisterPeerResponse(r)) => r.request_pk,
+            other => panic!("expected RegisterPeerResponse, got {other:?}"),
+        }
     }
 
     async fn send(&mut self, msg: &RendezvousMessage) {

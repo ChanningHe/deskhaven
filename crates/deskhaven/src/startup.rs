@@ -21,7 +21,7 @@ use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 use tokio_util::sync::CancellationToken;
 
 use crate::instance_lock::{self, InstanceLock};
-use crate::signal_server::{self, Backoff, CoreControl, Launcher, RunningSignal};
+use crate::signal_server::{self, Backoff, CoreControl, Launcher, RunningSignal, SignalStatus};
 use crate::signal_store::SignalPeerStore;
 use crate::{data_dir, database, http};
 
@@ -114,6 +114,9 @@ pub async fn start(
     let public_key = signal_key.public_key_base64();
     let state = Arc::new(open_state(config, pins, crypto, public_key).await?);
     let signal = start_signal(config, &signal_key, &state, token).await?;
+    if let Some(running) = &signal {
+        forget_deleted_devices(&state, running.status.clone());
+    }
     Ok(Started {
         state,
         listeners,
@@ -146,6 +149,14 @@ async fn start_signal(
     );
     let running = signal_server::start(launcher, Backoff::DEFAULT, token).await?;
     Ok(Some(running))
+}
+
+/// A device deleted through the core is dropped from the signal server's memory too, so its
+/// next RegisterPk registers it again instead of the server answering it as registered.
+pub fn forget_deleted_devices(state: &AppState, signal: SignalStatus) {
+    state
+        .devices
+        .on_device_deleted(Arc::new(move |id: &str| signal.reload_peer(id)));
 }
 
 /// Database, migrations, settings: the [`AppState`] the routers serve.
