@@ -505,6 +505,14 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `limits.rs` expectations follow; `heartbeats_keep_a_tcp_peer_online_past_reg_timeout` now
   fails on a closed connection instead of spinning (a closed stream answers at once and the
   paused clock never advanced).
+- 2026-11-03, M1-08 review (LOW + security), forwarded RequestRelay (`handle_tcp`): besides
+  `token` and `licence_key`, the controller's `switch_code` is cleared, and so are
+  `control_permissions` and `controlled_context`: only the server may set those (Pro; M5 injects
+  the grant's values), and the target applies `control_permissions` over its own local
+  settings (client connection.rs `permission`), so passing on what a controller sent let it
+  enable features the target had disabled (upstream behavior). Test
+  `request_relay_is_forwarded_without_token_and_licence_key` became
+  `request_relay_is_forwarded_without_secrets_or_server_only_fields`.
 - 2026-11-03, M1-08, known limitations (no change): a claimed websocket port is unique among
   websocket connections claiming that IP but can equal the source port of a direct TCP
   connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in

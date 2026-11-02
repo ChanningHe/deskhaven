@@ -827,6 +827,12 @@ impl RendezvousServer {
                     // only; upstream forwarded them to the target, in clear over UDP.
                     rf.token.clear();
                     rf.licence_key.clear();
+                    rf.switch_code.clear();
+                    // deskhaven (M1-08 review): only the server may set these (the target
+                    // applies control_permissions over its local settings); upstream passed on
+                    // what the controller sent. M5 injects the grant's values here.
+                    rf.control_permissions.clear();
+                    rf.controlled_context.clear();
                     let id = rf.id.clone();
                     msg_out.set_request_relay(rf);
                     self.send_to_peer(&id, msg_out, peer_addr).await.ok();

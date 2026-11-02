@@ -11,11 +11,11 @@
 mod support;
 
 use deskhaven_signal::{
-    Authz, ConnectReq, ControlPlane, Grant, HttpProxyRequest, HttpProxyResponse, RegisterInfo,
-    RegisterVerdict, SignalConfig,
+    Authz, ConnectReq, ControlPermissions, ControlPlane, Grant, HttpProxyRequest,
+    HttpProxyResponse, RegisterInfo, RegisterVerdict, SignalConfig,
 };
 use hbb_common::{
-    rendezvous_proto::{IdPk, NatType, RequestRelay},
+    rendezvous_proto::{ControlledContext, IdPk, NatType, RequestRelay},
     tokio,
 };
 use std::{
@@ -45,15 +45,31 @@ fn relays(list: &[&str]) -> Vec<String> {
 
 /// Changed in M1-08. Upstream (rs:541-554) passed a RequestRelay for a peer in memory on over
 /// UDP unchanged except for socket_addr (the controller's address), i.e. including the
-/// controller's `token` and `licence_key`, in clear (07 §2.4, P0). Both are now cleared before
-/// forwarding; everything else is passed on as before. The controller gets no direct answer.
+/// controller's `token`, `licence_key` and `switch_code`, in clear (07 §2.4, P0), and whatever
+/// `control_permissions` / `controlled_context` the controller put in, which the target applies
+/// over its own local settings (connection.rs `permission`) although only the server may set
+/// them (Pro, M5). All five are now cleared before forwarding; everything else is passed on as
+/// before. The controller gets no direct answer.
 #[tokio::test]
-async fn request_relay_is_forwarded_without_token_and_licence_key() {
+async fn request_relay_is_forwarded_without_secrets_or_server_only_fields() {
     // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let mut controller = server.tcp().await;
-    let req = request_relay(TARGET, &server.licence_key);
+    let req = RequestRelay {
+        switch_code: "switch-code".to_owned(),
+        control_permissions: Some(ControlPermissions {
+            permissions: u64::MAX,
+            ..Default::default()
+        })
+        .into(),
+        controlled_context: Some(ControlledContext {
+            conn_audit_ref: "forged-audit-ref".to_owned(),
+            ..Default::default()
+        })
+        .into(),
+        ..request_relay(TARGET, &server.licence_key)
+    };
     assert!(!req.token.is_empty() && !req.licence_key.is_empty());
 
     // Act
@@ -64,10 +80,16 @@ async fn request_relay_is_forwarded_without_token_and_licence_key() {
     assert_eq!(decode_addr(&fwd.socket_addr), controller.local_addr());
     assert_eq!(fwd.token, "");
     assert_eq!(fwd.licence_key, "");
+    assert_eq!(fwd.switch_code, "");
+    assert!(fwd.control_permissions.is_none());
+    assert!(fwd.controlled_context.is_none());
     let expected = RequestRelay {
         socket_addr: fwd.socket_addr.clone(),
         token: String::new(),
         licence_key: String::new(),
+        switch_code: String::new(),
+        control_permissions: Default::default(),
+        controlled_context: Default::default(),
         ..req
     };
     assert_eq!(fwd, expected);
