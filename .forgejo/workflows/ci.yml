@@ -93,7 +93,7 @@ jobs:
           git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
       # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
-      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --all-targets --no-fail-fast
       # The committed admin API OpenAPI document must match the code (the console's
       # types are generated from it). Reuses the test build; only xtask itself links.
       - run: cargo xtask gen-openapi --check
@@ -130,7 +130,7 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
-      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --all-targets --no-fail-fast
 
   # Runs in parallel with the tests; report only.
   coverage:
@@ -161,4 +161,4 @@ jobs:
       - run: .forgejo/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
       # Report only until the end of M2. To enforce the gate, append
       # `--fail-under-lines 80` to the command below.
-      - run: cargo llvm-cov --workspace --all-targets --summary-only # --fail-under-lines 80
+      - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only # --fail-under-lines 80
