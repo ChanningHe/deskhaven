@@ -22,7 +22,7 @@ if [ "${CI_SKIP_APT:-0}" != "1" ]; then
   export DEBIAN_FRONTEND=noninteractive
   apt_update_with_retry
   apt-get install -y -qq --no-install-recommends \
-    pkg-config protobuf-compiler libsodium-dev >/dev/null
+    pkg-config protobuf-compiler libsodium-dev libssl-dev >/dev/null
 fi
 
 # Installs the channel and components declared in rust-toolchain.toml.

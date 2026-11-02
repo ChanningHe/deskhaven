@@ -25,6 +25,21 @@ allow = [
     "CDLA-Permissive-2.0", # webpki-roots (bundled Mozilla CA roots, via sqlx rustls)
 ]
 
+# RustDesk-authored git crates that declare no license and ship no license file.
+# hbb_common: covered by rustdesk-server's debian/copyright ("Files: *", AGPL-3.0
+# "or any later version"), which includes the libs/hbb_common submodule.
+[[licenses.clarify]]
+crate = "hbb_common"
+expression = "AGPL-3.0-or-later"
+license-files = []
+
+# default_net (rustdesk-org): no license anywhere in the repo. ASSUMPTION, not a
+# grant: treated like the rest of RustDesk (AGPL-3.0). Needs confirmation upstream.
+[[licenses.clarify]]
+crate = "default_net"
+expression = "AGPL-3.0-or-later"
+license-files = []
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
@@ -34,9 +49,10 @@ deny = [
     # TLS backend is rustls with the ring provider only.
     { crate = "aws-lc-rs" },
     { crate = "aws-lc-sys" },
-    # No OpenSSL anywhere (rustls + ring only).
-    { crate = "openssl" },
-    { crate = "openssl-sys" },
+    # openssl / openssl-sys are NOT banned: documented exception, see
+    # dev/docs/02-architecture.md section 5.1 ("openssl exception"). hbb_common
+    # unconditionally depends on native-tls (proxy and wss fallback paths).
+    # deskhaven's own code still uses rustls + ring only.
     # Exactly one libsqlite3-sys (duplicates are an error), and it must stay
     # below 0.38 (sqlx constraint).
     { crate = "libsqlite3-sys", deny-multiple-versions = true },
@@ -50,11 +66,32 @@ ignore = [
     # sodiumoxide is unmaintained; it arrives via hbb_common (RustDesk protocol
     # crate) which we must stay wire-compatible with. Accepted, documented risk.
     { id = "RUSTSEC-2021-0137", reason = "sodiumoxide is pulled in by hbb_common; protocol compatibility requires it" },
+    # The entries below all arrive via hbb_common (rev fae47e0) and cannot be
+    # upgraded without forking it. Each was checked against hbb_common's source;
+    # re-check on every hbb_common bump.
+    { id = "RUSTSEC-2025-0040", reason = "users 0.11: hbb_common only re-exports the crate and never calls it; deskhaven does not use it, so the group-listing bug is unreachable" },
+    { id = "RUSTSEC-2023-0040", reason = "users 0.11 unmaintained: re-exported by hbb_common, never called (see RUSTSEC-2025-0040)" },
+    { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 (fix needs 0.14, semver-incompatible with hbb_common): hbb_common never uses the with_context stream constructors" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7.4: Seekable API only; the `seekable` feature is not enabled" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.4 streaming decoder: only reached via hbb_common::compress::decompress (client address-book/group cache load); deskhaven never calls it" },
+    { id = "RUSTSEC-2023-0051", reason = "dlopen_derive unmaintained: compile-time proc-macro of dlopen, which hbb_common re-exports but deskhaven does not use" },
+    { id = "RUSTSEC-2021-0139", reason = "ansi_term unmaintained: build-time only (clap 2 <- bindgen 0.59 <- machine-uid build script)" },
+    { id = "RUSTSEC-2024-0375", reason = "atty unmaintained: build-time only (clap 2 / env_logger 0.9 <- bindgen 0.59 <- machine-uid build script)" },
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# TODO: add the hbb_common git URL to allow-git once it is introduced as a dependency.
-allow-git = []
+# hbb_common (pinned by rev in Cargo.toml) and the rustdesk-org forks it pulls in.
+# confy, default_net, machine-uid, tokio-socks and sysinfo are branch-tracked by
+# hbb_common; Cargo.lock pins their commits. Review these on every hbb_common bump.
+allow-git = [
+    "https://github.com/rustdesk/hbb_common",
+    "https://github.com/rustdesk-org/tokio-tungstenite",
+    "https://github.com/rustdesk-org/confy",
+    "https://github.com/rustdesk-org/default_net",
+    "https://github.com/rustdesk-org/machine-uid",
+    "https://github.com/rustdesk-org/sysinfo",
+    "https://github.com/rustdesk-org/tokio-socks",
+]

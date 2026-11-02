@@ -26,6 +26,7 @@
             pkg-config
             protobuf
             libsodium
+            openssl
             sqlite
             postgresql
             nodejs
