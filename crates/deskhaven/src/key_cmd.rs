@@ -4,7 +4,9 @@ use std::io::Write;
 
 use anyhow::Context;
 use deskhaven_config::bootstrap::{LoadOptions, Loaded};
-use deskhaven_core::keys::{KeyWarning, SignalKeyPaths, read_master_key, read_signal_key};
+use deskhaven_core::keys::{
+    KeyWarning, SignalKeyPaths, master_key_path, read_master_key, read_signal_key,
+};
 
 use crate::config_cmd;
 
@@ -44,15 +46,29 @@ pub fn show(options: &LoadOptions) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `config check`: key material that exists must be valid; nothing is generated.
+/// `config check`: key material that exists must be valid; nothing is
+/// generated. Also reminds to back up the master key (05-config §5).
 pub fn check(loaded: &Loaded) -> anyhow::Result<()> {
     let config = &loaded.config;
-    if let Some(master) = read_master_key(&config.security.master_key, &config.data_dir)? {
+    let master = read_master_key(&config.security.master_key, &config.data_dir)?;
+    if let Some(master) = &master {
         report_warnings(&master.warnings)?;
     }
     if let Some(signal) = read_signal_key(&SignalKeyPaths::from_bootstrap(config))? {
         report_warnings(&signal.warnings)?;
     }
+    let path = master_key_path(&config.data_dir);
+    let location = if !config.security.master_key.is_empty() {
+        "the security.master_key value".to_owned()
+    } else if master.is_some() {
+        path.display().to_string()
+    } else {
+        format!("{} (generated on first start)", path.display())
+    };
+    writeln!(
+        std::io::stderr().lock(),
+        "note: back up {location}; encrypted secrets cannot be recovered without it"
+    )?;
     Ok(())
 }
 

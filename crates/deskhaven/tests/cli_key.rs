@@ -147,3 +147,83 @@ fn config_check_rejects_invalid_configured_master_key_without_echo() {
     assert!(stderr.contains("security.master_key"), "{stderr}");
     assert!(!stderr.contains(value), "{stderr}");
 }
+
+/// base64 of [5; 32] and [6; 32].
+const MASTER_5: &str = "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=";
+const MASTER_6: &str = "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=";
+
+fn check_with_env(dir: &Path, data: &Path, env: &[(&str, &str)]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_deskhaven"))
+        .args([
+            "--config",
+            "none.toml",
+            "--data-dir",
+            data.to_str().unwrap(),
+        ])
+        .args(["config", "check"])
+        .env_clear()
+        .envs(env.iter().copied())
+        .current_dir(dir)
+        .output()
+        .unwrap()
+}
+
+fn install_master_key(data: &Path, value: &str) {
+    std::fs::create_dir_all(data).unwrap();
+    std::fs::write(data.join("master.key"), format!("{value}\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(data.join("master.key"), mode).unwrap();
+    }
+}
+
+#[test]
+fn config_check_reminds_to_back_up_the_master_key() {
+    let (dir, data) = prepare("check-backup");
+    let fresh = check_with_env(&dir, &data, &[]);
+    assert!(fresh.status.success(), "{}", text(&fresh.stderr));
+    let stderr = text(&fresh.stderr);
+    assert!(
+        stderr.contains("back up") && stderr.contains("master.key"),
+        "{stderr}"
+    );
+
+    install_master_key(&data, MASTER_5);
+    let existing = check_with_env(&dir, &data, &[]);
+    assert!(existing.status.success(), "{}", text(&existing.stderr));
+    let stderr = text(&existing.stderr);
+    assert!(
+        stderr.contains("back up") && stderr.contains("master.key"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(MASTER_5), "{stderr}");
+
+    let configured = check_with_env(&dir, &data, &[("DESKHAVEN_SECURITY__MASTER_KEY", MASTER_5)]);
+    let stderr = text(&configured.stderr);
+    assert!(
+        stderr.contains("back up") && stderr.contains("security.master_key"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("warning"), "{stderr}");
+}
+
+#[test]
+fn config_check_warns_when_configured_master_key_differs_from_file() {
+    let (dir, data) = prepare("check-conflict");
+    install_master_key(&data, MASTER_5);
+
+    let out = check_with_env(&dir, &data, &[("DESKHAVEN_SECURITY__MASTER_KEY", MASTER_6)]);
+
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let stderr = text(&out.stderr);
+    assert!(
+        stderr.contains("warning:") && stderr.contains("master.key"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains(MASTER_5) && !stderr.contains(MASTER_6),
+        "{stderr}"
+    );
+}
