@@ -33,6 +33,11 @@ impl TrustedOrigins {
     fn contains(&self, origin: &str) -> bool {
         self.0.iter().any(|o| o == origin)
     }
+
+    /// Whether any configured URL is https (TLS terminates in front of the console).
+    pub(crate) fn any_https(&self) -> bool {
+        self.0.iter().any(|o| o.starts_with("https://"))
+    }
 }
 
 /// `Err(csrf_failed)` when the request is a cross-site browser request (module docs).

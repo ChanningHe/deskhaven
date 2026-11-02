@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "deskhaven admin API",
-    "description": "Backs the deskhaven web console. Authenticated operations need the console session cookie; their security requirement names the role they need (self: any console user, admin: admin or owner, owner: owner). Every state-changing request (not GET, HEAD or OPTIONS) must send the `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie (any non-empty value without a session); cross-site browser requests are refused. Errors are `{\"error\": {\"code\", \"message\", \"details\"?}}` with a stable `code`.",
+    "description": "Backs the deskhaven web console. Authenticated operations need the console session cookie; their security requirement names the role they need (session: any console session, also one that must first change its password or enrol a required second factor; self: any console user, admin: admin or owner, owner: owner; a session with an unfinished account setup gets 403 `setup_required` outside `session` operations). Every state-changing request (not GET, HEAD or OPTIONS) must send the `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie (any non-empty value without a session); cross-site browser requests are refused. Errors are `{\"error\": {\"code\", \"message\", \"details\"?}}` with a stable `code`.",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -10,6 +10,401 @@
     "version": "0.1.0-dev"
   },
   "paths": {
+    "/admin/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signs in with a password (see the module docs).",
+        "operationId": "login",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in (cookies set), or a TOTP challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong username or password (`invalid_credentials`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Disabled or unverified account (`account_disabled`, `account_unverified`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed input (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/admin/api/v1/auth/login/totp": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Completes a password login with a TOTP or recovery code.",
+        "operationId": "login_totp",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in (cookies set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The challenge is gone: log in again (`invalid_challenge`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong code (`invalid_code`), or malformed input (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/admin/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signs out.",
+        "operationId": "logout",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out; the cookies are cleared"
+          },
+          "403": {
+            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/admin/api/v1/auth/oidc/complete": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Completes a console OIDC login in the browser that started it (see the module docs).",
+        "operationId": "complete_oidc_login",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in (cookies set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The login failed (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/admin/api/v1/auth/oidc/providers": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The enabled OIDC providers, as login buttons (empty without `public_url`).",
+        "operationId": "list_oidc_providers",
+        "responses": {
+          "200": {
+            "description": "Login buttons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OidcProvider"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/admin/api/v1/auth/oidc/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Starts a console OIDC login (see the module docs).",
+        "operationId": "start_oidc_login",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The authorization URL; the binding cookie is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcStart"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown or disabled provider, or OIDC not configured (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many logins from this address (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The provider is unreachable (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/admin/api/v1/me": {
       "get": {
         "tags": [
@@ -38,8 +433,186 @@
               }
             }
           },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "session"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/password": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Changes the signed-in user's password.",
+        "operationId": "change_password",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Changed; a fresh session (cookies set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Role not allowed (`forbidden`).",
+            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The account has no local password (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong current password (`wrong_password`), or the new one breaks the policy (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "session"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/totp/enrolment": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Starts a TOTP enrolment.",
+        "operationId": "begin_totp_enrolment",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pending seed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnrolment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TOTP is already enabled (`conflict`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -62,9 +635,215 @@
         "security": [
           {
             "console_session": [
-              "self"
+              "session"
             ]
           }
+        ]
+      }
+    },
+    "/admin/api/v1/me/totp/enrolment/confirm": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Confirms the TOTP enrolment with a code.",
+        "operationId": "confirm_totp_enrolment",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Enabled; recovery codes; a fresh session (cookies set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already enabled, or no enrolment pending (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong code (`invalid_code`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "session"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/setup": {
+      "get": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "The first-run setup state.",
+        "operationId": "get_setup_status",
+        "responses": {
+          "200": {
+            "description": "Setup state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      },
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Creates the owner with the setup link's token and signs them in.",
+        "operationId": "complete_setup",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The owner exists and is signed in (cookies set)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Unknown, used or expired token (`invalid_setup_token`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An owner already exists (`setup_completed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid account fields or password policy (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts from this address (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
         ]
       }
     }
@@ -111,7 +890,18 @@
           "method_not_allowed",
           "payload_too_large",
           "timeout",
-          "unavailable"
+          "unavailable",
+          "invalid_credentials",
+          "account_disabled",
+          "account_unverified",
+          "invalid_code",
+          "invalid_challenge",
+          "wrong_password",
+          "insecure_transport",
+          "setup_required",
+          "invalid_setup_token",
+          "setup_completed",
+          "oidc_failed"
         ]
       },
       "ErrorEnvelope": {
@@ -125,6 +915,67 @@
             "$ref": "#/components/schemas/ErrorBody"
           }
         }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "description": "Username and password. Never logged.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "format": "password"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoginResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Signed in: the session and CSRF cookies are set. When `user.setup_required` is set,\nthe session reaches only `/me`, the password change, the TOTP enrolment and logout\nuntil that step is done.",
+            "required": [
+              "user",
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "signed_in"
+                ]
+              },
+              "user": {
+                "$ref": "#/components/schemas/Me"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The password was right and the account has TOTP: send a TOTP or recovery code with\nthis challenge to `POST /auth/login/totp` (valid 5 minutes, 5 codes). No cookie.",
+            "required": [
+              "challenge",
+              "status"
+            ],
+            "properties": {
+              "challenge": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "totp_required"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The answer of a sign-in step."
       },
       "Me": {
         "type": "object",
@@ -157,11 +1008,123 @@
           "role": {
             "$ref": "#/components/schemas/RoleView"
           },
+          "setup_required": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SetupStep",
+                "description": "The account setup step this session must finish before anything else; `null` when\nnone. Until then only `/me`, the password change, the TOTP enrolment and logout\nanswer (others: 403 `setup_required`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "totp_enabled": {
             "type": "boolean"
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "OidcCompleteRequest": {
+        "type": "object",
+        "description": "The IdP's answer, as it arrived on the callback (`?state=&code=` or `?state=&error=`).\nNever logged.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OidcProvider": {
+        "type": "object",
+        "description": "An OIDC login button of the console.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The provider's name, the `provider` of `POST /auth/oidc/start`."
+          }
+        }
+      },
+      "OidcStart": {
+        "type": "object",
+        "description": "Where to send the browser.",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The IdP's authorization URL."
+          }
+        }
+      },
+      "OidcStartRequest": {
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordChange": {
+        "type": "object",
+        "description": "Never logged.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "new_password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "QrCode": {
+        "type": "object",
+        "description": "A QR code to draw: a square of `size` units, dark modules in `path`.",
+        "required": [
+          "size",
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "SVG path data of the dark modules."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Side length in modules, quiet zone included (the SVG `viewBox` is `0 0 size size`)."
           }
         }
       },
@@ -173,6 +1136,148 @@
           "admin",
           "user"
         ]
+      },
+      "SetupRequest": {
+        "type": "object",
+        "description": "The setup link's token and the owner to create. Never logged.",
+        "required": [
+          "token",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Blank: the username."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          },
+          "token": {
+            "type": "string",
+            "description": "The `token` of the setup link (`/setup#token=…`)."
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetupStatus": {
+        "type": "object",
+        "description": "Whether the first-run setup is still open.",
+        "required": [
+          "required"
+        ],
+        "properties": {
+          "public_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The configured `public_url` (bootstrap configuration, changed by a restart); `null`\nwhen unset (OIDC and e-mail links need it)."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "No owner exists yet."
+          }
+        }
+      },
+      "SetupStep": {
+        "type": "string",
+        "description": "The next account setup step of a console session.",
+        "enum": [
+          "password_change",
+          "totp_enrolment"
+        ]
+      },
+      "TotpConfirm": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "A current six-digit code of the pending seed."
+          }
+        },
+        "additionalProperties": false
+      },
+      "TotpEnabled": {
+        "type": "object",
+        "description": "TOTP is enabled: the recovery codes (shown once) and the user.",
+        "required": [
+          "recovery_codes",
+          "user"
+        ],
+        "properties": {
+          "recovery_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user": {
+            "$ref": "#/components/schemas/Me"
+          }
+        }
+      },
+      "TotpEnrolment": {
+        "type": "object",
+        "description": "A pending enrolment, shown once.",
+        "required": [
+          "secret",
+          "uri",
+          "qr"
+        ],
+        "properties": {
+          "qr": {
+            "$ref": "#/components/schemas/QrCode",
+            "description": "The URI as a QR code."
+          },
+          "secret": {
+            "type": "string",
+            "description": "The seed in base32, for manual entry."
+          },
+          "uri": {
+            "type": "string",
+            "description": "`otpauth://` provisioning URI."
+          }
+        }
+      },
+      "TotpLoginRequest": {
+        "type": "object",
+        "description": "The challenge of the password step and a code. Never logged.",
+        "required": [
+          "username",
+          "challenge",
+          "code"
+        ],
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "Six-digit TOTP code, or a recovery code (`xxxxx-xxxxx`)."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username the password step was for."
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {

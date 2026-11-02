@@ -16,6 +16,14 @@
 //!   derived from, and the value reveals neither the token nor its stored hash (different
 //!   input). The comparison is constant-time.
 //!
+//! - **Plain HTTP**: the attributes stay `__Host-` + `Secure`, with no switch to relax
+//!   them. A browser on an http page would drop both cookies, so the requests that set
+//!   them refuse with `insecure_transport` instead (see `transport`): deployments put the
+//!   console behind an https reverse proxy or reach it through an SSH tunnel to localhost.
+//! - **Fixation**: every login, OIDC completion and setup mints a fresh token (and revokes
+//!   one the request presented); finishing an account setup step mints another
+//!   (`account_setup`).
+//!
 //! Cookie authentication shares the bearer gate's spraying defense (see
 //! `deskhaven_client_api::BearerUser`): cache first, per-IP budget before a database
 //! lookup, rejected lookups spend from it.
@@ -132,16 +140,34 @@ pub(crate) async fn authenticate(
 /// The value of the one [`SESSION_COOKIE`] across all `Cookie` headers; `None` when it
 /// is absent, empty or present more than once (ambiguous).
 pub(crate) fn session_token(headers: &HeaderMap) -> Option<&str> {
+    cookie(headers, SESSION_COOKIE)
+}
+
+/// The value of the one cookie `name` across all `Cookie` headers; `None` when it is
+/// absent, empty or present more than once (ambiguous).
+pub(crate) fn cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
     let mut found = headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|line| line.split(';'))
         .filter_map(|pair| pair.trim().split_once('='))
-        .filter(|(name, _)| *name == SESSION_COOKIE)
+        .filter(|(found, _)| *found == name)
         .map(|(_, value)| value);
     let value = found.next()?;
     (found.next().is_none() && !value.is_empty()).then_some(value)
+}
+
+/// The requesting address as the login throttle keys it (see [`client_addr`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Client(pub ClientAddr);
+
+impl<S: Send + Sync> FromRequestParts<S> for Client {
+    type Rejection = AdminApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        client_addr(parts, state).await.map(Self)
+    }
 }
 
 /// The CSRF token of a console session token (see the module docs).
@@ -192,6 +218,14 @@ pub fn session_cookies(token: &SessionToken, max_age: Duration) -> [HeaderValue;
         csrf_token(token.expose())
     );
     [session, csrf].map(cookie_header)
+}
+
+/// A `Set-Cookie` value for a short-lived HttpOnly cookie `name` (console attributes).
+pub(crate) fn http_only_cookie(name: &str, value: &str, max_age: Duration) -> HeaderValue {
+    let secs = max_age.as_secs();
+    cookie_header(format!(
+        "{name}={value}; {COOKIE_ATTRIBUTES}; HttpOnly; Max-Age={secs}"
+    ))
 }
 
 /// `Set-Cookie` values that remove both cookies (logout).

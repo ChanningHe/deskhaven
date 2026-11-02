@@ -128,6 +128,17 @@ pub(crate) fn request_peer(ext: &Extensions) -> Option<(SocketAddr, bool)> {
         .map(|addr| (addr, false))
 }
 
+/// The socket peer of a request (canonicalized), before any `X-Forwarded-For`
+/// resolution; `None` for an in-process request ([`InternalPeer`]: no socket) or a
+/// missing peer. For decisions about the connection itself (is it loopback, is it a
+/// trusted proxy), not about the client.
+pub fn socket_peer(ext: &Extensions) -> Option<IpAddr> {
+    match request_peer(ext)? {
+        (_, true) => None,
+        (addr, false) => Some(addr.ip().to_canonical()),
+    }
+}
+
 /// The resolved client address. Requires a peer (`ConnectInfo<SocketAddr>` from
 /// [`crate::Listeners`], or [`InternalPeer`]) and [`TrustedProxies`] in the
 /// request extensions (inserted by [`crate::apply_middleware`]).

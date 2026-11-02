@@ -177,6 +177,11 @@ rustls-platform-verifier = "0.6.2"
 # Mock IdP (discovery, JWKS, token endpoint) for the OIDC tests. Dev only.
 wiremock = "0.6.5"
 
+# --- console login (M3-02) ---
+# QR encoding of the TOTP provisioning URI (Project Nayuki; MIT, no dependencies). The
+# admin API returns SVG path data the console draws under its strict CSP.
+qrcodegen = "1.8"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

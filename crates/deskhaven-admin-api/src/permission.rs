@@ -4,9 +4,14 @@
 //! | declaration | permission | who passes |
 //! |---|---|---|
 //! | `security(())` | [`Permission::Public`] | anyone, no session |
+//! | `security(("console_session" = ["session"]))` | [`Permission::Session`] | any console session, also one restricted to its account setup |
 //! | `security(("console_session" = ["self"]))` | [`Permission::SelfService`] | any console user |
 //! | `security(("console_session" = ["admin"]))` | [`Permission::Admin`] | admin, owner |
 //! | `security(("console_session" = ["owner"]))` | [`Permission::Owner`] | owner |
+//!
+//! A session whose account setup is unfinished (a password it must change, a second
+//! factor `auth.tfa.enforce` requires but it has not enrolled; see `account_setup`) passes
+//! only `Public` and `Session` routes; every other route answers 403 `setup_required`.
 //!
 //! The declaration is the single source of truth: route assembly reads it back from the
 //! generated operation (an operation without one, or with anything else, fails assembly,
@@ -24,6 +29,9 @@ pub const SESSION_SCHEME: &str = "console_session";
 pub enum Permission {
     /// No session needed (console login, first-run setup). Not audited automatically.
     Public,
+    /// Any console session, including one that must finish its account setup first: only
+    /// what that setup needs (`/me`, password change, TOTP enrolment).
+    Session,
     /// Any authenticated console user, acting on their own account (08: "self").
     SelfService,
     /// Administrators and the owner.
@@ -33,12 +41,13 @@ pub enum Permission {
 }
 
 impl Permission {
-    const SCOPED: [Self; 3] = [Self::SelfService, Self::Admin, Self::Owner];
+    const SCOPED: [Self; 4] = [Self::Session, Self::SelfService, Self::Admin, Self::Owner];
 
     /// The role name in the security requirement; `None` for [`Permission::Public`].
     pub const fn scope(self) -> Option<&'static str> {
         match self {
             Self::Public => None,
+            Self::Session => Some("session"),
             Self::SelfService => Some("self"),
             Self::Admin => Some("admin"),
             Self::Owner => Some("owner"),
@@ -48,10 +57,15 @@ impl Permission {
     /// Whether a console user of `role` may call an operation with this permission.
     pub fn allows(self, role: Role) -> bool {
         match self {
-            Self::Public | Self::SelfService => true,
+            Self::Public | Self::Session | Self::SelfService => true,
             Self::Admin => matches!(role, Role::Admin | Role::Owner),
             Self::Owner => role == Role::Owner,
         }
+    }
+
+    /// Whether a session with an unfinished account setup may call it.
+    pub const fn admits_setup(self) -> bool {
+        matches!(self, Self::Public | Self::Session)
     }
 
     /// The permission an operation declares (see the module docs), or why it declares none.
@@ -77,7 +91,7 @@ impl Permission {
         };
         match scopes.as_slice() {
             [Value::String(scope)] => Self::from_scope(scope),
-            _ => Err("declare exactly one role: self, admin or owner"),
+            _ => Err("declare exactly one role: session, self, admin or owner"),
         }
     }
 
@@ -85,7 +99,7 @@ impl Permission {
         Self::SCOPED
             .into_iter()
             .find(|p| p.scope() == Some(scope))
-            .ok_or("unknown role (expected self, admin or owner)")
+            .ok_or("unknown role (expected session, self, admin or owner)")
     }
 }
 
@@ -115,6 +129,7 @@ mod tests {
                 Some(vec![SecurityRequirement::default()]),
                 Permission::Public,
             ),
+            (scoped(&["session"]), Permission::Session),
             (scoped(&["self"]), Permission::SelfService),
             (scoped(&["admin"]), Permission::Admin),
             (scoped(&["owner"]), Permission::Owner),
@@ -150,6 +165,7 @@ mod tests {
         use Role::{Admin, Owner, User};
         let expect = [
             (Permission::Public, [true, true, true]),
+            (Permission::Session, [true, true, true]),
             (Permission::SelfService, [true, true, true]),
             (Permission::Admin, [false, true, true]),
             (Permission::Owner, [false, false, true]),

@@ -29,7 +29,10 @@ pub(crate) const ERROR_SCHEMA: &str = "ErrorEnvelope";
         title = "deskhaven admin API",
         description = "Backs the deskhaven web console. Authenticated operations need the \
             console session cookie; their security requirement names the role they need \
-            (self: any console user, admin: admin or owner, owner: owner). Every \
+            (session: any console session, also one that must first change its password or \
+            enrol a required second factor; self: any console user, admin: admin or owner, \
+            owner: owner; a session with an unfinished account setup gets 403 \
+            `setup_required` outside `session` operations). Every \
             state-changing request (not GET, HEAD or OPTIONS) must send the \
             `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie \
             (any non-empty value without a session); cross-site browser requests are refused. \
@@ -78,13 +81,24 @@ pub(crate) fn add_gate_docs(operation: &mut Operation, method: &Method, permissi
             "Too many rejected sessions from this address (`rate_limited`).",
         ));
     }
+    let setup = !permission.admits_setup();
     match (permission != Permission::Public, writes) {
+        (true, true) if setup => failures.push((
+            "403",
+            "Role not allowed (`forbidden`), the account setup is unfinished \
+             (`setup_required`), or a missing or wrong CSRF header or a cross-site request \
+             (`csrf_failed`).",
+        )),
+        (true, false) if setup => failures.push((
+            "403",
+            "Role not allowed (`forbidden`), or the account setup is unfinished \
+             (`setup_required`).",
+        )),
         (true, true) => failures.push((
             "403",
-            "Role not allowed (`forbidden`), or a missing or wrong CSRF header or a \
-             cross-site request (`csrf_failed`).",
+            "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
         )),
-        (true, false) => failures.push(("403", "Role not allowed (`forbidden`).")),
+        (true, false) => {}
         (false, true) => failures.push((
             "403",
             "A missing or wrong CSRF header or a cross-site request (`csrf_failed`).",

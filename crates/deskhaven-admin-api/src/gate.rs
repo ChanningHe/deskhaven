@@ -2,7 +2,9 @@
 //! 1. state-changing methods (all routes, `Public` included): same-origin check and the
 //!    CSRF header (403 `csrf_failed`; see `origin` and `session`);
 //! 2. authenticated routes: console session (401), then role against the route's
-//!    [`Permission`] (403);
+//!    [`Permission`] (403 `forbidden`), then the account setup: a session that must change
+//!    its password or enrol a required second factor passes only `Session` routes (403
+//!    `setup_required`, see `account_setup`);
 //! 3. handler;
 //! 4. console audit fallback for 2xx responses (see `audit`).
 //!
@@ -18,6 +20,7 @@ use axum::response::{IntoResponse, Response};
 use deskhaven_core::state::AppState;
 
 use crate::AdminApiError;
+use crate::account_setup::{pending_step, setup_required};
 use crate::audit::{self, Audit, Audited, Fallback};
 use crate::origin::{TrustedOrigins, check_same_origin};
 use crate::permission::Permission;
@@ -70,6 +73,8 @@ async fn guarded(
         session::check_csrf(&parts.headers, session::session_token(&parts.headers))?;
     }
     let client = session::client_addr(&mut parts, &()).await?;
+    // For `SecureTransport` (handlers that set the console's cookies).
+    parts.extensions.insert(guard.origins.clone());
     let slot = SessionSlot::default();
     let gate_user = match guard.permission {
         Permission::Public => {
@@ -83,6 +88,11 @@ async fn guarded(
             if !permission.allows(principal.role) {
                 tracing::debug!(user_id = principal.user_id, ?permission, "role denied");
                 return Err(AdminApiError::forbidden());
+            }
+            let pending = pending_step(&state.tfa, principal.role, principal.account);
+            if let Some(step) = pending.filter(|_| !permission.admits_setup()) {
+                tracing::debug!(user_id = principal.user_id, ?step, "account setup pending");
+                return Err(setup_required(step));
             }
             let user_id = principal.user_id;
             parts.extensions.insert(ConsoleUser(principal));

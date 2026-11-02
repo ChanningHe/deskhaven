@@ -120,8 +120,10 @@ fn production_document_declares_auth_on_every_operation() {
         })
     );
     let me = &doc["paths"]["/admin/api/v1/me"]["get"];
-    assert_eq!(me["security"], json!([{ "console_session": ["self"] }]));
-    for status in ["401", "403", "429"] {
+    assert_eq!(me["security"], json!([{ "console_session": ["session"] }]));
+    // Any session passes the role and the account-setup checks: no gate 403 on this GET.
+    assert!(me["responses"]["403"].is_null());
+    for status in ["401", "429"] {
         assert_eq!(
             me["responses"][status]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ErrorEnvelope",

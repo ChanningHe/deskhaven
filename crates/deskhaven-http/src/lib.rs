@@ -58,7 +58,9 @@ pub use health::{NotReady, ReadinessCheck, health_routes};
 pub use middleware::{INTERNAL_ERROR_BODY, apply_middleware};
 pub use nofile::{NOFILE_TARGET_WHEN_UNLIMITED, NofileInfo, raise_nofile_limit};
 pub use paths::{ADMIN_API_PREFIX, CLIENT_API_PREFIX};
-pub use real_ip::{ClientIp, ClientIpRejection, InternalPeer, TrustedProxies, X_FORWARDED_FOR};
+pub use real_ip::{
+    ClientIp, ClientIpRejection, InternalPeer, TrustedProxies, X_FORWARDED_FOR, socket_peer,
+};
 pub use request_id::X_REQUEST_ID;
 pub use serve::{
     Apps, ListenConfig, Listeners, ServeError, redirect_client_root, single_listener_router,

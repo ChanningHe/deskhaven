@@ -64,7 +64,18 @@
       "method_not_allowed": "不支持此操作。",
       "payload_too_large": "提交的内容过大。",
       "timeout": "服务器响应超时，请稍后重试。",
-      "unavailable": "服务暂时不可用，请稍后重试。"
+      "unavailable": "服务暂时不可用，请稍后重试。",
+      "invalid_credentials": "用户名或密码错误。",
+      "account_disabled": "该账号已被禁用，请联系管理员。",
+      "account_unverified": "该账号尚未验证。",
+      "invalid_code": "验证码错误或已被使用，请检查验证器的时间后重试。",
+      "invalid_challenge": "验证已过期，请重新登录。",
+      "wrong_password": "当前密码错误。",
+      "insecure_transport": "必须通过 HTTPS（或到 localhost 的 SSH 隧道）访问控制台；在明文 HTTP 下浏览器会丢弃登录 Cookie。",
+      "setup_required": "请先完成账号设置。",
+      "invalid_setup_token": "初始化链接无效、已过期或已被使用。",
+      "setup_completed": "服务器已完成初始化，请直接登录。",
+      "oidc_failed": "单点登录失败，请重试。"
     }
   },
   "theme": {

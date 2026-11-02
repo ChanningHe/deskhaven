@@ -12,6 +12,7 @@ base64_022 = { workspace = true }
 deskhaven-core = { workspace = true }
 deskhaven-http = { workspace = true }
 garde = { workspace = true }
+qrcodegen = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -29,6 +30,11 @@ sea-orm = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
+# The mock IdP shared with the core tests (deskhaven-core/tests/common/oidc_idp.rs).
+chrono = { workspace = true }
+openidconnect = { workspace = true }
+url = { workspace = true }
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

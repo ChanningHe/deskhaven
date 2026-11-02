@@ -38,6 +38,58 @@ fn codes_are_stable_snake_case_with_fixed_statuses() {
             "internal",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
+        // M3-02: none of the codes a session holder can trigger is a 401.
+        (
+            ErrorCode::InvalidCredentials,
+            "invalid_credentials",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            ErrorCode::InvalidChallenge,
+            "invalid_challenge",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            ErrorCode::InvalidCode,
+            "invalid_code",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            ErrorCode::WrongPassword,
+            "wrong_password",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            ErrorCode::AccountDisabled,
+            "account_disabled",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            ErrorCode::AccountUnverified,
+            "account_unverified",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            ErrorCode::InsecureTransport,
+            "insecure_transport",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            ErrorCode::SetupRequired,
+            "setup_required",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            ErrorCode::InvalidSetupToken,
+            "invalid_setup_token",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            ErrorCode::SetupCompleted,
+            "setup_completed",
+            StatusCode::CONFLICT,
+        ),
+        (ErrorCode::OidcFailed, "oidc_failed", StatusCode::FORBIDDEN),
     ];
     for (code, wire, status) in cases {
         assert_eq!(serde_json::to_value(code).unwrap(), json!(wire));

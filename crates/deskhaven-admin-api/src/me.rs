@@ -1,15 +1,18 @@
-//! `GET /me`: the signed-in console user (self service).
+//! `GET /me`: the signed-in console user, including a session that must finish its
+//! account setup first (`setup_required` says which step).
 
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
+use deskhaven_core::sessions::AccountFlags;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{Role, User, UserError};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::AdminApiError;
+use crate::account_setup::{SetupStep, pending_step};
 use crate::session::ConsoleUser;
 
 /// Console role (06 §4.1).
@@ -41,18 +44,25 @@ pub struct Me {
     pub role: RoleView,
     pub must_change_password: bool,
     pub totp_enabled: bool,
+    /// The account setup step this session must finish before anything else; `null` when
+    /// none. Until then only `/me`, the password change, the TOTP enrolment and logout
+    /// answer (others: 403 `setup_required`).
+    pub setup_required: Option<SetupStep>,
 }
 
-impl From<User> for Me {
-    fn from(u: User) -> Self {
+impl Me {
+    /// `user` as the console shows it, with its pending setup step.
+    pub fn of(state: &AppState, user: User) -> Self {
+        let setup_required = pending_step(&state.tfa, user.role, AccountFlags::from(&user));
         Self {
-            id: u.id,
-            username: u.username,
-            display_name: u.display_name,
-            email: u.email,
-            role: u.role.into(),
-            must_change_password: u.must_change_password,
-            totp_enabled: u.totp_enabled,
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name,
+            email: user.email,
+            role: user.role.into(),
+            must_change_password: user.must_change_password,
+            totp_enabled: user.totp_enabled,
+            setup_required,
         }
     }
 }
@@ -62,7 +72,7 @@ impl From<User> for Me {
     get,
     path = "/me",
     tag = "me",
-    security(("console_session" = ["self"])),
+    security(("console_session" = ["session"])),
     responses((status = 200, description = "The signed-in user", body = Me))
 )]
 pub async fn get_me(
@@ -70,7 +80,7 @@ pub async fn get_me(
     ConsoleUser(principal): ConsoleUser,
 ) -> Result<Json<Me>, AdminApiError> {
     match state.users.get(principal.user_id).await {
-        Ok(user) => Ok(Json(user.into())),
+        Ok(user) => Ok(Json(Me::of(&state, user))),
         // Deleted since the session was validated.
         Err(UserError::NotFound) => Err(AdminApiError::unauthorized()),
         Err(err) => Err(AdminApiError::internal(err)),

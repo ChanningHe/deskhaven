@@ -56,6 +56,8 @@ pub struct AppState {
     pub setup: SetupService,
     /// See [`StateConfig::console_url`].
     pub console_url: String,
+    /// `public_url` as configured (blank: unset).
+    pub public_url: String,
 }
 
 /// Bootstrap values the services need beyond the database and the settings.
@@ -133,6 +135,7 @@ impl AppState {
             devices,
             setup,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
+            public_url: config.public_url.trim().to_owned(),
         }
     }
 }

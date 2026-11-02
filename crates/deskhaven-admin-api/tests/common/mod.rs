@@ -27,6 +27,7 @@ use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
 use serde_json::Value;
 use tower::ServiceExt;
 
+pub mod login;
 pub mod probe;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
@@ -132,7 +133,7 @@ impl Harness {
         format!("{SESSION_COOKIE}={}", token.expose())
     }
 
-    async fn create_user(&self, username: &str, role: Role) -> i64 {
+    pub async fn create_user(&self, username: &str, role: Role) -> i64 {
         let credential = Credential::Local {
             password: Password::new(PASSWORD),
         };

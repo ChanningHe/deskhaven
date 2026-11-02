@@ -16,7 +16,14 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query'
 
-import type { ErrorEnvelope, Me } from '../model'
+import type {
+  ErrorEnvelope,
+  Me,
+  PasswordChange,
+  TotpConfirm,
+  TotpEnabled,
+  TotpEnrolment,
+} from '../model'
 
 import { apiFetch } from '../../client'
 import type { ErrorType } from '../../client'
@@ -141,6 +148,419 @@ export function useGetMe<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetMeQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  return withQueryKey(query, queryOptions.queryKey)
+}
+
+export const getChangePasswordUrl = () => {
+  return `/admin/api/v1/me/password`
+}
+
+/**
+ * @summary Changes the signed-in user's password.
+ */
+export const changePassword = async (
+  passwordChange: PasswordChange,
+  options?: Parameters<typeof apiFetch>[1],
+): Promise<Me> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {}
+    if (h instanceof Headers) return Object.fromEntries(h.entries())
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      )
+    }
+    const headers: Record<string, string | readonly string[]> = {}
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value
+    }
+    return headers
+  }
+  return apiFetch<Me>(getChangePasswordUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(passwordChange),
+  })
+}
+
+export const getChangePasswordQueryKey = (passwordChange?: PasswordChange) => {
+  return ['POST', `/admin/api/v1/me/password`, passwordChange] as const
+}
+
+export const getChangePasswordQueryOptions = <
+  TData = Awaited<ReturnType<typeof changePassword>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  passwordChange: PasswordChange,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof changePassword>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getChangePasswordQueryKey(passwordChange)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof changePassword>>> = ({ signal }) =>
+    changePassword(passwordChange, { signal, ...requestOptions })
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof changePassword>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ChangePasswordQueryResult = NonNullable<Awaited<ReturnType<typeof changePassword>>>
+export type ChangePasswordQueryError = ErrorType<ErrorEnvelope>
+
+export function useChangePassword<
+  TData = Awaited<ReturnType<typeof changePassword>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  passwordChange: PasswordChange,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof changePassword>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof changePassword>>,
+          TError,
+          Awaited<ReturnType<typeof changePassword>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useChangePassword<
+  TData = Awaited<ReturnType<typeof changePassword>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  passwordChange: PasswordChange,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof changePassword>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof changePassword>>,
+          TError,
+          Awaited<ReturnType<typeof changePassword>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useChangePassword<
+  TData = Awaited<ReturnType<typeof changePassword>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  passwordChange: PasswordChange,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof changePassword>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Changes the signed-in user's password.
+ */
+
+export function useChangePassword<
+  TData = Awaited<ReturnType<typeof changePassword>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  passwordChange: PasswordChange,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof changePassword>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getChangePasswordQueryOptions(passwordChange, options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  return withQueryKey(query, queryOptions.queryKey)
+}
+
+export const getBeginTotpEnrolmentUrl = () => {
+  return `/admin/api/v1/me/totp/enrolment`
+}
+
+/**
+ * @summary Starts a TOTP enrolment.
+ */
+export const beginTotpEnrolment = async (
+  options?: Parameters<typeof apiFetch>[1],
+): Promise<TotpEnrolment> => {
+  return apiFetch<TotpEnrolment>(getBeginTotpEnrolmentUrl(), {
+    ...options,
+    method: 'POST',
+  })
+}
+
+export const getBeginTotpEnrolmentQueryKey = () => {
+  return ['POST', `/admin/api/v1/me/totp/enrolment`] as const
+}
+
+export const getBeginTotpEnrolmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof beginTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof beginTotpEnrolment>>, TError, TData>>
+  request?: SecondParameter<typeof apiFetch>
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getBeginTotpEnrolmentQueryKey()
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof beginTotpEnrolment>>> = ({ signal }) =>
+    beginTotpEnrolment({ signal, ...requestOptions })
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof beginTotpEnrolment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type BeginTotpEnrolmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof beginTotpEnrolment>>
+>
+export type BeginTotpEnrolmentQueryError = ErrorType<ErrorEnvelope>
+
+export function useBeginTotpEnrolment<
+  TData = Awaited<ReturnType<typeof beginTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof beginTotpEnrolment>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof beginTotpEnrolment>>,
+          TError,
+          Awaited<ReturnType<typeof beginTotpEnrolment>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBeginTotpEnrolment<
+  TData = Awaited<ReturnType<typeof beginTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof beginTotpEnrolment>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof beginTotpEnrolment>>,
+          TError,
+          Awaited<ReturnType<typeof beginTotpEnrolment>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBeginTotpEnrolment<
+  TData = Awaited<ReturnType<typeof beginTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof beginTotpEnrolment>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Starts a TOTP enrolment.
+ */
+
+export function useBeginTotpEnrolment<
+  TData = Awaited<ReturnType<typeof beginTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof beginTotpEnrolment>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getBeginTotpEnrolmentQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>
+  }
+
+  return withQueryKey(query, queryOptions.queryKey)
+}
+
+export const getConfirmTotpEnrolmentUrl = () => {
+  return `/admin/api/v1/me/totp/enrolment/confirm`
+}
+
+/**
+ * @summary Confirms the TOTP enrolment with a code.
+ */
+export const confirmTotpEnrolment = async (
+  totpConfirm: TotpConfirm,
+  options?: Parameters<typeof apiFetch>[1],
+): Promise<TotpEnabled> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {}
+    if (h instanceof Headers) return Object.fromEntries(h.entries())
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      )
+    }
+    const headers: Record<string, string | readonly string[]> = {}
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value
+    }
+    return headers
+  }
+  return apiFetch<TotpEnabled>(getConfirmTotpEnrolmentUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(totpConfirm),
+  })
+}
+
+export const getConfirmTotpEnrolmentQueryKey = (totpConfirm?: TotpConfirm) => {
+  return ['POST', `/admin/api/v1/me/totp/enrolment/confirm`, totpConfirm] as const
+}
+
+export const getConfirmTotpEnrolmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  totpConfirm: TotpConfirm,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof confirmTotpEnrolment>>, TError, TData>
+    >
+    request?: SecondParameter<typeof apiFetch>
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {}
+
+  const queryKey = queryOptions?.queryKey ?? getConfirmTotpEnrolmentQueryKey(totpConfirm)
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof confirmTotpEnrolment>>> = ({ signal }) =>
+    confirmTotpEnrolment(totpConfirm, { signal, ...requestOptions })
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ConfirmTotpEnrolmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof confirmTotpEnrolment>>
+>
+export type ConfirmTotpEnrolmentQueryError = ErrorType<ErrorEnvelope>
+
+export function useConfirmTotpEnrolment<
+  TData = Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  totpConfirm: TotpConfirm,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof confirmTotpEnrolment>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+          TError,
+          Awaited<ReturnType<typeof confirmTotpEnrolment>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useConfirmTotpEnrolment<
+  TData = Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  totpConfirm: TotpConfirm,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof confirmTotpEnrolment>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+          TError,
+          Awaited<ReturnType<typeof confirmTotpEnrolment>>
+        >,
+        'initialData'
+      >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useConfirmTotpEnrolment<
+  TData = Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  totpConfirm: TotpConfirm,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof confirmTotpEnrolment>>, TError, TData>
+    >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Confirms the TOTP enrolment with a code.
+ */
+
+export function useConfirmTotpEnrolment<
+  TData = Awaited<ReturnType<typeof confirmTotpEnrolment>>,
+  TError = ErrorType<ErrorEnvelope>,
+>(
+  totpConfirm: TotpConfirm,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof confirmTotpEnrolment>>, TError, TData>
+    >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getConfirmTotpEnrolmentQueryOptions(totpConfirm, options)
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>

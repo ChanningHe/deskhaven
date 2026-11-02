@@ -26,6 +26,17 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   payload_too_large: 'errors.codes.payload_too_large',
   timeout: 'errors.codes.timeout',
   unavailable: 'errors.codes.unavailable',
+  invalid_credentials: 'errors.codes.invalid_credentials',
+  account_disabled: 'errors.codes.account_disabled',
+  account_unverified: 'errors.codes.account_unverified',
+  invalid_code: 'errors.codes.invalid_code',
+  invalid_challenge: 'errors.codes.invalid_challenge',
+  wrong_password: 'errors.codes.wrong_password',
+  insecure_transport: 'errors.codes.insecure_transport',
+  setup_required: 'errors.codes.setup_required',
+  invalid_setup_token: 'errors.codes.invalid_setup_token',
+  setup_completed: 'errors.codes.setup_completed',
+  oidc_failed: 'errors.codes.oidc_failed',
 }
 
 // For responses without a (known) code: a proxy error page, a future code.

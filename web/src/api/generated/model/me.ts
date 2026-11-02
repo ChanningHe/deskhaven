@@ -3,6 +3,7 @@
  * Run `pnpm gen:api` to regenerate.
  */
 import type { RoleView } from './roleView'
+import type { SetupStep } from './setupStep'
 
 /**
  * The signed-in user's own account.
@@ -14,6 +15,7 @@ export interface Me {
   id: number
   must_change_password: boolean
   role: RoleView
+  setup_required?: SetupStep | null
   totp_enabled: boolean
   username: string
 }

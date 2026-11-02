@@ -9,7 +9,10 @@
 //!   [`ValidQuery`], lists [`PageQuery`] / [`Paginated`].
 //! - OpenAPI: [`openapi_json`], committed at [`SPEC_PATH`] by `cargo xtask gen-openapi`.
 
+mod account;
+pub mod account_setup;
 pub mod audit;
+mod auth;
 mod error;
 mod extract;
 mod gate;
@@ -20,7 +23,9 @@ mod pagination;
 pub mod permission;
 mod routes;
 pub mod session;
+mod setup;
 mod stack_error;
+pub mod transport;
 
 use std::sync::Arc;
 
@@ -38,15 +43,27 @@ pub use pagination::{PageQuery, Paginated};
 pub use permission::Permission;
 pub use routes::{ADMIN_API_V1, AdminRoutes, RouteError};
 pub use session::{
-    CSRF_COOKIE, CSRF_HEADER, ConsoleUser, SESSION_COOKIE, clear_session_cookies, csrf_token,
-    session_cookies,
+    CSRF_COOKIE, CSRF_HEADER, Client, ConsoleUser, SESSION_COOKIE, clear_session_cookies,
+    csrf_token, session_cookies,
 };
 pub use stack_error::render_stack_error;
+
+pub use account::{PasswordChange, QrCode, TotpConfirm, TotpEnabled, TotpEnrolment};
+pub use account_setup::SetupStep;
+pub use auth::{
+    LoginRequest, LoginResponse, OIDC_BINDING_COOKIE, OidcCompleteRequest, OidcProvider, OidcStart,
+    OidcStartRequest, TotpLoginRequest,
+};
+pub use setup::{SetupRequest, SetupStatus};
 
 /// Every production admin API route. Fails when an operation declares no valid
 /// permission, so the server cannot start with an unguarded route.
 pub fn api_routes() -> Result<AdminRoutes, RouteError> {
-    AdminRoutes::new().routes(routes!(me::get_me))
+    AdminRoutes::new()
+        .routes(routes!(me::get_me))?
+        .merge(auth::routes()?)?
+        .merge(account::routes()?)?
+        .merge(setup::routes()?)
 }
 
 /// The production routes behind their gates, for the admin listener.

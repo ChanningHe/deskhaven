@@ -37,6 +37,30 @@ pub enum ErrorCode {
     PayloadTooLarge,
     Timeout,
     Unavailable,
+    // Console login and first-run setup (M3-02).
+    /// Login: wrong username or password, or an account without a local password; one
+    /// code for all, so it does not tell whether the account exists.
+    InvalidCredentials,
+    /// Login: right password, disabled account.
+    AccountDisabled,
+    /// Login: right password, unverified account.
+    AccountUnverified,
+    /// A wrong, replayed or used TOTP / recovery code (the step can be retried).
+    InvalidCode,
+    /// Login second step: the challenge expired, was used up or is unknown; log in again.
+    InvalidChallenge,
+    /// Password change: the current password is wrong.
+    WrongPassword,
+    /// The console is reached over plain HTTP: browsers would drop its `Secure` cookies.
+    InsecureTransport,
+    /// The session must finish its account setup first (`details.step`).
+    SetupRequired,
+    /// First-run setup: unknown, expired or used setup link.
+    InvalidSetupToken,
+    /// First-run setup: the instance already has an owner.
+    SetupCompleted,
+    /// A console OIDC login failed (`details.reason`).
+    OidcFailed,
 }
 
 impl ErrorCode {
@@ -54,6 +78,17 @@ impl ErrorCode {
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Timeout | Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            // Before any session exists: 401 cannot log anyone out.
+            Self::InvalidCredentials | Self::InvalidChallenge => StatusCode::UNAUTHORIZED,
+            // With or without a session, never 401 (the console treats 401 as logged out).
+            Self::InvalidCode | Self::WrongPassword => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::AccountDisabled
+            | Self::AccountUnverified
+            | Self::InsecureTransport
+            | Self::SetupRequired
+            | Self::InvalidSetupToken
+            | Self::OidcFailed => StatusCode::FORBIDDEN,
+            Self::SetupCompleted => StatusCode::CONFLICT,
         }
     }
 
@@ -73,6 +108,17 @@ impl ErrorCode {
             Self::PayloadTooLarge => "payload_too_large",
             Self::Timeout => "timeout",
             Self::Unavailable => "unavailable",
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::AccountDisabled => "account_disabled",
+            Self::AccountUnverified => "account_unverified",
+            Self::InvalidCode => "invalid_code",
+            Self::InvalidChallenge => "invalid_challenge",
+            Self::WrongPassword => "wrong_password",
+            Self::InsecureTransport => "insecure_transport",
+            Self::SetupRequired => "setup_required",
+            Self::InvalidSetupToken => "invalid_setup_token",
+            Self::SetupCompleted => "setup_completed",
+            Self::OidcFailed => "oidc_failed",
         }
     }
 }
@@ -136,6 +182,17 @@ impl AdminApiError {
         Self {
             retry_after: Some(retry_after),
             ..Self::new(ErrorCode::RateLimited, "too many requests, try again later")
+        }
+    }
+
+    /// 503 with `Retry-After` (e.g. the password hasher is saturated).
+    pub fn unavailable(retry_after: Duration) -> Self {
+        Self {
+            retry_after: Some(retry_after),
+            ..Self::new(
+                ErrorCode::Unavailable,
+                "temporarily unavailable, try again later",
+            )
         }
     }
 
