@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
-use deskhaven_core::clock::SystemClock;
+use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::SecretBox;
 use deskhaven_core::keys::{
     KeyWarning, SignalKeyPaths, load_or_generate_master_key, load_or_generate_signal_key,
@@ -126,13 +126,14 @@ pub async fn open_state(
         tracing::warn!("{warning}");
     }
 
-    let users = UserService::new(db.clone(), settings.clone(), PasswordHasher::default());
-    let sessions = SessionService::new(
+    let clock: SharedClock = Arc::new(SystemClock);
+    let users = UserService::with_clock(
         db.clone(),
         settings.clone(),
-        users.clone(),
-        Arc::new(SystemClock),
+        PasswordHasher::default(),
+        Arc::clone(&clock),
     );
+    let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
 
     Ok(AppState {
         db,

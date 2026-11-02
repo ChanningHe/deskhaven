@@ -132,8 +132,10 @@ impl Core {
         revoke_rows(&self.db, which, timestamp(self.now_ms())?).await
     }
 
-    /// Database first, then the cache, which is invalidated even when the write failed.
+    /// Cache first (nothing cached survives even a failing write), then the database, then
+    /// the cache again (drops a fill that read the rows just before the write committed).
     pub(super) async fn revoke_all_for_user(&self, user_id: i64) -> Result<u64, DbErr> {
+        self.cache.invalidate_user(user_id);
         let revoked = self
             .revoke(session::Column::UserId.eq(user_id).into())
             .await;

@@ -19,10 +19,11 @@ mod policy;
 mod write;
 
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use deskhaven_config::settings::AUTH_PASSWORD_MIN_LENGTH;
 use deskhaven_db::entity::user;
+use deskhaven_db::time::TimestampMs;
 use sea_orm::sea_query::{Expr, ExprTrait, Func, LikeExpr};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
@@ -33,11 +34,12 @@ use tokio::sync::broadcast;
 pub use auth::{Authenticated, CredentialStamp};
 pub use deskhaven_db::entity::user::{AuthSource, Role, Status};
 pub use error::{AuthError, UserError};
-pub use events::UserEvent;
+pub use events::{CommitHook, UserChange, UserEvent};
 pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery};
 pub use password::{HashLimits, HashParams, Password, PasswordError, PasswordHasher};
 pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
 
+use crate::clock::{SharedClock, SystemClock};
 use crate::pagination::Page;
 use crate::settings::SettingsService;
 
@@ -54,18 +56,33 @@ struct Inner {
     db: DatabaseConnection,
     settings: SettingsService,
     hasher: PasswordHasher,
+    clock: SharedClock,
+    hooks: RwLock<Vec<CommitHook>>,
     events: broadcast::Sender<UserEvent>,
 }
 
 impl UserService {
     /// `settings` supplies `auth.password.min_length` at each password change; `hasher`
-    /// fixes the Argon2id parameters (production: [`PasswordHasher::default`]).
+    /// fixes the Argon2id parameters (production: [`PasswordHasher::default`]). Timestamps
+    /// come from the system clock.
     pub fn new(db: DatabaseConnection, settings: SettingsService, hasher: PasswordHasher) -> Self {
+        Self::with_clock(db, settings, hasher, Arc::new(SystemClock))
+    }
+
+    /// [`UserService::new`] with timestamps from `clock` (share it with the session service).
+    pub fn with_clock(
+        db: DatabaseConnection,
+        settings: SettingsService,
+        hasher: PasswordHasher,
+        clock: SharedClock,
+    ) -> Self {
         let (events, _) = broadcast::channel(events::EVENT_CAPACITY);
         let inner = Inner {
             db,
             settings,
             hasher,
+            clock,
+            hooks: RwLock::default(),
             events,
         };
         Self {
@@ -76,6 +93,16 @@ impl UserService {
     /// Receives every [`UserEvent`] sent after this call (see `events` for the contract).
     pub fn subscribe(&self) -> broadcast::Receiver<UserEvent> {
         self.inner.events.subscribe()
+    }
+
+    /// Calls `hook` synchronously after every later committed [`UserChange`], before the
+    /// writing call returns and before the matching event is broadcast.
+    pub fn register_commit_hook(&self, hook: CommitHook) {
+        self.inner
+            .hooks
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(hook);
     }
 
     pub async fn get(&self, id: i64) -> Result<User, UserError> {
@@ -151,9 +178,21 @@ impl Inner {
         self.settings.snapshot().get(&AUTH_PASSWORD_MIN_LENGTH)
     }
 
-    /// Sends after commit. No receiver is not an error: nobody needs to react.
-    fn emit(&self, event: UserEvent) {
-        let _ = self.events.send(event);
+    fn now(&self) -> TimestampMs {
+        self.clock.now()
+    }
+
+    /// After commit: the hooks first (synchronously), then the event if there is one. No
+    /// receiver is not an error: nobody needs to react.
+    fn committed(&self, change: UserChange) {
+        let hooks = self.hooks.read().unwrap_or_else(PoisonError::into_inner);
+        for hook in hooks.iter() {
+            hook(&change);
+        }
+        drop(hooks);
+        if let UserChange::Event(event) = change {
+            let _ = self.events.send(event);
+        }
     }
 }
 

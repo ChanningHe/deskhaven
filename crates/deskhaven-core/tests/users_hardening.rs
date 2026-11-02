@@ -1,18 +1,18 @@
 //! UserService hardening: credential stamps against the login / password-change race,
-//! bounded pagination, best-effort rehash, fail-closed on corrupt hashes. Every test runs on
-//! SQLite and PostgreSQL.
+//! bounded pagination, best-effort rehash, fail-closed on corrupt hashes, commit hooks.
+//! Every test runs on SQLite and PostgreSQL.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::pagination::{MAX_PAGE, PageRequest};
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::users::{
-    AuthError, Credential, HashParams, NewUser, Password, PasswordHasher, Status, UserError,
-    UserQuery, UserService,
+    AuthError, Credential, HashParams, NewUser, Password, PasswordHasher, Role, Status, UserChange,
+    UserError, UserEvent, UserQuery, UserService,
 };
 use deskhaven_db::entity::user;
 use deskhaven_db::testing::{Backend, TestDb, each_migrated_backend};
@@ -243,6 +243,60 @@ async fn malformed_stored_hash_fails_closed_as_invalid_credentials() {
         assert!(
             matches!(result, Err(AuthError::InvalidCredentials)),
             "{result:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn commit_hooks_run_before_the_call_returns_and_before_the_event() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service_with(db, FAST).await;
+        let alice = svc.create(local("alice")).await.unwrap().id;
+        let bob = svc.create(local("bob")).await.unwrap().id;
+        // Each hook call records its change and whether that change's event was already
+        // broadcast (draining what earlier changes sent).
+        let events = Mutex::new(svc.subscribe());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        svc.register_commit_hook(Arc::new(move |change: &UserChange| {
+            let mut receiver = events.lock().unwrap();
+            let mut sent_already = false;
+            while let Ok(event) = receiver.try_recv() {
+                sent_already |= UserChange::Event(event) == *change;
+            }
+            sink.lock().unwrap().push((*change, sent_already));
+        }));
+
+        svc.set_role(alice, Role::Admin).await.unwrap();
+        svc.set_status(alice, Status::Unverified).await.unwrap();
+        svc.set_status(alice, Status::Disabled).await.unwrap();
+        svc.set_password(bob, &pw("another-Phrase-7"), false)
+            .await
+            .unwrap();
+        svc.delete(bob).await.unwrap();
+        // No change, no hook.
+        svc.set_role(alice, Role::Admin).await.unwrap();
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(
+            seen,
+            [
+                (UserChange::RoleChanged { user_id: alice }, false),
+                (UserChange::StatusChanged { user_id: alice }, false),
+                (
+                    UserChange::Event(UserEvent::Disabled { user_id: alice }),
+                    false
+                ),
+                (
+                    UserChange::Event(UserEvent::PasswordChanged { user_id: bob }),
+                    false
+                ),
+                (
+                    UserChange::Event(UserEvent::Deleted { user_id: bob }),
+                    false
+                ),
+            ]
         );
     })
     .await;

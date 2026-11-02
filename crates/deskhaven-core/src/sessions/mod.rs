@@ -6,17 +6,21 @@
 //!   (`last_used_at` + the current `auth.session_idle_ttl`). `last_used_at` is written at
 //!   most once per [`TOUCH_INTERVAL`] per session, so the idle timeout is exact to within
 //!   that interval and steady traffic causes no write per request.
-//! - **Validity at read time**: a session authenticates only while it is unrevoked,
-//!   unexpired and its owner exists and is `active`. The owner check runs on every database
-//!   read, so it holds even when a [`UserEvent`](crate::users::UserEvent) was never delivered (events are in memory
-//!   only); a cached session is re-read at the latest after [`CACHE_TTL`].
+//! - **Validity at read time**: a session authenticates only for the expected
+//!   [`SessionKind`] and while it is unrevoked, unexpired and its owner exists and is
+//!   `active`. The owner check runs on every database read, so it holds even when a
+//!   [`UserEvent`](crate::users::UserEvent) was never delivered (events are in memory only);
+//!   a cached session is re-read at the latest after [`CACHE_TTL`].
 //! - **Revocation**: `revoke*` write `revoked_at` and invalidate the cache from a task the
 //!   caller cannot cancel half-way. Password changes and disabling revoke every session of
 //!   the user in the same transaction as the change (`users::write`); account deletion
-//!   cascades. The [`UserEvent`](crate::users::UserEvent) consumer then revokes again (idempotent) and invalidates
-//!   the user's cache entries; a lagged consumer flushes the whole cache.
-//! - **Login race**: creation re-checks the [`CredentialStamp`](crate::users::CredentialStamp) of the login inside its own
-//!   write transaction (see [`UserService::credential_stamp_matches`]).
+//!   cascades. A commit hook drops the user's cache entries (also on role and status
+//!   changes) before the `UserService` call returns, so the very next request sees the
+//!   change. The [`UserEvent`](crate::users::UserEvent) consumer then invalidates and
+//!   revokes again (idempotent); a lagged consumer flushes the whole cache.
+//! - **Login race**: creation re-checks the
+//!   [`CredentialStamp`](crate::users::CredentialStamp) of the login inside its own write
+//!   transaction (see [`UserService::credential_stamp_matches`]).
 
 mod cache;
 mod create;
@@ -46,7 +50,7 @@ pub use token::{SessionToken, TOKEN_BYTES, TOKEN_LEN, TokenHash};
 
 use crate::clock::SharedClock;
 use crate::settings::SettingsService;
-use crate::users::UserService;
+use crate::users::{UserChange, UserService};
 
 /// Minimum time between two `last_used_at` writes of one session.
 pub const TOUCH_INTERVAL: Duration = Duration::from_secs(60);
@@ -68,18 +72,25 @@ struct Core {
 }
 
 impl SessionService {
-    /// Subscribes to `users`' events and spawns their consumer, so it must be called
-    /// inside a Tokio runtime. The consumer ends when the event channel closes.
+    /// Registers a commit hook on `users` that drops the changed user's cache entries before
+    /// the writing call returns, subscribes to `users`' events and spawns their consumer, so
+    /// it must be called inside a Tokio runtime. The consumer ends when the event channel
+    /// closes. Give both services the same `clock`.
     pub fn new(
         db: DatabaseConnection,
         settings: SettingsService,
         users: UserService,
         clock: SharedClock,
     ) -> Self {
+        let cache = SessionCache::default();
+        let hook_cache = cache.clone();
+        users.register_commit_hook(Arc::new(move |change: &UserChange| {
+            hook_cache.invalidate_user(change.user_id());
+        }));
         let core = Core {
             db,
             settings,
-            cache: SessionCache::default(),
+            cache,
             clock,
         };
         let service = Self {

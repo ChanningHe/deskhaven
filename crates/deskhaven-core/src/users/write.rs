@@ -3,6 +3,8 @@
 use deskhaven_db::entity::user;
 use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, time};
+
+use super::events::UserChange;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
@@ -28,7 +30,7 @@ impl UserService {
             Credential::Ldap | Credential::Oidc => None,
         };
         let (email, email_norm) = split_email(email);
-        let now = time::now();
+        let now = self.inner.now();
         let password_changed_at = password_hash.as_ref().map(|_| now);
         let model = user::ActiveModel {
             username: Set(new.username),
@@ -82,7 +84,7 @@ impl UserService {
         if let Some(note) = note {
             changes.note = Set(note);
         }
-        changes.updated_at = Set(time::now());
+        changes.updated_at = Set(self.inner.now());
         let updated = changes.update(&tx).await.map_err(conflict)?;
         tx.commit().await?;
         Ok(updated.into())
@@ -107,7 +109,7 @@ impl UserService {
         let hash = self.inner.hash_new_password(password).await?;
         let previous = target.password_changed_at;
         self.detached(move |inner| async move {
-            let now = time::now();
+            let now = inner.now();
             let changes = user::ActiveModel {
                 password_hash: Set(Some(hash)),
                 password_changed_at: Set(Some(after(previous, now))),
@@ -128,7 +130,9 @@ impl UserService {
             }
             revoke_user_sessions(&tx, id, now).await?;
             tx.commit().await?;
-            inner.emit(UserEvent::PasswordChanged { user_id: id });
+            inner.committed(UserChange::Event(UserEvent::PasswordChanged {
+                user_id: id,
+            }));
             Ok(())
         })
         .await
@@ -136,7 +140,8 @@ impl UserService {
 
     /// Changes the status. Leaving `active` is refused for the last active owner; entering
     /// `disabled` revokes every session of the user in the same transaction and emits
-    /// [`UserEvent::Disabled`]. Setting the current status is a no-op.
+    /// [`UserEvent::Disabled`]; other transitions reach commit hooks only. Setting the
+    /// current status is a no-op.
     pub async fn set_status(&self, id: i64, status: Status) -> Result<User, UserError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
@@ -148,7 +153,7 @@ impl UserService {
             if status != Status::Active {
                 ensure_not_last_owner(&current, &owners)?;
             }
-            let now = time::now();
+            let now = inner.now();
             let mut changes: user::ActiveModel = current.into();
             changes.status = Set(status);
             changes.updated_at = Set(now);
@@ -158,15 +163,17 @@ impl UserService {
                 revoke_user_sessions(&tx, id, now).await?;
             }
             tx.commit().await?;
-            if status == Status::Disabled {
-                inner.emit(UserEvent::Disabled { user_id: id });
-            }
+            inner.committed(match status {
+                Status::Disabled => UserChange::Event(UserEvent::Disabled { user_id: id }),
+                _ => UserChange::StatusChanged { user_id: id },
+            });
             Ok(updated.into())
         })
         .await
     }
 
-    /// Changes the role; demoting the last active owner is refused.
+    /// Changes the role; demoting the last active owner is refused. Reaches commit hooks
+    /// (no event).
     pub async fn set_role(&self, id: i64, role: Role) -> Result<User, UserError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
@@ -180,9 +187,10 @@ impl UserService {
             }
             let mut changes: user::ActiveModel = current.into();
             changes.role = Set(role);
-            changes.updated_at = Set(time::now());
+            changes.updated_at = Set(inner.now());
             let updated = changes.update(&tx).await?;
             tx.commit().await?;
+            inner.committed(UserChange::RoleChanged { user_id: id });
             Ok(updated.into())
         })
         .await
@@ -198,7 +206,7 @@ impl UserService {
             ensure_not_last_owner(&current, &owners)?;
             user::Entity::delete_by_id(id).exec(&tx).await?;
             tx.commit().await?;
-            inner.emit(UserEvent::Deleted { user_id: id });
+            inner.committed(UserChange::Event(UserEvent::Deleted { user_id: id }));
             Ok(())
         })
         .await
