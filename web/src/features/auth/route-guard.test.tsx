@@ -61,10 +61,9 @@ describe('console route guard', () => {
       api: { 'GET /admin/api/v1/me': { status: 503, body: errorEnvelope('unavailable') } },
     })
 
-    // 5xx is retried once (query policy) before the error shows.
-    expect(
-      await screen.findByRole('heading', { level: 1, name: '出错了' }, { timeout: 4000 }),
-    ).toBeInTheDocument()
+    // 5xx is retried once (query policy, ~1 s delay) before the error shows; the
+    // global asyncUtilTimeout (src/test/setup.ts) covers that.
+    expect(await screen.findByRole('heading', { level: 1, name: '出错了' })).toBeInTheDocument()
     expect(screen.getByText('服务暂时不可用，请稍后重试。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })

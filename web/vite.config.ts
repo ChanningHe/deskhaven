@@ -36,5 +36,8 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
     restoreMocks: true,
+    // Well above Testing Library's asyncUtilTimeout (src/test/setup.ts), so a slow
+    // findBy fails with its own message instead of a bare test timeout.
+    testTimeout: 15_000,
   },
 })
