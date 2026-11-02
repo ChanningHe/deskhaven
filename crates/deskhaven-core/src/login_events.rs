@@ -44,6 +44,16 @@ pub enum LoginResult {
     /// Second step: unknown, expired, used or exhausted challenge, or one issued to another
     /// username or device.
     InvalidChallenge,
+    /// OIDC: the IdP returned an error (cancelled, consent denied) or no code.
+    OidcDenied,
+    /// OIDC: discovery or the code exchange failed.
+    OidcUnavailable,
+    /// OIDC: the token response or ID token failed verification.
+    OidcInvalidToken,
+    /// OIDC: no linked account, and none may be linked or created.
+    NoLinkedAccount,
+    /// OIDC: creating the account failed.
+    ProvisioningFailed,
 }
 
 impl LoginResult {
@@ -58,6 +68,26 @@ impl LoginResult {
             Self::SecondFactorSetupRequired => "tfa_setup_required",
             Self::InvalidCode => "invalid_code",
             Self::InvalidChallenge => "invalid_challenge",
+            Self::OidcDenied => "oidc_denied",
+            Self::OidcUnavailable => "oidc_unavailable",
+            Self::OidcInvalidToken => "oidc_invalid_token",
+            Self::NoLinkedAccount => "no_linked_account",
+            Self::ProvisioningFailed => "provisioning_failed",
+        }
+    }
+}
+
+impl From<crate::oidc::Failure> for LoginResult {
+    fn from(failure: crate::oidc::Failure) -> Self {
+        use crate::oidc::Failure;
+        match failure {
+            Failure::Denied => Self::OidcDenied,
+            Failure::Unavailable => Self::OidcUnavailable,
+            Failure::InvalidToken => Self::OidcInvalidToken,
+            Failure::NoLinkedAccount => Self::NoLinkedAccount,
+            Failure::Disabled => Self::Disabled,
+            Failure::Unverified => Self::Unverified,
+            Failure::ProvisioningFailed => Self::ProvisioningFailed,
         }
     }
 }

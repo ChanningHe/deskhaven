@@ -60,6 +60,40 @@ pub fn bearer(path: &str, token: &str) -> Request {
     request
 }
 
+/// `POST /api/oidc/auth` as `OidcSession::auth` sends it (`src/hbbs_http/account.rs:160-176`,
+/// `post_request` always sets `Content-Type: application/json`, `src/common.rs:1760`).
+pub fn oidc_auth(op: &str) -> Request {
+    let mut request = Request::new("POST", "/api/oidc/auth");
+    request
+        .headers
+        .insert("content-type".to_owned(), "application/json".to_owned());
+    request.body = Body::Json(json!({
+        "op": op, "id": SEED_RUSTDESK_ID, "uuid": SEED_UUID,
+        "deviceInfo": device_info(), "apiDomain": "http://127.0.0.1:21114",
+    }));
+    request
+}
+
+/// `GET /api/oidc/auth-query` as `OidcSession::query` builds it
+/// (`src/hbbs_http/account.rs:179-198`: `Url::parse_with_params`, so form-urlencoded).
+pub fn oidc_query(code: &str, id: &str, uuid: &str) -> Request {
+    let query: String = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("code", code)
+        .append_pair("id", id)
+        .append_pair("uuid", uuid)
+        .finish();
+    Request::new("GET", &format!("/api/oidc/auth-query?{query}"))
+}
+
+/// The browser's redirect back from the IdP with these query pairs.
+pub fn oidc_callback(pairs: &[(&str, &str)]) -> Request {
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    for (key, value) in pairs {
+        query.append_pair(key, value);
+    }
+    Request::new("GET", &format!("/api/oidc/callback?{}", query.finish()))
+}
+
 /// `request` from another TCP peer. Panics on a malformed address (test input).
 #[allow(clippy::panic)]
 pub fn from(mut request: Request, peer: &str) -> Request {

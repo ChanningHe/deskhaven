@@ -32,6 +32,12 @@ deskhaven-client-api = { workspace = true }
 # Flow tests inspect rows (login_events) and break state behind the services' back.
 deskhaven-db = { workspace = true }
 sea-orm = { workspace = true }
+# The mock IdP shared with the core tests (deskhaven-core/tests/common/oidc_idp.rs).
+base64_022 = { workspace = true }
+chrono = { workspace = true }
+openidconnect = { workspace = true }
+sha2 = { workspace = true }
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

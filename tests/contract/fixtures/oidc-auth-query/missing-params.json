@@ -1,0 +1,18 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/account.rs:179-198",
+    "src/hbbs_http.rs:24-39"
+  ],
+  "description": "The client always sends code, id and uuid; without the device the poll is a 400 {\"error\"} (not the pending message, so a broken caller does not poll for 3 minutes).",
+  "request": {
+    "method": "GET",
+    "path": "/api/oidc/auth-query?code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Invalid login request" }
+  }
+}

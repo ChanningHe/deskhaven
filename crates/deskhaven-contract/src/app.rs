@@ -61,6 +61,8 @@ pub struct TestOptions {
     pub trusted_proxies: Vec<Cidr>,
     /// Which listener the requests go to (default: the client API alone).
     pub listen: Listen,
+    /// Bootstrap `public_url` (default unset: OIDC logins are refused).
+    pub public_url: String,
 }
 
 impl TestApp {
@@ -95,10 +97,12 @@ impl TestApp {
             hasher,
             trusted_proxies,
             listen,
+            public_url,
         } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let mut config = Bootstrap {
             data_dir: data_dir.path().to_path_buf(),
+            public_url,
             ..Bootstrap::default()
         };
         config.security.trusted_proxies = trusted_proxies;

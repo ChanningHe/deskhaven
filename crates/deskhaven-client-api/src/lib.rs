@@ -10,6 +10,7 @@ mod client;
 mod error;
 mod login;
 mod login_options;
+mod oidc;
 mod stack_error;
 mod user_payload;
 mod version;
@@ -25,6 +26,9 @@ pub use ab::{MAX_AB_BODY, MAX_LEGACY_AB_BODY};
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use login::MAX_LOGIN_BODY;
+pub use oidc::{
+    INVALID_LOGIN_MESSAGE as OIDC_INVALID_LOGIN_MESSAGE, PENDING_MESSAGE as OIDC_PENDING_MESSAGE,
+};
 pub use stack_error::render_stack_error;
 pub use version::{SOURCE_URL, VERSION};
 
@@ -41,5 +45,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
         .route("/api/version", get(version::version))
+        .merge(oidc::routes())
         .merge(ab::routes())
 }

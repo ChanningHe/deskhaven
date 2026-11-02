@@ -132,10 +132,10 @@ async fn login_options_still_answers_after_a_rejected_method() {
 Prepare state with the same seeds (`Seeds::builtin().apply(&names,
 &app.state)`), directly through `app.state`'s services, or with
 `app.set_setting(key, value)` (hot-reloaded runtime settings);
-`TestApp::start_with_options(TestOptions { routes, hasher, trusted_proxies })`
+`TestApp::start_with_options(TestOptions { routes, hasher, trusted_proxies, public_url, .. })`
 adds test routes, rebuilds users and sessions around a given password hasher
-(e.g. one slot, to provoke `Busy`) or trusts proxy ranges. `requests::{login,
-second_step, bearer, from}` build the account requests (the 2FA second step
+(e.g. one slot, to provoke `Busy`), trusts proxy ranges or sets `public_url` (OIDC). `requests::{login,
+second_step, bearer, oidc_auth, oidc_query, oidc_callback, from}` build the requests (the 2FA second step
 included) exactly as the client sends them. Set
 `Request::headers`/`body` for the client's exact request, and carry values
 from one reply into the next request in plain Rust.

@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/account.rs:179-198",
+    "src/hbbs_http/account.rs:301-340",
+    "src/hbbs_http.rs:24-39"
+  ],
+  "description": "A code the server never issued (or one that expired or was already used): an error other than \"No authed oidc is found\", so the client stops polling at once and shows it instead of waiting for its 3-minute timeout.",
+  "request": {
+    "method": "GET",
+    "path": "/api/oidc/auth-query?code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&id=123456789&uuid=contract-seed-device-uuid"
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "OIDC login expired, please log in again" }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/account.rs:160-176",
+    "src/hbbs_http/account.rs:249-273",
+    "src/hbbs_http.rs:24-39"
+  ],
+  "description": "No public_url, so no callback URL: OIDC login is refused with a 4xx {\"error\"}. The Rust client parses the body only and shows the error string (HbbHttpResponse::Error) instead of opening a browser.",
+  "request": {
+    "method": "POST",
+    "path": "/api/oidc/auth",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "op": "corp",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "host" },
+        "apiDomain": "http://127.0.0.1:21114"
+      }
+    }
+  },
+  "expect": {
+    "status": 404,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "OIDC login is not configured on this server" }
+  }
+}

@@ -1418,6 +1418,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -1443,6 +1444,8 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
+ "chrono",
  "deskhaven",
  "deskhaven-admin-api",
  "deskhaven-client-api",
@@ -1451,14 +1454,17 @@ dependencies = [
  "deskhaven-db",
  "deskhaven-http",
  "flate2",
+ "openidconnect",
  "sea-orm",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tokio-util",
  "tower",
  "url",
+ "wiremock",
 ]
 
 [[package]]

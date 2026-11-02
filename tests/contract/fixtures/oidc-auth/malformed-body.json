@@ -1,0 +1,20 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/account.rs:160-176",
+    "src/hbbs_http.rs:24-39"
+  ],
+  "description": "A body without the device (id, uuid): 400 {\"error\"}, refused before the rate limit or any provider lookup. The client shows the error string.",
+  "request": {
+    "method": "POST",
+    "path": "/api/oidc/auth",
+    "headers": { "content-type": "application/json" },
+    "body": { "json": { "op": "corp" } }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Invalid login request" }
+  }
+}

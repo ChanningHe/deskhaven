@@ -108,11 +108,20 @@ impl OidcService {
             .and_then(TokenHash::of_presented)
             .ok_or(CallbackError::InvalidState)?;
         let now = timestamp(self.inner.now_ms())?;
-        let claimed = oidc_flow::Entity::update_many()
-            .col_expr(Column::ConsumedAt, Expr::value(now))
+        // Read first: a state that matches nothing (the unauthenticated, unlimited case)
+        // costs one indexed read, never a write lock (SQLite locks the database for an
+        // UPDATE even when it matches no row).
+        let live = oidc_flow::Entity::find()
             .filter(Column::StateHash.eq(hash.as_str()))
             .filter(Column::ConsumedAt.is_null())
             .filter(Column::ExpiresAt.gt(now))
+            .one(&self.inner.db)
+            .await?
+            .ok_or(CallbackError::InvalidState)?;
+        let claimed = oidc_flow::Entity::update_many()
+            .col_expr(Column::ConsumedAt, Expr::value(now))
+            .filter(Column::Id.eq(live.id))
+            .filter(Column::ConsumedAt.is_null())
             .exec_with_returning(&self.inner.db)
             .await?;
         claimed

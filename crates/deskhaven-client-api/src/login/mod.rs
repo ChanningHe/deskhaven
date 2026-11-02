@@ -44,9 +44,9 @@
 //! busy-hasher 503 refunds its attempt, so the replay is just one more attempt.
 
 mod account;
-mod event;
-mod failure;
-mod request;
+pub(crate) mod event;
+pub(crate) mod failure;
+pub(crate) mod request;
 mod second_step;
 
 use std::sync::Arc;
@@ -55,7 +55,9 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::HeaderMap;
+use deskhaven_core::sessions::SessionToken;
 use deskhaven_core::state::AppState;
+use deskhaven_core::users::User;
 use serde::Serialize;
 
 use self::account::{Challenged, LoggedIn, PasswordStep};
@@ -112,13 +114,20 @@ pub struct ChallengeUser {
     name: String,
 }
 
+impl TokenReply {
+    /// The AuthBody of a completed login (also the OIDC poll's, read by the Rust client).
+    pub(crate) fn new(user: &User, token: &SessionToken) -> Self {
+        Self {
+            access_token: token.expose().to_owned(),
+            kind: ACCESS_TOKEN,
+            user: UserPayload::from(user),
+        }
+    }
+}
+
 impl From<LoggedIn> for LoginReply {
     fn from(done: LoggedIn) -> Self {
-        Self::Token(TokenReply {
-            access_token: done.token.expose().to_owned(),
-            kind: ACCESS_TOKEN,
-            user: UserPayload::from(&done.user),
-        })
+        Self::Token(TokenReply::new(&done.user, &done.token))
     }
 }
 

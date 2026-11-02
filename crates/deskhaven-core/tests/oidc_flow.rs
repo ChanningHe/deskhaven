@@ -120,6 +120,40 @@ async fn a_state_completes_once_and_a_replay_does_nothing() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_callbacks_for_one_state_complete_it_once() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let (_, request) = env.begin().await;
+        env.idp.mount_token(&env.spec("sub-1", &request)).await;
+        let params = CallbackParams {
+            state: Some(&request.state),
+            code: Some(AUTH_CODE),
+            error: None,
+        };
+
+        let results = futures_join(&env, &params).await;
+
+        let completed = results.iter().filter(|r| r.is_ok()).count();
+        let refused = results
+            .iter()
+            .filter(|r| matches!(r, Err(CallbackError::InvalidState)))
+            .count();
+        assert_eq!((completed, refused), (1, 3), "{}: {results:?}", db.backend);
+        assert_eq!(env.idp.token_requests().await.len(), 1);
+    })
+    .await;
+}
+
+async fn futures_join(
+    env: &Env,
+    params: &CallbackParams<'_>,
+) -> Vec<Result<deskhaven_core::oidc::CallbackReport, CallbackError>> {
+    let call = || env.oidc.complete_callback(params);
+    let (a, b, c, d) = tokio::join!(call(), call(), call(), call());
+    vec![a, b, c, d]
+}
+
 #[tokio::test]
 async fn unknown_missing_or_malformed_states_are_refused_without_a_request() {
     each_migrated_backend(async |db: &TestDb| {

@@ -4,6 +4,7 @@
 use sea_orm::DbErr;
 
 use crate::crypto::CryptoError;
+use crate::login_events::LoginResult;
 use crate::users::UserError;
 
 /// Why a provider operation failed.
@@ -132,17 +133,9 @@ impl Failure {
         Self::ProvisioningFailed,
     ];
 
-    /// Stored form (`oidc_flows.error`) and login event result.
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Denied => "oidc_denied",
-            Self::Unavailable => "oidc_unavailable",
-            Self::InvalidToken => "oidc_invalid_token",
-            Self::NoLinkedAccount => "no_linked_account",
-            Self::Disabled => "disabled",
-            Self::Unverified => "unverified",
-            Self::ProvisioningFailed => "provisioning_failed",
-        }
+    /// Stored form (`oidc_flows.error`): the login event result of the failure.
+    pub fn code(self) -> &'static str {
+        LoginResult::from(self).as_str()
     }
 
     pub(crate) fn from_code(code: &str) -> Option<Self> {

@@ -133,7 +133,7 @@ impl Raw {
 }
 
 /// `id`, `uuid` and `deviceInfo`, checked as the session service will.
-fn device(
+pub(crate) fn device(
     id: Option<String>,
     uuid: Option<String>,
     info: Option<Value>,

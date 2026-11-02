@@ -36,6 +36,9 @@ pub enum ClientApiError {
     /// 503 + `Retry-After`: overloaded; the request was not processed.
     #[error("{TRY_LATER_MESSAGE}")]
     Unavailable { retry_after: Duration },
+    /// 502: an upstream service (an OIDC provider) failed.
+    #[error("{0}")]
+    BadGateway(Cow<'static, str>),
     /// Detail is logged, never returned.
     #[error("{INTERNAL_ERROR_BODY}")]
     Internal(#[source] BoxError),
@@ -54,6 +57,7 @@ impl ClientApiError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Unavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
