@@ -110,7 +110,8 @@ async fn atomic_write(
 /// A fallback-audited write that signals when the handler is done.
 #[utoipa::path(post, path = "/probe/fallback", security(("console_session" = ["admin"])), responses((status = 200)))]
 async fn fallback_write() -> (Audit, Json<Value>) {
-    FALLBACK_HANDLER_DONE.notify_one();
+    // `notify_waiters` stores no permit, so a later run cannot see a stale notification.
+    FALLBACK_HANDLER_DONE.notify_waiters();
     (Audit::new("probe.fallback"), Json(json!({ "ok": true })))
 }
 
