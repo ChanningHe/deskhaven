@@ -127,6 +127,18 @@ async-trait = "0.1"
 # HashMap is plenty for login traffic).
 governor = { version = "0.10.4", default-features = false, features = ["std"] }
 
+# --- 2FA (M2-08) ---
+# (zeroize: reused from an earlier block.)
+# TOTP (RFC 6238) is a dozen lines over HMAC-SHA1, so no TOTP crate (totp-rs would add
+# hmac 0.12, base32, constant_time_eq and rand). All of these are already in the graph
+# (hmac/sha2 0.11 via sqlx-postgres, data-encoding via tungstenite); the digest-0.11
+# family is needed because hmac 0.13 only takes digest-0.11 hashes. `sha2` above stays
+# 0.10 (ed25519-dalek and existing code); 0.11 gets its own key, like `base64_022`.
+hmac = { version = "0.13", default-features = false }
+sha1 = { version = "0.11", default-features = false }
+sha2_011 = { package = "sha2", version = "0.11", default-features = false }
+data-encoding = "2.11"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

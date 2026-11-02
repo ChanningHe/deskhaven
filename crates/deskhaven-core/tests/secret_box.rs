@@ -291,3 +291,41 @@ fn generated_master_keys_differ() {
     let b = MasterKey::generate().unwrap();
     assert_ne!(a.key_id(), b.key_id());
 }
+
+// --- keyed MAC (06 §3.3: k_hmac = HKDF(master key, "deskhaven/hmac/v1")) ------------------
+
+/// Computed independently with OpenSSL, not with this crate:
+/// `openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt hexkey:07…07
+/// -kdfopt info:deskhaven/hmac/v1 HKDF` (no salt) gives k_hmac; then
+/// `openssl dgst -sha256 -mac HMAC -macopt hexkey:<k_hmac>` over
+/// `u64be(27) || "recovery_codes.code_hash:42" || "abcde23456"`, standard base64 unpadded.
+const KAT_MAC: &str = "v1:330d29e5:+SPsmDaIQ81ziO4r9L0v2HEcGtbk6nCSt+1NQRjvL/I";
+const MAC_CTX: &str = "recovery_codes.code_hash:42";
+
+#[test]
+fn mac_matches_the_known_answer_vector() {
+    assert_eq!(boxed(KEY_A).mac(MAC_CTX, b"abcde23456"), KAT_MAC);
+}
+
+#[test]
+fn mac_is_deterministic_and_bound_to_key_context_and_data() {
+    let sb = boxed(KEY_A);
+    let tag = sb.mac(MAC_CTX, b"abcde23456");
+
+    assert_eq!(sb.mac(MAC_CTX, b"abcde23456"), tag);
+    assert_ne!(boxed(KEY_B).mac(MAC_CTX, b"abcde23456"), tag);
+    assert_ne!(sb.mac("recovery_codes.code_hash:43", b"abcde23456"), tag);
+    assert_ne!(sb.mac(MAC_CTX, b"abcde23457"), tag);
+    // The context is length-prefixed: moving bytes between context and data changes the tag.
+    assert_ne!(sb.mac("recovery_codes.code_hash:4", b"2abcde23456"), tag);
+}
+
+#[test]
+fn mac_uses_the_primary_key_after_rotation() {
+    let old = MasterKey::from_bytes(&KEY_A);
+    let new = MasterKey::from_bytes(&KEY_B);
+    let rotated = SecretBox::new(&new).with_previous(&old).unwrap();
+
+    assert_eq!(rotated.mac(MAC_CTX, b"x"), boxed(KEY_B).mac(MAC_CTX, b"x"));
+    assert!(rotated.mac(MAC_CTX, b"x").starts_with("v1:02b408d5:"));
+}

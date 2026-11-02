@@ -8,6 +8,11 @@
 //! `users.totp_secret_enc:42`, 06-security §5), so an attacker with database
 //! write access but no master key cannot move a ciphertext to another row or
 //! column. The context is not stored; callers recompute it on open.
+//!
+//! [`SecretBox::mac`] is the keyed hash of low-entropy secrets that are looked up by
+//! equality (06 §3.3): `v1:<key_id>:<base64 HMAC-SHA256>` under `k_hmac`, derived from the
+//! **primary** key (`mac.rs`). Values made under a retired key no longer match after a
+//! rotation; their owners regenerate them (recovery codes) or they expire (emailed codes).
 
 use std::fmt;
 
@@ -17,6 +22,7 @@ use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use zeroize::Zeroizing;
 
 use super::b64::SEALED_B64;
+use super::mac::{MAC_KEY_LEN, derive_mac_key, hmac_sha256};
 use super::{CryptoError, KeyId, MasterKey, fill_random};
 
 /// Largest plaintext `seal` accepts; sealed output stays below [`MAX_SEALED_LEN`].
@@ -44,10 +50,12 @@ impl Slot {
 }
 
 /// Seals with the primary key; opens with any held key (rotation). Cipher
-/// state wipes its key copy on drop.
+/// state and the MAC key wipe their key copies on drop.
 pub struct SecretBox {
     primary: Slot,
     previous: Vec<Slot>,
+    /// `k_hmac` of the primary key.
+    mac_key: Zeroizing<[u8; MAC_KEY_LEN]>,
 }
 
 impl SecretBox {
@@ -55,6 +63,7 @@ impl SecretBox {
         Self {
             primary: Slot::new(primary),
             previous: Vec::new(),
+            mac_key: derive_mac_key(primary.bytes()),
         }
     }
 
@@ -66,10 +75,23 @@ impl SecretBox {
         }
         let mut previous = self.previous;
         previous.push(Slot::new(key));
-        Ok(Self {
-            primary: self.primary,
-            previous,
-        })
+        Ok(Self { previous, ..self })
+    }
+
+    /// `v1:<key_id>:<tag>`: HMAC-SHA256 under `k_hmac` of `u64be(len(context)) || context
+    /// || data`, the tag in unpadded standard base64. Deterministic, so it can be looked up
+    /// by equality. The context names the use, like a sealing context
+    /// (`"<table>.<column>:<row or owner id>"`).
+    pub fn mac(&self, context: &str, data: &[u8]) -> String {
+        let len = u64::try_from(context.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes();
+        let tag = hmac_sha256(&self.mac_key, &[&len, context.as_bytes(), data]);
+        format!(
+            "{}{SEPARATOR}{}",
+            header(self.primary.id),
+            SEALED_B64.encode(tag.as_slice())
+        )
     }
 
     pub fn seal(&self, context: &str, plaintext: &[u8]) -> Result<String, CryptoError> {
