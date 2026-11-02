@@ -22,13 +22,18 @@ impl SignalPeerStore {
 
 #[async_trait]
 impl PeerStore for SignalPeerStore {
-    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError> {
-        let all = self
+    async fn load_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<PeerRecord>, StoreError> {
+        let limit = u64::try_from(limit).map_err(StoreError::backend)?;
+        let page = self
             .devices
-            .all_registrations()
+            .registrations_page(after, limit)
             .await
             .map_err(StoreError::backend)?;
-        Ok(all
+        Ok(page
             .into_iter()
             .map(|d| record(d.rustdesk_id, d.uuid, d.pk, &d.register_ip))
             .collect())

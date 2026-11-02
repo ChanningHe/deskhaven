@@ -70,13 +70,18 @@ async fn upsert_then_get_round_trips_through_devices() {
 }
 
 #[tokio::test]
-async fn load_all_returns_every_device_as_a_peer_record() {
+async fn load_page_returns_devices_as_peer_records_after_the_cursor() {
     each_migrated_backend(async |db: &TestDb| {
         let store = store(&db.conn);
-        assert!(store.load_all().await.unwrap().is_empty(), "{}", db.backend);
+        assert!(
+            store.load_page(None, 10).await.unwrap().is_empty(),
+            "{}",
+            db.backend
+        );
         store.upsert_pk(&upsert(OWNER_UUID, PK1, 7)).await.unwrap();
 
-        let all = store.load_all().await.unwrap();
+        let all = store.load_page(None, 10).await.unwrap();
+        let after_it = store.load_page(Some(ID), 10).await.unwrap();
 
         let expected = PeerRecord {
             id: ID.to_owned(),
@@ -85,6 +90,7 @@ async fn load_all_returns_every_device_as_a_peer_record() {
             ip: Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7))),
         };
         assert_eq!(all, vec![expected], "{}", db.backend);
+        assert!(after_it.is_empty(), "{}", db.backend);
     })
     .await;
 }
