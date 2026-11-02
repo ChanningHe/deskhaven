@@ -28,18 +28,58 @@ impl SessionService {
         let hash = TokenHash::of_presented(token).ok_or(SessionError::InvalidToken)?;
         let core = &self.core;
         let now = core.now_ms();
-        let cached = core.cache.get(&hash, now);
-        let (session, fill) = match cached {
-            Some(session) => (session, None),
-            None => {
-                let (session, seen) = core.load(&hash).await?;
-                (session, Some(seen))
-            }
+        if let Some(session) = core.cache.get(&hash, now) {
+            return core.validated(&hash, session, None, now, expected).await;
+        }
+        let (session, seen) = core.load(&hash).await?;
+        core.validated(&hash, session, Some(seen), now, expected)
+            .await
+    }
+
+    /// [`authenticate`](Self::authenticate) without the database read: the outcome when
+    /// the token's session is in the cache (or the token is malformed), else
+    /// [`CachedAuth::Miss`]. Lets callers rate-limit only the requests that would read the
+    /// database. A hit may still write (the throttled `last_used_at` touch).
+    pub async fn authenticate_cached(&self, token: &str, expected: SessionKind) -> CachedAuth {
+        let Some(hash) = TokenHash::of_presented(token) else {
+            return CachedAuth::Hit(Err(SessionError::InvalidToken));
         };
+        let core = &self.core;
+        let now = core.now_ms();
+        match core.cache.get(&hash, now) {
+            Some(session) => {
+                CachedAuth::Hit(core.validated(&hash, session, None, now, expected).await)
+            }
+            None => CachedAuth::Miss,
+        }
+    }
+}
+
+/// Outcome of [`SessionService::authenticate_cached`].
+#[derive(Debug)]
+pub enum CachedAuth {
+    /// Decided without reading the database.
+    Hit(Result<SessionPrincipal, SessionError>),
+    /// Not cached: only [`SessionService::authenticate`] can tell.
+    Miss,
+}
+
+impl Core {
+    /// Expiry, kind and touch checks of a session from the cache (`fill: None`) or the
+    /// database (`fill`: the generation seen before the read, to cache it race-free).
+    async fn validated(
+        &self,
+        hash: &TokenHash,
+        session: CachedSession,
+        fill: Option<CacheGeneration>,
+        now: i64,
+        expected: SessionKind,
+    ) -> Result<SessionPrincipal, SessionError> {
+        let core = self;
         if let Err(expired) = session.check(now, core.idle_ttl_ms()) {
             // Expiry is permanent, so this needs no fill-race protection (no generation
             // bump: a client repeating an expired token must not disturb other fills).
-            core.cache.remove_expired(&hash);
+            core.cache.remove_expired(hash);
             return Err(expired);
         }
         if let Some(seen) = fill {
@@ -48,12 +88,9 @@ impl SessionService {
         if session.principal.kind != expected {
             return Err(SessionError::InvalidToken);
         }
-        core.touch_if_due(&hash, &session, now).await?;
+        core.touch_if_due(hash, &session, now).await?;
         Ok(session.principal)
     }
-}
-
-impl Core {
     /// The session and its owner from the database, plus the cache generation seen before
     /// the read (for a race-free fill).
     async fn load(

@@ -5,8 +5,8 @@
 use std::time::{Duration, Instant};
 
 use deskhaven_core::users::{
-    HashParams, MAX_PASSWORD_LEN, Password, PasswordError, PasswordHasher, PolicyViolation,
-    check_password_policy,
+    HashLimits, HashParams, MAX_PASSWORD_LEN, Password, PasswordError, PasswordHasher,
+    PolicyViolation, check_password_policy,
 };
 
 const DEFAULT_PREFIX: &str = "$argon2id$v=19$m=19456,t=2,p=1$";
@@ -20,6 +20,31 @@ const MIN_HASH_TIME: Duration = Duration::from_millis(5);
 
 fn pw(s: &str) -> Password {
     Password::new(s)
+}
+
+#[tokio::test]
+async fn available_slots_shows_a_running_computation_and_is_shared_by_clones() {
+    let limits = HashLimits {
+        max_concurrent: 2,
+        acquire_timeout: Duration::from_secs(5),
+    };
+    // Slow enough (hundreds of ms) that the loop below sees the computation running.
+    let slow = HashParams {
+        iterations: 16,
+        ..HashParams::DEFAULT
+    };
+    let hasher = PasswordHasher::with_limits(slow, limits).unwrap();
+    let clone = hasher.clone();
+    assert_eq!(hasher.available_slots(), 2);
+
+    let running = tokio::spawn(async move { clone.verify_dummy(&pw("x")).await });
+    while hasher.available_slots() == 2 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(hasher.available_slots(), 1);
+    running.await.unwrap().unwrap();
+
+    assert_eq!(hasher.available_slots(), 2);
 }
 
 #[tokio::test]

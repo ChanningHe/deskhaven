@@ -13,8 +13,10 @@
 //! - Time: [`Clock::elapsed`](crate::clock::Clock::elapsed), monotonic in production, so
 //!   stepping the wall clock neither refills nor drains buckets.
 //! - Peek: [`IpLimiter::over_limit`] answers "is this client over its limit" without taking a
-//!   token, from the deadline its last denied check returned (GCRA has no peek of its own).
-//!   Bearer authentication gates on it before looking a token up.
+//!   token, from the deadline its last denied [`IpLimiter::check_recorded`] returned (GCRA
+//!   has no peek of its own). Bearer authentication records its rejections that way and
+//!   gates its database lookups on it; login checks share the bucket but are not recorded,
+//!   so logins alone never close the bearer gate.
 //! - Memory: buckets that refilled completely are indistinguishable from absent ones and are
 //!   dropped every [`SWEEP_EVERY`] checks and on [`IpLimiter::sweep`], as are denials whose
 //!   deadline passed. Both maps are therefore bounded by the number of distinct clients seen
@@ -151,9 +153,20 @@ impl IpLimiter {
         }
     }
 
-    /// Takes one token for `client`, or returns how long until one is available (and
-    /// remembers that for [`over_limit`](Self::over_limit)).
+    /// Takes one token for `client`, or returns how long until one is available.
     pub fn check(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.take(client, false)
+    }
+
+    /// [`check`](Self::check), and a denial is remembered for
+    /// [`over_limit`](Self::over_limit). Only the callers that gate on `over_limit` use it,
+    /// so other consumers of the same bucket (logins) drain the quota but never trip the
+    /// gate themselves.
+    pub fn check_recorded(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.take(client, true)
+    }
+
+    fn take(&self, client: ClientAddr, record_denial: bool) -> Result<(), Duration> {
         let current = self.configured();
         let now = governor::clock::Clock::now(&self.clock);
         let key = bucket_key(client);
@@ -165,7 +178,7 @@ impl IpLimiter {
             Some(addr) => current.buckets.check_key(&addr),
         }
         .map_err(|not_until| not_until.wait_time_from(now));
-        if let Err(wait) = result {
+        if let (Err(wait), true) = (result, record_denial) {
             current.deny(key, now, wait);
         }
         if key.is_some()
@@ -177,9 +190,9 @@ impl IpLimiter {
     }
 
     /// Without taking a token: the time left until `client`'s bucket has a token again,
-    /// if its most recent [`check`](Self::check) was denied and that time has not passed.
-    /// An empty bucket that no check was denied by yet reads as not over the limit, so
-    /// callers that gate on this let at most one request per refill past the quota.
+    /// if its most recent [`check_recorded`](Self::check_recorded) was denied and that time
+    /// has not passed. Plain [`check`](Self::check) denials do not count. An empty bucket
+    /// that no recorded check was denied by yet reads as not over the limit.
     pub fn over_limit(&self, client: ClientAddr) -> Option<Duration> {
         let current = self.configured();
         let now = governor::clock::Clock::now(&self.clock);

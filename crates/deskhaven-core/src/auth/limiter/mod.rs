@@ -57,12 +57,18 @@
 //! - Client `/api/login` and console login: the protocols above.
 //! - 2FA verification: step 2 above, with the **same username key** as the first step.
 //! - OIDC initiation: [`IpLimiter::check`] only (there is no username to count).
-//! - Bearer-authenticated endpoints: [`LoginThrottle::check_bearer`] before the token lookup
-//!   (429 while the IP is over its limit, no database access) and
-//!   [`LoginThrottle::on_bearer_rejected`] when the token does not authenticate (401). Valid
-//!   tokens spend nothing, so steady authenticated traffic never drains the login budget;
-//!   random-token spraying from one network gets a bounded number of lookups: one per
-//!   token, plus one denied lookup per refill (at most twice the per-minute quota).
+//! - Bearer-authenticated endpoints: a token valid in the session cache passes without
+//!   touching the limiter. Otherwise (a database lookup) [`LoginThrottle::check_bearer`]
+//!   first (429 while a recent bearer rejection found the IP over its limit, no database
+//!   access), then [`LoginThrottle::on_bearer_rejected`] when the token does not
+//!   authenticate (401). Valid tokens spend nothing. Bearer rejections and logins draw from
+//!   the same bucket, but only bearer rejections close the gate, so heavy login traffic
+//!   from one address never locks its users out of account features.
+//!
+//!   Lookup bound for random-token spraying from one network: roughly the per-minute quota
+//!   plus one denied lookup per refill. It is approximate: requests already past the gate
+//!   when the first denial is recorded still look their token up, so under concurrency up
+//!   to one in-flight batch more gets through each time the gate reopens.
 //!
 //! **Proxy fallback**: requests whose address resolved to a trusted proxy
 //! (`ClientAddr::is_proxy_fallback`) all share the source `fallback` — and one IP bucket — by
@@ -179,16 +185,18 @@ impl LoginThrottle {
         self.accounts.refund(attempt).await
     }
 
-    /// Before looking up a presented bearer token: `Err(retry_after)` while `client` is over
-    /// its per-IP limit, so a token-spraying client causes no lookups. Takes no token.
+    /// Before looking a presented bearer token up in the database: `Err(retry_after)` while
+    /// a bearer rejection found `client` over its per-IP limit (login denials do not count),
+    /// so a token-spraying client causes no lookups. Takes no token.
     pub fn check_bearer(&self, client: ClientAddr) -> Result<(), Duration> {
         self.ip.over_limit(client).map_or(Ok(()), Err)
     }
 
     /// A presented bearer token did not authenticate: spends one token of `client`'s
-    /// per-IP budget, the one logins draw from. `Err(retry_after)` when none was left.
+    /// per-IP budget, the one logins draw from. `Err(retry_after)` when none was left, which
+    /// also closes [`check_bearer`](Self::check_bearer) until a token frees up.
     pub fn on_bearer_rejected(&self, client: ClientAddr) -> Result<(), Duration> {
-        self.ip.check(client)
+        self.ip.check_recorded(client)
     }
 
     /// Admin unlock: clears every counter and lock of `username`; returns rows removed.

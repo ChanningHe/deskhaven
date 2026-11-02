@@ -176,6 +176,12 @@ impl PasswordHasher {
         }
     }
 
+    /// Computation slots free right now (shared by all clones). For load metrics and for
+    /// tests that need to know a computation is running.
+    pub fn available_slots(&self) -> usize {
+        self.permits.available_permits()
+    }
+
     /// A new PHC string for `password`, with a fresh random salt.
     pub async fn hash(&self, password: &Password) -> Result<String, PasswordError> {
         let mut salt = [0u8; SALT_LEN];

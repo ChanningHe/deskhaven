@@ -47,6 +47,7 @@ pub use model::{
 };
 pub(crate) use revoke::revoke_user_sessions;
 pub use token::{SessionToken, TOKEN_BYTES, TOKEN_LEN, TokenHash};
+pub use verify::CachedAuth;
 
 use crate::clock::SharedClock;
 use crate::settings::SettingsService;

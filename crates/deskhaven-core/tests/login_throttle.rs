@@ -330,6 +330,24 @@ fn pending_subject_round_trips_through_stored_parts_and_rejects_tampering() {
 }
 
 #[tokio::test]
+async fn login_denials_drain_the_shared_bucket_but_do_not_close_the_bearer_gate() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, _) = throttle(db).await;
+        let from = client("192.0.2.1");
+        for name in ["a", "b", "c", "d"] {
+            let attempt = throttle.pre_check(from, name).await.unwrap();
+            throttle.on_success(attempt).await.unwrap();
+        }
+        let wait = retry_after(throttle.pre_check(from, "e").await);
+
+        assert_eq!(throttle.check_bearer(from), Ok(()), "{}", db.backend);
+        assert_eq!(throttle.on_bearer_rejected(from), Err(wait), "same quota");
+        assert_eq!(throttle.check_bearer(from), Err(wait));
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn rejected_bearer_tokens_spend_the_ip_budget_shared_with_logins() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, clock) = throttle(db).await;

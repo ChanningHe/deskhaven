@@ -14,7 +14,7 @@ use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::sessions::{
-    ClientDevice, SessionError, SessionKind, SessionService, SessionToken,
+    CachedAuth, ClientDevice, SessionError, SessionKind, SessionService, SessionToken,
 };
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::users::{
@@ -1026,6 +1026,75 @@ async fn cleanup_removes_only_revoked_and_expired_sessions() {
         for gone in [idle.id, revoked.id, expired.id] {
             assert!(row(db, gone).await.is_none(), "session {gone} survived");
         }
+    })
+    .await;
+}
+
+fn hit(result: CachedAuth) -> Result<i64, SessionError> {
+    match result {
+        CachedAuth::Hit(outcome) => outcome.map(|p| p.user_id),
+        CachedAuth::Miss => panic!("expected a cache hit"),
+    }
+}
+
+#[tokio::test]
+async fn authenticate_cached_answers_from_the_cache_only() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (alice, token) = env.client_session("alice").await;
+        let sessions = &env.sessions;
+
+        let before = env.queries();
+        let fresh = sessions
+            .authenticate_cached(token.expose(), SessionKind::Client)
+            .await;
+        let malformed = sessions
+            .authenticate_cached("not-a-token", SessionKind::Client)
+            .await;
+        assert!(matches!(fresh, CachedAuth::Miss), "{}", db.backend);
+        assert!(matches!(hit(malformed), Err(SessionError::InvalidToken)));
+        assert_eq!(env.queries(), before, "no database access");
+
+        env.auth(&token).await.unwrap();
+        let before = env.queries();
+        let valid = sessions
+            .authenticate_cached(token.expose(), SessionKind::Client)
+            .await;
+        let wrong_kind = sessions
+            .authenticate_cached(token.expose(), SessionKind::Console)
+            .await;
+        assert_eq!(hit(valid).unwrap(), alice);
+        assert!(matches!(hit(wrong_kind), Err(SessionError::InvalidToken)));
+        assert_eq!(
+            env.queries(),
+            before,
+            "hits are served without the database"
+        );
+
+        // Past the cache TTL the entry no longer answers: back to the database.
+        env.clock.advance(SESSION_TTL);
+        let stale = sessions
+            .authenticate_cached(token.expose(), SessionKind::Client)
+            .await;
+        assert!(matches!(stale, CachedAuth::Miss));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn authenticate_cached_misses_after_revocation() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (_, token) = env.client_session("alice").await;
+        env.auth(&token).await.unwrap();
+
+        assert!(env.sessions.revoke_token(token.expose()).await.unwrap());
+
+        let after = env
+            .sessions
+            .authenticate_cached(token.expose(), SessionKind::Client)
+            .await;
+        assert!(matches!(after, CachedAuth::Miss), "{}", db.backend);
     })
     .await;
 }

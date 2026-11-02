@@ -247,7 +247,7 @@ async fn over_limit_reports_a_denied_key_without_taking_a_token() {
         assert_eq!(allowed(&limiter, "192.0.2.1", 2), 2);
         // Bucket empty, but no check was denied yet: GCRA offers no peek.
         assert_eq!(limiter.over_limit(a), None);
-        let wait = limiter.check(a).unwrap_err();
+        let wait = limiter.check_recorded(a).unwrap_err();
         assert_eq!(limiter.over_limit(a), Some(wait), "{}", db.backend);
         // Peeking repeatedly takes nothing and counts down to the same deadline.
         clock.advance(Duration::from_secs(10));
@@ -257,6 +257,29 @@ async fn over_limit_reports_a_denied_key_without_taking_a_token() {
         clock.advance(wait);
         assert_eq!(limiter.over_limit(a), None);
         assert!(limiter.check(a).is_ok(), "the peeks took no token");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn plain_check_denials_share_the_quota_but_are_not_recorded() {
+    each_migrated_backend(async |db: &TestDb| {
+        let settings = settings(db).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(1)).await;
+        let limiter = IpLimiter::new(settings, clock());
+        let a = client("192.0.2.1");
+
+        limiter.check(a).unwrap();
+        let wait = limiter.check(a).unwrap_err();
+
+        assert_eq!(limiter.over_limit(a), None, "{}", db.backend);
+        assert_eq!(limiter.denied_clients(), 0);
+        assert_eq!(
+            limiter.check_recorded(a),
+            Err(wait),
+            "same bucket, same quota"
+        );
+        assert_eq!(limiter.over_limit(a), Some(wait));
     })
     .await;
 }
@@ -273,11 +296,11 @@ async fn over_limit_follows_the_bucket_key_and_the_fallback_bucket() {
         };
 
         limiter.check(client("2001:db8:1:2::1")).unwrap();
-        assert!(limiter.check(client("2001:db8:1:2::1")).is_err());
+        assert!(limiter.check_recorded(client("2001:db8:1:2::1")).is_err());
         for _ in 0..FALLBACK_FACTOR {
             limiter.check(fallback("10.0.0.1")).unwrap();
         }
-        assert!(limiter.check(fallback("10.0.0.1")).is_err());
+        assert!(limiter.check_recorded(fallback("10.0.0.1")).is_err());
 
         assert!(
             limiter.over_limit(client("2001:db8:1:2::ffff")).is_some(),
@@ -302,7 +325,7 @@ async fn denials_are_swept_and_dropped_on_reconfiguration() {
         let limiter = IpLimiter::new(settings.clone(), clock.clone());
         let a = client("192.0.2.1");
         limiter.check(a).unwrap();
-        let _ = limiter.check(a).unwrap_err();
+        let _ = limiter.check_recorded(a).unwrap_err();
         assert_eq!(limiter.denied_clients(), 1);
 
         clock.advance(MINUTE);
@@ -310,7 +333,7 @@ async fn denials_are_swept_and_dropped_on_reconfiguration() {
         assert_eq!(limiter.denied_clients(), 0, "expired denials are swept");
 
         limiter.check(a).unwrap();
-        let _ = limiter.check(a).unwrap_err();
+        let _ = limiter.check_recorded(a).unwrap_err();
         set(&settings, "auth.ip_rate_limit.per_minute", json!(5)).await;
         assert_eq!(
             limiter.over_limit(a),

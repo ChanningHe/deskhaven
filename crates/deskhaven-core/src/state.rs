@@ -9,6 +9,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::auth::limiter::LoginThrottle;
 use crate::crypto::SecretBox;
+use crate::login_events::LoginEventLog;
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
 use crate::users::UserService;
@@ -28,4 +29,6 @@ pub struct AppState {
     pub sessions: SessionService,
     /// Per-IP rate limit and account lockout for login-type endpoints.
     pub login_throttle: LoginThrottle,
+    /// Audit trail of login attempts.
+    pub login_events: LoginEventLog,
 }

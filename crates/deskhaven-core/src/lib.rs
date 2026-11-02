@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod devices;
 pub mod groups;
 pub mod keys;
+pub mod login_events;
 pub mod pagination;
 pub mod sessions;
 pub mod settings;
