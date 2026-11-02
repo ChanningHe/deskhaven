@@ -13,7 +13,7 @@ use deskhaven_signal::{
     MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, SignalConfig, SignalError, run,
 };
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{OK, UUID_MISMATCH},
+    rendezvous_proto::register_pk_response::Result::{OK, SERVER_ERROR, UUID_MISMATCH},
     tokio::{
         self,
         time::{Duration, Instant, sleep, timeout},
@@ -37,6 +37,13 @@ use tokio_util::sync::CancellationToken;
 /// (30 s); writing the backlog follows at once.
 const RECOVERY: Duration = Duration::from_secs(40);
 const POLL: Duration = Duration::from_millis(100);
+/// How often a stalled upsert checks whether it may go on.
+const STALL_POLL: Duration = Duration::from_millis(10);
+/// The server's write queue bound for ids that are not bound yet (`persist.rs` `WRITE_QUEUE`).
+const WRITE_QUEUE: usize = 1024;
+/// RegisterPk per source IP in the queue test, below the per-IP limit (`check_ip_block`: 30
+/// a minute).
+const REGISTRATIONS_PER_IP: usize = 25;
 
 /// A memory store that counts calls and can fail or hang.
 #[derive(Default)]
@@ -49,6 +56,8 @@ struct TestStore {
     fail_upserts: AtomicUsize,
     fail_load: AtomicBool,
     hang_load: AtomicBool,
+    /// Upserts wait while set (and then go through).
+    stall_upserts: AtomicBool,
 }
 
 impl TestStore {
@@ -105,6 +114,9 @@ impl PeerStore for TestStore {
 
     async fn upsert_pk(&self, rec: &PeerUpsert) -> Result<(), deskhaven_signal::StoreError> {
         self.upserts.fetch_add(1, Ordering::SeqCst);
+        while self.stall_upserts.load(Ordering::SeqCst) {
+            sleep(STALL_POLL).await;
+        }
         // Upserts come from one writer task, one at a time: load-then-sub cannot race.
         if self.fail_upserts.load(Ordering::SeqCst) > 0 {
             self.fail_upserts.fetch_sub(1, Ordering::SeqCst);
@@ -382,5 +394,56 @@ async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
     );
     assert_eq!(store_owner, OK, "the store's owner");
     assert_eq!(store.stored_uuid(ID).await, Some(owner.uuid.to_vec()));
+    server.stop().await;
+}
+
+/// M1-08 (07 §2.4): upstream answered RegisterPk OK whatever `update_pk` returned (rs:466).
+/// With the write-behind (M1-05) the one failure left on that path is a full write queue
+/// refusing an id that is not bound yet: it is answered SERVER_ERROR (the client retries), over
+/// UDP and over TCP alike, and nothing is registered; bound peers are still accepted.
+#[tokio::test]
+async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
+    // Arrange: the store stalls, so accepted registrations of new ids pile up in the queue.
+    let store = TestStore::shared();
+    store.stall_upserts.store(true, Ordering::SeqCst);
+    let server = start(&store).await;
+    let first = PeerKeys::random();
+    let mut udp = server.udp().await;
+    assert_eq!(udp.register_pk("queued-0", &first).await, OK);
+
+    // Act: new ids until one is refused.
+    let mut refused_at = None;
+    for n in 1..=WRITE_QUEUE + REGISTRATIONS_PER_IP {
+        if n % REGISTRATIONS_PER_IP == 0 {
+            udp = server.udp().await;
+        }
+        let res = udp
+            .register_pk(&format!("queued-{n}"), &PeerKeys::random())
+            .await;
+        if res == SERVER_ERROR {
+            refused_at = Some(n);
+            break;
+        }
+        assert_eq!(res, OK, "queued-{n}");
+    }
+    let tcp = server
+        .tcp()
+        .await
+        .register_pk("queued-over-tcp", &PeerKeys::random())
+        .await;
+    let bound = server.udp().await.register_pk("queued-0", &first).await;
+
+    // Assert
+    let refused_at = refused_at.expect("the write queue never filled up");
+    assert!(refused_at >= WRITE_QUEUE, "refused after {refused_at}");
+    assert_eq!(tcp, SERVER_ERROR, "over TCP");
+    assert_eq!(bound, OK, "a bound peer");
+    let online = server
+        .nat()
+        .await
+        .online_request(&["queued-over-tcp"])
+        .await;
+    assert_eq!(online_bits(&online.states, 1), [false], "not registered");
+    store.stall_upserts.store(false, Ordering::SeqCst);
     server.stop().await;
 }

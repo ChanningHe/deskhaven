@@ -443,3 +443,11 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `websocket_controllers_behind_one_proxy_ip_overwrite_each_other_upstream_behavior_m1_08_changes_this`
   became `websocket_client_addr_takes_the_proxy_header_ip_with_a_unique_port` and
   `websocket_controllers_behind_one_proxy_ip_get_their_own_answers`.
+- 2026-11-02, M1-08, `update_pk` failure -> SERVER_ERROR (07 §2.4, upstream rs:466 answered OK
+  whatever `update_pk` returned): no code change in M1-08. Since the M1-05 write-behind the only
+  synchronous `update_pk` failure is a full write queue refusing an id that is not bound yet,
+  and the RegisterPk path already answered it SERVER_ERROR without registering the id; since
+  the TCP registration above, the same `register_pk` answers RegisterPk over TCP / websocket.
+  New protocol test `full_write_queue_answers_server_error_over_udp_and_tcp`
+  (`tests/peer_store.rs`, with a stalling test store) pins it over UDP and TCP, and that bound
+  peers are still accepted; it fails if the result is ignored as upstream did.
