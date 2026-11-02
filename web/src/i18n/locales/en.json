@@ -1,0 +1,112 @@
+{
+  "app": {
+    "name": "deskhaven",
+    "skipToContent": "Skip to content"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "overview": "Overview",
+    "devices": "Devices",
+    "users": "Users",
+    "groups": "Groups",
+    "addressBooks": "Address books",
+    "strategies": "Strategies",
+    "audit": "Audit",
+    "identity": "Identity",
+    "clientSetup": "Client setup",
+    "tokens": "API tokens",
+    "settings": "Settings"
+  },
+  "shell": {
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "openNavigation": "Open navigation",
+    "close": "Close",
+    "search": "Search…",
+    "searchUnavailable": "Command palette is coming soon"
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language"
+  },
+  "user": {
+    "menu": "Account menu",
+    "profile": "Profile",
+    "signOut": "Sign out"
+  },
+  "pages": {
+    "overview": {
+      "description": "Health of your deskhaven server at a glance.",
+      "emptyTitle": "No data yet",
+      "emptyDescription": "Statistics appear here once devices start connecting."
+    },
+    "devices": {
+      "description": "Every RustDesk client registered with this server.",
+      "emptyTitle": "No devices yet",
+      "emptyDescription": "Configure your RustDesk clients to use this server and they will show up here.",
+      "emptyAction": "Open client setup"
+    },
+    "users": {
+      "description": "People who can sign in to RustDesk clients and this console.",
+      "emptyTitle": "No users yet",
+      "emptyDescription": "Users you create or import from an identity provider are listed here."
+    },
+    "groups": {
+      "description": "User groups and device groups used for access and policies.",
+      "emptyTitle": "No groups yet",
+      "emptyDescription": "Group users and devices to manage them together."
+    },
+    "addressBooks": {
+      "description": "Shared address books and who can use them.",
+      "emptyTitle": "No address books yet",
+      "emptyDescription": "Shared address books let teams reach the same devices."
+    },
+    "strategies": {
+      "description": "Client option sets assigned to devices, users and groups.",
+      "emptyTitle": "No strategies yet",
+      "emptyDescription": "Strategies push RustDesk client options from the server."
+    },
+    "audit": {
+      "description": "Connection, file transfer, alarm, login and console events.",
+      "emptyTitle": "No events yet",
+      "emptyDescription": "Audit events are recorded as clients connect and administrators act."
+    },
+    "identity": {
+      "description": "OIDC, LDAP and two-factor authentication.",
+      "emptyTitle": "No identity providers configured",
+      "emptyDescription": "Local accounts work out of the box; add OIDC or LDAP to use existing identities."
+    },
+    "clientSetup": {
+      "description": "Server addresses, public key and configuration string for RustDesk clients.",
+      "emptyTitle": "Client configuration is not available yet",
+      "emptyDescription": "Connection details appear here once the server is configured."
+    },
+    "tokens": {
+      "description": "Tokens for automation and integrations.",
+      "emptyTitle": "No API tokens yet",
+      "emptyDescription": "Create a token to call the management API from scripts."
+    },
+    "settings": {
+      "description": "Server-wide settings and where each value comes from.",
+      "emptyTitle": "Settings are not available yet",
+      "emptyDescription": "Settings will be editable here once the server API is connected."
+    }
+  },
+  "login": {
+    "title": "Sign in to deskhaven",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "notice": "Sign-in is not available in this preview build."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you are looking for does not exist or has moved.",
+    "back": "Back to overview"
+  }
+}

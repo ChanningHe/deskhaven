@@ -1,0 +1,6 @@
+minimumReleaseAgeExclude:
+  - '@tanstack/query-core@5.105.1'
+  - '@tanstack/react-query@5.105.1'
+  - i18next@26.7.1
+  - react-i18next@17.1.11
+  - globals@17.14.0

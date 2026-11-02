@@ -1,0 +1,112 @@
+{
+  "app": {
+    "name": "deskhaven",
+    "skipToContent": "跳到主要内容"
+  },
+  "nav": {
+    "label": "主导航",
+    "overview": "概览",
+    "devices": "设备",
+    "users": "用户",
+    "groups": "分组",
+    "addressBooks": "地址簿",
+    "strategies": "策略",
+    "audit": "审计",
+    "identity": "身份认证",
+    "clientSetup": "客户端配置",
+    "tokens": "API Token",
+    "settings": "设置"
+  },
+  "shell": {
+    "collapseSidebar": "收起侧栏",
+    "expandSidebar": "展开侧栏",
+    "openNavigation": "打开导航",
+    "close": "关闭",
+    "search": "搜索…",
+    "searchUnavailable": "命令面板即将推出"
+  },
+  "theme": {
+    "label": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "language": {
+    "label": "语言"
+  },
+  "user": {
+    "menu": "账户菜单",
+    "profile": "个人资料",
+    "signOut": "退出登录"
+  },
+  "pages": {
+    "overview": {
+      "description": "deskhaven 服务器运行状况一览。",
+      "emptyTitle": "暂无数据",
+      "emptyDescription": "设备开始连接后，这里会显示统计信息。"
+    },
+    "devices": {
+      "description": "注册到本服务器的所有 RustDesk 客户端。",
+      "emptyTitle": "暂无设备",
+      "emptyDescription": "将 RustDesk 客户端配置为使用本服务器后，设备会出现在这里。",
+      "emptyAction": "前往客户端配置"
+    },
+    "users": {
+      "description": "可登录 RustDesk 客户端和本控制台的用户。",
+      "emptyTitle": "暂无用户",
+      "emptyDescription": "新建或从身份提供方导入的用户会列在这里。"
+    },
+    "groups": {
+      "description": "用于访问控制与策略的用户组和设备组。",
+      "emptyTitle": "暂无分组",
+      "emptyDescription": "将用户和设备分组以便统一管理。"
+    },
+    "addressBooks": {
+      "description": "共享地址簿及其授权。",
+      "emptyTitle": "暂无地址簿",
+      "emptyDescription": "共享地址簿让团队访问同一批设备。"
+    },
+    "strategies": {
+      "description": "分配给设备、用户和分组的客户端选项集。",
+      "emptyTitle": "暂无策略",
+      "emptyDescription": "策略由服务器向 RustDesk 客户端下发选项。"
+    },
+    "audit": {
+      "description": "连接、文件传输、告警、登录与控制台操作记录。",
+      "emptyTitle": "暂无事件",
+      "emptyDescription": "客户端连接和管理员操作时会记录审计事件。"
+    },
+    "identity": {
+      "description": "OIDC、LDAP 与双因素认证。",
+      "emptyTitle": "尚未配置身份提供方",
+      "emptyDescription": "本地账户开箱即用；添加 OIDC 或 LDAP 以使用现有身份。"
+    },
+    "clientSetup": {
+      "description": "RustDesk 客户端所需的服务器地址、公钥与配置字符串。",
+      "emptyTitle": "客户端配置暂不可用",
+      "emptyDescription": "服务器配置完成后，这里会显示连接信息。"
+    },
+    "tokens": {
+      "description": "用于自动化与集成的访问令牌。",
+      "emptyTitle": "暂无 API Token",
+      "emptyDescription": "创建 Token 以便在脚本中调用管理 API。"
+    },
+    "settings": {
+      "description": "服务器全局设置及每项取值来源。",
+      "emptyTitle": "设置暂不可用",
+      "emptyDescription": "接入服务器 API 后即可在此编辑设置。"
+    }
+  },
+  "login": {
+    "title": "登录 deskhaven",
+    "username": "用户名",
+    "password": "密码",
+    "submit": "登录",
+    "notice": "当前预览版本尚未开放登录。"
+  },
+  "notFound": {
+    "title": "页面不存在",
+    "description": "你访问的页面不存在或已被移动。",
+    "back": "返回概览"
+  }
+}
