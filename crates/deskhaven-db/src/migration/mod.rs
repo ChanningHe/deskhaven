@@ -8,6 +8,7 @@ use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 mod m20261102_000001_settings;
+mod m20261102_000002_devices;
 mod m20261102_000010_users_groups;
 mod m20261102_000011_external_identity;
 mod m20261102_000012_sessions_credentials;
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
             Box::new(m20261102_000001_settings::Migration),
+            Box::new(m20261102_000002_devices::Migration),
             Box::new(m20261102_000010_users_groups::Migration),
             Box::new(m20261102_000011_external_identity::Migration),
             Box::new(m20261102_000012_sessions_credentials::Migration),

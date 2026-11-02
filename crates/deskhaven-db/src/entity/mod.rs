@@ -4,6 +4,7 @@
 
 pub mod api_token;
 pub mod auth_challenge;
+pub mod device;
 pub mod group;
 pub mod group_member;
 pub mod ldap_directory;
