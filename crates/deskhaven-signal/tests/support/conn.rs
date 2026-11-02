@@ -1,6 +1,6 @@
 //! Transport-independent client surface.
 
-use super::{PeerKeys, QUIET, STEP, msg, msg::rv};
+use super::{PeerKeys, QUIET, STEP, io, msg, msg::rv};
 use hbb_common::{
     protobuf::Message as _,
     rendezvous_proto::{
@@ -44,9 +44,10 @@ pub trait Conn {
         }
     }
 
-    /// The next message; panics if none arrives within [`STEP`].
+    /// The next message; panics if none arrives within [`STEP`] (on a paused clock: within
+    /// [`super::IO_DEADLINE`] of real time, the clock held still meanwhile; see [`io`]).
     async fn recv(&mut self) -> RendezvousMessage {
-        match self.recv_within(STEP).await {
+        match io("recv", self.recv_within(STEP)).await {
             Recv::Msg(msg) => *msg,
             other => panic!("no message within {STEP:?}: {other:?}"),
         }
@@ -61,7 +62,7 @@ pub trait Conn {
 
     /// Panics unless the server closes the connection within [`STEP`] without sending anything.
     async fn assert_closed(&mut self) {
-        match self.recv_within(STEP).await {
+        match io("assert_closed", self.recv_within(STEP)).await {
             Recv::Closed => {}
             other => panic!("expected the server to close the connection, got {other:?}"),
         }

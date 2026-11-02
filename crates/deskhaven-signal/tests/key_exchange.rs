@@ -31,7 +31,7 @@ use hbb_common::{
 use sodiumoxide::crypto::sign;
 use support::{
     Conn, KxClient, PeerKeys, QUIET, REG_TIMEOUT, Recv, Rendezvous, SIGNED_PARAMS_FLAG, TestServer,
-    decode_addr, expect_msg, punch_hole_sent, read_offer, relay_response, reply, rv, secure,
+    decode_addr, expect_msg, io, punch_hole_sent, read_offer, relay_response, reply, rv, secure,
     secured_tcp, verify_offer,
 };
 
@@ -476,13 +476,14 @@ async fn heartbeats_on_a_secured_connection_are_plaintext_empty_frames() {
     let mut target = secured_tcp(&server).await;
     assert_eq!(target.register_pk(TARGET, &PeerKeys::random()).await, OK);
 
-    // Act: read the next frame raw, below the cipher.
-    let raw = timeout(
-        HEARTBEAT * 2,
+    // Act: let the first heartbeat fall due (the registration answer proves the server is
+    // caught up), then read it raw, below the cipher, with the clock held still.
+    tokio::time::advance(HEARTBEAT + Duration::from_secs(1)).await;
+    let raw = io(
+        "a heartbeat",
         hbb_common::futures::StreamExt::next(&mut target.stream().0),
     )
     .await
-    .expect("a heartbeat")
     .expect("open")
     .expect("readable");
     assert!(raw.is_empty(), "heartbeat frame of {} bytes", raw.len());

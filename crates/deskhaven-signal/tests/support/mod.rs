@@ -37,6 +37,7 @@ macro_rules! expect_msg {
 #[allow(unused_imports)] // re-exports: each test binary uses a subset
 pub(crate) use expect_msg;
 
+mod clock;
 mod conn;
 mod flows;
 mod kx;
@@ -49,9 +50,12 @@ mod ws;
 
 #[allow(unused_imports)]
 pub use {
+    clock::{IO_DEADLINE, io},
     conn::{Conn, Recv, Rendezvous},
     flows::*,
-    kx::{KxClient, SIGNED_PARAMS_FLAG, read_offer, reply, secure, secured_tcp, verify_offer},
+    kx::{
+        KxClient, SIGNED_PARAMS_FLAG, answer, read_offer, reply, secure, secured_tcp, verify_offer,
+    },
     msg::*,
     net::*,
     server::{TestServer, TrustXff, allow_all, config, memory_store, trusting, wait_until_ready},

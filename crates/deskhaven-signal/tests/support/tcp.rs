@@ -1,7 +1,7 @@
 //! TCP client over hbb_common's `FramedStream` (the codec RustDesk clients use on 21116 /
 //! 21115).
 
-use super::{Conn, Recv, Rendezvous, STEP_MS, next_client_ip};
+use super::{Conn, Recv, Rendezvous, STEP_MS, io, next_client_ip};
 use hbb_common::{
     bytes::Bytes,
     rendezvous_proto::{KeyExchange, RendezvousMessage, rendezvous_message},
@@ -54,9 +54,12 @@ impl TcpClient {
     /// key exchange); wrap it with [`TcpClient::from_stream`] afterwards.
     pub async fn connect_raw(ip: IpAddr, server: SocketAddr) -> FramedStream {
         let local = SocketAddr::new(ip, 0);
-        FramedStream::new(server, Some(local), STEP_MS)
-            .await
-            .unwrap()
+        io(
+            "tcp connect",
+            FramedStream::new(server, Some(local), STEP_MS),
+        )
+        .await
+        .unwrap()
     }
 
     pub fn from_stream(stream: FramedStream) -> Self {

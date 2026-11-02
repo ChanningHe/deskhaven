@@ -2,7 +2,7 @@
 //! src/common.rs `key_exchange` (2292-2358) and `create_symmetric_key_msg` (2435-2442),
 //! hbb_common fae47e0 `Stream::set_negotiated_key` (stream.rs 87-106).
 
-use super::{STEP_MS, TcpClient};
+use super::{STEP_MS, TcpClient, io};
 use hbb_common::{
     bytes::Bytes,
     protobuf::Message as _,
@@ -90,12 +90,13 @@ pub fn reply(their_pk: [u8; 32], picked: u32) -> Reply {
 /// The first frame from the server, which must be its KeyExchange offer (read in plain text,
 /// before any cipher is installed).
 pub async fn read_offer(client: &mut TcpClient) -> KeyExchange {
-    let bytes = client
-        .stream()
-        .next_timeout(STEP_MS)
-        .await
-        .expect("a first frame")
-        .expect("a readable first frame");
+    let bytes = io(
+        "the KeyExchange offer",
+        client.stream().next_timeout(STEP_MS),
+    )
+    .await
+    .expect("a first frame")
+    .expect("a readable first frame");
     let msg = RendezvousMessage::parse_from_bytes(&bytes).expect("a RendezvousMessage");
     match msg.union {
         Some(rendezvous_message::Union::KeyExchange(ex)) => ex,
@@ -111,14 +112,25 @@ pub async fn secure(
     client: KxClient,
 ) -> Result<u32, String> {
     let ex = read_offer(conn).await;
-    let their_pk = verify_offer(&ex, rs_pk, client)?;
-    let picked = picked_by(client, ex.version);
+    answer(conn, rs_pk, client, &ex).await
+}
+
+/// The rest of [`secure`] for an `offer` read earlier: lets a test read the offer at once and
+/// answer it after a (virtual) delay.
+pub async fn answer(
+    conn: &mut TcpClient,
+    rs_pk: &sign::PublicKey,
+    client: KxClient,
+    offer: &KeyExchange,
+) -> Result<u32, String> {
+    let their_pk = verify_offer(offer, rs_pk, client)?;
+    let picked = picked_by(client, offer.version);
     let reply = reply(their_pk, picked);
     conn.stream()
         .send(&reply.msg)
         .await
         .map_err(|e| e.to_string())?;
-    install(conn, reply, their_pk, ex.version, picked)?;
+    install(conn, reply, their_pk, offer.version, picked)?;
     Ok(picked)
 }
 

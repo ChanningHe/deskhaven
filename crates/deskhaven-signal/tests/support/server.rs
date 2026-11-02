@@ -1,6 +1,9 @@
 //! A signal server on free loopback ports for one test.
 
-use super::{PeerKeys, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, msg};
+use super::{
+    PeerKeys, Rendezvous, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, io, msg,
+    read_offer,
+};
 use deskhaven_signal::{
     AllowAll, ClientIpResolver, ControlPlane, MemoryPeerStore, PeerStore, SignalConfig,
     SignalError, SignalHandle, SignalServer, WsHeaders,
@@ -275,6 +278,26 @@ impl TestServer {
 
     pub async fn ws(&self) -> WsClient {
         WsClient::connect(self.ws_addr()).await
+    }
+
+    /// A bare TCP connection to `addr` that sends nothing (for timeout tests).
+    pub async fn raw_connect(addr: SocketAddr) -> TcpStream {
+        io("raw tcp connect", TcpStream::connect(addr))
+            .await
+            .unwrap()
+    }
+
+    /// Returns once the server has accepted and started serving every connection opened before
+    /// the call, on all three ports, so a paused clock can safely move on: the server's per-
+    /// connection timers exist and nothing of ours is still in flight. Each port gets a witness
+    /// connection with a full round trip (main: the KeyExchange offer, NAT: a TestNatRequest,
+    /// websocket: the handshake); a listener accepts and spawns in connection order, so the
+    /// witness being served means the earlier connections already are. Event driven: no
+    /// sleeps.
+    pub async fn settle(&self) {
+        read_offer(&mut self.tcp().await).await;
+        self.nat().await.test_nat().await;
+        self.ws().await;
     }
 
     /// A PunchHoleRequest for `target` with this server's licence key.

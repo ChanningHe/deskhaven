@@ -6,8 +6,11 @@
 //! closes the connection as soon as its header is read, the first frame (websocket: handshake
 //! included) must arrive within [`FIRST_FRAME_TIMEOUT`] ([`NAT_FIRST_FRAME_TIMEOUT`] on the NAT
 //! test port) and later ones within
-//! [`IDLE_TIMEOUT`] of the previous one. The timeout tests run on tokio's paused clock, which
-//! jumps ahead whenever the runtime idles, so they take no real time.
+//! [`IDLE_TIMEOUT`] of the previous one. The timeout tests run on tokio's paused clock so they take
+//! no real time. They move it only with `advance`, from a state where the server has caught up
+//! ([`TestServer::settle`]), and wait for real I/O events with it held still ([`io`]): the
+//! paused clock otherwise leaps ahead whenever the runtime finds nothing ready, which includes
+//! loopback data still in flight on a loaded machine (see `support/clock.rs`).
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -24,7 +27,9 @@ use hbb_common::{
     },
 };
 use std::net::SocketAddr;
-use support::{Conn, KxClient, Recv, Rendezvous, STEP, TestServer, expect_msg, secure};
+use support::{
+    Conn, KxClient, Recv, Rendezvous, STEP, TestServer, answer, expect_msg, io, read_offer,
+};
 
 /// The server's frame limit (`rendezvous_server.rs` `MAX_FRAME_LEN`).
 const MAX_FRAME_LEN: usize = 64 * 1024;
@@ -39,8 +44,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Slack around a timeout on the paused clock (timers fire exactly; this covers the ticks
 /// the server's own timers add).
 const SLACK: Duration = Duration::from_secs(1);
-/// Longest wait for a close that must happen (well past every server limit).
-const NEVER: Duration = Duration::from_secs(120);
 /// Largest length a hbb_common frame header can declare (4-byte header).
 const MAX_DECLARABLE: usize = 0x3FFF_FFFF;
 
@@ -76,14 +79,6 @@ async fn closed_within(stream: &mut TcpStream, limit: Duration) -> Option<Durati
             Ok(Ok(_)) => {}
         }
     }
-}
-
-fn assert_around(elapsed: Option<Duration>, expected: Duration, what: &str) {
-    let elapsed = elapsed.unwrap_or_else(|| panic!("{what}: never closed"));
-    assert!(
-        elapsed + SLACK >= expected && elapsed <= expected + SLACK,
-        "{what}: closed after {elapsed:?}, expected {expected:?}"
-    );
 }
 
 /// A frame header declaring more than [`MAX_FRAME_LEN`] closes the connection at once, before
@@ -147,28 +142,74 @@ async fn expect_id_not_exist(conn: &mut impl Conn) {
     assert_eq!(res.failure.enum_value(), Ok(ID_NOT_EXIST));
 }
 
-/// `true` if the connection stayed open and silent for `wait`, `false` once it closed.
-async fn quiet_for(conn: &mut impl Conn, wait: Duration) -> bool {
-    match conn.recv_within(wait).await {
-        Recv::Quiet => true,
-        Recv::Closed => false,
-        Recv::Msg(msg) => panic!("unexpected message: {msg:?}"),
+/// A connection the server closes on a timer, seen from a client that only listens.
+#[allow(async_fn_in_trait)] // test-only trait, never used as `dyn` or across threads
+trait TimedClose {
+    /// `false` once the server's close has reached us; a zero wait never moves the clock.
+    async fn is_open(&mut self) -> bool;
+
+    /// Waits for the server's close with the clock held still.
+    async fn closed(&mut self);
+}
+
+impl TimedClose for TcpStream {
+    async fn is_open(&mut self) -> bool {
+        let mut buf = [0u8; 1024];
+        loop {
+            match self.try_read(&mut buf) {
+                Ok(0) => return false,
+                Ok(_) => {} // the main port's KeyExchange offer
+                Err(e) => return e.kind() == std::io::ErrorKind::WouldBlock,
+            }
+        }
+    }
+
+    async fn closed(&mut self) {
+        let mut buf = [0u8; 1024];
+        let what = "the server closing a silent connection";
+        io(what, async {
+            while matches!(self.read(&mut buf).await, Ok(n) if n > 0) {}
+        })
+        .await;
     }
 }
 
-/// Punches an unknown id over `conn`, then checks it is still open shortly before IDLE_TIMEOUT
-/// and closed once silent for IDLE_TIMEOUT.
-async fn assert_idle_timeout(conn: &mut impl Rendezvous, server: &TestServer, name: &str) {
+impl<C: Conn> TimedClose for C {
+    async fn is_open(&mut self) -> bool {
+        match self.recv_within(Duration::ZERO).await {
+            Recv::Closed => false,
+            Recv::Msg(msg) => panic!("unexpected message: {msg:?}"),
+            Recv::Quiet => true,
+        }
+    }
+
+    async fn closed(&mut self) {
+        self.assert_closed().await;
+    }
+}
+
+/// Checks that the server closes `conn` `limit` after it started its timer for it: still open
+/// `SLACK` before, closed `SLACK` after (the slack covers the ticks the server's own timers add).
+/// The caller has settled the server, so nothing is in flight when the paused clock moves;
+/// the close itself is awaited as an event (see `support/clock.rs`).
+async fn assert_closes_at(conn: &mut impl TimedClose, limit: Duration, what: &str) {
+    tokio::time::advance(limit - SLACK).await;
+    assert!(conn.is_open().await, "{what}: closed before {limit:?}");
+    tokio::time::advance(SLACK * 2).await;
+    conn.closed().await;
+}
+
+/// Punches an unknown id over `conn`, then checks it closes IDLE_TIMEOUT after the server read
+/// the request (the answer proves it did, and the clock has not moved since).
+async fn assert_idle_timeout(
+    conn: &mut (impl Rendezvous + TimedClose),
+    server: &TestServer,
+    name: &str,
+) {
     conn.punch_hole_request(server.punch_req("idle-unknown"))
         .await;
     expect_id_not_exist(conn).await;
-    let started = Instant::now();
-    assert!(
-        quiet_for(conn, IDLE_TIMEOUT - SLACK * 5).await,
-        "{name}: closed early"
-    );
-    assert!(!quiet_for(conn, NEVER).await, "{name}: never closed");
-    assert_around(Some(started.elapsed()), IDLE_TIMEOUT, name);
+    assert_closes_at(conn, IDLE_TIMEOUT, name).await;
 }
 
 /// A connection that sends nothing (websocket: not even the handshake) is closed after its
@@ -192,19 +233,14 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
 
     for (addr, limit, name) in ports {
         // Act
-        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut stream = TestServer::raw_connect(addr).await;
+        server.settle().await;
 
         // Assert
-        assert_around(closed_within(&mut stream, NEVER).await, limit, name);
+        assert_closes_at(&mut stream, limit, name).await;
     }
     let mut ws = server.ws().await;
-    let started = Instant::now();
-    assert!(matches!(ws.recv_within(NEVER).await, Recv::Closed));
-    assert_around(
-        Some(started.elapsed()),
-        FIRST_FRAME_TIMEOUT,
-        "ws after handshake",
-    );
+    assert_closes_at(&mut ws, FIRST_FRAME_TIMEOUT, "ws after handshake").await;
     server.stop().await;
 }
 
@@ -217,11 +253,12 @@ async fn first_frame_within_the_first_frame_timeout_is_served() {
     let server = TestServer::start().await;
     let mut main = server.tcp().await;
     let mut nat = server.nat().await;
+    server.settle().await;
 
     // Act + Assert
-    tokio::time::sleep(NAT_FIRST_FRAME_TIMEOUT - SLACK * 2).await;
+    tokio::time::advance(NAT_FIRST_FRAME_TIMEOUT - SLACK * 2).await;
     assert!(nat.test_nat().await.port > 0, "nat");
-    tokio::time::sleep(FIRST_FRAME_TIMEOUT - NAT_FIRST_FRAME_TIMEOUT).await;
+    tokio::time::advance(FIRST_FRAME_TIMEOUT - NAT_FIRST_FRAME_TIMEOUT).await;
     assert!(main.test_nat().await.port > 0, "main");
     server.stop().await;
 }
@@ -234,13 +271,16 @@ async fn request_after_the_key_exchange_gets_the_idle_timeout() {
     // Arrange
     let server = TestServer::start().await;
     let mut conn = server.tcp().await;
-    tokio::time::sleep(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
-    secure(&mut conn, &server.public_key, KxClient::Current)
+    let offer = read_offer(&mut conn).await;
+    tokio::time::advance(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
+    answer(&mut conn, &server.public_key, KxClient::Current, &offer)
         .await
         .unwrap();
+    // The reply has no answer to wait for; the witnesses connect after it was sent.
+    server.settle().await;
 
     // Act
-    tokio::time::sleep(IDLE_TIMEOUT - SLACK * 5).await;
+    tokio::time::advance(IDLE_TIMEOUT - SLACK * 5).await;
 
     // Assert
     assert!(conn.test_nat().await.port > 0);
