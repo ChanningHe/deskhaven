@@ -5,7 +5,7 @@
 //! needs `sslrootcert=/path/to/ca.pem` in the URL.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -33,7 +33,9 @@ pub struct DbOptions {
     pub connect_timeout: Duration,
     /// Inspect without writing (`config check`): SQLite opens read-only and never creates
     /// the file or changes its journal mode; PostgreSQL sessions default to read-only
-    /// transactions (`default_transaction_read_only`).
+    /// transactions (`default_transaction_read_only`). PgBouncer in transaction-pool mode
+    /// rejects that startup parameter unless listed in `ignore_startup_parameters`, so a
+    /// read-only connection fails there while a read-write one works.
     pub read_only: bool,
 }
 
@@ -88,10 +90,29 @@ fn sqlite_tuning(opts: SqliteConnectOptions) -> SqliteConnectOptions {
 }
 
 /// SQLite inspection: an existing file only, no pragma that writes (no `journal_mode`).
+///
+/// A read-only connection to a WAL database still creates missing `-wal`/`-shm` files
+/// (SQLite >= 3.22). Created by another user (`sudo deskhaven config check`), they would
+/// make the database read-only for the server. Without a live writer (neither side file
+/// exists) the file is opened `immutable` instead, which never creates them; with a live
+/// writer both files exist and a plain read-only connection sees its committed frames.
 fn sqlite_read_only(opts: SqliteConnectOptions) -> SqliteConnectOptions {
+    let is_idle = !SQLITE_SIDE_FILES
+        .iter()
+        .any(|suffix| side_file(opts.get_filename(), suffix).exists());
     opts.read_only(true)
+        .immutable(is_idle)
         .create_if_missing(false)
         .busy_timeout(SQLITE_BUSY_TIMEOUT)
+}
+
+/// Files SQLite keeps beside a WAL-mode database while it is open.
+const SQLITE_SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
+
+fn side_file(db: &Path, suffix: &str) -> PathBuf {
+    let mut name = db.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
 }
 
 fn postgres_read_only(opts: PgConnectOptions) -> PgConnectOptions {

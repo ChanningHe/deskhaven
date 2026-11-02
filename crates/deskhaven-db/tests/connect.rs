@@ -176,6 +176,86 @@ async fn read_only_sqlite_reads_but_refuses_writes() {
     assert!(write.is_err(), "read-only connection accepted a write");
 }
 
+fn side_file(db: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = db.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
+}
+
+/// Size and mtime of every file of the database.
+fn fingerprint(db: &std::path::Path) -> Vec<Option<(u64, std::time::SystemTime)>> {
+    ["", "-wal", "-shm"]
+        .iter()
+        .map(|suffix| {
+            let meta = std::fs::metadata(side_file(db, suffix)).ok()?;
+            Some((meta.len(), meta.modified().unwrap()))
+        })
+        .collect()
+}
+
+/// Review H1: SQLite >= 3.22 creates missing `-wal`/`-shm` files even for a
+/// read-only connection; run as another user (sudo) they would lock the server out.
+#[tokio::test]
+async fn read_only_sqlite_leaves_a_closed_wal_database_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let (opts, path) = sqlite_options(&dir, "wal.db");
+    let writer = connect(&opts).await.unwrap();
+    writer
+        .execute_unprepared("CREATE TABLE t (id INTEGER PRIMARY KEY); INSERT INTO t VALUES (7)")
+        .await
+        .unwrap();
+    writer.close().await.unwrap();
+    assert!(!side_file(&path, "-wal").exists() && !side_file(&path, "-shm").exists());
+    let before = fingerprint(&path);
+    let mut ro = opts.clone();
+    ro.read_only = true;
+
+    let reader = connect(&ro).await.unwrap();
+    let rows = reader
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT id FROM t",
+        ))
+        .await
+        .unwrap();
+    reader.close().await.unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        fingerprint(&path),
+        before,
+        "read-only connect changed the files"
+    );
+}
+
+#[tokio::test]
+async fn read_only_sqlite_reads_a_database_with_a_live_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (opts, _) = sqlite_options(&dir, "live.db");
+    let writer = connect(&opts).await.unwrap();
+    writer
+        .execute_unprepared("CREATE TABLE t (id INTEGER PRIMARY KEY); INSERT INTO t VALUES (1)")
+        .await
+        .unwrap();
+    let mut ro = opts.clone();
+    ro.read_only = true;
+
+    let reader = connect(&ro).await.unwrap();
+    writer
+        .execute_unprepared("INSERT INTO t VALUES (2)")
+        .await
+        .unwrap();
+    let rows = reader
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT id FROM t",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2, "the reader must see committed WAL frames");
+}
+
 #[tokio::test]
 async fn read_only_postgres_refuses_writes() {
     each_backend(async |db: &TestDb| {
