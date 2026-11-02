@@ -28,11 +28,13 @@ mod common;
 // Vendored upstream code; clean up incrementally.
 #[allow(clippy::unwrap_used)]
 mod peer;
+mod persist;
 mod server;
 mod store;
 mod tasks;
 
 pub use server::{
-    DEFAULT_PUNCH_REQ_MAX, SignalConfig, SignalError, SignalHandle, SignalServer, run,
+    DEFAULT_PEER_PRELOAD_TIMEOUT, DEFAULT_PUNCH_REQ_MAX, SignalConfig, SignalError, SignalHandle,
+    SignalServer, run,
 };
 pub use store::{MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, StoreError};

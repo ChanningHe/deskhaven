@@ -10,14 +10,10 @@
 
 mod support;
 
-use deskhaven_signal::{PeerRecord, PeerStore, PeerUpsert, StoreError};
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{
-        NOT_SUPPORT, OK, SERVER_ERROR, UUID_MISMATCH,
-    },
+    rendezvous_proto::register_pk_response::Result::{NOT_SUPPORT, OK, UUID_MISMATCH},
     tokio,
 };
-use std::sync::Arc;
 use support::{
     Conn, PeerKeys, Rendezvous, TestServer, decode_addr, expect_msg, register_peer, register_pk,
 };
@@ -94,6 +90,39 @@ async fn register_pk_without_uuid_or_pk_is_ignored() {
     server.stop().await;
 }
 
+/// M1-05 (deskhaven input validation): a pk that is not a 32-byte ed25519 public key, or a
+/// uuid over 128 bytes, is dropped without an answer like a missing one (rs:391-393), and
+/// nothing is registered; the bounds themselves are accepted.
+#[tokio::test]
+async fn register_pk_with_malformed_pk_or_overlong_uuid_is_ignored() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut peer = server.udp().await;
+    let keys = PeerKeys::random();
+    let with = |uuid: Vec<u8>, pk: Vec<u8>| PeerKeys {
+        uuid: uuid.into(),
+        pk: pk.into(),
+    };
+    let malformed = [
+        with(keys.uuid.to_vec(), vec![7; 31]),
+        with(keys.uuid.to_vec(), vec![7; 33]),
+        with(vec![1; 129], keys.pk.to_vec()),
+    ];
+
+    // Act + Assert
+    for keys in malformed {
+        peer.send(&register_pk(ID, &keys)).await;
+        peer.assert_silent().await;
+    }
+    assert!(
+        peer.register_peer(ID).await.request_pk,
+        "nothing registered"
+    );
+    let longest_uuid = with(vec![1; 128], keys.pk.to_vec());
+    assert_eq!(peer.register_pk(ID, &longest_uuid).await, OK);
+    server.stop().await;
+}
+
 /// rs:396-397: ids shorter than 6 or longer than 253 bytes get UUID_MISMATCH (upstream never
 /// uses the protocol's INVALID_ID_FORMAT); the bounds themselves are accepted.
 #[tokio::test]
@@ -148,8 +177,9 @@ async fn register_pk_stores_peer_and_repeat_is_ok() {
 /// uuid could claim the id): registrations live in the injected `PeerStore`, which outlives a
 /// restart (same ports, key and store instance). Afterwards another uuid, or the right uuid
 /// with a new pk from a new IP (rs:408-428), still gets UUID_MISMATCH: both are checked
-/// against the registration loaded from the store. With the pk known again, the owner's next
-/// RegisterPeer refreshes its address (rs:612-653) and punch holes reach it.
+/// against the registration preloaded from the store. With the pk known, the owner's next
+/// RegisterPeer refreshes its address (rs:612-653), punch holes reach it, and its RegisterPk
+/// with unchanged keys is OK.
 #[tokio::test]
 async fn restart_keeps_registrations_with_persistent_store() {
     // Arrange
@@ -163,6 +193,7 @@ async fn restart_keeps_registrations_with_persistent_store() {
     let mut moved = server.udp().await;
     let new_ip_and_pk = moved.register_pk(ID, &keys.with_new_pk()).await;
     let asked_for_pk = owner.register_peer(ID).await.request_pk;
+    let owner_again = owner.register_pk(ID, &keys).await;
     let mut controller = server.tcp().await;
     controller.punch_hole_request(server.punch_req(ID)).await;
 
@@ -170,70 +201,11 @@ async fn restart_keeps_registrations_with_persistent_store() {
     assert_eq!(other_uuid, UUID_MISMATCH, "another uuid");
     assert_eq!(new_ip_and_pk, UUID_MISMATCH, "same uuid, new IP and new pk");
     assert!(!asked_for_pk, "pk known from the store");
+    assert_eq!(owner_again, OK, "owner, unchanged keys");
     let ph = expect_msg!(owner.recv().await, PunchHole);
     assert_eq!(decode_addr(&ph.socket_addr), controller.local_addr());
     thief.assert_silent().await;
     moved.assert_silent().await;
-    server.stop().await;
-}
-
-/// M1-05: the usual way back after a restart. RegisterPeer only consults memory (rs:612-653),
-/// so the owner is asked for its pk; RegisterPk with its unchanged keys matches the stored
-/// registration (OK), while another uuid still gets UUID_MISMATCH.
-#[tokio::test]
-async fn restart_owner_reregisters_with_unchanged_keys() {
-    // Arrange
-    let server = TestServer::start().await;
-    let (mut owner, keys) = server.online_peer(ID).await;
-
-    // Act
-    let server = server.restart().await;
-    let asked_for_pk = owner.register_peer(ID).await.request_pk;
-    let owner_again = owner.register_pk(ID, &keys).await;
-    let other_uuid = server
-        .udp()
-        .await
-        .register_pk(ID, &PeerKeys::random())
-        .await;
-
-    // Assert
-    assert!(asked_for_pk, "nothing in memory after the restart");
-    assert_eq!(owner_again, OK);
-    assert_eq!(other_uuid, UUID_MISMATCH);
-    server.stop().await;
-}
-
-/// A store that is down: every call fails.
-struct BrokenStore;
-
-#[async_trait::async_trait]
-impl PeerStore for BrokenStore {
-    async fn get(&self, _id: &str) -> Result<Option<PeerRecord>, StoreError> {
-        Err(StoreError::backend("store down"))
-    }
-
-    async fn upsert_pk(&self, _rec: &PeerUpsert) -> Result<(), StoreError> {
-        Err(StoreError::backend("store down"))
-    }
-}
-
-/// M1-05: when the store cannot tell whether an id is registered, RegisterPk fails closed
-/// with SERVER_ERROR (the client retries) instead of letting the uuid claim the id.
-#[tokio::test]
-async fn register_pk_when_store_lookup_fails_gets_server_error() {
-    // Arrange
-    let server = TestServer::start_with_store(|cfg| cfg, Arc::new(BrokenStore)).await;
-    let mut peer = server.udp().await;
-
-    // Act
-    let res = peer.register_pk(ID, &PeerKeys::random()).await;
-
-    // Assert
-    assert_eq!(res, SERVER_ERROR);
-    assert!(
-        peer.register_peer(ID).await.request_pk,
-        "nothing was stored"
-    );
     server.stop().await;
 }
 

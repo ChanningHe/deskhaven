@@ -24,6 +24,8 @@ tungstenite.workspace = true
 [dev-dependencies]
 # Random device uuids in the protocol test harness.
 uuid.workspace = true
+# Paused clock for the writer retry / deadline unit tests.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

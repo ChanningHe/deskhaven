@@ -4,7 +4,7 @@
 
 use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
-use crate::store::PeerStore;
+use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
     anyhow, log,
@@ -18,11 +18,14 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 use tokio_util::sync::CancellationToken;
 
 /// Upstream default of `MAX_PUNCH_REQUESTS`.
 pub const DEFAULT_PUNCH_REQ_MAX: usize = 100_000;
+/// Default bound of loading the peer registry at start.
+pub const DEFAULT_PEER_PRELOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// Upstream default port (`hbb_common::config::RENDEZVOUS_PORT`).
 const DEFAULT_PORT: u16 = 21116;
 /// Upstream rejects main ports below 3; the NAT test port is `port - 1`.
@@ -58,6 +61,10 @@ pub struct SignalConfig {
     pub always_use_relay: bool,
     /// Bound of the in-memory punch request log, 0 disables it (upstream `MAX_PUNCH_REQUESTS`).
     pub punch_req_max: usize,
+    /// Bound of loading every registration from the [`PeerStore`] at start, before the
+    /// listeners are bound; exceeding it (or a store error) fails [`SignalServer::run`] with
+    /// [`SignalError::PeerPreload`].
+    pub peer_preload_timeout: Duration,
     /// hbbs ed25519 key: signs peer public keys (`IdPk`), and clients must present its public
     /// key as licence key (upstream default `-k -`). Loading/generating the key file is the
     /// caller's job.
@@ -76,6 +83,7 @@ impl SignalConfig {
             relay_servers: Vec::new(),
             always_use_relay: false,
             punch_req_max: DEFAULT_PUNCH_REQ_MAX,
+            peer_preload_timeout: DEFAULT_PEER_PRELOAD_TIMEOUT,
             secret_key,
         }
     }
@@ -136,6 +144,10 @@ pub enum SignalError {
     /// Unexpected internal failure (e.g. reading a listener's local address).
     #[error("signal server failed")]
     Internal(#[source] BoxError),
+    /// The peer registry could not be loaded from the [`PeerStore`] at start (store error or
+    /// [`SignalConfig::peer_preload_timeout`] exceeded); nothing was bound.
+    #[error("cannot load the peer registry")]
+    PeerPreload(#[source] StoreError),
     /// [`SignalHandle::set_relay_servers`] got entries that do not resolve; nothing was applied.
     #[error("relay servers do not resolve: {}", rejected.join(", "))]
     RelayServersRejected {

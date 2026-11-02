@@ -75,6 +75,10 @@ const CHECK_RELAY_TIMEOUT: u64 = 3_000;
 // deskhaven: hard cap on IP_BLOCKER entries (one per client IP seen in the last day); see
 // `check_ip_block`.
 const MAX_IP_BLOCK_ENTRIES: usize = 100_000;
+// deskhaven (M1-05): RegisterPk key bounds. A RustDesk pk is an ed25519 public key; client
+// uuids are machine ids (16-64 bytes in practice), so 128 leaves ample room.
+const REGISTER_PK_LEN: usize = sign::PUBLICKEYBYTES;
+const MAX_REGISTER_UUID_LEN: usize = 128;
 // deskhaven: the ALWAYS_USE_RELAY static became the per-instance `always_use_relay` field.
 
 // Store punch hole requests
@@ -184,6 +188,13 @@ impl RendezvousServer {
         let mut rs = Self::new(&cfg, store, tx, always_use_relay, tasks)
             .await
             .map_err(SignalError::internal)?;
+        // deskhaven (M1-05): the registry is in memory before anything is answered.
+        let peers = rs
+            .pm
+            .preload(cfg.peer_preload_timeout)
+            .await
+            .map_err(SignalError::PeerPreload)?;
+        log::info!("loaded {peers} registered peers");
         let mut socket = bind_udp(bind_addr, ports.main, rmem).await?;
         let mut listener = bind_tcp(bind_addr, ports.main).await?;
         let mut listener2 = bind_tcp(bind_addr, ports.nat).await?;
@@ -467,6 +478,16 @@ impl RendezvousServer {
                     if rk.uuid.is_empty() || rk.pk.is_empty() {
                         return Ok(());
                     }
+                    // deskhaven: malformed keys are ignored like missing ones (above), before
+                    // memory or the store see them: a RustDesk pk is an ed25519 public key, and
+                    // an oversized uuid would only bloat every cached and stored row. Not
+                    // UUID_MISMATCH: that makes a real client give up its id.
+                    // Known limit (cf. 07 §2.4): RegisterPk is unauthenticated UDP, so a
+                    // spoofed source can still register (and persist) unclaimed ids; admission
+                    // (require_deploy / ControlPlane, M5) addresses that.
+                    if rk.pk.len() != REGISTER_PK_LEN || rk.uuid.len() > MAX_REGISTER_UUID_LEN {
+                        return Ok(());
+                    }
                     let id = rk.id;
                     let ip = addr.ip().to_string();
                     if id.len() < 6 || id.len() > MAX_PEER_ID_LEN {
@@ -474,14 +495,7 @@ impl RendezvousServer {
                     } else if !self.check_ip_blocker(&ip, &id).await {
                         return send_rk_res(socket, addr, TOO_FREQUENT).await;
                     }
-                    // deskhaven: a failed store lookup must not let any uuid claim the id.
-                    let peer = match self.pm.get_or(&id).await {
-                        Ok(peer) => peer,
-                        Err(err) => {
-                            log::error!("peer store: lookup of {id} failed: {err:?}");
-                            return send_rk_res(socket, addr, SERVER_ERROR).await;
-                        }
-                    };
+                    let peer = self.pm.get_or(&id).await;
                     let (changed, _ip_changed) = {
                         let peer = peer.read().await;
                         if peer.uuid.is_empty() {
@@ -511,8 +525,13 @@ impl RendezvousServer {
                                 return send_rk_res(socket, addr, UUID_MISMATCH).await;
                             }
                             let ip_changed = peer.info.ip != ip;
+                            // deskhaven: `dirty`: the last accepted registration is not saved
+                            // yet; re-queue its write (persist.rs).
                             (
-                                peer.uuid != rk.uuid || peer.pk != rk.pk || ip_changed,
+                                peer.uuid != rk.uuid
+                                    || peer.pk != rk.pk
+                                    || ip_changed
+                                    || peer.dirty,
                                 ip_changed,
                             )
                         }
@@ -666,7 +685,7 @@ impl RendezvousServer {
             } else {
                 ip.to_string() != old.info.ip
             } && !ip.is_loopback();
-            let request_pk = old.pk.is_empty() || ip_change;
+            let request_pk = old.pk.is_empty() || ip_change || old.dirty; // deskhaven: + dirty
             if !request_pk {
                 old.socket_addr = socket_addr;
                 old.last_reg_time = Instant::now();
@@ -1483,7 +1502,7 @@ mod tests {
 
         async fn online_peer(&self) -> SocketAddr {
             let peer_addr: SocketAddr = "203.0.113.5:40000".parse().unwrap();
-            let peer = self.rs.pm.get_or(PEER_ID).await.unwrap();
+            let peer = self.rs.pm.get_or(PEER_ID).await;
             let mut w = peer.write().await;
             w.socket_addr = peer_addr;
             w.last_reg_time = Instant::now();

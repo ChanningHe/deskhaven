@@ -232,33 +232,50 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   control plane does). Relay-selection tests assert the relay list itself instead of sampling
   the process-wide rotation cursor, and use TEST-NET-1 (192.0.2.0/24) addresses so health
   probes never connect.
-- 2026-11-02, M1-05, persistent peer registry: new deskhaven module `src/store.rs` (not
-  vendored, full workspace lints) with the public `PeerStore` trait (`get(id)`,
-  `upsert_pk(&PeerUpsert)`; the uuid of a stored id is immutable, a different one fails with
-  `StoreError::UuidMismatch`), `PeerRecord { uuid, pk, ip }`, `PeerUpsert { id, uuid, pk, ip,
-  registered_at }`, `StoreError` and the non-persistent `MemoryPeerStore`. The in-memory stub
-  `src/database.rs` (M1-02) is deleted; its SECURITY caveat (registrations lost on restart, so
-  any uuid could claim an id afterwards) no longer applies with a persistent store.
-  `SignalServer::new(cfg, store)` and `run(cfg, store, shutdown)` take an `Arc<dyn PeerStore>`,
-  threaded through `RendezvousServer::{serve, new}` into `PeerMap::new(store, &tasks)`.
-- 2026-11-02, M1-05, `peer.rs` `PeerMap`: the in-memory map is a cache in front of the store
-  (upstream: in front of SQLite). `get` / `get_or` read the store only for ids not in memory
-  (upstream behavior); an entry another task inserted meanwhile is kept instead of overwritten.
-  A store read error no longer reads as "unknown id" on the RegisterPk path: `get_or` returns
-  it and `handle_udp` answers SERVER_ERROR without caching anything (fail closed; upstream's
-  `if let Ok(Some(..))` handed out a fresh entry, letting any uuid claim the id while the
-  database failed). `get` (punch hole / `get_pk`) logs the error and treats the id as unknown.
-- 2026-11-02, M1-05, `peer.rs` `PeerMap::update_pk`: no longer awaits the database on the UDP
-  loop. It reserves a slot in a bounded queue (1024) first, then updates the in-memory peer
-  and queues the write; one writer task (`Writer`, started on `Tasks` with the new
-  `Tasks::spawn_draining`) calls `upsert_pk` in acceptance order, each call bounded by 10 s.
-  A full queue (or a stopped writer) returns an error before the peer is touched, and
-  `handle_udp` answers SERVER_ERROR; upstream ignored `update_pk`'s result and always answered
-  OK. A failed write is logged and the peer is evicted from memory, so the store stays the
-  truth: the next RegisterPeer gets `request_pk` and the following RegisterPk is checked against
-  the store again. On stop the writer flushes the queue (bounded by 5 s, remainder logged as
-  lost) before `run` returns. `Peer.guid` removed (it only chose insert vs. update, which
-  `upsert_pk` decides); `PeerInfo` lost its serde derives (the `info` JSON column is gone).
+- 2026-11-02, M1-05, persistent peer registry: new deskhaven modules `src/store.rs` and
+  `src/persist.rs` (not vendored, full workspace lints). `store.rs`: public `PeerStore` trait
+  (`load_all()`, `get(id)`, `upsert_pk(&PeerUpsert)`; the uuid of a stored id is immutable, a
+  different one fails with `StoreError::UuidMismatch`), `PeerRecord { id, uuid, pk, ip }`,
+  `PeerUpsert { id, uuid, pk, ip, registered_at }`, `StoreError` and the non-persistent
+  `MemoryPeerStore`. The in-memory stub `src/database.rs` (M1-02) is deleted; its SECURITY
+  caveat (registrations lost on restart, so any uuid could claim an id afterwards) no longer
+  applies with a persistent store. `SignalServer::new(cfg, store)` and `run(cfg, store,
+  shutdown)` take an `Arc<dyn PeerStore>`, threaded through `RendezvousServer::{serve, new}`
+  into `PeerMap::new(store, &tasks)`.
+- 2026-11-02, M1-05, startup preload (`rendezvous_server.rs` `serve`, `persist.rs`): every stored
+  registration is loaded into the peer map before the listeners are bound, bounded by the new
+  `SignalConfig::peer_preload_timeout` (default `DEFAULT_PEER_PRELOAD_TIMEOUT`, 30 s); a store
+  error or timeout ends `run` with the new `SignalError::PeerPreload` (nothing bound). Upstream
+  looked ids up in SQLite on every cache miss, on the UDP loop.
+- 2026-11-02, M1-05, `peer.rs` `PeerMap`: memory is authoritative while serving. `get` /
+  `get_or` no longer read the store (a miss means "unknown id"; `get_or` is upstream's minus the
+  database lookup), so no lookup can stall the UDP loop and no request can exhaust the store's
+  connections; no negative cache is needed. The server assumes it is the store's only writer;
+  out-of-band changes need the (not yet wired) invalidation hook `PeerMap::reload(id)`.
+  `Peer.guid` removed (it only chose insert vs. update, which `upsert_pk` decides); new
+  `Peer.dirty`; `PeerInfo` lost its serde derives (the `info` JSON column is gone).
+- 2026-11-02, M1-05, write-behind (`persist.rs`; `PeerMap::update_pk` keeps only the call
+  site): an accepted RegisterPk updates memory and is answered **OK before it is persisted**;
+  the write is queued (bounded, 1024) to one writer task that applies writes in acceptance
+  order. A full queue (or stopped writer) is detected before memory changes and the RegisterPk
+  is answered SERVER_ERROR (upstream ignored `update_pk`'s result and always answered OK).
+  **Async write failures are retried, never silently dropped**: on a backend error the
+  accepted entry stays in memory and the write is retried (5 s per attempt, backoff 0.25 / 1 /
+  2 / 4 s) unless a newer registration of the same peer superseded it; after the last attempt
+  the peer is marked `dirty`, its next RegisterPeer gets `request_pk` (`update_addr`) and the
+  RegisterPk that follows re-queues the write (`changed` includes `dirty`). Only
+  `StoreError::UuidMismatch` (the store binds the id to another device) evicts the entry. On
+  stop the writer flushes the queue, in-flight write included, within one 5 s deadline
+  (`Tasks::spawn_draining`); what is left is cancelled and logged.
+- 2026-11-02, M1-05, `handle_udp` RegisterPk input validation: a pk that is not 32 bytes
+  (ed25519 public key) or a uuid over 128 bytes is dropped without an answer, like an empty
+  one (upstream rs:391-393), before memory or the store see it. Not UUID_MISMATCH, which makes
+  a real client give up its id. Known limit: RegisterPk is unauthenticated UDP, so spoofed
+  sources can still register (and persist) unclaimed ids; admission (require_deploy /
+  ControlPlane, M5) addresses that.
+- 2026-11-02, M1-05, deferred: the `DeviceRegistered` event of the task list (Presence update)
+  is not emitted yet; it comes with the ControlPlane wiring in M1-06.
 - 2026-11-02, M1-05, dependencies: added `async-trait` (object-safe async `PeerStore`; upstream
   used it too); dropped `serde`, `serde_derive` and `serde_json` (only used for the `info`
-  JSON); `uuid` moved to dev-dependencies (only the test harness generates uuids now).
+  JSON); `uuid` moved to dev-dependencies (only the test harness generates uuids now); dev
+  dependency `tokio` with `test-util` (paused clock in the writer tests).

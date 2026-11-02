@@ -1,16 +1,17 @@
 //! Peer registry persistence (deskhaven code, not vendored): the [`PeerStore`] trait that
 //! replaces upstream's `database.rs`, and the non-persistent [`MemoryPeerStore`].
 //!
-//! The server keeps every peer it has seen in memory and asks the store only for ids it does
-//! not know yet (first RegisterPk / punch hole after a start); writes leave the UDP loop
-//! through a bounded queue (see `peer.rs`). The store is what makes the anti id-hijack check
-//! (UUID_MISMATCH) survive a restart: an id registered once stays bound to its uuid.
+//! The server loads every registration at start ([`PeerStore::load_all`]) and from then on
+//! answers from memory only: the UDP and TCP paths never wait for the store. Accepted
+//! registrations are written behind, in order, by one writer task (`persist.rs`). The store
+//! is what makes the anti id-hijack check (UUID_MISMATCH) survive a restart: an id registered
+//! once stays bound to its uuid.
 
 use async_trait::async_trait;
 use std::{
     collections::{HashMap, hash_map::Entry},
     net::IpAddr,
-    sync::{Mutex, PoisonError},
+    sync::{Mutex, MutexGuard, PoisonError},
     time::SystemTime,
 };
 
@@ -20,6 +21,8 @@ type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 /// RegisterPk checks read).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PeerRecord {
+    /// RustDesk id.
+    pub id: String,
     /// Device uuid of the first accepted RegisterPk; never changes afterwards.
     pub uuid: Vec<u8>,
     /// Device public key of the last accepted RegisterPk.
@@ -47,7 +50,7 @@ pub enum StoreError {
     /// [`PeerStore::upsert_pk`] for an id that is stored with another uuid; nothing changed.
     #[error("peer {id} is registered with another uuid")]
     UuidMismatch { id: String },
-    /// The backing storage failed.
+    /// The backing storage failed (possibly transient; writes are retried).
     #[error("peer store failed")]
     Backend(#[source] BoxError),
 }
@@ -60,15 +63,22 @@ impl StoreError {
 
 /// Persistent peer registry injected into [`SignalServer::new`](crate::SignalServer::new).
 ///
-/// Neither method is called on the UDP loop for a peer already in memory: `get` runs once per
-/// id and server start (cache miss), `upsert_pk` on a writer task, one call at a time, in the
-/// order the server accepted the registrations.
+/// The server assumes it is the only writer: it loads everything once at start and keeps
+/// memory authoritative afterwards. Registrations changed or deleted behind its back are not
+/// seen until a restart (an explicit invalidation hook exists for later admin use).
 #[async_trait]
 pub trait PeerStore: Send + Sync + 'static {
-    /// The stored registration of `id`, if any.
+    /// Every stored registration; called once when the server starts, bounded by
+    /// [`SignalConfig::peer_preload_timeout`](crate::SignalConfig::peer_preload_timeout).
+    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError>;
+
+    /// The stored registration of `id`, if any. Not used while serving; only by the
+    /// invalidation hook.
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError>;
 
-    /// Inserts `rec`, or updates the stored pk / ip / registration time of `rec.id`.
+    /// Inserts `rec`, or updates the stored pk / ip / registration time of `rec.id`. Called
+    /// by one writer task, one call at a time, in the order the server accepted the
+    /// registrations.
     ///
     /// The uuid is immutable: if `rec.id` is stored with a different uuid, fail with
     /// [`StoreError::UuidMismatch`] and change nothing.
@@ -89,7 +99,7 @@ impl MemoryPeerStore {
         Self::default()
     }
 
-    fn peers(&self) -> std::sync::MutexGuard<'_, HashMap<String, PeerRecord>> {
+    fn peers(&self) -> MutexGuard<'_, HashMap<String, PeerRecord>> {
         // The map stays consistent even if a holder panicked: every update is one insert.
         self.peers.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -97,12 +107,17 @@ impl MemoryPeerStore {
 
 #[async_trait]
 impl PeerStore for MemoryPeerStore {
+    async fn load_all(&self) -> Result<Vec<PeerRecord>, StoreError> {
+        Ok(self.peers().values().cloned().collect())
+    }
+
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError> {
         Ok(self.peers().get(id).cloned())
     }
 
     async fn upsert_pk(&self, rec: &PeerUpsert) -> Result<(), StoreError> {
         let record = PeerRecord {
+            id: rec.id.clone(),
             uuid: rec.uuid.clone(),
             pk: rec.pk.clone(),
             ip: Some(rec.ip),
@@ -152,15 +167,14 @@ mod tests {
             .await
             .ok();
 
-        let rec = store.get("a").await.ok().flatten();
-        assert_eq!(
-            rec,
-            Some(PeerRecord {
-                uuid: b"u".to_vec(),
-                pk: b"pk2".to_vec(),
-                ip: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))),
-            })
-        );
+        let expected = PeerRecord {
+            id: "a".to_owned(),
+            uuid: b"u".to_vec(),
+            pk: b"pk2".to_vec(),
+            ip: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))),
+        };
+        assert_eq!(store.get("a").await.ok().flatten(), Some(expected.clone()));
+        assert_eq!(store.load_all().await.ok(), Some(vec![expected]));
     }
 
     #[tokio::test]
