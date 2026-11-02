@@ -3,9 +3,14 @@
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
+// Not `tests/scan.rs`: cargo would build that as a test target of its own.
+#[path = "csp/scan.rs"]
+mod scan;
+
 use std::path::{Path, PathBuf};
 
 use deskhaven_web::CSP;
+use scan::{csp_violations, start_tags};
 
 fn repo_file(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -13,78 +18,65 @@ fn repo_file(relative: &str) -> PathBuf {
         .join(relative)
 }
 
-/// What in `html` a strict CSP (`script-src 'self'; style-src 'self'`) blocks.
-fn csp_violations(html: &str) -> Vec<String> {
-    let lower = html.to_ascii_lowercase();
-    let mut found = Vec::new();
-    for tag in tags(&lower) {
-        let name = tag.split_whitespace().next().unwrap_or_default();
-        match name {
-            "script" if !has_attr(tag, "src") => found.push(format!("inline script: <{tag}>")),
-            "style" => found.push("<style> element".to_owned()),
-            _ => {}
-        }
-        if has_attr(tag, "style") {
-            found.push(format!("style attribute: <{tag}>"));
-        }
-        if tag
-            .split_whitespace()
-            .any(|w| w.starts_with("on") && w.contains('='))
-        {
-            found.push(format!("event handler: <{tag}>"));
-        }
-        if tag.contains("javascript:") {
-            found.push(format!("javascript: URL: <{tag}>"));
-        }
-    }
-    found
-}
-
-/// Opening-tag contents (between `<` and `>`), skipping comments.
-fn tags(html: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut rest = html;
-    while let Some(start) = rest.find('<') {
-        rest = &rest[start..];
-        if let Some(after) = rest.strip_prefix("<!--") {
-            rest = after.split_once("-->").map_or("", |(_, tail)| tail);
-            continue;
-        }
-        let Some(end) = rest.find('>') else { break };
-        let tag = &rest[1..end];
-        if !tag.starts_with('/') && !tag.starts_with('!') {
-            out.push(tag);
-        }
-        rest = &rest[end + 1..];
-    }
-    out
-}
-
-fn has_attr(tag: &str, name: &str) -> bool {
-    // The first word is the tag name, not an attribute.
-    tag.split_whitespace()
-        .skip(1)
-        .any(|w| w == name || w.starts_with(&format!("{name}=")))
+fn none() -> Vec<String> {
+    Vec::new()
 }
 
 #[test]
 fn the_scanner_flags_what_the_csp_blocks() {
     let bad = r#"<script>alert(1)</script><p style="x:y"><style>a{}</style><a onclick="f()">"#;
-    let found = csp_violations(bad);
-    assert_eq!(found.len(), 4, "{found:?}");
+    assert_eq!(csp_violations(bad).len(), 4, "{:?}", csp_violations(bad));
+}
+
+#[test]
+fn the_scanner_sees_spaced_unquoted_and_upper_case_attributes() {
+    for bad in [
+        r#"<p style = "x:y">"#,
+        "<p style=x:y>",
+        "<P STYLE='x:y'>",
+        r#"<a ONCLICK = "f()">"#,
+        r#"<a href=" JavaScript:alert(1)">"#,
+        "<SCRIPT>alert(1)</SCRIPT>",
+        "<script\n>alert(1)</script>",
+    ] {
+        assert_eq!(
+            csp_violations(bad).len(),
+            1,
+            "{bad}: {:?}",
+            csp_violations(bad)
+        );
+    }
+}
+
+#[test]
+fn a_gt_inside_an_attribute_value_does_not_end_the_tag() {
+    // The style attribute comes after a `>` in `alt`.
+    let hidden = r#"<img alt="a>b" style="x:y">"#;
+    assert_eq!(
+        csp_violations(hidden).len(),
+        1,
+        "{:?}",
+        csp_violations(hidden)
+    );
+    // Markup-looking text inside a value is text, not a tag.
+    let text = r#"<div title="x > <script>alert(1)</script> onclick=y">"#;
+    assert_eq!(csp_violations(text), none());
+    assert_eq!(start_tags(text).len(), 1);
 }
 
 #[test]
 fn the_scanner_accepts_external_scripts_and_ignores_comments() {
-    let ok = r#"<!-- <script>alert(1)</script> --><script src="/a.js"></script>
-        <script type="module" crossorigin src="/b.js"></script><link rel="stylesheet" href="/c.css">"#;
-    assert_eq!(csp_violations(ok), Vec::<String>::new());
+    let ok = r#"<!doctype html><!-- <script>alert(1)</script> --><script src="/a.js"></script>
+        <script type="module" crossorigin src="/b.js"></script>
+        <link rel="stylesheet" href="/c.css"><meta name="x" content="one">"#;
+    assert_eq!(csp_violations(ok), none());
 }
 
 #[test]
 fn the_spa_source_entry_point_is_csp_clean() {
     let html = std::fs::read_to_string(repo_file("web/index.html")).unwrap();
-    assert_eq!(csp_violations(&html), Vec::<String>::new());
+    assert_eq!(csp_violations(&html), none());
+    assert!(!start_tags(&html).is_empty());
 }
 
 /// Skipped (with a note) when the frontend has not been built; `xtask dist`
@@ -96,7 +88,7 @@ fn the_built_index_is_csp_clean() {
         eprintln!("skipping: {} not built", path.display());
         return;
     };
-    assert_eq!(csp_violations(&html), Vec::<String>::new());
+    assert_eq!(csp_violations(&html), none());
 }
 
 #[test]
