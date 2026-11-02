@@ -9,16 +9,22 @@ use deskhaven_config::settings::PinSet;
 use deskhaven_core::auth::limiter::LoginThrottle;
 use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::SecretBox;
+use deskhaven_core::devices::DeviceRepository;
 use deskhaven_core::keys::{
-    KeyWarning, SignalKeyPaths, load_or_generate_master_key, load_or_generate_signal_key,
+    KeyWarning, SignalKeyPair, SignalKeyPaths, load_or_generate_master_key,
+    load_or_generate_signal_key,
 };
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
+use deskhaven_signal::AllowAll;
+use tokio_util::sync::CancellationToken;
 
 use crate::instance_lock::{self, InstanceLock};
+use crate::signal_server::{self, Backoff, Launcher, RunningSignal};
+use crate::signal_store::SignalPeerStore;
 use crate::{data_dir, database, http};
 
 /// Files this process creates (data_dir, database and its side files, keys,
@@ -31,7 +37,7 @@ pub struct Prepared {
     lock: InstanceLock,
     pins: PinSet,
     crypto: Arc<SecretBox>,
-    signal_public_key: String,
+    signal_key: SignalKeyPair,
 }
 
 /// Everything needed to serve.
@@ -39,6 +45,8 @@ pub struct Started {
     pub state: Arc<AppState>,
     pub listeners: Listeners,
     pub http: HttpConfig,
+    /// The supervised signal server; `None` with `[signal] enabled = false`.
+    pub signal: Option<RunningSignal>,
     /// Held until the process exits.
     pub lock: InstanceLock,
 }
@@ -59,28 +67,30 @@ pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     log_key_warnings(&master.warnings);
     let crypto = Arc::new(SecretBox::new(&master.value));
 
-    // M1-06 hands the pair itself to the signal server; until then only the
-    // public key is kept, so the private key leaves memory here.
+    // Loaded even with the signal server disabled: the client API serves the
+    // public key, and `key show` must agree with a later start.
     let signal = load_or_generate_signal_key(&SignalKeyPaths::from_bootstrap(config))?;
     log_key_warnings(&signal.warnings);
-    let signal_public_key = signal.value.public_key_base64();
-    tracing::info!(public_key = %signal_public_key, "hbbs key pair loaded");
+    tracing::info!(public_key = %signal.value.public_key_base64(), "hbbs key pair loaded");
 
     Ok(Prepared {
         lock,
         pins,
         crypto,
-        signal_public_key,
+        signal_key: signal.value,
     })
 }
 
 /// Listeners first (an instance that cannot bind never touches the
-/// database), then database, migrations, settings. Until serving starts,
-/// connections wait in the listen backlog.
+/// database), then database, migrations, settings, then the signal server
+/// (which loads the peer registry before binding its ports). Until serving
+/// starts, HTTP connections wait in the listen backlog. The signal server
+/// stops when `token` is cancelled.
 pub async fn start(
     config: &Bootstrap,
     prepared: Prepared,
     drain_timeout: Duration,
+    token: &CancellationToken,
 ) -> anyhow::Result<Started> {
     let http = http::http_config(config, drain_timeout);
     http.validate()?;
@@ -95,15 +105,42 @@ pub async fn start(
         lock,
         pins,
         crypto,
-        signal_public_key,
+        signal_key,
     } = prepared;
-    let state = Arc::new(open_state(config, pins, crypto, signal_public_key).await?);
+    let public_key = signal_key.public_key_base64();
+    let state = Arc::new(open_state(config, pins, crypto, public_key).await?);
+    let signal = start_signal(config, &signal_key, &state, token).await?;
     Ok(Started {
         state,
         listeners,
         http,
+        signal,
         lock,
     })
+}
+
+/// The signal server over the device registry, following the settings;
+/// `None` when disabled.
+async fn start_signal(
+    config: &Bootstrap,
+    key: &SignalKeyPair,
+    state: &AppState,
+    token: &CancellationToken,
+) -> anyhow::Result<Option<RunningSignal>> {
+    if !config.signal.enabled {
+        tracing::info!("signal server disabled");
+        return Ok(None);
+    }
+    let launcher = Launcher::new(
+        signal_server::base_config(&config.signal, key)?,
+        Arc::new(SignalPeerStore::new(DeviceRepository::new(
+            state.db.clone(),
+        ))),
+        Arc::new(AllowAll::new()),
+        state.settings.subscribe(),
+    );
+    let running = signal_server::start(launcher, Backoff::DEFAULT, token).await?;
+    Ok(Some(running))
 }
 
 /// Database, migrations, settings: the [`AppState`] the routers serve.

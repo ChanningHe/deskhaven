@@ -2,7 +2,8 @@
 //! SIGTERM/SIGINT, then a bounded shutdown (02 §7).
 //!
 //! Exit codes: 0 after a clean shutdown (also when a signal arrives during
-//! startup), 1 on any startup failure or when shutdown overruns its deadline.
+//! startup), 1 on any startup failure (including a signal server that cannot
+//! serve, e.g. a taken port) or when shutdown overruns its deadline.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -13,7 +14,7 @@ use anyhow::{Context, anyhow};
 use deskhaven_config::bootstrap::{Bootstrap, LoadOptions, load};
 use deskhaven_core::state::AppState;
 use deskhaven_http::ServeError;
-use tokio::task::JoinError;
+use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::startup::{self, Prepared, Started};
@@ -21,6 +22,9 @@ use crate::{http, log_safe, logging, shutdown};
 
 /// Hard bound from the signal to process exit (02 §7), split into
 /// [`DRAIN_TIMEOUT`] + [`DB_CLOSE_TIMEOUT`] + [`RUNTIME_SHUTDOWN_GRACE`].
+/// The signal server stops during the drain share, in parallel with HTTP
+/// (its own write-behind flush is bounded by 5 s), and before the database
+/// closes, so its last registrations still reach the store.
 pub const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
 /// Blocking tasks still running when the runtime is dropped get this long.
 const RUNTIME_SHUTDOWN_GRACE: Duration = Duration::from_millis(500);
@@ -75,11 +79,14 @@ async fn serve(config: &Bootstrap, prepared: Prepared) -> anyhow::Result<ExitCod
     let token = CancellationToken::new();
     shutdown::spawn_signal_listener(token.clone())?;
     let started = tokio::select! {
+        // A cancelled startup may also fail (the signal server stops before
+        // serving); the request wins.
+        biased;
         () = token.cancelled() => {
             tracing::info!("shutdown requested before startup completed");
             return Ok(ExitCode::SUCCESS);
         }
-        started = startup::start(config, prepared, DRAIN_TIMEOUT) => started?,
+        started = startup::start(config, prepared, DRAIN_TIMEOUT, &token) => started?,
     };
     serve_until_shutdown(started, token).await
 }
@@ -92,9 +99,11 @@ async fn serve_until_shutdown(
         state,
         listeners,
         http: http_config,
+        signal,
         lock: _lock,
     } = started;
-    let apps = http::apps(Arc::clone(&state), &token);
+    let (signal_status, mut signal_task) = signal.map(|s| (s.status, s.task)).unzip();
+    let apps = http::apps(Arc::clone(&state), &token, signal_status);
     let mut serving = tokio::spawn({
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }
@@ -103,14 +112,26 @@ async fn serve_until_shutdown(
 
     tokio::select! {
         joined = &mut serving => {
+            token.cancel();
+            let _ = tokio::time::timeout(DRAIN_TIMEOUT, join_signal(signal_task)).await;
             close_db(&state).await;
             return Err(stopped_early(joined));
+        }
+        joined = signal_ended(&mut signal_task) => {
+            // The supervisor only returns after cancellation: it panicked.
+            token.cancel();
+            let _ = tokio::time::timeout(DRAIN_TIMEOUT, serving).await;
+            close_db(&state).await;
+            return Err(match joined {
+                Ok(()) => anyhow!("signal server supervisor stopped unexpectedly"),
+                Err(err) => anyhow::Error::new(err).context("signal server supervisor failed"),
+            });
         }
         () = token.cancelled() => {}
     }
 
     let finish = async {
-        let joined = serving.await;
+        let (joined, ()) = tokio::join!(serving, join_signal(signal_task));
         close_db(&state).await;
         joined
     };
@@ -124,6 +145,22 @@ async fn serve_until_shutdown(
             tracing::error!(deadline = ?SHUTDOWN_DEADLINE, "shutdown deadline exceeded; exiting");
             Ok(ExitCode::FAILURE)
         }
+    }
+}
+
+/// The supervisor task's end; never with the signal server disabled.
+async fn signal_ended(task: &mut Option<JoinHandle<()>>) -> Result<(), JoinError> {
+    match task {
+        Some(task) => task.await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Waits for the supervisor (and so the signal server) to stop.
+async fn join_signal(task: Option<JoinHandle<()>>) {
+    let Some(task) = task else { return };
+    if let Err(err) = task.await {
+        tracing::warn!(error = %err, "signal server supervisor failed");
     }
 }
 

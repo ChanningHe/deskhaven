@@ -20,20 +20,21 @@ clap = { workspace = true }
 rustls = { workspace = true }
 sea-orm = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["net", "signal"] }
+tokio = { workspace = true, features = ["net", "signal", "sync"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json", "tracing-log"] }
-# signal peer store adapter (M1-05)
+# signal peer store adapter (M1-05); signal server wiring (M1-06: the hbbs key in
+# sodiumoxide's layout for `SignalConfig::secret_key`)
 deskhaven-signal = { workspace = true }
 async-trait = { workspace = true }
+sodiumoxide = { workspace = true }
 
 [dev-dependencies]
 base64_022 = { workspace = true }
 tempfile = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
 hbb_common = { workspace = true }
-sodiumoxide = { workspace = true }
 
 # umask, flock on the instance lock; tests also send signals with it.
 [target.'cfg(unix)'.dependencies]

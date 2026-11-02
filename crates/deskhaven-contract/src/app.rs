@@ -67,7 +67,7 @@ impl TestApp {
             .await?,
         );
         let shutdown = CancellationToken::new();
-        let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown);
+        let apps = deskhaven::http::apps(Arc::clone(&state), &shutdown, None);
         let client_api = apps.client_api.merge(extra.with_state(Arc::clone(&state)));
         // As served on a split client_api listener (deskhaven_http::serve);
         // single-listener mode routes `/api/*` identically.

@@ -2,7 +2,7 @@
 //! is created, migrated or generated, and sockets are released at once.
 
 use std::io::Write;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, UdpSocket};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -20,14 +20,38 @@ pub fn settings_pins(loaded: &Loaded) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The HTTP listen addresses can be bound now (another process may hold
-/// them, e.g. a running server). The signal ports join with M1-06.
+/// The HTTP listen addresses and, when enabled, the signal ports can be
+/// bound now (another process may hold them, e.g. a running server).
 pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
     let listen = &loaded.config.listen;
     let admin = listen.admin_addr().map(|addr| ("listen.admin", addr));
     for (key, addr) in std::iter::once(("listen.client_api", listen.client_api)).chain(admin) {
         TcpListener::bind(addr).with_context(|| format!("{key}: cannot bind {addr}"))?;
     }
+    if loaded.config.signal.enabled {
+        signal_ports(loaded.config.signal.port)?;
+    }
+    Ok(())
+}
+
+/// What the signal server binds on all interfaces: TCP port-1 (NAT test),
+/// port (TCP and UDP) and port+2 (WebSocket). Probed on IPv4 `0.0.0.0`,
+/// which collides with any IPv4 or dual-stack holder of the port. The
+/// bootstrap validation already rejected ports without room for port-1 and
+/// port+2.
+fn signal_ports(port: u16) -> anyhow::Result<()> {
+    let any = |port| SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
+    let tcp = [
+        ("signal NAT test (port-1)", port.saturating_sub(1)),
+        ("signal.port", port),
+        ("signal WebSocket (port+2)", port.saturating_add(2)),
+    ];
+    for (name, port) in tcp {
+        TcpListener::bind(any(port))
+            .with_context(|| format!("{name}: cannot bind TCP {}", any(port)))?;
+    }
+    UdpSocket::bind(any(port))
+        .with_context(|| format!("signal.port: cannot bind UDP {}", any(port)))?;
     Ok(())
 }
 

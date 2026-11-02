@@ -17,6 +17,7 @@ use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::log_safe;
+use crate::signal_server::SignalStatus;
 
 /// HSTS for https deployments: one year, without `includeSubDomains`
 /// (other hosts under the domain are not ours to pin).
@@ -55,9 +56,14 @@ pub fn listen_config(listen: &Listen) -> ListenConfig {
 }
 
 /// Routers of both sides with the API error renderers. Health routes are on
-/// both, so a split admin listener can be probed on its own.
-pub fn apps(state: Arc<AppState>, shutdown: &CancellationToken) -> Apps {
-    let readiness = readiness(state.db.clone(), shutdown.clone());
+/// both, so a split admin listener can be probed on its own. `signal` is the
+/// signal server readiness follows (`None`: not running in this process).
+pub fn apps(
+    state: Arc<AppState>,
+    shutdown: &CancellationToken,
+    signal: Option<SignalStatus>,
+) -> Apps {
+    let readiness = readiness(state.db.clone(), shutdown.clone(), signal);
     Apps {
         client_api: client_api_router(state, readiness.clone()),
         admin: admin_router(readiness),
@@ -79,23 +85,32 @@ fn admin_router(readiness: impl ReadinessCheck) -> Router {
     health_routes(readiness).merge(deskhaven_web::router())
 }
 
-/// `/readyz`: the database answers a ping, and the process is not shutting
-/// down. Migrations are applied by construction (requests are only served
-/// after `migrate` succeeded). Settings load warnings do not count: the
-/// service runs on safe fallbacks, and a restart would not fix a bad row.
-/// The ping uses the shared pool, so a saturated pool (no connection within
-/// [`READY_PROBE_TIMEOUT`]) also reports not ready.
+/// `/readyz`: the database answers a ping, the process is not shutting down,
+/// and the signal server (when enabled) is serving: a deployment without
+/// rendezvous cannot connect anyone, so a load balancer should stop sending
+/// clients here while the supervisor restarts it (`/healthz` stays up, so the
+/// process is not killed meanwhile). Migrations are applied by construction
+/// (requests are only served after `migrate` succeeded). Settings load
+/// warnings do not count: the service runs on safe fallbacks, and a restart
+/// would not fix a bad row. The ping uses the shared pool, so a saturated pool
+/// (no connection within [`READY_PROBE_TIMEOUT`]) also reports not ready.
 pub fn readiness(
     db: DatabaseConnection,
     shutdown: CancellationToken,
+    signal: Option<SignalStatus>,
 ) -> impl ReadinessCheck + Clone {
-    move || probe(db.clone(), shutdown.clone())
+    move || probe(db.clone(), shutdown.clone(), signal.clone())
 }
 
-async fn probe(db: DatabaseConnection, shutdown: CancellationToken) -> Result<(), NotReady> {
+async fn probe(
+    db: DatabaseConnection,
+    shutdown: CancellationToken,
+    signal: Option<SignalStatus>,
+) -> Result<(), NotReady> {
     if shutdown.is_cancelled() {
         return Err(NotReady::new("shutting down"));
     }
+    signal_ready(signal.as_ref())?;
     match tokio::time::timeout(READY_PROBE_TIMEOUT, db.ping()).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(err)) => Err(NotReady::new(format!(
@@ -103,6 +118,13 @@ async fn probe(db: DatabaseConnection, shutdown: CancellationToken) -> Result<()
             log_safe::render_error(&err)
         ))),
         Err(_) => Err(NotReady::new("database ping timed out")),
+    }
+}
+
+pub(crate) fn signal_ready(signal: Option<&SignalStatus>) -> Result<(), NotReady> {
+    match signal {
+        Some(status) if !status.is_serving() => Err(NotReady::new("signal server not serving")),
+        _ => Ok(()),
     }
 }
 

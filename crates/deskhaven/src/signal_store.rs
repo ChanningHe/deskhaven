@@ -1,6 +1,6 @@
 //! The signal server's peer store over the device registry (07-hbbs-fork §3.1): what
 //! hbbs registers lands in `devices`, the single source of truth for registered devices.
-//! Not yet started by `serve` (M1-06 wires the signal server).
+//! `serve` starts the signal server on it (`signal_server`, M1-06).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
