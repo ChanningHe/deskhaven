@@ -29,6 +29,16 @@ impl Tasks {
         });
     }
 
+    /// For a task with work to finish when stopped (flushing a queue): it is not dropped but
+    /// gets the stop token, and must end promptly (bounded) once it fires.
+    pub(crate) fn spawn_draining<T, F>(&self, task: T)
+    where
+        T: FnOnce(CancellationToken) -> F,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.tracker.spawn(task(self.stop.clone()));
+    }
+
     /// Stops every task and waits until all of them have finished.
     pub(crate) async fn shutdown(&self) {
         self.stop.cancel();
@@ -54,5 +64,20 @@ mod tests {
         tasks.shutdown().await;
 
         assert!(rx.await.is_err(), "task (and its sender) was dropped");
+    }
+
+    #[tokio::test]
+    async fn shutdown_lets_draining_tasks_finish_their_work() {
+        let tasks = Tasks::new(CancellationToken::new());
+        let (tx, rx) = oneshot::channel::<()>();
+        tasks.spawn_draining(|stop| async move {
+            stop.cancelled().await;
+            tokio::task::yield_now().await;
+            tx.send(()).ok();
+        });
+
+        tasks.shutdown().await;
+
+        assert!(rx.await.is_ok(), "task ran to completion after the stop");
     }
 }

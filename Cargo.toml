@@ -114,6 +114,12 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 # OS RNG core already uses (chacha20poly1305's `OsRng`).
 argon2 = { version = "0.5.3", default-features = false, features = ["std", "password-hash", "zeroize"] }
 
+# --- peer store (M1-05) ---
+# (tokio, thiserror, sea-orm: reused from the db block.)
+# `deskhaven_signal::PeerStore` is used as `Arc<dyn PeerStore>`, so its async methods need
+# boxing; async-trait 0.1 is already in the graph through sea-orm-migration.
+async-trait = "0.1"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

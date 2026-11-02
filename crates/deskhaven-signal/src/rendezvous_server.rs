@@ -2,6 +2,7 @@
 use crate::common::*;
 use crate::peer::*;
 use crate::server::{Ports, SignalConfig, SignalError};
+use crate::store::PeerStore;
 use crate::tasks::Tasks;
 use hbb_common::{
     AddrMangle, ResultType, allow_err, bail,
@@ -16,7 +17,7 @@ use hbb_common::{
     log,
     protobuf::Message as _,
     rendezvous_proto::{
-        register_pk_response::Result::{TOO_FREQUENT, UUID_MISMATCH},
+        register_pk_response::Result::{SERVER_ERROR, TOO_FREQUENT, UUID_MISMATCH},
         *,
     },
     tcp::FramedStream,
@@ -170,6 +171,7 @@ impl RendezvousServer {
     pub(crate) async fn serve(
         cfg: SignalConfig,
         ports: Ports,
+        store: Arc<dyn PeerStore>,
         tx: Sender,
         mut rx: Receiver,
         always_use_relay: Arc<AtomicBool>,
@@ -179,7 +181,7 @@ impl RendezvousServer {
         log::info!("Key: {}", key);
         let bind_addr = cfg.bind;
         let rmem = cfg.rmem;
-        let mut rs = Self::new(&cfg, tx, always_use_relay, tasks)
+        let mut rs = Self::new(&cfg, store, tx, always_use_relay, tasks)
             .await
             .map_err(SignalError::internal)?;
         let mut socket = bind_udp(bind_addr, ports.main, rmem).await?;
@@ -245,14 +247,15 @@ impl RendezvousServer {
     // rendezvous-servers are gone. No DNS here: the initial relay list starts out unresolved
     // and is resolved by the first timer tick in `io_loop`, i.e. after the listeners are bound
     // and off the loop (`on_tick`). An empty `local_ip` means auto-detect, like upstream
-    // `get_arg_or`.
+    // `get_arg_or`. The peer map persists to the injected store (M1-05).
     async fn new(
         cfg: &SignalConfig,
+        store: Arc<dyn PeerStore>,
         tx: Sender,
         always_use_relay: Arc<AtomicBool>,
         tasks: Tasks,
     ) -> ResultType<Self> {
-        let pm = PeerMap::new().await?;
+        let pm = PeerMap::new(store, &tasks);
         let mask = cfg.mask;
         let local_ip = match (&mask, cfg.local_ip.as_deref().filter(|ip| !ip.is_empty())) {
             (None, _) => "".to_owned(),
@@ -471,7 +474,14 @@ impl RendezvousServer {
                     } else if !self.check_ip_blocker(&ip, &id).await {
                         return send_rk_res(socket, addr, TOO_FREQUENT).await;
                     }
-                    let peer = self.pm.get_or(&id).await;
+                    // deskhaven: a failed store lookup must not let any uuid claim the id.
+                    let peer = match self.pm.get_or(&id).await {
+                        Ok(peer) => peer,
+                        Err(err) => {
+                            log::error!("peer store: lookup of {id} failed: {err:?}");
+                            return send_rk_res(socket, addr, SERVER_ERROR).await;
+                        }
+                    };
                     let (changed, _ip_changed) = {
                         let peer = peer.read().await;
                         if peer.uuid.is_empty() {
@@ -517,8 +527,16 @@ impl RendezvousServer {
                     req_pk.1 = Instant::now();
                     peer.write().await.reg_pk = req_pk;
                     // deskhaven: IP_CHANGES bookkeeping removed (only read by console `ic`).
-                    if changed {
-                        self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
+                    // deskhaven: the store write is queued, not awaited; a full queue is the
+                    // only failure seen here (upstream ignored update_pk's result).
+                    if changed
+                        && self
+                            .pm
+                            .update_pk(id, peer, addr, rk.uuid, rk.pk, ip)
+                            .await
+                            .is_err()
+                    {
+                        return send_rk_res(socket, addr, SERVER_ERROR).await;
                     }
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
@@ -1322,6 +1340,10 @@ fn local_addr(listener: &TcpListener) -> Result<SocketAddr, SignalError> {
 mod tests {
     use super::*;
 
+    fn memory_store() -> Arc<dyn PeerStore> {
+        Arc::new(crate::store::MemoryPeerStore::new())
+    }
+
     #[hbb_common::tokio::test]
     async fn udp_listener_uses_bind_address() {
         let bind_addr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -1399,7 +1421,7 @@ mod tests {
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
         let handle = crate::SignalHandle::new(tx.clone(), always_use_relay.clone());
         let tasks = crate::tasks::Tasks::new(Default::default());
-        let rs = RendezvousServer::new(&cfg, tx.clone(), always_use_relay, tasks)
+        let rs = RendezvousServer::new(&cfg, memory_store(), tx.clone(), always_use_relay, tasks)
             .await
             .unwrap();
         let socket = create_udp_listener(Some(IpAddr::V4(Ipv4Addr::LOCALHOST)), 0, 0)
@@ -1461,7 +1483,7 @@ mod tests {
 
         async fn online_peer(&self) -> SocketAddr {
             let peer_addr: SocketAddr = "203.0.113.5:40000".parse().unwrap();
-            let peer = self.rs.pm.get_or(PEER_ID).await;
+            let peer = self.rs.pm.get_or(PEER_ID).await.unwrap();
             let mut w = peer.write().await;
             w.socket_addr = peer_addr;
             w.last_reg_time = Instant::now();
@@ -1626,7 +1648,7 @@ mod tests {
             };
             let (tx, _rx) = mpsc::unbounded_channel();
             let tasks = crate::tasks::Tasks::new(Default::default());
-            let rs = RendezvousServer::new(&cfg, tx, Default::default(), tasks)
+            let rs = RendezvousServer::new(&cfg, memory_store(), tx, Default::default(), tasks)
                 .await
                 .unwrap();
             rs.inner.local_ip.clone()

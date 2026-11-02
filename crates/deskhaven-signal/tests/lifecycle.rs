@@ -19,7 +19,7 @@ use hbb_common::{
 };
 use support::{
     Conn, Rendezvous, STEP, TcpClient, TestServer, UdpClient, addr, config, free_base_port,
-    ports_free, rv, wait_until_ready,
+    memory_store, ports_free, rv, wait_until_ready,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -112,7 +112,7 @@ async fn unresolvable_initial_relay_does_not_delay_listening() {
     let started = tokio::time::Instant::now();
 
     // Act
-    let task = tokio::spawn(run(cfg, shutdown.clone()));
+    let task = tokio::spawn(run(cfg, memory_store(), shutdown.clone()));
     let ready = wait_until_ready(port, &task).await;
 
     // Assert
@@ -167,7 +167,7 @@ async fn relay_update_rejects_unresolvable_entries_and_keeps_serving() {
 #[tokio::test]
 async fn rejects_ports_without_room_for_nat_and_ws_ports() {
     for port in [0, 1, 2, 65534, 65535] {
-        let res = run(config(port), CancellationToken::new()).await;
+        let res = run(config(port), memory_store(), CancellationToken::new()).await;
         assert!(
             matches!(res, Err(SignalError::InvalidPort(p)) if p == port),
             "port {port}: {res:?}"
@@ -182,9 +182,12 @@ async fn port_in_use_fails_with_bind_error() {
     let _taken = std::net::TcpListener::bind(addr(port)).unwrap();
 
     // Act
-    let res = timeout(STEP, run(config(port), CancellationToken::new()))
-        .await
-        .expect("bind failure is reported promptly");
+    let res = timeout(
+        STEP,
+        run(config(port), memory_store(), CancellationToken::new()),
+    )
+    .await
+    .expect("bind failure is reported promptly");
 
     // Assert
     match res {
@@ -199,7 +202,7 @@ async fn port_in_use_fails_with_bind_error() {
 #[tokio::test]
 async fn handle_reports_stopped_once_run_has_returned() {
     // Arrange
-    let server = SignalServer::new(config(free_base_port()));
+    let server = SignalServer::new(config(free_base_port()), memory_store());
     let handle = server.handle();
     let shutdown = CancellationToken::new();
     shutdown.cancel();

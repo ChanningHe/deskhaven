@@ -49,7 +49,7 @@ pub use {
     flows::*,
     msg::*,
     net::*,
-    server::{TestServer, config, wait_until_ready},
+    server::{TestServer, config, memory_store, wait_until_ready},
     tcp::TcpClient,
     udp::UdpClient,
     ws::WsClient,

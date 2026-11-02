@@ -1328,15 +1328,13 @@ dependencies = [
 name = "deskhaven-signal"
 version = "0.1.0-dev"
 dependencies = [
+ "async-trait",
  "base64 0.13.1",
  "hbb_common",
  "ipnetwork",
  "lazy_static",
  "local-ip-address",
  "once_cell",
- "serde",
- "serde_derive",
- "serde_json",
  "sodiumoxide",
  "thiserror 2.0.21",
  "tokio-tungstenite",

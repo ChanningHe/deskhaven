@@ -232,3 +232,33 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   control plane does). Relay-selection tests assert the relay list itself instead of sampling
   the process-wide rotation cursor, and use TEST-NET-1 (192.0.2.0/24) addresses so health
   probes never connect.
+- 2026-11-02, M1-05, persistent peer registry: new deskhaven module `src/store.rs` (not
+  vendored, full workspace lints) with the public `PeerStore` trait (`get(id)`,
+  `upsert_pk(&PeerUpsert)`; the uuid of a stored id is immutable, a different one fails with
+  `StoreError::UuidMismatch`), `PeerRecord { uuid, pk, ip }`, `PeerUpsert { id, uuid, pk, ip,
+  registered_at }`, `StoreError` and the non-persistent `MemoryPeerStore`. The in-memory stub
+  `src/database.rs` (M1-02) is deleted; its SECURITY caveat (registrations lost on restart, so
+  any uuid could claim an id afterwards) no longer applies with a persistent store.
+  `SignalServer::new(cfg, store)` and `run(cfg, store, shutdown)` take an `Arc<dyn PeerStore>`,
+  threaded through `RendezvousServer::{serve, new}` into `PeerMap::new(store, &tasks)`.
+- 2026-11-02, M1-05, `peer.rs` `PeerMap`: the in-memory map is a cache in front of the store
+  (upstream: in front of SQLite). `get` / `get_or` read the store only for ids not in memory
+  (upstream behavior); an entry another task inserted meanwhile is kept instead of overwritten.
+  A store read error no longer reads as "unknown id" on the RegisterPk path: `get_or` returns
+  it and `handle_udp` answers SERVER_ERROR without caching anything (fail closed; upstream's
+  `if let Ok(Some(..))` handed out a fresh entry, letting any uuid claim the id while the
+  database failed). `get` (punch hole / `get_pk`) logs the error and treats the id as unknown.
+- 2026-11-02, M1-05, `peer.rs` `PeerMap::update_pk`: no longer awaits the database on the UDP
+  loop. It reserves a slot in a bounded queue (1024) first, then updates the in-memory peer
+  and queues the write; one writer task (`Writer`, started on `Tasks` with the new
+  `Tasks::spawn_draining`) calls `upsert_pk` in acceptance order, each call bounded by 10 s.
+  A full queue (or a stopped writer) returns an error before the peer is touched, and
+  `handle_udp` answers SERVER_ERROR; upstream ignored `update_pk`'s result and always answered
+  OK. A failed write is logged and the peer is evicted from memory, so the store stays the
+  truth: the next RegisterPeer gets `request_pk` and the following RegisterPk is checked against
+  the store again. On stop the writer flushes the queue (bounded by 5 s, remainder logged as
+  lost) before `run` returns. `Peer.guid` removed (it only chose insert vs. update, which
+  `upsert_pk` decides); `PeerInfo` lost its serde derives (the `info` JSON column is gone).
+- 2026-11-02, M1-05, dependencies: added `async-trait` (object-safe async `PeerStore`; upstream
+  used it too); dropped `serde`, `serde_derive` and `serde_json` (only used for the `info`
+  JSON); `uuid` moved to dev-dependencies (only the test harness generates uuids now).

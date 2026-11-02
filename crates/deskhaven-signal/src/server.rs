@@ -4,6 +4,7 @@
 
 use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
+use crate::store::PeerStore;
 use crate::tasks::Tasks;
 use hbb_common::{
     anyhow, log,
@@ -229,17 +230,25 @@ impl SignalHandle {
 /// A configured server that is not running yet.
 pub struct SignalServer {
     cfg: SignalConfig,
+    store: Arc<dyn PeerStore>,
     handle: SignalHandle,
     rx: Receiver,
 }
 
 impl SignalServer {
-    /// Prepares a server; nothing is bound or resolved until [`SignalServer::run`].
-    pub fn new(cfg: SignalConfig) -> Self {
+    /// Prepares a server that keeps peer registrations in `store`; nothing is bound or
+    /// resolved until [`SignalServer::run`].
+    ///
+    /// The store is what binds a registered id to its device uuid across restarts (the
+    /// UUID_MISMATCH anti id-hijack check); with a non-persistent store such as
+    /// [`MemoryPeerStore`](crate::MemoryPeerStore), any uuid can claim any id after a process
+    /// restart.
+    pub fn new(cfg: SignalConfig, store: Arc<dyn PeerStore>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
         Self {
             cfg,
+            store,
             handle: SignalHandle::new(tx, always_use_relay),
             rx,
         }
@@ -252,8 +261,9 @@ impl SignalServer {
 
     /// Resolves the initial relay list, binds, then serves on the caller's runtime until
     /// `shutdown` is cancelled (`Ok`) or a listener cannot be (re)created or the UDP self-test
-    /// fails (`Err`). When it returns, every listener is closed and every task it spawned has
-    /// finished.
+    /// fails (`Err`). When it returns, every listener is closed, every task it spawned has
+    /// finished, and every accepted registration has been handed to the store (bounded by a
+    /// few seconds; anything left is logged as lost).
     ///
     /// Errors are terminal: the server does not restart itself, and the embedding process
     /// must supervise it (restart it or exit).
@@ -274,9 +284,21 @@ impl SignalServer {
         tasks: Tasks,
         shutdown: &CancellationToken,
     ) -> Result<(), SignalError> {
-        let Self { cfg, handle, rx } = self;
-        let serve =
-            RendezvousServer::serve(cfg, ports, handle.tx, rx, handle.always_use_relay, tasks);
+        let Self {
+            cfg,
+            store,
+            handle,
+            rx,
+        } = self;
+        let serve = RendezvousServer::serve(
+            cfg,
+            ports,
+            store,
+            handle.tx,
+            rx,
+            handle.always_use_relay,
+            tasks,
+        );
         tokio::select! {
             biased;
             res = serve => res,
@@ -289,8 +311,12 @@ impl SignalServer {
 }
 
 /// [`SignalServer::run`] for callers that never change relay settings at runtime.
-pub async fn run(cfg: SignalConfig, shutdown: CancellationToken) -> Result<(), SignalError> {
-    SignalServer::new(cfg).run(shutdown).await
+pub async fn run(
+    cfg: SignalConfig,
+    store: Arc<dyn PeerStore>,
+    shutdown: CancellationToken,
+) -> Result<(), SignalError> {
+    SignalServer::new(cfg, store).run(shutdown).await
 }
 
 #[cfg(test)]

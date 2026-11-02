@@ -1,7 +1,9 @@
 //! A signal server on free loopback ports for one test.
 
 use super::{PeerKeys, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, msg};
-use deskhaven_signal::{SignalConfig, SignalError, SignalHandle, SignalServer};
+use deskhaven_signal::{
+    MemoryPeerStore, PeerStore, SignalConfig, SignalError, SignalHandle, SignalServer,
+};
 use hbb_common::{
     rendezvous_proto::{PunchHoleRequest, register_pk_response},
     tokio::{
@@ -12,7 +14,7 @@ use hbb_common::{
     },
 };
 use sodiumoxide::crypto::sign;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 const READY_POLL: Duration = Duration::from_millis(20);
@@ -53,14 +55,17 @@ pub async fn wait_until_ready(port: u16, task: &RunTask) -> bool {
     panic!("signal server on port {port} did not become ready");
 }
 
+/// A fresh, empty, non-persistent store.
+pub fn memory_store() -> Arc<dyn PeerStore> {
+    Arc::new(MemoryPeerStore::new())
+}
+
 /// Everything a server is built from, kept so [`TestServer::restart`] can rebuild the same
-/// server (same ports, same key).
-///
-/// Extension point for M1-05: add the injected `PeerStore` here and hand it to the server in
-/// [`TestServer::try_start`]; `restart` then keeps the store (and its registrations) as well.
+/// server (same ports, same key, same `PeerStore` instance and so the same registrations).
 #[derive(Clone)]
 struct Setup {
     cfg: SignalConfig,
+    store: Arc<dyn PeerStore>,
 }
 
 pub struct TestServer {
@@ -82,11 +87,24 @@ impl TestServer {
         Self::start_with(|cfg| cfg).await
     }
 
-    /// Starts with `customize(config(port))` on free ports, retrying on a lost port race.
+    /// Starts with `customize(config(port))` on free ports and a fresh [`memory_store`],
+    /// retrying on a lost port race.
     pub async fn start_with(customize: impl Fn(SignalConfig) -> SignalConfig) -> Self {
+        Self::start_with_store(customize, memory_store()).await
+    }
+
+    /// [`TestServer::start_with`] on the given store.
+    pub async fn start_with_store(
+        customize: impl Fn(SignalConfig) -> SignalConfig,
+        store: Arc<dyn PeerStore>,
+    ) -> Self {
         for _ in 0..START_ATTEMPTS {
             let cfg = customize(config(free_base_port()));
-            if let Some(server) = Self::try_start(Setup { cfg }).await {
+            let setup = Setup {
+                cfg,
+                store: store.clone(),
+            };
+            if let Some(server) = Self::try_start(setup).await {
                 return server;
             }
         }
@@ -103,12 +121,14 @@ impl TestServer {
         .await
     }
 
-    /// Starts on exactly `cfg` (its port and key), retrying briefly while the ports are busy.
+    /// Starts on exactly `cfg` (its port and key) with a fresh [`memory_store`], retrying
+    /// briefly while the ports are busy.
     pub async fn start_on(cfg: SignalConfig) -> Self {
-        Self::start_setup(Setup { cfg }).await
+        let store = memory_store();
+        Self::start_setup(Setup { cfg, store }).await
     }
 
-    /// Stops the server and starts a new one on the same ports with the same key.
+    /// Stops the server and starts a new one on the same ports with the same key and store.
     pub async fn restart(self) -> Self {
         let setup = self.setup.clone();
         self.stop().await;
@@ -133,7 +153,7 @@ impl TestServer {
         let (port, licence_key) = (cfg.port, cfg.licence_key());
         let public_key = cfg.secret_key.public_key();
         let shutdown = CancellationToken::new();
-        let server = SignalServer::new(cfg);
+        let server = SignalServer::new(cfg, setup.store.clone());
         let handle = server.handle();
         let task = tokio::spawn(server.run(shutdown.clone()));
         if !wait_until_ready(port, &task).await {
