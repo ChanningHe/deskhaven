@@ -12,6 +12,7 @@ use crate::crypto::SecretBox;
 use crate::login_events::LoginEventLog;
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
+use crate::tfa::TfaService;
 use crate::users::UserService;
 
 pub struct AppState {
@@ -31,4 +32,6 @@ pub struct AppState {
     pub login_throttle: LoginThrottle,
     /// Audit trail of login attempts.
     pub login_events: LoginEventLog,
+    /// TOTP enrolment, recovery codes and two-step login challenges.
+    pub tfa: TfaService,
 }

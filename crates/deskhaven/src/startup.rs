@@ -18,6 +18,7 @@ use deskhaven_core::login_events::LoginEventLog;
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::AppState;
+use deskhaven_core::tfa::TfaService;
 use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 use deskhaven_signal::AllowAll;
@@ -174,6 +175,12 @@ pub async fn open_state(
     );
     let login_throttle = LoginThrottle::new(db.clone(), settings.clone(), Arc::clone(&clock));
     let login_events = LoginEventLog::new(db.clone(), Arc::clone(&clock));
+    let tfa = TfaService::new(
+        db.clone(),
+        Arc::clone(&crypto),
+        settings.clone(),
+        Arc::clone(&clock),
+    );
     let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
 
     Ok(AppState {
@@ -185,6 +192,7 @@ pub async fn open_state(
         sessions,
         login_throttle,
         login_events,
+        tfa,
     })
 }
 

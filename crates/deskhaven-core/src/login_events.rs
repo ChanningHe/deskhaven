@@ -34,6 +34,16 @@ pub enum LoginResult {
     Unverified,
     /// A failed attempt that started a lockout (the next ones are refused unrecorded).
     Locked,
+    /// Right password; a second-factor challenge was issued (the login is not complete).
+    SecondFactorRequired,
+    /// Right password, but `auth.tfa.enforce` requires a second factor the user has not
+    /// enrolled: refused.
+    SecondFactorSetupRequired,
+    /// Second step: wrong, replayed or already used code.
+    InvalidCode,
+    /// Second step: unknown, expired, used or exhausted challenge, or one issued to another
+    /// username or device.
+    InvalidChallenge,
 }
 
 impl LoginResult {
@@ -44,6 +54,10 @@ impl LoginResult {
             Self::Disabled => "disabled",
             Self::Unverified => "unverified",
             Self::Locked => "locked",
+            Self::SecondFactorRequired => "tfa_required",
+            Self::SecondFactorSetupRequired => "tfa_setup_required",
+            Self::InvalidCode => "invalid_code",
+            Self::InvalidChallenge => "invalid_challenge",
         }
     }
 }

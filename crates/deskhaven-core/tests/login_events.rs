@@ -97,6 +97,10 @@ async fn result_labels_are_stable() {
         (LoginResult::Disabled, "disabled"),
         (LoginResult::Unverified, "unverified"),
         (LoginResult::Locked, "locked"),
+        (LoginResult::SecondFactorRequired, "tfa_required"),
+        (LoginResult::SecondFactorSetupRequired, "tfa_setup_required"),
+        (LoginResult::InvalidCode, "invalid_code"),
+        (LoginResult::InvalidChallenge, "invalid_challenge"),
     ];
     for (result, label) in labels {
         assert_eq!(result.as_str(), label);
