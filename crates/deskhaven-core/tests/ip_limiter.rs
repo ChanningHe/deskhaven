@@ -1,5 +1,5 @@
 //! Per-IP login token bucket (M2-06): quota from settings with hot reload, /64 keying,
-//! trusted-proxy exemption, bounded memory. Time is a manual clock.
+//! trusted-proxy fallback bucket, bounded memory. Time is a manual clock.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -9,7 +9,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use common::{MINUTE, clock, set, settings};
-use deskhaven_core::auth::limiter::{ClientAddr, IpLimiter, SWEEP_EVERY};
+use deskhaven_core::auth::limiter::{ClientAddr, FALLBACK_FACTOR, IpLimiter, SWEEP_EVERY};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use serde_json::json;
 
@@ -94,24 +94,33 @@ async fn ipv4_mapped_ipv6_shares_the_ipv4_bucket() {
 }
 
 #[tokio::test]
-async fn proxy_fallback_addresses_are_never_limited() {
+async fn proxy_fallback_shares_one_bucket_with_ten_times_the_quota() {
     each_migrated_backend(async |db: &TestDb| {
         let settings = settings(db).await;
-        set(&settings, "auth.ip_rate_limit.per_minute", json!(1)).await;
+        set(&settings, "auth.ip_rate_limit.per_minute", json!(2)).await;
         let limiter = IpLimiter::new(settings, clock());
-        let proxy = ClientAddr {
-            is_proxy_fallback: true,
-            ..client("10.0.0.1")
-        };
 
-        let ok = (0..100).filter(|_| limiter.check(proxy).is_ok()).count();
+        let ok = (0..30)
+            .filter(|i| limiter.check(proxy(&format!("10.0.0.{i}"))).is_ok())
+            .count();
 
-        assert_eq!(ok, 100);
-        assert_eq!(limiter.tracked_clients(), 0);
-        // The same address seen as a real client is limited.
-        assert_eq!(allowed(&limiter, "10.0.0.1", 2), 1);
+        assert_eq!(ok, 2 * FALLBACK_FACTOR as usize);
+        assert_eq!(
+            limiter.tracked_clients(),
+            0,
+            "fallback is not a per-client bucket"
+        );
+        // The same address seen as a real client has its own bucket.
+        assert_eq!(allowed(&limiter, "10.0.0.1", 3), 2);
     })
     .await;
+}
+
+fn proxy(addr: &str) -> ClientAddr {
+    ClientAddr {
+        is_proxy_fallback: true,
+        ..client(addr)
+    }
 }
 
 #[tokio::test]

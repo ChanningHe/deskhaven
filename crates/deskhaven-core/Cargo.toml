@@ -31,6 +31,7 @@ rustix = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
 
 [lints]
 workspace = true

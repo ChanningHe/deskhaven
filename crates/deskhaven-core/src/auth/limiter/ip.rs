@@ -1,4 +1,4 @@
-//! Per-client token bucket for login-type endpoints (governor keyed GCRA, in memory).
+//! Per-client token bucket for login-type endpoints (governor GCRA, in memory).
 //!
 //! - Key: the IPv4 address (/32), or the IPv6 /64 the address is in (one host usually owns a
 //!   whole /64; per-/128 buckets would be free to multiply). IPv4-mapped IPv6 counts as IPv4.
@@ -6,8 +6,12 @@
 //!   the per-minute value). Read from the settings snapshot on every check; when it changed,
 //!   the limiter is rebuilt and every bucket starts full again.
 //! - A [`ClientAddr`] with `is_proxy_fallback` is a trusted proxy's own address, shared by
-//!   every client behind it: it is never limited (logged at debug). Account lockout still
-//!   applies to such requests.
+//!   every client behind it. All such requests share one separate bucket with
+//!   [`FALLBACK_FACTOR`] × the quota, and their occurrence is logged at warn at most once per
+//!   [`FALLBACK_WARN_INTERVAL`]: it means a misconfigured proxy or a client inside a trusted
+//!   range. The account lockout keys them by source `fallback`.
+//! - Time: [`Clock::elapsed`](crate::clock::Clock::elapsed), monotonic in production, so
+//!   stepping the wall clock neither refills nor drains buckets.
 //! - Memory: buckets that refilled completely are indistinguishable from absent ones and are
 //!   dropped every [`SWEEP_EVERY`] checks and on [`IpLimiter::sweep`]. The map is therefore
 //!   bounded by the number of distinct clients seen within one minute.
@@ -23,6 +27,7 @@ use arc_swap::ArcSwap;
 use deskhaven_config::settings::AUTH_IP_RATE_LIMIT_PER_MINUTE;
 use governor::middleware::NoOpMiddleware;
 use governor::state::keyed::HashMapStateStore;
+use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 
 use super::ClientAddr;
@@ -31,6 +36,10 @@ use crate::settings::SettingsService;
 
 /// Checks between two sweeps of refilled buckets.
 pub const SWEEP_EVERY: u64 = 1024;
+/// The shared proxy-fallback bucket gets this many times the per-client quota.
+pub const FALLBACK_FACTOR: u32 = 10;
+/// At most one proxy-fallback warning per interval.
+pub const FALLBACK_WARN_INTERVAL: Duration = Duration::from_secs(60);
 /// Keeps the upper 64 bits of an IPv6 address.
 const IPV6_PREFIX_MASK: u128 = !0 << 64;
 
@@ -42,7 +51,7 @@ pub fn ip_key(addr: IpAddr) -> IpAddr {
     }
 }
 
-/// governor's view of the injected [`Clock`](crate::clock::Clock): time since the epoch.
+/// governor's view of the injected clock: its monotonic reading.
 #[derive(Clone)]
 struct GovernorClock(SharedClock);
 
@@ -50,30 +59,35 @@ impl governor::clock::Clock for GovernorClock {
     type Instant = Duration;
 
     fn now(&self) -> Duration {
-        Duration::from_millis(u64::try_from(self.0.now_ms()).unwrap_or(0))
+        self.0.elapsed()
     }
 }
 
 type Buckets =
     RateLimiter<IpAddr, HashMapStateStore<IpAddr>, GovernorClock, NoOpMiddleware<Duration>>;
+type SharedBucket = RateLimiter<NotKeyed, InMemoryState, GovernorClock, NoOpMiddleware<Duration>>;
 
-/// One limiter for one quota.
+/// The limiters for one quota.
 struct Configured {
     per_minute: u32,
     buckets: Buckets,
+    fallback: SharedBucket,
 }
 
 impl Configured {
     fn new(per_minute: u32, clock: &GovernorClock) -> Self {
-        let burst = NonZeroU32::new(per_minute).unwrap_or(NonZeroU32::MIN);
-        let buckets = RateLimiter::new(
-            Quota::per_minute(burst),
-            HashMapStateStore::default(),
-            clock.clone(),
-        );
+        let quota = |n: u32| Quota::per_minute(NonZeroU32::new(n).unwrap_or(NonZeroU32::MIN));
         Self {
             per_minute,
-            buckets,
+            buckets: RateLimiter::new(
+                quota(per_minute),
+                HashMapStateStore::default(),
+                clock.clone(),
+            ),
+            fallback: RateLimiter::direct_with_clock(
+                quota(per_minute.saturating_mul(FALLBACK_FACTOR)),
+                clock.clone(),
+            ),
         }
     }
 }
@@ -84,6 +98,8 @@ pub struct IpLimiter {
     clock: GovernorClock,
     current: ArcSwap<Configured>,
     checks: AtomicU64,
+    /// `elapsed` (ms) + 1 of the last fallback warning; 0 = never.
+    fallback_warned: AtomicU64,
 }
 
 impl IpLimiter {
@@ -96,22 +112,25 @@ impl IpLimiter {
             clock,
             current,
             checks: AtomicU64::new(0),
+            fallback_warned: AtomicU64::new(0),
         }
     }
 
     /// Takes one token for `client`, or returns how long until one is available.
     pub fn check(&self, client: ClientAddr) -> Result<(), Duration> {
-        if client.is_proxy_fallback {
-            tracing::debug!(addr = %client.addr, "trusted proxy address; per-IP login limit skipped");
-            return Ok(());
-        }
         let current = self.configured();
+        let now = governor::clock::Clock::now(&self.clock);
+        if client.is_proxy_fallback {
+            self.warn_fallback(client.addr, now);
+            return current
+                .fallback
+                .check()
+                .map_err(|not_until| not_until.wait_time_from(now));
+        }
         let result = current
             .buckets
             .check_key(&ip_key(client.addr))
-            .map_err(|not_until| {
-                not_until.wait_time_from(governor::clock::Clock::now(&self.clock))
-            });
+            .map_err(|not_until| not_until.wait_time_from(now));
         if self.checks.fetch_add(1, Ordering::Relaxed) % SWEEP_EVERY == SWEEP_EVERY - 1 {
             sweep(&current.buckets);
         }
@@ -123,12 +142,32 @@ impl IpLimiter {
         sweep(&self.current.load().buckets);
     }
 
-    /// Number of client networks currently tracked.
+    /// Number of client networks currently tracked (the fallback bucket not included).
     pub fn tracked_clients(&self) -> usize {
         self.current.load().buckets.len()
     }
 
-    /// The limiter for the current setting, rebuilt if the setting changed.
+    /// Logs the proxy-fallback warning unless one was logged within the interval.
+    fn warn_fallback(&self, addr: IpAddr, now: Duration) {
+        let now_ms = u64::try_from(now.as_millis()).unwrap_or(u64::MAX - 1);
+        let last = self.fallback_warned.load(Ordering::Relaxed);
+        let interval = u64::try_from(FALLBACK_WARN_INTERVAL.as_millis()).unwrap_or(u64::MAX);
+        let due = last == 0 || now_ms.saturating_add(1).saturating_sub(last) >= interval;
+        let claimed = due
+            && self
+                .fallback_warned
+                .compare_exchange(last, now_ms + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok();
+        if claimed {
+            tracing::warn!(
+                %addr,
+                "login request resolved to a trusted proxy address (misconfigured proxy or a \
+                 client inside trusted_proxies); all such requests share one rate-limit bucket"
+            );
+        }
+    }
+
+    /// The limiters for the current setting, rebuilt if the setting changed.
     fn configured(&self) -> Arc<Configured> {
         let want = self.settings.snapshot().get(&AUTH_IP_RATE_LIMIT_PER_MINUTE);
         let current = self.current.load_full();

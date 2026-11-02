@@ -1,4 +1,4 @@
-//! The login handler facade (M2-06): IP bucket first, then the account lockout; the same
+//! The login handler facade (M2-06): IP bucket first, then the attempt reservation; the same
 //! `Throttled` for every reason and for existing and unknown accounts alike.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
@@ -6,10 +6,14 @@
 mod common;
 
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::{MINUTE, clock, set, settings};
-use deskhaven_core::auth::limiter::{ClientAddr, LockStatus, LoginThrottle, ThrottleError};
+use deskhaven_core::auth::limiter::{
+    Attempt, ClientAddr, LOCKOUT_RETENTION, LockStatus, LoginThrottle, ThrottleError,
+};
+use deskhaven_core::clock::ManualClock;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use serde_json::json;
 
@@ -20,76 +24,100 @@ fn client(addr: &str) -> ClientAddr {
     }
 }
 
-fn retry_after(result: Result<(), ThrottleError>) -> Duration {
+fn proxy(addr: &str) -> ClientAddr {
+    ClientAddr {
+        is_proxy_fallback: true,
+        ..client(addr)
+    }
+}
+
+fn retry_after(result: Result<Attempt, ThrottleError>) -> Duration {
     match result {
         Err(ThrottleError::Throttled { retry_after }) => retry_after,
         other => panic!("expected Throttled, got {other:?}"),
     }
 }
 
-/// max_failures 3, 2 requests per minute per IP.
-async fn throttle(
-    db: &TestDb,
-) -> (
-    LoginThrottle,
-    std::sync::Arc<deskhaven_core::clock::ManualClock>,
-) {
+/// max_failures 3, 4 requests per minute per IP.
+async fn throttle(db: &TestDb) -> (LoginThrottle, Arc<ManualClock>) {
     let settings = settings(db).await;
     set(&settings, "auth.lockout.max_failures", json!(3)).await;
-    set(&settings, "auth.ip_rate_limit.per_minute", json!(2)).await;
+    set(&settings, "auth.ip_rate_limit.per_minute", json!(4)).await;
     let clock = clock();
-    (
-        LoginThrottle::new(db.conn.clone(), settings, clock.clone()),
-        clock,
-    )
+    let throttle = LoginThrottle::new(db.conn.clone(), settings, clock.clone());
+    (throttle, clock)
+}
+
+/// One failed login: pre-check, then report the failure.
+async fn failed_login(throttle: &LoginThrottle, from: ClientAddr, username: &str) -> LockStatus {
+    let attempt = throttle.pre_check(from, username).await.unwrap();
+    throttle.on_failure(attempt)
 }
 
 #[tokio::test]
-async fn ip_bucket_is_checked_before_the_account() {
+async fn ip_bucket_is_checked_before_any_attempt_is_counted() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, _) = throttle(db).await;
-
-        throttle
-            .pre_check(client("192.0.2.1"), "alice")
-            .await
-            .unwrap();
-        throttle
-            .pre_check(client("192.0.2.1"), "bob")
-            .await
-            .unwrap();
+        for name in ["a", "b", "c", "d"] {
+            let attempt = throttle.pre_check(client("192.0.2.1"), name).await.unwrap();
+            throttle.on_success(attempt).await.unwrap();
+        }
 
         let wait = retry_after(throttle.pre_check(client("192.0.2.1"), "carol").await);
-        assert_eq!(wait, Duration::from_secs(30));
-        throttle
+
+        assert_eq!(wait, Duration::from_secs(15));
+        let carol = throttle
             .pre_check(client("192.0.2.2"), "carol")
             .await
             .unwrap();
+        assert_eq!(throttle.on_failure(carol), LockStatus::Allowed);
     })
     .await;
 }
 
 #[tokio::test]
-async fn locked_accounts_are_throttled_from_any_address() {
+async fn failures_lock_the_username_for_that_source_only() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, clock) = throttle(db).await;
-        for _ in 0..3 {
-            throttle.on_failure("alice").await.unwrap();
-        }
+        failed_login(&throttle, client("198.51.100.7"), "alice").await;
+        failed_login(&throttle, client("198.51.100.7"), "alice").await;
+        let third = failed_login(&throttle, client("198.51.100.7"), "Alice").await;
+        assert_eq!(
+            third,
+            LockStatus::Locked {
+                retry_after: MINUTE * 15
+            }
+        );
 
         let wait = retry_after(throttle.pre_check(client("198.51.100.7"), "alice").await);
         assert_eq!(wait, MINUTE * 15);
-        let proxy = ClientAddr {
-            is_proxy_fallback: true,
-            ..client("10.0.0.1")
-        };
-        retry_after(throttle.pre_check(proxy, "Alice").await);
-        throttle.pre_check(proxy, "bob").await.unwrap();
-
-        clock.advance(MINUTE * 15);
-        throttle
-            .pre_check(client("198.51.100.8"), "alice")
+        let elsewhere = throttle
+            .pre_check(client("203.0.113.9"), "alice")
             .await
             .unwrap();
+        throttle.on_failure(elsewhere);
+
+        clock.advance(MINUTE * 15);
+        let again = throttle
+            .pre_check(client("198.51.100.7"), "alice")
+            .await
+            .unwrap();
+        throttle.on_success(again).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn proxy_fallback_is_limited_and_counted_under_the_fallback_source() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, _) = throttle(db).await;
+        for i in 0..3 {
+            failed_login(&throttle, proxy(&format!("10.0.0.{i}")), "alice").await;
+        }
+
+        retry_after(throttle.pre_check(proxy("10.0.0.9"), "alice").await);
+        let bob = throttle.pre_check(proxy("10.0.0.9"), "bob").await.unwrap();
+        throttle.on_success(bob).await.unwrap();
     })
     .await;
 }
@@ -99,16 +127,12 @@ async fn throttled_is_identical_for_unknown_and_existing_accounts() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, _) = throttle(db).await;
         let mut outcomes = Vec::new();
-        for name in ["alice", "no-such-user"] {
+        for (name, from) in [("alice", "192.0.2.10"), ("no-such-user", "192.0.2.20")] {
             let mut statuses = Vec::new();
             for _ in 0..3 {
-                statuses.push(throttle.on_failure(name).await.unwrap());
+                statuses.push(failed_login(&throttle, client(from), name).await);
             }
-            let proxy = ClientAddr {
-                is_proxy_fallback: true,
-                ..client("10.0.0.1")
-            };
-            let wait = retry_after(throttle.pre_check(proxy, name).await);
+            let wait = retry_after(throttle.pre_check(client(from), name).await);
             outcomes.push((statuses, wait));
         }
 
@@ -124,27 +148,52 @@ async fn throttled_is_identical_for_unknown_and_existing_accounts() {
 }
 
 #[tokio::test]
-async fn success_clears_the_failure_count() {
+async fn success_clears_the_count_and_refund_never_counts() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, clock) = throttle(db).await;
-        throttle.on_failure("alice").await.unwrap();
-        throttle.on_failure("alice").await.unwrap();
+        let from = client("192.0.2.1");
+        failed_login(&throttle, from, "alice").await;
+        failed_login(&throttle, from, "alice").await;
+        let ok = throttle.pre_check(from, "ALICE").await.unwrap();
+        throttle.on_success(ok).await.unwrap();
 
-        throttle.on_success("ALICE").await.unwrap();
-
-        assert_eq!(
-            throttle.on_failure("alice").await.unwrap(),
-            LockStatus::Allowed
-        );
-        assert_eq!(
-            throttle.on_failure("alice").await.unwrap(),
-            LockStatus::Allowed
-        );
         clock.advance(MINUTE);
-        throttle
+        assert_eq!(
+            failed_login(&throttle, from, "alice").await,
+            LockStatus::Allowed
+        );
+        for _ in 0..3 {
+            let busy = throttle.pre_check(from, "alice").await.unwrap();
+            throttle.refund(busy).await.unwrap();
+        }
+        clock.advance(MINUTE);
+        assert_eq!(
+            failed_login(&throttle, from, "alice").await,
+            LockStatus::Allowed
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unlock_lifts_every_lock_of_the_username() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (throttle, clock) = throttle(db).await;
+        for from in ["192.0.2.1", "192.0.2.2"] {
+            for _ in 0..3 {
+                failed_login(&throttle, client(from), "alice").await;
+            }
+            retry_after(throttle.pre_check(client(from), "alice").await);
+        }
+
+        assert_eq!(throttle.unlock("Alice").await.unwrap(), 3);
+        clock.advance(Duration::from_secs(15)); // one IP token back; the locks would last 15m
+
+        let attempt = throttle
             .pre_check(client("192.0.2.1"), "alice")
             .await
             .unwrap();
+        throttle.on_success(attempt).await.unwrap();
     })
     .await;
 }
@@ -153,16 +202,12 @@ async fn success_clears_the_failure_count() {
 async fn cleanup_sweeps_ip_buckets_and_stale_rows() {
     each_migrated_backend(async |db: &TestDb| {
         let (throttle, clock) = throttle(db).await;
-        throttle
-            .pre_check(client("192.0.2.1"), "alice")
-            .await
-            .unwrap();
-        throttle.on_failure("alice").await.unwrap();
+        failed_login(&throttle, client("192.0.2.1"), "alice").await;
         assert_eq!(throttle.ip().tracked_clients(), 1);
 
-        clock.advance(deskhaven_core::auth::limiter::LOCKOUT_RETENTION);
+        clock.advance(LOCKOUT_RETENTION);
 
-        assert_eq!(throttle.cleanup().await.unwrap(), 1);
+        assert_eq!(throttle.cleanup().await.unwrap(), 2);
         assert_eq!(throttle.ip().tracked_clients(), 0);
     })
     .await;

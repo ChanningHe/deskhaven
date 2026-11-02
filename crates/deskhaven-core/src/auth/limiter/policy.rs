@@ -1,16 +1,23 @@
-//! The account lockout state machine, free of I/O. All times are unix milliseconds.
+//! The lockout state machine, free of I/O. All times are unix milliseconds.
 //!
-//! - Failures are counted in a fixed window that opens at the first failure and lasts
-//!   `auth.lockout.window`; a failure after the window closed starts a new one at 1.
-//! - Reaching `auth.lockout.max_failures` in one window locks the key for
-//!   `auth.lockout.duration × 2^level`, capped at [`MAX_LOCK`]; the counter and window
-//!   restart at the lock.
-//! - The level is 0 for the first lock, and one more than the previous lock's level when
-//!   that lock ended less than [`LEVEL_DECAY`] ago. After a quiet period of [`LEVEL_DECAY`]
-//!   with no lock in force, the next lock starts at level 0 again.
-//! - Failures while locked change nothing (they normally never get here: the login
-//!   pre-check rejects locked keys before authenticating).
-//! - A successful login deletes the row (failures and level reset).
+//! Attempts are counted **before** verification (the login pre-check reserves one), so a
+//! reservation is an attempt, not yet a failure; a success deletes the rows and a refund
+//! (verification never ran) gives the attempt back.
+//!
+//! - Attempts are counted in a fixed window that opens at the first one and lasts
+//!   `auth.lockout.window`; an attempt after the window closed starts a new one at 1.
+//! - Reaching the threshold in one window locks the key; the counter and window restart at
+//!   the lock. The attempt that reaches the threshold is still verified, so at most
+//!   `threshold` verifications happen per lock cycle.
+//! - Per-source rows ([`Policy::per_source`]): threshold `auth.lockout.max_failures`, lock
+//!   `auth.lockout.duration × 2^level`, capped at [`MAX_LOCK`]. The level is 0 for the first
+//!   lock, and one more than the previous lock's level when that lock ended less than
+//!   [`LEVEL_DECAY`] ago; after a quiet period of [`LEVEL_DECAY`] with no lock in force it
+//!   starts at 0 again.
+//! - Global rows ([`Policy::global`]): threshold [`GLOBAL_FACTOR`] × `max_failures`, fixed
+//!   lock of `auth.lockout.duration` (no backoff), so distributed guessing is bounded but no
+//!   single source can lock the account for long.
+//! - Attempts while locked change nothing (the pre-check rejects them).
 
 use std::time::Duration;
 
@@ -23,30 +30,44 @@ use deskhaven_config::settings::{
 pub const MAX_LOCK: Duration = Duration::from_secs(24 * 60 * 60);
 /// Quiet period after which the backoff level resets.
 pub const LEVEL_DECAY: Duration = Duration::from_secs(24 * 60 * 60);
+/// The global row's threshold is this many times the per-source one.
+pub const GLOBAL_FACTOR: i32 = 4;
 /// Highest stored level. `duration` is at least 1 minute, and 1m × 2^11 already exceeds
 /// [`MAX_LOCK`], so higher levels would not change anything.
 const MAX_LEVEL: i32 = 11;
 
-/// The lockout settings, read from one snapshot.
+/// The lockout rule of one kind of row, read from one settings snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Policy {
-    pub max_failures: i32,
+    pub threshold: i32,
     pub window_ms: i64,
     pub base_lock_ms: i64,
+    pub backoff: bool,
 }
 
 impl Policy {
-    pub fn from_snapshot(snapshot: &Snapshot) -> Self {
+    /// `user:<name>|<source>` rows: exponential backoff.
+    pub fn per_source(snapshot: &Snapshot) -> Self {
         Self {
-            max_failures: i32::try_from(snapshot.get(&AUTH_LOCKOUT_MAX_FAILURES))
-                .unwrap_or(i32::MAX),
+            threshold: i32::try_from(snapshot.get(&AUTH_LOCKOUT_MAX_FAILURES)).unwrap_or(i32::MAX),
             window_ms: millis(snapshot.get(&AUTH_LOCKOUT_WINDOW).as_std()),
             base_lock_ms: millis(snapshot.get(&AUTH_LOCKOUT_DURATION).as_std()),
+            backoff: true,
         }
     }
 
-    /// The state after one more failure at `now`.
-    pub fn on_failure(&self, state: State, now: i64) -> State {
+    /// `user:<name>|*` rows: higher threshold, fixed duration.
+    pub fn global(snapshot: &Snapshot) -> Self {
+        let per_source = Self::per_source(snapshot);
+        Self {
+            threshold: per_source.threshold.saturating_mul(GLOBAL_FACTOR),
+            backoff: false,
+            ..per_source
+        }
+    }
+
+    /// The state after one more attempt at `now`.
+    pub fn on_attempt(&self, state: State, now: i64) -> State {
         if state.is_locked(now) {
             return state;
         }
@@ -56,7 +77,7 @@ impl Policy {
         } else {
             (1, now)
         };
-        if failures < self.max_failures {
+        if failures < self.threshold {
             return State {
                 failures,
                 window_started_at,
@@ -64,8 +85,8 @@ impl Policy {
             };
         }
         let level = match state.locked_until {
-            Some(until) if now.saturating_sub(until) < millis(LEVEL_DECAY) => {
-                (state.lock_level + 1).min(MAX_LEVEL)
+            Some(until) if self.backoff && now.saturating_sub(until) < millis(LEVEL_DECAY) => {
+                state.lock_level.saturating_add(1).min(MAX_LEVEL)
             }
             _ => 0,
         };
@@ -96,7 +117,7 @@ pub(super) struct State {
 }
 
 impl State {
-    /// No failures yet.
+    /// No attempts yet.
     pub fn fresh(now: i64) -> Self {
         Self {
             failures: 0,
@@ -117,6 +138,33 @@ impl State {
             u64::try_from(until - now).unwrap_or(u64::MAX),
         ))
     }
+
+    /// Whether going from `self` to `next` started a lock.
+    pub fn starts_lock(&self, next: &State) -> bool {
+        next.locked_until.is_some() && next.locked_until != self.locked_until
+    }
+}
+
+/// One reserved attempt on one row: the row before and after the reservation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Reservation {
+    pub before: State,
+    pub after: State,
+}
+
+impl Reservation {
+    /// The row with this attempt given back, or `None` if there is nothing to give back.
+    /// Untouched since the reservation: exactly the state before it (a lock it started is
+    /// lifted). Otherwise best effort: one attempt less, if any are counted.
+    pub fn refund(&self, current: State) -> Option<State> {
+        if current == self.after {
+            return Some(self.before);
+        }
+        (current.failures > 0).then(|| State {
+            failures: current.failures - 1,
+            ..current
+        })
+    }
 }
 
 pub(super) fn millis(d: Duration) -> i64 {
@@ -133,27 +181,28 @@ mod tests {
 
     fn policy() -> Policy {
         Policy {
-            max_failures: 3,
+            threshold: 3,
             window_ms: 15 * MIN,
             base_lock_ms: 15 * MIN,
+            backoff: true,
         }
     }
 
-    fn fail_n(p: &Policy, mut s: State, now: i64, n: usize) -> State {
+    fn attempt_n(p: &Policy, mut s: State, now: i64, n: usize) -> State {
         for _ in 0..n {
-            s = p.on_failure(s, now);
+            s = p.on_attempt(s, now);
         }
         s
     }
 
     #[test]
-    fn locks_on_the_max_failure_within_the_window() {
+    fn locks_on_the_threshold_attempt_within_the_window() {
         let p = policy();
-        let s = fail_n(&p, State::fresh(T0), T0, 2);
+        let s = attempt_n(&p, State::fresh(T0), T0, 2);
         assert_eq!(s.failures, 2);
         assert!(!s.is_locked(T0));
 
-        let s = p.on_failure(s, T0 + MIN);
+        let s = p.on_attempt(s, T0 + MIN);
         assert_eq!(s.locked_until, Some(T0 + MIN + 15 * MIN));
         assert_eq!((s.failures, s.lock_level), (0, 0));
         assert_eq!(s.retry_after(T0 + MIN), Some(Duration::from_secs(15 * 60)));
@@ -162,17 +211,17 @@ mod tests {
     #[test]
     fn a_closed_window_restarts_the_count() {
         let p = policy();
-        let s = fail_n(&p, State::fresh(T0), T0, 2);
-        let s = p.on_failure(s, T0 + 15 * MIN);
+        let s = attempt_n(&p, State::fresh(T0), T0, 2);
+        let s = p.on_attempt(s, T0 + 15 * MIN);
         assert_eq!((s.failures, s.window_started_at), (1, T0 + 15 * MIN));
         assert!(!s.is_locked(T0 + 15 * MIN));
     }
 
     #[test]
-    fn failures_while_locked_change_nothing() {
+    fn attempts_while_locked_change_nothing() {
         let p = policy();
-        let locked = fail_n(&p, State::fresh(T0), T0, 3);
-        assert_eq!(p.on_failure(locked, T0 + MIN), locked);
+        let locked = attempt_n(&p, State::fresh(T0), T0, 3);
+        assert_eq!(p.on_attempt(locked, T0 + MIN), locked);
     }
 
     #[test]
@@ -182,7 +231,7 @@ mod tests {
         let mut now = T0;
         let mut seen = Vec::new();
         for _ in 0..9 {
-            s = fail_n(&p, s, now, 3);
+            s = attempt_n(&p, s, now, 3);
             let until = s.locked_until.unwrap_or_default();
             seen.push((until - now) / MIN);
             now = until;
@@ -192,15 +241,48 @@ mod tests {
     }
 
     #[test]
+    fn level_saturates_at_the_maximum() {
+        let p = policy();
+        let s = State {
+            locked_until: Some(T0),
+            lock_level: i32::MAX,
+            ..State::fresh(T0)
+        };
+        assert_eq!(attempt_n(&p, s, T0, 3).lock_level, MAX_LEVEL);
+    }
+
+    #[test]
+    fn global_policy_has_a_higher_threshold_and_no_backoff() {
+        let snapshot = Snapshot::defaults();
+        let per_source = Policy::per_source(&snapshot);
+        let global = Policy::global(&snapshot);
+        assert_eq!(global.threshold, per_source.threshold * GLOBAL_FACTOR);
+
+        let mut s = State::fresh(T0);
+        let mut now = T0;
+        for _ in 0..3 {
+            s = attempt_n(
+                &global,
+                s,
+                now,
+                usize::try_from(global.threshold).unwrap_or(0),
+            );
+            assert_eq!(s.locked_until, Some(now + per_source.base_lock_ms));
+            assert_eq!(s.lock_level, 0);
+            now = s.locked_until.unwrap_or_default();
+        }
+    }
+
+    #[test]
     fn level_resets_after_a_quiet_period() {
         let p = policy();
-        let s = fail_n(&p, State::fresh(T0), T0, 3);
+        let s = attempt_n(&p, State::fresh(T0), T0, 3);
         let ended = s.locked_until.unwrap_or_default();
 
-        let soon = fail_n(&p, s, ended + millis(LEVEL_DECAY) - 1, 3);
+        let soon = attempt_n(&p, s, ended + millis(LEVEL_DECAY) - 1, 3);
         assert_eq!(soon.lock_level, 1);
 
-        let later = fail_n(&p, s, ended + 24 * HOUR, 3);
+        let later = attempt_n(&p, s, ended + 24 * HOUR, 3);
         assert_eq!(later.lock_level, 0);
     }
 
@@ -216,11 +298,44 @@ mod tests {
     }
 
     #[test]
-    fn max_failures_of_one_locks_on_the_first_failure() {
+    fn threshold_of_one_locks_on_the_first_attempt() {
         let p = Policy {
-            max_failures: 1,
+            threshold: 1,
             ..policy()
         };
-        assert!(p.on_failure(State::fresh(T0), T0).is_locked(T0));
+        assert!(p.on_attempt(State::fresh(T0), T0).is_locked(T0));
+    }
+
+    #[test]
+    fn refund_restores_an_untouched_row_exactly() {
+        let p = policy();
+        let before = attempt_n(&p, State::fresh(T0), T0, 2);
+        let after = p.on_attempt(before, T0);
+        assert!(after.is_locked(T0));
+        let r = Reservation { before, after };
+
+        assert_eq!(r.refund(after), Some(before));
+    }
+
+    #[test]
+    fn refund_of_a_changed_row_takes_back_one_attempt() {
+        let p = policy();
+        let before = State::fresh(T0);
+        let after = p.on_attempt(before, T0);
+        let r = Reservation { before, after };
+
+        let later = p.on_attempt(after, T0);
+        assert_eq!(r.refund(later).map(|s| s.failures), Some(1));
+        assert_eq!(r.refund(State::fresh(T0)), None);
+    }
+
+    #[test]
+    fn starts_lock_detects_only_new_locks() {
+        let p = policy();
+        let two = attempt_n(&p, State::fresh(T0), T0, 2);
+        let locked = p.on_attempt(two, T0);
+        assert!(two.starts_lock(&locked));
+        assert!(!locked.starts_lock(&locked));
+        assert!(!State::fresh(T0).starts_lock(&two));
     }
 }
