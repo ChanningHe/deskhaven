@@ -5,9 +5,9 @@
 # are fetched with plain git (the repository is public; a private repo would need a
 # token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
 #
-# Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}`.
+# Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
 # To change it, set the repository/org variable CI_RUNNER_LABEL (Settings ->
-# Actions -> Variables) or replace the 'docker' default in every `runs-on`
+# Actions -> Variables) or replace the 'ubuntu-latest' default in every `runs-on`
 # line below. Jobs run inside the `container:` image, so the runner only needs
 # Docker access (label must map to a docker-capable runner).
 #
@@ -43,7 +43,7 @@ env:
 
 jobs:
   fmt:
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -57,7 +57,7 @@ jobs:
 
   clippy:
     needs: fmt
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -70,7 +70,7 @@ jobs:
 
   deny:
     needs: fmt
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -83,7 +83,7 @@ jobs:
 
   test-sqlite:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -97,7 +97,7 @@ jobs:
 
   test-postgres:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     strategy:
       fail-fast: false
@@ -132,7 +132,7 @@ jobs:
   # Runs in parallel with the tests; report only.
   coverage:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     services:
       postgres:
