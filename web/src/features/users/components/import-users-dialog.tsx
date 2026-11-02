@@ -23,8 +23,16 @@ import { SECRET_MUTATION } from '../secret-mutation'
 import { importRowErrors } from '../import-errors'
 import { ImportRowErrors } from './import-row-errors'
 
-/** Largest CSV the server takes (`MAX_CSV_BYTES`). */
+/** Largest CSV the server takes (`MAX_CSV_BYTES`, UTF-8 bytes). */
 const MAX_CSV_BYTES = 64 * 1024
+const BYTES_PER_KIB = 1024
+
+function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).length
+}
+
+/** Why `csv` cannot be sent as it is, or undefined. */
+type CsvProblem = 'tooLarge' | 'readFailed'
 
 /** "Import CSV": all or nothing; created accounts' temporary passwords are shown once. */
 export function ImportUsersButton() {
@@ -33,18 +41,33 @@ export function ImportUsersButton() {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [csv, setCsv] = useState('')
+  const [readFailed, setReadFailed] = useState(false)
   const mutation = useImportUsers(SECRET_MUTATION)
   const rows = importRowErrors(mutation.error)
   const created = mutation.data?.created
   const secret = created?.map((row) => `${row.user.username}\t${row.temporary_password}`).join('\n')
+  const size = utf8Bytes(csv)
+  const problem: CsvProblem | undefined = readFailed
+    ? 'readFailed'
+    : size > MAX_CSV_BYTES
+      ? 'tooLarge'
+      : undefined
 
   const loadFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (file !== undefined) setCsv(await file.text())
+    if (file === undefined) return
+    setReadFailed(false)
+    try {
+      setCsv(await file.text())
+    } catch {
+      setCsv('')
+      setReadFailed(true)
+    }
   }
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (problem !== undefined) return
     const result = await mutation.mutateAsync({ data: { csv } }).catch(() => undefined)
     if (result === undefined) return
     setOpen(false)
@@ -91,18 +114,34 @@ export function ImportUsersButton() {
               required
               rows={8}
               spellCheck={false}
-              maxLength={MAX_CSV_BYTES}
+              aria-invalid={problem === 'tooLarge'}
+              aria-describedby={problem === undefined ? undefined : `${id}-problem`}
               placeholder="username,display_name,email,role,note"
               value={csv}
               onChange={(event) => {
+                setReadFailed(false)
                 setCsv(event.target.value)
               }}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
+            {problem === undefined ? null : (
+              <p id={`${id}-problem`} role="alert" className="text-xs text-destructive">
+                {problem === 'readFailed'
+                  ? t('users.import.readFailed')
+                  : t('users.import.tooLarge', {
+                      size: Math.ceil(size / BYTES_PER_KIB),
+                      max: MAX_CSV_BYTES / BYTES_PER_KIB,
+                    })}
+              </p>
+            )}
             {rows.length > 0 ? <ImportRowErrors rows={rows} /> : null}
             {mutation.error && rows.length === 0 ? <ErrorAlert error={mutation.error} /> : null}
             <DialogFooter>
-              <Button type="submit" disabled={mutation.isPending} aria-busy={mutation.isPending}>
+              <Button
+                type="submit"
+                disabled={mutation.isPending || problem !== undefined}
+                aria-busy={mutation.isPending}
+              >
                 {t('users.import.submit')}
               </Button>
             </DialogFooter>

@@ -388,6 +388,8 @@
       "secretTitle": "Temporary passwords ({{count}} accounts)",
       "secretDescription": "One line per account: username, tab, temporary password. Each must be changed at first sign-in.",
       "rejected": "Nothing was imported. Fix these rows and try again:",
+      "tooLarge": "The CSV is {{size}} KiB; at most {{max}} KiB can be imported at once.",
+      "readFailed": "The file could not be read. Choose it again or paste its text.",
       "line": "Line {{line}}",
       "fieldProblem": "{{field}}: {{problem}}",
       "codes": {

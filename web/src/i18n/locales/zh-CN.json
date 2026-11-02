@@ -388,6 +388,8 @@
       "secretTitle": "临时密码（{{count}} 个账户）",
       "secretDescription": "每行一个账户：用户名、制表符、临时密码。首次登录时必须修改。",
       "rejected": "未导入任何账户。请修正以下行后重试：",
+      "tooLarge": "CSV 大小为 {{size}} KiB，单次最多导入 {{max}} KiB。",
+      "readFailed": "无法读取该文件。请重新选择，或粘贴其文本。",
       "line": "第 {{line}} 行",
       "fieldProblem": "{{field}}：{{problem}}",
       "codes": {

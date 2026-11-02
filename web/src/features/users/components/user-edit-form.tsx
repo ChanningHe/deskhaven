@@ -36,7 +36,8 @@ function patchOf(user: UserView, draft: Draft): UserPatch {
   const before = draftOf(user)
   return {
     ...(draft.display_name === before.display_name ? {} : { display_name: draft.display_name }),
-    ...(draft.email === before.email ? {} : { email: draft.email.trim() }),
+    // Surrounding blanks are no change (a field of spaces stays as it was).
+    ...(draft.email.trim() === before.email ? {} : { email: draft.email.trim() }),
     ...(draft.role === before.role ? {} : { role: draft.role }),
     ...(draft.note === before.note ? {} : { note: draft.note }),
   }

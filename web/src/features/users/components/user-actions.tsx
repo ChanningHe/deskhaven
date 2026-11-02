@@ -38,18 +38,26 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
   const { t } = useTranslation()
   const me = useMe()
   const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState<Confirmed | null>(null)
+  // `action` outlives `open`: the dialog keeps its texts while it animates closed.
+  const [action, setAction] = useState<Confirmed>('disable')
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(undefined)
   const [unlocked, setUnlocked] = useState(false)
   const refresh = () => invalidateAccounts(queryClient)
 
-  const run = async (action: () => Promise<unknown>) => {
+  /** A direct (unconfirmed) action; its button stays disabled until it settles. */
+  const run = async (work: () => Promise<unknown>) => {
+    if (busy) return
+    setBusy(true)
     setError(undefined)
     try {
-      await action()
+      await work()
       await refresh()
     } catch (caught) {
       setError(caught)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -65,8 +73,9 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
       }),
   }
 
-  const ask = (action: Confirmed) => () => {
-    setConfirming(action)
+  const ask = (next: Confirmed) => () => {
+    setAction(next)
+    setConfirming(true)
   }
 
   return (
@@ -89,6 +98,8 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
         <Button
           variant="outline"
           size="sm"
+          disabled={busy}
+          aria-busy={busy}
           onClick={() =>
             void run(async () => {
               await unlockUser(user.id)
@@ -103,7 +114,13 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
             {t('users.actions.disable')}
           </Button>
         ) : (
-          <Button variant="outline" size="sm" onClick={() => void run(() => enableUser(user.id))}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void run(() => enableUser(user.id))}
+          >
             {t('users.actions.enable')}
           </Button>
         )}
@@ -118,20 +135,14 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
       </p>
       {error === undefined ? null : <ErrorAlert error={error} />}
       <ConfirmDialog
-        open={confirming !== null}
-        onOpenChange={(open) => {
-          if (!open) setConfirming(null)
-        }}
-        title={confirming === null ? '' : t(`users.confirm.${confirming}.title`)}
-        description={
-          confirming === null
-            ? undefined
-            : t(`users.confirm.${confirming}.description`, { username: user.username })
-        }
-        confirmLabel={confirming === null ? '' : t(`users.confirm.${confirming}.confirm`)}
-        {...(confirming === 'delete' ? { confirmText: user.username } : {})}
-        destructive={confirming !== 'resetPassword'}
-        onConfirm={confirming === null ? () => undefined : confirmed[confirming]}
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t(`users.confirm.${action}.title`)}
+        description={t(`users.confirm.${action}.description`, { username: user.username })}
+        confirmLabel={t(`users.confirm.${action}.confirm`)}
+        {...(action === 'delete' ? { confirmText: user.username } : {})}
+        destructive={action !== 'resetPassword'}
+        onConfirm={confirmed[action]}
       />
     </section>
   )

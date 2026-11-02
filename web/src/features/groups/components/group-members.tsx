@@ -30,7 +30,9 @@ export function GroupMembers({ groupId, editable }: GroupMembersProps) {
     { page, page_size: MEMBER_PAGE_SIZE, sort: 'username' },
     { query: { placeholderData: keepPreviousData } },
   )
+  // `removing` outlives `confirming`: the dialog keeps its text while it animates closed.
   const [removing, setRemoving] = useState<UserView | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const total = members.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / MEMBER_PAGE_SIZE))
   // A removal can empty the last page: step back to one that exists.
@@ -66,6 +68,7 @@ export function GroupMembers({ groupId, editable }: GroupMembersProps) {
                 aria-label={t('groups.members.remove', { username: user.username })}
                 onClick={() => {
                   setRemoving(user)
+                  setConfirming(true)
                 }}
               >
                 {t('groups.members.removeShort')}
@@ -104,10 +107,8 @@ export function GroupMembers({ groupId, editable }: GroupMembersProps) {
       ) : null}
       {editable ? <AddMember groupId={groupId} /> : null}
       <ConfirmDialog
-        open={removing !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoving(null)
-        }}
+        open={confirming}
+        onOpenChange={setConfirming}
         title={t('groups.members.confirmTitle')}
         description={t('groups.members.confirmDescription', {
           username: removing?.username ?? '',

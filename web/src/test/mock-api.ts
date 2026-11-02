@@ -6,7 +6,10 @@ export interface MockResponse {
   headers?: Record<string, string>
 }
 
-export type MockHandler = (request: { url: URL; init: RequestInit }) => MockResponse
+export type MockHandler = (request: {
+  url: URL
+  init: RequestInit
+}) => MockResponse | Promise<MockResponse>
 
 /** A JSON response (or an empty one for 204 / undefined body). */
 export function toResponse({ status = 200, body, headers = {} }: MockResponse): Response {
@@ -40,7 +43,7 @@ export function mockApi(routes: Record<string, MockResponse | MockHandler>) {
       return Promise.resolve(toResponse({ status: 404, body: errorEnvelope('not_found') }))
     }
     const response = typeof route === 'function' ? route({ url, init }) : route
-    return Promise.resolve(toResponse(response))
+    return Promise.resolve(response).then(toResponse)
   })
   vi.stubGlobal('fetch', spy)
   return spy
