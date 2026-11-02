@@ -2,11 +2,11 @@
 use crate::common::*;
 use crate::database;
 use hbb_common::{
+    ResultType,
     bytes::Bytes,
     log,
     rendezvous_proto::*,
     tokio::sync::{Mutex, RwLock},
-    ResultType,
 };
 use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, collections::HashSet, net::SocketAddr, sync::Arc, time::Instant};

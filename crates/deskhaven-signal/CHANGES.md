@@ -155,3 +155,13 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `TaskTracker`); dropped `chrono` (only used by the console `pr` command) and `tempfile`
   (only used by the key-file code). flexi_logger and `check_software_update` were already
   gone since M1-02; none remain.
+- 2026-11-02, M1-03, edition 2021 -> 2024 (`edition.workspace = true`), possible now that
+  `set_var` is gone. Reviewed every `rust_2024_compatibility` hit (3 `if_let_rescope`, 15
+  `tail_expr_drop_order`): all concern the drop timing of completed futures, `Bytes`,
+  protobuf messages, timers and `anyhow::Error` relative to locals; no lock guard sits in an
+  `if let` scrutinee, and the tail-expression guards (`peer.rs` `get_in_memory` /
+  `is_in_memory`, `database.rs` `get_peer`) have no locals to reorder against, so no
+  observable change. No RPIT, `macro_rules!`, `extern` or never-type-fallback hits. Same
+  commit: rustfmt 2024 style edition (import order only) and three nested `if let` collapsed
+  into let-chains because clippy `collapsible_if` fires under 2024 (`send_to_sink`,
+  `handle_listener2`, websocket loop in `handle_listener_inner`); same evaluation order.

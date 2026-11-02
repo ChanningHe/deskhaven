@@ -7,7 +7,7 @@
 // restart owns it: the UUID_MISMATCH check (anti id-hijack) only covers ids registered since
 // the last start. Do not wire this stub into `deskhaven serve`; M1-05 must replace it first.
 
-use hbb_common::{anyhow::anyhow, tokio::sync::Mutex, ResultType};
+use hbb_common::{ResultType, anyhow::anyhow, tokio::sync::Mutex};
 use std::{collections::HashMap, sync::Arc};
 
 /// Upstream `peer` row, reduced to the columns `peer.rs` reads.

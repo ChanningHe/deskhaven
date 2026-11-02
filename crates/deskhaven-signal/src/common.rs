@@ -1,7 +1,8 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use hbb_common::{
+    ResultType,
     anyhow::{Context, Result},
-    log, ResultType,
+    log,
 };
 use std::{
     net::{IpAddr, SocketAddr},

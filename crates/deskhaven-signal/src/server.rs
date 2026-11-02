@@ -13,8 +13,8 @@ use sodiumoxide::crypto::sign;
 use std::{
     net::IpAddr,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 use tokio_util::sync::CancellationToken;

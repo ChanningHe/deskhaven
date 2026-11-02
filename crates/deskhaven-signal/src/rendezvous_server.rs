@@ -4,7 +4,7 @@ use crate::peer::*;
 use crate::server::{Ports, SignalConfig, SignalError};
 use crate::tasks::Tasks;
 use hbb_common::{
-    allow_err, bail,
+    AddrMangle, ResultType, allow_err, bail,
     bytes::{Bytes, BytesMut},
     bytes_codec::BytesCodec,
     config,
@@ -24,21 +24,20 @@ use hbb_common::{
     tokio::{
         self,
         net::{TcpListener, TcpStream},
-        sync::{mpsc, Mutex},
-        time::{interval, Duration},
+        sync::{Mutex, mpsc},
+        time::{Duration, interval},
     },
     tokio_util::codec::Framed,
     try_into_v4,
     udp::FramedSocket,
-    AddrMangle, ResultType,
 };
 use ipnetwork::Ipv4Network;
 use sodiumoxide::crypto::sign;
 use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     sync::Arc,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::Instant,
 };
 
@@ -854,15 +853,15 @@ impl RendezvousServer {
 
     #[inline]
     async fn send_to_sink(sink: &mut Option<Sink>, msg: RendezvousMessage) {
-        if let Some(sink) = sink.as_mut() {
-            if let Ok(bytes) = msg.write_to_bytes() {
-                match sink {
-                    Sink::TcpStream(s) => {
-                        allow_err!(s.send(Bytes::from(bytes)).await);
-                    }
-                    Sink::Ws(ws) => {
-                        allow_err!(ws.send(tungstenite::Message::Binary(bytes.into())).await);
-                    }
+        if let Some(sink) = sink.as_mut()
+            && let Ok(bytes) = msg.write_to_bytes()
+        {
+            match sink {
+                Sink::TcpStream(s) => {
+                    allow_err!(s.send(Bytes::from(bytes)).await);
+                }
+                Sink::Ws(ws) => {
+                    allow_err!(ws.send(tungstenite::Message::Binary(bytes.into())).await);
                 }
             }
         }
@@ -971,22 +970,22 @@ impl RendezvousServer {
         let stream = FramedStream::from(stream, addr);
         self.tasks.spawn(async move {
             let mut stream = stream;
-            if let Some(Ok(bytes)) = stream.next_timeout(30_000).await {
-                if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes) {
-                    match msg_in.union {
-                        Some(rendezvous_message::Union::TestNatRequest(_)) => {
-                            let mut msg_out = RendezvousMessage::new();
-                            msg_out.set_test_nat_response(TestNatResponse {
-                                port: addr.port() as _,
-                                ..Default::default()
-                            });
-                            stream.send(&msg_out).await.ok();
-                        }
-                        Some(rendezvous_message::Union::OnlineRequest(or)) => {
-                            allow_err!(rs.handle_online_request(&mut stream, or.peers).await);
-                        }
-                        _ => {}
+            if let Some(Ok(bytes)) = stream.next_timeout(30_000).await
+                && let Ok(msg_in) = RendezvousMessage::parse_from_bytes(&bytes)
+            {
+                match msg_in.union {
+                    Some(rendezvous_message::Union::TestNatRequest(_)) => {
+                        let mut msg_out = RendezvousMessage::new();
+                        msg_out.set_test_nat_response(TestNatResponse {
+                            port: addr.port() as _,
+                            ..Default::default()
+                        });
+                        stream.send(&msg_out).await.ok();
                     }
+                    Some(rendezvous_message::Union::OnlineRequest(or)) => {
+                        allow_err!(rs.handle_online_request(&mut stream, or.peers).await);
+                    }
+                    _ => {}
                 }
             }
         });
@@ -1040,10 +1039,10 @@ impl RendezvousServer {
             let (a, mut b) = ws_stream.split();
             sink = Some(Sink::Ws(a));
             while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
-                if let tungstenite::Message::Binary(bytes) = msg {
-                    if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
-                        break;
-                    }
+                if let tungstenite::Message::Binary(bytes) = msg
+                    && !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await
+                {
+                    break;
                 }
             }
         } else {

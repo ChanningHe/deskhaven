@@ -32,5 +32,5 @@ mod server;
 mod tasks;
 
 pub use server::{
-    run, SignalConfig, SignalError, SignalHandle, SignalServer, DEFAULT_PUNCH_REQ_MAX,
+    DEFAULT_PUNCH_REQ_MAX, SignalConfig, SignalError, SignalHandle, SignalServer, run,
 };

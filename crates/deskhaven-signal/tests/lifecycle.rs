@@ -5,17 +5,17 @@
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use deskhaven_signal::{run, SignalConfig, SignalError, SignalServer};
+use deskhaven_signal::{SignalConfig, SignalError, SignalServer, run};
 use hbb_common::{
     protobuf::Message as _,
-    rendezvous_proto::{rendezvous_message, RegisterPeer, RendezvousMessage, TestNatRequest},
+    rendezvous_proto::{RegisterPeer, RendezvousMessage, TestNatRequest, rendezvous_message},
     tcp::FramedStream,
     tokio::{
         self,
         io::AsyncReadExt,
         net::{TcpStream, UdpSocket},
         task::JoinHandle,
-        time::{sleep, timeout, Duration},
+        time::{Duration, sleep, timeout},
     },
 };
 use sodiumoxide::crypto::sign;
