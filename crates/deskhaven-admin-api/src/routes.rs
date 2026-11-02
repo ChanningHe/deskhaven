@@ -18,6 +18,7 @@ use utoipa_axum::router::UtoipaMethodRouter;
 
 use crate::gate::{RouteGuard, gate};
 use crate::openapi;
+use crate::origin::TrustedOrigins;
 use crate::permission::Permission;
 
 /// Prefix of every admin API route (08 §6).
@@ -38,6 +39,7 @@ pub struct RouteError {
 #[derive(Default)]
 pub struct AdminRoutes {
     entries: Vec<Entry>,
+    origins: TrustedOrigins,
 }
 
 struct Entry {
@@ -62,8 +64,8 @@ impl AdminRoutes {
         let path = absolute(&relative);
         let permission = route_permission(&path, &item)?;
         self.reject_duplicates(&path, &item)?;
-        for (_, operation) in operations_mut(&mut item) {
-            openapi::add_gate_responses(operation, permission);
+        for (method, operation) in operations_mut(&mut item) {
+            openapi::add_gate_docs(operation, &method, permission);
         }
         let operations = operations_mut(&mut item)
             .map(|(method, op)| (method, op.operation_id.clone().unwrap_or_default()))
@@ -76,11 +78,12 @@ impl AdminRoutes {
             guard: RouteGuard {
                 permission,
                 operations,
+                origins: TrustedOrigins::default(),
             },
         };
         let mut entries = self.entries;
         entries.push(entry);
-        Ok(Self { entries })
+        Ok(Self { entries, ..self })
     }
 
     /// Adds every route of `other`; the same operation twice is a [`RouteError`].
@@ -90,23 +93,28 @@ impl AdminRoutes {
         }
         let mut entries = self.entries;
         entries.extend(other.entries);
-        Ok(Self { entries })
+        Ok(Self { entries, ..self })
     }
 
-    /// axum would panic on a second handler for one method and path; fail cleanly instead.
+    /// axum panics (at router construction, after the listeners are bound) on a second
+    /// handler for one method and path, and on one path shape with differently named
+    /// parameters (`/users/{id}` and `/users/{user_id}`); fail cleanly instead.
     fn reject_duplicates(&self, path: &str, item: &PathItem) -> Result<(), RouteError> {
-        let taken = self
-            .entries
-            .iter()
-            .filter(|entry| entry.path == path)
-            .flat_map(|entry| operations(&entry.item).map(|(method, _)| method));
-        for method in taken {
-            if operations(item).any(|(m, _)| m == method) {
-                return Err(RouteError {
-                    method: method.to_string(),
-                    path: path.to_owned(),
-                    reason: "operation declared twice",
-                });
+        let shape = path_shape(path);
+        for entry in self.entries.iter().filter(|e| path_shape(&e.path) == shape) {
+            let error = |method: &Method, reason| RouteError {
+                method: method.to_string(),
+                path: path.to_owned(),
+                reason,
+            };
+            if entry.path != path {
+                return Err(error(&Method::GET, "path parameters named differently"));
+            }
+            let taken = operations(&entry.item).map(|(method, _)| method);
+            for method in taken {
+                if operations(item).any(|(m, _)| m == method) {
+                    return Err(error(&method, "operation declared twice"));
+                }
             }
         }
         Ok(())
@@ -129,14 +137,25 @@ impl AdminRoutes {
         doc
     }
 
+    /// Origins the console is served from (`public_url`, `admin_public_url`), accepted by
+    /// the same-origin check besides the request's own `Host`.
+    #[must_use]
+    pub fn trusted_origins(self, origins: TrustedOrigins) -> Self {
+        Self { origins, ..self }
+    }
+
     /// The routes, each behind its gate, ready to merge into the admin listener's router.
     pub fn into_router(self, state: Arc<AppState>) -> Router {
+        let origins = self.origins;
         let router = self
             .entries
             .into_iter()
             .fold(Router::new(), |router, entry| {
                 let state = Arc::clone(&state);
-                let guard = entry.guard;
+                let guard = RouteGuard {
+                    origins: origins.clone(),
+                    ..entry.guard
+                };
                 let gated = entry.methods.layer(from_fn(move |req, next| {
                     gate(Arc::clone(&state), guard.clone(), req, next)
                 }));
@@ -156,6 +175,20 @@ fn single_path(paths: Paths) -> Result<(String, PathItem), RouteError> {
             reason: "one routes!(...) call must serve exactly one path",
         }),
     }
+}
+
+/// `path` with parameter names erased: `{id}` -> `{}`, `{*rest}` -> `{*}`.
+fn path_shape(path: &str) -> String {
+    path.split('/')
+        .map(
+            |segment| match segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+                Some(name) if name.starts_with('*') => "{*}",
+                Some(_) => "{}",
+                None => segment,
+            },
+        )
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn absolute(relative: &str) -> String {

@@ -4,7 +4,11 @@
 //!   (`HttpOnly; Secure; SameSite=Lax; Path=/`). `__Host-` forbids a `Domain` attribute,
 //!   so a sibling subdomain cannot plant or overwrite it.
 //! - **CSRF** (double submit): every state-changing request (anything but GET, HEAD,
-//!   OPTIONS) must carry `X-Deskhaven-CSRF` equal to [`csrf_token`] of its session token.
+//!   OPTIONS) on every admin route, `Public` included, must carry exactly one
+//!   `X-Deskhaven-CSRF` header (a custom header forces a CORS preflight, which is never
+//!   granted). With a session cookie present it must equal [`csrf_token`] of that token;
+//!   without one (login, setup) any non-empty value passes. The gate also refuses
+//!   cross-site browser requests (see `origin`).
 //!   The value is derived, not stored: `base64url(SHA-256("deskhaven/csrf/v1" || 0x00 ||
 //!   token))`, unpadded. The server hands it to the SPA in the JS-readable
 //!   `__Host-deskhaven_csrf` cookie, but checks the header against the session cookie,
@@ -16,7 +20,7 @@
 //! `deskhaven_client_api::BearerUser`): cache first, per-IP budget before a database
 //! lookup, rejected lookups spend from it.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use axum::extract::FromRequestParts;
@@ -44,10 +48,10 @@ const CSRF_DOMAIN: &[u8] = b"deskhaven/csrf/v1\0";
 const COOKIE_ATTRIBUTES: &str = "Path=/; Secure; SameSite=Lax";
 
 /// The authenticated console session of a request. As a handler argument it reuses the
-/// gate's result, or (on a `Public` route) authenticates the session cookie itself and,
-/// for a state-changing method, checks the CSRF header like the gate does. Rejects with
-/// 401 (no, malformed or invalid cookie, or a client session), 403 `csrf_failed`, 429
-/// (uncached cookie from an address over its budget) or 500 (storage failure).
+/// gate's result, or (on a `Public` route) authenticates the session cookie itself; the
+/// gate has already checked origin and CSRF for every route. Rejects with 401 (no,
+/// malformed or invalid cookie, or a client session), 429 (uncached cookie from an
+/// address over its budget) or 500 (storage failure).
 #[derive(Clone, Debug)]
 pub struct ConsoleUser(pub SessionPrincipal);
 
@@ -64,12 +68,19 @@ impl FromRequestParts<Arc<AppState>> for ConsoleUser {
         let client = client_addr(parts, state).await?;
         let token = session_token(&parts.headers).ok_or_else(AdminApiError::unauthorized)?;
         let principal = authenticate(state, client, token).await?;
-        if is_state_changing(&parts.method) {
-            check_csrf(&parts.headers, token)?;
+        if let Some(SessionSlot(slot)) = parts.extensions.get::<SessionSlot>() {
+            // Only the first extraction fills it; later ones see the same principal.
+            let _ = slot.set(principal.user_id);
         }
+        parts.extensions.insert(Self(principal.clone()));
         Ok(Self(principal))
     }
 }
+
+/// Lets the gate of a `Public` route learn the user a handler authenticated through
+/// [`ConsoleUser`], to attribute that request's audit row.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SessionSlot(pub Arc<OnceLock<i64>>);
 
 /// The requesting address as the throttle keys it; a missing peer is a wiring bug (500).
 pub(crate) async fn client_addr<S: Send + Sync>(
@@ -147,14 +158,21 @@ pub(crate) fn is_state_changing(method: &Method) -> bool {
     !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
-/// The one [`CSRF_HEADER`] must equal [`csrf_token`] of `session_token`.
-pub(crate) fn check_csrf(headers: &HeaderMap, session_token: &str) -> Result<(), AdminApiError> {
+/// Exactly one non-empty [`CSRF_HEADER`]; with a session token it must equal
+/// [`csrf_token`] of it (see the module docs).
+pub(crate) fn check_csrf(
+    headers: &HeaderMap,
+    session_token: Option<&str>,
+) -> Result<(), AdminApiError> {
     let mut values = headers.get_all(&CSRF_HEADER).iter();
     let (Some(presented), None) = (values.next(), values.next()) else {
         return Err(AdminApiError::csrf_failed());
     };
-    let expected = csrf_token(session_token);
-    if bool::from(presented.as_bytes().ct_eq(expected.as_bytes())) {
+    let matches = match session_token {
+        Some(token) => bool::from(presented.as_bytes().ct_eq(csrf_token(token).as_bytes())),
+        None => !presented.is_empty(),
+    };
+    if matches {
         Ok(())
     } else {
         Err(AdminApiError::csrf_failed())
@@ -247,10 +265,17 @@ mod tests {
         let mut wrong = HeaderMap::new();
         wrong.insert(CSRF_HEADER, HeaderValue::from_static("nope"));
 
-        assert!(check_csrf(&ok, token).is_ok());
-        for headers in [HeaderMap::new(), twice, wrong] {
-            let err = check_csrf(&headers, token).unwrap_err();
+        assert!(check_csrf(&ok, Some(token)).is_ok());
+        for headers in [HeaderMap::new(), twice.clone(), wrong.clone()] {
+            let err = check_csrf(&headers, Some(token)).unwrap_err();
             assert_eq!(err.code(), crate::ErrorCode::CsrfFailed);
+        }
+        // Without a session any single non-empty value passes.
+        let mut empty = HeaderMap::new();
+        empty.insert(CSRF_HEADER, HeaderValue::from_static(""));
+        assert!(check_csrf(&wrong, None).is_ok());
+        for headers in [HeaderMap::new(), twice, empty] {
+            assert!(check_csrf(&headers, None).is_err());
         }
     }
 

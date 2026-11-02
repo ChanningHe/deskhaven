@@ -33,6 +33,21 @@ async fn shadow_me() -> Json<Value> {
     Json(json!({}))
 }
 
+#[utoipa::path(get, path = "/users/{id}", security(("console_session" = ["admin"])), params(("id" = i64, Path)), responses((status = 200)))]
+async fn user_by_id() -> Json<Value> {
+    Json(json!({}))
+}
+
+#[utoipa::path(delete, path = "/users/{user_id}", security(("console_session" = ["admin"])), params(("user_id" = i64, Path)), responses((status = 200)))]
+async fn user_by_other_name() -> Json<Value> {
+    Json(json!({}))
+}
+
+#[utoipa::path(post, path = "/login", security(()), responses((status = 200)))]
+async fn public_post() -> Json<Value> {
+    Json(json!({}))
+}
+
 fn err(routes: Result<AdminRoutes, RouteError>) -> RouteError {
     match routes {
         Ok(_) => panic!("route set assembled"),
@@ -125,4 +140,49 @@ fn production_document_declares_auth_on_every_operation() {
 #[test]
 fn document_is_deterministic() {
     assert_eq!(openapi_json().unwrap(), openapi_json().unwrap());
+}
+
+#[test]
+fn differently_named_path_parameters_fail_route_assembly() {
+    let error = err(AdminRoutes::new()
+        .routes(routes!(user_by_id))
+        .and_then(|r| r.routes(routes!(user_by_other_name))));
+
+    assert_eq!(error.path, "/admin/api/v1/users/{user_id}");
+    assert_eq!(error.reason, "path parameters named differently");
+}
+
+#[test]
+fn write_operations_document_the_csrf_header() {
+    let routes = AdminRoutes::new()
+        .routes(routes!(mixed_read))
+        .and_then(|r| r.routes(routes!(mixed_write)))
+        .and_then(|r| r.routes(routes!(public_post)))
+        .unwrap();
+    let doc = serde_json::to_value(routes.openapi()).unwrap();
+    let csrf = json!({
+        "name": "X-Deskhaven-CSRF",
+        "in": "header",
+        "required": true,
+    });
+
+    let read = &doc["paths"]["/admin/api/v1/mixed"]["get"];
+    assert!(read.get("parameters").is_none(), "{read}");
+    for op in [
+        &doc["paths"]["/admin/api/v1/mixed"]["post"],
+        &doc["paths"]["/admin/api/v1/login"]["post"],
+    ] {
+        let [param] = op["parameters"].as_array().unwrap().as_slice() else {
+            panic!("{op}");
+        };
+        for key in ["name", "in", "required"] {
+            assert_eq!(param[key], csrf[key], "{op}");
+        }
+        assert_eq!(
+            op["responses"]["403"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ErrorEnvelope"
+        );
+    }
+    let public = &doc["paths"]["/admin/api/v1/login"]["post"]["responses"];
+    assert!(public.get("401").is_none(), "{public}");
 }

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "deskhaven admin API",
-    "description": "Backs the deskhaven web console. Authenticated operations need the console session cookie; their security requirement names the role they need (self: any console user, admin: admin or owner, owner: owner). Every state-changing request (not GET, HEAD or OPTIONS) must also send the `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie. Errors are `{\"error\": {\"code\", \"message\", \"details\"?}}` with a stable `code`.",
+    "description": "Backs the deskhaven web console. Authenticated operations need the console session cookie; their security requirement names the role they need (self: any console user, admin: admin or owner, owner: owner). Every state-changing request (not GET, HEAD or OPTIONS) must send the `X-Deskhaven-CSRF` header with the value of the `__Host-deskhaven_csrf` cookie (any non-empty value without a session); cross-site browser requests are refused. Errors are `{\"error\": {\"code\", \"message\", \"details\"?}}` with a stable `code`.",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -39,7 +39,7 @@
             }
           },
           "403": {
-            "description": "Role not allowed (`forbidden`), or a state-changing request without the matching CSRF header (`csrf_failed`).",
+            "description": "Role not allowed (`forbidden`).",
             "content": {
               "application/json": {
                 "schema": {

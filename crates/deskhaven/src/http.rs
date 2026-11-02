@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::http::HeaderValue;
-use deskhaven_admin_api::AdminRoutes;
+use deskhaven_admin_api::{AdminRoutes, TrustedOrigins};
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::{Bootstrap, Listen};
 use deskhaven_core::state::AppState;
@@ -46,6 +46,15 @@ fn hsts_for(url: &str) -> Option<HeaderValue> {
     url.get(..HTTPS_PREFIX.len())
         .is_some_and(|scheme| scheme.eq_ignore_ascii_case(HTTPS_PREFIX))
         .then(|| HeaderValue::from_static(HSTS))
+}
+
+/// Origins the console is served from, for the admin API's same-origin check of
+/// state-changing requests (besides each request's own `Host`).
+pub fn trusted_origins(config: &Bootstrap) -> TrustedOrigins {
+    TrustedOrigins::from_urls([
+        config.public_url.as_str(),
+        config.listen.admin_public_url.as_str(),
+    ])
 }
 
 pub fn listen_config(listen: &Listen) -> ListenConfig {

@@ -2,8 +2,9 @@
 //!
 //! - Routes: added only through [`AdminRoutes`] from `utoipa_axum::routes!`; each
 //!   operation declares a [`Permission`] in its `#[utoipa::path]` (see [`permission`]).
-//! - Gate (per route): console session cookie, CSRF header, role, console audit
-//!   (see [`session`], [`audit`]).
+//! - Gate (per route): same-origin and CSRF header on writes, console session cookie,
+//!   role, console audit fallback (see [`session`], [`audit`]; writes record in their own
+//!   transaction via [`AuditCtx`]).
 //! - Wire conventions (08 §6): errors [`AdminApiError`], input [`ValidJson`] /
 //!   [`ValidQuery`], lists [`PageQuery`] / [`Paginated`].
 //! - OpenAPI: [`openapi_json`], committed at [`SPEC_PATH`] by `cargo xtask gen-openapi`.
@@ -14,6 +15,7 @@ mod extract;
 mod gate;
 mod me;
 mod openapi;
+mod origin;
 mod pagination;
 pub mod permission;
 mod routes;
@@ -26,11 +28,12 @@ use axum::Router;
 use deskhaven_core::state::AppState;
 use utoipa_axum::routes;
 
-pub use audit::Audit;
+pub use audit::{Audit, AuditCtx, Audited};
 pub use error::{AdminApiError, BoxError, ErrorBody, ErrorCode, ErrorEnvelope};
-pub use extract::{ValidJson, ValidQuery};
+pub use extract::{MAX_REASON_CHARS, ValidJson, ValidQuery};
 pub use me::{Me, RoleView};
 pub use openapi::{OpenApiError, SPEC_PATH, openapi_json};
+pub use origin::TrustedOrigins;
 pub use pagination::{PageQuery, Paginated};
 pub use permission::Permission;
 pub use routes::{ADMIN_API_V1, AdminRoutes, RouteError};

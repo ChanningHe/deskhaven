@@ -13,7 +13,8 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
-use deskhaven_admin_api::{AdminRoutes, CSRF_HEADER, SESSION_COOKIE, csrf_token};
+use deskhaven_admin_api::{AdminRoutes, SESSION_COOKIE, csrf_token};
+
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::SystemClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
@@ -29,6 +30,8 @@ use tower::ServiceExt;
 pub mod probe;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
+/// `deskhaven_admin_api::CSRF_HEADER` as a static string.
+pub const CSRF_HEADER_NAME: &str = "x-deskhaven-csrf";
 /// TEST-NET-3 peer, not a trusted proxy.
 pub const PEER: SocketAddr = SocketAddr::new(
     std::net::IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 9)),
@@ -148,24 +151,23 @@ impl Harness {
         csrf: Option<&str>,
         body: Option<Value>,
     ) -> Reply {
-        let mut builder = Request::builder()
-            .method(method)
-            .uri(path)
-            .extension(ConnectInfo(PEER));
+        let mut headers = Vec::new();
         if let Some(cookie) = cookie {
-            builder = builder.header(header::COOKIE, cookie);
+            headers.push(("cookie", cookie));
         }
         if let Some(csrf) = csrf {
-            builder = builder.header(CSRF_HEADER, csrf);
+            headers.push((CSRF_HEADER_NAME, csrf));
         }
-        let body = match body {
-            Some(json) => {
-                builder = builder.header(header::CONTENT_TYPE, "application/json");
-                Body::from(serde_json::to_vec(&json).unwrap())
-            }
-            None => Body::empty(),
-        };
-        self.raw(builder.body(body).unwrap()).await
+        self.raw(request(method, path, &headers, body)).await
+    }
+
+    /// The router's response future for `request` (to drop it mid-flight).
+    pub fn call(
+        &self,
+        request: Request<Body>,
+    ) -> impl std::future::Future<Output = Result<axum::response::Response, std::convert::Infallible>>
+    {
+        self.router.clone().oneshot(request)
     }
 
     /// GET with the console's cookie.
@@ -197,6 +199,43 @@ impl Harness {
             body,
         }
     }
+}
+
+/// `method path` from [`PEER`] with `headers` and an optional JSON body.
+pub fn request(
+    method: Method,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<Value>,
+) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .extension(ConnectInfo(PEER));
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let body = match body {
+        Some(json) => {
+            builder = builder.header(header::CONTENT_TYPE, "application/json");
+            Body::from(serde_json::to_vec(&json).unwrap())
+        }
+        None => Body::empty(),
+    };
+    builder.body(body).unwrap()
+}
+
+/// `(cookie, csrf)` headers of `console`, followed by `extra`.
+pub fn auth_headers<'a>(
+    console: &'a Console,
+    extra: &[(&'a str, &'a str)],
+) -> Vec<(&'a str, &'a str)> {
+    let mut headers = vec![
+        ("cookie", console.cookie.as_str()),
+        (CSRF_HEADER_NAME, console.csrf.as_str()),
+    ];
+    headers.extend_from_slice(extra);
+    headers
 }
 
 impl Reply {

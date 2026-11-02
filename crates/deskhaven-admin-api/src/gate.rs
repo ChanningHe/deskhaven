@@ -1,7 +1,13 @@
-//! The per-route gate every admin operation runs behind, in order: console session
-//! (401) -> CSRF header on state-changing methods (403 `csrf_failed`) -> role against
-//! the route's [`Permission`] (403) -> handler -> console audit of a successful write.
-//! `Public` routes pass straight through.
+//! The per-route gate every admin operation runs behind, in order:
+//! 1. state-changing methods (all routes, `Public` included): same-origin check and the
+//!    CSRF header (403 `csrf_failed`; see `origin` and `session`);
+//! 2. authenticated routes: console session (401), then role against the route's
+//!    [`Permission`] (403);
+//! 3. handler;
+//! 4. console audit fallback for 2xx responses (see `audit`).
+//!
+//! The gate wraps the route's whole method router, so a method the route does not serve
+//! (405) and `HEAD` (served by the `GET` handler, under the `GET` gate) pass it too.
 
 use std::sync::Arc;
 
@@ -12,9 +18,10 @@ use axum::response::{IntoResponse, Response};
 use deskhaven_core::state::AppState;
 
 use crate::AdminApiError;
-use crate::audit::{self, Audit, AuditContext};
+use crate::audit::{self, Audit, Audited, Fallback};
+use crate::origin::{TrustedOrigins, check_same_origin};
 use crate::permission::Permission;
-use crate::session::{self, ConsoleUser};
+use crate::session::{self, ConsoleUser, SessionSlot};
 
 /// What the gate knows about the route it guards.
 #[derive(Clone, Debug)]
@@ -22,10 +29,16 @@ pub(crate) struct RouteGuard {
     pub permission: Permission,
     /// Operation id per method: the audit action when the handler names none.
     pub operations: Arc<[(Method, String)]>,
+    pub origins: TrustedOrigins,
 }
 
 impl RouteGuard {
     fn operation_id(&self, method: &Method) -> &str {
+        let method = if method == Method::HEAD {
+            &Method::GET
+        } else {
+            method
+        };
         self.operations
             .iter()
             .find(|(m, _)| m == method)
@@ -45,40 +58,58 @@ pub(crate) async fn gate(
 }
 
 async fn guarded(
-    state: &AppState,
+    state: &Arc<AppState>,
     guard: &RouteGuard,
     req: Request,
     next: Next,
 ) -> Result<Response, AdminApiError> {
-    if guard.permission == Permission::Public {
-        return Ok(next.run(req).await);
-    }
     let (mut parts, body) = req.into_parts();
-    let client = session::client_addr(&mut parts, &()).await?;
-    let token = session::session_token(&parts.headers).ok_or_else(AdminApiError::unauthorized)?;
-    let principal = session::authenticate(state, client, token).await?;
     let writes = session::is_state_changing(&parts.method);
     if writes {
-        session::check_csrf(&parts.headers, token)?;
+        check_same_origin(&parts.headers, &guard.origins)?;
+        session::check_csrf(&parts.headers, session::session_token(&parts.headers))?;
     }
-    if !guard.permission.allows(principal.role) {
-        tracing::debug!(user_id = principal.user_id, permission = ?guard.permission, "role denied");
-        return Err(AdminApiError::forbidden());
-    }
-    let user_id = principal.user_id;
+    let client = session::client_addr(&mut parts, &()).await?;
+    let slot = SessionSlot::default();
+    let gate_user = match guard.permission {
+        Permission::Public => {
+            parts.extensions.insert(slot.clone());
+            None
+        }
+        permission => {
+            let token =
+                session::session_token(&parts.headers).ok_or_else(AdminApiError::unauthorized)?;
+            let principal = session::authenticate(state, client, token).await?;
+            if !permission.allows(principal.role) {
+                tracing::debug!(user_id = principal.user_id, ?permission, "role denied");
+                return Err(AdminApiError::forbidden());
+            }
+            let user_id = principal.user_id;
+            parts.extensions.insert(ConsoleUser(principal));
+            Some(user_id)
+        }
+    };
     let method = parts.method.clone();
-    parts.extensions.insert(ConsoleUser(principal));
 
     let mut response = next.run(Request::from_parts(parts, body)).await;
-    if !writes || !response.status().is_success() {
+    // No await from here on: the fallback task must exist before the gate can be dropped.
+    let audited = response.extensions_mut().remove::<Audited>().is_some();
+    let attached = response.extensions_mut().remove::<Audit>();
+    if audited || !response.status().is_success() {
         return Ok(response);
     }
-    let details = response.extensions_mut().remove::<Audit>();
-    let ctx = AuditContext {
+    // A `Public` handler that authenticated through `ConsoleUser` is attributed too.
+    let user_id = gate_user.or_else(|| slot.0.get().copied());
+    let audit = match attached {
+        Some(audit) => audit,
+        None if writes && gate_user.is_some() => Audit::default(),
+        None => return Ok(response),
+    };
+    let ctx = Fallback {
         user_id,
         ip: client.addr,
         operation_id: guard.operation_id(&method),
     };
-    audit::record(state, ctx, details).await?;
+    audit::record_detached(state, ctx, audit);
     Ok(response)
 }

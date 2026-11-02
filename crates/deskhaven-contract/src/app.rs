@@ -116,7 +116,8 @@ impl TestApp {
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(
             Arc::clone(&state),
-            deskhaven_admin_api::api_routes()?,
+            deskhaven_admin_api::api_routes()?
+                .trusted_origins(deskhaven::http::trusted_origins(&config)),
             &shutdown,
             None,
         );

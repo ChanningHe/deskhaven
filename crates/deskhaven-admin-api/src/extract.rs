@@ -80,8 +80,17 @@ fn report_error(report: Report) -> AdminApiError {
     AdminApiError::validation_failed("invalid input").with_details(json!({ "fields": fields }))
 }
 
+/// Longest `details.reason` returned (characters); serde messages can quote input.
+pub const MAX_REASON_CHARS: usize = 256;
+
+/// The rejection's message for the requester, bounded. Never logged: it may echo input.
+fn reason(body_text: &str) -> String {
+    body_text.chars().take(MAX_REASON_CHARS).collect()
+}
+
 fn json_rejection(rejection: JsonRejection) -> AdminApiError {
-    let reason = rejection.body_text();
+    let reason = reason(&rejection.body_text());
+    let kind = rejection_kind(&rejection);
     let error = match rejection {
         JsonRejection::MissingJsonContentType(_) => AdminApiError::new(
             ErrorCode::UnsupportedMediaType,
@@ -97,11 +106,21 @@ fn json_rejection(rejection: JsonRejection) -> AdminApiError {
         }
         _ => AdminApiError::new(ErrorCode::BadRequest, "unreadable request body"),
     };
-    tracing::debug!(%reason, "request body rejected");
+    tracing::debug!(kind, "request body rejected");
     error
 }
 
+fn rejection_kind(rejection: &JsonRejection) -> &'static str {
+    match rejection {
+        JsonRejection::MissingJsonContentType(_) => "content_type",
+        JsonRejection::JsonSyntaxError(_) => "syntax",
+        JsonRejection::JsonDataError(_) => "data",
+        _ => "body",
+    }
+}
+
 fn query_rejection(rejection: QueryRejection) -> AdminApiError {
+    tracing::debug!("query string rejected");
     AdminApiError::validation_failed("invalid query string")
-        .with_details(json!({ "reason": rejection.body_text() }))
+        .with_details(json!({ "reason": reason(&rejection.body_text()) }))
 }

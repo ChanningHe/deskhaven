@@ -211,18 +211,29 @@ async fn console_user_on_a_public_route_still_requires_csrf_for_writes() {
         let path = "/admin/api/v1/probe/public-session";
 
         let anonymous = app
-            .send(Method::POST, path, None, None, Some(json!({})))
+            .send(Method::POST, path, None, Some("any"), Some(json!({})))
             .await;
         let no_csrf = app
             .send(Method::POST, path, Some(&uma.cookie), None, Some(json!({})))
             .await;
+        let wrong_csrf = app
+            .send(
+                Method::POST,
+                path,
+                Some(&uma.cookie),
+                Some("any"),
+                Some(json!({})),
+            )
+            .await;
         let ok = app.write(Method::POST, path, &uma, json!({})).await;
 
         assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED, "{}", db.backend);
-        assert_eq!(
-            (no_csrf.status, no_csrf.code()),
-            (StatusCode::FORBIDDEN, "csrf_failed")
-        );
+        for reply in [&no_csrf, &wrong_csrf] {
+            assert_eq!(
+                (reply.status, reply.code()),
+                (StatusCode::FORBIDDEN, "csrf_failed")
+            );
+        }
         assert_eq!(ok.status, StatusCode::OK);
         assert_eq!(ok.body, json!({ "user_id": uma.user_id }));
     })
@@ -230,21 +241,229 @@ async fn console_user_on_a_public_route_still_requires_csrf_for_writes() {
 }
 
 #[tokio::test]
-async fn public_routes_need_no_session_or_csrf() {
+async fn public_writes_need_a_csrf_header_but_no_session() {
     each_migrated_backend(async |db: &TestDb| {
         let app = app(db).await;
+        let path = "/admin/api/v1/probe/public";
 
-        let reply = app
-            .send(
-                Method::POST,
-                "/admin/api/v1/probe/public",
-                None,
-                None,
-                Some(json!({})),
-            )
+        let missing = app
+            .send(Method::POST, path, None, None, Some(json!({})))
+            .await;
+        let empty = app
+            .send(Method::POST, path, None, Some(""), Some(json!({})))
+            .await;
+        let any = app
+            .send(Method::POST, path, None, Some("x"), Some(json!({})))
             .await;
 
-        assert_eq!(reply.status, StatusCode::OK, "{}", db.backend);
+        for reply in [&missing, &empty] {
+            assert_eq!(
+                (reply.status, reply.code()),
+                (StatusCode::FORBIDDEN, "csrf_failed")
+            );
+        }
+        assert_eq!(any.status, StatusCode::OK, "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn cross_site_writes_are_refused_on_public_and_authenticated_routes() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let ada = app.console("ada", Role::Admin).await;
+        let host = [("host", "console.local:8443")];
+        let cases: [(&[(&str, &str)], StatusCode); 7] = [
+            (&[("sec-fetch-site", "cross-site")], StatusCode::FORBIDDEN),
+            (&[("sec-fetch-site", "same-site")], StatusCode::FORBIDDEN),
+            (
+                &[
+                    ("sec-fetch-site", "same-origin"),
+                    ("origin", "https://evil.test"),
+                ],
+                StatusCode::OK,
+            ),
+            (&[("sec-fetch-site", "none")], StatusCode::OK),
+            (
+                &[("origin", "https://evil.test"), host[0]],
+                StatusCode::FORBIDDEN,
+            ),
+            (&[("origin", "null"), host[0]], StatusCode::FORBIDDEN),
+            (
+                &[("origin", "https://console.local:8443"), host[0]],
+                StatusCode::OK,
+            ),
+        ];
+        for (extra, expected) in cases {
+            let admin = common::request(
+                Method::POST,
+                "/admin/api/v1/probe/admin",
+                &common::auth_headers(&ada, extra),
+                Some(json!({})),
+            );
+            let mut public_headers = vec![("x-deskhaven-csrf", "x")];
+            public_headers.extend_from_slice(extra);
+            let public = common::request(
+                Method::POST,
+                "/admin/api/v1/probe/public",
+                &public_headers,
+                Some(json!({})),
+            );
+            for (route, req) in [("admin", admin), ("public", public)] {
+                let reply = app.raw(req).await;
+                assert_eq!(reply.status, expected, "{} {route} {extra:?}", db.backend);
+                if expected == StatusCode::FORBIDDEN {
+                    assert_eq!(reply.code(), "csrf_failed");
+                }
+            }
+        }
+        // Reads are not subject to the check.
+        let read = app
+            .raw(common::request(
+                Method::GET,
+                "/admin/api/v1/me",
+                &common::auth_headers(&ada, &[("sec-fetch-site", "cross-site")]),
+                None,
+            ))
+            .await;
+        assert_eq!(read.status, StatusCode::OK);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn split_permissions_on_one_path_are_enforced_per_method() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        let olga = app.console("olga", Role::Owner).await;
+        let path = "/admin/api/v1/probe/split";
+
+        let user_get = app.get(path, &uma).await;
+        let user_head = app
+            .send(Method::HEAD, path, Some(&uma.cookie), None, None)
+            .await;
+        let user_post = app.write(Method::POST, path, &uma, json!({})).await;
+        let owner_post = app.write(Method::POST, path, &olga, json!({})).await;
+
+        assert_eq!(user_get.body, json!({ "read": true }), "{}", db.backend);
+        assert_eq!(user_head.status, StatusCode::OK);
+        assert_eq!(
+            (user_post.status, user_post.code()),
+            (StatusCode::FORBIDDEN, "forbidden")
+        );
+        assert_eq!(owner_post.body, json!({ "written": true }));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn head_runs_under_the_get_gate() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        let ada = app.console("ada", Role::Admin).await;
+        let path = "/admin/api/v1/probe/secret";
+
+        let anonymous = app.send(Method::HEAD, path, None, None, None).await;
+        let user = app
+            .send(Method::HEAD, path, Some(&uma.cookie), None, None)
+            .await;
+        let admin = app
+            .send(Method::HEAD, path, Some(&ada.cookie), None, None)
+            .await;
+
+        assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED, "{}", db.backend);
+        assert_eq!(user.status, StatusCode::FORBIDDEN);
+        assert_eq!(admin.status, StatusCode::OK);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unserved_methods_pass_the_gate_before_the_405() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        let path = "/admin/api/v1/me";
+
+        let anonymous = app.send(Method::DELETE, path, None, Some("x"), None).await;
+        let no_csrf = app
+            .send(Method::DELETE, path, Some(&uma.cookie), None, None)
+            .await;
+        let signed_in = app.write(Method::DELETE, path, &uma, json!({})).await;
+
+        assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED, "{}", db.backend);
+        assert_eq!(no_csrf.code(), "csrf_failed");
+        assert_eq!(
+            (signed_in.status, signed_in.code()),
+            (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed")
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn duplicate_session_cookies_are_401() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        let olga = app.console("olga", Role::Owner).await;
+        let both = format!("{}; {}", uma.cookie, olga.cookie);
+
+        let one_header = app
+            .send(Method::GET, "/admin/api/v1/me", Some(&both), None, None)
+            .await;
+        let two_headers = app
+            .raw(common::request(
+                Method::GET,
+                "/admin/api/v1/me",
+                &[
+                    ("cookie", uma.cookie.as_str()),
+                    ("cookie", olga.cookie.as_str()),
+                ],
+                None,
+            ))
+            .await;
+
+        for reply in [one_header, two_headers] {
+            assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{}", db.backend);
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn cookie_spraying_is_rate_limited_per_address() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let uma = app.console("uma", Role::User).await;
+        // Warm the cache: a cached valid session is never throttled.
+        assert_eq!(
+            app.get("/admin/api/v1/me", &uma).await.status,
+            StatusCode::OK
+        );
+
+        let mut limited = None;
+        for i in 0..40 {
+            let guess = format!("{SESSION_COOKIE}={:A>43}", i);
+            let reply = app
+                .send(Method::GET, "/admin/api/v1/me", Some(&guess), None, None)
+                .await;
+            if reply.status == StatusCode::TOO_MANY_REQUESTS {
+                limited = Some(reply);
+                break;
+            }
+            assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{i}");
+        }
+
+        let limited = limited.unwrap_or_else(|| panic!("{}: never rate limited", db.backend));
+        assert_eq!(limited.code(), "rate_limited");
+        assert!(limited.headers.contains_key("retry-after"));
+        assert_eq!(
+            app.get("/admin/api/v1/me", &uma).await.status,
+            StatusCode::OK
+        );
     })
     .await;
 }

@@ -95,7 +95,8 @@ pub async fn start(
 ) -> anyhow::Result<Started> {
     // An unguarded admin route (no permission declared) must stop startup before any port
     // is bound or the database is touched.
-    let admin_routes = deskhaven_admin_api::api_routes()?;
+    let admin_routes =
+        deskhaven_admin_api::api_routes()?.trusted_origins(http::trusted_origins(config));
     let http = http::http_config(config, drain_timeout);
     http.validate()?;
     let listeners = Listeners::bind(&http::listen_config(&config.listen)).await?;

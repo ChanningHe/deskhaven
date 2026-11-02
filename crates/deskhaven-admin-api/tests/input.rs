@@ -157,6 +157,32 @@ async fn pagination_has_defaults_bounds_and_the_list_shape() {
 }
 
 #[tokio::test]
+async fn rejection_reason_is_bounded() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = harness(db, probe::routes()).await;
+        let uma = app.console("uma", Role::User).await;
+        let long_field = "x".repeat(2_000);
+
+        let reply = app
+            .write(
+                Method::POST,
+                SELF_WRITE,
+                &uma,
+                json!({ "name": "box", "count": 1, long_field: true }),
+            )
+            .await;
+
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        let reason = reply.body["error"]["details"]["reason"].as_str().unwrap();
+        assert!(
+            reason.chars().count() <= deskhaven_admin_api::MAX_REASON_CHARS,
+            "{reason}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn unknown_admin_paths_are_enveloped_404() {
     each_migrated_backend(async |db: &TestDb| {
         let app = harness(db, probe::routes()).await;
