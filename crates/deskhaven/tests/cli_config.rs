@@ -8,6 +8,11 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// Appended to configs that run `config check`: the signal server's fixed
+/// default ports would collide between parallel probes (and with a running
+/// server); its probe has a test of its own (serve_signal.rs).
+const NO_SIGNAL: &str = "[signal]\nenabled = false\n";
+
 fn workdir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("cli_config")
@@ -96,10 +101,11 @@ fn check_fails_on_unknown_file_key() {
     );
 }
 
-/// Own data_dir and an OS-assigned port: `config check` probes both.
+/// Own data_dir and an OS-assigned port: `config check` probes both; no
+/// signal server ([`NO_SIGNAL`]).
 fn isolated_config(dir: &Path, extra: &str) -> String {
     format!(
-        "data_dir = \"{}\"\n{extra}\n[listen]\nclient_api = \"127.0.0.1:0\"\n",
+        "data_dir = \"{}\"\n{extra}\n[listen]\nclient_api = \"127.0.0.1:0\"\n{NO_SIGNAL}",
         dir.join("data").display()
     )
 }
@@ -170,7 +176,7 @@ fn check_fails_when_a_listen_port_is_in_use() {
     let taken = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = taken.local_addr().unwrap();
     let config = format!(
-        "data_dir = \"{}\"\n[listen]\nclient_api = \"{addr}\"\n",
+        "data_dir = \"{}\"\n[listen]\nclient_api = \"{addr}\"\n{NO_SIGNAL}",
         dir.join("data").display()
     );
     std::fs::write(dir.join("deskhaven.toml"), config).unwrap();
@@ -237,7 +243,7 @@ fn check_reports_every_failed_check() {
     let dir = workdir("all_checks");
     let taken = TcpListener::bind("127.0.0.1:0").unwrap();
     let config = format!(
-        "data_dir = \"{}\"\n[listen]\nclient_api = \"{}\"\n",
+        "data_dir = \"{}\"\n[listen]\nclient_api = \"{}\"\n{NO_SIGNAL}",
         dir.join("data").display(),
         taken.local_addr().unwrap()
     );

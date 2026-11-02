@@ -34,12 +34,13 @@ fn run(dir: &Path, args: &[&str]) -> Output {
 }
 
 /// `--config none.toml` must exist: defaults, except an OS-assigned client
-/// API port so the port check of parallel `config check` runs never collides.
+/// API port and no signal server so the port check of parallel `config check`
+/// runs never collides.
 fn prepare(name: &str) -> (PathBuf, PathBuf) {
     let dir = workdir(name);
     std::fs::write(
         dir.join("none.toml"),
-        "[listen]\nclient_api = \"127.0.0.1:0\"\n",
+        "[listen]\nclient_api = \"127.0.0.1:0\"\n\n[signal]\nenabled = false\n",
     )
     .unwrap();
     let data = dir.join("data");
