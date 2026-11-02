@@ -3,6 +3,7 @@
 //! Every endpoint is contract-tested by fixtures in `tests/contract`
 //! (crate `deskhaven-contract`, which this crate must never depend on).
 
+mod auth;
 mod error;
 mod login_options;
 mod stack_error;
@@ -13,6 +14,7 @@ use axum::Router;
 use axum::routing::get;
 use deskhaven_core::state::AppState;
 
+pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError};
 pub use stack_error::render_stack_error;
 
