@@ -50,6 +50,13 @@ pub(crate) enum Data {
     // deskhaven: (list the health check ran on, healthy subset); applied only while that
     // list is still current.
     RelayServers(Arc<RelayServers>, RelayServers),
+    // deskhaven: result of resolving the configured list (`relay_config`) off the loop;
+    // applied only while that list is still current.
+    RelayResolved {
+        config: Arc<RelayServers>,
+        accepted: RelayServers,
+        rejected: RelayServers,
+    },
 }
 
 const REG_TIMEOUT: i64 = 30_000;
@@ -64,6 +71,9 @@ pub(crate) type Receiver = mpsc::UnboundedReceiver<Data>;
 static ROTATION_RELAY_SERVER: AtomicUsize = AtomicUsize::new(0);
 type RelayServers = Vec<String>;
 const CHECK_RELAY_TIMEOUT: u64 = 3_000;
+// deskhaven: hard cap on IP_BLOCKER entries (one per client IP seen in the last day); see
+// `check_ip_block`.
+const MAX_IP_BLOCK_ENTRIES: usize = 100_000;
 // deskhaven: the ALWAYS_USE_RELAY static became the per-instance `always_use_relay` field.
 
 // Store punch hole requests
@@ -131,6 +141,14 @@ pub(crate) struct RendezvousServer {
     tx: Sender,
     relay_servers: Arc<RelayServers>,
     relay_servers0: Arc<RelayServers>,
+    // deskhaven: the configured relay list (initial config or last handle update); its
+    // resolvable entries are `relay_servers0`.
+    relay_config: Arc<RelayServers>,
+    // deskhaven: configured entries that did not resolve on the last attempt, retried on the
+    // timer while non-empty; `None` until the first attempt.
+    relay_unresolved: Option<RelayServers>,
+    // deskhaven: a resolution of `relay_config` is in flight (no overlapping retries).
+    relay_resolving: bool,
     // deskhaven: `rendezvous_servers` removed with the ConfigureUpdate backdoor.
     inner: Arc<Inner>,
     always_use_relay: Arc<AtomicBool>,
@@ -224,9 +242,10 @@ impl RendezvousServer {
 
     // deskhaven: construction split out of `start_with_bind`; configuration comes from
     // `SignalConfig` instead of env vars. The deprecated `-s` serial and `-R`
-    // rendezvous-servers are gone. The initial relay list is resolved asynchronously here,
-    // before the server loop starts; unresolvable entries are dropped and logged (upstream).
-    // An empty `local_ip` means auto-detect, like upstream `get_arg_or`.
+    // rendezvous-servers are gone. No DNS here: the initial relay list starts out unresolved
+    // and is resolved by the first timer tick in `io_loop`, i.e. after the listeners are bound
+    // and off the loop (`on_tick`). An empty `local_ip` means auto-detect, like upstream
+    // `get_arg_or`.
     async fn new(
         cfg: &SignalConfig,
         tx: Sender,
@@ -242,13 +261,25 @@ impl RendezvousServer {
                 .map(|x| x.to_string())
                 .unwrap_or_default(),
         };
-        let (relay_servers, _rejected) = resolve_servers(&cfg.relay_servers, "relay-servers").await;
-        let mut rs = Self {
+        let relay_config: RelayServers = cfg
+            .relay_servers
+            .iter()
+            .filter(|x| !x.is_empty())
+            .cloned()
+            .collect();
+        let rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             pm,
             tx,
             relay_servers: Default::default(),
             relay_servers0: Default::default(),
+            relay_unresolved: if relay_config.is_empty() {
+                Some(Vec::new())
+            } else {
+                None
+            },
+            relay_config: Arc::new(relay_config),
+            relay_resolving: false,
             inner: Arc::new(Inner {
                 sk: cfg.secret_key.clone(),
                 mask,
@@ -260,8 +291,36 @@ impl RendezvousServer {
         };
         log::info!("mask: {:?}", rs.inner.mask);
         log::info!("local-ip: {:?}", rs.inner.local_ip);
-        rs.apply_relay_servers(relay_servers);
         Ok(rs)
+    }
+
+    // deskhaven: the timer branch of `io_loop`, split out so tests can drive it. Prunes
+    // IP_BLOCKER (upstream only pruned from the console's `ib`), starts the relay health check
+    // (upstream), and (re)resolves the configured relay list while entries are unresolved.
+    async fn on_tick(&mut self) {
+        prune_ip_blocks(&mut *IP_BLOCKER.lock().await, Instant::now());
+        if self.relay_servers0.len() > 1 {
+            let rs = self.relay_servers0.clone();
+            let tx = self.tx.clone();
+            self.tasks.spawn(async move {
+                check_relay_servers(rs, tx).await;
+            });
+        }
+        let pending = self.relay_unresolved.as_ref().is_none_or(|x| !x.is_empty());
+        if pending && !self.relay_resolving {
+            self.relay_resolving = true;
+            let config = self.relay_config.clone();
+            let tx = self.tx.clone();
+            self.tasks.spawn(async move {
+                let (accepted, rejected) = resolve_servers(&config, RESOLVE_TIMEOUT).await;
+                tx.send(Data::RelayResolved {
+                    config,
+                    accepted,
+                    rejected,
+                })
+                .ok();
+            });
+        }
     }
 
     async fn io_loop(
@@ -277,15 +336,7 @@ impl RendezvousServer {
         loop {
             tokio::select! {
                 _ = timer_check_relay.tick() => {
-                    // deskhaven: IP_BLOCKER pruning (upstream only pruned from console `ib`).
-                    prune_ip_blocks(&mut *IP_BLOCKER.lock().await, Instant::now());
-                    if self.relay_servers0.len() > 1 {
-                        let rs = self.relay_servers0.clone();
-                        let tx = self.tx.clone();
-                        self.tasks.spawn(async move {
-                            check_relay_servers(rs, tx).await;
-                        });
-                    }
+                    self.on_tick().await;
                 }
                 Some(data) = rx.recv() => {
                     self.handle_data(data, socket).await;
@@ -363,6 +414,30 @@ impl RendezvousServer {
                     self.relay_servers = Arc::new(rs);
                 }
             }
+            Data::RelayResolved {
+                config,
+                accepted,
+                rejected,
+            } => {
+                self.relay_resolving = false;
+                if Arc::ptr_eq(&config, &self.relay_config) {
+                    self.apply_resolved_config(accepted, rejected);
+                }
+            }
+        }
+    }
+
+    // deskhaven: applies a resolution of the configured list. An unchanged result keeps the
+    // current health-checked subset; unresolved entries stay queued for the next tick.
+    fn apply_resolved_config(&mut self, accepted: RelayServers, rejected: RelayServers) {
+        if !rejected.is_empty() && self.relay_unresolved.as_ref() != Some(&rejected) {
+            log::warn!("relay-servers not resolvable yet, retrying every 3 s: {rejected:?}");
+        }
+        self.relay_unresolved = Some(rejected);
+        if accepted != *self.relay_servers0 {
+            log::info!("relay-servers={accepted:?}");
+            self.relay_servers0 = Arc::new(accepted);
+            self.relay_servers = self.relay_servers0.clone();
         }
     }
 
@@ -876,46 +951,59 @@ impl RendezvousServer {
         Ok(())
     }
 
-    // NOTE: `prune_ip_blocks` (free function below the impl) bounds this map.
+    // deskhaven: body moved to the free function `check_ip_block` (testable, with a cap).
     async fn check_ip_blocker(&self, ip: &str, id: &str) -> bool {
-        let mut lock = IP_BLOCKER.lock().await;
-        let now = Instant::now();
-        if let Some(old) = lock.get_mut(ip) {
-            let counter = &mut old.0;
-            if counter.1.elapsed().as_secs() > IP_BLOCK_DUR {
-                counter.0 = 0;
-            } else if counter.0 > 30 {
-                return false;
-            }
-            counter.0 += 1;
-            counter.1 = now;
-
-            let counter = &mut old.1;
-            let is_new = counter.0.get(id).is_none();
-            if counter.1.elapsed().as_secs() > DAY_SECONDS {
-                counter.0.clear();
-            } else if counter.0.len() > 300 {
-                return !is_new;
-            }
-            if is_new {
-                counter.0.insert(id.to_owned());
-            }
-            counter.1 = now;
-        } else {
-            lock.insert(ip.to_owned(), ((0, now), (Default::default(), now)));
-        }
-        true
+        check_ip_block(&mut *IP_BLOCKER.lock().await, ip, id, MAX_IP_BLOCK_ENTRIES)
     }
 
     // deskhaven: was `parse_relay_servers(&str)`. Takes a list that is already resolved and
     // validated (`resolve_servers`, off the server loop) instead of a comma-separated string
-    // resolved with blocking DNS here. The loopback console (`check_cmd`) that followed here
-    // was removed: unauthenticated, and its `aur` command overwrote the relay list with "Y"/"N".
+    // resolved with blocking DNS here; it replaces the configured list, so nothing is left to
+    // retry. The loopback console (`check_cmd`) that followed here was removed:
+    // unauthenticated, and its `aur` command overwrote the relay list with "Y"/"N".
     fn apply_relay_servers(&mut self, relay_servers: RelayServers) {
+        self.relay_config = Arc::new(relay_servers.clone());
+        self.relay_unresolved = Some(Vec::new());
         self.relay_servers0 = Arc::new(relay_servers);
         self.relay_servers = self.relay_servers0.clone();
     }
+}
 
+// deskhaven: upstream `check_ip_blocker` body, unchanged except for the cap: when the map
+// already holds `max_entries` IPs, a new IP is refused (TOO_FREQUENT) without an insert, so the
+// map stays bounded between prunes. Known IPs keep their normal accounting.
+fn check_ip_block(lock: &mut IpBlockMap, ip: &str, id: &str, max_entries: usize) -> bool {
+    let now = Instant::now();
+    if let Some(old) = lock.get_mut(ip) {
+        let counter = &mut old.0;
+        if counter.1.elapsed().as_secs() > IP_BLOCK_DUR {
+            counter.0 = 0;
+        } else if counter.0 > 30 {
+            return false;
+        }
+        counter.0 += 1;
+        counter.1 = now;
+
+        let counter = &mut old.1;
+        let is_new = counter.0.get(id).is_none();
+        if counter.1.elapsed().as_secs() > DAY_SECONDS {
+            counter.0.clear();
+        } else if counter.0.len() > 300 {
+            return !is_new;
+        }
+        if is_new {
+            counter.0.insert(id.to_owned());
+        }
+        counter.1 = now;
+    } else if lock.len() >= max_entries {
+        return false;
+    } else {
+        lock.insert(ip.to_owned(), ((0, now), (Default::default(), now)));
+    }
+    true
+}
+
+impl RendezvousServer {
     fn get_relay_server(&self, _pa: IpAddr, _pb: IpAddr) -> String {
         if self.relay_servers.is_empty() {
             return "".to_owned();
@@ -1282,9 +1370,15 @@ mod tests {
 
     // deskhaven (M1-03): relay settings changed through `SignalHandle` (replacing the removed
     // console `rs` / `aur` commands) reach relay selection and the punch-hole decision.
+    // TEST-NET-1 addresses (RFC 5737): never reachable, so health probes never succeed.
     const PEER_ID: &str = "relay-test-peer";
-    const RELAY_A: &str = "10.0.0.1:21117";
-    const RELAY_B: &str = "10.0.0.2:21117";
+    const RELAY_INIT: &str = "192.0.2.9:21117";
+    const RELAY_A: &str = "192.0.2.1:21117";
+    const RELAY_B: &str = "192.0.2.2:21117";
+    const RELAY_C: &str = "192.0.2.3:21117";
+    const RELAY_D: &str = "192.0.2.4:21117";
+    /// Rejected without DNS (invalid port).
+    const UNRESOLVABLE: &str = "bad host:x";
 
     struct Fixture {
         rs: RendezvousServer,
@@ -1295,9 +1389,9 @@ mod tests {
         key: String,
     }
 
-    async fn fixture() -> Fixture {
+    async fn fixture_with(relay_servers: &[&str]) -> Fixture {
         let cfg = crate::SignalConfig {
-            relay_servers: vec!["10.9.9.9:21117".to_owned()],
+            relay_servers: relay_servers.iter().map(|s| (*s).to_owned()).collect(),
             punch_req_max: 0, // keep the process-wide PUNCH_REQS untouched
             ..crate::SignalConfig::new(sign::gen_keypair().1)
         };
@@ -1322,11 +1416,46 @@ mod tests {
         }
     }
 
+    /// A fixture whose initial relay list has been resolved (first timer tick).
+    async fn fixture() -> Fixture {
+        let mut f = fixture_with(&[RELAY_INIT]).await;
+        f.tick_and_resolve().await;
+        f
+    }
+
     impl Fixture {
         /// Delivers queued handle updates the way `io_loop` does.
         async fn pump(&mut self) {
             while let Ok(data) = self.rx.try_recv() {
                 self.rs.handle_data(data, &mut self.socket).await;
+            }
+        }
+
+        /// Runs one timer tick and delivers everything up to the resulting relay resolution.
+        async fn tick_and_resolve(&mut self) {
+            self.rs.on_tick().await;
+            loop {
+                let data = timeout(5_000, self.rx.recv()).await.unwrap().unwrap();
+                let resolved = matches!(data, Data::RelayResolved { .. });
+                self.rs.handle_data(data, &mut self.socket).await;
+                if resolved {
+                    return;
+                }
+            }
+        }
+
+        fn relays(&self) -> Vec<String> {
+            (*self.rs.relay_servers).clone()
+        }
+
+        /// A pick is always one of the current relays (the rotation cursor is process-wide,
+        /// so the exact order is not asserted).
+        fn assert_picks_from_relays(&self) {
+            let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+            let relays = self.relays();
+            for _ in 0..relays.len() * 2 {
+                let pick = self.rs.get_relay_server(ip, ip);
+                assert!(relays.contains(&pick), "{pick} not in {relays:?}");
             }
         }
 
@@ -1363,29 +1492,22 @@ mod tests {
     #[hbb_common::tokio::test]
     async fn relay_servers_set_via_handle_drive_relay_selection() {
         let mut f = fixture().await;
+        assert_eq!(f.relays(), [RELAY_INIT]);
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert_eq!(f.rs.get_relay_server(ip, ip), "10.9.9.9:21117");
+        assert_eq!(f.rs.get_relay_server(ip, ip), RELAY_INIT);
 
         f.handle
             .set_relay_servers(vec![RELAY_A.to_owned(), String::new(), RELAY_B.to_owned()])
             .await
             .unwrap();
         f.pump().await;
-
-        let picks: std::collections::HashSet<String> =
-            (0..4).map(|_| f.rs.get_relay_server(ip, ip)).collect();
-        let expected = [RELAY_A.to_owned(), RELAY_B.to_owned()]
-            .into_iter()
-            .collect();
-        assert_eq!(
-            picks, expected,
-            "round-robin over the new list, empty entry dropped"
-        );
+        assert_eq!(f.relays(), [RELAY_A, RELAY_B], "empty entry dropped");
+        f.assert_picks_from_relays();
 
         let peer_addr = f.online_peer().await;
         let (ph, to) = f.punch().await;
         assert_eq!(to, Some(peer_addr));
-        assert!(expected.contains(&ph.relay_server), "{}", ph.relay_server);
+        assert!(f.relays().contains(&ph.relay_server), "{}", ph.relay_server);
 
         f.handle.set_relay_servers(Vec::new()).await.unwrap();
         f.pump().await;
@@ -1416,15 +1538,6 @@ mod tests {
         assert_eq!(ph.nat_type, NatType::ASYMMETRIC.into());
     }
 
-    fn picks(rs: &RendezvousServer) -> std::collections::HashSet<String> {
-        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        (0..4).map(|_| rs.get_relay_server(ip, ip)).collect()
-    }
-
-    fn set_of(servers: &[&str]) -> std::collections::HashSet<String> {
-        servers.iter().map(|s| (*s).to_owned()).collect()
-    }
-
     // deskhaven (M1-03): a health-check result computed from a list that has since been
     // replaced must not resurrect the old servers.
     #[hbb_common::tokio::test]
@@ -1437,8 +1550,6 @@ mod tests {
         f.pump().await;
         let checked = f.rs.relay_servers0.clone(); // a check of [A, B] starts
 
-        const RELAY_C: &str = "10.0.0.3:21117";
-        const RELAY_D: &str = "10.0.0.4:21117";
         f.handle
             .set_relay_servers(vec![RELAY_C.to_owned(), RELAY_D.to_owned()])
             .await
@@ -1446,18 +1557,62 @@ mod tests {
         f.tx.send(Data::RelayServers(checked, vec![RELAY_A.to_owned()]))
             .unwrap();
         f.pump().await;
-        assert_eq!(
-            picks(&f.rs),
-            set_of(&[RELAY_C, RELAY_D]),
-            "A/B never come back"
-        );
+        assert_eq!(f.relays(), [RELAY_C, RELAY_D], "A/B never come back");
 
         // A result for the current list still applies.
         let current = f.rs.relay_servers0.clone();
         f.tx.send(Data::RelayServers(current, vec![RELAY_D.to_owned()]))
             .unwrap();
         f.pump().await;
-        assert_eq!(picks(&f.rs), set_of(&[RELAY_D]));
+        assert_eq!(f.relays(), [RELAY_D]);
+    }
+
+    // deskhaven (M1-03): the initial relay list is resolved on the timer, not in `new` (so the
+    // listeners are up before any DNS), and entries that do not resolve are retried on later
+    // ticks instead of being dropped for good.
+    #[hbb_common::tokio::test]
+    async fn initial_relays_resolve_on_timer_and_unresolved_entries_are_retried() {
+        let mut f = fixture_with(&[RELAY_INIT, UNRESOLVABLE]).await;
+        assert!(f.relays().is_empty(), "nothing is resolved in new");
+
+        f.tick_and_resolve().await;
+        assert_eq!(f.relays(), [RELAY_INIT]);
+        assert_eq!(f.rs.relay_unresolved, Some(vec![UNRESOLVABLE.to_owned()]));
+
+        // A health-check result narrowed the list; an unchanged retry must not undo it.
+        f.rs.relay_servers = Arc::new(Vec::new());
+        f.tick_and_resolve().await; // the retry runs again
+        assert!(f.relays().is_empty(), "health-check result kept");
+        assert_eq!(
+            f.rs.relay_unresolved,
+            Some(vec![UNRESOLVABLE.to_owned()]),
+            "still retried"
+        );
+    }
+
+    // deskhaven (M1-03): a retry of the initial list still in flight when the handle replaces
+    // the list must not restore the initial entries.
+    #[hbb_common::tokio::test]
+    async fn stale_initial_resolution_is_ignored() {
+        let mut f = fixture_with(&[RELAY_INIT, UNRESOLVABLE]).await;
+        let config = f.rs.relay_config.clone();
+        f.handle
+            .set_relay_servers(vec![RELAY_A.to_owned()])
+            .await
+            .unwrap();
+        f.tx.send(Data::RelayResolved {
+            config,
+            accepted: vec![RELAY_INIT.to_owned()],
+            rejected: vec![UNRESOLVABLE.to_owned()],
+        })
+        .unwrap();
+        f.pump().await;
+        assert_eq!(f.relays(), [RELAY_A]);
+        assert_eq!(
+            f.rs.relay_unresolved,
+            Some(Vec::new()),
+            "no retry of the old list"
+        );
     }
 
     // deskhaven (M1-03): an empty `local_ip` means auto-detect, like upstream `get_arg_or`.
@@ -1512,5 +1667,30 @@ mod tests {
 
         prune_ip_blocks(&mut map, later + day + Duration::from_secs(1));
         assert!(map.is_empty(), "both windows expired for all");
+    }
+
+    // deskhaven (M1-03): IP_BLOCKER is capped; when full, new IPs are refused (TOO_FREQUENT)
+    // without an insert, while known IPs keep their normal accounting.
+    #[test]
+    fn ip_block_cap_refuses_new_ips_only() {
+        const CAP: usize = 2;
+        let mut map: IpBlockMap = HashMap::new();
+        assert!(check_ip_block(&mut map, "1.1.1.1", "id1", CAP));
+        assert!(check_ip_block(&mut map, "2.2.2.2", "id2", CAP));
+
+        assert!(
+            !check_ip_block(&mut map, "3.3.3.3", "id3", CAP),
+            "full: new ip refused"
+        );
+        assert!(!map.contains_key("3.3.3.3"), "and not inserted");
+
+        assert!(
+            check_ip_block(&mut map, "1.1.1.1", "id1", CAP),
+            "known ip unaffected"
+        );
+        assert_eq!(map.len(), CAP);
+
+        map.remove("2.2.2.2"); // pruning frees a slot
+        assert!(check_ip_block(&mut map, "3.3.3.3", "id3", CAP));
     }
 }

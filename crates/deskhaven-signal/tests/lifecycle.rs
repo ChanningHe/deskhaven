@@ -31,8 +31,10 @@ const READY_POLL: Duration = Duration::from_millis(20);
 const START_ATTEMPTS: usize = 10;
 /// How long to wait for a datagram that must NOT arrive.
 const QUIET: Duration = Duration::from_millis(500);
-/// Upper bound for an `.invalid` lookup to fail (resolver timeouts on offline hosts).
-const DNS_STEP: Duration = Duration::from_secs(30);
+/// Upper bound for an `.invalid` lookup to fail (the server's per-lookup timeout is 3 s).
+const DNS_STEP: Duration = Duration::from_secs(10);
+/// Listening must not wait for relay DNS (well under the 3 s resolve timeout).
+const LISTEN_PROMPTLY: Duration = Duration::from_secs(2);
 
 fn config(port: u16) -> SignalConfig {
     SignalConfig {
@@ -262,8 +264,40 @@ async fn loopback_configure_update_has_no_effect() {
     stop(server).await;
 }
 
+/// Startup binds every listener before resolving the initial relay list, so an unresolvable
+/// relay cannot delay listening (it is retried on the timer).
 #[tokio::test]
-async fn relay_update_resolves_off_the_server_loop() {
+async fn unresolvable_initial_relay_does_not_delay_listening() {
+    // Arrange
+    let port = free_base_port();
+    let cfg = SignalConfig {
+        relay_servers: vec!["relay.invalid".to_owned(), "192.0.2.1".to_owned()],
+        ..config(port)
+    };
+    let shutdown = CancellationToken::new();
+    let started = tokio::time::Instant::now();
+
+    // Act
+    let task = tokio::spawn(run(cfg, shutdown.clone()));
+    let ready = wait_until_ready(port, &task).await;
+
+    // Assert
+    assert!(ready, "run ended early: {:?}", task.await);
+    assert!(
+        started.elapsed() < LISTEN_PROMPTLY,
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(register_peer_udp(port).await);
+    shutdown.cancel();
+    let res = timeout(STEP, task).await.expect("run returns promptly");
+    assert!(matches!(res, Ok(Ok(()))), "{res:?}");
+}
+
+/// The handle resolves on the caller's task: all-or-nothing, the rejected entries are named,
+/// and the server keeps serving meanwhile.
+#[tokio::test]
+async fn relay_update_rejects_unresolvable_entries_and_keeps_serving() {
     // Arrange
     let server = start().await;
     let port = server.port;

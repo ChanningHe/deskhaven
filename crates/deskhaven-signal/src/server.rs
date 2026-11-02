@@ -2,7 +2,7 @@
 //! of the signal server. Replaces upstream's command line, environment variables, process
 //! signal handling and loopback console.
 
-use crate::common::resolve_servers;
+use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
 use crate::tasks::Tasks;
 use hbb_common::{
@@ -47,10 +47,10 @@ pub struct SignalConfig {
     /// Relay address for LAN peers when `mask` is set (upstream `LOCAL_IP`). `None` or empty:
     /// the detected local IP. A string because it stands in for a `relay_servers` entry.
     pub local_ip: Option<String>,
-    /// Initial relay servers, `host[:port]` (upstream `-r`), resolved asynchronously when `run`
-    /// starts; entries that are empty or do not resolve are dropped (and logged) so a transient
-    /// DNS failure cannot prevent startup. Change at runtime with
-    /// [`SignalHandle::set_relay_servers`].
+    /// Initial relay servers, `host[:port]` (upstream `-r`); empty entries are dropped. They
+    /// are resolved off the server loop after the listeners are bound (each lookup bounded by
+    /// 3 s); entries that do not resolve are logged, left out, and retried every 3 s until they
+    /// do or the list is replaced with [`SignalHandle::set_relay_servers`].
     pub relay_servers: Vec<String>,
     /// Force relayed connections (upstream `ALWAYS_USE_RELAY`). Change at runtime with
     /// [`SignalHandle::set_always_use_relay`].
@@ -185,18 +185,25 @@ impl SignalHandle {
     }
 
     /// Replaces the relay list (`host[:port]`). Every entry is resolved here, on the caller's
-    /// task, never on the server loop; empty entries are dropped. If any entry does not resolve
-    /// nothing is applied and [`SignalError::RelayServersRejected`] names them; otherwise the
-    /// accepted list is returned and connections accepted afterwards use it.
+    /// task, never on the server loop: concurrently, each bounded by a 3 s timeout; empty
+    /// entries are dropped. If any entry does not resolve in time nothing is applied and
+    /// [`SignalError::RelayServersRejected`] names them; otherwise the accepted list is
+    /// returned and connections accepted afterwards use it.
+    ///
+    /// Concurrent callers must be serialized by the caller (the control plane does): two
+    /// overlapping calls are applied in the order their lookups finish, not the order they
+    /// were made.
     pub async fn set_relay_servers(
         &self,
         servers: Vec<String>,
     ) -> Result<Vec<String>, SignalError> {
         self.ensure_running()?;
-        let (accepted, rejected) = resolve_servers(&servers, "relay-servers").await;
+        let (accepted, rejected) = resolve_servers(&servers, RESOLVE_TIMEOUT).await;
         if !rejected.is_empty() {
+            log::warn!("relay-servers rejected (do not resolve): {rejected:?}");
             return Err(SignalError::RelayServersRejected { rejected });
         }
+        log::info!("relay-servers={accepted:?}");
         self.tx
             .send(Data::RelayServers0(accepted.clone()))
             .map_err(|_| SignalError::Stopped)?;

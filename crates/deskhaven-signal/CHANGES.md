@@ -207,3 +207,28 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   cancellation). `///` docs added for `SignalServer::{new, handle}` and every `SignalError`
   variant. `common` is now a private module; its unused `parse_bind_address` (with its test)
   and `now` are removed, and the unused `MessageField` import is dropped.
+- 2026-11-02, M1-03, relay resolution bounds (re-review): `common::resolve_servers(servers,
+  limit)` resolves all entries concurrently (`join_all`), each lookup bounded by
+  `RESOLVE_TIMEOUT` (3 s); a timeout counts as rejected. It no longer logs (callers do). The
+  lookup is injectable (`resolve_servers_with`) for tests.
+- 2026-11-02, M1-03, startup order and retry (re-review): `RendezvousServer::new` does no DNS.
+  The configured relay list is kept as `relay_config` (empty entries dropped) and resolved by
+  the timer branch of `io_loop`, now `on_tick` (the first tick fires right after the listeners
+  are bound), in a tracked task that reports `Data::RelayResolved { config, accepted, rejected }`.
+  Entries that do not resolve stay in `relay_unresolved` and are retried every tick (3 s), one
+  resolution at a time (`relay_resolving`), until they resolve or the handle replaces the list;
+  this supersedes the earlier "dropped and logged" behavior for initial entries. A result is
+  applied only while `relay_config` is the list it was computed from (`Arc::ptr_eq`), and an
+  unchanged result leaves the health-checked `relay_servers` alone. A warning is logged when
+  the unresolved set changes. `apply_relay_servers` (handle path) also resets `relay_config`
+  and clears the retry queue.
+- 2026-11-02, M1-03, IP_BLOCKER hard cap (re-review): the body of `check_ip_blocker` moved
+  unchanged into the free function `check_ip_block(map, ip, id, max_entries)`, plus a cap: when
+  the map already holds `MAX_IP_BLOCK_ENTRIES` (100000) IPs, a `RegisterPk` from a new IP gets
+  TOO_FREQUENT and nothing is inserted; known IPs keep their normal accounting, and pruning
+  still runs on the timer.
+- 2026-11-02, M1-03, docs and tests (re-review): `SignalHandle::set_relay_servers` documents
+  the 3 s per-entry timeout and that concurrent callers must be serialized by the caller (the
+  control plane does). Relay-selection tests assert the relay list itself instead of sampling
+  the process-wide rotation cursor, and use TEST-NET-1 (192.0.2.0/24) addresses so health
+  probes never connect.
