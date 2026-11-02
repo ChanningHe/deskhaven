@@ -324,3 +324,17 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `RendezvousServer::serve` after binding and reset when `run` returns (a dropped `run` future
   closes the channel, which also reads as not serving). The embedding process gates startup
   and readiness on it.
+- 2026-11-02, M1-06, review fixes (`server.rs`, `rendezvous_server.rs`): `SignalServer::run`
+  runs the server loop under `catch_unwind`, so a panic no longer skips `tasks.shutdown()` (a
+  registration writer still flushing would have raced a restarted instance or the embedder's
+  database close); the panic becomes `SignalError::Internal("signal server panicked: …")`,
+  which the embedder restarts like any error. The serving flag is reset as soon as the loop
+  ends, before the drain, so readiness drops at once. New `SignalHandle::stopped()` resolves
+  once `run` has returned (drain included) or its future was dropped. New cargo feature
+  `testing` (dev-only for embedders): `SignalHandle::inject_fault(Fault::{Error, Panic})`
+  makes the server loop fail through a `Data::Inject` message (compiled only with the feature
+  or in this crate's tests).
+- 2026-11-02, M1-06, relay list semantics (documented): the initial list of a (re)start uses
+  every entry that resolves and retries the others on the timer (M1-03), while a runtime
+  update through `SignalHandle::set_relay_servers` is all or nothing (one unresolvable entry
+  rejects the update and the previous list stays). The embedder retries a rejected update.

@@ -61,6 +61,9 @@ pub(crate) enum Data {
         accepted: RelayServers,
         rejected: RelayServers,
     },
+    // deskhaven (M1-06): test-only fault injection into the server loop.
+    #[cfg(any(test, feature = "testing"))]
+    Inject(crate::server::Fault),
 }
 
 const REG_TIMEOUT: i64 = 30_000;
@@ -176,6 +179,9 @@ enum LoopFailure {
     Listener3,
     Listener2,
     Listener,
+    // deskhaven (M1-06): `Fault::Error` injected by a test.
+    #[cfg(any(test, feature = "testing"))]
+    Injected,
 }
 
 impl RendezvousServer {
@@ -257,6 +263,10 @@ impl RendezvousServer {
                     LoopFailure::Listener3 => {
                         drop(listener3);
                         listener3 = bind_tcp(bind_addr, ports.ws).await?;
+                    }
+                    #[cfg(any(test, feature = "testing"))]
+                    LoopFailure::Injected => {
+                        return Err(SignalError::internal("injected failure"));
                     }
                 }
             }
@@ -369,6 +379,14 @@ impl RendezvousServer {
                     self.on_tick().await;
                 }
                 Some(data) = rx.recv() => {
+                    #[cfg(any(test, feature = "testing"))]
+                    #[allow(clippy::panic)]
+                    if let Data::Inject(fault) = &data {
+                        match fault {
+                            crate::server::Fault::Error => return LoopFailure::Injected,
+                            crate::server::Fault::Panic => panic!("injected panic"),
+                        }
+                    }
                     self.handle_data(data, socket).await;
                 }
                 res = socket.next() => {
@@ -444,6 +462,8 @@ impl RendezvousServer {
                     self.relay_servers.store(Arc::new(rs));
                 }
             }
+            #[cfg(any(test, feature = "testing"))]
+            Data::Inject(_) => {} // handled in `io_loop`
             Data::RelayResolved {
                 config,
                 accepted,

@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Test-only fault injection (`SignalHandle::inject_fault`) for embedders' supervision tests.
+testing = []
+
 [dependencies]
 # Relay list shared lock-free by the server loop and every connection task (M1-06).
 arc-swap.workspace = true

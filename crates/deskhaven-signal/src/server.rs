@@ -8,7 +8,9 @@ use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
 use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
-    anyhow, log,
+    anyhow,
+    futures::FutureExt as _,
+    log,
     tokio::{
         self,
         sync::{mpsc, watch},
@@ -17,7 +19,9 @@ use hbb_common::{
 use ipnetwork::Ipv4Network;
 use sodiumoxide::crypto::sign;
 use std::{
+    any::Any,
     net::IpAddr,
+    panic::AssertUnwindSafe,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -215,6 +219,24 @@ impl SignalHandle {
         self.serving.has_changed().is_ok() && *self.serving.borrow()
     }
 
+    /// Waits until the server's `run` has returned (every task it spawned finished, the
+    /// registration writer included) or its future was dropped; at once if it never ran
+    /// because the [`SignalServer`] was dropped.
+    pub async fn stopped(&self) {
+        let mut serving = self.serving.clone();
+        // Never true: resolves when the last sender (dropped as `run` returns) is gone.
+        let _ = serving.wait_for(|_| false).await;
+    }
+
+    /// Test-only: makes the running server fail as if it hit `fault`.
+    #[cfg(any(test, feature = "testing"))]
+    #[doc(hidden)]
+    pub fn inject_fault(&self, fault: Fault) -> Result<(), SignalError> {
+        self.tx
+            .send(Data::Inject(fault))
+            .map_err(|_| SignalError::Stopped)
+    }
+
     /// Waits until the server is serving; [`SignalError::Stopped`] if its `run` ends first
     /// (or already ended, or never started because the [`SignalServer`] was dropped).
     pub async fn serving(&self) -> Result<(), SignalError> {
@@ -267,6 +289,17 @@ impl SignalHandle {
         }
         Ok(())
     }
+}
+
+/// Test-only faults for [`SignalHandle::inject_fault`] (feature `testing`).
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// The server loop returns an internal error, like a failed rebind.
+    Error,
+    /// The server loop panics.
+    Panic,
 }
 
 /// A configured server that is not running yet.
@@ -328,9 +361,16 @@ impl SignalServer {
         let _stop_on_drop = stop.clone().drop_guard();
         let tasks = Tasks::new(stop);
         let serving = self.serving.clone();
-        let res = self.serve_until(ports, tasks.clone(), &shutdown).await;
-        tasks.shutdown().await;
+        // deskhaven (M1-06): a panic of the server loop must not skip the drain below (a
+        // registration writer still flushing would race a restarted instance or the
+        // database close); it becomes an internal error, which the embedder restarts.
+        let res = AssertUnwindSafe(self.serve_until(ports, tasks.clone(), &shutdown))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|panic| Err(SignalError::internal(panic_message(&*panic))));
+        // Not serving any more from here on (readiness drops before the drain).
         serving.send_replace(false);
+        tasks.shutdown().await;
         res
     }
 
@@ -368,6 +408,15 @@ impl SignalServer {
             }
         }
     }
+}
+
+fn panic_message(panic: &(dyn Any + Send)) -> String {
+    let text = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string payload");
+    format!("signal server panicked: {text}")
 }
 
 /// [`SignalServer::run`] for callers that never change relay settings at runtime.
@@ -430,5 +479,116 @@ mod tests {
             !debug.contains(&secret) && debug.contains("****"),
             "{debug}"
         );
+    }
+
+    // deskhaven (M1-06): a panicking server loop still drains before `run` returns (the
+    // registration writer finishes its in-flight write), readiness drops before that drain,
+    // `stopped` resolves only after it, and the panic becomes an internal error.
+    #[hbb_common::tokio::test]
+    async fn panic_in_the_server_loop_drains_before_run_returns() {
+        use crate::store::{PeerRecord, PeerUpsert};
+        use hbb_common::protobuf::Message as _;
+        use hbb_common::rendezvous_proto::{RegisterPk, RendezvousMessage};
+        use std::sync::atomic::AtomicUsize;
+
+        /// Every write takes `WRITE`; counts writes started and finished.
+        #[derive(Default)]
+        struct SlowStore {
+            started: AtomicUsize,
+            finished: AtomicUsize,
+        }
+        const WRITE: Duration = Duration::from_millis(1500);
+        #[async_trait::async_trait]
+        impl PeerStore for SlowStore {
+            async fn load_page(
+                &self,
+                _: Option<&str>,
+                _: usize,
+            ) -> Result<Vec<PeerRecord>, StoreError> {
+                Ok(Vec::new())
+            }
+            async fn get(&self, _: &str) -> Result<Option<PeerRecord>, StoreError> {
+                Ok(None)
+            }
+            async fn upsert_pk(&self, _: &PeerUpsert) -> Result<(), StoreError> {
+                self.started.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(WRITE).await;
+                self.finished.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        async fn until(cond: impl Fn() -> bool) {
+            for _ in 0..250 {
+                if cond() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            panic!("condition never held");
+        }
+
+        // Arrange: a serving server with a registration write in flight.
+        let localhost = IpAddr::from([127, 0, 0, 1]);
+        let store = Arc::new(SlowStore::default());
+        let (handle, task, port) = loop {
+            let port = std::net::TcpListener::bind((localhost, 0))
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+            let cfg = SignalConfig {
+                bind: Some(localhost),
+                ..cfg(port)
+            };
+            let server = SignalServer::new(cfg, store.clone(), Arc::new(crate::AllowAll::new()));
+            let handle = server.handle();
+            let task = tokio::spawn(server.run(CancellationToken::new()));
+            if handle.serving().await.is_ok() {
+                break (handle, task, port);
+            }
+            assert!(matches!(task.await.unwrap(), Err(SignalError::Bind { .. })));
+        };
+        let mut msg = RendezvousMessage::new();
+        msg.set_register_pk(RegisterPk {
+            id: "123456789".to_owned(),
+            uuid: b"uuid".to_vec().into(),
+            pk: vec![1; 32].into(),
+            ..Default::default()
+        });
+        let udp = tokio::net::UdpSocket::bind((localhost, 0)).await.unwrap();
+        udp.send_to(&msg.write_to_bytes().unwrap(), (localhost, port))
+            .await
+            .unwrap();
+        until(|| store.started.load(Ordering::SeqCst) == 1).await;
+
+        // Act
+        handle.inject_fault(Fault::Panic).unwrap();
+
+        // Assert
+        until(|| !handle.is_serving()).await;
+        assert_eq!(
+            store.finished.load(Ordering::SeqCst),
+            0,
+            "not ready before the drain"
+        );
+        let stopped = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.stopped().await }
+        });
+        let res = tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.finished.load(Ordering::SeqCst), 1, "writer drained");
+        match res {
+            Err(err @ SignalError::Internal(_)) => {
+                assert!(format!("{:?}", err).contains("injected panic"), "{err:?}")
+            }
+            other => panic!("expected an internal error, got {other:?}"),
+        }
+        tokio::time::timeout(Duration::from_secs(1), stopped)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
