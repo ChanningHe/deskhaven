@@ -24,10 +24,16 @@ tokio = { workspace = true, features = ["net", "signal"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json", "tracing-log"] }
+# signal peer store adapter (M1-05)
+deskhaven-signal = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 base64_022 = { workspace = true }
 tempfile = { workspace = true }
+deskhaven-db = { workspace = true, features = ["testing"] }
+hbb_common = { workspace = true }
+sodiumoxide = { workspace = true }
 
 # umask, flock on the instance lock; tests also send signals with it.
 [target.'cfg(unix)'.dependencies]

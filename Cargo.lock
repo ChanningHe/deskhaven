@@ -1182,6 +1182,7 @@ name = "deskhaven"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "clap 4.6.7",
@@ -1191,11 +1192,14 @@ dependencies = [
  "deskhaven-core",
  "deskhaven-db",
  "deskhaven-http",
+ "deskhaven-signal",
  "deskhaven-web",
+ "hbb_common",
  "rustix 1.1.6",
  "rustls",
  "sea-orm",
  "serde_json",
+ "sodiumoxide",
  "tempfile",
  "tokio",
  "tokio-util",

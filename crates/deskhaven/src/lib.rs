@@ -15,6 +15,7 @@ pub mod log_safe;
 pub mod logging;
 pub mod serve;
 pub mod shutdown;
+pub mod signal_store;
 pub mod startup;
 
 use anyhow::anyhow;
