@@ -5,15 +5,18 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::mirror::{
-    AbPeer, AuthBody, ClientUserPayload, ErrorBody, HbbData, HeartbeatResponse, LoginOptions,
-    LoginResponse, OidcAuthUrl, PagedResponse, SecondFactorChallenge,
+    AbPeer, AbPersonal, AbProfile, AbSettings, AbTag, AuthBody, ClientUserPayload, ErrorBody,
+    HbbData, HeartbeatResponse, LoginOptions, LoginResponse, OidcAuthUrl, PagedResponse,
+    SecondFactorChallenge,
 };
 
 /// Parses a response body; `Err` is serde's message (with line/column).
 pub type ShapeCheck = fn(&[u8]) -> Result<(), String>;
 
-/// Types the Rust client reads through `HbbHttpResponse` are registered as
-/// `HbbData<T>` (object only, no top-level `error` key).
+/// Types the Rust client reads through `HbbHttpResponse`, and the address book
+/// bodies Flutter refuses when they contain an `error` key
+/// (`flutter/lib/models/ab_model.dart:244-247`), are registered as `HbbData<T>`
+/// (object only, no top-level `error` key).
 const SHAPES: &[(&str, ShapeCheck)] = &[
     ("AuthBody", parse::<HbbData<AuthBody>>),
     ("ClientUserPayload", object::<ClientUserPayload>),
@@ -22,8 +25,18 @@ const SHAPES: &[(&str, ShapeCheck)] = &[
     ("LoginOptions", parse::<LoginOptions>),
     ("LoginResponse", object::<LoginResponse>),
     ("OidcAuthUrl", parse::<HbbData<OidcAuthUrl>>),
-    ("PagedResponse<AbPeer>", object::<PagedResponse<AbPeer>>),
     ("SecondFactorChallenge", object::<SecondFactorChallenge>),
+    ("AbPersonal", parse::<HbbData<AbPersonal>>),
+    ("AbSettings", parse::<HbbData<AbSettings>>),
+    (
+        "PagedResponse<AbPeer>",
+        parse::<HbbData<PagedResponse<AbPeer>>>,
+    ),
+    (
+        "PagedResponse<AbProfile>",
+        parse::<HbbData<PagedResponse<AbProfile>>>,
+    ),
+    ("Vec<AbTag>", parse::<Vec<AbTag>>),
     (
         "PagedResponse<ClientUserPayload>",
         object::<PagedResponse<ClientUserPayload>>,

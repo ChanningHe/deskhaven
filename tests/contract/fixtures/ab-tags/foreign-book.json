@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1499-1545"],
+  "description": "Another user's shared book (not shared with this user): 404, as for a book that does not exist.",
+  "seed": ["client-session", "ab-foreign"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/tags/${foreign_shared_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": { "status": 404, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Address book not found" } }
+}

@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1834-1856"],
+  "description": "PUT {name, color} changes a tag's colour (Color.value, an ARGB int). Success is 200 with an empty body.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "PUT",
+    "path": "/api/ab/tag/update/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "name": "work", "color": 4278255360 } }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

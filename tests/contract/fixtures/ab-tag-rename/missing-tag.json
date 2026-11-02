@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1805-1832"],
+  "description": "Renaming a tag the book does not have: 404 'Tag not found'.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "PUT",
+    "path": "/api/ab/tag/rename/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "old": "nope", "new": "office" } }
+  },
+  "expect": { "status": 404, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Tag not found" } }
+}

@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1776-1803"],
+  "description": "Rule 1 cannot add tags: 403.",
+  "seed": ["client-session", "ab-shared-read"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/tag/add/${read_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "name": "db", "color": 4294198070 } }
+  },
+  "expect": { "status": 403, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Permission denied" } }
+}

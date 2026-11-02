@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1432-1497"],
+  "description": "A guid no book has: 404 with the same message as a book out of reach (foreign-book.json).",
+  "seed": ["client-session"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peers?current=1&pageSize=100&ab=00000000-0000-7000-8000-000000000000",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": { "status": 404, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Address book not found" } }
+}

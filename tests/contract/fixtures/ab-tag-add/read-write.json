@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1776-1803"],
+  "description": "POST {name, color} adds a tag (one request per tag); color is the ARGB int value. Success is 200 with an empty body.",
+  "seed": ["client-session", "ab-shared-write"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/tag/add/${write_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "name": "db", "color": 4294198070 } }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

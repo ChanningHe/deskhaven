@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1548-1578", "flutter/lib/models/ab_model.dart:1392-1408"],
+  "description": "Rule 3 (full control) includes writing peers.",
+  "seed": ["client-session", "ab-shared-full"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peer/add/${full_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "333333333" } }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

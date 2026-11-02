@@ -1,0 +1,11 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:220-228", "flutter/lib/models/ab_model.dart:262-292"],
+  "description": "No bearer token: 401, on which the client resets its login (never 404, which would mean legacy mode).",
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/personal",
+    "headers": { "content-type": "application/json" }
+  },
+  "expect": { "status": 401, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Unauthorized" } }
+}

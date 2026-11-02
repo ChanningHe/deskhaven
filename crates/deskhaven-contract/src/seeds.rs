@@ -23,6 +23,7 @@ use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{Credential, NewUser, Password, Status};
 
+use crate::ab_seeds;
 use crate::app::DEFAULT_PEER;
 
 /// Output name → value, substituted into `${name}` placeholders.
@@ -42,6 +43,20 @@ const BUILTIN: &[(&str, Seed)] = &[
     }),
     ("totp-user", |state| Box::pin(totp_user(state))),
     ("tfa-enforce-all", |state| Box::pin(tfa_enforce_all(state))),
+    ("ab-personal", |state| Box::pin(ab_seeds::personal(state))),
+    ("ab-shared-read", |state| {
+        Box::pin(ab_seeds::shared_read(state))
+    }),
+    ("ab-shared-write", |state| {
+        Box::pin(ab_seeds::shared_write(state))
+    }),
+    ("ab-shared-full", |state| {
+        Box::pin(ab_seeds::shared_full(state))
+    }),
+    ("ab-foreign", |state| Box::pin(ab_seeds::foreign(state))),
+    ("ab-one-peer-max", |state| {
+        Box::pin(ab_seeds::one_peer_max(state))
+    }),
 ];
 
 /// `client-session` / `local-user` values (fixed, so fixtures may also spell

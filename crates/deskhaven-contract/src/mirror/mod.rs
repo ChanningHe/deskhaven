@@ -23,7 +23,7 @@ mod hbb;
 
 use serde::Deserialize;
 
-pub use ab::{AbPeer, PagedResponse};
+pub use ab::{AbPeer, AbPersonal, AbProfile, AbRule, AbSettings, AbTag, PagedResponse};
 pub use account::{
     AuthBody, ChallengeUser, ClientUserPayload, ClientUserStatus, DeviceInfo, LoginOptions,
     LoginResponse, OidcAuthUrl, SecondFactorChallenge, UserInfo, WhitelistItem,

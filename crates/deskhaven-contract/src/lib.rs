@@ -9,6 +9,7 @@
 //! (`tests/no_production_dependents.rs`): a server that deserializes its own
 //! responses with its own types proves nothing.
 
+pub mod ab_seeds;
 pub mod app;
 pub mod check;
 pub mod fixture;

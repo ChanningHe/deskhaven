@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1548-1578", "flutter/lib/models/ab_model.dart:2002-2026"],
+  "description": "Rule 1 (read-only): the client hides write actions, but the server refuses on its own: 403 with an error the client shows.",
+  "seed": ["client-session", "ab-shared-read"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peer/add/${read_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "333333333" } }
+  },
+  "expect": { "status": 403, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Permission denied" } }
+}

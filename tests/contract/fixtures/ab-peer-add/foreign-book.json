@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1548-1578"],
+  "description": "Writing to a book out of reach is a 404 like a missing book (not a 403, which would reveal it exists).",
+  "seed": ["client-session", "ab-foreign"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peer/add/${foreign_shared_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "333333333" } }
+  },
+  "expect": { "status": 404, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Address book not found" } }
+}

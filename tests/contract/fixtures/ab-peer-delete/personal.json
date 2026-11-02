@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1752-1774"],
+  "description": "DELETE with a JSON list of ids; ids not in the book are ignored. Success is 200 with an empty body.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "DELETE",
+    "path": "/api/ab/peer/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": ["111111111", "not-there"] }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

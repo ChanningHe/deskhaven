@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:295-356"],
+  "description": "No reachable shared book (another user's books exist): {total: 0, data: []}; the client shows only the personal book.",
+  "seed": ["client-session", "ab-foreign"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/shared/profiles?current=1&pageSize=100",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": { "status": 200, "body_kind": "json", "shape": "PagedResponse<AbProfile>", "json_subset": { "total": 0, "data": [] } }
+}

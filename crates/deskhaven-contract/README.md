@@ -77,6 +77,15 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
      previous step's code, so the current and next codes still log in);
      outputs `totp_secret` (base32) and `recovery_code`.
    - `tfa-enforce-all`: sets `auth.tfa.enforce` to `all`.
+   - Address books (after `client-session`; `src/ab_seeds.rs`):
+     `ab-personal` (alice's personal book with peer `111111111` and tag
+     `work`; outputs `personal_guid`), `ab-shared-read` / `ab-shared-write` /
+     `ab-shared-full` (admin-managed `Team Read` / `Team Write` / `Team Full`
+     granted to alice at rule 1 / 2 / 3, each with peer `222222222` and tag
+     `ops`; outputs `read_guid` / `write_guid` / `full_guid`), `ab-foreign`
+     (user `bob` with a personal and an owned shared book; outputs
+     `foreign_personal_guid`, `foreign_shared_guid`), `ab-one-peer-max`
+     (`addressbook.max_peers` = 1).
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 

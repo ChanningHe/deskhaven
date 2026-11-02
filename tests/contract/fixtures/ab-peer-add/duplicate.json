@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1548-1578", "flutter/lib/models/ab_model.dart:380-382"],
+  "description": "The id is already in the book (the client checks locally first; a stale list or a second client gets here): an error, the existing entry is untouched.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peer/add/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "111111111" } }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "Peer already exists" } }
+}

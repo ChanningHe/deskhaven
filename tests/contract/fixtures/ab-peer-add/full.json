@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1548-1578", "src/lang/en.rs:169"],
+  "description": "The book already holds addressbook.max_peers peers (1 here): refused with the client's own wording for that case (exceed_max_devices).",
+  "seed": ["client-session", "ab-personal", "ab-one-peer-max"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peer/add/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "333333333" } }
+  },
+  "expect": { "status": 400, "body_kind": "json", "shape": "ErrorBody", "json_subset": { "error": "You have reached the maximum number of managed devices." } }
+}

@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1499-1545", "flutter/lib/common/hbbs/hbbs.dart:277-286"],
+  "description": "Tags of a book: a JSON list (not a page) of {name, color}, color an ARGB int (0xFF0000FF here).",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/tags/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": { "status": 200, "body_kind": "json", "shape": "Vec<AbTag>", "json_subset": [ { "name": "work", "color": 4278190335 } ] }
+}

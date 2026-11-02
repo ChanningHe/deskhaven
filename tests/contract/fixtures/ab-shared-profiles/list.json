@@ -1,0 +1,24 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:295-356", "flutter/lib/common/hbbs/hbbs.dart:258-275", "flutter/lib/models/ab_model.dart:1392-1408"],
+  "description": "Shared books the user can reach, by name, each with the user's rule (1 read-only, 2 read/write, 3 full control); books of other users stay out. The client pages with current/pageSize=100 until current*pageSize >= total; owner is '' for admin-managed books.",
+  "seed": ["client-session", "ab-shared-read", "ab-shared-write", "ab-shared-full", "ab-foreign"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/shared/profiles?current=1&pageSize=100",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<AbProfile>",
+    "json_subset": {
+      "total": 3,
+      "data": [
+        { "name": "Team Full", "owner": "", "note": "Team Full note", "rule": 3 },
+        { "name": "Team Read", "owner": "", "note": "Team Read note", "rule": 1 },
+        { "name": "Team Write", "owner": "", "note": "Team Write note", "rule": 2 }
+      ]
+    }
+  }
+}

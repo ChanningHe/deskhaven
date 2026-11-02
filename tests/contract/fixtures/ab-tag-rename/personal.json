@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1805-1832", "flutter/lib/models/ab_model.dart:508-520"],
+  "description": "PUT {old, new} renames a tag (also in the peers' tag lists; the client pulls the book afterwards). Success is 200 with an empty body.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "PUT",
+    "path": "/api/ab/tag/rename/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "old": "work", "new": "office" } }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

@@ -1,0 +1,27 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1432-1497", "flutter/lib/models/peer_model.dart:33-48", "src/client.rs:4776-4800"],
+  "description": "Peers of the personal book: the client-computed hash comes back (used for auto-login), never a password; forceAlwaysRelay is the string 'true' (the client compares with 'true'); an unknown field the client once sent is echoed back verbatim.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "POST",
+    "path": "/api/ab/peers?current=1&pageSize=100&ab=${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<AbPeer>",
+    "json_subset": {
+      "total": 1,
+      "data": [
+        {
+          "id": "111111111", "hash": "seed-hash", "alias": "office", "tags": ["work"],
+          "forceAlwaysRelay": "true", "note": "", "username": "", "hostname": "", "platform": "",
+          "rdpPort": "", "rdpUsername": "", "loginName": "", "futureField": { "kept": true }
+        }
+      ]
+    },
+    "json_absent": ["/data/0/password", "/error"]
+  }
+}

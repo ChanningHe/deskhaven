@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/ab_model.dart:1581-1680", "flutter/lib/models/ab_model.dart:1682-1720"],
+  "description": "PUT {id, <some fields>} (alias, note, tags, hash, username/hostname/platform from recent sessions): only the given fields change. Success is 200 with an empty body.",
+  "seed": ["client-session", "ab-personal"],
+  "request": {
+    "method": "PUT",
+    "path": "/api/ab/peer/update/${personal_guid}",
+    "headers": { "authorization": "Bearer ${session_token}", "content-type": "application/json" },
+    "body": { "json": { "id": "111111111", "alias": "renamed", "hash": "new-hash" } }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}
