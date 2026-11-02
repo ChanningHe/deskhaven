@@ -160,7 +160,77 @@
     "username": "Username",
     "password": "Password",
     "submit": "Sign in",
-    "notice": "Sign-in is not available in this preview build."
+    "signingIn": "Signing in…",
+    "orContinueWith": "or",
+    "oidcButton": "Sign in with {{name}}",
+    "totpTitle": "Two-factor authentication",
+    "totpDescription": "Enter the code from your authenticator app, or one of your recovery codes.",
+    "code": "Code",
+    "codeHint": "6 digits, or a recovery code like abcde-fghij",
+    "verify": "Verify",
+    "back": "Back",
+    "setupPending": "This server has no owner yet. Open the one-time setup link from the server log, or create a new one with `deskhaven admin create-setup-link`."
+  },
+  "insecure": {
+    "title": "This connection is not secure",
+    "description": "The console only works over HTTPS: on plain HTTP the browser discards the sign-in cookies, so you would be signed out right away.",
+    "proxy": "Put deskhaven behind an HTTPS reverse proxy (and list the proxy in security.trusted_proxies), or",
+    "tunnel": "reach it through an SSH tunnel and open http://localhost:21114:"
+  },
+  "oidc": {
+    "completing": "Signing you in…",
+    "failedTitle": "Single sign-on failed",
+    "backToLogin": "Back to sign-in",
+    "reasons": {
+      "denied": "The sign-in was cancelled or denied at the identity provider.",
+      "unavailable": "The identity provider is unavailable. Try again later.",
+      "invalid_token": "The identity provider's answer could not be verified.",
+      "no_linked_account": "No account is linked to this identity. Sign in with your password and link it under My account.",
+      "disabled": "This account is disabled.",
+      "unverified": "This account is not verified yet.",
+      "provisioning_failed": "No account could be created for this identity.",
+      "expired": "This sign-in link expired or was opened in another browser. Start again from the sign-in page."
+    }
+  },
+  "setup": {
+    "title": "Set up deskhaven",
+    "description": "Create the owner account of this server.",
+    "steps": {
+      "account": "Owner",
+      "publicUrl": "Public URL",
+      "done": "Done"
+    },
+    "missingToken": "Open the one-time setup link printed in the server log (it ends in #token=…), or create a new one with `deskhaven admin create-setup-link`.",
+    "completed": "This server is already set up.",
+    "username": "Username",
+    "displayName": "Display name",
+    "email": "Email",
+    "optional": "Optional",
+    "password": "Password",
+    "confirmPassword": "Repeat password",
+    "passwordMismatch": "The passwords do not match.",
+    "create": "Create owner",
+    "publicUrlHint": "Clients and identity providers reach this server at its public URL (public_url in deskhaven.toml or DESKHAVEN_PUBLIC_URL; a restart applies it). Single sign-on and the client configuration need it.",
+    "publicUrlUnset": "Not set",
+    "next": "Next",
+    "doneDescription": "The owner account is ready. Client configuration (server address and key) is under Client setup in the console.",
+    "openConsole": "Open the console"
+  },
+  "accountSetup": {
+    "passwordTitle": "Choose a new password",
+    "passwordDescription": "Your password was set by an administrator. Replace it before you continue.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Repeat new password",
+    "change": "Change password",
+    "totpTitle": "Set up two-factor authentication",
+    "totpDescription": "This server requires a second factor. Scan the code with an authenticator app, then enter the code it shows.",
+    "qrLabel": "QR code for your authenticator app",
+    "manual": "Or enter this key manually:",
+    "code": "Code from the app",
+    "enable": "Enable",
+    "recoveryTitle": "Recovery codes",
+    "recoveryDescription": "Each code signs you in once if you lose your authenticator. Keep them somewhere safe."
   },
   "notFound": {
     "title": "Page not found",

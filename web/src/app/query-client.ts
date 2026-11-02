@@ -28,7 +28,7 @@ export interface QueryClientOptions {
    * Called when any query or mutation fails with 403, with the failing query's
    * key (undefined for mutations). The app re-checks the session's role.
    */
-  onForbidden?: (failedQueryKey: QueryKey | undefined) => void
+  onForbidden?: (failedQueryKey: QueryKey | undefined, error: unknown) => void
 }
 
 export function createQueryClient({
@@ -38,7 +38,7 @@ export function createQueryClient({
   const handleError = (error: unknown, failedQueryKey: QueryKey | undefined) => {
     const status = httpStatusOf(error)
     if (status === HTTP_UNAUTHORIZED) onUnauthorized?.()
-    if (status === HTTP_FORBIDDEN) onForbidden?.(failedQueryKey)
+    if (status === HTTP_FORBIDDEN) onForbidden?.(failedQueryKey, error)
   }
 
   return new QueryClient({

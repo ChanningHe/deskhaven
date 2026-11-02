@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppAddressBooksRouteImport } from './routes/_app/address-books'
@@ -24,6 +25,9 @@ import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppStrategiesRouteImport } from './routes/_app/strategies'
 import { Route as AppTokensRouteImport } from './routes/_app/tokens'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
+import { Route as AccountPasswordRouteImport } from './routes/account.password'
+import { Route as AccountTwoFactorRouteImport } from './routes/account.two-factor'
+import { Route as LoginOidcRouteImport } from './routes/login_.oidc'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -32,6 +36,11 @@ const AppRoute = AppRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -99,10 +108,26 @@ const AppUsersRoute = AppUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppRoute,
 } as any)
+const AccountPasswordRoute = AccountPasswordRouteImport.update({
+  id: '/account/password',
+  path: '/account/password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountTwoFactorRoute = AccountTwoFactorRouteImport.update({
+  id: '/account/two-factor',
+  path: '/account/two-factor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginOidcRoute = LoginOidcRouteImport.update({
+  id: '/login_/oidc',
+  path: '/login/oidc',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/$': typeof AppSplatRoute
   '/address-books': typeof AppAddressBooksRoute
   '/audit': typeof AppAuditRoute
@@ -115,9 +140,13 @@ export interface FileRoutesByFullPath {
   '/strategies': typeof AppStrategiesRoute
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
+  '/account/password': typeof AccountPasswordRoute
+  '/account/two-factor': typeof AccountTwoFactorRoute
+  '/login/oidc': typeof LoginOidcRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/$': typeof AppSplatRoute
   '/address-books': typeof AppAddressBooksRoute
   '/audit': typeof AppAuditRoute
@@ -130,12 +159,16 @@ export interface FileRoutesByTo {
   '/strategies': typeof AppStrategiesRoute
   '/tokens': typeof AppTokensRoute
   '/users': typeof AppUsersRoute
+  '/account/password': typeof AccountPasswordRoute
+  '/account/two-factor': typeof AccountTwoFactorRoute
+  '/login/oidc': typeof LoginOidcRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/_app/$': typeof AppSplatRoute
   '/_app/address-books': typeof AppAddressBooksRoute
   '/_app/audit': typeof AppAuditRoute
@@ -148,6 +181,9 @@ export interface FileRoutesById {
   '/_app/strategies': typeof AppStrategiesRoute
   '/_app/tokens': typeof AppTokensRoute
   '/_app/users': typeof AppUsersRoute
+  '/account/password': typeof AccountPasswordRoute
+  '/account/two-factor': typeof AccountTwoFactorRoute
+  '/login_/oidc': typeof LoginOidcRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -155,6 +191,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/setup'
     | '/$'
     | '/address-books'
     | '/audit'
@@ -167,9 +204,13 @@ export interface FileRouteTypes {
     | '/strategies'
     | '/tokens'
     | '/users'
+    | '/account/password'
+    | '/account/two-factor'
+    | '/login/oidc'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/setup'
     | '/$'
     | '/address-books'
     | '/audit'
@@ -182,11 +223,15 @@ export interface FileRouteTypes {
     | '/strategies'
     | '/tokens'
     | '/users'
+    | '/account/password'
+    | '/account/two-factor'
+    | '/login/oidc'
     | '/'
   id:
     | '__root__'
     | '/_app'
     | '/login'
+    | '/setup'
     | '/_app/$'
     | '/_app/address-books'
     | '/_app/audit'
@@ -199,12 +244,19 @@ export interface FileRouteTypes {
     | '/_app/strategies'
     | '/_app/tokens'
     | '/_app/users'
+    | '/account/password'
+    | '/account/two-factor'
+    | '/login_/oidc'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  SetupRoute: typeof SetupRoute
+  AccountPasswordRoute: typeof AccountPasswordRoute
+  AccountTwoFactorRoute: typeof AccountTwoFactorRoute
+  LoginOidcRoute: typeof LoginOidcRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -221,6 +273,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -314,6 +373,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
     }
+    '/account/password': {
+      id: '/account/password'
+      path: '/account/password'
+      fullPath: '/account/password'
+      preLoaderRoute: typeof AccountPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account/two-factor': {
+      id: '/account/two-factor'
+      path: '/account/two-factor'
+      fullPath: '/account/two-factor'
+      preLoaderRoute: typeof AccountTwoFactorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login_/oidc': {
+      id: '/login_/oidc'
+      path: '/login/oidc'
+      fullPath: '/login/oidc'
+      preLoaderRoute: typeof LoginOidcRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -354,6 +434,10 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  SetupRoute: SetupRoute,
+  AccountPasswordRoute: AccountPasswordRoute,
+  AccountTwoFactorRoute: AccountTwoFactorRoute,
+  LoginOidcRoute: LoginOidcRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

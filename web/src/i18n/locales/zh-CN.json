@@ -160,7 +160,77 @@
     "username": "用户名",
     "password": "密码",
     "submit": "登录",
-    "notice": "当前预览版本尚未开放登录。"
+    "signingIn": "正在登录…",
+    "orContinueWith": "或",
+    "oidcButton": "使用 {{name}} 登录",
+    "totpTitle": "两步验证",
+    "totpDescription": "输入验证器应用中的验证码，或任意一个恢复码。",
+    "code": "验证码",
+    "codeHint": "6 位数字，或形如 abcde-fghij 的恢复码",
+    "verify": "验证",
+    "back": "返回",
+    "setupPending": "此服务器尚无所有者。请打开服务器日志中的一次性初始化链接，或运行 `deskhaven admin create-setup-link` 生成新链接。"
+  },
+  "insecure": {
+    "title": "当前连接不安全",
+    "description": "控制台只能通过 HTTPS 使用：在明文 HTTP 下浏览器会丢弃登录 Cookie，登录后会立即掉线。",
+    "proxy": "将 deskhaven 放在 HTTPS 反向代理之后（并把代理加入 security.trusted_proxies），或",
+    "tunnel": "通过 SSH 隧道访问，然后打开 http://localhost:21114："
+  },
+  "oidc": {
+    "completing": "正在登录…",
+    "failedTitle": "单点登录失败",
+    "backToLogin": "返回登录",
+    "reasons": {
+      "denied": "身份提供方取消或拒绝了登录。",
+      "unavailable": "身份提供方暂时不可用，请稍后重试。",
+      "invalid_token": "无法验证身份提供方的应答。",
+      "no_linked_account": "没有账号关联到此身份。请先用密码登录，并在“我的”中完成绑定。",
+      "disabled": "该账号已被禁用。",
+      "unverified": "该账号尚未验证。",
+      "provisioning_failed": "无法为此身份创建账号。",
+      "expired": "此登录链接已过期，或在另一个浏览器中打开。请从登录页重新开始。"
+    }
+  },
+  "setup": {
+    "title": "初始化 deskhaven",
+    "description": "创建此服务器的所有者账号。",
+    "steps": {
+      "account": "所有者",
+      "publicUrl": "公网地址",
+      "done": "完成"
+    },
+    "missingToken": "请打开服务器日志中打印的一次性初始化链接（以 #token=… 结尾），或运行 `deskhaven admin create-setup-link` 生成新链接。",
+    "completed": "此服务器已完成初始化。",
+    "username": "用户名",
+    "displayName": "显示名称",
+    "email": "邮箱",
+    "optional": "可选",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "passwordMismatch": "两次输入的密码不一致。",
+    "create": "创建所有者",
+    "publicUrlHint": "客户端与身份提供方通过公网地址访问此服务器（deskhaven.toml 中的 public_url 或 DESKHAVEN_PUBLIC_URL，重启后生效）。单点登录与客户端配置都需要它。",
+    "publicUrlUnset": "未设置",
+    "next": "下一步",
+    "doneDescription": "所有者账号已就绪。客户端配置（服务器地址与公钥）位于控制台的“客户端配置”页面。",
+    "openConsole": "进入控制台"
+  },
+  "accountSetup": {
+    "passwordTitle": "设置新密码",
+    "passwordDescription": "当前密码由管理员设置，请先更换后再继续。",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码",
+    "confirmPassword": "确认新密码",
+    "change": "修改密码",
+    "totpTitle": "设置两步验证",
+    "totpDescription": "此服务器要求启用第二因素。请用验证器应用扫描二维码，然后输入应用显示的验证码。",
+    "qrLabel": "供验证器应用扫描的二维码",
+    "manual": "或手动输入以下密钥：",
+    "code": "应用中的验证码",
+    "enable": "启用",
+    "recoveryTitle": "恢复码",
+    "recoveryDescription": "丢失验证器时，每个恢复码可登录一次。请妥善保存。"
   },
   "notFound": {
     "title": "页面不存在",

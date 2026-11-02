@@ -15,6 +15,21 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
+## Web console access
+
+The console's session cookies are `__Host-` + `Secure`, so browsers only keep them on HTTPS
+pages (or on `http://localhost`). deskhaven itself serves plain HTTP; on a plain-HTTP address
+the console refuses to sign in (`insecure_transport`) instead of signing you out right away.
+Reach it in one of these ways:
+
+- **HTTPS reverse proxy** (recommended): terminate TLS in front of deskhaven, set `public_url`
+  (or `listen.admin_public_url` with a split admin listener) to the https address, and list the
+  proxy in `security.trusted_proxies` so its `X-Forwarded-For` / `X-Forwarded-Proto` count.
+- **SSH tunnel**: `ssh -L 21114:127.0.0.1:21114 user@server`, then open `http://localhost:21114`.
+
+First run: while no owner exists, the server logs a one-time link (`/setup#token=…`, valid 24 h)
+to create the owner account; `deskhaven admin create-setup-link` issues a new one.
+
 ## License
 
 [AGPL-3.0-only](LICENSE).

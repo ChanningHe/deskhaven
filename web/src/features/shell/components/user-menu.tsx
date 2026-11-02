@@ -12,12 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useLogout } from '@/features/auth/api'
 import { useMe } from '@/features/auth/session'
 
-// Sign-out only links to /login until the logout endpoint exists (M3-02).
+// Sign-out revokes the session server-side, then drops the cache (M3-02).
 export function UserMenu() {
   const { t } = useTranslation()
   const me = useMe()
+  const logout = useLogout()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -48,7 +50,11 @@ export function UserMenu() {
           <UserRound aria-hidden />
           {t('user.profile')}
         </DropdownMenuItem>
-        <DropdownMenuItem render={<Link to="/login" />}>
+        <DropdownMenuItem
+          onClick={() => {
+            logout.mutate()
+          }}
+        >
           <LogOut aria-hidden />
           {t('user.signOut')}
         </DropdownMenuItem>

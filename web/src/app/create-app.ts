@@ -1,6 +1,8 @@
 import { hashKey } from '@tanstack/react-query'
 import type { RouterHistory } from '@tanstack/react-router'
 
+import { isApiError } from '@/api/api-error'
+
 import { LOGIN_PATH, ME_QUERY_KEY, safeRedirectTarget } from '@/features/auth/session'
 
 import { createQueryClient } from './query-client'
@@ -36,9 +38,14 @@ export function createApp(history?: RouterHistory) {
     },
     // A 403 may mean the role changed (e.g. demoted elsewhere): re-check it so
     // the navigation converges. Not for `me` itself, which would loop.
-    onForbidden: (failedQueryKey) => {
+    // `setup_required` (an account setup step became due, e.g. 2FA was just
+    // enforced): reload `me` and re-run the guards, which go to the setup page.
+    onForbidden: (failedQueryKey, error) => {
       if (failedQueryKey !== undefined && hashKey(failedQueryKey) === ME_KEY_HASH) return
-      void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY })
+      const reloaded = queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY })
+      if (isApiError(error) && error.code === 'setup_required') {
+        void reloaded.then(() => router.invalidate())
+      }
     },
   })
   const router = createAppRouter(queryClient, history)

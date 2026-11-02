@@ -65,7 +65,7 @@ describe('createQueryClient onUnauthorized hook', () => {
 })
 
 describe('createQueryClient onForbidden hook', () => {
-  it('passes the failing query key, and undefined for mutations', async () => {
+  it('passes the failing query key (undefined for mutations) and the error', async () => {
     const onForbidden = vi.fn()
     const client = createQueryClient({ onForbidden })
 
@@ -81,7 +81,10 @@ describe('createQueryClient onForbidden hook', () => {
     })
     await expect(mutation.execute(undefined)).rejects.toThrow()
 
-    expect(onForbidden.mock.calls).toEqual([[['settings']], [undefined]])
+    expect(onForbidden.mock.calls).toEqual([
+      [['settings'], expect.any(HttpError)],
+      [undefined, expect.any(HttpError)],
+    ])
   })
 })
 
