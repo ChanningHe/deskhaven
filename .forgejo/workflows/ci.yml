@@ -33,9 +33,6 @@ env:
   # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_LLVM_COV_VERSION: "0.9.1"
-  # The pnpm of the Nix devshell (flake.lock); web/package.json deliberately has no
-  # packageManager field (see web/README.md).
-  PNPM_VERSION: "12.9.0"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
@@ -65,35 +62,51 @@ jobs:
   # is generated from the committed openapi.json, whose own drift test-sqlite checks.
   web:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    # Major version only: web/package.json requires node >= 24 (engine-strict).
-    container: node:24-bookworm
+    # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
+    # like the rust image above, a digest would also freeze out Debian security
+    # rebuilds of this tag, and the tag already fixes Node itself.
+    container: node:24.21.0-bookworm
+    env:
+      # pnpm comes from web/package.json `packageManager` (version + sha512 of the
+      # tarball, verified by corepack); no interactive download prompt in CI.
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: checkout
         run: |
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
+      # Corepack resolves `packageManager` from the working directory, so every pnpm
+      # step runs inside web/.
       - name: pnpm
+        working-directory: web
         run: |
-          npm install -g --no-fund --no-audit "pnpm@$PNPM_VERSION"
+          corepack enable pnpm
           node --version
           pnpm --version
       # Same as `xtask dist`: dependency install scripts never run.
-      - run: pnpm -C web install --frozen-lockfile --ignore-scripts
-      - run: pnpm -C web lint
-      - run: pnpm -C web typecheck
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: web
+      - run: pnpm lint
+        working-directory: web
+      - run: pnpm typecheck
+        working-directory: web
       # Fails on a key missing from a locale or {{placeholders}} that differ.
-      - run: pnpm -C web i18n:check
-      - run: pnpm -C web test
+      - run: pnpm i18n:check
+        working-directory: web
+      - run: pnpm test
+        working-directory: web
       - name: generated API client matches openapi.json
+        working-directory: web
         run: |
-          pnpm -C web gen:api
-          git status --porcelain -- web/src/api/generated
-          test -z "$(git status --porcelain -- web/src/api/generated)"
+          pnpm gen:api
+          git status --porcelain -- src/api/generated
+          test -z "$(git status --porcelain -- src/api/generated)"
       - name: build (and the committed route tree is current)
+        working-directory: web
         run: |
-          pnpm -C web build
-          git diff --exit-code -- web/src/routeTree.gen.ts
+          pnpm build
+          git diff --exit-code -- src/routeTree.gen.ts
 
   clippy:
     needs: fmt
