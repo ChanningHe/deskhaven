@@ -1,13 +1,20 @@
 # Forgejo Actions CI for deskhaven (Forgejo 15, git.homielab.cc).
 #
+# No JavaScript actions are used: the job image (rust:*-bookworm) has no node, and
+# bare `actions/*` resolution depends on the instance's DEFAULT_ACTIONS_URL. Sources
+# are fetched with plain git (the repository is public; a private repo would need a
+# token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
+#
 # Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}`.
 # To change it, set the repository/org variable CI_RUNNER_LABEL (Settings ->
 # Actions -> Variables) or replace the 'docker' default in every `runs-on`
 # line below. Jobs run inside the `container:` image, so the runner only needs
 # Docker access (label must map to a docker-capable runner).
 #
-# Pipeline: fmt -> clippy -> deny -> test {sqlite, postgres-16, postgres-17} -> coverage.
-# Toolchain comes from rust-toolchain.toml; the image tag below must match its channel.
+# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage.
+# The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
+# Network egress needed: git host, crates.io, Debian mirrors, Docker Hub, and
+# github.com (cargo-deny fetches the RustSec advisory DB from GitHub).
 
 name: ci
 
@@ -21,17 +28,31 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Tool versions, defined once.
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_LLVM_COV_VERSION: "0.9.1"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  RUSTFLAGS: "-D warnings"
+  # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
+  # also covers test code). No global RUSTFLAGS, so `cargo install` of tools is unaffected.
+  #
+  # Checkout inputs: PRs fetch refs/pull/N/head, pushes fetch the commit (ref as fallback).
+  CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+  CI_FETCH_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+  CI_FALLBACK_REF: ${{ github.ref }}
 
 jobs:
   fmt:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
     container: rust:1.99.1-bookworm
     steps:
-      - uses: actions/checkout@v4
-      - run: .forgejo/ci-setup.sh
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      # Toolchain only (rustfmt); no apt packages needed.
+      - run: CI_SKIP_APT=1 .forgejo/ci-setup.sh
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -39,15 +60,11 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
     container: rust:1.99.1-bookworm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            target
-          key: clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: clippy-
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -56,15 +73,12 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
     container: rust:1.99.1-bookworm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            /usr/local/cargo/bin/cargo-deny
-          key: deny-${{ hashFiles('rust-toolchain.toml') }}-cargo-deny-0.20.2
-      - run: .forgejo/ci-setup.sh cargo-deny@0.20.2
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - run: CI_SKIP_APT=1 .forgejo/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
   test-sqlite:
@@ -72,15 +86,11 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
     container: rust:1.99.1-bookworm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            target
-          key: test-sqlite-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: test-sqlite-
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
       # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
       - run: cargo test --workspace --all-targets
@@ -111,20 +121,17 @@ jobs:
       # The DB test helper panics (instead of skipping PG) if the URL is missing.
       DESKHAVEN_TEST_REQUIRE_PG: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            target
-          key: test-pg${{ matrix.pg }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: test-pg${{ matrix.pg }}-
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
       - run: cargo test --workspace --all-targets
 
+  # Runs in parallel with the tests; report only.
   coverage:
-    needs: [test-sqlite, test-postgres]
+    needs: [clippy, deny]
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'docker' }}
     container: rust:1.99.1-bookworm
     services:
@@ -143,17 +150,12 @@ jobs:
       DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
       DESKHAVEN_TEST_REQUIRE_PG: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            /usr/local/cargo/bin/cargo-llvm-cov
-            target
-          key: coverage-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: coverage-
-      - run: .forgejo/ci-setup.sh cargo-llvm-cov
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - run: .forgejo/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
       # Report only until the end of M2. To enforce the gate, append
       # `--fail-under-lines 80` to the command below.
       - run: cargo llvm-cov --workspace --all-targets --summary-only # --fail-under-lines 80
