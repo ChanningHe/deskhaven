@@ -367,7 +367,7 @@ impl RendezvousServer {
         bytes: &BytesMut,
         addr: SocketAddr,
         socket: &mut FramedSocket,
-        key: &str,
+        _key: &str,
     ) -> ResultType<()> {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
@@ -472,14 +472,14 @@ impl RendezvousServer {
                     });
                     socket.send(&msg_out, addr).await?
                 }
-                Some(rendezvous_message::Union::PunchHoleRequest(ph)) => {
+                Some(rendezvous_message::Union::PunchHoleRequest(_ph)) => {
                     // UDP PunchHoleRequest is intentionally unsupported.
                     // The supported client path sends PunchHoleRequest over TCP/WS.
                 }
-                Some(rendezvous_message::Union::PunchHoleSent(phs)) => {
+                Some(rendezvous_message::Union::PunchHoleSent(_phs)) => {
                     // UDP PunchHoleSent is intentionally unsupported to avoid UDP reflection/amplification
                 }
-                Some(rendezvous_message::Union::LocalAddr(la)) => {
+                Some(rendezvous_message::Union::LocalAddr(_la)) => {
                     // UDP LocalAddr is intentionally unsupported to avoid UDP reflection/amplification
                 }
                 Some(rendezvous_message::Union::ConfigureUpdate(mut cu)) => {
@@ -867,7 +867,7 @@ impl RendezvousServer {
                         allow_err!(s.send(Bytes::from(bytes)).await);
                     }
                     Sink::Ws(ws) => {
-                        allow_err!(ws.send(tungstenite::Message::Binary(bytes)).await);
+                        allow_err!(ws.send(tungstenite::Message::Binary(bytes.into())).await);
                     }
                 }
             }
@@ -903,6 +903,7 @@ impl RendezvousServer {
     }
 
     #[inline]
+    #[allow(dead_code)] // upstream disabled the UDP punch path (see handle_udp)
     async fn handle_udp_punch_hole_request(
         &mut self,
         addr: SocketAddr,
@@ -1085,7 +1086,7 @@ impl RendezvousServer {
                 let arg = fds.next();
                 if let Some("-") = arg { lock.clear(); }
                 else {
-                    let mut start = arg.and_then(|x| x.parse::<usize>().ok()).unwrap_or(0);
+                    let start = arg.and_then(|x| x.parse::<usize>().ok()).unwrap_or(0);
                     let mut page_size = fds.next().and_then(|x| x.parse::<usize>().ok()).unwrap_or(10);
                     if page_size == 0 { page_size = 10; }
                     for (_, e) in lock.iter().enumerate().skip(start).take(page_size) {
@@ -1250,7 +1251,7 @@ impl RendezvousServer {
                 Some(peer) => {
                     let pk = peer.read().await.pk.clone();
                     sign::sign(
-                        &hbb_common::message_proto::IdPk {
+                        &hbb_common::rendezvous_proto::IdPk {
                             id,
                             pk,
                             ..Default::default()

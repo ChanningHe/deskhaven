@@ -1,8 +1,6 @@
-use clap::App;
 use hbb_common::{
-    allow_err, anyhow::{Context, Result}, get_version_number, log, tokio, ResultType
+    anyhow::{Context, Result}, log, ResultType
 };
-use ini::Ini;
 use sodiumoxide::crypto::sign;
 use std::{
     fs,
@@ -116,37 +114,6 @@ fn arg_name(name: &str) -> String {
 #[inline]
 pub fn set_arg(name: &str, value: &str) {
     std::env::set_var(arg_name(name), value);
-}
-
-#[allow(dead_code)]
-pub fn init_args(args: &str, name: &str, about: &str) {
-    let matches = App::new(name)
-        .version(crate::version::VERSION)
-        .author("Purslane Ltd. <info@rustdesk.com>")
-        .about(about)
-        .args_from_usage(args)
-        .get_matches();
-    if let Ok(v) = Ini::load_from_file(".env") {
-        if let Some(section) = v.section(None::<String>) {
-            section
-                .iter()
-                .for_each(|(k, v)| set_arg(k, v));
-        }
-    }
-    if let Some(config) = matches.value_of("config") {
-        if let Ok(v) = Ini::load_from_file(config) {
-            if let Some(section) = v.section(None::<String>) {
-                section
-                    .iter()
-                    .for_each(|(k, v)| set_arg(k, v));
-            }
-        }
-    }
-    for (k, v) in matches.args {
-        if let Some(v) = v.vals.first() {
-            set_arg(k, &v.to_string_lossy());
-        }
-    }
 }
 
 #[allow(dead_code)]
@@ -327,6 +294,8 @@ fn write_public_key(path: &str, pk: &str, required: bool) -> ResultType<()> {
         }
         Err(err) => return Err(err).context("Failed to create public key file"),
     };
+    // try_from_path would absolutize relative paths: different behavior, keep upstream call.
+    #[allow(deprecated)]
     let temporary = tempfile::TempPath::from_path(temporary);
     #[cfg(unix)]
     {
@@ -424,37 +393,13 @@ pub async fn listen_signal() -> Result<()> {
     unreachable!();
 }
 
-
-pub fn check_software_update() {
-    const ONE_DAY_IN_SECONDS: u64 = 60 * 60 * 24;
-    std::thread::spawn(move || loop {
-        std::thread::spawn(move || allow_err!(check_software_update_()));
-        std::thread::sleep(std::time::Duration::from_secs(ONE_DAY_IN_SECONDS));
-    });
-}
-
-#[tokio::main(flavor = "current_thread")]
-async fn check_software_update_() -> hbb_common::ResultType<()> {
-    let (request, url) = hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_SERVER.to_string());
-    let latest_release_response = reqwest::Client::builder().build()?
-        .post(url)
-        .json(&request)
-        .send()
-        .await?;
-
-    let bytes = latest_release_response.bytes().await?;
-    let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
-    let response_url = resp.url;
-    let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
-    if get_version_number(&latest_release_version) > get_version_number(crate::version::VERSION) {
-       log::info!("new version is available: {}", latest_release_version);
-    }
-    Ok(())
-}
-
 #[cfg(test)]
+// Upstream tests set the process umask and RLIMIT_FSIZE via libc to exercise key-file
+// permission and short-write handling; there is no safe std API for either.
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
+    use hbb_common::tokio;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
