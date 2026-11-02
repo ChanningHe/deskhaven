@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::UserError;
+use deskhaven_core::users::{Status, UserError};
 
 use crate::auth::unauthorized;
 use crate::user_payload::UserPayload;
@@ -21,7 +21,10 @@ pub async fn current_user(
     BearerUser(principal): BearerUser,
 ) -> Result<Json<UserPayload>, ClientApiError> {
     match state.users.get(principal.user_id).await {
-        Ok(user) => Ok(Json(UserPayload::from(&user))),
+        Ok(user) if user.status == Status::Active => Ok(Json(UserPayload::from(&user))),
+        // Disabled or unverified while a validated session was cached (a missed event):
+        // the fresh read decides.
+        Ok(_) => Err(unauthorized()),
         // Deleted after the session was validated.
         Err(UserError::NotFound) => Err(unauthorized()),
         Err(err) => Err(ClientApiError::internal(err)),

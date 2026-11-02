@@ -2,10 +2,10 @@
 //! (`flutter/lib/common/hbbs/hbbs.dart:155-177`), validated at the boundary: nothing is
 //! counted or verified for a malformed request.
 //!
-//! The body is parsed from the raw bytes whatever the `Content-Type` (the client sends
-//! `application/json`, but a JSON object is unambiguous). Unknown fields are ignored (the
-//! client adds fields over time, 06 §6).
+//! `Content-Type` must be `application/json` (parameters allowed, any case), as the client
+//! sends it. Unknown fields are ignored (the client adds fields over time, 06 §6).
 
+use axum::http::{HeaderMap, header};
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::users::Password;
 use serde::Deserialize;
@@ -15,6 +15,7 @@ use crate::ClientApiError;
 
 /// `type` of a password login (`HttpType.kAuthReqTypeAccount`).
 const ACCOUNT: &str = "account";
+const JSON: &str = "application/json";
 pub const INVALID_REQUEST_MESSAGE: &str = "Invalid login request";
 pub const UNSUPPORTED_TYPE_MESSAGE: &str = "Unsupported login type";
 
@@ -82,6 +83,20 @@ impl Raw {
             device,
         })
     }
+}
+
+/// 400 [`INVALID_REQUEST_MESSAGE`] unless the one `Content-Type` is `application/json`
+/// (`; charset=...` and other parameters allowed, case-insensitive).
+pub fn require_json(headers: &HeaderMap) -> Result<(), ClientApiError> {
+    let mut values = headers.get_all(header::CONTENT_TYPE).iter();
+    let is_json = match (values.next(), values.next()) {
+        (Some(value), None) => value.to_str().is_ok_and(|v| {
+            let essence = v.split(';').next().unwrap_or_default();
+            essence.trim().eq_ignore_ascii_case(JSON)
+        }),
+        _ => false,
+    };
+    is_json.then_some(()).ok_or_else(invalid)
 }
 
 /// RustDesk ids are numeric or custom ids of ASCII letters, digits, `-` and `_`.
@@ -185,6 +200,35 @@ mod tests {
         }
         for raw in [&b""[..], b"{", b"null", b"\"x\""] {
             assert!(LoginRequest::parse(raw).is_err(), "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn content_type_must_be_json_with_any_parameters_and_case() {
+        let with = |values: &[&str]| {
+            let mut headers = HeaderMap::new();
+            for v in values {
+                headers.append(header::CONTENT_TYPE, v.parse().unwrap());
+            }
+            require_json(&headers).is_ok()
+        };
+        for ok in [
+            "application/json",
+            "Application/JSON",
+            "application/json; charset=utf-8",
+            " application/json ;charset=UTF-8",
+        ] {
+            assert!(with(&[ok]), "{ok:?}");
+        }
+        for bad in [
+            &[][..],
+            &["text/plain; charset=utf-8"],
+            &["application/x-www-form-urlencoded"],
+            &["multipart/form-data; boundary=x"],
+            &["application/jsonx"],
+            &["application/json", "application/json"],
+        ] {
+            assert!(!with(bad), "{bad:?}");
         }
     }
 

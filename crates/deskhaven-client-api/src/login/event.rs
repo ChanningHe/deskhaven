@@ -1,82 +1,48 @@
-//! Login events (04 §7 `login_events`): one record per account login attempt, written from
-//! [`record`] only. Carries no password, token or request body.
+//! The login event of a client password login (04 §7 `login_events`), written from
+//! [`record`] only.
+//!
+//! Recorded: every attempt that was verified — `success`, `invalid_credentials` (wrong
+//! password, unknown or non-local account alike), `disabled`, `unverified` — and `locked`
+//! for the verified failure that started a lockout. Not recorded: refused attempts
+//! (429: IP limit or lockout; 503: hasher busy), because nothing was verified and their
+//! number is unbounded, so recording them would hand attackers one database write per
+//! request; malformed requests (400); server failures (500, logged instead).
+//!
+//! `user_id` is set on success only: a failure row must not need an account lookup (which
+//! would make the failure paths differ), and `username_attempted` names it anyway.
 
-use std::net::IpAddr;
-
+use deskhaven_core::auth::limiter::ClientAddr;
+use deskhaven_core::login_events::{LoginClient, LoginMethod, LoginResult, NewLoginEvent};
 use deskhaven_core::state::AppState;
 
-/// `login_events.method`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Method {
-    Password,
-}
+use super::request::AccountLogin;
 
-impl Method {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Password => "password",
-        }
+/// Writes the event. Best effort: a failed write is logged and never changes the reply.
+/// No password, token or request body is stored or logged.
+pub async fn record(
+    state: &AppState,
+    client: ClientAddr,
+    request: &AccountLogin,
+    user_id: Option<i64>,
+    result: LoginResult,
+) {
+    let event = NewLoginEvent {
+        user_id,
+        username_attempted: &request.username,
+        method: LoginMethod::Password,
+        result,
+        client: LoginClient::Rustdesk,
+        rustdesk_id: Some(&request.device.rustdesk_id),
+        ip: Some(client.addr),
+    };
+    let (result, ip) = (result.as_str(), client.addr);
+    if let Err(err) = state.login_events.record(&event).await {
+        tracing::error!(result, %ip, error = %err, "cannot write the login event");
     }
-}
-
-/// `login_events.result`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoginResult {
-    Success,
-    /// Wrong password, unknown or non-local account (one result: no enumeration in the log
-    /// either).
-    InvalidCredentials,
-    Disabled,
-    Unverified,
-    /// Per-IP limit or account lockout; nothing was verified.
-    Throttled,
-    /// Password hasher overloaded; nothing was verified.
-    Busy,
-    /// Server-side failure.
-    Error,
-}
-
-impl LoginResult {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Success => "success",
-            Self::InvalidCredentials => "invalid_credentials",
-            Self::Disabled => "disabled",
-            Self::Unverified => "unverified",
-            Self::Throttled => "throttled",
-            Self::Busy => "busy",
-            Self::Error => "error",
-        }
-    }
-}
-
-/// One `login_events` row (client `rustdesk`).
-#[derive(Debug)]
-pub struct LoginEvent<'a> {
-    /// Known on success only (a failure must not reveal whether the account exists).
-    pub user_id: Option<i64>,
-    #[expect(
-        dead_code,
-        reason = "stored in login_events once the table exists (M2-02)"
-    )]
-    pub username_attempted: &'a str,
-    pub method: Method,
-    pub result: LoginResult,
-    pub rustdesk_id: &'a str,
-    pub ip: IpAddr,
-}
-
-/// Records `event`. Best effort: a failed write is logged and never fails the login.
-pub async fn record(state: &AppState, event: &LoginEvent<'_>) {
-    // TODO(M2-02): login_events — insert `event` through the login-event repository of
-    // `state` here (the table does not exist yet). Until then the log is the only record.
-    let _ = state;
-    // The attempted username stays out of the log: users type passwords into it.
-    let (user_id, result, ip) = (event.user_id, event.result.as_str(), event.ip);
-    let (method, rustdesk_id) = (event.method.as_str(), event.rustdesk_id);
-    if event.result == LoginResult::Success {
-        tracing::info!(user_id, method, result, %ip, rustdesk_id, "client login");
+    // The attempted username stays out of the log: people type passwords into it.
+    if result == LoginResult::Success.as_str() {
+        tracing::info!(user_id, result, %ip, "client login");
     } else {
-        tracing::debug!(method, result, %ip, rustdesk_id, "client login failed");
+        tracing::debug!(result, %ip, "client login failed");
     }
 }

@@ -2,20 +2,29 @@
 //! the credential is a 401 with one generic message: the client then resets its login
 //! (§1.3), and the message reveals nothing about why. Tokens are never logged.
 //!
-//! Token spraying: a presented token that does not authenticate spends one token of the
-//! client's per-IP login budget (`LoginThrottle::on_bearer_rejected`), and while the client
-//! is over that budget every bearer request is a 429 **before** the token is looked up
-//! (`LoginThrottle::check_bearer`), so random tokens cannot drive one database lookup each.
-//! A 429 rather than a 401: the client is not told the token is bad (it was not checked),
-//! and a legitimate client sharing the address keeps its login (a 401 would reset it).
-//! Valid tokens spend nothing. A missing or malformed header is a plain 401 (no lookup).
+//! Token spraying, in order:
+//! 1. The session cache answers first (`SessionService::authenticate_cached`): a cached
+//!    valid token passes and spends nothing, whatever the address's limit state; a cached
+//!    but expired or wrong-kind token (or a malformed one) is a 401 that spends one token.
+//! 2. Otherwise the token needs a database lookup. While a recent bearer rejection found the
+//!    address over its per-IP budget (`LoginThrottle::check_bearer`; login denials do not
+//!    count), that is a 429 **before** the lookup, so random tokens cannot drive one
+//!    database read each. A 429 rather than a 401: the token was not checked, and a
+//!    legitimate client sharing the address keeps its login (a 401 would reset it).
+//! 3. A looked-up token that does not authenticate spends one token of the per-IP budget
+//!    logins also draw from (`LoginThrottle::on_bearer_rejected`); none left -> 429.
+//!
+//! So during an attack from the same address (NAT, or the shared trusted-proxy fallback
+//! bucket) users with cached sessions are unaffected; only a cache miss (at most one per
+//! session per cache TTL) may get a 429. A missing or malformed header is a plain 401.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, header};
-use deskhaven_core::sessions::{SessionKind, SessionPrincipal};
+use deskhaven_core::sessions::{CachedAuth, SessionKind, SessionPrincipal};
 use deskhaven_core::state::AppState;
 
 use crate::ClientApiError;
@@ -30,8 +39,9 @@ const SCHEME: &str = "bearer";
 /// handler argument it rejects with 401
 /// `{"error": "Unauthorized"}` when the header is missing or malformed, or the token is
 /// unknown, a console token, revoked, expired or belongs to an inactive user; with 429 +
-/// `Retry-After` while the client's address is over its per-IP limit; storage failures are
-/// a 500 (never a 401, which would log the client out).
+/// `Retry-After` when an uncached token comes from an address over its per-IP limit (see
+/// the module docs); storage failures are a 500 (never a 401, which would log the client
+/// out).
 #[derive(Clone, Debug)]
 pub struct BearerUser(pub SessionPrincipal);
 
@@ -44,26 +54,37 @@ impl FromRequestParts<Arc<AppState>> for BearerUser {
     ) -> Result<Self, Self::Rejection> {
         let Client(client) = Client::from_request_parts(parts, state).await?;
         let token = bearer_token(&parts.headers).ok_or_else(unauthorized)?;
-        let throttle = &state.login_throttle;
-        throttle
-            .check_bearer(client)
-            .map_err(|retry_after| ClientApiError::TooManyRequests { retry_after })?;
-        match state
-            .sessions
-            .authenticate(token, SessionKind::Client)
+        let sessions = &state.sessions;
+        let outcome = match sessions
+            .authenticate_cached(token, SessionKind::Client)
             .await
         {
+            CachedAuth::Hit(outcome) => outcome,
+            CachedAuth::Miss => {
+                state
+                    .login_throttle
+                    .check_bearer(client)
+                    .map_err(too_many)?;
+                sessions.authenticate(token, SessionKind::Client).await
+            }
+        };
+        match outcome {
             Ok(principal) => Ok(Self(principal)),
             Err(err) if err.is_unauthenticated() => {
                 tracing::debug!(reason = %err, "bearer token rejected");
-                throttle
+                state
+                    .login_throttle
                     .on_bearer_rejected(client)
-                    .map_err(|retry_after| ClientApiError::TooManyRequests { retry_after })?;
+                    .map_err(too_many)?;
                 Err(unauthorized())
             }
             Err(err) => Err(ClientApiError::internal(err)),
         }
     }
+}
+
+fn too_many(retry_after: Duration) -> ClientApiError {
+    ClientApiError::TooManyRequests { retry_after }
 }
 
 pub(crate) fn unauthorized() -> ClientApiError {

@@ -15,11 +15,13 @@ mod user_payload;
 use std::sync::Arc;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use deskhaven_core::state::AppState;
 
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
+pub use login::MAX_LOGIN_BODY;
 pub use stack_error::render_stack_error;
 
 /// Client API routes, without middleware or state: the server applies the
@@ -28,7 +30,10 @@ pub use stack_error::render_stack_error;
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/login-options", get(login_options::login_options))
-        .route("/api/login", post(login::login))
+        .route(
+            "/api/login",
+            post(login::login).layer(DefaultBodyLimit::max(login::MAX_LOGIN_BODY)),
+        )
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
 }
