@@ -12,7 +12,7 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QuerySelect, TryInsertResult,
+    QueryFilter, QueryOrder, QuerySelect, TryInsertResult,
 };
 
 /// An accepted RegisterPk.
@@ -70,9 +70,16 @@ impl DeviceRepository {
             .await
     }
 
-    /// The keys of every registered device, for the signal server's startup preload.
-    pub async fn all_registrations(&self) -> Result<Vec<RegisteredKeys>, DbErr> {
-        let rows: Vec<(String, Vec<u8>, Vec<u8>, String)> = device::Entity::find()
+    /// Up to `limit` registered devices with `rustdesk_id` after `after` (from the first if
+    /// `None`), ordered by `rustdesk_id` (keyset pagination over `ux_devices_rustdesk_id`), for
+    /// the signal server's startup preload. Order and comparison use the same collation, so
+    /// passing the last id of a page as `after` walks every row exactly once.
+    pub async fn registrations_page(
+        &self,
+        after: Option<&str>,
+        limit: u64,
+    ) -> Result<Vec<RegisteredKeys>, DbErr> {
+        let mut query = device::Entity::find()
             .select_only()
             .columns([
                 device::Column::RustdeskId,
@@ -80,9 +87,13 @@ impl DeviceRepository {
                 device::Column::Pk,
                 device::Column::RegisterIp,
             ])
-            .into_tuple()
-            .all(&self.db)
-            .await?;
+            .order_by_asc(device::Column::RustdeskId)
+            .limit(limit);
+        if let Some(after) = after {
+            query = query.filter(device::Column::RustdeskId.gt(after));
+        }
+        let rows: Vec<(String, Vec<u8>, Vec<u8>, String)> =
+            query.into_tuple().all(&self.db).await?;
         Ok(rows
             .into_iter()
             .map(|(rustdesk_id, uuid, pk, register_ip)| RegisteredKeys {

@@ -215,39 +215,36 @@ async fn concurrent_first_registrations_with_different_uuids_keep_the_winner() {
 }
 
 #[tokio::test]
-async fn all_registrations_lists_every_device_with_its_keys() {
+async fn registrations_page_walks_every_device_in_id_order() {
     each_migrated_backend(async |db: &TestDb| {
         let repo = DeviceRepository::new(db.conn.clone());
+        let b = db.backend;
         assert!(
-            repo.all_registrations().await.unwrap().is_empty(),
-            "{}",
-            db.backend
+            repo.registrations_page(None, 2).await.unwrap().is_empty(),
+            "{b}"
         );
-        repo.upsert_registration(&registration("111111111", b"a", b"pk-a", 1, 1_000))
-            .await
-            .unwrap();
-        repo.upsert_registration(&registration("222222222", b"b", b"pk-b", 2, 1_000))
-            .await
-            .unwrap();
+        for (id, n) in [("333333333", 3), ("111111111", 1), ("222222222", 2)] {
+            let reg = registration(id, &[n], &[n; 32], n, 1_000);
+            repo.upsert_registration(&reg).await.unwrap();
+        }
 
-        let mut all = repo.all_registrations().await.unwrap();
+        let first = repo.registrations_page(None, 2).await.unwrap();
+        let second = repo.registrations_page(Some("222222222"), 2).await.unwrap();
+        let after_last = repo.registrations_page(Some("333333333"), 2).await.unwrap();
 
-        all.sort_by(|x, y| x.rustdesk_id.cmp(&y.rustdesk_id));
-        let expected = vec![
-            RegisteredKeys {
-                rustdesk_id: "111111111".to_owned(),
-                uuid: b"a".to_vec(),
-                pk: b"pk-a".to_vec(),
-                register_ip: "192.0.2.1".to_owned(),
-            },
-            RegisteredKeys {
-                rustdesk_id: "222222222".to_owned(),
-                uuid: b"b".to_vec(),
-                pk: b"pk-b".to_vec(),
-                register_ip: "192.0.2.2".to_owned(),
-            },
-        ];
-        assert_eq!(all, expected, "{}", db.backend);
+        let ids = |page: &[RegisteredKeys]| -> Vec<String> {
+            page.iter().map(|k| k.rustdesk_id.clone()).collect()
+        };
+        assert_eq!(ids(&first), ["111111111", "222222222"], "{b}");
+        assert_eq!(ids(&second), ["333333333"], "{b}");
+        assert!(after_last.is_empty(), "{b}");
+        let expected = RegisteredKeys {
+            rustdesk_id: "333333333".to_owned(),
+            uuid: vec![3],
+            pk: vec![3; 32],
+            register_ip: "192.0.2.3".to_owned(),
+        };
+        assert_eq!(second, [expected], "{b}");
     })
     .await;
 }
