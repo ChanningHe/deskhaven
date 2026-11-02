@@ -4,6 +4,7 @@
 //! here but every mutation (rename, delete, membership) is refused with
 //! [`GroupError::ManagedByConfig`]. Membership changes are idempotent.
 
+use std::future::Future;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use deskhaven_db::entity::{group, group_member, user};
@@ -12,7 +13,7 @@ use deskhaven_db::{begin_write, is_foreign_key_violation, time};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    ModelTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr,
+    ModelTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr, TryInsertResult,
 };
 
 pub use deskhaven_db::entity::managed_by::ManagedBy;
@@ -92,6 +93,11 @@ pub enum GroupError {
     #[error("the group is managed by the configuration file")]
     ManagedByConfig,
 
+    /// The operation's task panicked or the runtime is shutting down; whether it committed
+    /// is unknown until the next read.
+    #[error("group operation did not complete")]
+    Aborted,
+
     #[error("group storage failed")]
     Database(#[source] DbErr),
 }
@@ -108,7 +114,8 @@ impl From<DbErr> for GroupError {
 pub enum GroupChange {
     /// The group, its memberships and its strategy assignment are gone.
     Deleted { group_id: i64 },
-    /// `add_member` / `remove_member` committed (also when nothing changed).
+    /// `add_member` / `remove_member` committed and changed a membership row (not sent when
+    /// the user already was / was not a member).
     MembershipChanged { group_id: i64, user_id: i64 },
 }
 
@@ -196,49 +203,75 @@ impl GroupService {
     /// Deletes the group, its memberships (cascade), the address book shares naming it and
     /// its strategy assignment (same transaction: neither has a foreign key to the group).
     pub async fn delete(&self, id: i64) -> Result<(), GroupError> {
-        let tx = begin_write(&self.db).await?;
-        let current = writable_group(&tx, id).await?;
-        addressbooks::forget_group(&tx, id).await?;
-        strategies::forget_group(&tx, id).await?;
-        current.delete(&tx).await?;
-        tx.commit().await?;
-        self.committed(GroupChange::Deleted { group_id: id });
-        Ok(())
+        self.detached(move |svc| async move {
+            let tx = begin_write(&svc.db).await?;
+            let current = writable_group(&tx, id).await?;
+            addressbooks::forget_group(&tx, id).await?;
+            strategies::forget_group(&tx, id).await?;
+            current.delete(&tx).await?;
+            tx.commit().await?;
+            svc.committed(GroupChange::Deleted { group_id: id });
+            Ok(())
+        })
+        .await
     }
 
-    /// Adds `user_id` to the group; already a member is not an error.
+    /// Adds `user_id` to the group; already a member is not an error (and reaches no hook).
     pub async fn add_member(&self, group_id: i64, user_id: i64) -> Result<(), GroupError> {
-        let tx = begin_write(&self.db).await?;
-        writable_group(&tx, group_id).await?;
-        find_user(&tx, user_id).await?;
-        let member = group_member::ActiveModel {
-            group_id: Set(group_id),
-            user_id: Set(user_id),
-            created_at: Set(time::now()),
-        };
-        group_member::Entity::insert(member)
-            .on_conflict_do_nothing_on([
-                group_member::Column::GroupId,
-                group_member::Column::UserId,
-            ])
-            .exec_without_returning(&tx)
-            .await
-            .map_err(missing_reference)?;
-        tx.commit().await?;
-        self.committed(GroupChange::MembershipChanged { group_id, user_id });
-        Ok(())
+        self.detached(move |svc| async move {
+            let tx = begin_write(&svc.db).await?;
+            writable_group(&tx, group_id).await?;
+            find_user(&tx, user_id).await?;
+            let member = group_member::ActiveModel {
+                group_id: Set(group_id),
+                user_id: Set(user_id),
+                created_at: Set(time::now()),
+            };
+            let inserted = group_member::Entity::insert(member)
+                .on_conflict_do_nothing_on([
+                    group_member::Column::GroupId,
+                    group_member::Column::UserId,
+                ])
+                .exec_without_returning(&tx)
+                .await
+                .map_err(missing_reference)?;
+            tx.commit().await?;
+            if matches!(inserted, TryInsertResult::Inserted(n) if n > 0) {
+                svc.committed(GroupChange::MembershipChanged { group_id, user_id });
+            }
+            Ok(())
+        })
+        .await
     }
 
-    /// Removes `user_id` from the group; not a member is not an error.
+    /// Removes `user_id` from the group; not a member is not an error (and reaches no hook).
     pub async fn remove_member(&self, group_id: i64, user_id: i64) -> Result<(), GroupError> {
-        let tx = begin_write(&self.db).await?;
-        writable_group(&tx, group_id).await?;
-        group_member::Entity::delete_by_id((group_id, user_id))
-            .exec(&tx)
-            .await?;
-        tx.commit().await?;
-        self.committed(GroupChange::MembershipChanged { group_id, user_id });
-        Ok(())
+        self.detached(move |svc| async move {
+            let tx = begin_write(&svc.db).await?;
+            writable_group(&tx, group_id).await?;
+            let removed = group_member::Entity::delete_by_id((group_id, user_id))
+                .exec(&tx)
+                .await?;
+            tx.commit().await?;
+            if removed.rows_affected > 0 {
+                svc.committed(GroupChange::MembershipChanged { group_id, user_id });
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Runs `op` to completion in its own task: dropping the caller's future can then
+    /// neither interrupt a commit nor lose the hooks that follow it.
+    async fn detached<T, F, Fut>(&self, op: F) -> Result<T, GroupError>
+    where
+        F: FnOnce(GroupService) -> Fut,
+        Fut: Future<Output = Result<T, GroupError>> + Send + 'static,
+        T: Send + 'static,
+    {
+        tokio::spawn(op(self.clone()))
+            .await
+            .map_err(|_| GroupError::Aborted)?
     }
 
     /// Members of the group, ordered by id.

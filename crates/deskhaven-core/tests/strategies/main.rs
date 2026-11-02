@@ -5,6 +5,7 @@ mod assignments;
 mod crud;
 mod deletion;
 mod effective;
+mod group_hooks;
 mod invalidation;
 mod modified_at;
 mod support;
