@@ -157,7 +157,7 @@ impl AddressBookService {
     }
 }
 
-fn check_tag(tag: &Tag) -> Result<(), AddressBookError> {
+pub(super) fn check_tag(tag: &Tag) -> Result<(), AddressBookError> {
     check_tag_name("name", &tag.name)?;
     if !(0..=MAX_COLOR).contains(&tag.color) {
         return Err(invalid("color", "must be a 32-bit ARGB value"));

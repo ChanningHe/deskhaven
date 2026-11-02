@@ -154,7 +154,7 @@ impl AddressBookService {
         Ok(())
     }
 
-    fn new_row(
+    pub(super) fn new_row(
         &self,
         book: &address_book::Model,
         patch: PeerPatch,
@@ -190,7 +190,7 @@ impl AddressBookService {
         })
     }
 
-    fn changes(
+    pub(super) fn changes(
         &self,
         book: &address_book::Model,
         current: address_book_peer::Model,
@@ -257,7 +257,11 @@ impl AddressBookService {
     /// A stored row as clients read it. Unreadable stored values (corrupt JSON, a password
     /// sealed under a lost key) are logged and read as empty, so one bad row does not hide
     /// the whole book.
-    fn to_peer(&self, book: &address_book::Model, row: address_book_peer::Model) -> Peer {
+    pub(super) fn to_peer(
+        &self,
+        book: &address_book::Model,
+        row: address_book_peer::Model,
+    ) -> Peer {
         let secret = match book.kind {
             Kind::Personal => {
                 let hash = self.open(Secret::Hash, &row, row.hash_enc.as_deref());

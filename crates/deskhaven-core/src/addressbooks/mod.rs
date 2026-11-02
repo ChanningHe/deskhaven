@@ -14,6 +14,9 @@
 //!   credential in its own right. Unknown peer fields are kept in `extra` and echoed back
 //!   (see [`PeerPatch`]).
 //! - Capacity: a book holds at most `addressbook.max_peers` peers (read at each add).
+//! - Whole-book operations ([`AddressBookService::contents`] and
+//!   [`AddressBookService::replace_contents`]) serve legacy clients that read and push the
+//!   book as one document; the merge rules are in the `contents` module.
 //! - Every write locks the book row, so writes to one book are serialized on both backends.
 //!
 //! Names: shared book names are not unique in the schema. This service refuses to create
@@ -25,6 +28,7 @@
 
 mod access;
 mod books;
+mod contents;
 mod error;
 mod peer;
 mod peers;
@@ -39,6 +43,7 @@ use deskhaven_db::time::TimestampMs;
 use sea_orm::DatabaseConnection;
 
 pub use access::{Actor, covers};
+pub use contents::{BookContents, BookReplacement, DEFAULT_TAG_COLOR, ReplacementTag};
 pub use deskhaven_db::entity::address_book::Kind;
 pub use deskhaven_db::entity::address_book_share::Rule;
 pub use error::AddressBookError;
