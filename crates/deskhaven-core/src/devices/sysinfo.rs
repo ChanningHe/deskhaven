@@ -2,7 +2,8 @@
 //! `src/hbbs_http/sync.rs:135-228`, `src/common.rs:962-1006` `get_sysinfo`) and its content
 //! hash.
 //!
-//! Every field is self-reported by an unauthenticated device (06 §2): control characters are
+//! Every field is self-reported by an unauthenticated device (06 §2): control characters,
+//! bidi controls and zero-width characters are
 //! dropped (PostgreSQL TEXT cannot even hold NUL) and each field is cut to
 //! [`MAX_FIELD_CHARS`] characters. A truncated value is still stored: refusing would leave the
 //! client retrying every 120 s forever without its "Pro" features.
@@ -71,16 +72,31 @@ impl Sysinfo {
     }
 }
 
-/// Without control characters, at most [`MAX_FIELD_CHARS`] characters.
+/// Without control or invisible characters, at most [`MAX_FIELD_CHARS`] characters.
 fn clean(raw: String) -> String {
     let fits = raw.chars().count() <= MAX_FIELD_CHARS;
-    if fits && !raw.chars().any(char::is_control) {
+    if fits && !raw.chars().any(is_dropped) {
         return raw;
     }
     raw.chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !is_dropped(*c))
         .take(MAX_FIELD_CHARS)
         .collect()
+}
+
+/// Control characters, bidi embedding / override / isolate controls (which can make a
+/// hostname read as something else in the console, "Trojan Source") and zero-width
+/// characters (which make look-alike names).
+fn is_dropped(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{200B}'..='\u{200F}'   // zero-width space / (non-)joiner, LRM, RLM
+                | '\u{202A}'..='\u{202E}' // LRE, RLE, PDF, LRO, RLO
+                | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
+                | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI
+                | '\u{FEFF}' // zero-width no-break space (BOM)
+        )
 }
 
 #[cfg(test)]
@@ -154,5 +170,25 @@ mod tests {
         assert_eq!(clean.os.unwrap().chars().count(), MAX_FIELD_CHARS);
         assert_eq!(clean.cpu.as_deref(), Some("Intel, 3.2GHz, 8/4 cores"));
         assert_eq!(clean.username, None);
+    }
+
+    #[test]
+    fn sanitized_drops_bidi_controls_and_zero_width_characters() {
+        let raw = Sysinfo {
+            hostname: Some("pc\u{202E}gpj.exe\u{2066}x\u{2069}".to_owned()),
+            username: Some("ad\u{200B}min\u{FEFF}\u{200D}".to_owned()),
+            os: Some("Linux – Ünïcode 日本".to_owned()),
+            ..Default::default()
+        };
+
+        let clean = raw.sanitized();
+
+        assert_eq!(clean.hostname.as_deref(), Some("pcgpj.exex"));
+        assert_eq!(clean.username.as_deref(), Some("admin"));
+        assert_eq!(
+            clean.os.as_deref(),
+            Some("Linux – Ünïcode 日本"),
+            "visible text kept"
+        );
     }
 }
