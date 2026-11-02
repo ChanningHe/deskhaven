@@ -11,12 +11,13 @@
 //!   ([`Recv`] tells silence from a closed connection), [`Rendezvous`] the typed request
 //!   helpers of the stream transports; `flows` holds multi-step flows.
 //!
-//! Determinism: the server keeps process-wide state (`IP_BLOCKER`: RegisterPk per source IP;
-//! `ROTATION_RELAY_SERVER`: the relay round-robin cursor). Every client binds its own loopback
-//! source address from [`next_client_ip`] so no two clients share an `IP_BLOCKER` entry; only
-//! the dedicated `relay_rotation` binary asserts rotation order. Requires Linux routing all of
-//! 127.0.0.0/8 to `lo` (macOS only configures 127.0.0.1): the first `next_client_ip` call
-//! probes 127.77.0.1 and fails with that explanation otherwise.
+//! Determinism: the server keeps process-wide state (`IP_BLOCKER`: RegisterPk per source IP).
+//! Every client binds its own loopback source address from [`next_client_ip`] so no two
+//! clients share an `IP_BLOCKER` entry. The relay round-robin cursor lives in each server's
+//! `AllowAll` (it was process-wide upstream); only the `relay_rotation` binary asserts the
+//! rotation order. Requires Linux routing all of 127.0.0.0/8 to `lo` (macOS only configures
+//! 127.0.0.1): the first `next_client_ip` call probes 127.77.0.1 and fails with that
+//! explanation otherwise.
 
 // Each test binary uses a different subset of the harness.
 #![allow(dead_code)]
@@ -49,7 +50,7 @@ pub use {
     flows::*,
     msg::*,
     net::*,
-    server::{TestServer, config, memory_store, wait_until_ready},
+    server::{TestServer, allow_all, config, memory_store, wait_until_ready},
     tcp::TcpClient,
     udp::UdpClient,
     ws::WsClient,

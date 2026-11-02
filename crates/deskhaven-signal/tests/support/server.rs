@@ -2,7 +2,8 @@
 
 use super::{PeerKeys, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, msg};
 use deskhaven_signal::{
-    MemoryPeerStore, PeerStore, SignalConfig, SignalError, SignalHandle, SignalServer,
+    AllowAll, ControlPlane, MemoryPeerStore, PeerStore, SignalConfig, SignalError, SignalHandle,
+    SignalServer,
 };
 use hbb_common::{
     rendezvous_proto::{PunchHoleRequest, register_pk_response},
@@ -60,12 +61,19 @@ pub fn memory_store() -> Arc<dyn PeerStore> {
     Arc::new(MemoryPeerStore::new())
 }
 
+/// Upstream's policy (a fresh relay rotation cursor).
+pub fn allow_all() -> Arc<dyn ControlPlane> {
+    Arc::new(AllowAll::new())
+}
+
 /// Everything a server is built from, kept so [`TestServer::restart`] can rebuild the same
-/// server (same ports, same key, same `PeerStore` instance and so the same registrations).
+/// server (same ports, same key, same `PeerStore` and `ControlPlane` instances and so the
+/// same registrations).
 #[derive(Clone)]
 struct Setup {
     cfg: SignalConfig,
     store: Arc<dyn PeerStore>,
+    control: Arc<dyn ControlPlane>,
 }
 
 pub struct TestServer {
@@ -98,11 +106,28 @@ impl TestServer {
         customize: impl Fn(SignalConfig) -> SignalConfig,
         store: Arc<dyn PeerStore>,
     ) -> Self {
+        Self::start_with_parts(customize, store, allow_all()).await
+    }
+
+    /// [`TestServer::start_with`] with the given control plane.
+    pub async fn start_with_control(
+        customize: impl Fn(SignalConfig) -> SignalConfig,
+        control: Arc<dyn ControlPlane>,
+    ) -> Self {
+        Self::start_with_parts(customize, memory_store(), control).await
+    }
+
+    async fn start_with_parts(
+        customize: impl Fn(SignalConfig) -> SignalConfig,
+        store: Arc<dyn PeerStore>,
+        control: Arc<dyn ControlPlane>,
+    ) -> Self {
         for _ in 0..START_ATTEMPTS {
             let cfg = customize(config(free_base_port()));
             let setup = Setup {
                 cfg,
                 store: store.clone(),
+                control: control.clone(),
             };
             if let Some(server) = Self::try_start(setup).await {
                 return server;
@@ -124,8 +149,12 @@ impl TestServer {
     /// Starts on exactly `cfg` (its port and key) with a fresh [`memory_store`], retrying
     /// briefly while the ports are busy.
     pub async fn start_on(cfg: SignalConfig) -> Self {
-        let store = memory_store();
-        Self::start_setup(Setup { cfg, store }).await
+        let setup = Setup {
+            cfg,
+            store: memory_store(),
+            control: allow_all(),
+        };
+        Self::start_setup(setup).await
     }
 
     /// Stops the server and starts a new one on the same ports with the same key and store.
@@ -153,7 +182,8 @@ impl TestServer {
         let (port, licence_key) = (cfg.port, cfg.licence_key());
         let public_key = cfg.secret_key.public_key();
         let shutdown = CancellationToken::new();
-        let server = SignalServer::new(cfg, setup.store.clone());
+        let server = SignalServer::new(cfg, setup.store.clone(), setup.control.clone());
+
         let handle = server.handle();
         let task = tokio::spawn(server.run(shutdown.clone()));
         if !wait_until_ready(port, &task).await {

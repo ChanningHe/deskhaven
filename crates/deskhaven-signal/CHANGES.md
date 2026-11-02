@@ -289,3 +289,38 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   used it too); dropped `serde`, `serde_derive` and `serde_json` (only used for the `info`
   JSON); `uuid` moved to dev-dependencies (only the test harness generates uuids now); dev
   dependency `tokio` with `test-util` (paused clock in the writer tests).
+- 2026-11-02, M1-06, control plane (07 §3.2): new deskhaven module `src/control.rs` (not
+  vendored, full workspace lints) with the public `ControlPlane` trait (`register_pk`,
+  `authorize`, `http_proxy`, `health_check`, `pick_relay`), its argument / result types
+  (`RegisterInfo`, `RegisterVerdict`, `ConnectReq`, `ConnKind`, `Grant`, `Authz`) and `AllowAll`
+  (upstream behavior). The protocol types in the signatures (`ConnType`, `ControlPermissions`,
+  `HttpProxyRequest`, `HttpProxyResponse`, `HeaderEntry`) are re-exported from hbb_common.
+  `SignalServer::new(cfg, store, control)` and `run(cfg, store, control, shutdown)` take an
+  `Arc<dyn ControlPlane>`, threaded through `RendezvousServer::{serve, new}` into the new
+  `control` field. Only `pick_relay` is called so far; the insertion points of the other hooks
+  (07 §5) are marked `ControlPlane hook (M5)` in `rendezvous_server.rs` (UDP RegisterPk before
+  the peer update, PunchHoleRequest after the licence check, RequestRelay before forwarding,
+  the `handle_tcp` fallback arm for HttpProxyRequest / HealthCheck); no behavior change there.
+  The `DeviceRegistered` event deferred by M1-05 stays deferred: Presence does not exist yet.
+- 2026-11-02, M1-06, relay selection (`rendezvous_server.rs` `get_relay_server`): delegates to
+  `ControlPlane::pick_relay(a, b, relays)` with the controller's and the target's IPs (unused
+  upstream) and the current relay list; `None` hands out no relay (upstream's empty string).
+  The process-wide `ROTATION_RELAY_SERVER` static is gone: `AllowAll` keeps its own
+  round-robin cursor (same order: none / the only one / next in turn). Deviation from the 07
+  sketch `pick_relay(a, b)`: the list is an argument, because the registry (resolution, retry,
+  health check) stays in this crate and the control plane only chooses.
+- 2026-11-02, M1-06, shared relay list (`rendezvous_server.rs`; 07 §6): the handed-out list
+  `relay_servers` is an `Arc<ArcSwap<Vec<String>>>` shared by the server loop (the only
+  writer: handle updates, resolution results, health checks) and every connection task
+  (lock-free `load` per relay choice). Upstream cloned a plain `Arc` into each connection task
+  at accept (rs:1174-1182), so a relay update never reached connections that were already
+  open; now it applies to their next request too. The M1-04 baseline test
+  `early_connection_keeps_old_relay_set_upstream_behavior_m1_06_changes_this` became
+  `early_connection_uses_relay_set_replaced_later`. Dependency added: `arc-swap` (already in
+  the workspace).
+- 2026-11-02, M1-06, serving state (`server.rs`): `SignalHandle::is_serving()` and
+  `SignalHandle::serving()` (waits; `Err(Stopped)` if `run` ends first) report whether every
+  listener is bound and `run` is still running, through a `watch` channel set by
+  `RendezvousServer::serve` after binding and reset when `run` returns (a dropped `run` future
+  closes the channel, which also reads as not serving). The embedding process gates startup
+  and readiness on it.

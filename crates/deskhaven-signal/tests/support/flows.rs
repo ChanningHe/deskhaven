@@ -18,9 +18,9 @@ pub async fn relay_via(
     expect_msg!(target.recv().await, PunchHole).relay_server
 }
 
-/// [`relay_via`] a new controller connection. A connection keeps the relay list that was
-/// current when it was accepted (rs:1174-1182 clones the server state into each connection
-/// task), so only new connections see a new list.
+/// [`relay_via`] a new controller connection. (Upstream connections kept the relay list of
+/// their accept time, rs:1174-1182; since M1-06 every connection reads the shared list, but a
+/// fresh connection per sample keeps the baseline tests transport-neutral.)
 pub async fn next_relay(
     server: &TestServer,
     target: &mut UdpClient,

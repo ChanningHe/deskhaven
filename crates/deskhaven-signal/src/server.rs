@@ -3,12 +3,16 @@
 //! signal handling and loopback console.
 
 use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
+use crate::control::ControlPlane;
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
 use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
     anyhow, log,
-    tokio::{self, sync::mpsc},
+    tokio::{
+        self,
+        sync::{mpsc, watch},
+    },
 };
 use ipnetwork::Ipv4Network;
 use sodiumoxide::crypto::sign;
@@ -178,7 +182,8 @@ impl SignalError {
     }
 }
 
-/// Runtime control of a server; replaces upstream's loopback console commands `rs` and `aur`.
+/// Runtime control and state of a server; replaces upstream's loopback console commands `rs`
+/// and `aur`.
 ///
 /// Calls fail with [`SignalError::Stopped`] once the server's `run` future has finished or been
 /// dropped. Updates travel to the server loop over an unbounded channel; that is fine because
@@ -187,21 +192,46 @@ impl SignalError {
 pub struct SignalHandle {
     tx: Sender,
     always_use_relay: Arc<AtomicBool>,
+    serving: watch::Receiver<bool>,
 }
 
 impl SignalHandle {
-    pub(crate) fn new(tx: Sender, always_use_relay: Arc<AtomicBool>) -> Self {
+    pub(crate) fn new(
+        tx: Sender,
+        always_use_relay: Arc<AtomicBool>,
+        serving: watch::Receiver<bool>,
+    ) -> Self {
         Self {
             tx,
             always_use_relay,
+            serving,
         }
+    }
+
+    /// Whether the server is serving: every listener was bound and `run` has not returned.
+    /// False while the peer registry is still being loaded.
+    pub fn is_serving(&self) -> bool {
+        // A dropped `run` future never resets the flag, but it closes the channel.
+        self.serving.has_changed().is_ok() && *self.serving.borrow()
+    }
+
+    /// Waits until the server is serving; [`SignalError::Stopped`] if its `run` ends first
+    /// (or already ended, or never started because the [`SignalServer`] was dropped).
+    pub async fn serving(&self) -> Result<(), SignalError> {
+        let mut serving = self.serving.clone();
+        serving
+            .wait_for(|on| *on)
+            .await
+            .map(drop)
+            .map_err(|_| SignalError::Stopped)
     }
 
     /// Replaces the relay list (`host[:port]`). Every entry is resolved here, on the caller's
     /// task, never on the server loop: concurrently, each bounded by a 3 s timeout; empty
     /// entries are dropped. If any entry does not resolve in time nothing is applied and
     /// [`SignalError::RelayServersRejected`] names them; otherwise the accepted list is
-    /// returned and connections accepted afterwards use it.
+    /// returned and every relay choice from then on uses it, on new and already open
+    /// connections alike (until the health check narrows it).
     ///
     /// Concurrent callers must be serialized by the caller (the control plane does): two
     /// overlapping calls are applied in the order their lookups finish, not the order they
@@ -243,8 +273,10 @@ impl SignalHandle {
 pub struct SignalServer {
     cfg: SignalConfig,
     store: Arc<dyn PeerStore>,
+    control: Arc<dyn ControlPlane>,
     handle: SignalHandle,
     rx: Receiver,
+    serving: watch::Sender<bool>,
 }
 
 impl SignalServer {
@@ -255,18 +287,28 @@ impl SignalServer {
     /// UUID_MISMATCH anti id-hijack check); with a non-persistent store such as
     /// [`MemoryPeerStore`](crate::MemoryPeerStore), any uuid can claim any id after a process
     /// restart.
-    pub fn new(cfg: SignalConfig, store: Arc<dyn PeerStore>) -> Self {
+    ///
+    /// `control` makes the policy decisions ([`AllowAll`](crate::AllowAll): upstream's).
+    pub fn new(
+        cfg: SignalConfig,
+        store: Arc<dyn PeerStore>,
+        control: Arc<dyn ControlPlane>,
+    ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
+        let (serving, serving_rx) = watch::channel(false);
         Self {
             cfg,
             store,
-            handle: SignalHandle::new(tx, always_use_relay),
+            control,
+            handle: SignalHandle::new(tx, always_use_relay, serving_rx),
             rx,
+            serving,
         }
     }
 
-    /// A handle for changing relay settings while the server runs; take it before `run`.
+    /// A handle for changing relay settings and watching the state while the server runs;
+    /// take it before `run`.
     pub fn handle(&self) -> SignalHandle {
         self.handle.clone()
     }
@@ -285,8 +327,10 @@ impl SignalServer {
         // Also stops the tasks if this future is dropped instead of awaited to the end.
         let _stop_on_drop = stop.clone().drop_guard();
         let tasks = Tasks::new(stop);
+        let serving = self.serving.clone();
         let res = self.serve_until(ports, tasks.clone(), &shutdown).await;
         tasks.shutdown().await;
+        serving.send_replace(false);
         res
     }
 
@@ -299,17 +343,21 @@ impl SignalServer {
         let Self {
             cfg,
             store,
+            control,
             handle,
             rx,
+            serving,
         } = self;
         let serve = RendezvousServer::serve(
             cfg,
             ports,
             store,
+            control,
             handle.tx,
             rx,
             handle.always_use_relay,
             tasks,
+            &serving,
         );
         tokio::select! {
             biased;
@@ -326,9 +374,10 @@ impl SignalServer {
 pub async fn run(
     cfg: SignalConfig,
     store: Arc<dyn PeerStore>,
+    control: Arc<dyn ControlPlane>,
     shutdown: CancellationToken,
 ) -> Result<(), SignalError> {
-    SignalServer::new(cfg, store).run(shutdown).await
+    SignalServer::new(cfg, store, control).run(shutdown).await
 }
 
 #[cfg(test)]

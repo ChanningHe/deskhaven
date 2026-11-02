@@ -9,7 +9,8 @@ use deskhaven_core::devices::DeviceRepository;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::{DbOptions, connect, migrate};
 use deskhaven_signal::{
-    PeerRecord, PeerStore, PeerUpsert, SignalConfig, SignalError, SignalServer, StoreError,
+    AllowAll, PeerRecord, PeerStore, PeerUpsert, SignalConfig, SignalError, SignalServer,
+    StoreError,
 };
 use hbb_common::protobuf::Message as _;
 use hbb_common::rendezvous_proto::{
@@ -129,7 +130,7 @@ impl Server {
                 ..SignalConfig::new(key.clone())
             };
             let shutdown = CancellationToken::new();
-            let server = SignalServer::new(cfg, store.clone());
+            let server = SignalServer::new(cfg, store.clone(), Arc::new(AllowAll::new()));
             let task = tokio::spawn(server.run(shutdown.clone()));
             let addr = SocketAddr::new(LOCALHOST, port);
             if wait_until_listening(addr, &task).await {

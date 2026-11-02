@@ -18,8 +18,8 @@ use hbb_common::{
     },
 };
 use support::{
-    Conn, Rendezvous, STEP, TcpClient, TestServer, UdpClient, addr, config, free_base_port,
-    memory_store, ports_free, rv, wait_until_ready,
+    Conn, Rendezvous, STEP, TcpClient, TestServer, UdpClient, addr, allow_all, config,
+    free_base_port, memory_store, ports_free, rv, wait_until_ready,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -27,6 +27,43 @@ use tokio_util::sync::CancellationToken;
 const DNS_STEP: Duration = Duration::from_secs(10);
 /// Listening must not wait for relay DNS (well under the 3 s resolve timeout).
 const LISTEN_PROMPTLY: Duration = Duration::from_secs(2);
+/// Tries on fresh free ports before a lost port race fails the test.
+const START_ATTEMPTS: usize = 10;
+
+/// M1-06: the handle reports serving once every listener is bound and stops doing so when
+/// `run` returns (the embedding process gates its startup and readiness on it).
+#[tokio::test]
+async fn handle_reports_serving_while_listeners_are_bound() {
+    for _ in 0..START_ATTEMPTS {
+        // Arrange
+        let port = free_base_port();
+        let server = SignalServer::new(config(port), memory_store(), allow_all());
+        let handle = server.handle();
+        assert!(!handle.is_serving(), "not before run");
+        let shutdown = CancellationToken::new();
+
+        // Act
+        let task = tokio::spawn(server.run(shutdown.clone()));
+        if timeout(STEP, handle.serving()).await.unwrap().is_err() {
+            let res = task.await.unwrap();
+            assert!(matches!(res, Err(SignalError::Bind { .. })), "{res:?}");
+            continue; // lost a port race
+        }
+
+        // Assert
+        assert!(handle.is_serving());
+        assert!(
+            wait_until_ready(port, &task).await,
+            "listening while serving"
+        );
+        shutdown.cancel();
+        assert!(matches!(timeout(STEP, task).await, Ok(Ok(Ok(())))));
+        assert!(!handle.is_serving(), "not after run");
+        assert!(matches!(handle.serving().await, Err(SignalError::Stopped)));
+        return;
+    }
+    panic!("could not start the signal server");
+}
 
 /// Sends a TestNatRequest over TCP and returns the port the server saw us on.
 async fn test_nat(port: u16) -> i32 {
@@ -112,7 +149,7 @@ async fn unresolvable_initial_relay_does_not_delay_listening() {
     let started = tokio::time::Instant::now();
 
     // Act
-    let task = tokio::spawn(run(cfg, memory_store(), shutdown.clone()));
+    let task = tokio::spawn(run(cfg, memory_store(), allow_all(), shutdown.clone()));
     let ready = wait_until_ready(port, &task).await;
 
     // Assert
@@ -167,7 +204,13 @@ async fn relay_update_rejects_unresolvable_entries_and_keeps_serving() {
 #[tokio::test]
 async fn rejects_ports_without_room_for_nat_and_ws_ports() {
     for port in [0, 1, 2, 65534, 65535] {
-        let res = run(config(port), memory_store(), CancellationToken::new()).await;
+        let res = run(
+            config(port),
+            memory_store(),
+            allow_all(),
+            CancellationToken::new(),
+        )
+        .await;
         assert!(
             matches!(res, Err(SignalError::InvalidPort(p)) if p == port),
             "port {port}: {res:?}"
@@ -184,7 +227,12 @@ async fn port_in_use_fails_with_bind_error() {
     // Act
     let res = timeout(
         STEP,
-        run(config(port), memory_store(), CancellationToken::new()),
+        run(
+            config(port),
+            memory_store(),
+            allow_all(),
+            CancellationToken::new(),
+        ),
     )
     .await
     .expect("bind failure is reported promptly");
@@ -202,7 +250,7 @@ async fn port_in_use_fails_with_bind_error() {
 #[tokio::test]
 async fn handle_reports_stopped_once_run_has_returned() {
     // Arrange
-    let server = SignalServer::new(config(free_base_port()), memory_store());
+    let server = SignalServer::new(config(free_base_port()), memory_store(), allow_all());
     let handle = server.handle();
     let shutdown = CancellationToken::new();
     shutdown.cancel();

@@ -1,9 +1,9 @@
 //! Upstream-behavior baseline (M1-04): relay round-robin.
 //!
-//! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). The
-//! rotation cursor `ROTATION_RELAY_SERVER` is process-wide, so this test has a binary of its
-//! own: nothing else here advances the cursor, which makes the order deterministic. Relays are
-//! TEST-NET-1 (RFC 5737), so the health check never replaces the list.
+//! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). Upstream's
+//! rotation cursor `ROTATION_RELAY_SERVER` was process-wide, hence this binary of its own;
+//! since M1-06 it is per server (`AllowAll`), which keeps the order deterministic too. Relays
+//! are TEST-NET-1 (RFC 5737), so the health check never replaces the list.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

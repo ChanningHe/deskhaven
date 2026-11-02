@@ -1,10 +1,12 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
+use crate::control::ControlPlane;
 use crate::log_limit::LogLimit;
 use crate::peer::*;
 use crate::server::{Ports, SignalConfig, SignalError};
 use crate::store::PeerStore;
 use crate::tasks::Tasks;
+use arc_swap::ArcSwap;
 use hbb_common::{
     AddrMangle, ResultType, allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -26,7 +28,7 @@ use hbb_common::{
     tokio::{
         self,
         net::{TcpListener, TcpStream},
-        sync::{Mutex, mpsc},
+        sync::{Mutex, mpsc, watch},
         time::{Duration, interval},
     },
     tokio_util::codec::Framed,
@@ -39,7 +41,7 @@ use std::{
     collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
@@ -70,7 +72,7 @@ enum Sink {
 }
 pub(crate) type Sender = mpsc::UnboundedSender<Data>;
 pub(crate) type Receiver = mpsc::UnboundedReceiver<Data>;
-static ROTATION_RELAY_SERVER: AtomicUsize = AtomicUsize::new(0);
+// deskhaven (M1-06): the ROTATION_RELAY_SERVER static moved into `AllowAll` (control.rs).
 type RelayServers = Vec<String>;
 const CHECK_RELAY_TIMEOUT: u64 = 3_000;
 // deskhaven: hard cap on IP_BLOCKER entries (one per client IP seen in the last day); see
@@ -147,7 +149,11 @@ pub(crate) struct RendezvousServer {
     tcp_punch: Arc<Mutex<HashMap<SocketAddr, Sink>>>,
     pm: PeerMap,
     tx: Sender,
-    relay_servers: Arc<RelayServers>,
+    // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
+    // server loop (the only writer) and every connection task (lock-free readers). Upstream
+    // kept a plain `Arc` that each connection task cloned at accept (rs:1174-1182), so a list
+    // change never reached connections that were already open.
+    relay_servers: Arc<ArcSwap<RelayServers>>,
     relay_servers0: Arc<RelayServers>,
     // deskhaven: the configured relay list (initial config or last handle update); its
     // resolvable entries are `relay_servers0`.
@@ -160,6 +166,8 @@ pub(crate) struct RendezvousServer {
     // deskhaven: `rendezvous_servers` removed with the ConfigureUpdate backdoor.
     inner: Arc<Inner>,
     always_use_relay: Arc<AtomicBool>,
+    // deskhaven (M1-06): policy hooks (07 §3.2); only `pick_relay` is called so far.
+    control: Arc<dyn ControlPlane>,
     tasks: Tasks,
 }
 
@@ -174,21 +182,24 @@ impl RendezvousServer {
     // deskhaven: replaces upstream `start` / `start_with_bind` (own tokio runtime, env-var
     // arguments, own SIGTERM/INT/QUIT handling, loopback console, exiting the process). Runs on
     // the caller's runtime until a listener cannot be re-created or the UDP self-test fails;
-    // the caller (`SignalServer::run`) handles cancellation.
+    // the caller (`SignalServer::run`) handles cancellation. `serving` turns true once every
+    // listener is bound (M1-06; the caller resets it when `run` ends).
     pub(crate) async fn serve(
         cfg: SignalConfig,
         ports: Ports,
         store: Arc<dyn PeerStore>,
+        control: Arc<dyn ControlPlane>,
         tx: Sender,
         mut rx: Receiver,
         always_use_relay: Arc<AtomicBool>,
         tasks: Tasks,
+        serving: &watch::Sender<bool>,
     ) -> Result<(), SignalError> {
         let key = cfg.licence_key();
         log::info!("Key: {}", key);
         let bind_addr = cfg.bind;
         let rmem = cfg.rmem;
-        let mut rs = Self::new(&cfg, store, tx, always_use_relay, tasks)
+        let mut rs = Self::new(&cfg, store, control, tx, always_use_relay, tasks)
             .await
             .map_err(SignalError::internal)?;
         // deskhaven (M1-05): the registry is in memory before anything is answered (row count
@@ -216,6 +227,7 @@ impl RendezvousServer {
                 "N"
             }
         );
+        serving.send_replace(true);
         let main_task = async move {
             loop {
                 log::info!("Start");
@@ -264,6 +276,7 @@ impl RendezvousServer {
     async fn new(
         cfg: &SignalConfig,
         store: Arc<dyn PeerStore>,
+        control: Arc<dyn ControlPlane>,
         tx: Sender,
         always_use_relay: Arc<AtomicBool>,
         tasks: Tasks,
@@ -303,6 +316,7 @@ impl RendezvousServer {
                 punch_req_max: cfg.punch_req_max,
             }),
             always_use_relay,
+            control,
             tasks,
         };
         log::info!("mask: {:?}", rs.inner.mask);
@@ -427,7 +441,7 @@ impl RendezvousServer {
             // a check still in flight when the list is replaced cannot restore old servers.
             Data::RelayServers(checked, rs) => {
                 if Arc::ptr_eq(&checked, &self.relay_servers0) {
-                    self.relay_servers = Arc::new(rs);
+                    self.relay_servers.store(Arc::new(rs));
                 }
             }
             Data::RelayResolved {
@@ -453,7 +467,7 @@ impl RendezvousServer {
         if accepted != *self.relay_servers0 {
             log::info!("relay-servers={accepted:?}");
             self.relay_servers0 = Arc::new(accepted);
-            self.relay_servers = self.relay_servers0.clone();
+            self.relay_servers.store(self.relay_servers0.clone());
         }
     }
 
@@ -505,6 +519,10 @@ impl RendezvousServer {
                     } else if !self.check_ip_blocker(&ip, &id).await {
                         return send_rk_res(socket, addr, TOO_FREQUENT).await;
                     }
+                    // ControlPlane hook (M5): `control.register_pk(&RegisterInfo { id, uuid,
+                    // pk, ip, no_register_device })` goes here (inline, memory only): NotDeployed
+                    // -> NOT_DEPLOYED, UuidMismatch -> UUID_MISMATCH, before memory or the store
+                    // change. AllowAll answers Ok, so it is not called yet.
                     let peer = self.pm.get_or(&id).await;
                     let (changed, _ip_changed) = {
                         let peer = peer.read().await;
@@ -616,6 +634,10 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
+                    // ControlPlane hook (M5): `control.authorize(&ConnectReq { kind: Relay, .. })`
+                    // goes here; Deny -> RelayResponse{refuse_reason}, Allow(grant) -> inject
+                    // grant.permissions / audit_ref into the forwarded RequestRelay. AllowAll
+                    // allows with an empty grant, so it is not called yet.
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
@@ -670,6 +692,10 @@ impl RendezvousServer {
                     });
                     Self::send_to_sink(sink, msg_out).await;
                 }
+                // ControlPlane hooks (M5): an `HttpProxyRequest` arm (`control.http_proxy`, only
+                // on KeyExchange-secured connections, M1-07) and a `Hc` / HealthCheck arm
+                // (`control.health_check`, keeping the connection open for `keep_alive`) go
+                // here. Upstream ignores both messages, as AllowAll would.
                 _ => {}
             }
         }
@@ -809,6 +835,12 @@ impl RendezvousServer {
             return Ok((msg_out, None));
         }
         let id = ph.id;
+        // ControlPlane hook (M5): `control.authorize(&ConnectReq { kind: Punch, .. })` goes here,
+        // after the licence check and before the peer lookup; Deny -> PunchHoleResponse
+        // {other_failure}, Allow(grant) -> inject grant.permissions / audit_ref into the
+        // PunchHole / FetchLocalAddr below and remember the grant with A's sink in `tcp_punch`
+        // (feedback in handle_hole_sent / handle_local_addr / RelayResponse). AllowAll allows
+        // with an empty grant, so it is not called yet.
         // punch hole request from A, relay to B,
         // check if in same intranet first,
         // fetch local addrs if in same intranet.
@@ -1008,7 +1040,7 @@ impl RendezvousServer {
         self.relay_config = Arc::new(relay_servers.clone());
         self.relay_unresolved = Some(Vec::new());
         self.relay_servers0 = Arc::new(relay_servers);
-        self.relay_servers = self.relay_servers0.clone();
+        self.relay_servers.store(self.relay_servers0.clone());
     }
 }
 
@@ -1047,14 +1079,12 @@ fn check_ip_block(lock: &mut IpBlockMap, ip: &str, id: &str, max_entries: usize)
 }
 
 impl RendezvousServer {
-    fn get_relay_server(&self, _pa: IpAddr, _pb: IpAddr) -> String {
-        if self.relay_servers.is_empty() {
-            return "".to_owned();
-        } else if self.relay_servers.len() == 1 {
-            return self.relay_servers[0].clone();
-        }
-        let i = ROTATION_RELAY_SERVER.fetch_add(1, Ordering::SeqCst) % self.relay_servers.len();
-        self.relay_servers[i].clone()
+    // deskhaven (M1-06): the choice is the control plane's (`AllowAll` keeps upstream's
+    // round-robin), among the relays currently shared by every connection.
+    fn get_relay_server(&self, pa: IpAddr, pb: IpAddr) -> String {
+        self.control
+            .pick_relay(pa, pb, &self.relay_servers.load())
+            .unwrap_or_default()
     }
 
     async fn handle_listener2(&self, stream: TcpStream, addr: SocketAddr) {
@@ -1444,11 +1474,20 @@ mod tests {
         };
         let (tx, rx) = mpsc::unbounded_channel();
         let always_use_relay = Arc::new(AtomicBool::new(cfg.always_use_relay));
-        let handle = crate::SignalHandle::new(tx.clone(), always_use_relay.clone());
+        let (_, serving) = watch::channel(false);
+        let handle = crate::SignalHandle::new(tx.clone(), always_use_relay.clone(), serving);
         let tasks = crate::tasks::Tasks::new(Default::default());
-        let rs = RendezvousServer::new(&cfg, memory_store(), tx.clone(), always_use_relay, tasks)
-            .await
-            .unwrap();
+        let control = Arc::new(crate::AllowAll::new());
+        let rs = RendezvousServer::new(
+            &cfg,
+            memory_store(),
+            control,
+            tx.clone(),
+            always_use_relay,
+            tasks,
+        )
+        .await
+        .unwrap();
         let socket = create_udp_listener(Some(IpAddr::V4(Ipv4Addr::LOCALHOST)), 0, 0)
             .await
             .unwrap();
@@ -1492,11 +1531,10 @@ mod tests {
         }
 
         fn relays(&self) -> Vec<String> {
-            (*self.rs.relay_servers).clone()
+            (**self.rs.relay_servers.load()).clone()
         }
 
-        /// A pick is always one of the current relays (the rotation cursor is process-wide,
-        /// so the exact order is not asserted).
+        /// A pick is always one of the current relays.
         fn assert_picks_from_relays(&self) {
             let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
             let relays = self.relays();
@@ -1559,6 +1597,80 @@ mod tests {
         f.handle.set_relay_servers(Vec::new()).await.unwrap();
         f.pump().await;
         assert_eq!(f.rs.get_relay_server(ip, ip), "");
+    }
+
+    // deskhaven (M1-06): a connection task works on a clone of the server taken at accept;
+    // relay changes made by the loop afterwards (handle update, health check) still reach it.
+    #[hbb_common::tokio::test]
+    async fn connection_clone_sees_later_relay_changes() {
+        let mut f = fixture().await;
+        let conn = f.rs.clone();
+        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        assert_eq!(conn.get_relay_server(ip, ip), RELAY_INIT);
+
+        f.handle
+            .set_relay_servers(vec![RELAY_A.to_owned()])
+            .await
+            .unwrap();
+        f.pump().await;
+        assert_eq!(conn.get_relay_server(ip, ip), RELAY_A, "handle update");
+
+        f.handle
+            .set_relay_servers(vec![RELAY_B.to_owned(), RELAY_C.to_owned()])
+            .await
+            .unwrap();
+        f.pump().await;
+        let checked = f.rs.relay_servers0.clone();
+        f.tx.send(Data::RelayServers(checked, vec![RELAY_C.to_owned()]))
+            .unwrap();
+        f.pump().await;
+        assert_eq!(conn.get_relay_server(ip, ip), RELAY_C, "health check");
+    }
+
+    // deskhaven (M1-06): relay selection is the control plane's: it gets both addresses and
+    // the current list, and `None` hands out no relay.
+    #[hbb_common::tokio::test]
+    async fn relay_choice_is_delegated_to_the_control_plane() {
+        use crate::control::{Authz, ConnectReq, ControlPlane, RegisterInfo, RegisterVerdict};
+        use hbb_common::rendezvous_proto::{HttpProxyRequest, HttpProxyResponse};
+        use std::sync::Mutex as StdMutex;
+
+        #[derive(Default)]
+        struct Recorder(StdMutex<Vec<(IpAddr, IpAddr, Vec<String>)>>);
+        #[async_trait::async_trait]
+        impl ControlPlane for Recorder {
+            fn register_pk(&self, _: &RegisterInfo<'_>) -> RegisterVerdict {
+                RegisterVerdict::Ok
+            }
+            async fn authorize(&self, _: &ConnectReq<'_>) -> Authz {
+                Authz::Deny(String::new())
+            }
+            async fn http_proxy(&self, _: SocketAddr, _: HttpProxyRequest) -> HttpProxyResponse {
+                HttpProxyResponse::default()
+            }
+            async fn health_check(&self, _: &str, _: SocketAddr) -> Option<i32> {
+                None
+            }
+            fn pick_relay(&self, a: IpAddr, b: IpAddr, relays: &[String]) -> Option<String> {
+                let mut calls = self.0.lock().unwrap();
+                calls.push((a, b, relays.to_vec()));
+                (calls.len() == 1).then(|| "picked:21117".to_owned())
+            }
+        }
+
+        let mut f = fixture().await;
+        let recorder = Arc::new(Recorder::default());
+        f.rs.control = recorder.clone();
+        let peer_addr = f.online_peer().await;
+
+        let (first, _) = f.punch().await;
+        let (second, _) = f.punch().await;
+
+        assert_eq!(first.relay_server, "picked:21117");
+        assert_eq!(second.relay_server, "", "None hands out no relay");
+        let from: IpAddr = "198.51.100.7".parse().unwrap();
+        let expected = (from, peer_addr.ip(), vec![RELAY_INIT.to_owned()]);
+        assert_eq!(*recorder.0.lock().unwrap(), [expected.clone(), expected]);
     }
 
     #[hbb_common::tokio::test]
@@ -1627,7 +1739,7 @@ mod tests {
         assert_eq!(f.rs.relay_unresolved, Some(vec![UNRESOLVABLE.to_owned()]));
 
         // A health-check result narrowed the list; an unchanged retry must not undo it.
-        f.rs.relay_servers = Arc::new(Vec::new());
+        f.rs.relay_servers.store(Arc::new(Vec::new()));
         f.tick_and_resolve().await; // the retry runs again
         assert!(f.relays().is_empty(), "health-check result kept");
         assert_eq!(
@@ -1673,9 +1785,12 @@ mod tests {
             };
             let (tx, _rx) = mpsc::unbounded_channel();
             let tasks = crate::tasks::Tasks::new(Default::default());
-            let rs = RendezvousServer::new(&cfg, memory_store(), tx, Default::default(), tasks)
-                .await
-                .unwrap();
+            let control = Arc::new(crate::AllowAll::new());
+            let rs =
+                RendezvousServer::new(&cfg, memory_store(), control, tx, Default::default(), tasks)
+                    .await
+                    .unwrap();
+
             rs.inner.local_ip.clone()
         }
         let detected = local_ip_address::local_ip()

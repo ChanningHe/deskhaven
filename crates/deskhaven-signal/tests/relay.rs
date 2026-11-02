@@ -2,17 +2,28 @@
 //!
 //! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). Relay
 //! addresses are TEST-NET-1 (RFC 5737), so the health check never finds them healthy and never
-//! replaces the list. Relay selection uses the process-wide `ROTATION_RELAY_SERVER` cursor,
-//! so this binary asserts only membership; the rotation order is pinned in `relay_rotation.rs`.
+//! replaces the list. This binary asserts only membership; the rotation order is pinned in
+//! `relay_rotation.rs`.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod support;
 
+use deskhaven_signal::{
+    Authz, ConnectReq, ControlPlane, Grant, HttpProxyRequest, HttpProxyResponse, RegisterInfo,
+    RegisterVerdict, SignalConfig,
+};
 use hbb_common::{
     rendezvous_proto::{IdPk, NatType, RequestRelay},
     tokio,
+};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use support::{
     CLIENT_VERSION, Conn, Rendezvous, TestServer, decode_addr, expect_msg, next_relay, open_id_pk,
@@ -170,12 +181,12 @@ async fn relay_set_replaced_through_handle_is_used_by_new_connections() {
     server.stop().await;
 }
 
-/// rs:1174-1182: every connection task works on a clone of the server state, including
-/// `relay_servers`, so a controller connection accepted before a relay update keeps handing
-/// out the old set even after new connections use the new one. M1-06 (`RelayRegistry`) is
-/// expected to change this.
+/// Changed in M1-06. Upstream (rs:1174-1182) cloned the relay list into each connection task
+/// at accept, so a controller connection accepted before a relay update kept handing out the
+/// old set. The list is now shared by every connection: once an update took effect, the
+/// already open connection's next punch holes name only relays of the new set.
 #[tokio::test]
-async fn early_connection_keeps_old_relay_set_upstream_behavior_m1_06_changes_this() {
+async fn early_connection_uses_relay_set_replaced_later() {
     // Arrange
     let (old, new) = ([RELAY_1, RELAY_2], [RELAY_3, RELAY_4]);
     let server = TestServer::start_with_relays(&old).await;
@@ -193,9 +204,90 @@ async fn early_connection_keeps_old_relay_set_upstream_behavior_m1_06_changes_th
     assert!(old.contains(&before.as_str()), "{before:?}");
     for _ in 0..SAMPLES {
         let after = relay_via(&mut early, &mut target, &req).await;
-        assert!(old.contains(&after.as_str()), "early connection: {after:?}");
+        assert!(new.contains(&after.as_str()), "early connection: {after:?}");
     }
     server.stop().await;
+}
+
+/// M1-06: relay choices go through the injected `ControlPlane::pick_relay`, which sees the
+/// controller's and the target's addresses and the current relay list; its answer is what the
+/// target is told (`None`: no relay).
+#[tokio::test]
+async fn control_plane_picks_the_relay_handed_out() {
+    // Arrange
+    let control = Arc::new(FixedPick::default());
+    let server = TestServer::start_with_control(
+        |cfg| SignalConfig {
+            relay_servers: relays(&[RELAY_1, RELAY_2]),
+            ..cfg
+        },
+        control.clone(),
+    )
+    .await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let req = server.punch_req(TARGET);
+    let resolved = || {
+        control
+            .last
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|c| c.2.len() == 2)
+    };
+    wait_for_relay(&server, &mut target, &req, |_| resolved()).await;
+    let mut controller = server.tcp().await;
+
+    // Act
+    let picked = relay_via(&mut controller, &mut target, &req).await;
+    control.answer.store(false, Ordering::SeqCst);
+    let none = relay_via(&mut controller, &mut target, &req).await;
+
+    // Assert
+    assert_eq!(picked, PICKED);
+    assert_eq!(none, "");
+    let (a, b, list) = control.last.lock().unwrap().clone().unwrap();
+    assert_eq!(a, controller.local_addr().ip());
+    assert_eq!(b, target.local_addr().ip());
+    assert_eq!(list, relays(&[RELAY_1, RELAY_2]));
+    server.stop().await;
+}
+
+const PICKED: &str = "picked.example:21117";
+
+/// Answers [`PICKED`] (or `None` once `answer` is cleared) and records the last call.
+struct FixedPick {
+    answer: AtomicBool,
+    last: Mutex<Option<(IpAddr, IpAddr, Vec<String>)>>,
+}
+
+impl Default for FixedPick {
+    fn default() -> Self {
+        Self {
+            answer: AtomicBool::new(true),
+            last: Mutex::new(None),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ControlPlane for FixedPick {
+    fn register_pk(&self, _: &RegisterInfo<'_>) -> RegisterVerdict {
+        RegisterVerdict::Ok
+    }
+    async fn authorize(&self, _: &ConnectReq<'_>) -> Authz {
+        Authz::Allow(Grant::default())
+    }
+    async fn http_proxy(&self, _: SocketAddr, _: HttpProxyRequest) -> HttpProxyResponse {
+        HttpProxyResponse::default()
+    }
+    async fn health_check(&self, _: &str, _: SocketAddr) -> Option<i32> {
+        None
+    }
+    fn pick_relay(&self, a: IpAddr, b: IpAddr, relays: &[String]) -> Option<String> {
+        *self.last.lock().unwrap() = Some((a, b, relays.to_vec()));
+        let answer = self.answer.load(Ordering::SeqCst);
+        answer.then(|| PICKED.to_owned())
+    }
 }
 
 /// rs:771-777: ALWAYS_USE_RELAY (now `SignalHandle::set_always_use_relay`) forces nat_type

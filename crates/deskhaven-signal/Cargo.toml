@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Relay list shared lock-free by the server loop and every connection task (M1-06).
+arc-swap.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 hbb_common.workspace = true

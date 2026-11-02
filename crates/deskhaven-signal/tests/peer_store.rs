@@ -28,8 +28,8 @@ use std::{
     time::SystemTime,
 };
 use support::{
-    Conn, PeerKeys, Rendezvous, STEP, TestServer, config, decode_addr, expect_msg, free_base_port,
-    online_bits, ports_free,
+    Conn, PeerKeys, Rendezvous, STEP, TestServer, allow_all, config, decode_addr, expect_msg,
+    free_base_port, online_bits, ports_free,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -215,9 +215,12 @@ async fn preload_failure_fails_run_before_binding() {
     let port = free_base_port();
 
     // Act
-    let res = timeout(STEP, run(config(port), store, CancellationToken::new()))
-        .await
-        .expect("run returns promptly");
+    let res = timeout(
+        STEP,
+        run(config(port), store, allow_all(), CancellationToken::new()),
+    )
+    .await
+    .expect("run returns promptly");
 
     // Assert
     assert!(matches!(res, Err(SignalError::PeerPreload(_))), "{res:?}");
@@ -235,7 +238,7 @@ async fn preload_timeout_fails_run() {
     };
 
     // Act
-    let res = timeout(STEP, run(cfg, store, CancellationToken::new()))
+    let res = timeout(STEP, run(cfg, store, allow_all(), CancellationToken::new()))
         .await
         .expect("run returns once the preload times out");
 
