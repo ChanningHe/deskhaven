@@ -6,20 +6,16 @@ use std::time::Duration;
 
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
-use deskhaven_core::auth::limiter::LoginThrottle;
-use deskhaven_core::clock::{SharedClock, SystemClock};
+use deskhaven_core::clock::SystemClock;
 use deskhaven_core::crypto::SecretBox;
 use deskhaven_core::devices::DeviceRepository;
 use deskhaven_core::keys::{
     KeyWarning, SignalKeyPair, SignalKeyPaths, load_or_generate_master_key,
     load_or_generate_signal_key,
 };
-use deskhaven_core::login_events::LoginEventLog;
-use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::AppState;
-use deskhaven_core::tfa::TfaService;
-use deskhaven_core::users::{PasswordHasher, UserService};
+use deskhaven_core::users::PasswordHasher;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
 use deskhaven_signal::AllowAll;
 use tokio_util::sync::CancellationToken;
@@ -166,34 +162,14 @@ pub async fn open_state(
         tracing::warn!("{warning}");
     }
 
-    let clock: SharedClock = Arc::new(SystemClock);
-    let users = UserService::with_clock(
-        db.clone(),
-        settings.clone(),
-        PasswordHasher::default(),
-        Arc::clone(&clock),
-    );
-    let login_throttle = LoginThrottle::new(db.clone(), settings.clone(), Arc::clone(&clock));
-    let login_events = LoginEventLog::new(db.clone(), Arc::clone(&clock));
-    let tfa = TfaService::new(
-        db.clone(),
-        Arc::clone(&crypto),
-        settings.clone(),
-        Arc::clone(&clock),
-    );
-    let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
-
-    Ok(AppState {
+    Ok(AppState::new(
         db,
         settings,
         crypto,
         signal_public_key,
-        users,
-        sessions,
-        login_throttle,
-        login_events,
-        tfa,
-    })
+        PasswordHasher::default(),
+        Arc::new(SystemClock),
+    ))
 }
 
 #[cfg(unix)]

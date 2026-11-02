@@ -8,12 +8,14 @@ use std::sync::Arc;
 use sea_orm::DatabaseConnection;
 
 use crate::auth::limiter::LoginThrottle;
+use crate::clock::SharedClock;
+use crate::console_audit::ConsoleAuditLog;
 use crate::crypto::SecretBox;
 use crate::login_events::LoginEventLog;
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
 use crate::tfa::TfaService;
-use crate::users::UserService;
+use crate::users::{PasswordHasher, UserService};
 
 pub struct AppState {
     /// Migrated connection pool (cheap to clone).
@@ -34,4 +36,45 @@ pub struct AppState {
     pub login_events: LoginEventLog,
     /// TOTP enrolment, recovery codes and two-step login challenges.
     pub tfa: TfaService,
+    /// Audit trail of console / API / CLI changes.
+    pub console_audit: ConsoleAuditLog,
+}
+
+impl AppState {
+    /// Wires the services around a migrated `db` and loaded `settings`, all on one `clock`
+    /// (production: `SystemClock`, `PasswordHasher::default()`). Must be called inside a
+    /// Tokio runtime (the session service spawns its event consumer).
+    pub fn new(
+        db: DatabaseConnection,
+        settings: SettingsService,
+        crypto: Arc<SecretBox>,
+        signal_public_key: String,
+        hasher: PasswordHasher,
+        clock: SharedClock,
+    ) -> Self {
+        let users =
+            UserService::with_clock(db.clone(), settings.clone(), hasher, Arc::clone(&clock));
+        let login_throttle = LoginThrottle::new(db.clone(), settings.clone(), Arc::clone(&clock));
+        let login_events = LoginEventLog::new(db.clone(), Arc::clone(&clock));
+        let console_audit = ConsoleAuditLog::new(db.clone(), Arc::clone(&clock));
+        let tfa = TfaService::new(
+            db.clone(),
+            Arc::clone(&crypto),
+            settings.clone(),
+            Arc::clone(&clock),
+        );
+        let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
+        Self {
+            db,
+            settings,
+            crypto,
+            signal_public_key,
+            users,
+            sessions,
+            login_throttle,
+            login_events,
+            tfa,
+            console_audit,
+        }
+    }
 }

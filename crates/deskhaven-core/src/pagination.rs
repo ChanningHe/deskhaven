@@ -1,8 +1,8 @@
 //! Offset pagination shared by list operations.
 
-/// Largest accepted page size.
-pub const MAX_PAGE_SIZE: u64 = 100;
-/// Largest accepted page number. Keeps the offset (`(page - 1) * page_size` <= 10^8) far
+/// Largest accepted page size (08-web-console §6).
+pub const MAX_PAGE_SIZE: u64 = 200;
+/// Largest accepted page number. Keeps the offset (`(page - 1) * page_size` <= 2 * 10^8) far
 /// from any integer limit of Rust or either database; nobody pages that deep.
 pub const MAX_PAGE: u64 = 1_000_000;
 const DEFAULT_PAGE_SIZE: u64 = 20;

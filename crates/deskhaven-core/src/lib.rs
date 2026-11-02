@@ -3,6 +3,7 @@
 pub mod addressbooks;
 pub mod auth;
 pub mod clock;
+pub mod console_audit;
 pub mod crypto;
 pub mod devices;
 pub mod groups;
