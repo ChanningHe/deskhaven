@@ -1,6 +1,7 @@
 //! User accounts and local passwords (04 §3, 06 §3.1-3.2, §3.6).
 //!
-//! [`UserService`] owns every write to `users`. Usernames and emails are normalized here
+//! [`UserService`] owns every write to `users`, except the `totp_*` columns, which belong to
+//! [`TfaService`](crate::tfa::TfaService). Usernames and emails are normalized here
 //! (see `normalize`); the schema's unique indexes on the normalized columns are the source
 //! of truth for uniqueness, and their violations map to [`UserError::Conflict`].
 //!

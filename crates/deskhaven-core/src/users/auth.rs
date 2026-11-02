@@ -23,6 +23,18 @@ impl CredentialStamp {
             password_changed_at: user.password_changed_at.map(|t| t.timestamp_millis()),
         }
     }
+
+    /// For carrying a stamp across the two steps of a 2FA login (`tfa`, stored server side
+    /// with the challenge, never sent to the client).
+    pub(crate) fn to_stored(self) -> Option<i64> {
+        self.password_changed_at
+    }
+
+    pub(crate) fn from_stored(password_changed_at: Option<i64>) -> Self {
+        Self {
+            password_changed_at,
+        }
+    }
 }
 
 /// A successful local login.

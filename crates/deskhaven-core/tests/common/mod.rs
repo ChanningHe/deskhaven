@@ -14,6 +14,7 @@ use deskhaven_db::testing::TestDb;
 use serde_json::Value as Json;
 
 pub mod lockout;
+pub mod tfa;
 
 /// A fixed instant with a non-zero millisecond part.
 pub const T0_MS: i64 = 1_700_000_000_123;

@@ -20,7 +20,7 @@ pub const TOKEN_LEN: usize = 43;
 pub struct SessionToken(Zeroizing<String>);
 
 impl SessionToken {
-    pub(super) fn generate() -> Result<Self, CryptoError> {
+    pub(crate) fn generate() -> Result<Self, CryptoError> {
         let mut bytes = Zeroizing::new([0u8; TOKEN_BYTES]);
         fill_random(bytes.as_mut())?;
         Ok(Self(Zeroizing::new(URL_SAFE_NO_PAD.encode(bytes.as_ref()))))
@@ -31,7 +31,7 @@ impl SessionToken {
         &self.0
     }
 
-    pub(super) fn hash(&self) -> TokenHash {
+    pub(crate) fn hash(&self) -> TokenHash {
         TokenHash::digest(&self.0)
     }
 }
@@ -58,7 +58,7 @@ impl TokenHash {
         Self(format!("{:x}", Sha256::digest(token.as_bytes())))
     }
 
-    pub(super) fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }

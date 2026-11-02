@@ -12,4 +12,5 @@ pub mod sessions;
 pub mod settings;
 pub mod state;
 mod text;
+pub mod tfa;
 pub mod users;
