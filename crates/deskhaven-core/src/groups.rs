@@ -9,12 +9,13 @@ use deskhaven_db::time::TimestampMs;
 use deskhaven_db::{begin_write, is_foreign_key_violation, time};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
-    QueryOrder, QuerySelect, SqlErr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    ModelTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
 pub use deskhaven_db::entity::managed_by::ManagedBy;
 
+use crate::addressbooks;
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::User;
 
@@ -156,10 +157,12 @@ impl GroupService {
         Ok(updated.into())
     }
 
-    /// Deletes the group and, by cascade, its memberships.
+    /// Deletes the group, its memberships (cascade) and the address book shares naming it
+    /// (same transaction: shares have no foreign key to their subject).
     pub async fn delete(&self, id: i64) -> Result<(), GroupError> {
         let tx = begin_write(&self.db).await?;
         let current = writable_group(&tx, id).await?;
+        addressbooks::forget_group(&tx, id).await?;
         current.delete(&tx).await?;
         tx.commit().await?;
         Ok(())
@@ -219,6 +222,20 @@ impl GroupService {
             .await?;
         Ok(groups.into_iter().map(Group::from).collect())
     }
+}
+
+/// Ids of the groups `user_id` belongs to (address book share resolution).
+pub(crate) async fn member_group_ids(
+    db: &impl ConnectionTrait,
+    user_id: i64,
+) -> Result<Vec<i64>, DbErr> {
+    group_member::Entity::find()
+        .select_only()
+        .column(group_member::Column::GroupId)
+        .filter(group_member::Column::UserId.eq(user_id))
+        .into_tuple::<i64>()
+        .all(db)
+        .await
 }
 
 async fn find_group(db: &impl ConnectionTrait, id: i64) -> Result<group::Model, GroupError> {

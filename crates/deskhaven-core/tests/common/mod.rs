@@ -13,6 +13,7 @@ use deskhaven_core::settings::{SettingsService, UpdateRequest};
 use deskhaven_db::testing::TestDb;
 use serde_json::Value as Json;
 
+pub mod ab;
 pub mod lockout;
 pub mod tfa;
 

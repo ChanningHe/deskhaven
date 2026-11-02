@@ -29,6 +29,8 @@ sha1 = { workspace = true }
 sha2_011 = { workspace = true }
 data-encoding = { workspace = true }
 subtle = { workspace = true }
+# Address book guids are UUIDv7 strings (04 §1).
+uuid = { workspace = true, features = ["v7"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true }
