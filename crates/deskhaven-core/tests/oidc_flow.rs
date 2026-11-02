@@ -120,6 +120,60 @@ async fn a_state_completes_once_and_a_replay_does_nothing() {
     .await;
 }
 
+#[tokio::test]
+async fn the_callback_preview_names_the_device_and_consumes_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let (_, request) = env.begin().await;
+        env.idp.mount_token(&env.spec("sub-1", &request)).await;
+
+        let first = env
+            .oidc
+            .preview_callback(Some(&request.state))
+            .await
+            .unwrap();
+        let again = env
+            .oidc
+            .preview_callback(Some(&request.state))
+            .await
+            .unwrap();
+        let completed = env.callback(&request).await;
+        let after = env.oidc.preview_callback(Some(&request.state)).await;
+
+        let shown = first.device.clone().unwrap();
+        assert_eq!(shown.rustdesk_id, device().rustdesk_id, "{}", db.backend);
+        assert_eq!(shown.name.as_deref(), Some("oidc-host"));
+        assert_eq!(shown.os.as_deref(), Some("linux"));
+        assert_eq!(first.provider, "corp");
+        assert_eq!(first, again);
+        // Previews did not exchange anything; the confirmation did, once.
+        assert!(completed.outcome.is_ok());
+        assert_eq!(env.idp.token_requests().await.len(), 1);
+        assert!(matches!(after, Err(CallbackError::InvalidState)));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn flows_live_five_minutes_and_an_expired_one_has_no_preview() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (_, request) = env.begin().await;
+        env.clock
+            .advance(FLOW_TTL - std::time::Duration::from_secs(1));
+        let late = env.oidc.preview_callback(Some(&request.state)).await;
+        env.clock.advance(std::time::Duration::from_secs(1));
+        let expired = env.oidc.preview_callback(Some(&request.state)).await;
+        let unknown = env.oidc.preview_callback(Some(&"Q".repeat(43))).await;
+
+        assert_eq!(FLOW_TTL, std::time::Duration::from_secs(5 * 60));
+        assert!(late.is_ok(), "{}: {late:?}", db.backend);
+        assert!(matches!(expired, Err(CallbackError::InvalidState)));
+        assert!(matches!(unknown, Err(CallbackError::InvalidState)));
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_callbacks_for_one_state_complete_it_once() {
     each_migrated_backend(async |db: &TestDb| {

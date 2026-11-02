@@ -11,7 +11,9 @@ use deskhaven_client_api::{OIDC_INVALID_LOGIN_MESSAGE, OIDC_PENDING_MESSAGE};
 use deskhaven_contract::app::{TestApp, TestOptions};
 use deskhaven_contract::check::Reply;
 use deskhaven_contract::mirror::{AuthBody, ErrorBody, LoginOptions, OidcAuthUrl};
-use deskhaven_contract::requests::{bearer, from, oidc_auth, oidc_callback, oidc_query};
+use deskhaven_contract::requests::{
+    bearer, from, oidc_auth, oidc_callback, oidc_confirm, oidc_query,
+};
 use deskhaven_contract::seeds::{SEED_RUSTDESK_ID, SEED_UUID};
 use deskhaven_contract::shapes;
 use deskhaven_core::clock::{Clock, SystemClock};
@@ -73,7 +75,8 @@ impl Env {
         (start, request)
     }
 
-    /// The IdP answers with a token per `shape`, and the browser follows the redirect.
+    /// The IdP answers with a token per `shape`; the browser follows the redirect (the
+    /// confirmation page) and the user confirms. The confirmation's reply.
     async fn callback(
         &self,
         request: &AuthRequest,
@@ -82,9 +85,16 @@ impl Env {
     ) -> Reply {
         let spec = TokenSpec::for_flow(subject, &request.nonce, SystemClock.now_ms());
         self.idp.mount_token(&shape(spec)).await;
-        let redirect = oidc_callback(&[("code", AUTH_CODE), ("state", &request.state)]);
+        let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+        let shown = self.app.send(&oidc_callback(&pairs)).await.unwrap();
+        assert_eq!(shown.status, 200, "{}", text(&shown));
+        assert!(
+            text(&shown).contains("<form method=\"post\">"),
+            "{}",
+            text(&shown)
+        );
         self.app
-            .send(&from(redirect, "198.51.100.20:4000"))
+            .send(&from(oidc_confirm(&pairs), "198.51.100.20:4000"))
             .await
             .unwrap()
     }
@@ -423,5 +433,120 @@ async fn auth_refuses_malformed_unknown_and_unconfigured_requests() {
             404,
             "OIDC login is not configured on this server".to_owned()
         )
+    );
+}
+
+/// M1: the IdP redirect names the device and completes nothing until confirmed.
+#[tokio::test]
+async fn the_redirect_shows_the_device_and_completes_only_on_confirmation() {
+    let env = env().await;
+    let (start, request) = env.start().await;
+    let spec = TokenSpec::for_flow("sub-1", &request.nonce, SystemClock.now_ms());
+    env.idp.mount_token(&spec).await;
+    let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+
+    let shown = env.app.send(&oidc_callback(&pairs)).await.unwrap();
+    let shown_again = env.app.send(&oidc_callback(&pairs)).await.unwrap();
+    let before = env.poll(&start.code).await;
+    let exchanges_before = env.idp.token_requests().await.len();
+    let confirmed = env.app.send(&oidc_confirm(&pairs)).await.unwrap();
+    let after = env.poll(&start.code).await;
+
+    let page = text(&shown);
+    assert_eq!(shown.status, 200);
+    // The device as it described itself at /api/oidc/auth (`requests::device_info`).
+    assert!(
+        page.contains(SEED_RUSTDESK_ID) && page.contains("flow-host") && page.contains("linux"),
+        "{page}"
+    );
+    assert!(
+        page.contains("<form method=\"post\">") && !page.contains("action="),
+        "{page}"
+    );
+    assert!(
+        !page.contains(AUTH_CODE) && !page.contains(&request.state),
+        "{page}"
+    );
+    assert!(header(&shown, "content-security-policy").contains("form-action 'self'"));
+    assert_eq!(header(&shown, "referrer-policy"), "no-referrer");
+    assert_eq!(text(&shown_again), page);
+    assert_eq!(error_of(&before), (404, OIDC_PENDING_MESSAGE.to_owned()));
+    assert_eq!(exchanges_before, 0);
+    assert!(
+        text(&confirmed).contains("Login successful"),
+        "{}",
+        text(&confirmed)
+    );
+    assert_eq!(after.status, 200, "{}", text(&after));
+}
+
+/// M1: a confirmation works once.
+#[tokio::test]
+async fn a_replayed_confirmation_is_refused() {
+    let env = env().await;
+    let (_, request) = env.start().await;
+
+    let first = env.callback(&request, "sub-1", |s| s).await;
+    let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+    let replay = env.app.send(&oidc_confirm(&pairs)).await.unwrap();
+    let page_after = env.app.send(&oidc_callback(&pairs)).await.unwrap();
+
+    assert!(text(&first).contains("Login successful"));
+    assert!(
+        text(&replay).contains("invalid, expired or already used"),
+        "{}",
+        text(&replay)
+    );
+    assert!(text(&page_after).contains("invalid, expired or already used"));
+    assert_eq!(env.idp.token_requests().await.len(), 1);
+}
+
+/// M1: the device's self-description and the request are never markup on the page.
+#[tokio::test]
+async fn the_confirmation_page_escapes_the_device_and_never_reflects_the_request() {
+    let env = env().await;
+    let mut auth = oidc_auth(PROVIDER);
+    auth.body = deskhaven_contract::fixture::Body::Json(json!({
+        "op": PROVIDER, "id": SEED_RUSTDESK_ID, "uuid": SEED_UUID,
+        "deviceInfo": { "os": "<b>os</b>", "type": "client", "name": "<script>alert(1)</script>" },
+    }));
+    let reply = env.app.send(&auth).await.unwrap();
+    let start: OidcAuthUrl = reply.json().unwrap();
+    let request = AuthRequest::parse(&start.url);
+
+    let pairs = [("code", "<i>evil</i>"), ("state", request.state.as_str())];
+    let page = text(&env.app.send(&oidc_callback(&pairs)).await.unwrap());
+
+    assert!(
+        page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+        "{page}"
+    );
+    assert!(!page.contains("<script>") && !page.contains("<b>") && !page.contains("<i>"));
+    assert!(!page.contains("evil"));
+}
+
+/// M1: an IdP error asks before telling the device to stop; the confirmation fails the flow.
+#[tokio::test]
+async fn an_idp_error_is_confirmed_before_the_device_stops_waiting() {
+    let env = env().await;
+    let (start, request) = env.start().await;
+    let pairs = [
+        ("error", "access_denied"),
+        ("state", request.state.as_str()),
+    ];
+
+    let shown = text(&env.app.send(&oidc_callback(&pairs)).await.unwrap());
+    let pending = env.poll(&start.code).await;
+    env.app.send(&oidc_confirm(&pairs)).await.unwrap();
+    let stopped = env.poll(&start.code).await;
+
+    assert!(
+        shown.contains("Stop waiting") && !shown.contains("access_denied"),
+        "{shown}"
+    );
+    assert_eq!(error_of(&pending), (404, OIDC_PENDING_MESSAGE.to_owned()));
+    assert_eq!(
+        error_of(&stopped),
+        (403, "OIDC login was cancelled or denied".to_owned())
     );
 }

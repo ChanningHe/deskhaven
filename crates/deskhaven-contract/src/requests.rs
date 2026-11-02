@@ -85,13 +85,25 @@ pub fn oidc_query(code: &str, id: &str, uuid: &str) -> Request {
     Request::new("GET", &format!("/api/oidc/auth-query?{query}"))
 }
 
-/// The browser's redirect back from the IdP with these query pairs.
+/// The browser's redirect back from the IdP with these query pairs (shows the confirmation).
 pub fn oidc_callback(pairs: &[(&str, &str)]) -> Request {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
     for (key, value) in pairs {
         query.append_pair(key, value);
     }
     Request::new("GET", &format!("/api/oidc/callback?{}", query.finish()))
+}
+
+/// The confirmation button: the page's `<form method="post">` without an action, which a
+/// browser posts to the page's own URL (query included) with an empty form body.
+pub fn oidc_confirm(pairs: &[(&str, &str)]) -> Request {
+    let mut request = oidc_callback(pairs);
+    request.method = "POST".to_owned();
+    request.headers.insert(
+        "content-type".to_owned(),
+        "application/x-www-form-urlencoded".to_owned(),
+    );
+    request
 }
 
 /// `request` from another TCP peer. Panics on a malformed address (test input).

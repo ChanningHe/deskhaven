@@ -9,7 +9,11 @@
 //!    (the row id is unknown before the insert; the state hash is unique per row), the
 //!    `nonce`, the device the session will be bound to (`context`) and `expires_at`
 //!    ([`FLOW_TTL`]). Returns the polling code and the IdP's authorization URL.
-//! 2. [`OidcService::complete_callback`] (`GET <public_url>/api/oidc/callback`): claims the
+//! 2. The IdP redirects the browser to `GET <public_url>/api/oidc/callback`, which only
+//!    shows [`OidcService::preview_callback`]: which device (RustDesk id, host name, OS from
+//!    the flow) is about to be signed in, with a button. Nothing is consumed (see `preview`:
+//!    cross-device consent phishing). The confirming `POST` runs
+//!    [`OidcService::complete_callback`]: it claims the
 //!    flow by its state (`UPDATE … SET consumed_at WHERE consumed_at IS NULL AND
 //!    expires_at > now`, so a state works once), exchanges the code with the verifier,
 //!    verifies the ID token (signature against the provider's JWKS, `iss`, `aud`, `exp`,
@@ -25,16 +29,28 @@
 //!
 //! # Identity (06 §3.4)
 //!
-//! The identity key is `(provider, sub)` (`user_identities`; a provider's issuer never
-//! changes). An unknown identity is linked to an existing account by email only when the ID
-//! token says `email_verified: true` **and** `auth.oidc.link_verified_email` is on; a
+//! The identity key is `(provider_id, sub)` (`user_identities`). It stands for
+//! `(issuer, sub)` because a provider's issuer can never change after creation (the update
+//! API has no issuer field); a different issuer is a different provider. An unknown identity
+//! is linked to an existing account by email only when the ID token says
+//! `email_verified: true`, `auth.oidc.link_verified_email` is on, and the account's own
+//! address is verified, it has no TOTP and it is not an admin or owner (see `identity`); a
 //! missing claim counts as false. Otherwise, when the email belongs to an account, the login
 //! is refused (the user links the account in the console). With no such account and
-//! `auto_provision` on, a new `oidc` account is created. Accounts are never matched by
-//! username. Disabled and unverified accounts are refused.
+//! `auto_provision` on, a new `oidc` account is created. Only IdP-verified addresses are ever
+//! stored. Accounts are never matched by username. Disabled and unverified accounts are
+//! refused. Accepted: the refusal versus provisioning difference tells an IdP user whether an
+//! address has a deskhaven account (the clearer experience for its real owner).
 //!
 //! OIDC logins do not ask for the account's local second factor: the IdP authenticates, and
-//! multi-factor policy belongs there.
+//! multi-factor policy belongs there. That is why accounts with TOTP are never linked by
+//! email.
+//!
+//! # Callback URL
+//!
+//! `<public_url>/api/oidc/callback`, registered at the IdP. With a path prefix in
+//! `public_url` (`https://example.com/rustdesk`), the reverse proxy must strip the prefix
+//! before forwarding (deskhaven serves `/api/oidc/callback`).
 //!
 //! # Outbound HTTP
 //!
@@ -50,6 +66,7 @@ mod flow;
 mod http;
 mod identity;
 mod poll;
+mod preview;
 mod protocol;
 mod providers;
 mod url_policy;
@@ -69,6 +86,7 @@ pub use http::{
     ReqwestFetch,
 };
 pub use poll::{ClientLogin, PollOutcome};
+pub use preview::{CallbackPreview, DeviceSummary};
 pub use providers::{
     LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
 };
@@ -81,9 +99,9 @@ use crate::users::UserService;
 
 use discovery::Discovery;
 
-/// Lifetime of a flow, from `/api/oidc/auth` to the last poll (06 §3.4). The client gives
-/// up after 3 minutes.
-pub const FLOW_TTL: Duration = Duration::from_secs(10 * 60);
+/// Lifetime of a flow, from `/api/oidc/auth` to the last poll. The client gives up after 3
+/// minutes; kept short so a phished authorization URL goes stale quickly.
+pub const FLOW_TTL: Duration = Duration::from_secs(5 * 60);
 /// Path of the callback, below `public_url`.
 pub const CALLBACK_PATH: &str = "api/oidc/callback";
 

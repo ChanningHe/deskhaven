@@ -31,11 +31,13 @@
 //! | unknown, expired, already used code; another device; account changed since | 401 | `{"error": INVALID_LOGIN_MESSAGE}` |
 //! | missing parameter | 400 | `{"error": "Invalid login request"}` |
 //!
-//! `GET <public_url>/api/oidc/callback` is the browser's redirect from the IdP; it always
-//! answers 200 with a small static HTML page stating the outcome (see `callback`).
+//! `GET <public_url>/api/oidc/callback` is the browser's redirect from the IdP: it shows which
+//! device would be signed in and a button; the button's `POST` completes the flow (see
+//! `callback`). Both always answer 200 with a small HTML page.
 
 mod auth;
 mod callback;
+mod page;
 mod params;
 mod query;
 
@@ -64,7 +66,10 @@ pub fn routes() -> Router<Arc<AppState>> {
             post(auth::auth).layer(DefaultBodyLimit::max(MAX_LOGIN_BODY)),
         )
         .route("/api/oidc/auth-query", get(query::auth_query))
-        .route("/api/oidc/callback", get(callback::callback))
+        .route(
+            "/api/oidc/callback",
+            get(callback::confirm).post(callback::complete),
+        )
 }
 
 /// What the user is told about a failed flow (client dialog and callback page).

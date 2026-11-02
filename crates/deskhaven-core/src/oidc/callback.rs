@@ -1,4 +1,5 @@
-//! Step 2: the IdP's redirect back (see the module docs of `oidc`).
+//! Step 2: the IdP's redirect back (see the module docs of `oidc`), once the user confirmed
+//! it on the page `preview_callback` describes.
 //!
 //! The state is claimed before anything else (single use, also against concurrent
 //! callbacks); a callback with an unknown, expired or used state does nothing and is not
@@ -102,22 +103,31 @@ impl OidcService {
         })
     }
 
-    /// Marks the live flow of `state` consumed and returns it.
-    async fn claim(&self, state: Option<&str>) -> Result<oidc_flow::Model, CallbackError> {
+    /// The unconsumed, unexpired flow of `state`, read only.
+    pub(crate) async fn live_flow(
+        &self,
+        state: Option<&str>,
+    ) -> Result<oidc_flow::Model, CallbackError> {
         let hash = state
             .and_then(TokenHash::of_presented)
             .ok_or(CallbackError::InvalidState)?;
         let now = timestamp(self.inner.now_ms())?;
-        // Read first: a state that matches nothing (the unauthenticated, unlimited case)
-        // costs one indexed read, never a write lock (SQLite locks the database for an
-        // UPDATE even when it matches no row).
-        let live = oidc_flow::Entity::find()
+        oidc_flow::Entity::find()
             .filter(Column::StateHash.eq(hash.as_str()))
             .filter(Column::ConsumedAt.is_null())
             .filter(Column::ExpiresAt.gt(now))
             .one(&self.inner.db)
             .await?
-            .ok_or(CallbackError::InvalidState)?;
+            .ok_or(CallbackError::InvalidState)
+    }
+
+    /// Marks the live flow of `state` consumed and returns it.
+    async fn claim(&self, state: Option<&str>) -> Result<oidc_flow::Model, CallbackError> {
+        // Read first: a state that matches nothing (the unauthenticated, unlimited case)
+        // costs one indexed read, never a write lock (SQLite locks the database for an
+        // UPDATE even when it matches no row).
+        let live = self.live_flow(state).await?;
+        let now = timestamp(self.inner.now_ms())?;
         let claimed = oidc_flow::Entity::update_many()
             .col_expr(Column::ConsumedAt, Expr::value(now))
             .filter(Column::Id.eq(live.id))
