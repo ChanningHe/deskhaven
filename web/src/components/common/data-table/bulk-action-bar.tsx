@@ -10,13 +10,16 @@ interface BulkActionBarProps {
   children: ReactNode
 }
 
-/** Shown above the table while rows are selected. */
+/**
+ * Shown above the table while rows are selected. The region keeps a fixed
+ * name; only the count text is a live region, so each change is announced once.
+ */
 export function BulkActionBar({ count, onClear, children }: BulkActionBarProps) {
   const { t } = useTranslation()
   return (
     <div
       role="region"
-      aria-label={t('dataTable.selected', { count })}
+      aria-label={t('dataTable.bulkActions')}
       className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm"
     >
       <span aria-live="polite" className="font-medium">

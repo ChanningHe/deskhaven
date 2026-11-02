@@ -1,6 +1,6 @@
 import type { RowData, Table } from '@tanstack/react-table'
 import { Columns3, Search } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode, SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -30,25 +30,39 @@ function SearchBox({ value = '', placeholder, onChange }: SearchBoxProps) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(value)
   const [synced, setSynced] = useState(value)
+  // What this box last sent: when the URL catches up to it, the draft (maybe
+  // with a trailing space or more typing) is kept.
+  const [submitted, setSubmitted] = useState(value)
   // The URL changed underneath (back button, "clear filters"): follow it.
   if (value !== synced) {
     setSynced(value)
-    setDraft(value)
+    if (value !== submitted) {
+      setSubmitted(value)
+      if (value !== draft.trim()) setDraft(value)
+    }
   }
+
+  const send = useCallback(
+    (q: string) => {
+      setSubmitted(q)
+      onChange(q)
+    },
+    [onChange],
+  )
 
   useEffect(() => {
     if (draft.trim() === value) return
     const timer = setTimeout(() => {
-      onChange(draft.trim())
+      send(draft.trim())
     }, SEARCH_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
     }
-  }, [draft, value, onChange])
+  }, [draft, value, send])
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onChange(draft.trim())
+    send(draft.trim())
   }
 
   return (

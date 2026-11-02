@@ -22,13 +22,15 @@ export function SelectAllCheckbox({ checked, indeterminate, onChange }: SelectAl
 }
 
 interface SelectRowCheckboxProps {
+  /** The row's name ("Select <name>"); a generic label without it. */
+  name: string | undefined
   checked: boolean
   onChange: (checked: boolean) => void
 }
 
-export function SelectRowCheckbox({ checked, onChange }: SelectRowCheckboxProps) {
+export function SelectRowCheckbox({ name, checked, onChange }: SelectRowCheckboxProps) {
   const { t } = useTranslation()
-  return (
-    <Checkbox aria-label={t('dataTable.selectRow')} checked={checked} onCheckedChange={onChange} />
-  )
+  const label =
+    name === undefined ? t('dataTable.selectRow') : t('dataTable.selectRowNamed', { name })
+  return <Checkbox aria-label={label} checked={checked} onCheckedChange={onChange} />
 }

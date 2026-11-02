@@ -134,7 +134,9 @@ const query = useQuery({ ...devicesQueryOptions(toListParams(search)), placehold
   Corrections (a page past the end after rows were deleted) arrive with `{ replace: true }` and
   must replace the history entry, or Back would land on the bad page and be corrected again.
 - Column visibility is a per-browser preference (localStorage), not part of the URL.
-- `bulkActions` enables row selection (current page only; a new page, sort or filter clears it).
+- `bulkActions` enables row selection (current page only; a new page, sort or filter clears it,
+  and rows that vanish on a refetch drop out). Pass `getRowLabel` (stable) so each checkbox is
+  named "Select <name>".
 - With no rows and no filter, `emptyState` replaces the table (08 §4: offer the next step); with
   filters, the table says "no results" and offers to clear them.
 - **Not found**: unknown URLs render inside the shell (`_app/$.tsx` passes them to the `_app`

@@ -34,6 +34,8 @@ export interface DataTableProps<TData extends RowData> {
   /** The current page from the list endpoint; undefined while loading. */
   data: ListPage<TData> | undefined
   getRowId: (row: TData) => string
+  /** Names a row for its selection checkbox ("Select <name>"); keep it stable. */
+  getRowLabel?: (row: TData) => string
   /** The table's part of the route search (page, page_size, sort, q). */
   search: TableSearch
   /**
@@ -72,14 +74,15 @@ function bodyState<TData extends RowData>(
 
 export function DataTable<TData extends RowData>(props: DataTableProps<TData>) {
   const { id, label, columns, sortable = [], data, getRowId, search, onSearchChange } = props
-  const { bulkActions, emptyState, searchPlaceholder, filters } = props
+  const { bulkActions, emptyState, searchPlaceholder, filters, getRowLabel } = props
   const isFiltered = (props.isFiltered ?? false) || search.q !== undefined
   const params = toListParams(search)
   const sort = parseSort(search.sort)
 
+  const hasBulkActions = bulkActions !== undefined
   const allColumns = useMemo(
-    () => (bulkActions ? [selectColumn<TData>(), ...columns] : columns),
-    [bulkActions, columns],
+    () => (hasBulkActions ? [selectColumn(getRowLabel), ...columns] : columns),
+    [hasBulkActions, columns, getRowLabel],
   )
   const [columnVisibility, setColumnVisibility] = useColumnVisibility(id)
 
@@ -103,7 +106,7 @@ export function DataTable<TData extends RowData>(props: DataTableProps<TData>) {
     state: { columnVisibility, rowSelection },
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange,
-    enableRowSelection: bulkActions !== undefined,
+    enableRowSelection: hasBulkActions,
   })
 
   // A page past the end (rows deleted elsewhere, a stale link): go to the last one.
@@ -123,7 +126,10 @@ export function DataTable<TData extends RowData>(props: DataTableProps<TData>) {
 
   if (data?.total === 0 && !isFiltered) return <>{emptyState}</>
 
-  const selectedIds = Object.keys(rowSelection).filter((rowId) => rowSelection[rowId])
+  // Only rows still on screen: a refetch may have removed a selected one.
+  const selectedIds = (data?.items ?? NO_ROWS)
+    .map(getRowId)
+    .filter((rowId) => rowSelection[rowId] === true)
   const clearSelection = () => {
     setSelection({ key: selectionKey, rows: {} })
   }

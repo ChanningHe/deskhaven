@@ -171,7 +171,9 @@
     "pageSummary": "Page {{page}} of {{pages}} · {{total}} total",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "pageSize": "Rows per page"
+    "pageSize": "Rows per page",
+    "selectRowNamed": "Select {{name}}",
+    "bulkActions": "Bulk actions"
   },
   "confirm": {
     "typeToConfirm": "Type {{name}} to confirm"

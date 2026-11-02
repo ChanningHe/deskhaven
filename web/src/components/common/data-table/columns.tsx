@@ -46,7 +46,9 @@ export function createDataTableColumnHelper<TData extends RowData>() {
 export const SELECT_COLUMN_ID = '_select'
 
 /** The checkbox column DataTable prepends when bulk actions are enabled. */
-export function selectColumn<TData extends RowData>(): DataTableColumnDef<TData> {
+export function selectColumn<TData extends RowData>(
+  getRowLabel?: (row: TData) => string,
+): DataTableColumnDef<TData> {
   return {
     id: SELECT_COLUMN_ID,
     enableHiding: false,
@@ -62,6 +64,7 @@ export function selectColumn<TData extends RowData>(): DataTableColumnDef<TData>
     ),
     cell: ({ row }) => (
       <SelectRowCheckbox
+        name={getRowLabel?.(row.original)}
         checked={row.getIsSelected()}
         onChange={(checked) => {
           row.toggleSelected(checked)

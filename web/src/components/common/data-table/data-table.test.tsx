@@ -42,6 +42,7 @@ const COLUMNS = column.columns([
   column.accessor('os', { header: 'OS', meta: { label: 'OS' } }),
 ])
 const SORTABLE = ['name'] as const
+const deviceName = (device: Device) => device.name
 
 /** A fake list endpoint over `devices`: filter, sort, paginate. */
 function listDevices(
@@ -94,6 +95,7 @@ function renderTable(
         sortable={SORTABLE}
         data={query.data}
         getRowId={(device) => device.id}
+        getRowLabel={deviceName}
         search={search}
         onSearchChange={onSearchChange}
         searchPlaceholder="Search devices"
@@ -146,7 +148,7 @@ function rowNames() {
 }
 
 function rowCheckbox(index: number): HTMLElement {
-  const checkbox = screen.getAllByRole('checkbox', { name: '选择此行' })[index]
+  const checkbox = screen.getAllByRole('checkbox', { name: /^选择 Device / })[index]
   if (!checkbox) throw new Error(`no row checkbox #${index}`)
   return checkbox
 }
@@ -245,6 +247,40 @@ describe('DataTable URL sync', () => {
     })
   })
 
+  it('keeps what is being typed when the URL catches up (trailing space)', async () => {
+    const { router, user } = renderTable('/devices')
+    await screen.findByText('Device 01')
+    const box = screen.getByRole('searchbox', { name: '搜索' })
+
+    await user.type(box, 'Device ')
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ q: 'Device' })
+    })
+    expect(box).toHaveValue('Device ')
+    await user.type(box, '4')
+
+    expect(box).toHaveValue('Device 4')
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ q: 'Device 4' })
+    })
+  })
+
+  it('follows the URL when it changes underneath (Back)', async () => {
+    const { router, user } = renderTable('/devices')
+    await screen.findByText('Device 01')
+    const box = screen.getByRole('searchbox', { name: '搜索' })
+    await user.type(box, 'Device 4{Enter}')
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ q: 'Device 4' })
+    })
+
+    router.history.back()
+
+    await waitFor(() => {
+      expect(box).toHaveValue('')
+    })
+  })
+
   it('shows "no results" with a way back when filters match nothing', async () => {
     const { router, user } = renderTable('/devices?q=nothing-matches')
 
@@ -312,6 +348,48 @@ describe('DataTable columns and selection', () => {
     await user.click(screen.getByRole('button', { name: '下一页' }))
     await screen.findByText('Device 21')
     expect(screen.queryByText(/已选择/)).not.toBeInTheDocument()
+  })
+
+  it('names each row checkbox after its row', async () => {
+    renderTable('/devices')
+    await screen.findByText('Device 01')
+
+    expect(screen.getByRole('checkbox', { name: '选择 Device 01' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '选择 Device 20' })).toBeInTheDocument()
+  })
+
+  it('announces the count once, in a region whose name does not change', async () => {
+    const { user } = renderTable('/devices')
+    await screen.findByText('Device 01')
+
+    await user.click(rowCheckbox(0))
+    const region = screen.getByRole('region', { name: '批量操作' })
+    expect(within(region).getByText('已选择 1 项')).toHaveAttribute('aria-live', 'polite')
+    await user.click(rowCheckbox(1))
+
+    expect(screen.getByRole('region', { name: '批量操作' })).toBe(region)
+    expect(region.querySelectorAll('[aria-live]')).toHaveLength(1)
+    expect(within(region).getByText('已选择 2 项')).toBeInTheDocument()
+  })
+
+  it('drops selected rows that disappear after a refetch', async () => {
+    const rows = { current: DEVICES }
+    const { user, onBulk, queryClient } = renderTable('/devices', { rows })
+    await screen.findByText('Device 01')
+    await user.click(rowCheckbox(0))
+    await user.click(rowCheckbox(2))
+    expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
+
+    // Someone else deletes Device 01; the list refetches on the same page.
+    rows.current = DEVICES.filter((device) => device.id !== 'd1')
+    await queryClient.invalidateQueries({ queryKey: ['devices'] })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Device 01')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('已选择 1 项')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Delete selected' }))
+    expect(onBulk).toHaveBeenLastCalledWith(['d3'])
   })
 
   it('shows the empty state instead of the table when there is no data at all', async () => {

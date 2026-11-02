@@ -171,7 +171,9 @@
     "pageSummary": "第 {{page}} / {{pages}} 页，共 {{total}} 条",
     "previousPage": "上一页",
     "nextPage": "下一页",
-    "pageSize": "每页行数"
+    "pageSize": "每页行数",
+    "selectRowNamed": "选择 {{name}}",
+    "bulkActions": "批量操作"
   },
   "confirm": {
     "typeToConfirm": "请输入 {{name}} 以确认"
