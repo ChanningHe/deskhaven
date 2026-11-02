@@ -16,8 +16,8 @@ use deskhaven_db::entity::{
 };
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time;
-use sea_orm::EntityTrait;
 use sea_orm::{ActiveModelTrait, ModelTrait, Set};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
 
 #[tokio::test]
 async fn user_round_trips_every_column() {
@@ -224,14 +224,13 @@ async fn challenge_and_flow_round_trip() {
         let conn = &db.conn;
         let alice = user_row("alice").insert(conn).await.unwrap();
         let provider = provider_row("corp").insert(conn).await.unwrap();
-        let sess = session_row(alice.id, "s").insert(conn).await.unwrap();
         let mut totp = challenge_row(alice.id, "secret");
         totp.kind = Set(auth_challenge::Kind::Totp);
         totp.code_hash = Set(None);
         totp.attempts = Set(3);
         let challenge = totp.insert(conn).await.unwrap();
-        let mut done = flow_row(provider.id, "state", Some("client-code"));
-        done.completed_session_id = Set(Some(sess.id));
+        let mut done = flow_row(provider.id, "state-hash", Some("code-hash"));
+        done.completed_user_id = Set(Some(alice.id));
         done.error = Set(Some("access_denied".to_owned()));
         let flow = done.insert(conn).await.unwrap();
 
@@ -250,7 +249,77 @@ async fn challenge_and_flow_round_trip() {
         assert_eq!(found_challenge.kind, auth_challenge::Kind::Totp);
         assert_eq!(found_challenge.attempts, 3);
         assert_eq!(found_flow, flow);
-        assert_eq!(found_flow.completed_session_id, Some(sess.id));
+        assert_eq!(found_flow.completed_user_id, Some(alice.id));
+        assert_eq!(found_flow.consumed_at, None);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn public_client_provider_has_no_secret() {
+    each_migrated_backend(async |db: &TestDb| {
+        let mut row = provider_row("public");
+        row.client_secret_enc = Set(None);
+
+        let inserted = row.insert(&db.conn).await.unwrap();
+        let found = oidc_provider::Entity::find_by_id(inserted.id)
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(found.client_secret_enc, None, "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn flows_and_challenges_are_consumed_exactly_once() {
+    each_migrated_backend(async |db: &TestDb| {
+        let conn = &db.conn;
+        let alice = user_row("alice").insert(conn).await.unwrap();
+        let provider = provider_row("corp").insert(conn).await.unwrap();
+        let flow = flow_row(provider.id, "state-hash", Some("code-hash"))
+            .insert(conn)
+            .await
+            .unwrap();
+        let challenge = challenge_row(alice.id, "secret-hash")
+            .insert(conn)
+            .await
+            .unwrap();
+        let now = ts(T0_MS + 1_000);
+
+        let consume_flow = || async {
+            oidc_flow::Entity::update_many()
+                .col_expr(oidc_flow::Column::ConsumedAt, Expr::value(now))
+                .filter(oidc_flow::Column::Id.eq(flow.id))
+                .filter(oidc_flow::Column::ConsumedAt.is_null())
+                .exec(conn)
+                .await
+                .unwrap()
+                .rows_affected
+        };
+        let consume_challenge = || async {
+            auth_challenge::Entity::update_many()
+                .col_expr(auth_challenge::Column::ConsumedAt, Expr::value(now))
+                .filter(auth_challenge::Column::Id.eq(challenge.id))
+                .filter(auth_challenge::Column::ConsumedAt.is_null())
+                .exec(conn)
+                .await
+                .unwrap()
+                .rows_affected
+        };
+
+        assert_eq!(consume_flow().await, 1, "{}", db.backend);
+        assert_eq!(consume_flow().await, 0, "{}", db.backend);
+        assert_eq!(consume_challenge().await, 1, "{}", db.backend);
+        assert_eq!(consume_challenge().await, 0, "{}", db.backend);
+        let stored = oidc_flow::Entity::find_by_id(flow.id)
+            .one(conn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.consumed_at, Some(now));
     })
     .await;
 }

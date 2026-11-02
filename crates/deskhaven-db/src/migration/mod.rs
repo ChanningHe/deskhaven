@@ -4,6 +4,7 @@
 //! in [`Migrator::migrations`]. One migration body serves both backends; dialect differences
 //! branch on `manager.get_database_backend()`.
 
+use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 mod m20261102_000001_settings;
@@ -30,6 +31,18 @@ fn enum_check(name: &str, col: impl IntoColumnRef, values: &[&str]) -> Check {
         name.to_owned(),
         Expr::col(col).is_in(values.iter().copied()),
     )
+}
+
+/// SQLite stores booleans as integers and accepts any value; constrain them to 0/1.
+/// PostgreSQL's native `boolean` needs nothing.
+fn bool_checks(table: &mut TableCreateStatement, backend: DbBackend, name: &str, cols: &[&str]) {
+    if backend != DbBackend::Sqlite {
+        return;
+    }
+    for col in cols {
+        let expr = Expr::col(Alias::new(*col)).is_in([0, 1]);
+        table.check(Check::named(format!("ck_{name}_{col}_bool"), expr));
+    }
 }
 
 /// Named UNIQUE index over one column. NULLs never conflict on either backend, so a nullable

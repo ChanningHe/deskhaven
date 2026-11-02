@@ -18,10 +18,10 @@ pub enum Flow {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    /// One-time OAuth `state`.
-    pub state: String,
-    /// Code the client polls with; `None` for console flows.
-    pub client_code: Option<String>,
+    /// SHA-256 of the one-time OAuth `state` (256-bit random).
+    pub state_hash: String,
+    /// SHA-256 of the code the client polls with; `Some` exactly for client flows.
+    pub client_code_hash: Option<String>,
     pub provider_id: i64,
     /// Encrypted PKCE verifier (`v1:<key_id>:<nonce>:<ct>`).
     pub pkce_verifier_enc: String,
@@ -31,7 +31,10 @@ pub struct Model {
     pub context: String,
     pub created_at: TimestampMs,
     pub expires_at: TimestampMs,
-    pub completed_session_id: Option<i64>,
+    /// Set by the callback on success; the session is minted when the flow is consumed.
+    pub completed_user_id: Option<i64>,
+    /// Single-use marker, set by `UPDATE ... WHERE consumed_at IS NULL`.
+    pub consumed_at: Option<TimestampMs>,
     pub error: Option<String>,
 }
 
@@ -45,12 +48,12 @@ pub enum Relation {
     )]
     OidcProvider,
     #[sea_orm(
-        belongs_to = "super::session::Entity",
-        from = "Column::CompletedSessionId",
-        to = "super::session::Column::Id",
-        on_delete = "SetNull"
+        belongs_to = "super::user::Entity",
+        from = "Column::CompletedUserId",
+        to = "super::user::Column::Id",
+        on_delete = "Cascade"
     )]
-    Session,
+    User,
 }
 
 impl Related<super::oidc_provider::Entity> for Entity {
@@ -59,9 +62,9 @@ impl Related<super::oidc_provider::Entity> for Entity {
     }
 }
 
-impl Related<super::session::Entity> for Entity {
+impl Related<super::user::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Session.def()
+        Relation::User.def()
     }
 }
 

@@ -16,8 +16,8 @@ pub struct Model {
     pub icon: Option<String>,
     pub issuer: String,
     pub client_id: String,
-    /// Encrypted client secret (`v1:<key_id>:<nonce>:<ct>`).
-    pub client_secret_enc: String,
+    /// Encrypted client secret (`v1:<key_id>:<nonce>:<ct>`); `None` for public (PKCE-only) clients.
+    pub client_secret_enc: Option<String>,
     /// Space-separated scopes.
     pub scopes: String,
     pub auto_provision: bool,

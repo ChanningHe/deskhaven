@@ -10,6 +10,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub user_id: i64,
+    /// `HMAC(k_hmac, user_id || code)` computed by the service (recovery codes have low entropy).
     pub code_hash: String,
     pub used_at: Option<TimestampMs>,
     pub created_at: TimestampMs,

@@ -1,10 +1,13 @@
 //! Sessions, API tokens, recovery codes and the short-lived login/OIDC/setup state
 //! (04-data-model §3, 06-security §3.2–3.4).
 //!
-//! Long-lived bearer secrets (`token_hash`, `code_hash`) are SHA-256 hashes; `pkce_verifier_enc`
-//! is encrypted. `auth_challenges.secret`, `oidc_flows.state` and `oidc_flows.client_code` are
-//! the opaque handles handed to a client for minutes, stored as given and looked up by equality.
-//! Every `expires_at` is indexed for the periodic cleanup job.
+//! Every bearer value is stored hashed: `sessions.token_hash`, `api_tokens.token_hash`,
+//! `setup_tokens.token_hash`, `auth_challenges.secret_hash`, `oidc_flows.state_hash` and
+//! `oidc_flows.client_code_hash` are SHA-256 of 256-bit random values (looked up by equality).
+//! `auth_challenges.code_hash` and `recovery_codes.code_hash` hold low-entropy secrets and are
+//! HMACs computed by the service; the columns are plain TEXT. `pkce_verifier_enc` is encrypted.
+//! Challenges and OIDC flows are single-use (`consumed_at`, conditional UPDATE). Every
+//! `expires_at` is indexed for the periodic cleanup job.
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{
@@ -74,7 +77,7 @@ enum RecoveryCodes {
 enum AuthChallenges {
     Table,
     Id,
-    Secret,
+    SecretHash,
     UserId,
     Kind,
     CodeHash,
@@ -82,14 +85,15 @@ enum AuthChallenges {
     Context,
     CreatedAt,
     ExpiresAt,
+    ConsumedAt,
 }
 
 #[derive(DeriveIden)]
 enum OidcFlows {
     Table,
     Id,
-    State,
-    ClientCode,
+    StateHash,
+    ClientCodeHash,
     ProviderId,
     PkceVerifierEnc,
     Nonce,
@@ -97,7 +101,8 @@ enum OidcFlows {
     Context,
     CreatedAt,
     ExpiresAt,
-    CompletedSessionId,
+    CompletedUserId,
+    ConsumedAt,
     Error,
 }
 
@@ -116,7 +121,23 @@ const CHALLENGE_KINDS: &[&str] = &["email_code", "totp"];
 const FLOW_KINDS: &[&str] = &["client", "console"];
 const EMPTY_JSON_OBJECT: &str = "{}";
 
+/// `(col = value) = (other IS NOT NULL)`, spelled out with AND/OR so it reads the same on both
+/// backends.
+fn present_exactly_when(col: impl IntoIden, value: &str, other: impl IntoIden) -> Expr {
+    let (col, other) = (col.into_iden(), other.into_iden());
+    Expr::col(col.clone())
+        .eq(value)
+        .and(Expr::col(other.clone()).is_not_null())
+        .or(Expr::col(col).ne(value).and(Expr::col(other).is_null()))
+}
+
 fn sessions_table() -> TableCreateStatement {
+    // Client sessions are bound to a device (06 §3.2); console sessions are not.
+    let device_bound = Expr::col(Sessions::Kind)
+        .eq("console")
+        .or(Expr::col(Sessions::RustdeskId)
+            .is_not_null()
+            .and(Expr::col(Sessions::DeviceUuid).is_not_null()));
     Table::create()
         .table(Sessions::Table)
         .col(big_pk_auto(Sessions::Id))
@@ -135,6 +156,10 @@ fn sessions_table() -> TableCreateStatement {
             "ck_sessions_kind",
             Sessions::Kind,
             SESSION_KINDS,
+        ))
+        .check(Check::named(
+            "ck_sessions_client_device_bound",
+            device_bound,
         ))
         .foreign_key(&mut foreign_key(
             "fk_sessions_user",
@@ -158,12 +183,12 @@ fn api_tokens_table() -> TableCreateStatement {
         .col(big_integer_null(ApiTokens::ExpiresAt))
         .col(big_integer_null(ApiTokens::LastUsedAt))
         .col(big_integer_null(ApiTokens::RevokedAt))
-        // Tokens outlive the user who minted them (automation keeps working, audit keeps the row).
+        // A token carries its creator's authority, so it dies with them (06 §3.2).
         .foreign_key(&mut foreign_key(
             "fk_api_tokens_created_by",
             (ApiTokens::Table, ApiTokens::CreatedBy),
             (Users::Table, Users::Id),
-            ForeignKeyAction::SetNull,
+            ForeignKeyAction::Cascade,
         ))
         .to_owned()
 }
@@ -189,7 +214,7 @@ fn auth_challenges_table() -> TableCreateStatement {
     Table::create()
         .table(AuthChallenges::Table)
         .col(big_pk_auto(AuthChallenges::Id))
-        .col(text(AuthChallenges::Secret))
+        .col(text(AuthChallenges::SecretHash))
         .col(big_integer(AuthChallenges::UserId))
         .col(text(AuthChallenges::Kind))
         .col(text_null(AuthChallenges::CodeHash))
@@ -197,6 +222,7 @@ fn auth_challenges_table() -> TableCreateStatement {
         .col(text(AuthChallenges::Context).default(EMPTY_JSON_OBJECT))
         .col(big_integer(AuthChallenges::CreatedAt))
         .col(big_integer(AuthChallenges::ExpiresAt))
+        .col(big_integer_null(AuthChallenges::ConsumedAt))
         .check(enum_check(
             "ck_auth_challenges_kind",
             AuthChallenges::Kind,
@@ -205,6 +231,11 @@ fn auth_challenges_table() -> TableCreateStatement {
         .check(Check::named(
             "ck_auth_challenges_attempts",
             Expr::col(AuthChallenges::Attempts).gte(0),
+        ))
+        // An emailed code exists exactly for email_code challenges.
+        .check(Check::named(
+            "ck_auth_challenges_code_hash",
+            present_exactly_when(AuthChallenges::Kind, "email_code", AuthChallenges::CodeHash),
         ))
         .foreign_key(&mut foreign_key(
             "fk_auth_challenges_user",
@@ -219,8 +250,8 @@ fn oidc_flows_table() -> TableCreateStatement {
     Table::create()
         .table(OidcFlows::Table)
         .col(big_pk_auto(OidcFlows::Id))
-        .col(text(OidcFlows::State))
-        .col(text_null(OidcFlows::ClientCode))
+        .col(text(OidcFlows::StateHash))
+        .col(text_null(OidcFlows::ClientCodeHash))
         .col(big_integer(OidcFlows::ProviderId))
         .col(text(OidcFlows::PkceVerifierEnc))
         .col(text(OidcFlows::Nonce))
@@ -228,12 +259,18 @@ fn oidc_flows_table() -> TableCreateStatement {
         .col(text(OidcFlows::Context).default(EMPTY_JSON_OBJECT))
         .col(big_integer(OidcFlows::CreatedAt))
         .col(big_integer(OidcFlows::ExpiresAt))
-        .col(big_integer_null(OidcFlows::CompletedSessionId))
+        .col(big_integer_null(OidcFlows::CompletedUserId))
+        .col(big_integer_null(OidcFlows::ConsumedAt))
         .col(text_null(OidcFlows::Error))
         .check(enum_check(
             "ck_oidc_flows_flow",
             OidcFlows::Flow,
             FLOW_KINDS,
+        ))
+        // Only client flows are polled with a client code.
+        .check(Check::named(
+            "ck_oidc_flows_client_code_hash",
+            present_exactly_when(OidcFlows::Flow, "client", OidcFlows::ClientCodeHash),
         ))
         .foreign_key(&mut foreign_key(
             "fk_oidc_flows_provider",
@@ -241,11 +278,12 @@ fn oidc_flows_table() -> TableCreateStatement {
             (OidcProviders::Table, OidcProviders::Id),
             ForeignKeyAction::Cascade,
         ))
+        // The session is minted when the flow is consumed, so only the user is recorded.
         .foreign_key(&mut foreign_key(
-            "fk_oidc_flows_completed_session",
-            (OidcFlows::Table, OidcFlows::CompletedSessionId),
-            (Sessions::Table, Sessions::Id),
-            ForeignKeyAction::SetNull,
+            "fk_oidc_flows_completed_user",
+            (OidcFlows::Table, OidcFlows::CompletedUserId),
+            (Users::Table, Users::Id),
+            ForeignKeyAction::Cascade,
         ))
         .to_owned()
 }
@@ -259,6 +297,96 @@ fn setup_tokens_table() -> TableCreateStatement {
         .col(big_integer(SetupTokens::ExpiresAt))
         .col(big_integer_null(SetupTokens::UsedAt))
         .to_owned()
+}
+
+fn indexes() -> Vec<IndexCreateStatement> {
+    vec![
+        unique_index(
+            "uq_sessions_token_hash",
+            Sessions::Table,
+            Sessions::TokenHash,
+        ),
+        index("idx_sessions_user_id", Sessions::Table, Sessions::UserId),
+        index(
+            "idx_sessions_expires_at",
+            Sessions::Table,
+            Sessions::ExpiresAt,
+        ),
+        // Idle-expiry sweeps.
+        index(
+            "idx_sessions_last_used_at",
+            Sessions::Table,
+            Sessions::LastUsedAt,
+        ),
+        unique_index(
+            "uq_api_tokens_token_hash",
+            ApiTokens::Table,
+            ApiTokens::TokenHash,
+        ),
+        index(
+            "idx_api_tokens_created_by",
+            ApiTokens::Table,
+            ApiTokens::CreatedBy,
+        ),
+        // Also serves lookups by user_id (leading column) and the user-delete cascade.
+        Index::create()
+            .name("uq_recovery_codes_user_code")
+            .table(RecoveryCodes::Table)
+            .col(RecoveryCodes::UserId)
+            .col(RecoveryCodes::CodeHash)
+            .unique()
+            .to_owned(),
+        unique_index(
+            "uq_auth_challenges_secret_hash",
+            AuthChallenges::Table,
+            AuthChallenges::SecretHash,
+        ),
+        index(
+            "idx_auth_challenges_user_id",
+            AuthChallenges::Table,
+            AuthChallenges::UserId,
+        ),
+        index(
+            "idx_auth_challenges_expires_at",
+            AuthChallenges::Table,
+            AuthChallenges::ExpiresAt,
+        ),
+        unique_index(
+            "uq_oidc_flows_state_hash",
+            OidcFlows::Table,
+            OidcFlows::StateHash,
+        ),
+        unique_index(
+            "uq_oidc_flows_client_code_hash",
+            OidcFlows::Table,
+            OidcFlows::ClientCodeHash,
+        ),
+        index(
+            "idx_oidc_flows_provider_id",
+            OidcFlows::Table,
+            OidcFlows::ProviderId,
+        ),
+        index(
+            "idx_oidc_flows_completed_user_id",
+            OidcFlows::Table,
+            OidcFlows::CompletedUserId,
+        ),
+        index(
+            "idx_oidc_flows_expires_at",
+            OidcFlows::Table,
+            OidcFlows::ExpiresAt,
+        ),
+        unique_index(
+            "uq_setup_tokens_token_hash",
+            SetupTokens::Table,
+            SetupTokens::TokenHash,
+        ),
+        index(
+            "idx_setup_tokens_expires_at",
+            SetupTokens::Table,
+            SetupTokens::ExpiresAt,
+        ),
+    ]
 }
 
 #[async_trait::async_trait]
@@ -275,82 +403,7 @@ impl MigrationTrait for Migration {
         for table in tables {
             manager.create_table(table).await?;
         }
-
-        let indexes = [
-            unique_index(
-                "uq_sessions_token_hash",
-                Sessions::Table,
-                Sessions::TokenHash,
-            ),
-            index("idx_sessions_user_id", Sessions::Table, Sessions::UserId),
-            index(
-                "idx_sessions_expires_at",
-                Sessions::Table,
-                Sessions::ExpiresAt,
-            ),
-            unique_index(
-                "uq_api_tokens_token_hash",
-                ApiTokens::Table,
-                ApiTokens::TokenHash,
-            ),
-            index(
-                "idx_api_tokens_created_by",
-                ApiTokens::Table,
-                ApiTokens::CreatedBy,
-            ),
-            index(
-                "idx_recovery_codes_user_id",
-                RecoveryCodes::Table,
-                RecoveryCodes::UserId,
-            ),
-            unique_index(
-                "uq_auth_challenges_secret",
-                AuthChallenges::Table,
-                AuthChallenges::Secret,
-            ),
-            index(
-                "idx_auth_challenges_user_id",
-                AuthChallenges::Table,
-                AuthChallenges::UserId,
-            ),
-            index(
-                "idx_auth_challenges_expires_at",
-                AuthChallenges::Table,
-                AuthChallenges::ExpiresAt,
-            ),
-            unique_index("uq_oidc_flows_state", OidcFlows::Table, OidcFlows::State),
-            unique_index(
-                "uq_oidc_flows_client_code",
-                OidcFlows::Table,
-                OidcFlows::ClientCode,
-            ),
-            index(
-                "idx_oidc_flows_provider_id",
-                OidcFlows::Table,
-                OidcFlows::ProviderId,
-            ),
-            index(
-                "idx_oidc_flows_completed_session_id",
-                OidcFlows::Table,
-                OidcFlows::CompletedSessionId,
-            ),
-            index(
-                "idx_oidc_flows_expires_at",
-                OidcFlows::Table,
-                OidcFlows::ExpiresAt,
-            ),
-            unique_index(
-                "uq_setup_tokens_token_hash",
-                SetupTokens::Table,
-                SetupTokens::TokenHash,
-            ),
-            index(
-                "idx_setup_tokens_expires_at",
-                SetupTokens::Table,
-                SetupTokens::ExpiresAt,
-            ),
-        ];
-        for statement in indexes {
+        for statement in indexes() {
             manager.create_index(statement).await?;
         }
         Ok(())

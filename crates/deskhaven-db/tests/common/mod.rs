@@ -83,7 +83,7 @@ pub fn provider_row(name: &str) -> oidc_provider::ActiveModel {
         icon: Set(None),
         issuer: Set(format!("https://{name}.example.com")),
         client_id: Set("client".to_owned()),
-        client_secret_enc: Set("v1:k1:nonce:ct".to_owned()),
+        client_secret_enc: Set(Some("v1:k1:nonce:ct".to_owned())),
         scopes: Set("openid profile email".to_owned()),
         auto_provision: Set(false),
         group_claim: Set(None),
@@ -175,10 +175,10 @@ pub fn recovery_row(user_id: i64, code_hash: &str) -> recovery_code::ActiveModel
     }
 }
 
-pub fn challenge_row(user_id: i64, secret: &str) -> auth_challenge::ActiveModel {
+pub fn challenge_row(user_id: i64, secret_hash: &str) -> auth_challenge::ActiveModel {
     auth_challenge::ActiveModel {
         id: NotSet,
-        secret: Set(secret.to_owned()),
+        secret_hash: Set(secret_hash.to_owned()),
         user_id: Set(user_id),
         kind: Set(auth_challenge::Kind::EmailCode),
         code_hash: Set(Some("hash".to_owned())),
@@ -186,26 +186,32 @@ pub fn challenge_row(user_id: i64, secret: &str) -> auth_challenge::ActiveModel 
         context: Set(r#"{"rustdesk_id":"1"}"#.to_owned()),
         created_at: Set(ts(T0_MS)),
         expires_at: Set(ts(T0_MS + 600_000)),
+        consumed_at: Set(None),
     }
 }
 
 pub fn flow_row(
     provider_id: i64,
-    state: &str,
-    client_code: Option<&str>,
+    state_hash: &str,
+    client_code_hash: Option<&str>,
 ) -> oidc_flow::ActiveModel {
     oidc_flow::ActiveModel {
         id: NotSet,
-        state: Set(state.to_owned()),
-        client_code: Set(client_code.map(str::to_owned)),
+        state_hash: Set(state_hash.to_owned()),
+        client_code_hash: Set(client_code_hash.map(str::to_owned)),
         provider_id: Set(provider_id),
         pkce_verifier_enc: Set("v1:k1:nonce:ct".to_owned()),
         nonce: Set("nonce".to_owned()),
-        flow: Set(oidc_flow::Flow::Client),
+        flow: Set(if client_code_hash.is_some() {
+            oidc_flow::Flow::Client
+        } else {
+            oidc_flow::Flow::Console
+        }),
         context: Set("{}".to_owned()),
         created_at: Set(ts(T0_MS)),
         expires_at: Set(ts(T0_MS + 600_000)),
-        completed_session_id: Set(None),
+        completed_user_id: Set(None),
+        consumed_at: Set(None),
         error: Set(None),
     }
 }

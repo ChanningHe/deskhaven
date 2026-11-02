@@ -15,7 +15,7 @@ pub struct Model {
     pub token_hash: String,
     /// JSON array of scopes.
     pub scopes: String,
-    /// `None` once the creating user is deleted.
+    /// Creating user; the token is deleted with them. `None` for system-created tokens.
     pub created_by: Option<i64>,
     pub created_at: TimestampMs,
     pub expires_at: Option<TimestampMs>,
@@ -29,7 +29,7 @@ pub enum Relation {
         belongs_to = "super::user::Entity",
         from = "Column::CreatedBy",
         to = "super::user::Column::Id",
-        on_delete = "SetNull"
+        on_delete = "Cascade"
     )]
     User,
 }

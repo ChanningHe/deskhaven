@@ -5,12 +5,13 @@
 //! users without an email never conflict and no partial index is needed. CHECK constraints
 //! keep a buggy writer from bypassing the normalized columns.
 
+use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{
     big_integer, big_integer_null, big_pk_auto, boolean, text, text_null,
 };
 
-use super::{enum_check, foreign_key, index, unique_index};
+use super::{bool_checks, enum_check, foreign_key, index, unique_index};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -65,7 +66,19 @@ const STATUSES: &[&str] = &["active", "disabled", "unverified"];
 const MANAGED_BY: &[&str] = &["ui", "config"];
 const USERNAME_MAX_LEN: i32 = 64;
 
-fn users_table() -> TableCreateStatement {
+/// `[A-Za-z0-9._@-]` only (04 §3). The two backends have no common character-class syntax
+/// (SQLite has no regex operator, PostgreSQL no GLOB), so the expression branches. Both reject
+/// every non-ASCII character; emptiness is covered by the length check.
+fn username_charset_check(backend: DbBackend) -> Check {
+    let expr = if backend == DbBackend::Postgres {
+        "username ~ '^[A-Za-z0-9._@-]+$'"
+    } else {
+        "username NOT GLOB '*[^A-Za-z0-9._@-]*'"
+    };
+    Check::named("ck_users_username_charset", Expr::cust(expr))
+}
+
+fn users_table(backend: DbBackend) -> TableCreateStatement {
     let username_len = || Expr::expr(Func::char_length(Expr::col(Users::Username)));
     let email_pair_consistent = Expr::col(Users::Email)
         .is_null()
@@ -73,7 +86,7 @@ fn users_table() -> TableCreateStatement {
         .or(Expr::col(Users::Email)
             .is_not_null()
             .and(Expr::col(Users::EmailNorm).is_not_null()));
-    Table::create()
+    let mut table = Table::create()
         .table(Users::Table)
         .col(big_pk_auto(Users::Id))
         .col(text(Users::Username))
@@ -114,6 +127,11 @@ fn users_table() -> TableCreateStatement {
         ))
         .check(Check::named("ck_users_email_norm", email_pair_consistent))
         .check(Check::named(
+            "ck_users_email_norm_not_empty",
+            Expr::col(Users::EmailNorm).ne(""),
+        ))
+        .check(username_charset_check(backend))
+        .check(Check::named(
             "ck_users_external_has_no_password",
             Expr::col(Users::AuthSource)
                 .eq("local")
@@ -125,7 +143,14 @@ fn users_table() -> TableCreateStatement {
                 .is_null()
                 .or(Expr::col(Users::TotpSecretEnc).is_not_null()),
         ))
-        .to_owned()
+        .to_owned();
+    bool_checks(
+        &mut table,
+        backend,
+        "users",
+        &["email_verified", "must_change_password"],
+    );
+    table
 }
 
 fn groups_table() -> TableCreateStatement {
@@ -174,7 +199,9 @@ fn group_members_table() -> TableCreateStatement {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.create_table(users_table()).await?;
+        manager
+            .create_table(users_table(manager.get_database_backend()))
+            .await?;
         let unique_username =
             unique_index("uq_users_username_norm", Users::Table, Users::UsernameNorm);
         manager.create_index(unique_username).await?;

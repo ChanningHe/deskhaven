@@ -31,7 +31,7 @@ pub enum Relation {
         belongs_to = "super::oidc_provider::Entity",
         from = "Column::ProviderId",
         to = "super::oidc_provider::Column::Id",
-        on_delete = "Cascade"
+        on_delete = "Restrict"
     )]
     OidcProvider,
 }

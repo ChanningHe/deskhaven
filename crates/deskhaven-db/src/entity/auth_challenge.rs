@@ -18,17 +18,20 @@ pub enum Kind {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    /// Random handle returned to the client.
-    pub secret: String,
+    /// SHA-256 of the 256-bit random secret returned to the client.
+    pub secret_hash: String,
     pub user_id: i64,
     pub kind: Kind,
-    /// Hash of the emailed code; `None` for TOTP.
+    /// Emailed code, hashed with HMAC(k_hmac, id || code) by the service (a 6-digit code is
+    /// brute-forceable under plain SHA-256); `Some` exactly for `email_code`.
     pub code_hash: Option<String>,
     pub attempts: i32,
     /// JSON: rustdesk_id, uuid, device_info.
     pub context: String,
     pub created_at: TimestampMs,
     pub expires_at: TimestampMs,
+    /// Single-use marker, set by `UPDATE ... WHERE consumed_at IS NULL`.
+    pub consumed_at: Option<TimestampMs>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
