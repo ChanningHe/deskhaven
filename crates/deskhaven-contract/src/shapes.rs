@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::mirror::{
     AbPeer, AuthBody, ClientUserPayload, ErrorBody, HbbData, HeartbeatResponse, LoginOptions,
-    LoginResponse, OidcAuthUrl, PagedResponse,
+    LoginResponse, OidcAuthUrl, PagedResponse, SecondFactorChallenge,
 };
 
 /// Parses a response body; `Err` is serde's message (with line/column).
@@ -23,6 +23,7 @@ const SHAPES: &[(&str, ShapeCheck)] = &[
     ("LoginResponse", object::<LoginResponse>),
     ("OidcAuthUrl", parse::<HbbData<OidcAuthUrl>>),
     ("PagedResponse<AbPeer>", object::<PagedResponse<AbPeer>>),
+    ("SecondFactorChallenge", object::<SecondFactorChallenge>),
     (
         "PagedResponse<ClientUserPayload>",
         object::<PagedResponse<ClientUserPayload>>,

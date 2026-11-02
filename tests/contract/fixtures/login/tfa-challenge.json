@@ -1,0 +1,40 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/common/hbbs/hbbs.dart:10-20",
+    "flutter/lib/common/hbbs/hbbs.dart:180-197",
+    "flutter/lib/common/hbbs/hbbs.dart:36-47",
+    "flutter/lib/models/user_model.dart:193-235",
+    "flutter/lib/common/widgets/login.dart:790-812",
+    "flutter/lib/common/widgets/login.dart:1003-1024"
+  ],
+  "description": "Right password for an account with TOTP enabled: 200 {type: \"email_check\", tfa_type: \"tfa_check\", secret, user: {name}} and no access_token. handleLoginResponse opens the 2FA dialog for tfa_type tfa_check; verificationCodeDialog sends secret back and user.name as the second step's username, so user.name is required. Nothing else about the account is disclosed before the second factor.",
+  "seed": ["totp-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "SecondFactorChallenge",
+    "json_subset": {
+      "type": "email_check",
+      "tfa_type": "tfa_check",
+      "user": { "name": "alice" }
+    },
+    "json_absent": ["/access_token", "/error", "/user/email", "/user/status", "/user/info"]
+  }
+}

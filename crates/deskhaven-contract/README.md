@@ -73,6 +73,10 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
    - `login-locked-out`: spends the whole `auth.lockout.max_failures` budget
      of `alice` and of the unknown `nobody` from the default peer, so their
      next login from there is locked out.
+   - `totp-user`: active user `alice` with TOTP enabled (confirmed with the
+     previous step's code, so the current and next codes still log in);
+     outputs `totp_secret` (base32) and `recovery_code`.
+   - `tfa-enforce-all`: sets `auth.tfa.enforce` to `all`.
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 
@@ -122,7 +126,8 @@ Prepare state with the same seeds (`Seeds::builtin().apply(&names,
 `TestApp::start_with_options(TestOptions { routes, hasher, trusted_proxies })`
 adds test routes, rebuilds users and sessions around a given password hasher
 (e.g. one slot, to provoke `Busy`) or trusts proxy ranges. `requests::{login,
-bearer, from}` build the account requests exactly as the client sends them. Set
+second_step, bearer, from}` build the account requests (the 2FA second step
+included) exactly as the client sends them. Set
 `Request::headers`/`body` for the client's exact request, and carry values
 from one reply into the next request in plain Rust.
 

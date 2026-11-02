@@ -25,8 +25,8 @@ use serde::Deserialize;
 
 pub use ab::{AbPeer, PagedResponse};
 pub use account::{
-    AuthBody, ClientUserPayload, ClientUserStatus, DeviceInfo, LoginOptions, LoginResponse,
-    OidcAuthUrl, UserInfo, WhitelistItem,
+    AuthBody, ChallengeUser, ClientUserPayload, ClientUserStatus, DeviceInfo, LoginOptions,
+    LoginResponse, OidcAuthUrl, SecondFactorChallenge, UserInfo, WhitelistItem,
 };
 pub use device::{HeartbeatResponse, StrategyOptions};
 pub use hbb::HbbData;

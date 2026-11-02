@@ -111,7 +111,9 @@ pub struct ClientUserPayload {
 /// `POST /api/login` responses, read by Flutter (03 §3.2).
 ///
 /// `flutter/lib/common/hbbs/hbbs.dart:180-197`: every key is optional, so
-/// the 2FA first step (`{type: "email_check", tfa_type, secret}`) parses too.
+/// the 2FA first step (`{type: "email_check", tfa_type, secret}`) parses too
+/// when it has no `user`; a challenge with its minimal `user` is checked with
+/// [`SecondFactorChallenge`], what the login dialog actually needs.
 /// Stricter than Flutter: `user` must be a full [`ClientUserPayload`], since
 /// the same user record is what the Rust client reads elsewhere.
 #[derive(Debug, Deserialize)]
@@ -126,6 +128,33 @@ pub struct LoginResponse {
     pub secret: Option<String>,
     #[serde(default)]
     pub user: Option<ClientUserPayload>,
+}
+
+/// `POST /api/login` reply that asks for a second factor (03 §3.2), as the
+/// login dialog uses it rather than as `LoginResponse.fromJson` merely parses
+/// it (`flutter/lib/common/hbbs/hbbs.dart:180-197`, all optional there):
+///
+/// - `flutter/lib/common/widgets/login.dart:790-812`: `type` must be
+///   `email_check`; `tfa_type` `tfa_check` opens the 2FA dialog (null or
+///   `email_check` the email dialog, anything else is an error); `secret` and
+///   `user` are handed to `verificationCodeDialog`.
+/// - `login.dart:1003-1024`: the second request sends `secret` back and
+///   `user?.name` as `username`, so without `user.name` the second step has no
+///   username. `UserPayload.fromJson` (`hbbs.dart:36-47`) defaults every other
+///   field, so a user object with only `name` is complete for the dialog.
+#[derive(Debug, Deserialize)]
+pub struct SecondFactorChallenge {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub tfa_type: String,
+    pub secret: String,
+    pub user: ChallengeUser,
+}
+
+/// The `user` of a [`SecondFactorChallenge`]: what `verificationCodeDialog` reads.
+#[derive(Debug, Deserialize)]
+pub struct ChallengeUser {
+    pub name: String,
 }
 
 /// `POST /api/oidc/auth` response (03 §3.5).
@@ -227,6 +256,23 @@ mod tests {
         assert!(parses::<LoginResponse>(
             json!({ "type": "access_token", "access_token": "t", "user": user() })
         ));
+    }
+
+    #[test]
+    fn second_factor_challenge_needs_secret_and_user_name() {
+        let ok = json!({
+            "type": "email_check", "tfa_type": "tfa_check", "secret": "c1",
+            "user": { "name": "alice" }
+        });
+        let no_user = json!({ "type": "email_check", "tfa_type": "tfa_check", "secret": "c1" });
+        let no_secret =
+            json!({ "type": "email_check", "tfa_type": "tfa_check", "user": { "name": "a" } });
+        let null_tfa = json!({ "type": "email_check", "tfa_type": null, "secret": "c1", "user": { "name": "a" } });
+
+        assert!(parses::<SecondFactorChallenge>(ok));
+        assert!(!parses::<SecondFactorChallenge>(no_user));
+        assert!(!parses::<SecondFactorChallenge>(no_secret));
+        assert!(!parses::<SecondFactorChallenge>(null_tfa));
     }
 
     #[test]

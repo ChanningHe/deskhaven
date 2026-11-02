@@ -1,0 +1,35 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/common/widgets/login.dart:1003-1046",
+    "flutter/lib/common/hbbs/hbbs.dart:155-177",
+    "flutter/lib/models/user_model.dart:198-211"
+  ],
+  "description": "Second step (type email_code, as verificationCodeDialog sends it) with a secret no challenge was issued for: 401 {\"error\"}. The dialog catches the RequestException and shows translate(error) under the code field; the user has to cancel and log in again. The attempt counts against the username's login budget.",
+  "seed": ["totp-user"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "verificationCode": "123456",
+        "tfaCode": "123456",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "username": "alice",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "email_code",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Verification expired, please log in again" },
+    "json_absent": ["/access_token"]
+  }
+}

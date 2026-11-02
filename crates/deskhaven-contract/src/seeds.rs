@@ -14,10 +14,13 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Context;
-use deskhaven_config::settings::AUTH_LOCKOUT_MAX_FAILURES;
+use deskhaven_config::settings::{AUTH_LOCKOUT_MAX_FAILURES, Change};
 use deskhaven_core::auth::limiter::ClientAddr;
+use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::sessions::ClientDevice;
+use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
+use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{Credential, NewUser, Password, Status};
 
 use crate::app::DEFAULT_PEER;
@@ -37,6 +40,8 @@ const BUILTIN: &[(&str, Seed)] = &[
     ("login-locked-out", |state| {
         Box::pin(login_locked_out(state))
     }),
+    ("totp-user", |state| Box::pin(totp_user(state))),
+    ("tfa-enforce-all", |state| Box::pin(tfa_enforce_all(state))),
 ];
 
 /// `client-session` / `local-user` values (fixed, so fixtures may also spell
@@ -116,6 +121,51 @@ async fn login_locked_out(state: &AppState) -> anyhow::Result<SeedOutputs> {
             let _ = state.login_throttle.on_failure(attempt);
         }
     }
+    Ok(SeedOutputs::new())
+}
+
+/// An active local user [`SEED_USERNAME`] with TOTP enabled through the real
+/// 2FA service. The enrolment is confirmed with the code of the **previous**
+/// time step, so the authenticator's current and next codes both still log in.
+/// Outputs `totp_secret` (base32 seed) and `recovery_code` (one of its codes).
+async fn totp_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let user_id = create_user(state, SEED_USERNAME, Status::Active).await?;
+    let enrolment = state.tfa.begin_enrolment(user_id).await?;
+    let secret =
+        TotpSecret::from_base32(&enrolment.secret).context("enrolment seed is not base32")?;
+    let previous = totp::step_at(SystemClock.now_ms()) - 1;
+    let codes = state
+        .tfa
+        .confirm_enrolment(user_id, &totp::code_at_step(&secret, previous))
+        .await?;
+    let recovery = codes.codes().next().context("no recovery code issued")?;
+    Ok(SeedOutputs::from([
+        ("totp_secret".to_owned(), enrolment.secret.to_string()),
+        ("recovery_code".to_owned(), recovery.to_owned()),
+    ]))
+}
+
+/// Sets `auth.tfa.enforce` to `all` through the settings service. No outputs.
+async fn tfa_enforce_all(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let key = "auth.tfa.enforce";
+    let settings = &state.settings;
+    let version = settings
+        .snapshot()
+        .view(key)
+        .with_context(|| format!("unknown setting {key:?}"))?
+        .version;
+    let change = Change {
+        key: key.to_owned(),
+        value: serde_json::json!("all"),
+        version,
+    };
+    settings
+        .update(UpdateRequest {
+            changes: vec![change],
+            actor: None,
+            reason: None,
+        })
+        .await?;
     Ok(SeedOutputs::new())
 }
 

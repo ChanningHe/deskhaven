@@ -1,0 +1,34 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "flutter/lib/models/user_model.dart:198-211",
+    "flutter/lib/common/widgets/login.dart:850-851"
+  ],
+  "description": "auth.tfa.enforce = all and the account has not enrolled a second factor (right password): no token, 403 {\"error\"} shown as the login failure. The client has no enrolment UI; the message sends the user to the web console. Like disabled-user, the distinct answer is only given after the password verified.",
+  "seed": ["local-user", "tfa-enforce-all"],
+  "request": {
+    "method": "POST",
+    "path": "/api/login",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "username": "alice",
+        "password": "contract-Seed-pass-1",
+        "id": "123456789",
+        "uuid": "contract-seed-device-uuid",
+        "autoLogin": true,
+        "type": "account",
+        "deviceInfo": { "os": "linux", "type": "client", "name": "contract-host" }
+      }
+    }
+  },
+  "expect": {
+    "status": 403,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": {
+      "error": "Two-factor authentication is required: set it up in the web console first"
+    },
+    "json_absent": ["/access_token", "/secret"]
+  }
+}

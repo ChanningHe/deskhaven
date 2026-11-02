@@ -28,6 +28,24 @@ pub fn login(username: &str, password: &str) -> Request {
     request
 }
 
+/// `POST /api/login`, second step of a TOTP login: what `verificationCodeDialog`
+/// sends (`flutter/lib/common/widgets/login.dart:1016-1024`, serialized by
+/// `hbbs.dart:155-177`): the code in both `verificationCode` and `tfaCode`,
+/// the challenge `secret`, the first reply's `user.name` as `username`, no
+/// password.
+pub fn second_step(secret: &str, username: &str, code: &str) -> Request {
+    let mut request = Request::new("POST", "/api/login");
+    request
+        .headers
+        .insert("content-type".to_owned(), "application/json".to_owned());
+    request.body = Body::Json(json!({
+        "verificationCode": code, "tfaCode": code, "secret": secret,
+        "username": username, "id": SEED_RUSTDESK_ID, "uuid": SEED_UUID,
+        "autoLogin": true, "type": "email_code", "deviceInfo": device_info(),
+    }));
+    request
+}
+
 /// `currentUser` / `logout` with a bearer token
 /// (`flutter/lib/models/user_model.dart:63-78, 170-183`).
 pub fn bearer(path: &str, token: &str) -> Request {
