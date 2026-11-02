@@ -6,18 +6,21 @@
 //! Internet-facing deployments should sit behind a reverse proxy (TLS, request
 //! buffering, connection management) with its address in `trusted_proxies`.
 //! The built-in limits keep a directly exposed server alive but are not a
-//! substitute. Knobs ([`HttpConfig`]):
+//! substitute. Knobs ([`HttpConfig`], checked by [`HttpConfig::validate`]):
 //!
 //! | knob | default | bounds |
 //! |---|---|---|
 //! | `header_read_timeout` | 60s | sending the request head; idle keep-alive |
 //! | `request_timeout` | 30s | handler incl. reading the body (-> 503) |
-//! | `write_stall_timeout` | 30s | a response write making no progress |
+//! | `write_stall_timeout` + `min_write_bytes_per_sec` | 30s, 1 KiB/s | clients reading the response too slowly |
 //! | `body_limit` | 2 MiB | request body (-> 413) |
 //! | `max_header_bytes` / `max_headers` | 64 KiB / 64 | request head (-> 431) |
-//! | `max_connections` | 10 000 | per listener, clamped to `RLIMIT_NOFILE` - 256 |
-//! | `max_connections_per_ip` | 256 | per untrusted address and listener |
+//! | `max_connections` | 10 000 | per listener; HTTP gets `nofile_budget_percent` (50%) of `RLIMIT_NOFILE`, split 3:1 client_api:admin |
+//! | `max_connections_per_ip` | 256 | per untrusted IPv4 address / IPv6 `/per_ip_ipv6_prefix` (64), capped at `max(16, max_connections / 64)` |
 //! | `drain_timeout` | 10s | shutdown |
+//!
+//! Trusted proxies are exempt from the per-IP cap, so keep `trusted_proxies` as
+//! narrow as possible: a broad range exempts every host inside it.
 //!
 //! Call [`raise_nofile_limit`] once at startup. The proxy must overwrite, not
 //! forward, the client's `X-Forwarded-For` and `X-Request-Id`, e.g. nginx:
@@ -45,14 +48,15 @@ mod serve;
 mod stack_error;
 
 pub use config::{
-    DEFAULT_BODY_LIMIT, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    ConfigError, DEFAULT_BODY_LIMIT, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
     DEFAULT_MAX_CONNECTIONS, DEFAULT_MAX_CONNECTIONS_PER_IP, DEFAULT_MAX_HEADER_BYTES,
-    DEFAULT_MAX_HEADERS, DEFAULT_REQUEST_TIMEOUT, DEFAULT_WRITE_STALL_TIMEOUT, HttpConfig,
+    DEFAULT_MAX_HEADERS, DEFAULT_MIN_WRITE_BYTES_PER_SEC, DEFAULT_NOFILE_BUDGET_PERCENT,
+    DEFAULT_PER_IP_IPV6_PREFIX, DEFAULT_REQUEST_TIMEOUT, DEFAULT_WRITE_STALL_TIMEOUT, HttpConfig,
 };
 pub use error::error_chain;
 pub use health::{NotReady, ReadinessCheck, health_routes};
 pub use middleware::{INTERNAL_ERROR_BODY, apply_middleware};
-pub use nofile::{NOFILE_RESERVE, NofileInfo, raise_nofile_limit};
+pub use nofile::{NOFILE_TARGET_WHEN_UNLIMITED, NofileInfo, raise_nofile_limit};
 pub use paths::{ADMIN_API_PREFIX, CLIENT_API_PREFIX};
 pub use real_ip::{ClientIp, ClientIpRejection, InternalPeer, TrustedProxies, X_FORWARDED_FOR};
 pub use request_id::X_REQUEST_ID;

@@ -120,12 +120,12 @@ async fn oversized_header_is_rejected() {
 #[tokio::test]
 async fn too_many_headers_are_rejected() {
     let cfg = HttpConfig {
-        max_headers: 8,
+        max_headers: 16,
         ..HttpConfig::default()
     };
     let srv = Running::start(single(), cfg).await;
     let mut stream = TcpStream::connect(srv.client_api).await.unwrap();
-    let extra: String = (0..20).map(|i| format!("X-H{i}: v\r\n")).collect();
+    let extra: String = (0..30).map(|i| format!("X-H{i}: v\r\n")).collect();
     let req = format!("GET /api/ip HTTP/1.1\r\nHost: t\r\n{extra}\r\n");
     stream.write_all(req.as_bytes()).await.unwrap();
     let mut buf = Vec::new();

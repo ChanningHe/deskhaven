@@ -155,3 +155,21 @@ async fn admin_public_url_is_ignored_when_not_split() {
     assert!(res.starts_with("HTTP/1.1 404"), "{res}");
     srv.stop().await;
 }
+
+/// Review round 3 LOW: an invalid limit stops `serve` before anything is served.
+#[tokio::test]
+async fn invalid_config_is_rejected_before_serving() {
+    let listeners = Listeners::bind(&single()).await.unwrap();
+    let cfg = HttpConfig {
+        max_header_bytes: 1024,
+        ..HttpConfig::default()
+    };
+    let token = tokio_util::sync::CancellationToken::new();
+    let result = tokio::time::timeout(DEADLINE, listeners.serve(apps(), &cfg, token))
+        .await
+        .unwrap();
+    match result {
+        Err(ServeError::InvalidConfig(err)) => assert_eq!(err.field, "max_header_bytes"),
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
+}

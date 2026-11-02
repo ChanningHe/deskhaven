@@ -14,11 +14,12 @@ use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 use url::Url;
 
-use crate::config::HttpConfig;
+use crate::config::{ConfigError, HttpConfig};
 use crate::conn::serve_listener;
 use crate::middleware::apply_middleware;
+use crate::nofile::{self, Share};
+use crate::paths;
 use crate::stack_error::ErrorBodies;
-use crate::{nofile, paths};
 
 const CLIENT_API: &str = "client_api";
 const ADMIN: &str = "admin";
@@ -66,6 +67,8 @@ pub enum ServeError {
     },
     #[error("listen.admin_public_url must be an absolute http(s) URL")]
     InvalidAdminPublicUrl,
+    #[error(transparent)]
+    InvalidConfig(#[from] ConfigError),
 }
 
 struct Bound {
@@ -122,17 +125,25 @@ impl Listeners {
         self.admin.as_ref().map(|a| a.bound.addr)
     }
 
-    /// Serve until `shutdown` is cancelled, then drain (see [`HttpConfig`]).
-    /// Accept errors are logged and retried, so this only returns on shutdown.
-    pub async fn serve(self, apps: Apps, cfg: &HttpConfig, shutdown: CancellationToken) {
-        let listeners = if self.admin.is_some() { 2 } else { 1 };
-        let cfg = &fit_descriptor_budget(cfg, listeners);
+    /// Validate `cfg`, then serve until `shutdown` is cancelled and drain (see
+    /// [`HttpConfig`]). Accept errors are logged and retried, so after a valid
+    /// config this only returns on shutdown.
+    pub async fn serve(
+        self,
+        apps: Apps,
+        cfg: &HttpConfig,
+        shutdown: CancellationToken,
+    ) -> Result<(), ServeError> {
+        cfg.validate()?;
         let Some(admin) = self.admin else {
+            let cfg = &fit_descriptor_budget(cfg, Share::Single);
             let router = single_listener_router(apps.client_api, apps.admin);
             let router = apply_middleware(router, cfg, apps.errors);
-            return serve_listener(CLIENT_API, self.client_api.listener, router, cfg, shutdown)
-                .await;
+            serve_listener(CLIENT_API, self.client_api.listener, router, cfg, shutdown).await;
+            return Ok(());
         };
+        let client_cfg = &fit_descriptor_budget(cfg, Share::SplitClientApi);
+        let admin_cfg = &fit_descriptor_budget(cfg, Share::SplitAdmin);
         let client_router = match admin.redirect {
             Some(location) => apps.client_api.layer(axum::middleware::from_fn(
                 move |req: Request, next: Next| redirect_root(location.clone(), req, next),
@@ -145,27 +156,30 @@ impl Listeners {
             serve_listener(
                 CLIENT_API,
                 self.client_api.listener,
-                apply_middleware(client_router, cfg, client_errors),
-                cfg,
+                apply_middleware(client_router, client_cfg, client_errors),
+                client_cfg,
                 shutdown.clone(),
             ),
             serve_listener(
                 ADMIN,
                 admin.bound.listener,
-                apply_middleware(apps.admin, cfg, admin_errors),
-                cfg,
+                apply_middleware(apps.admin, admin_cfg, admin_errors),
+                admin_cfg,
                 shutdown,
             ),
         );
+        Ok(())
     }
 }
 
-/// `cfg` with `max_connections` clamped to the `RLIMIT_NOFILE` budget.
-fn fit_descriptor_budget(cfg: &HttpConfig, listeners: usize) -> HttpConfig {
+/// `cfg` with `max_connections` clamped to this listener's `RLIMIT_NOFILE` share.
+fn fit_descriptor_budget(cfg: &HttpConfig, share: Share) -> HttpConfig {
     let soft = nofile::current_soft_limit();
-    let max_connections = nofile::connection_budget(cfg.max_connections, soft, listeners);
+    let max_connections =
+        nofile::connection_budget(cfg.max_connections, soft, cfg.nofile_budget_percent, share);
     if max_connections < cfg.max_connections {
         tracing::warn!(
+            ?share,
             configured = cfg.max_connections,
             effective = max_connections,
             nofile = soft,

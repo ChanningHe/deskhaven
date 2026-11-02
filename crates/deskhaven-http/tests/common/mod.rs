@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::routing::get;
-use deskhaven_http::{Apps, ClientIp, ErrorBodies, HttpConfig, ListenConfig, Listeners};
+use deskhaven_http::{
+    Apps, ClientIp, ErrorBodies, HttpConfig, ListenConfig, Listeners, ServeError,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::task::JoinHandle;
@@ -91,7 +93,7 @@ pub struct Running {
     pub client_api: SocketAddr,
     pub admin: Option<SocketAddr>,
     token: CancellationToken,
-    task: JoinHandle<()>,
+    task: JoinHandle<Result<(), ServeError>>,
 }
 
 impl Running {
@@ -118,10 +120,11 @@ impl Running {
     pub async fn stop(self) -> Duration {
         let started = Instant::now();
         self.token.cancel();
-        tokio::time::timeout(DEADLINE, self.task)
+        let result = tokio::time::timeout(DEADLINE, self.task)
             .await
             .unwrap()
             .unwrap();
+        assert!(result.is_ok(), "{result:?}");
         started.elapsed()
     }
 }

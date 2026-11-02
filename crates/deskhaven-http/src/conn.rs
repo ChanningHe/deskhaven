@@ -4,11 +4,13 @@
 //! - a client must send a complete request head within `header_read_timeout`
 //!   (hyper keeps that timer running while a keep-alive connection is idle) and
 //!   it may not exceed `max_header_bytes` / `max_headers`;
-//! - a response write that makes no progress for `write_stall_timeout` closes
-//!   the connection ([`crate::io`]);
+//! - a client whose response writes block must read at least
+//!   `min_write_bytes_per_sec` averaged over `write_stall_timeout`, or the
+//!   connection is closed ([`crate::io`]);
 //! - at most `max_connections` are served at once (the rest wait in the
-//!   backlog), and at most `max_connections_per_ip` per untrusted address
-//!   (excess connections are closed at once, [`crate::per_ip`]);
+//!   backlog), and at most the adaptive per-client cap per untrusted IPv4
+//!   address / IPv6 prefix (excess connections are closed at once,
+//!   [`crate::per_ip`]);
 //! - on shutdown: stop accepting, let in-flight requests finish, and drop whatever
 //!   is still open after `drain_timeout`.
 
@@ -30,8 +32,8 @@ use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 
 use crate::config::HttpConfig;
-use crate::io::WriteStallTimeout;
-use crate::per_ip::{PerIpLimiter, Slot};
+use crate::io::MinWriteRate;
+use crate::per_ip::{PerIpLimiter, Slot, per_key_limit};
 
 /// Pause after `accept` fails for lack of resources before retrying.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
@@ -42,7 +44,8 @@ struct Server {
     name: &'static str,
     router: Router,
     builder: http1::Builder,
-    write_stall_timeout: Duration,
+    write_window: Duration,
+    min_write_bytes_per_sec: u64,
     per_ip: PerIpLimiter,
     graceful: GracefulShutdown,
     conns: JoinSet<()>,
@@ -67,16 +70,18 @@ pub(crate) async fn serve_listener(
     cfg: &HttpConfig,
     shutdown: CancellationToken,
 ) {
+    let max_connections = cfg.max_connections.max(1);
+    let per_key = per_key_limit(cfg.max_connections_per_ip, max_connections);
     let mut server = Server {
         name,
         router,
         builder: http1_builder(cfg),
-        write_stall_timeout: cfg.write_stall_timeout,
-        per_ip: PerIpLimiter::new(cfg.max_connections_per_ip, cfg.trusted_proxies.clone()),
+        write_window: cfg.write_stall_timeout,
+        min_write_bytes_per_sec: cfg.min_write_bytes_per_sec,
+        per_ip: PerIpLimiter::new(per_key, cfg.per_ip_ipv6_prefix, cfg.trusted_proxies.clone()),
         graceful: GracefulShutdown::new(),
         conns: JoinSet::new(),
     };
-    let max_connections = cfg.max_connections.max(1);
     loop {
         tokio::select! {
             biased;
@@ -114,7 +119,8 @@ impl Server {
                 req.extensions_mut().insert(ConnectInfo(peer));
                 req
             });
-        let io = TokioIo::new(WriteStallTimeout::new(stream, self.write_stall_timeout));
+        let io = MinWriteRate::new(stream, self.write_window, self.min_write_bytes_per_sec);
+        let io = TokioIo::new(io);
         let conn = self
             .builder
             .serve_connection(io, TowerToHyperService::new(service));
