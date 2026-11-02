@@ -1,8 +1,8 @@
 //! `config check` probes beyond bootstrap validation. All read-only: nothing
 //! is created, migrated or generated, and sockets are released at once.
 
-use std::io::Write;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, UdpSocket};
+use std::io::{ErrorKind, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, UdpSocket};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -35,24 +35,40 @@ pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
 }
 
 /// What the signal server binds on all interfaces: TCP port-1 (NAT test),
-/// port (TCP and UDP) and port+2 (WebSocket). Probed on IPv4 `0.0.0.0`,
-/// which collides with any IPv4 or dual-stack holder of the port. The
-/// bootstrap validation already rejected ports without room for port-1 and
-/// port+2.
+/// port (TCP and UDP) and port+2 (WebSocket). Each is probed on IPv4
+/// `0.0.0.0` (collides with any IPv4 or dual-stack holder) and on IPv6 `[::]`
+/// (collides with any IPv6 holder, e.g. one bound to `[::1]` only). A host
+/// without usable IPv6 skips the IPv6 probes. The bootstrap validation
+/// already rejected ports without room for port-1 and port+2.
 fn signal_ports(port: u16) -> anyhow::Result<()> {
-    let any = |port| SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
     let tcp = [
         ("signal NAT test (port-1)", port.saturating_sub(1)),
         ("signal.port", port),
         ("signal WebSocket (port+2)", port.saturating_add(2)),
     ];
     for (name, port) in tcp {
-        TcpListener::bind(any(port))
-            .with_context(|| format!("{name}: cannot bind TCP {}", any(port)))?;
+        probe(name, "TCP", port, TcpListener::bind)?;
     }
-    UdpSocket::bind(any(port))
-        .with_context(|| format!("signal.port: cannot bind UDP {}", any(port)))?;
-    Ok(())
+    probe("signal.port", "UDP", port, UdpSocket::bind)
+}
+
+/// Binds (and releases) `port` on `0.0.0.0`, then on `[::]`.
+fn probe<T>(
+    name: &str,
+    proto: &str,
+    port: u16,
+    bind: impl Fn(SocketAddr) -> std::io::Result<T>,
+) -> anyhow::Result<()> {
+    let v4 = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
+    bind(v4).with_context(|| format!("{name}: cannot bind {proto} {v4}"))?;
+    let v6 = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
+    match bind(v6) {
+        // Only a taken port counts; any other failure means no usable IPv6 here.
+        Err(err) if err.kind() == ErrorKind::AddrInUse => {
+            Err(err).with_context(|| format!("{name}: cannot bind {proto} {v6}"))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The database is reachable over a read-only connection, and its schema is
@@ -109,4 +125,45 @@ async fn database_status(config: &Bootstrap) -> anyhow::Result<()> {
 fn note(text: &str) -> anyhow::Result<()> {
     writeln!(std::io::stderr().lock(), "note: {text}")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::*;
+
+    /// A bind that fails only on IPv6 with `kind`.
+    fn v6_fails(kind: ErrorKind) -> impl Fn(SocketAddr) -> io::Result<()> {
+        move |addr| match addr {
+            SocketAddr::V6(_) => Err(io::Error::from(kind)),
+            SocketAddr::V4(_) => Ok(()),
+        }
+    }
+
+    #[test]
+    fn probe_reports_a_port_taken_on_ipv6_only() {
+        let err = probe("signal.port", "TCP", 21116, v6_fails(ErrorKind::AddrInUse)).unwrap_err();
+        assert_eq!(err.to_string(), "signal.port: cannot bind TCP [::]:21116");
+    }
+
+    #[test]
+    fn probe_skips_ipv6_when_the_host_has_none() {
+        for kind in [ErrorKind::AddrNotAvailable, ErrorKind::Unsupported] {
+            assert!(
+                probe("signal.port", "UDP", 21116, v6_fails(kind)).is_ok(),
+                "{kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn probe_reports_ipv4_first() {
+        let taken = |_: SocketAddr| -> io::Result<()> { Err(ErrorKind::AddrInUse.into()) };
+        let err = probe("signal.port", "UDP", 21116, taken).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "signal.port: cannot bind UDP 0.0.0.0:21116"
+        );
+    }
 }

@@ -2,6 +2,13 @@
 //! changes are applied through the server's `SignalHandle`, debounced, one at a time (the
 //! handle requires serialized relay updates), on a task of their own so neither the settings
 //! writer nor the server loop ever waits for relay DNS.
+//!
+//! Runtime updates are all or nothing: `set_relay_servers` rejects the whole list if any entry
+//! does not resolve, and the server keeps its previous list (retried every
+//! [`RETRY_REJECTED`]). At (re)start the list is the server's initial configuration instead,
+//! where entries that resolve are used at once and the others are retried by the server
+//! itself until they resolve. Settings validation already guarantees well-formed `host:port`
+//! entries; only resolution can fail here.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,26 +27,27 @@ pub(super) const DEBOUNCE: Duration = Duration::from_millis(200);
 /// while the settings still ask for it.
 pub(super) const RETRY_REJECTED: Duration = Duration::from_secs(30);
 
-/// Result of one attempt to bring the server to the wanted settings.
-enum Outcome {
-    /// What the server now runs with; `retry` when the relay list was rejected.
-    Applied { now: RelaySettings, retry: bool },
-    /// The server is gone.
-    Stopped,
+/// What the server runs with, and the entries of the last rejected list (retried while set).
+struct State {
+    applied: RelaySettings,
+    rejected: Option<Vec<String>>,
 }
 
 /// Follows `settings` until `stop` fires, the server stops or the settings service is gone.
 /// `applied` is what the server was started with; only changes seen after `settings`'
-/// current version are applied.
+/// current version are applied. `stop` also interrupts an update waiting for DNS.
 pub(super) async fn run(
     handle: SignalHandle,
     mut settings: watch::Receiver<Arc<Snapshot>>,
     applied: RelaySettings,
     stop: CancellationToken,
 ) {
-    let mut applied = applied;
-    let mut retry = false;
+    let mut state = State {
+        applied,
+        rejected: None,
+    };
     loop {
+        let retry = state.rejected.is_some();
         tokio::select! {
             () = stop.cancelled() => return,
             changed = settings.changed() => if changed.is_err() { return },
@@ -50,55 +58,68 @@ pub(super) async fn run(
             () = sleep(DEBOUNCE) => {}
         }
         let wanted = RelaySettings::from_snapshot(&settings.borrow_and_update());
-        match apply(&handle, &applied, wanted).await {
-            Outcome::Applied { now, retry: again } => {
-                applied = now;
-                retry = again;
-            }
-            Outcome::Stopped => return,
-        }
+        state = tokio::select! {
+            () = stop.cancelled() => return,
+            next = apply(&handle, state, wanted) => match next {
+                Some(next) => next,
+                None => return, // the server is gone
+            },
+        };
     }
 }
 
-async fn apply(handle: &SignalHandle, applied: &RelaySettings, wanted: RelaySettings) -> Outcome {
+/// Brings the server to `wanted`; `None` once the server has stopped.
+async fn apply(handle: &SignalHandle, state: State, wanted: RelaySettings) -> Option<State> {
+    let State { applied, rejected } = state;
     if wanted.always_use_relay != applied.always_use_relay {
-        if handle
-            .set_always_use_relay(wanted.always_use_relay)
-            .is_err()
-        {
-            return Outcome::Stopped;
-        }
+        handle.set_always_use_relay(wanted.always_use_relay).ok()?;
         tracing::info!(
             always_use_relay = wanted.always_use_relay,
             "signal always_use_relay applied"
         );
     }
     if wanted.servers == applied.servers {
-        return Outcome::Applied {
-            now: wanted,
-            retry: false,
-        };
+        return Some(State {
+            applied: wanted,
+            rejected: None,
+        });
     }
     match handle.set_relay_servers(wanted.servers.clone()).await {
         Ok(accepted) => {
             tracing::info!(relay_servers = ?accepted, "signal relay servers applied");
-            Outcome::Applied {
-                now: wanted,
-                retry: false,
-            }
+            Some(State {
+                applied: wanted,
+                rejected: None,
+            })
         }
-        Err(SignalError::RelayServersRejected { rejected }) => {
-            tracing::warn!(
-                ?rejected,
-                retry_in = ?RETRY_REJECTED,
-                "signal relay servers not applied (entries do not resolve); keeping the previous list"
-            );
-            let now = RelaySettings {
-                servers: applied.servers.clone(),
+        Err(SignalError::RelayServersRejected { rejected: entries }) => {
+            log_rejection(rejected.as_deref(), &entries);
+            let applied = RelaySettings {
+                servers: applied.servers,
                 ..wanted
             };
-            Outcome::Applied { now, retry: true }
+            Some(State {
+                applied,
+                rejected: Some(entries),
+            })
         }
-        Err(_) => Outcome::Stopped,
+        Err(_) => None,
     }
+}
+
+/// Warns once per distinct rejected list; retries of the same list log at debug level.
+fn log_rejection(previous: Option<&[String]>, rejected: &[String]) {
+    if is_new_rejection(previous, rejected) {
+        tracing::warn!(
+            ?rejected,
+            retry_in = ?RETRY_REJECTED,
+            "signal relay servers not applied (entries do not resolve); keeping the previous list"
+        );
+    } else {
+        tracing::debug!(?rejected, "signal relay servers still do not resolve");
+    }
+}
+
+pub(super) fn is_new_rejection(previous: Option<&[String]>, rejected: &[String]) -> bool {
+    previous != Some(rejected)
 }

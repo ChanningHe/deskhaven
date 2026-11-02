@@ -262,6 +262,32 @@ fn config_check_reports_busy_signal_ports() {
     );
 }
 
+/// A holder of a signal port on IPv6 only (here `[::1]`) does not collide with the `0.0.0.0`
+/// probe; the `[::]` probe reports it. Skipped where the host has no IPv6 loopback.
+#[test]
+fn config_check_reports_an_ipv6_only_holder_of_a_signal_port() {
+    // Arrange
+    let dir = workdir("signal-check-v6");
+    let port = free_signal_port();
+    std::fs::write(dir.join("deskhaven.toml"), signal_config(&dir, port, "")).unwrap();
+    let Ok(_taken) = TcpListener::bind(("::1", port + 2)) else {
+        eprintln!("no IPv6 loopback; skipped");
+        return;
+    };
+
+    // Act
+    let out = config_check(&dir);
+
+    // Assert
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    let expected = format!(
+        "signal WebSocket (port+2): cannot bind TCP [::]:{}",
+        port + 2
+    );
+    assert!(stderr.contains(&expected), "{stderr}");
+}
+
 // --- protocol helpers ----------------------------------------------------------------------
 
 fn rv(set: impl FnOnce(&mut RendezvousMessage)) -> RendezvousMessage {
