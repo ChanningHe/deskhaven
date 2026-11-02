@@ -25,10 +25,6 @@ pub enum StrategyError {
     #[error("the strategy is managed by the configuration file")]
     ManagedByConfig,
 
-    /// The stored options of a strategy are not a `{string: string}` JSON object.
-    #[error("strategy {strategy_id} has unreadable stored options")]
-    Corrupt { strategy_id: i64 },
-
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.
     #[error("strategy operation did not complete")]

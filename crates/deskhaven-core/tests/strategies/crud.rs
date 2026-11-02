@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::strategies::{
-    KEY_MAX_LEN, MAX_OPTIONS, NewStrategy, Options, StrategyError, StrategyUpdate, VALUE_MAX_LEN,
+    KEY_MAX_LEN, MAX_OPTIONS, NewStrategy, Options, StrategyError, StrategyUpdate, Target,
+    VALUE_MAX_LEN,
 };
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::strategy;
@@ -202,27 +203,98 @@ async fn config_managed_strategies_are_read_only() {
     .await;
 }
 
+/// A strategy whose stored options were damaged outside the service.
+async fn insert_corrupt(db: &TestDb, name: &str) -> i64 {
+    let now = time::now();
+    let row = strategy::ActiveModel {
+        name: Set(name.to_owned()),
+        options: Set("[1]".to_owned()),
+        note: Set(String::new()),
+        managed_by: Set(ManagedBy::Ui),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    row.insert(&db.conn).await.unwrap().id
+}
+
 #[tokio::test]
-async fn unreadable_stored_options_are_reported_not_hidden() {
+async fn a_corrupt_strategy_is_listed_flagged_and_does_not_break_the_others() {
     each_migrated_backend(async |db: &TestDb| {
         let c = ctx(db).await;
-        let now = time::now();
-        let row = strategy::ActiveModel {
-            name: Set("broken".to_owned()),
-            options: Set("[1]".to_owned()),
-            note: Set(String::new()),
-            managed_by: Set(ManagedBy::Ui),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let id = row.insert(&db.conn).await.unwrap().id;
+        let fine = c.strategy("fine", &[("k", "v")]).await;
+        let broken = insert_corrupt(db, "broken").await;
 
-        assert!(matches!(c.svc.get(id).await, Err(StrategyError::Corrupt { strategy_id }) if strategy_id == id));
-        c.svc.assign(deskhaven_core::strategies::Target::Global, id).await.unwrap();
+        // Admins can still see it (flagged, options empty), so they can fix or delete it.
+        let all = c.svc.list().await.unwrap();
+        let flags: Vec<_> = all
+            .iter()
+            .map(|s| (s.name.as_str(), s.options_corrupt))
+            .collect();
+        assert_eq!(flags, [("broken", true), ("fine", false)]);
+        let got = c.svc.get(broken).await.unwrap();
+        assert!(got.options_corrupt && got.options.is_empty());
+        assert!(!c.svc.get(fine.id).await.unwrap().options_corrupt);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn effective_skips_a_corrupt_assigned_strategy_and_caches_the_result() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let device = c.device("1").await;
+        let fine = c.strategy("fine", &[("k", "v")]).await;
+        let broken = insert_corrupt(db, "broken").await;
+        c.svc.assign(Target::Global, broken).await.unwrap();
+        c.assign(Target::Device(device), &fine).await;
+        let inputs = super::support::device_inputs(device, None, None);
+
+        let first = c.svc.effective(&inputs).await.unwrap();
+        let second = c.svc.effective(&inputs).await.unwrap();
+
+        assert_eq!(first.options, opts(&[("k", "v")]));
+        let applied: Vec<_> = first.applied.iter().map(|a| a.strategy_id).collect();
+        assert_eq!(applied, [fine.id]);
+        assert_eq!(second, first);
+        assert_eq!(
+            c.svc.cache().loads(),
+            1,
+            "a bad row must not force a reload per call"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_corrupt_strategy_can_be_repaired_or_deleted() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let (repaired, doomed) = (insert_corrupt(db, "a").await, insert_corrupt(db, "b").await);
+        c.svc.assign(Target::Global, repaired).await.unwrap();
         let inputs = super::support::device_inputs(1, None, None);
-        let effective = c.svc.effective(&inputs).await;
-        assert!(matches!(effective, Err(StrategyError::Corrupt { .. })), "{effective:?}");
+        assert!(c.options(&inputs).await.is_empty());
+
+        let rename = StrategyUpdate {
+            name: Some("a2".to_owned()),
+            ..StrategyUpdate::default()
+        };
+        assert!(
+            c.svc
+                .update(repaired, rename)
+                .await
+                .unwrap()
+                .options_corrupt
+        );
+        let fix = StrategyUpdate {
+            options: Some(opts(&[("k", "v")])),
+            ..StrategyUpdate::default()
+        };
+        assert!(!c.svc.update(repaired, fix).await.unwrap().options_corrupt);
+        assert_eq!(c.options(&inputs).await, opts(&[("k", "v")]));
+
+        c.svc.delete(doomed).await.unwrap();
+        assert_eq!(c.svc.list().await.unwrap().len(), 1);
     })
     .await;
 }

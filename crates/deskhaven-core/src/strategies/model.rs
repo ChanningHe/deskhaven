@@ -3,7 +3,6 @@ use deskhaven_db::entity::strategy;
 use deskhaven_db::entity::strategy_assignment::TargetType;
 use deskhaven_db::time::TimestampMs;
 
-use super::StrategyError;
 use super::options::{self, Options};
 
 /// What a strategy is assigned to. Each target has at most one strategy.
@@ -64,28 +63,33 @@ pub struct Assignment {
 pub struct Strategy {
     pub id: i64,
     pub name: String,
+    /// Empty when [`options_corrupt`](Self::options_corrupt).
     pub options: Options,
+    /// The stored options are not a `{string: string}` JSON object (damaged outside the
+    /// service). Such a strategy is skipped when computing effective strategies (logged at
+    /// error level when the cache loads) until its options are replaced or it is deleted.
+    pub options_corrupt: bool,
     pub note: String,
     pub managed_by: ManagedBy,
     pub created_at: TimestampMs,
     pub updated_at: TimestampMs,
 }
 
-impl TryFrom<strategy::Model> for Strategy {
-    type Error = StrategyError;
-
-    fn try_from(m: strategy::Model) -> Result<Self, StrategyError> {
-        let options =
-            options::decode(&m.options).ok_or(StrategyError::Corrupt { strategy_id: m.id })?;
-        Ok(Self {
+impl From<strategy::Model> for Strategy {
+    /// Never fails: a row whose options cannot be read is shown flagged
+    /// ([`Strategy::options_corrupt`]) so the console can still list, repair or delete it.
+    fn from(m: strategy::Model) -> Self {
+        let decoded = options::decode(&m.options);
+        Self {
             id: m.id,
             name: m.name,
-            options,
+            options_corrupt: decoded.is_none(),
+            options: decoded.unwrap_or_default(),
             note: m.note,
             managed_by: m.managed_by,
             created_at: m.created_at,
             updated_at: m.updated_at,
-        })
+        }
     }
 }
 

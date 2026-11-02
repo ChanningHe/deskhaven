@@ -1,11 +1,13 @@
-//! Reads a [`Snapshot`] from the database: three plain queries, no transaction. A writer
-//! committing in between can make the snapshot mixed, but its own invalidation (after
-//! commit) bumps the cache generation, so such a snapshot is never kept.
+//! Reads a [`Snapshot`] from the database: three plain queries, deliberately not in one
+//! read transaction. A writer committing in between can make the snapshot mixed, but every
+//! writer invalidates the cache after its commit (in a task the caller cannot cancel), which
+//! bumps the generation, so such a snapshot is dropped by `StrategyCache::store` or by that
+//! invalidation, and it is served at most for the moment before the invalidation runs.
 
 use std::collections::{HashMap, HashSet};
 
 use deskhaven_db::entity::{group_member, strategy, strategy_assignment};
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Select};
 
 use super::StrategyError;
 use super::effective::Snapshot;
@@ -50,15 +52,29 @@ async fn assigned_options(
     assignments: &[Assignment],
 ) -> Result<HashMap<i64, Options>, StrategyError> {
     let assigned: HashSet<i64> = assignments.iter().map(|a| a.strategy_id).collect();
-    let strategies = strategy::Entity::find().all(db).await?;
-    let mut options = HashMap::with_capacity(assigned.len());
-    for row in strategies.into_iter().filter(|s| assigned.contains(&s.id)) {
-        let parsed = options::decode(&row.options).ok_or(StrategyError::Corrupt {
-            strategy_id: row.id,
-        })?;
-        options.insert(row.id, parsed);
+    if assigned.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = strategies_by_id(&assigned).all(db).await?;
+    let mut options = HashMap::with_capacity(rows.len());
+    for row in rows {
+        // One damaged row must not take every device's strategy down with it: its layer is
+        // skipped, and the console shows it flagged (`Strategy::options_corrupt`).
+        match options::decode(&row.options) {
+            Some(parsed) => drop(options.insert(row.id, parsed)),
+            None => tracing::error!(
+                strategy_id = row.id,
+                "stored strategy options are unreadable; the strategy is ignored"
+            ),
+        }
     }
     Ok(options)
+}
+
+/// Only the assigned strategies: options are up to ~1 MB each and most strategies may be
+/// unassigned.
+fn strategies_by_id(ids: &HashSet<i64>) -> Select<strategy::Entity> {
+    strategy::Entity::find().filter(strategy::Column::Id.is_in(ids.iter().copied()))
 }
 
 /// Members of the user groups that have an assignment.
@@ -85,4 +101,21 @@ async fn group_members(
         members.entry(row.group_id).or_default().insert(row.user_id);
     }
     Ok(members)
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::{DbBackend, QueryTrait};
+
+    use super::*;
+
+    #[test]
+    fn only_assigned_strategies_are_selected() {
+        let ids = HashSet::from([4]);
+        for backend in [DbBackend::Postgres, DbBackend::Sqlite] {
+            let sql = strategies_by_id(&ids).build(backend).to_string();
+
+            assert!(sql.contains("\"id\" IN (4)"), "{backend:?}: {sql}");
+        }
+    }
 }

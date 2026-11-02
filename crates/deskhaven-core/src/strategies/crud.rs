@@ -32,11 +32,11 @@ impl StrategyService {
             ..Default::default()
         };
         let created = model.insert(&self.inner.db).await.map_err(name_conflict)?;
-        created.try_into()
+        Ok(created.into())
     }
 
     pub async fn get(&self, id: i64) -> Result<Strategy, StrategyError> {
-        find(&self.inner.db, id).await?.try_into()
+        Ok(find(&self.inner.db, id).await?.into())
     }
 
     pub async fn get_by_name(&self, name: &str) -> Result<Strategy, StrategyError> {
@@ -44,7 +44,7 @@ impl StrategyService {
             .filter(strategy::Column::Name.eq(name.trim()))
             .one(&self.inner.db)
             .await?;
-        found.ok_or(StrategyError::NotFound)?.try_into()
+        Ok(found.ok_or(StrategyError::NotFound)?.into())
     }
 
     /// Every strategy, ordered by name.
@@ -53,7 +53,7 @@ impl StrategyService {
             .order_by_asc(strategy::Column::Name)
             .all(&self.inner.db)
             .await?;
-        rows.into_iter().map(Strategy::try_from).collect()
+        Ok(rows.into_iter().map(Strategy::from).collect())
     }
 
     /// Applies `update`; any successful update advances the strategy version.
@@ -78,7 +78,7 @@ impl StrategyService {
             let updated = changes.update(&tx).await.map_err(name_conflict)?;
             tx.commit().await?;
             inner.cache.invalidate();
-            Strategy::try_from(updated)
+            Ok(Strategy::from(updated))
         })
         .await
     }
