@@ -1,9 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
+use std::sync::Arc;
+
 use deskhaven_core::strategies::{Assignment, StrategyError, Target};
 use deskhaven_db::entity::strategy_assignment;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::{EntityTrait, PaginatorTrait};
+use tokio::sync::Barrier;
 
 use super::support::ctx;
 
@@ -108,32 +111,45 @@ async fn there_is_one_global_assignment() {
     .await;
 }
 
-#[tokio::test]
-async fn concurrent_assignments_to_one_target_leave_one_row() {
+/// Rounds of the concurrency test. With the primary-key conflict target the race failed on
+/// PostgreSQL in roughly one run in five, so 50 rounds make a regression near-certain.
+const RACE_ROUNDS: usize = 50;
+const RACERS: usize = 6;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_first_assigns_to_one_target_never_fail_and_leave_one_row() {
     each_migrated_backend(async |db: &TestDb| {
         let c = ctx(db).await;
         let mut strategies = Vec::new();
-        for i in 0..6 {
+        for i in 0..RACERS {
             strategies.push(c.strategy(&format!("s{i}"), &[]).await);
         }
         let device = c.device("1").await;
-
-        let mut tasks = Vec::new();
-        for strategy in &strategies {
-            let (svc, id) = (c.svc.clone(), strategy.id);
-            tasks.push(tokio::spawn(async move {
-                let global = svc.assign(Target::Global, id).await;
-                global.and(svc.assign(Target::Device(device), id).await)
-            }));
-        }
-        for task in tasks {
-            task.await.unwrap().unwrap();
-        }
-
-        assert_eq!(rows(db).await, 2);
         let ids: Vec<_> = strategies.iter().map(|s| Some(s.id)).collect();
-        assert!(ids.contains(&c.svc.assignment(Target::Global).await.unwrap()));
-        assert!(ids.contains(&c.svc.assignment(Target::Device(device)).await.unwrap()));
+
+        for round in 0..RACE_ROUNDS {
+            // Fresh targets each round: the race is between *first* assigns.
+            c.svc.unassign(Target::Global).await.unwrap();
+            c.svc.unassign(Target::Device(device)).await.unwrap();
+            let start = Arc::new(Barrier::new(RACERS));
+            let mut tasks = Vec::new();
+            for strategy in &strategies {
+                let (svc, id, start) = (c.svc.clone(), strategy.id, Arc::clone(&start));
+                tasks.push(tokio::spawn(async move {
+                    start.wait().await;
+                    let global = svc.assign(Target::Global, id).await;
+                    global.and(svc.assign(Target::Device(device), id).await)
+                }));
+            }
+            for task in tasks {
+                let result = task.await.unwrap();
+                assert!(result.is_ok(), "round {round}: {result:?}");
+            }
+
+            assert_eq!(rows(db).await, 2, "round {round}");
+            assert!(ids.contains(&c.svc.assignment(Target::Global).await.unwrap()));
+            assert!(ids.contains(&c.svc.assignment(Target::Device(device)).await.unwrap()));
+        }
     })
     .await;
 }

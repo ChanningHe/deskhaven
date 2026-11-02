@@ -10,10 +10,10 @@ use deskhaven_db::begin_write;
 use deskhaven_db::entity::strategy_assignment;
 use deskhaven_db::entity::{device, device_group, group, strategy, user};
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QuerySelect,
-    TryInsertResult,
+    TryInsert, TryInsertResult,
 };
 
 use super::load;
@@ -157,14 +157,7 @@ async fn upsert(tx: &impl ConnectionTrait, target: Target, strategy_id: i64) -> 
     if repoint(tx, target, strategy_id).await? {
         return Ok(());
     }
-    let row = strategy_assignment::ActiveModel {
-        id: NotSet,
-        strategy_id: Set(strategy_id),
-        target_type: Set(target.kind()),
-        target_id: Set(target.id()),
-    };
-    let inserted = strategy_assignment::Entity::insert(row)
-        .on_conflict_do_nothing()
+    let inserted = insert_if_absent(target, strategy_id)
         .exec_without_returning(tx)
         .await?;
     if matches!(inserted, TryInsertResult::Inserted(n) if n > 0)
@@ -175,6 +168,27 @@ async fn upsert(tx: &impl ConnectionTrait, target: Target, strategy_id: i64) -> 
     Err(DbErr::Custom(format!(
         "assignment of {target:?} vanished during upsert"
     )))
+}
+
+/// `INSERT ... ON CONFLICT DO NOTHING` **without a conflict target**, so any unique index
+/// absorbs the conflict: `uq_strategy_assignments_target` for the four id-carrying targets
+/// and the partial `uq_strategy_assignments_global` for the global one. sea-orm's own
+/// `on_conflict_do_nothing()` targets the primary key (`("id")`), which neither index is,
+/// so a concurrent first insert of the same target would raise 23505 and abort the
+/// PostgreSQL transaction.
+fn insert_if_absent(
+    target: Target,
+    strategy_id: i64,
+) -> TryInsert<strategy_assignment::ActiveModel> {
+    let row = strategy_assignment::ActiveModel {
+        id: NotSet,
+        strategy_id: Set(strategy_id),
+        target_type: Set(target.kind()),
+        target_id: Set(target.id()),
+    };
+    strategy_assignment::Entity::insert(row)
+        .on_conflict(OnConflict::new().do_nothing().to_owned())
+        .try_insert()
 }
 
 /// `true` if the target had a row (now pointing at `strategy_id`).
@@ -192,4 +206,28 @@ async fn repoint(
         .exec(tx)
         .await?;
     Ok(updated.rows_affected > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::{DbBackend, QueryTrait};
+
+    use super::*;
+
+    #[test]
+    fn the_insert_has_no_conflict_target_on_either_backend() {
+        for target in [Target::Global, Target::User(7)] {
+            for backend in [DbBackend::Postgres, DbBackend::Sqlite] {
+                let built = insert_if_absent(target, 1).build(backend).to_string();
+                // sea-query leaves two spaces where the conflict target would be.
+                let sql = built.split_whitespace().collect::<Vec<_>>().join(" ");
+
+                assert!(
+                    sql.ends_with(" ON CONFLICT DO NOTHING"),
+                    "{backend:?}: {sql}"
+                );
+                assert!(!sql.contains("ON CONFLICT (\"id\")"), "{backend:?}: {sql}");
+            }
+        }
+    }
 }
