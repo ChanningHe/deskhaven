@@ -26,7 +26,8 @@ use std::{
     },
 };
 use support::{
-    CLIENT_VERSION, Conn, Rendezvous, TestServer, decode_addr, expect_msg, next_relay, open_id_pk,
+    CLIENT_VERSION, Conn, MAX_RELAY_SERVER_LEN, MAX_RELAY_UUID_LEN, Rendezvous, TestServer,
+    decode_addr, expect_msg, max_size_request_relay, next_relay, open_id_pk, punch_hole_sent,
     relay_response, relay_via, request_relay, rv, wait_for_relay,
 };
 
@@ -93,6 +94,56 @@ async fn request_relay_to_unknown_peer_is_refused_with_id_does_not_exist() {
     assert_eq!(res.refuse_reason, "ID does not exist");
     assert_eq!(res.uuid, req.uuid);
     assert!(res.relay_server.is_empty() && res.socket_addr.is_empty());
+    server.stop().await;
+}
+
+/// M1-08 review (M2): strings a client hands the server to pass on to another client are
+/// bounded (uuid: 64, relay_server: 259). A RequestRelay at the bounds is forwarded; one over
+/// them is dropped (the target hears nothing) and its connection closed; a RelayResponse /
+/// PunchHoleSent with an oversized relay_server never reaches the controller.
+#[tokio::test]
+async fn forwarded_strings_over_their_bounds_are_dropped() {
+    // Arrange
+    let server = TestServer::start().await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let at_bounds = max_size_request_relay(TARGET, &server.licence_key);
+    let long_uuid = RequestRelay {
+        uuid: "u".repeat(MAX_RELAY_UUID_LEN + 1),
+        ..at_bounds.clone()
+    };
+    let long_relay = RequestRelay {
+        relay_server: "r".repeat(MAX_RELAY_SERVER_LEN + 1),
+        ..at_bounds.clone()
+    };
+
+    // Act + Assert: requests.
+    let mut ok = server.tcp().await;
+    ok.request_relay(at_bounds.clone()).await;
+    let fwd = expect_msg!(target.recv().await, RequestRelay);
+    assert_eq!(fwd.uuid, at_bounds.uuid);
+    for req in [long_uuid, long_relay] {
+        let mut controller = server.tcp().await;
+        controller.request_relay(req).await;
+        controller.assert_closed().await;
+        target.assert_silent().await;
+    }
+
+    // Act + Assert: answers to the controller `ok`.
+    let long = "r".repeat(MAX_RELAY_SERVER_LEN + 1);
+    let mut answer = relay_response(&fwd, TARGET);
+    answer.relay_server = long.clone();
+    server
+        .tcp()
+        .await
+        .send(&rv(|m| m.set_relay_response(answer)))
+        .await;
+    let sent = punch_hole_sent(&fwd.socket_addr, TARGET, &long);
+    server
+        .tcp()
+        .await
+        .send(&rv(|m| m.set_punch_hole_sent(sent)))
+        .await;
+    ok.assert_silent().await;
     server.stop().await;
 }
 

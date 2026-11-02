@@ -104,6 +104,12 @@ const STREAM_OUTBOX_LEN: usize = 32;
 /// within IDLE_TIMEOUT, and the heartbeats keep the client's own timeout (1.5 x its 60 s
 /// keep-alive) and reverse proxies' read timeouts (nginx: 60 s) from closing it.
 const STREAM_HEARTBEAT: Duration = Duration::from_secs(10);
+/// Bound of one send on a TCP / websocket connection (M1-08 review). A send only waits once the
+/// client's receive window and our socket buffer are full, i.e. the client has stopped reading
+/// for a while; frames are at most MAX_FRAME_LEN. Shorter than REG_TIMEOUT, so a stalled
+/// registered peer goes offline sooner than a silent one, and it bounds how long an answer to a
+/// stalled controller can hold up the answering peer's connection task (`send_to_tcp_sync`).
+const STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The next message queued for this connection's peer; pending while none is registered.
 async fn next_outbound(outbox: &mut Option<StreamOutbox>) -> Option<RendezvousMessage> {
@@ -174,6 +180,35 @@ const FIRST_FRAME_TIMEOUT_MS: u64 = 20_000;
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(FIRST_FRAME_TIMEOUT_MS);
 /// Between frames after the first (upstream's 30 s per frame).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+// deskhaven (M1-08 review): bounds of the strings a client hands the server to pass on to another
+// client (RequestRelay to the target; RelayResponse / PunchHoleSent / LocalAddr to the
+// controller). A message over a bound is dropped and its connection closed. Forwarded
+// RequestRelays wait in a peer's queue (STREAM_OUTBOX_LEN), so this also bounds that memory.
+/// RequestRelay / RelayResponse `uuid`: clients send `Uuid::new_v4().to_string()` (36 chars).
+const MAX_RELAY_UUID_LEN: usize = 64;
+/// `relay_server` (`host:port`): a DNS name (at most 253) plus `:` and a 5-digit port; a
+/// bracketed IPv6 literal is shorter.
+const MAX_RELAY_SERVER_LEN: usize = 259;
+/// RelayResponse / PunchHoleSent / LocalAddr `version`: the client's version string (e.g.
+/// "1.4.1").
+const MAX_VERSION_LEN: usize = 64;
+
+/// Whether a message's passed-on strings are within their bounds (logged when not).
+fn within_bounds(what: &str, uuid: &str, relay_server: &str, version: &str) -> bool {
+    let ok = uuid.len() <= MAX_RELAY_UUID_LEN
+        && relay_server.len() <= MAX_RELAY_SERVER_LEN
+        && version.len() <= MAX_VERSION_LEN;
+    if !ok {
+        log::debug!(
+            "dropped {what} with oversized fields (uuid {}, relay_server {}, version {} bytes)",
+            uuid.len(),
+            relay_server.len(),
+            version.len()
+        );
+    }
+    ok
+}
 
 // Store punch hole requests
 use once_cell::sync::Lazy;
@@ -756,6 +791,10 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
+                    // deskhaven (M1-08 review): passed-on strings are bounded.
+                    if !within_bounds("RequestRelay", &rf.uuid, &rf.relay_server, "") {
+                        return false;
+                    }
                     // there maybe several attempt, so sink can be none
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
@@ -793,6 +832,10 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
+                    // deskhaven (M1-08 review): passed-on strings are bounded.
+                    if !within_bounds("RelayResponse", &rr.uuid, &rr.relay_server, &rr.version) {
+                        return false;
+                    }
                     let addr_b = AddrMangle::decode(&rr.socket_addr);
                     rr.socket_addr = Default::default();
                     let id = rr.id();
@@ -812,11 +855,16 @@ impl RendezvousServer {
                     msg_out.set_relay_response(rr);
                     allow_err!(self.send_to_tcp_sync(msg_out, addr_b).await);
                 }
+                // deskhaven (M1-08 review): passed-on strings are bounded (both arms).
                 Some(rendezvous_message::Union::PunchHoleSent(phs)) => {
-                    allow_err!(self.handle_hole_sent(phs, addr, None).await);
+                    if within_bounds("PunchHoleSent", "", &phs.relay_server, &phs.version) {
+                        allow_err!(self.handle_hole_sent(phs, addr, None).await);
+                    }
                 }
                 Some(rendezvous_message::Union::LocalAddr(la)) => {
-                    allow_err!(self.handle_local_addr(la, addr, None).await);
+                    if within_bounds("LocalAddr", "", &la.relay_server, &la.version) {
+                        allow_err!(self.handle_local_addr(la, addr, None).await);
+                    }
                 }
                 Some(rendezvous_message::Union::TestNatRequest(_tar)) => {
                     let mut msg_out = RendezvousMessage::new();
@@ -1221,16 +1269,31 @@ impl RendezvousServer {
     }
 
     // deskhaven (M1-08): the sending half of `send_to_sink`, split out for `send_heartbeat`.
+    // deskhaven (M1-08 review): every send is bounded by STREAM_SEND_TIMEOUT (upstream: none, so
+    // a client that stopped reading blocked the sending task for good once the socket buffers
+    // were full). A failed or timed-out send drops the sink (`None`): nothing more is sent on
+    // that connection, and its own task ends a registered connection (`handle_listener_inner`).
     async fn send_bytes_to_sink(sink: &mut Option<Sink>, bytes: Bytes) {
-        if let Some(sink) = sink.as_mut() {
-            match sink {
-                Sink::TcpStream(s) => {
-                    allow_err!(s.send(bytes).await);
-                }
-                Sink::Ws(ws) => {
-                    allow_err!(ws.send(tungstenite::Message::Binary(bytes)).await);
-                }
-            }
+        let Some(s) = sink.as_mut() else {
+            return;
+        };
+        let sent = match s {
+            Sink::TcpStream(s) => matches!(
+                tokio::time::timeout(STREAM_SEND_TIMEOUT, s.send(bytes)).await,
+                Ok(Ok(()))
+            ),
+            Sink::Ws(ws) => matches!(
+                tokio::time::timeout(
+                    STREAM_SEND_TIMEOUT,
+                    ws.send(tungstenite::Message::Binary(bytes))
+                )
+                .await,
+                Ok(Ok(()))
+            ),
+        };
+        if !sent {
+            log::debug!("send to a stream connection failed or timed out, closing it");
+            *sink = None;
         }
     }
 
@@ -1474,6 +1537,11 @@ impl RendezvousServer {
                 _ = heartbeat.tick(), if conn.id.is_some() => {
                     Self::send_heartbeat(&mut sink).await;
                 }
+            }
+            // deskhaven (M1-08 review): a registered connection whose sink is gone (a send
+            // failed or timed out) can no longer serve its peer.
+            if conn.outbox.is_some() && sink.is_none() {
+                break;
             }
         }
         if let Some(id) = &conn.id {

@@ -91,6 +91,20 @@ pub fn request_relay(target: &str, licence_key: &str) -> RequestRelay {
     }
 }
 
+/// The server's bound on the `uuid` it passes on (`MAX_RELAY_UUID_LEN`).
+pub const MAX_RELAY_UUID_LEN: usize = 64;
+/// The server's bound on the `relay_server` it passes on (`MAX_RELAY_SERVER_LEN`).
+pub const MAX_RELAY_SERVER_LEN: usize = 259;
+
+/// [`request_relay`] with `uuid` and `relay_server` as long as the server passes on.
+pub fn max_size_request_relay(target: &str, licence_key: &str) -> RequestRelay {
+    RequestRelay {
+        uuid: "u".repeat(MAX_RELAY_UUID_LEN),
+        relay_server: format!("{}:21117", "r".repeat(MAX_RELAY_SERVER_LEN - 6)),
+        ..request_relay(target, licence_key)
+    }
+}
+
 /// The socket address hbbs encoded with `AddrMangle`.
 pub fn decode_addr(mangled: &[u8]) -> SocketAddr {
     AddrMangle::decode(mangled)

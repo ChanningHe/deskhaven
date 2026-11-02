@@ -265,3 +265,42 @@ async fn tcp_peer_that_ignores_heartbeats_is_dropped_and_offline() {
     assert_eq!(res.failure.enum_value(), Ok(OFFLINE));
     server.stop().await;
 }
+
+/// The server's bound on one send to a stream connection (`STREAM_SEND_TIMEOUT`).
+const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+/// RequestRelays sent at a peer that does not read: enough to fill its receive window and the
+/// server's send buffer many times over (each forwarded one is about 400 bytes).
+const FLOOD: usize = 30_000;
+
+/// M1-08 review (M2): a registered peer that stops reading must not pin its connection task.
+/// Upstream-style unbounded sends blocked the task once the socket buffers were full (so the
+/// idle timeout never fired); now each send is bounded, the connection ends and the peer is
+/// offline within SEND_TIMEOUT of the stall, well before REG_TIMEOUT would mark it offline.
+/// Paused clock.
+#[tokio::test(start_paused = true)]
+async fn registered_peer_that_never_reads_is_dropped_by_the_send_timeout() {
+    const ID: &str = "tcp-peer-wedged";
+    // Arrange
+    let server = TestServer::start().await;
+    let mut target = support::TcpClient::connect_small_buffer(server.main_addr()).await;
+    assert_eq!(target.register_pk(ID, &PeerKeys::random()).await, OK);
+    let registered = Instant::now();
+    let req = support::max_size_request_relay(ID, &server.licence_key);
+
+    // Act: the peer never reads again while RequestRelays for it keep coming.
+    let mut controller = server.tcp().await;
+    for _ in 0..FLOOD {
+        controller.request_relay(req.clone()).await;
+    }
+    sleep(SEND_TIMEOUT + Duration::from_secs(2)).await;
+
+    // Assert
+    let offline = !is_online(&server, ID).await;
+    let elapsed = registered.elapsed();
+    assert!(
+        elapsed < REG_TIMEOUT,
+        "inconclusive: {elapsed:?} since registration"
+    );
+    assert!(offline, "still bound after {elapsed:?}");
+    server.stop().await;
+}

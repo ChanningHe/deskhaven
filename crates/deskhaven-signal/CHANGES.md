@@ -480,6 +480,21 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `websocket_client_addr_takes_a_trusted_proxys_header_ip_with_a_unique_port` (replaces
   `websocket_client_addr_takes_the_proxy_header_ip_with_a_unique_port`); the proxy tests run
   with a trusting test resolver (`support::TrustXff`).
+- 2026-11-03, M1-08 review (M2), stalled connections and passed-on sizes (`rendezvous_server.rs`):
+  every send on a TCP / websocket sink (`send_bytes_to_sink`, used by `send_to_sink`,
+  `send_heartbeat`, `send_to_tcp`, `send_to_tcp_sync`) is bounded by the new
+  `STREAM_SEND_TIMEOUT` (10 s); a failed or timed-out send drops the sink, and a registered
+  connection that lost its sink ends (unbinding the peer, which goes offline). Upstream sends
+  had no bound (errors only logged), so a client that stopped reading blocked the sending task
+  for good once the socket buffers filled, and the idle timeout of a registered connection
+  never fired. New bounds `MAX_RELAY_UUID_LEN` (64; clients send a 36-char uuid),
+  `MAX_RELAY_SERVER_LEN` (259: a 253-char DNS name, `:`, a 5-digit port) and `MAX_VERSION_LEN`
+  (64) on the strings passed on to another client (`within_bounds`): an oversized RequestRelay
+  or RelayResponse is dropped and its connection closed, an oversized PunchHoleSent / LocalAddr
+  is dropped. This also bounds what a peer's queue of forwarded RequestRelays holds. Tests:
+  `registered_peer_that_never_reads_is_dropped_by_the_send_timeout` (paused clock; the test
+  client gets a minimal receive buffer, `TcpClient::connect_small_buffer`) and
+  `forwarded_strings_over_their_bounds_are_dropped`.
 - 2026-11-03, M1-08, known limitations (no change): a claimed websocket port is unique among
   websocket connections claiming that IP but can equal the source port of a direct TCP
   connection from the same IP (they share `tcp_punch`); `ClaimedAddrs::claim` scans ports in

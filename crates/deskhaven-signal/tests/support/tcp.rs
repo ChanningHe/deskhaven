@@ -6,12 +6,17 @@ use hbb_common::{
     bytes::Bytes,
     rendezvous_proto::{KeyExchange, RendezvousMessage, rendezvous_message},
     tcp::FramedStream,
-    tokio::time::{Duration, Instant, timeout_at},
+    tokio::{
+        net::TcpSocket,
+        time::{Duration, Instant, timeout_at},
+    },
 };
 use std::net::{IpAddr, SocketAddr};
 
 /// Server-first KeyExchange frames a RustDesk client skips at most (client `secure_tcp`).
 const MAX_SKIPPED_KX: usize = 2;
+/// Requested SO_RCVBUF of [`TcpClient::connect_small_buffer`] (the kernel rounds it up to its minimum).
+const SMALL_RECV_BUFFER: u32 = 1;
 
 pub struct TcpClient {
     stream: FramedStream,
@@ -32,6 +37,17 @@ impl TcpClient {
     /// Connects from `ip`, e.g. the address of a UDP client to look like the same host.
     pub async fn connect_from(ip: IpAddr, server: SocketAddr) -> Self {
         Self::from_stream(Self::connect_raw(ip, server).await)
+    }
+
+    /// Connects (from a fresh address) with the smallest receive buffer the kernel allows, so
+    /// the server's sends to it block soon after it stops reading.
+    pub async fn connect_small_buffer(server: SocketAddr) -> Self {
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_recv_buffer_size(SMALL_RECV_BUFFER).unwrap();
+        socket.bind(SocketAddr::new(next_client_ip(), 0)).unwrap();
+        let stream = socket.connect(server).await.unwrap();
+        let local = stream.local_addr().unwrap();
+        Self::from_stream(FramedStream::from(stream, local))
     }
 
     /// A bare connection, for protocol steps the client does not model (e.g. answering a
