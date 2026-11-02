@@ -42,13 +42,8 @@ fn is_unique_violation(res: Result<impl Sized, DbErr>) -> bool {
 }
 
 fn is_fk_violation(res: Result<impl Sized, DbErr>) -> bool {
-    let Some(err) = res.err() else { return false };
-    // SQLite reports ON DELETE RESTRICT with extended code 1811, which sea-orm does not
-    // classify; the message is the same as for any other foreign-key failure.
-    matches!(
-        err.sql_err(),
-        Some(SqlErr::ForeignKeyConstraintViolation(_))
-    ) || err.to_string().contains("FOREIGN KEY constraint failed")
+    res.err()
+        .is_some_and(|err| deskhaven_db::is_foreign_key_violation(&err))
 }
 
 async fn has_index(conn: &DatabaseConnection, table: &str, index: &str) -> bool {
