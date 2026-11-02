@@ -5,6 +5,7 @@
 //! startup), 1 on any startup failure (including a signal server that cannot
 //! serve, e.g. a taken port) or when shutdown overruns its deadline.
 
+use std::future::Future;
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -104,46 +105,71 @@ async fn serve_until_shutdown(
         signal,
         lock: _lock,
     } = started;
-    let (signal_status, mut signal_task) = signal.map(|s| (s.status, s.task)).unzip();
+    let (signal_status, signal_task) = signal.map(|s| (s.status, s.task)).unzip();
     let apps = http::apps(
         Arc::clone(&state),
         admin_routes,
         &token,
         signal_status.clone(),
     );
-    let signal_status = signal_status.as_ref();
-    let mut serving = tokio::spawn({
+    let serving = tokio::spawn({
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }
     });
     tracing::info!("ready");
+    drive(serving, signal_task, signal_status.as_ref(), &token, || {
+        close_db(&state)
+    })
+    .await
+}
 
+/// Runs the serving phase to its end: waits for the shutdown request (or a fault), then
+/// stops HTTP and the signal server in parallel and runs `close_db` only after both are
+/// done, within the shutdown budget.
+async fn drive<C: Future<Output = ()>>(
+    mut serving: JoinHandle<Result<(), ServeError>>,
+    mut signal_task: Option<JoinHandle<()>>,
+    signal_status: Option<&SignalStatus>,
+    token: &CancellationToken,
+    close_db: impl FnOnce() -> C,
+) -> anyhow::Result<ExitCode> {
     tokio::select! {
         joined = &mut serving => {
+            // HTTP only stops on its own after the request, which can be pending next to
+            // this branch (the select picks randomly): ask the token before cancelling it.
+            let requested = token.is_cancelled();
             token.cancel();
             let stop = stop_signal(signal_task, signal_status);
             let _ = tokio::time::timeout(DRAIN_TIMEOUT, stop).await;
-            close_db(&state).await;
-            return Err(stopped_early(joined));
+            close_db().await;
+            return http_stopped(requested, joined);
         }
         joined = signal_ended(&mut signal_task) => {
-            // The supervisor only returns after cancellation: it panicked. Its server is
-            // detached, not gone: wait for it to drain before closing the database.
-            token.cancel();
-            let stop = async { tokio::join!(serving, stop_signal(None, signal_status)) };
-            let _ = tokio::time::timeout(DRAIN_TIMEOUT, stop).await;
-            close_db(&state).await;
-            return Err(match joined {
-                Ok(()) => anyhow!("signal server supervisor stopped unexpectedly"),
-                Err(err) => anyhow::Error::new(err).context("signal server supervisor failed"),
-            });
+            // The supervisor returns with the shutdown request (racing the token branch
+            // here), or else it panicked. Its server is detached, not gone: wait for it
+            // to drain before closing the database.
+            if token.is_cancelled() {
+                if let Err(err) = joined {
+                    tracing::warn!(error = %err, "signal server supervisor failed");
+                }
+                signal_task = None;
+            } else {
+                token.cancel();
+                let stop = async { tokio::join!(serving, stop_signal(None, signal_status)) };
+                let _ = tokio::time::timeout(DRAIN_TIMEOUT, stop).await;
+                close_db().await;
+                return Err(match joined {
+                    Ok(()) => anyhow!("signal server supervisor stopped unexpectedly"),
+                    Err(err) => anyhow::Error::new(err).context("signal server supervisor failed"),
+                });
+            }
         }
         () = token.cancelled() => {}
     }
 
     let finish = async {
         let (joined, ()) = tokio::join!(serving, stop_signal(signal_task, signal_status));
-        close_db(&state).await;
+        close_db().await;
         joined
     };
     match tokio::time::timeout(IN_RUNTIME_DEADLINE, finish).await {
@@ -181,7 +207,23 @@ async fn stop_signal(task: Option<JoinHandle<()>>, status: Option<&SignalStatus>
     }
 }
 
-/// The server only returns after shutdown was requested; anything else is a fault.
+/// Outcome of the HTTP server ending before the finish step observed the shutdown request.
+/// Stopping cleanly after `requested` is the graceful shutdown; anything else is a fault.
+fn http_stopped(
+    requested: bool,
+    joined: Result<Result<(), ServeError>, JoinError>,
+) -> anyhow::Result<ExitCode> {
+    match joined {
+        Ok(Ok(())) if requested => {
+            tracing::info!("shutdown complete");
+            Ok(ExitCode::SUCCESS)
+        }
+        other => Err(stopped_early(other)),
+    }
+}
+
+/// The server only returns without error after shutdown was requested; anything else is a
+/// fault.
 fn stopped_early(joined: Result<Result<(), ServeError>, JoinError>) -> anyhow::Error {
     match joined {
         Ok(Ok(())) => anyhow!("HTTP server stopped unexpectedly"),
@@ -204,6 +246,10 @@ async fn close_db(state: &AppState) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tokio::task::AbortHandle;
+
     use super::*;
 
     #[test]
@@ -213,5 +259,197 @@ mod tests {
             SHUTDOWN_DEADLINE
         );
         assert!(!DRAIN_TIMEOUT.is_zero());
+    }
+
+    /// `drive` picks randomly among simultaneously ready branches, so a race between them
+    /// is exercised over many rounds (a wrong outcome shows up with probability
+    /// 1 - 2^-rounds).
+    const RACE_ROUNDS: usize = 64;
+
+    /// What `drive` observed about the database close.
+    #[derive(Clone, Default)]
+    struct Probe {
+        closed: Arc<AtomicBool>,
+        signal_drained: Arc<AtomicBool>,
+        closed_after_signal: Arc<AtomicBool>,
+    }
+
+    impl Probe {
+        fn closer(&self) -> impl FnOnce() -> std::future::Ready<()> {
+            let probe = self.clone();
+            move || {
+                probe.closed.store(true, Ordering::SeqCst);
+                let drained = probe.signal_drained.load(Ordering::SeqCst);
+                probe.closed_after_signal.store(drained, Ordering::SeqCst);
+                std::future::ready(())
+            }
+        }
+    }
+
+    /// An HTTP server that stops gracefully once `token` is cancelled.
+    fn http_until_cancelled(token: &CancellationToken) -> JoinHandle<Result<(), ServeError>> {
+        let token = token.clone();
+        tokio::spawn(async move {
+            token.cancelled().await;
+            Ok(())
+        })
+    }
+
+    /// A supervisor that returns once `token` is cancelled and the (slow) server drained.
+    fn signal_until_cancelled(token: &CancellationToken, probe: &Probe) -> JoinHandle<()> {
+        let (token, drained) = (token.clone(), Arc::clone(&probe.signal_drained));
+        tokio::spawn(async move {
+            token.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            drained.store(true, Ordering::SeqCst);
+        })
+    }
+
+    /// Lets spawned tasks run until all of them finished, so `drive` finds every ready
+    /// branch ready on its first poll.
+    async fn settle(tasks: &[AbortHandle]) {
+        while tasks.iter().any(|task| !task.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn exit_code_is_success(code: ExitCode) -> bool {
+        format!("{code:?}") == format!("{:?}", ExitCode::SUCCESS)
+    }
+
+    #[tokio::test]
+    async fn http_stop_after_the_shutdown_request_is_graceful() {
+        for _ in 0..RACE_ROUNDS {
+            // Arrange: shutdown requested and HTTP already stopped when `drive` polls.
+            let token = CancellationToken::new();
+            let probe = Probe::default();
+            let serving = http_until_cancelled(&token);
+            token.cancel();
+            settle(&[serving.abort_handle()]).await;
+
+            // Act
+            let outcome = drive(serving, None, None, &token, probe.closer()).await;
+
+            // Assert
+            assert!(exit_code_is_success(outcome.expect("graceful stop")));
+            assert!(probe.closed.load(Ordering::SeqCst));
+        }
+    }
+
+    #[tokio::test]
+    async fn supervisor_end_after_the_shutdown_request_is_graceful() {
+        for _ in 0..RACE_ROUNDS {
+            // Arrange: the supervisor returns as part of the requested shutdown.
+            let token = CancellationToken::new();
+            let probe = Probe::default();
+            let serving = http_until_cancelled(&token);
+            let signal = signal_until_cancelled(&token, &probe);
+            token.cancel();
+            settle(&[serving.abort_handle(), signal.abort_handle()]).await;
+
+            // Act
+            let outcome = drive(serving, Some(signal), None, &token, probe.closer()).await;
+
+            // Assert
+            assert!(exit_code_is_success(outcome.expect("graceful stop")));
+            assert!(probe.closed_after_signal.load(Ordering::SeqCst));
+        }
+    }
+
+    #[tokio::test]
+    async fn database_closes_after_the_signal_server_drained_when_http_stops_first() {
+        for _ in 0..RACE_ROUNDS {
+            // Arrange: HTTP stops at once, the signal server needs a moment.
+            let token = CancellationToken::new();
+            let probe = Probe::default();
+            let serving = http_until_cancelled(&token);
+            let signal = signal_until_cancelled(&token, &probe);
+            token.cancel();
+            settle(&[serving.abort_handle()]).await;
+
+            // Act
+            let outcome = drive(serving, Some(signal), None, &token, probe.closer()).await;
+
+            // Assert
+            assert!(outcome.is_ok());
+            assert!(probe.closed_after_signal.load(Ordering::SeqCst));
+        }
+    }
+
+    #[tokio::test]
+    async fn http_stop_without_a_shutdown_request_is_an_error() {
+        // Arrange: HTTP returns although nobody asked it to.
+        let token = CancellationToken::new();
+        let probe = Probe::default();
+        let signal = signal_until_cancelled(&token, &probe);
+        let serving = tokio::spawn(async { Ok(()) });
+
+        // Act
+        let outcome = drive(serving, Some(signal), None, &token, probe.closer()).await;
+
+        // Assert: a clear error, and the rest still shut down in order.
+        let err = outcome.expect_err("unexpected stop must fail");
+        assert_eq!(err.to_string(), "HTTP server stopped unexpectedly");
+        assert!(token.is_cancelled());
+        assert!(probe.closed_after_signal.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn http_failure_without_a_shutdown_request_is_reported() {
+        // Arrange
+        let token = CancellationToken::new();
+        let probe = Probe::default();
+        let serving = tokio::spawn(async { Err(ServeError::InvalidAdminPublicUrl) });
+
+        // Act
+        let outcome = drive(serving, None, None, &token, probe.closer()).await;
+
+        // Assert
+        let err = outcome.expect_err("serve error must fail");
+        assert!(err.downcast_ref::<ServeError>().is_some(), "{err:#}");
+        assert!(probe.closed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn http_failure_during_shutdown_is_still_reported() {
+        // Arrange: shutdown requested, but HTTP ends with an error.
+        let token = CancellationToken::new();
+        let probe = Probe::default();
+        let serving = tokio::spawn({
+            let token = token.clone();
+            async move {
+                token.cancelled().await;
+                Err(ServeError::InvalidAdminPublicUrl)
+            }
+        });
+        token.cancel();
+        settle(&[serving.abort_handle()]).await;
+
+        // Act
+        let outcome = drive(serving, None, None, &token, probe.closer()).await;
+
+        // Assert
+        assert!(outcome.is_err());
+        assert!(probe.closed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn supervisor_end_without_a_shutdown_request_is_an_error() {
+        // Arrange: the supervisor ends on its own (a panic would look the same).
+        let token = CancellationToken::new();
+        let probe = Probe::default();
+        let serving = http_until_cancelled(&token);
+        let signal = tokio::spawn(async {});
+
+        // Act
+        let outcome = drive(serving, Some(signal), None, &token, probe.closer()).await;
+
+        // Assert
+        let err = outcome.expect_err("unexpected supervisor end must fail");
+        assert_eq!(
+            err.to_string(),
+            "signal server supervisor stopped unexpectedly"
+        );
+        assert!(probe.closed.load(Ordering::SeqCst));
     }
 }
