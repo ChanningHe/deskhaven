@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 
+use crate::api_tokens::ApiTokenService;
 use crate::audit::AuditService;
 use crate::auth::limiter::LoginThrottle;
 use crate::clock::SharedClock;
@@ -34,6 +35,8 @@ pub struct AppState {
     pub signal_public_key: String,
     /// User accounts and local passwords.
     pub users: UserService,
+    /// API tokens (`--deploy`, `--assign`, automation).
+    pub api_tokens: ApiTokenService,
     /// Client and console sessions, with the validated-session cache.
     pub sessions: SessionService,
     /// Per-IP rate limit and account lockout for login-type endpoints.
@@ -123,6 +126,7 @@ impl AppState {
         );
         let audit = AuditService::new(db.clone(), devices.clone(), Arc::clone(&clock));
         let setup = SetupService::new(db.clone(), users.clone(), Arc::clone(&clock));
+        let api_tokens = ApiTokenService::new(db.clone(), Arc::clone(&clock));
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {
             db,
@@ -130,6 +134,7 @@ impl AppState {
             crypto,
             signal_public_key,
             users,
+            api_tokens,
             sessions,
             login_throttle,
             login_events,

@@ -54,7 +54,7 @@ impl TokenHash {
         is_well_formed(token).then(|| Self::digest(token))
     }
 
-    fn digest(token: &str) -> Self {
+    pub(crate) fn digest(token: &str) -> Self {
         Self(format!("{:x}", Sha256::digest(token.as_bytes())))
     }
 
