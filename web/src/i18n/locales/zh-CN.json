@@ -305,7 +305,8 @@
       "members": "{{count}} 名成员",
       "readOnly": "由配置文件定义，在此处只读。",
       "save": "保存修改",
-      "delete": "删除用户组"
+      "delete": "删除用户组",
+      "conflict": "他人刚修改了你正在编辑的内容，保存会覆盖它。"
     },
     "confirmDelete": {
       "title": "删除此用户组？",
@@ -705,7 +706,9 @@
       "viewDevices": "查看这些设备",
       "conflict": "他人刚修改了你正在编辑的内容，保存会覆盖它。",
       "devices_one": "{{count}} 台设备",
-      "devices_other": "{{count}} 台设备"
+      "devices_other": "{{count}} 台设备",
+      "gone": "该设备组已不存在，可能已被其他管理员删除。",
+      "stale": "无法刷新，以下为上次加载的数据"
     },
     "confirmDelete": {
       "title": "删除此设备组？",

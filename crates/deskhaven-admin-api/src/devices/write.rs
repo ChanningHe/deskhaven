@@ -85,7 +85,8 @@ pub async fn delete_device(
 /// Asks the device to close one of its connections. The request waits for the device's next
 /// heartbeat (every 3 s while it has connections) and expires after `ttl_seconds`; a
 /// connection the device does not report stays queued until then (audited
-/// `device.disconnect`).
+/// `device.disconnect`). The audit row is committed before the request is queued, so a full
+/// queue answers 503 with the attempt audited and nothing queued.
 #[utoipa::path(
     post,
     path = "/devices/{id}/disconnect",

@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { getGetDeviceGroupQueryKey } from '@/api/generated/device-groups/device-groups'
+import { errorEnvelope } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 import { DEVICE_GROUPS_PATH, deviceGroupView } from '@/features/devices/test-data'
 import { pageOf } from '@/features/users/test-data'
@@ -142,6 +143,34 @@ describe('device groups tab', () => {
       expect(bodies).toEqual([{ name: 'HQ' }])
     })
     expect(within(drawer).getByLabelText('备注')).toHaveValue('moved to floor 2')
+  })
+
+  it('says so when a refresh fails, and when another admin deleted the group', async () => {
+    let failure: { status: number; body: unknown } | undefined
+    const { queryClient } = renderApp('/groups?tab=devices&group=3', {
+      api: {
+        [`GET ${DEVICE_GROUPS_PATH}`]: pageOf([OFFICE]),
+        [`GET ${DEVICE_GROUPS_PATH}/3`]: () => failure ?? { body: OFFICE },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'Office' })
+    const refetch = () =>
+      act(async () => {
+        await queryClient.refetchQueries({ queryKey: getGetDeviceGroupQueryKey(3) })
+      })
+
+    failure = { status: 429, body: errorEnvelope('rate_limited') }
+    await refetch()
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('无法刷新')
+    expect(within(drawer).getByLabelText('名称')).toBeInTheDocument()
+
+    failure = { status: 404, body: errorEnvelope('not_found') }
+    await refetch()
+    expect(
+      await within(drawer).findByText('该设备组已不存在，可能已被其他管理员删除。'),
+    ).toBeVisible()
+    expect(within(drawer).queryByLabelText('名称')).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: '删除设备组' })).not.toBeInTheDocument()
   })
 
   it('shows a config-managed group read-only', async () => {

@@ -15,8 +15,12 @@ export interface RebasedDraft<T> {
   /** Edited fields whose server value has changed since the edit began. */
   conflicts: (keyof T)[]
   set: (change: Partial<T>) => void
-  /** Adopts `saved` (the server's copy after a save) as baseline and draft. */
-  reset: (saved: T) => void
+  /**
+   * A save succeeded: `saved` is the server's copy and `sent` the values it was sent with.
+   * Only the sent fields are rebased; what the user typed meanwhile (in other fields, or
+   * further in a sent one) stays in the draft.
+   */
+  reset: (saved: T, sent: Partial<T>) => void
 }
 
 function same(a: unknown, b: unknown): boolean {
@@ -27,16 +31,31 @@ function keysOf<T extends object>(value: T): (keyof T)[] {
   return Object.keys(value) as (keyof T)[]
 }
 
-/** Untouched fields follow the new server copy; edited ones keep the user's text. */
+function isUntouched<T extends object>(state: DraftState<T>, key: keyof T): boolean {
+  return same(state.draft[key], state.baseline[key])
+}
+
+/**
+ * Untouched fields follow the server copy, edited ones keep the user's text. A field the
+ * user edited and then typed back to its baseline is untouched again, so it follows too.
+ */
 function rebase<T extends object>(state: DraftState<T>, server: T): DraftState<T> {
   const baseline = { ...state.baseline }
   const draft = { ...state.draft }
   for (const key of keysOf(server)) {
-    if (!same(state.draft[key], state.baseline[key])) continue
+    if (!isUntouched(state, key)) continue
     baseline[key] = server[key]
     draft[key] = server[key]
   }
   return { server, baseline, draft }
+}
+
+/** Whether `state` lags behind `server`: a new copy, or an untouched field out of date. */
+function isStale<T extends object>(state: DraftState<T>, server: T): boolean {
+  if (!same(state.server, server)) return true
+  return keysOf(server).some(
+    (key) => isUntouched(state, key) && !same(state.baseline[key], server[key]),
+  )
 }
 
 /**
@@ -53,13 +72,13 @@ export function useRebasedDraft<T extends object>(server: T): RebasedDraft<T> {
     draft: server,
   }))
   let current = state
-  if (!same(state.server, server)) {
+  if (isStale(state, server)) {
     // Adjusting state while rendering is the documented way to derive it from a prop.
     current = rebase(state, server)
     setState(current)
   }
-  const changed = keysOf(current.draft).filter((k) => !same(current.draft[k], current.baseline[k]))
-  const conflicts = changed.filter((k) => !same(current.server[k], current.baseline[k]))
+  const changed = keysOf(current.draft).filter((key) => !isUntouched(current, key))
+  const conflicts = changed.filter((key) => !same(current.server[key], current.baseline[key]))
   return {
     draft: current.draft,
     changed,
@@ -67,8 +86,17 @@ export function useRebasedDraft<T extends object>(server: T): RebasedDraft<T> {
     set: (change) => {
       setState((previous) => ({ ...previous, draft: { ...previous.draft, ...change } }))
     },
-    reset: (saved) => {
-      setState({ server: saved, baseline: saved, draft: saved })
+    reset: (saved, sent) => {
+      setState((previous) => {
+        const baseline = { ...previous.baseline }
+        const draft = { ...previous.draft }
+        for (const key of keysOf(sent)) {
+          baseline[key] = saved[key]
+          // Typed further while the save was in flight: keep the newer text.
+          if (same(previous.draft[key], sent[key])) draft[key] = saved[key]
+        }
+        return rebase({ server: saved, baseline, draft }, saved)
+      })
     },
   }
 }

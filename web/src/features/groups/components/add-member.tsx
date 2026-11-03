@@ -24,14 +24,15 @@ export function AddMember({ groupId }: { groupId: number }) {
     setError(undefined)
     try {
       await addGroupMember(groupId, { user_id: user.id })
-      await invalidateAccounts(queryClient)
-      return true
     } catch (caught) {
       setError(caught)
       return false
     } finally {
       setAdding(false)
     }
+    // The member is added; a failing refresh of the lists is not a failed add.
+    await invalidateAccounts(queryClient).catch(() => undefined)
+    return true
   }
 
   return (

@@ -25,7 +25,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { invalidateDevices } from '@/features/devices/invalidate'
+import { httpStatusOf } from '@/lib/http-error'
 import { useRebasedDraft } from '@/lib/use-rebased-draft'
+
+const HTTP_NOT_FOUND = 404
 
 interface DeviceGroupDrawerProps {
   groupId: number | undefined
@@ -66,6 +69,9 @@ function DrawerBody({ groupId, onDeleted }: { groupId: number; onDeleted: () => 
   }
   const group = query.data
   const editable = group.managed_by === 'ui'
+  // A later refetch failed: what follows is the last good copy (or the group is gone).
+  const failure = query.isError ? query.error : undefined
+  const gone = httpStatusOf(failure) === HTTP_NOT_FOUND
   return (
     <>
       <SheetHeader>
@@ -80,16 +86,29 @@ function DrawerBody({ groupId, onDeleted }: { groupId: number; onDeleted: () => 
           </div>
         )}
       </SheetHeader>
-      <div className="grid gap-6 px-4 pb-6">
-        {editable ? <GroupForm key={group.id} group={group} onDeleted={onDeleted} /> : null}
-        <Link
-          to="/devices"
-          search={{ device_group: group.id }}
-          className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-fit' })}
-        >
-          {t('deviceGroups.drawer.viewDevices')}
-        </Link>
-      </div>
+      {gone ? (
+        <p role="alert" className="mx-4 rounded-lg bg-muted px-3 py-2 text-sm">
+          {t('deviceGroups.drawer.gone')}
+        </p>
+      ) : (
+        <div className="grid gap-6 px-4 pb-6">
+          {failure === undefined ? null : (
+            <ErrorAlert
+              error={failure}
+              title={t('deviceGroups.drawer.stale')}
+              onRetry={() => void query.refetch()}
+            />
+          )}
+          {editable ? <GroupForm key={group.id} group={group} onDeleted={onDeleted} /> : null}
+          <Link
+            to="/devices"
+            search={{ device_group: group.id }}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-fit' })}
+          >
+            {t('deviceGroups.drawer.viewDevices')}
+          </Link>
+        </div>
+      )}
     </>
   )
 }
@@ -114,12 +133,13 @@ function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: ()
       ...(changed.includes('name') ? { name: draft.name } : {}),
       ...(changed.includes('note') ? { note: draft.note } : {}),
     }
+    const sent = data
     const saved = await mutation.mutateAsync({ id: group.id, data }).catch(() => undefined)
     if (saved === undefined) return
     // The response is the newest copy: a refetch still in flight must not overwrite it.
     await queryClient.cancelQueries({ queryKey: detailKey })
     queryClient.setQueryData<DeviceGroupView>(detailKey, saved)
-    reset({ name: saved.name, note: saved.note })
+    reset({ name: saved.name, note: saved.note }, sent)
     void invalidateDevices(queryClient)
   }
 

@@ -1317,7 +1317,7 @@
         "tags": [
           "devices"
         ],
-        "summary": "Asks the device to close one of its connections. The request waits for the device's next\nheartbeat (every 3 s while it has connections) and expires after `ttl_seconds`; a\nconnection the device does not report stays queued until then (audited\n`device.disconnect`).",
+        "summary": "Asks the device to close one of its connections. The request waits for the device's next\nheartbeat (every 3 s while it has connections) and expires after `ttl_seconds`; a\nconnection the device does not report stays queued until then (audited\n`device.disconnect`). The audit row is committed before the request is queued, so a full\nqueue answers 503 with the attempt audited and nothing queued.",
         "operationId": "disconnect_device",
         "parameters": [
           {

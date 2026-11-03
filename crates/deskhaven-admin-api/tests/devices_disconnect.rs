@@ -12,6 +12,7 @@ use axum::http::{Method, StatusCode};
 use common::devices::{heartbeat_http, path, register};
 use common::{Console, Harness, harness};
 use deskhaven_admin_api::AdminRoutes;
+use deskhaven_core::devices::MAX_QUEUED_DEVICES;
 use deskhaven_core::strategies::{NewStrategy, Options, Target};
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::user;
@@ -122,6 +123,37 @@ async fn disconnect_is_audited_and_validated() {
         let after: Value = serde_json::from_str(rows[0].after.as_deref().unwrap()).unwrap();
         assert_eq!(after["conn_id"], 9);
         assert_eq!(after["rustdesk_id"], "100");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_full_queue_answers_503_with_the_attempt_audited_and_nothing_queued() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, admin) = setup(db).await;
+        let id = register(&h, "100").await;
+        for n in 0..MAX_QUEUED_DEVICES {
+            let queue = h.state.devices.disconnects();
+            queue.disconnect(&format!("filler-{n}"), &[1]).unwrap();
+        }
+
+        let refused = h
+            .write(
+                Method::POST,
+                &disconnect_path(id),
+                &admin,
+                json!({ "conn_id": 42 }),
+            )
+            .await;
+
+        assert_eq!(
+            (refused.status.as_u16(), refused.code()),
+            (503, "unavailable")
+        );
+        assert!(!h.state.devices.disconnects().is_pending("100"));
+        let rows = h.audit_rows().await;
+        assert_eq!(rows.len(), 1, "committed before the enqueue");
+        assert_eq!(rows[0].action, "device.disconnect");
     })
     .await;
 }

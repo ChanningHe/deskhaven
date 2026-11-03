@@ -98,6 +98,9 @@ impl DeviceService {
     /// the actor and its audit row commits first; only then is the request queued
     /// ([`DeviceError::QueueFull`] if the queue has no room). Runs in its own task, so a
     /// dropped request cannot leave a queued request without its row.
+    ///
+    /// The row is committed before the enqueue on purpose (an executed action must never lack
+    /// its row), so a full queue leaves an audited attempt that queued nothing.
     pub async fn disconnect_guarded(
         &self,
         id: i64,

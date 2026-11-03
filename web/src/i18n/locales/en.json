@@ -305,7 +305,8 @@
       "members": "{{count}} members",
       "readOnly": "Defined in the configuration file; read-only here.",
       "save": "Save changes",
-      "delete": "Delete group"
+      "delete": "Delete group",
+      "conflict": "Someone else just changed what you are editing; saving overwrites it."
     },
     "confirmDelete": {
       "title": "Delete this group?",
@@ -705,7 +706,9 @@
       "viewDevices": "View these devices",
       "conflict": "Someone else just changed what you are editing; saving overwrites it.",
       "devices_one": "{{count}} device",
-      "devices_other": "{{count}} devices"
+      "devices_other": "{{count}} devices",
+      "gone": "This device group no longer exists; another administrator may have deleted it.",
+      "stale": "Could not refresh; showing the data loaded last"
     },
     "confirmDelete": {
       "title": "Delete this device group?",

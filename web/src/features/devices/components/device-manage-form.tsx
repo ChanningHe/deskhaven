@@ -55,6 +55,7 @@ export function DeviceManageForm({ device }: { device: DeviceView }) {
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     const patch = patchOf(draft, changed)
+    const sent = Object.fromEntries(changed.map((key) => [key, draft[key]])) as Partial<Draft>
     const saved = await mutation.mutateAsync({ id: device.id, data: patch }).catch(() => undefined)
     if (saved === undefined) return
     // The response is the newest copy: a poll still in flight must not overwrite it.
@@ -63,7 +64,7 @@ export function DeviceManageForm({ device }: { device: DeviceView }) {
     queryClient.setQueryData<DeviceDetail>(key, (old) =>
       old === undefined ? old : { ...old, device: saved },
     )
-    reset(draftOf(saved))
+    reset(draftOf(saved), sent)
     void invalidateDevices(queryClient)
   }
 

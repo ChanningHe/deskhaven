@@ -3,7 +3,12 @@ import { useId, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { deleteGroup, useGetGroup, useUpdateGroup } from '@/api/generated/groups/groups'
+import {
+  deleteGroup,
+  getGetGroupQueryKey,
+  useGetGroup,
+  useUpdateGroup,
+} from '@/api/generated/groups/groups'
 import type { GroupView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
@@ -19,6 +24,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { invalidateAccounts } from '@/features/users/invalidate'
+import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { GroupMembers } from './group-members'
 
@@ -87,20 +93,29 @@ function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => vo
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const [name, setName] = useState(group.name)
-  const [note, setNote] = useState(group.note)
   const [confirming, setConfirming] = useState(false)
+  const { draft, changed, conflicts, set, reset } = useRebasedDraft({
+    name: group.name,
+    note: group.note,
+  })
   const mutation = useUpdateGroup()
-  const dirty = name !== group.name || note !== group.note
+  const dirty = changed.length > 0
+  const detailKey = getGetGroupQueryKey(group.id)
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // Only what the user edited: an unrelated field must not write a stale value back.
     const data = {
-      ...(name === group.name ? {} : { name }),
-      ...(note === group.note ? {} : { note }),
+      ...(changed.includes('name') ? { name: draft.name } : {}),
+      ...(changed.includes('note') ? { note: draft.note } : {}),
     }
     const saved = await mutation.mutateAsync({ id: group.id, data }).catch(() => undefined)
-    if (saved !== undefined) void invalidateAccounts(queryClient)
+    if (saved === undefined) return
+    // The response is the newest copy: a refetch still in flight must not overwrite it.
+    await queryClient.cancelQueries({ queryKey: detailKey })
+    queryClient.setQueryData<GroupView>(detailKey, saved)
+    reset({ name: saved.name, note: saved.note }, data)
+    void invalidateAccounts(queryClient)
   }
 
   // The confirm dialog is a sibling of the form, never inside it: React bubbles its submit
@@ -113,19 +128,24 @@ function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => vo
           id={`${id}-name`}
           required
           maxLength={64}
-          value={name}
+          value={draft.name}
           onChange={(e) => {
-            setName(e.target.value)
+            set({ name: e.target.value })
           }}
         />
         <Label htmlFor={`${id}-note`}>{t('groups.fields.note')}</Label>
         <Input
           id={`${id}-note`}
-          value={note}
+          value={draft.note}
           onChange={(e) => {
-            setNote(e.target.value)
+            set({ note: e.target.value })
           }}
         />
+        {conflicts.length > 0 ? (
+          <p role="status" className="text-xs text-warning">
+            {t('groups.drawer.conflict')}
+          </p>
+        ) : null}
         {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>

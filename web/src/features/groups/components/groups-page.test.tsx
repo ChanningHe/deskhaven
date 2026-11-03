@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { getGetGroupQueryKey } from '@/api/generated/groups/groups'
 import type { GroupView, UserView } from '@/api/generated/model'
 import { callsTo, requestedUrl } from '@/test/mock-api'
 import type { MockHandler } from '@/test/mock-api'
@@ -99,6 +100,41 @@ describe('groups page', () => {
     expect(await screen.findByRole('dialog', { name: 'ops' })).toBeInTheDocument()
     expect(posted).toEqual({ name: 'ops', note: '' })
     expect(router.state.location.search).toEqual({ group: 7 })
+  })
+
+  it('saves only the edited field when another admin changed the other one meanwhile', async () => {
+    let served = group(7, 'ops', { note: 'night shift' })
+    const bodies: unknown[] = []
+    const { user, queryClient } = renderApp('/groups?group=7', {
+      api: {
+        [`GET ${GROUPS}`]: page([served]),
+        [`GET ${GROUPS}/7`]: () => ({ body: served }),
+        [`GET ${GROUPS}/7/members`]: page([]),
+        [`PATCH ${GROUPS}/7`]: ({ init }) => {
+          bodies.push(JSON.parse(init.body as string))
+          served = { ...served, name: 'ops-2' }
+          return { body: served }
+        },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'ops' })
+    const name = within(drawer).getByLabelText('名称')
+    await user.clear(name)
+    await user.type(name, 'ops-2')
+
+    served = group(7, 'ops', { note: 'moved to days' })
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: getGetGroupQueryKey(7) })
+    })
+    await waitFor(() => {
+      expect(within(drawer).getByLabelText('备注')).toHaveValue('moved to days')
+    })
+    expect(name).toHaveValue('ops-2')
+
+    await user.click(within(drawer).getByRole('button', { name: '保存修改' }))
+    await waitFor(() => {
+      expect(bodies).toEqual([{ name: 'ops-2' }])
+    })
   })
 
   it('adds a member found by search and asks before removing one', async () => {
