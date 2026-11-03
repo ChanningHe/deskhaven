@@ -13,7 +13,7 @@ fn queue() -> (DisconnectQueue, Arc<ManualClock>) {
 }
 
 #[test]
-fn only_requested_ids_the_device_still_reports_are_handed_out_once() {
+fn only_live_requested_ids_are_handed_out_once_and_the_rest_wait() {
     // Arrange
     let (q, _) = queue();
     q.disconnect(ID, &[12, 13]).unwrap();
@@ -21,25 +21,53 @@ fn only_requested_ids_the_device_still_reports_are_handed_out_once() {
     // Act
     let first = q.take(ID, &[11, 12, 14]);
     let second = q.take(ID, &[11, 12, 14]);
+    let pending = q.is_pending(ID);
+    let later = q.take(ID, &[13]);
 
     // Assert
-    assert_eq!(first, vec![12], "13 is gone, 11 and 14 were not asked for");
-    assert!(second.is_empty(), "handed out once");
+    assert_eq!(first, vec![12], "11 and 14 were not asked for");
+    assert!(second.is_empty(), "12 handed out once");
+    assert!(pending, "13 was not reported, so it waits");
+    assert_eq!(later, vec![13]);
     assert!(!q.is_pending(ID));
 }
 
+/// A heartbeat reporting no connections (a clone, or a stolen uuid) cannot swallow what an
+/// administrator queued.
 #[test]
-fn a_heartbeat_without_live_connections_drops_the_request() {
+fn a_heartbeat_without_live_connections_keeps_the_request() {
     // Arrange
     let (q, _) = queue();
     q.disconnect(ID, &[12]).unwrap();
+    q.disconnect_all("987654321").unwrap();
 
     // Act
     let none = q.take(ID, &[]);
     let later = q.take(ID, &[12]);
+    let none_all = q.take("987654321", &[]);
+    let later_all = q.take("987654321", &[3]);
 
     // Assert
-    assert!(none.is_empty() && later.is_empty());
+    assert!(none.is_empty() && none_all.is_empty());
+    assert_eq!((later, later_all), (vec![12], vec![3]));
+}
+
+/// Each id keeps the deadline of the request that queued it; a later request does not
+/// extend it.
+#[test]
+fn merging_does_not_extend_the_deadline_of_older_ids() {
+    // Arrange
+    let (q, clock) = queue();
+    q.disconnect(ID, &[1]).unwrap();
+    clock.advance(DISCONNECT_TTL / 2);
+    q.disconnect(ID, &[1, 2]).unwrap();
+
+    // Act
+    clock.advance(DISCONNECT_TTL / 2);
+    let taken = q.take(ID, &[1, 2]);
+
+    // Assert
+    assert_eq!(taken, vec![2], "1 expired on its own deadline");
 }
 
 #[test]
@@ -55,6 +83,12 @@ fn disconnect_all_covers_every_reported_connection_once_each() {
 
     // Assert
     assert_eq!(all, vec![5, 7]);
+    assert_eq!(q.take(ID, &[5, 7]), Vec::<i32>::new(), "all used up");
+    assert_eq!(
+        q.take(ID, &[12]),
+        vec![12],
+        "12 was never reported: it waited"
+    );
     assert!(q.is_pending("987654321"), "per device");
 }
 

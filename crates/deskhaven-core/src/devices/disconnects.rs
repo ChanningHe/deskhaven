@@ -3,19 +3,21 @@
 //! them in `disconnect` and the client closes each one it still has ("Closed manually by the
 //! web console", `src/server/connection.rs:1389-1392`).
 //!
-//! - **Once**: a request is handed out by one heartbeat and then gone, whether or not the
-//!   reply arrives. Losing it costs a click; replaying it could close a later connection.
+//! - **Once**: an id is handed out by one heartbeat and then gone, whether or not the reply
+//!   arrives. Losing it costs a click; replaying it could close a later connection.
 //! - **Only live connections**: the reply carries only ids the device reports in that
-//!   heartbeat's `conns`; requested ids it no longer reports are dropped (the connection
-//!   already ended).
-//! - **Short-lived** ([`DISCONNECT_TTL`]): connection ids are a per-process counter in the
-//!   client, so after a client restart an old id can name a new connection. A request the
-//!   device does not pick up in time expires; a device with live connections heartbeats every
-//!   3 s (`sync.rs:232-235`).
+//!   heartbeat's `conns`. A requested id it does not report stays queued until reported or
+//!   expired, so a heartbeat with no `conns` (a clone, or a stolen uuid) cannot swallow it.
+//!   A disconnect-all request is used up by the first heartbeat that reports connections.
+//! - **Short-lived** ([`DISCONNECT_TTL`], per id from its own request, on the monotonic
+//!   clock): connection ids are a per-process counter in the client, so after a client
+//!   restart an old id can name a new connection. A request the device does not pick up in
+//!   time expires; a device with live connections heartbeats every 3 s (`sync.rs:232-235`).
+//!   A later request never extends the deadline of an id already queued.
 //! - **Bounded**: at most [`MAX_QUEUED_DEVICES`] devices with pending requests and
 //!   [`MAX_CONNS`] ids each. Not persisted (02 §3): after a restart the connections are new.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -34,20 +36,25 @@ pub enum QueueFull {
     Devices,
 }
 
-/// What to close on one device.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Request {
-    /// Every connection the next heartbeat reports.
-    All,
-    /// These connection ids, if still reported.
-    Conns(BTreeSet<i32>),
+/// What waits for one device. Times are monotonic ms
+/// ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)) of the request that queued them.
+#[derive(Debug, Default)]
+struct Pending {
+    /// A disconnect-all request.
+    all: Option<i64>,
+    /// Requested connection ids.
+    ids: HashMap<i32, i64>,
 }
 
-#[derive(Debug)]
-struct Pending {
-    request: Request,
-    /// Monotonic ms ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)) of the latest request.
-    queued_ms: i64,
+impl Pending {
+    fn prune(&mut self, now: i64) {
+        self.all = self.all.filter(|at| !expired(*at, now));
+        self.ids.retain(|_, at| !expired(*at, now));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.all.is_none() && self.ids.is_empty()
+    }
 }
 
 /// Shared handle; clones see the same queue.
@@ -71,83 +78,80 @@ impl DisconnectQueue {
         }
     }
 
-    /// Asks device `rustdesk_id` to close connections `conn_ids` (merged with what is already
-    /// pending for it; ids beyond [`MAX_CONNS`] are ignored).
+    /// Asks device `rustdesk_id` to close connections `conn_ids`, added to what is already
+    /// pending for it (an id already queued keeps its deadline; ids beyond [`MAX_CONNS`] per
+    /// device are ignored).
     pub fn disconnect(&self, rustdesk_id: &str, conn_ids: &[i32]) -> Result<(), QueueFull> {
-        self.queue(rustdesk_id, |previous| {
-            let mut ids = match previous {
-                Some(Request::All) => return Request::All,
-                Some(Request::Conns(ids)) => ids,
-                None => BTreeSet::new(),
-            };
+        self.queue(rustdesk_id, |pending, now| {
             for id in conn_ids {
-                if ids.len() >= MAX_CONNS {
+                if pending.ids.len() >= MAX_CONNS && !pending.ids.contains_key(id) {
                     break;
                 }
-                ids.insert(*id);
+                pending.ids.entry(*id).or_insert(now);
             }
-            Request::Conns(ids)
         })
     }
 
-    /// Asks device `rustdesk_id` to close every connection its next heartbeat reports.
+    /// Asks device `rustdesk_id` to close every connection reported by its next heartbeat
+    /// that reports any.
     pub fn disconnect_all(&self, rustdesk_id: &str) -> Result<(), QueueFull> {
-        self.queue(rustdesk_id, |_| Request::All)
+        self.queue(rustdesk_id, |pending, now| pending.all = Some(now))
     }
 
     /// Whether a request for `rustdesk_id` is waiting (expired ones count until the next
-    /// heartbeat or prune drops them).
+    /// heartbeat or request drops them).
     pub fn is_pending(&self, rustdesk_id: &str) -> bool {
         self.lock().contains_key(rustdesk_id)
     }
 
     /// The connection ids to put in the heartbeat reply of `rustdesk_id`, which reports the
-    /// live connections `active`; removes its request.
+    /// live connections `active`: the requested ones among them. Removes only what it hands
+    /// out.
     pub(crate) fn take(&self, rustdesk_id: &str, active: &[i32]) -> Vec<i32> {
         let now = self.inner.clock.elapsed_ms();
-        let Some(pending) = self.lock().remove(rustdesk_id) else {
+        let mut table = self.lock();
+        let Some(pending) = table.get_mut(rustdesk_id) else {
             return Vec::new();
         };
-        if expired(&pending, now) {
-            return Vec::new();
+        pending.prune(now);
+        let mut handed = Vec::new();
+        for id in active {
+            if handed.len() >= MAX_CONNS {
+                break;
+            }
+            let requested = pending.ids.remove(id).is_some();
+            if (requested || pending.all.is_some()) && !handed.contains(id) {
+                handed.push(*id);
+            }
         }
-        let wanted = |id: &i32| match &pending.request {
-            Request::All => true,
-            Request::Conns(ids) => ids.contains(id),
-        };
-        let mut seen = BTreeSet::new();
-        let live = active
-            .iter()
-            .copied()
-            .filter(|id| wanted(id) && seen.insert(*id));
-        live.take(MAX_CONNS).collect()
+        if !handed.is_empty() {
+            pending.all = None;
+        }
+        if pending.is_empty() {
+            table.remove(rustdesk_id);
+        }
+        handed
     }
 
     fn queue(
         &self,
         rustdesk_id: &str,
-        merge: impl FnOnce(Option<Request>) -> Request,
+        add: impl FnOnce(&mut Pending, i64),
     ) -> Result<(), QueueFull> {
         let now = self.inner.clock.elapsed_ms();
-        let mut pending = self.lock();
-        let previous = pending
-            .remove(rustdesk_id)
-            .filter(|p| !expired(p, now))
-            .map(|p| p.request);
-        if previous.is_none() && pending.len() >= MAX_QUEUED_DEVICES {
-            pending.retain(|_, p| !expired(p, now));
-            if pending.len() >= MAX_QUEUED_DEVICES {
+        let mut table = self.lock();
+        if !table.contains_key(rustdesk_id) && table.len() >= MAX_QUEUED_DEVICES {
+            table.retain(|_, p| {
+                p.prune(now);
+                !p.is_empty()
+            });
+            if table.len() >= MAX_QUEUED_DEVICES {
                 return Err(QueueFull::Devices);
             }
         }
-        let request = merge(previous);
-        pending.insert(
-            rustdesk_id.to_owned(),
-            Pending {
-                request,
-                queued_ms: now,
-            },
-        );
+        let pending = table.entry(rustdesk_id.to_owned()).or_default();
+        pending.prune(now);
+        add(pending, now);
         Ok(())
     }
 
@@ -160,9 +164,9 @@ impl DisconnectQueue {
     }
 }
 
-fn expired(pending: &Pending, now: i64) -> bool {
+fn expired(queued: i64, now: i64) -> bool {
     let ttl = i64::try_from(DISCONNECT_TTL.as_millis()).unwrap_or(i64::MAX);
-    now.saturating_sub(pending.queued_ms) >= ttl
+    now.saturating_sub(queued) >= ttl
 }
 
 #[cfg(test)]
