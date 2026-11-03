@@ -117,6 +117,7 @@ pub async fn start(
     let signal = start_signal(config, &signal_key, &state, token).await?;
     if let Some(running) = &signal {
         forget_deleted_devices(&state, running.status.clone());
+        share_registry_with_deploy(&state, running.status.clone());
     }
     Ok(Started {
         state,
@@ -158,6 +159,17 @@ pub fn forget_deleted_devices(state: &AppState, signal: SignalStatus) {
     state
         .devices
         .on_device_deleted(Arc::new(move |id: &str| signal.reload_peer(id)));
+}
+
+/// `--deploy` writes registrations behind the signal server's back: it first checks the
+/// server's in-memory registrations (not all stored yet), and the server re-reads every id
+/// it wrote.
+pub fn share_registry_with_deploy(state: &AppState, signal: SignalStatus) {
+    let reload = signal.clone();
+    state
+        .devices
+        .on_registry_changed(Arc::new(move |id: &str| reload.reload_peer(id)));
+    state.devices.set_live_registrations(Arc::new(signal));
 }
 
 /// Database, migrations, settings: the [`AppState`] the routers serve.

@@ -28,6 +28,8 @@ pub use supervisor::{Backoff, Launcher, RunningSignal, SignalStatus, spawn_super
 #[cfg(test)]
 mod deletion_tests;
 #[cfg(test)]
+mod deploy_tests;
+#[cfg(test)]
 mod kx_tests;
 #[cfg(test)]
 mod tests;

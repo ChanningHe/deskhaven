@@ -22,7 +22,7 @@ use super::tests::{FAST, POLL, STEP, TARGET, Target, start_launcher_with};
 use crate::signal_store::SignalPeerStore;
 use crate::startup::forget_deleted_devices;
 
-async fn state(db: &TestDb) -> AppState {
+pub(super) async fn state(db: &TestDb) -> AppState {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
     let (settings, _) = SettingsService::load(db.conn.clone(), crypto.clone(), PinSet::empty())
         .await
