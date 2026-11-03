@@ -32,15 +32,19 @@ pub use presence::{
 pub use preset_book::PRESET_TAG_COLOR;
 pub use presets::{AddressBookPreset, Presets};
 pub use service::{
-    DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceService, Heartbeat, HeartbeatOutcome,
-    HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
+    ConnectionRecord, DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceGroup, DeviceGroupQuery,
+    DeviceGroupSort, DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery,
+    DeviceRecord, DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate,
+    Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
 
 use std::net::IpAddr;
 
-use deskhaven_db::entity::device::{self, DeviceStatus};
+use crate::console_audit::{GuardError, Refused};
+use deskhaven_db::entity::device;
+pub use deskhaven_db::entity::device::DeviceStatus;
 use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -85,6 +89,20 @@ pub enum DeviceError {
     #[error("{field} is already taken")]
     Conflict { field: &'static str },
 
+    #[error("device not found")]
+    NotFound,
+
+    #[error("device group not found")]
+    GroupNotFound,
+
+    /// The device group is defined in the configuration file and read-only here.
+    #[error("the device group is managed by the configuration file")]
+    ManagedByConfig,
+
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
+
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.
     #[error("device operation did not complete")]
@@ -92,6 +110,15 @@ pub enum DeviceError {
 
     #[error("device storage failed")]
     Database(#[from] DbErr),
+}
+
+impl From<GuardError> for DeviceError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
+    }
 }
 
 /// `devices` access. Cheap to clone (pooled connection).

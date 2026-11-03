@@ -18,17 +18,22 @@ use std::sync::{Arc, PoisonError, RwLock};
 use deskhaven_config::settings::{AcceptPresets, DEVICES_VERIFY_UUID};
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::device::{self, Entity as Devices};
-use deskhaven_db::entity::device_group;
-use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::time;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect, SqlErr,
+    IntoActiveModel, QueryFilter, QuerySelect,
 };
 use subtle::ConstantTimeEq;
 
+mod admin;
 mod heartbeat;
+
+pub use admin::{
+    ConnectionRecord, DeviceGroup, DeviceGroupQuery, DeviceGroupSort, DeviceGroupSortField,
+    DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord, DeviceSort, DeviceSortField,
+    DeviceSummary, DeviceUpdate,
+};
 
 pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
 
@@ -43,10 +48,10 @@ use super::sysinfo::Sysinfo;
 use crate::addressbooks::AddressBookService;
 use crate::auth::limiter::{ClientAddr, IpLimiter};
 use crate::clock::SharedClock;
+use crate::console_audit::TxGuard;
 use crate::crypto::{SecretBox, b64::KEY_B64};
 use crate::settings::SettingsService;
-use crate::strategies::{self, StrategyService};
-use crate::text::{self, NOTE_MAX_LEN};
+use crate::strategies::StrategyService;
 use base64_022::Engine as _;
 use std::time::Duration;
 
@@ -247,64 +252,25 @@ impl DeviceService {
     /// Deletes device `device_id` (`devices.id`) and its strategy assignment; `false` if it
     /// did not exist. Then runs the [`on_device_deleted`](Self::on_device_deleted) hooks.
     pub async fn delete(&self, device_id: i64) -> Result<bool, DeviceError> {
-        self.detached(move |inner| async move {
-            let tx = begin_write(&inner.db).await?;
-            let found = Devices::find_by_id(device_id)
-                .lock_exclusive()
-                .one(&tx)
-                .await?;
-            let Some(row) = found else {
-                return Ok(false);
-            };
-            strategies::forget_device(&tx, row.id).await?;
-            Devices::delete_by_id(row.id).exec(&tx).await?;
-            tx.commit().await?;
-            inner.strategies.cache().invalidate();
-            inner.presence.forget(&row.rustdesk_id);
-            inner.sysinfo_writes.forget(&row.rustdesk_id);
-            inner.run_deleted_hooks(&row.rustdesk_id);
-            Ok(true)
-        })
-        .await
+        self.delete_guarded(device_id, TxGuard::none()).await
     }
 
     /// Creates a device group; returns its id. Names are unique (exact match).
     pub async fn create_group(&self, name: &str, note: &str) -> Result<i64, DeviceError> {
-        let name = validate_group_name(name)?;
-        if let Some(reason) = text::problem(note, NOTE_MAX_LEN, true) {
-            return Err(DeviceError::Invalid {
-                field: "note",
-                reason,
-            });
-        }
-        let now = time::now();
-        let row = device_group::ActiveModel {
-            name: Set(name),
-            note: Set(note.to_owned()),
-            managed_by: Set(ManagedBy::Ui),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let created = row.insert(&self.inner.db).await.map_err(name_conflict)?;
-        Ok(created.id)
+        let group = self
+            .create_group_guarded(name, note, TxGuard::none())
+            .await?;
+        Ok(group.id)
     }
 
     /// Deletes device group `id` and its strategy assignment; its devices become ungrouped
     /// (foreign key `SET NULL`). `false` if it did not exist.
     pub async fn delete_group(&self, id: i64) -> Result<bool, DeviceError> {
-        self.detached(move |inner| async move {
-            let tx = begin_write(&inner.db).await?;
-            strategies::forget_device_group(&tx, id).await?;
-            let deleted = device_group::Entity::delete_by_id(id).exec(&tx).await?;
-            tx.commit().await?;
-            let existed = deleted.rows_affected > 0;
-            if existed {
-                inner.strategies.cache().invalidate();
-            }
-            Ok(existed)
-        })
-        .await
+        match self.delete_group_guarded(id, TxGuard::none()).await {
+            Ok(()) => Ok(true),
+            Err(DeviceError::GroupNotFound) => Ok(false),
+            Err(other) => Err(other),
+        }
     }
 
     /// Runs `op` to completion in its own task (see the module documentation).
@@ -435,26 +401,4 @@ async fn write_row(
         active.note = Set(Some(note.clone()));
     }
     active.update(tx).await
-}
-
-fn validate_group_name(raw: &str) -> Result<String, DeviceError> {
-    let name = raw.trim();
-    let problem = match name.is_empty() {
-        true => Some("must not be blank".to_owned()),
-        false => text::problem(name, DEVICE_GROUP_NAME_MAX_LEN, false),
-    };
-    match problem {
-        Some(reason) => Err(DeviceError::Invalid {
-            field: "name",
-            reason,
-        }),
-        None => Ok(name.to_owned()),
-    }
-}
-
-fn name_conflict(err: DbErr) -> DeviceError {
-    match err.sql_err() {
-        Some(SqlErr::UniqueConstraintViolation(_)) => DeviceError::Conflict { field: "name" },
-        _ => DeviceError::Database(err),
-    }
 }
