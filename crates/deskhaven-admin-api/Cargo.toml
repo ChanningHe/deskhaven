@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 axum = { workspace = true, features = ["query"] }
 base64_022 = { workspace = true }
+deskhaven-config = { workspace = true }
 deskhaven-core = { workspace = true }
 deskhaven-http = { workspace = true }
 garde = { workspace = true }
@@ -24,10 +25,10 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 
 [dev-dependencies]
-deskhaven-config = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
 sea-orm = { workspace = true }
 tokio = { workspace = true }
+tempfile = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 # The mock IdP shared with the core tests (deskhaven-core/tests/common/oidc_idp.rs).

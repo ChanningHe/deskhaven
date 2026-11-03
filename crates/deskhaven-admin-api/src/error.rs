@@ -76,6 +76,12 @@ pub enum ErrorCode {
     /// The account has no local password or local second factor (OIDC sign-in; LDAP and
     /// OIDC accounts for a password reset).
     NotLocalAccount,
+    // Settings (05 §3.2, §3.4).
+    /// The setting is fixed by the configuration file or an environment variable
+    /// (`details.keys`).
+    SettingPinned,
+    /// The setting changed since it was read (`details.keys`, `details.conflicts`).
+    VersionConflict,
 }
 
 impl ErrorCode {
@@ -109,7 +115,9 @@ impl ErrorCode {
             | Self::SelfDelete
             | Self::SelfService
             | Self::ManagedByConfig
-            | Self::NotLocalAccount => StatusCode::CONFLICT,
+            | Self::NotLocalAccount
+            | Self::SettingPinned
+            | Self::VersionConflict => StatusCode::CONFLICT,
         }
     }
 
@@ -146,6 +154,8 @@ impl ErrorCode {
             Self::SelfService => "self_service",
             Self::ManagedByConfig => "managed_by_config",
             Self::NotLocalAccount => "not_local_account",
+            Self::SettingPinned => "setting_pinned",
+            Self::VersionConflict => "version_conflict",
         }
     }
 }

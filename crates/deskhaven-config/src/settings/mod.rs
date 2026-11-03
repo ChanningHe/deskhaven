@@ -27,7 +27,9 @@ pub use pins::{PinError, PinProblem, PinSet};
 pub use registry::*;
 pub use snapshot::{Entry, LoadWarning, SettingView, Snapshot, Stored};
 pub use text::TextRule;
-pub use update::{Accepted, Change, Problem, Rejection, Reset, check_rules, prepare, prepare_batch};
+pub use update::{
+    Accepted, Change, Problem, Rejection, Reset, check_rules, prepare, prepare_batch,
+};
 pub use value::{HostPort, HostPortError, Value};
 
 /// Machine-readable description of every setting and cross-key rule, for

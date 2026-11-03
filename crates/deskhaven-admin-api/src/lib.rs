@@ -25,6 +25,7 @@ mod pagination;
 pub mod permission;
 mod routes;
 pub mod session;
+mod settings;
 mod setup;
 mod stack_error;
 pub mod transport;
@@ -69,7 +70,8 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
         .merge(account::routes()?)?
         .merge(setup::routes()?)?;
     let routes = users::routes(routes)?;
-    groups::routes(routes)
+    let routes = groups::routes(routes)?;
+    settings::routes(routes)
 }
 
 /// The production routes behind their gates, for the admin listener.

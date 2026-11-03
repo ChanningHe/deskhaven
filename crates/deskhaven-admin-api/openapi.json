@@ -1609,6 +1609,270 @@
         ]
       }
     },
+    "/admin/api/v1/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Every setting with its effective value, source, pin state and form schema, in\ndeclaration order (grouped by `category`). Secrets are never returned: their value is\n`{\"set\": bool}`.",
+        "operationId": "list_settings",
+        "responses": {
+          "200": {
+            "description": "All settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SettingView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "owner"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Changes and resets settings in one all-or-nothing batch (audited `setting.update`, or\n`setting.reset` when it only resets). Every change names the `version` it was read at:\na stored row that moved on makes the batch a 409 `version_conflict` (nothing is\nwritten; `details.conflicts` has the current settings of the stale keys). Pinned keys\nare 409 `setting_pinned`; invalid values and violated cross-key rules are 422 with\n`details.fields` keyed by setting key. A change that leaves the value as it is writes\nnothing. Returns all settings, as after the batch.",
+        "operationId": "update_settings",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "All settings after the batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SettingView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A key is pinned (`setting_pinned`, `details.keys`) or changed since it was read (`version_conflict`, `details.conflicts`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown key, invalid value, both or neither of `value` and `reset`, or a violated cross-key rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/settings/{key}/history": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The changes of one setting, newest first. Secrets show only whether they were set.",
+        "operationId": "get_setting_history",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Dotted setting key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_HistoryEntryView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such setting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/setup": {
       "get": {
         "tags": [
@@ -2978,7 +3242,9 @@
           "self_delete",
           "self_service",
           "managed_by_config",
-          "not_local_account"
+          "not_local_account",
+          "setting_pinned",
+          "version_conflict"
         ]
       },
       "ErrorEnvelope": {
@@ -3067,6 +3333,52 @@
           "updated_at": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "HistoryEntryView": {
+        "type": "object",
+        "description": "One change of a setting.",
+        "required": [
+          "version",
+          "new_value",
+          "reset",
+          "updated_at"
+        ],
+        "properties": {
+          "new_value": {},
+          "old_value": {},
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "The stored value was dropped."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "updated_by_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The version the stored row had after this change."
           }
         }
       },
@@ -3514,6 +3826,83 @@
           }
         }
       },
+      "Paginated_HistoryEntryView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One change of a setting.",
+              "required": [
+                "version",
+                "new_value",
+                "reset",
+                "updated_at"
+              ],
+              "properties": {
+                "new_value": {},
+                "old_value": {},
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reset": {
+                  "type": "boolean",
+                  "description": "The stored value was dropped."
+                },
+                "updated_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "updated_by": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "updated_by_username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The version the stored row had after this change."
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
       "Paginated_UserView": {
         "type": "object",
         "description": "One page of a list.",
@@ -3664,6 +4053,20 @@
           "user"
         ]
       },
+      "SchemaBound": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          {
+            "type": "string",
+            "description": "A duration with units."
+          }
+        ],
+        "description": "A bound of a number or duration range."
+      },
       "SessionKindView": {
         "type": "string",
         "enum": [
@@ -3730,6 +4133,191 @@
           }
         }
       },
+      "SettingChangeBody": {
+        "type": "object",
+        "description": "One requested change: a new `value`, or `reset` to drop the stored value (exactly one).",
+        "required": [
+          "key",
+          "version"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "Delete the stored value, so the default applies again."
+          },
+          "value": {},
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The `version` of the setting as last read; a different stored version is a 409."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SettingKind": {
+        "type": "string",
+        "description": "How the form edits a setting: the registry's value kinds.",
+        "enum": [
+          "bool",
+          "u32",
+          "duration",
+          "enum",
+          "string",
+          "secret",
+          "host_port_list"
+        ]
+      },
+      "SettingSchema": {
+        "type": "object",
+        "description": "What a form needs to edit one setting (derived from the registry declaration).",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "format": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TextFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SchemaBound"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Longest text, in characters.",
+            "minimum": 0
+          },
+          "min": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SchemaBound"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "$ref": "#/components/schemas/SettingKind"
+          },
+          "variants": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "zero_allowed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`0` is accepted besides `min..=max` (\"off\", \"forever\")."
+          }
+        }
+      },
+      "SettingView": {
+        "type": "object",
+        "description": "One setting with its effective value.",
+        "required": [
+          "key",
+          "category",
+          "description",
+          "value",
+          "default",
+          "source",
+          "pinned",
+          "sensitive",
+          "version",
+          "schema"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "The first key segment: the form's group."
+          },
+          "default": {},
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "Dotted key, e.g. `auth.session_ttl`."
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "Fixed by the bootstrap configuration: not editable here."
+          },
+          "schema": {
+            "$ref": "#/components/schemas/SettingSchema"
+          },
+          "sensitive": {
+            "type": "boolean",
+            "description": "A secret: write-only, never returned."
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceView"
+          },
+          "value": {},
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `version` when changing or resetting the setting (0: nothing stored)."
+          }
+        }
+      },
+      "SettingsPatch": {
+        "type": "object",
+        "description": "A batch of changes, applied together or not at all.",
+        "required": [
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingChangeBody"
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Note stored in the history of every written key (at most 500 characters)."
+          }
+        },
+        "additionalProperties": false
+      },
       "SetupRequest": {
         "type": "object",
         "description": "The setup link's token and the owner to create. Never logged.",
@@ -3794,6 +4382,120 @@
           "totp_enrolment"
         ]
       },
+      "SourceView": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The built-in default.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "default"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Pinned by the configuration file; read-only here.",
+            "required": [
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Pinned by an environment variable (`<KEY>_FILE` included); read-only here.",
+            "required": [
+              "var",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "env"
+                ]
+              },
+              "var": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Pinned by a command-line flag; read-only here.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cli"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Stored in the database (the setting was modified in the console).",
+            "required": [
+              "version",
+              "at",
+              "kind"
+            ],
+            "properties": {
+              "at": {
+                "type": "integer",
+                "format": "int64",
+                "description": "When, unix milliseconds."
+              },
+              "by": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Account that wrote it; none for the system or when the account is gone."
+              },
+              "by_username": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "database"
+                ]
+              },
+              "version": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The stored row's version."
+              }
+            }
+          }
+        ],
+        "description": "Where the effective value comes from (05 §3.5)."
+      },
       "StatusView": {
         "type": "string",
         "description": "Account status (04 §3).",
@@ -3814,6 +4516,14 @@
             "type": "string"
           }
         }
+      },
+      "TextFormat": {
+        "type": "string",
+        "description": "Constraint of a text setting.",
+        "enum": [
+          "host",
+          "email"
+        ]
       },
       "TotpConfirm": {
         "type": "object",

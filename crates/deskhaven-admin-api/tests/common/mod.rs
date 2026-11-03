@@ -67,11 +67,15 @@ pub struct Reply {
 
 /// The production routes plus `extra`, on `db`.
 pub async fn harness(db: &TestDb, extra: AdminRoutes) -> Harness {
+    harness_pinned(db, extra, PinSet::empty()).await
+}
+
+/// [`harness`] with settings pinned by the bootstrap configuration.
+pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Harness {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[9; 32])));
-    let (settings, warnings) =
-        SettingsService::load(db.conn.clone(), Arc::clone(&crypto), PinSet::empty())
-            .await
-            .unwrap();
+    let (settings, warnings) = SettingsService::load(db.conn.clone(), Arc::clone(&crypto), pins)
+        .await
+        .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     let state = Arc::new(AppState::new(
         db.conn.clone(),

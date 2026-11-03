@@ -31,6 +31,14 @@ pub struct HistoryEntry {
 }
 
 impl SettingsService {
+    /// Usernames of those of `ids` that still exist, for "last changed by".
+    pub async fn authors(
+        &self,
+        ids: impl IntoIterator<Item = i64>,
+    ) -> Result<HashMap<i64, String>, SettingsError> {
+        Ok(usernames(&self.inner.db, ids).await?)
+    }
+
     /// One page of the history of `key`, newest first. An unknown key is
     /// [`SettingsError::Invalid`].
     pub async fn history(
@@ -46,7 +54,7 @@ impl SettingsService {
             .paginate(&self.inner.db, page.page_size);
         let total = paginator.num_items().await?;
         let rows = paginator.fetch_page(index).await?;
-        let names = usernames(&self.inner.db, &rows).await?;
+        let names = usernames(&self.inner.db, rows.iter().filter_map(|r| r.updated_by)).await?;
         let sensitive = setting.is_sensitive();
         let items = rows
             .into_iter()
@@ -72,9 +80,9 @@ fn invalid(field: &str, reason: &str) -> SettingsError {
 
 async fn usernames(
     db: &sea_orm::DatabaseConnection,
-    rows: &[setting_history::Model],
+    ids: impl IntoIterator<Item = i64>,
 ) -> Result<HashMap<i64, String>, DbErr> {
-    let mut ids: Vec<i64> = rows.iter().filter_map(|r| r.updated_by).collect();
+    let mut ids: Vec<i64> = ids.into_iter().collect();
     ids.sort_unstable();
     ids.dedup();
     if ids.is_empty() {
