@@ -8,6 +8,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -61,15 +62,39 @@ pub fn free_port() -> u16 {
         .port()
 }
 
-/// A signal base port whose TCP port-1, port, port+2 and UDP port were free
-/// on all IPv4 interfaces a moment ago (the server binds all interfaces).
+/// Lowest port the kernel hands out for ephemeral sockets (listeners on port 0 and the source
+/// ports of outgoing connections), from `ip_local_port_range`; the IANA default if unreadable.
+fn ephemeral_floor() -> u16 {
+    const IANA_FLOOR: u16 = 49152;
+    std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
+        .ok()
+        .and_then(|range| range.split_whitespace().next()?.parse().ok())
+        .unwrap_or(IANA_FLOOR)
+}
+
+/// First port of the signal port blocks, above the registered-service ports.
+const SIGNAL_PORT_FLOOR: u16 = 10_000;
+/// Ports from `base - 1` to `base + 2` belong to one signal server; blocks are this far apart.
+const SIGNAL_BLOCK: u16 = 4;
+
+/// A signal base port whose TCP port-1, port, port+2 and UDP port are free on all IPv4
+/// interfaces (the server binds all interfaces).
+///
+/// Probing alone is racy: the probe releases the ports again, and an ephemeral socket of a
+/// parallel test (a `:0` listener, a client's source port) can take one before the caller
+/// binds it. So blocks are drawn from below the ephemeral range, where the kernel never
+/// allocates on its own, and handed out once per process by a shared cursor that starts at
+/// a per-process offset (concurrent test processes rarely overlap); the probe still skips
+/// ports some other program holds.
 pub fn free_signal_port() -> u16 {
+    static CURSOR: AtomicU16 = AtomicU16::new(0);
     let any = |port: u16| SocketAddr::from(([0, 0, 0, 0], port));
-    loop {
-        let port = free_port();
-        if !(3..=u16::MAX - 2).contains(&port) {
-            continue;
-        }
+    let blocks = (ephemeral_floor().saturating_sub(SIGNAL_PORT_FLOOR + 2) / SIGNAL_BLOCK).max(1);
+    let start = std::process::id() % u32::from(blocks);
+    for _ in 0..blocks {
+        let step = CURSOR.fetch_add(1, Ordering::Relaxed);
+        let block = (start + u32::from(step)) % u32::from(blocks);
+        let port = SIGNAL_PORT_FLOOR + 1 + u16::try_from(block).unwrap() * SIGNAL_BLOCK;
         let tcp_free = [port - 1, port, port + 2]
             .iter()
             .all(|p| TcpListener::bind(any(*p)).is_ok());
@@ -77,6 +102,7 @@ pub fn free_signal_port() -> u16 {
             return port;
         }
     }
+    panic!("no free signal port block below the ephemeral range");
 }
 
 pub struct Server {
