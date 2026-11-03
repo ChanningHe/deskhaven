@@ -18,7 +18,10 @@ use hbb_common::{
 };
 use std::{
     collections::BTreeSet,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use support::{PeerKeys, STEP, TestServer};
 
@@ -30,6 +33,8 @@ const POLL: Duration = Duration::from_millis(20);
 struct DeletableStore {
     inner: MemoryPeerStore,
     deleted: Mutex<BTreeSet<String>>,
+    /// Writes fail while set (the write-behind keeps them owed).
+    failing: AtomicBool,
 }
 
 impl DeletableStore {
@@ -64,6 +69,9 @@ impl PeerStore for DeletableStore {
     }
 
     async fn upsert_pk(&self, rec: &PeerUpsert) -> Result<(), StoreError> {
+        if self.failing.load(Ordering::SeqCst) {
+            return Err(StoreError::backend("store unavailable (test)"));
+        }
         self.inner.upsert_pk(rec).await
     }
 }
@@ -124,5 +132,44 @@ async fn reloading_a_stored_peer_keeps_it() {
         other.register_pk(ID, &PeerKeys::random()).await,
         UUID_MISMATCH
     );
+    server.stop().await;
+}
+
+/// M2-19 re-review: a reinstalled device re-registers with a new key, then a reload arrives
+/// (an out-of-band registry write) before the write-behind stored that key. The newer
+/// in-memory key of the same device wins: it is kept and still written, not reverted to the
+/// stored one.
+#[tokio::test]
+async fn reloading_keeps_a_newer_unsaved_key_of_the_same_device() {
+    // Arrange
+    let store = Arc::new(DeletableStore::default());
+    let server = TestServer::start_with_store(|cfg| cfg, store.clone()).await;
+    let first = PeerKeys::random();
+    let mut peer = server.udp().await;
+    assert_eq!(peer.register_pk(ID, &first).await, OK);
+    let deadline = Instant::now() + STEP;
+    while store.inner.get(ID).await.unwrap().is_none() {
+        assert!(Instant::now() < deadline, "registration never stored");
+        sleep(POLL).await;
+    }
+    store.failing.store(true, Ordering::SeqCst);
+    let reinstalled = first.with_new_pk();
+    assert_eq!(peer.register_pk(ID, &reinstalled).await, OK);
+
+    // Act
+    server.handle.reload_peer(ID).unwrap();
+    sleep(Duration::from_millis(200)).await;
+    store.failing.store(false, Ordering::SeqCst);
+
+    // Assert
+    let deadline = Instant::now() + 3 * STEP;
+    loop {
+        let stored = store.inner.get(ID).await.unwrap().unwrap();
+        if stored.pk == reinstalled.pk.to_vec() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the new key was never written");
+        sleep(POLL).await;
+    }
     server.stop().await;
 }

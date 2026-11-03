@@ -233,7 +233,8 @@ impl Persist {
     /// Invalidation hook for registrations changed out of band (admin edits / deletes, M2;
     /// also used on UuidMismatch): re-reads `id` from the store. A stored record replaces the
     /// cached keys in place (address, liveness and rate-limit counters kept, the peer counts as
-    /// saved); a missing one is forgotten.
+    /// saved), unless the cached peer is an unsaved registration of the same uuid (newer: kept
+    /// for the writer); a missing one is forgotten.
     pub(crate) async fn reload(&self, id: &str) -> Result<(), StoreError> {
         let stored = self.store.get(id).await?;
         let cached = self.map.read().await.get(id).cloned();
@@ -247,6 +248,12 @@ impl Persist {
             }
             (Some(rec), Some(peer)) => {
                 let mut p = peer.write().await;
+                // deskhaven (M2-19): an unsaved registration of the same device (e.g. a new
+                // key after a reinstall) is newer than the stored row: keep it, the writer
+                // still owes and stores it.
+                if !p.save.is_saved() && p.uuid[..] == rec.uuid[..] {
+                    return Ok(());
+                }
                 p.uuid = rec.uuid.into();
                 p.pk = rec.pk.into();
                 p.info.ip = rec.ip.map(|ip| ip.to_string()).unwrap_or_default();
