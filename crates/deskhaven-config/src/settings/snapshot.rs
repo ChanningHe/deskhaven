@@ -168,18 +168,42 @@ impl Snapshot {
     /// A copy with `accepted` applied as stored at version
     /// `expected + 1` by `by` at `at` (unix ms). Pinned keys keep their pin.
     pub fn with_accepted(&self, accepted: &[Accepted], by: Option<i64>, at: i64) -> Self {
+        self.with_accepted_at(accepted, by, at, |change| change.expected_version() + 1)
+    }
+
+    /// [`Snapshot::with_accepted`] with the stored version of each non-reset change given
+    /// by `version_of` (a key whose row was deleted continues after its history, not after
+    /// the version the caller saw). A reset leaves no row: the default, version 0.
+    pub fn with_accepted_at(
+        &self,
+        accepted: &[Accepted],
+        by: Option<i64>,
+        at: i64,
+        version_of: impl Fn(&Accepted) -> i64,
+    ) -> Self {
         let mut entries = self.entries.clone();
         for change in accepted {
             let Some(entry) = entries.get_mut(change.key()).filter(|e| !e.pinned) else {
                 continue;
             };
-            let version = change.expected_version() + 1;
-            *entry = Entry {
-                value: change.value().clone(),
-                source: Source::Database { version, by, at },
-                pinned: false,
-                version,
-                fallback: false,
+            *entry = match change.is_reset() {
+                true => Entry {
+                    value: change.value().clone(),
+                    source: Source::Default,
+                    pinned: false,
+                    version: 0,
+                    fallback: false,
+                },
+                false => {
+                    let version = version_of(change);
+                    Entry {
+                        value: change.value().clone(),
+                        source: Source::Database { version, by, at },
+                        pinned: false,
+                        version,
+                        fallback: false,
+                    }
+                }
             };
         }
         Self { entries }

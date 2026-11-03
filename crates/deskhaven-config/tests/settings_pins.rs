@@ -8,7 +8,8 @@ mod common;
 use common::jail_err;
 use deskhaven_config::Source;
 use deskhaven_config::settings::{
-    self, Change, HostPort, PinSet, Registration, Rejection, Snapshot, TfaEnforce, prepare,
+    self, Change, HostPort, PinSet, Registration, Rejection, Reset, Snapshot, TfaEnforce, prepare,
+    prepare_batch,
 };
 use figment::Jail;
 
@@ -210,6 +211,34 @@ fn updates_to_pinned_keys_are_rejected() {
         let rejection = prepare(
             &pins,
             &[change("auth.lockout.window"), change("auth.session_ttl")],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            rejection,
+            Rejection::Pinned {
+                keys: vec!["auth.session_ttl".to_owned()]
+            }
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn resets_of_pinned_keys_are_rejected() {
+    Jail::expect_with(|jail| {
+        jail.clear_env();
+        jail.set_env("DESKHAVEN_SETTINGS__AUTH__SESSION_TTL", "7d");
+        let pins = pins(jail)?;
+
+        let reset = |key: &str| Reset {
+            key: key.to_owned(),
+            version: 0,
+        };
+        let rejection = prepare_batch(
+            &pins,
+            &[],
+            &[reset("auth.lockout.window"), reset("auth.session_ttl")],
         )
         .unwrap_err();
 

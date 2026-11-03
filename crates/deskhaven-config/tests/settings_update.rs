@@ -5,7 +5,7 @@
 
 use deskhaven_config::Source;
 use deskhaven_config::settings::{
-    self, Change, PinSet, Rejection, Snapshot, Stored, check_rules, prepare,
+    self, Change, PinSet, Rejection, Reset, Snapshot, Stored, check_rules, prepare, prepare_batch,
 };
 use serde_json::{Value as Json, json};
 
@@ -404,4 +404,79 @@ fn security_relevant_settings_fall_back_strictly_on_bad_rows() {
         Snapshot::defaults().get(&settings::AUTH_TFA_ENFORCE),
         settings::TfaEnforce::Off
     );
+}
+
+fn reset(key: &str, version: i64) -> Reset {
+    Reset {
+        key: key.to_owned(),
+        version,
+    }
+}
+
+#[test]
+fn a_reset_accepts_the_default_and_marks_the_change() {
+    let accepted = prepare_batch(
+        &PinSet::empty(),
+        &[change("smtp.port", json!(2525))],
+        &[reset("auth.session_ttl", 4)],
+    )
+    .unwrap();
+
+    let by_key = |key: &str| accepted.iter().find(|a| a.key() == key).unwrap();
+    let ttl = by_key("auth.session_ttl");
+    assert!(ttl.is_reset());
+    assert_eq!(ttl.expected_version(), 4);
+    assert_eq!(ttl.value().to_json(), json!("30d"));
+    assert!(!by_key("smtp.port").is_reset());
+}
+
+#[test]
+fn a_reset_snapshot_has_the_default_and_no_stored_row() {
+    let rows = vec![stored("auth.session_ttl", json!("60d"), 3)];
+    let (base, _) = Snapshot::build(&PinSet::empty(), rows);
+    let accepted = prepare_batch(&PinSet::empty(), &[], &[reset("auth.session_ttl", 3)]).unwrap();
+
+    let next = base.with_accepted(&accepted, Some(1), 5);
+
+    let view = next.view("auth.session_ttl").unwrap();
+    assert_eq!(view.value, json!("30d"));
+    assert_eq!((view.source, view.version), (Source::Default, 0));
+}
+
+#[test]
+fn with_accepted_at_takes_the_stored_version_from_the_caller() {
+    let accepted = prepare(&PinSet::empty(), &[change("smtp.port", json!(2525))]).unwrap();
+
+    let next = Snapshot::defaults().with_accepted_at(&accepted, None, 0, |_| 9);
+
+    let view = next.view("smtp.port").unwrap();
+    assert_eq!(view.version, 9);
+    assert!(matches!(view.source, Source::Database { version: 9, .. }));
+}
+
+#[test]
+fn a_key_may_be_changed_or_reset_once_per_batch_and_must_exist() {
+    let twice = prepare_batch(
+        &PinSet::empty(),
+        &[change("smtp.port", json!(2525))],
+        &[reset("smtp.port", 0), reset("nope", 0)],
+    )
+    .unwrap_err();
+    assert_eq!(invalid_keys(twice), ["smtp.port", "nope"]);
+}
+
+#[test]
+fn a_reset_is_checked_against_the_cross_key_rules() {
+    let rows = vec![
+        stored("smtp.host", json!("mail.example.com"), 1),
+        stored("smtp.from", json!("noreply@example.com"), 1),
+        stored("auth.email_code.enabled", json!(true), 1),
+    ];
+    let (base, _) = Snapshot::build(&PinSet::empty(), rows);
+    let accepted = prepare_batch(&PinSet::empty(), &[], &[reset("smtp.host", 1)]).unwrap();
+    let next = base.with_accepted(&accepted, None, 0);
+
+    let rejected = check_rules(&next, &["smtp.host"]).unwrap_err();
+
+    assert_eq!(invalid_keys(rejected), ["auth.email_code.enabled"]);
 }

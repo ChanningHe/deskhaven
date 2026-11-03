@@ -32,15 +32,30 @@ impl fmt::Debug for Change {
     }
 }
 
+/// A request to drop the stored value of a key, so its default applies again. `version`
+/// is as for [`Change`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reset {
+    pub key: String,
+    pub version: i64,
+}
+
 /// A change whose key exists, is not pinned, and whose value is valid.
 #[derive(Clone)]
 pub struct Accepted {
     setting: &'static dyn AnySetting,
     value: Value,
     version: i64,
+    reset: bool,
 }
 
 impl Accepted {
+    /// The change drops the stored value; [`Accepted::value`] is the default that applies
+    /// afterwards.
+    pub fn is_reset(&self) -> bool {
+        self.reset
+    }
+
     pub fn key(&self) -> &'static str {
         self.setting.key()
     }
@@ -65,6 +80,7 @@ impl fmt::Debug for Accepted {
             .field("key", &self.key())
             .field("value", &self.value)
             .field("version", &self.version)
+            .field("reset", &self.reset)
             .finish()
     }
 }
@@ -101,14 +117,28 @@ fn join(problems: &[Problem]) -> String {
 /// Checks everything that does not depend on current state. Pinned keys
 /// take precedence over other problems; all problems are reported at once.
 pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejection> {
+    prepare_batch(pins, changes, &[])
+}
+
+/// [`prepare`] for a batch that also resets keys. A key may appear once in the whole batch,
+/// as a change or as a reset.
+pub fn prepare_batch(
+    pins: &PinSet,
+    changes: &[Change],
+    resets: &[Reset],
+) -> Result<Vec<Accepted>, Rejection> {
+    let edits = changes
+        .iter()
+        .map(|c| (c.key.as_str(), c.version, Some(&c.value)))
+        .chain(resets.iter().map(|r| (r.key.as_str(), r.version, None)));
     let mut seen = BTreeSet::new();
     let mut pinned = Vec::new();
     let mut problems = Vec::new();
-    let mut accepted = Vec::with_capacity(changes.len());
-    for change in changes {
-        let Some(setting) = lookup(&change.key) else {
+    let mut accepted = Vec::with_capacity(changes.len() + resets.len());
+    for (key, version, value) in edits {
+        let Some(setting) = lookup(key) else {
             problems.push(Problem {
-                key: echo_key(&change.key),
+                key: echo_key(key),
                 reason: "unknown setting".to_owned(),
             });
             continue;
@@ -122,12 +152,8 @@ pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejec
         } else if pins.is_pinned(setting.key()) {
             pinned.push(setting.key().to_owned());
         } else {
-            match setting.coerce(&change.value) {
-                Ok(value) => accepted.push(Accepted {
-                    setting,
-                    value,
-                    version: change.version,
-                }),
+            match accept(setting, version, value) {
+                Ok(change) => accepted.push(change),
                 Err(reason) => problems.push(problem(&reason)),
             }
         }
@@ -139,6 +165,24 @@ pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejec
         true => Ok(accepted),
         false => Err(Rejection::Invalid { problems }),
     }
+}
+
+/// The edit of an existing, unpinned setting: `value` coerced, or (`None`) the default.
+fn accept(
+    setting: &'static dyn AnySetting,
+    version: i64,
+    value: Option<&Json>,
+) -> Result<Accepted, String> {
+    let (value, reset) = match value {
+        Some(raw) => (setting.coerce(raw)?, false),
+        None => (setting.default_value(), true),
+    };
+    Ok(Accepted {
+        setting,
+        value,
+        version,
+        reset,
+    })
 }
 
 /// Longest unknown key echoed back in a [`Problem`].
