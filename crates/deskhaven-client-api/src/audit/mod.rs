@@ -9,12 +9,11 @@
 //! | case | status | body | client |
 //! |---|---|---|---|
 //! | stored, or a nonce already stored (a retry) | 200 | empty | done |
-//! | controller note set, ignored (empty, or the session has one), waiting, or for an unknown id | 200 | empty | (ignores the reply) |
+//! | controller note, whatever became of it (set, ignored, waiting, no room to wait, unknown id) | 200 | empty | (ignores the reply) |
 //! | record of an unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` | drops the record |
 //! | malformed body, missing / oversized / mistyped field | 400 | `{"error": ...}` | drops the record |
 //! | body over [`MAX_AUDIT_BODY`] | 413 | stack renderer | drops the record |
 //! | over the per-IP quota ([`AUDIT_PER_IP_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_IP_PER_MINUTE)), or a verified device over its quota ([`AUDIT_PER_DEVICE_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_DEVICE_PER_MINUTE)) | 429 + `Retry-After` | `{"error": "Please try later"}` | retries (10 s, 30 s) |
-//! | controller note with no room to wait (per source, per device or in all) | 503 + `Retry-After` | `{"error": "Please try later"}` | (ignores the reply) |
 //! | storage failure | 500 | `{"error": ...}` | retries; the nonce was not claimed |
 //!
 //! Every reply but 200 carries a body, so no failure reads as "stored".
@@ -27,7 +26,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::routing::post;
-use deskhaven_core::audit::{Envelope, Ingest, NOTE_TTL, NoteOutcome, Record};
+use deskhaven_core::audit::{Envelope, Ingest, Record};
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::state::AppState;
 
@@ -59,18 +58,13 @@ async fn conn(
             ingest(&state, envelope, Record::Conn(report)).await
         }
         ConnMessage::Note(note) => {
+            // Every outcome gets the same reply: the note carries no uuid, so its reply must
+            // not tell which ids are registered (not even through "no room", which only a
+            // registered id can reach). The client ignores the reply anyway.
             let outcome = state.audit.record_note(note, client).await;
-            match outcome.map_err(ClientApiError::internal)? {
-                // An unknown id is answered like a known one: the note carries no uuid, so
-                // its reply must not tell which ids are registered.
-                NoteOutcome::Stored
-                | NoteOutcome::Ignored
-                | NoteOutcome::Pending
-                | NoteOutcome::NotFound => Ok(()),
-                NoteOutcome::Full => Err(ClientApiError::Unavailable {
-                    retry_after: NOTE_TTL,
-                }),
-            }
+            let outcome = outcome.map_err(ClientApiError::internal)?;
+            tracing::debug!(?outcome, "controller note");
+            Ok(())
         }
     }
 }

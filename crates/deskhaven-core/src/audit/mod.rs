@@ -30,7 +30,7 @@ mod session_id;
 
 pub use conn::{Authorization, ConnEvent, ConnReport, PAIRING_WINDOW, RETIRED_PREFIX};
 pub use limits::{AUDIT_PER_DEVICE_PER_MINUTE, AUDIT_PER_IP_PER_MINUTE};
-pub use notes::{MAX_NOTES_PER_DEVICE, MAX_NOTES_PER_SOURCE, MAX_PENDING_NOTES, NOTE_TTL};
+pub use notes::{MAX_NOTES_PER_SOURCE, MAX_NOTES_PER_SOURCE_DEVICE, MAX_PENDING_NOTES, NOTE_TTL};
 pub use records::{
     AlarmReport, Direction, FileInfo, FileReport, MAX_FILES, MAX_INFO_KEYS, MAX_INFO_TEXT_CHARS,
 };
@@ -95,7 +95,7 @@ pub enum NoteOutcome {
     /// No row has the session yet: kept until one does, at most [`NOTE_TTL`].
     Pending,
     /// No row has the session yet, and no room to wait: the source, the device or the whole
-    /// buffer is at its cap ([`MAX_NOTES_PER_SOURCE`], [`MAX_NOTES_PER_DEVICE`],
+    /// buffer is at its cap ([`MAX_NOTES_PER_SOURCE`], [`MAX_NOTES_PER_SOURCE_DEVICE`],
     /// [`MAX_PENDING_NOTES`]).
     Full,
     /// The id is not registered.

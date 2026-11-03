@@ -14,10 +14,10 @@ use deskhaven_contract::fixture::{Body, Request};
 use deskhaven_contract::mirror::ErrorBody;
 use deskhaven_contract::seeds::Seeds;
 use deskhaven_core::audit::{
-    AUDIT_PER_DEVICE_PER_MINUTE, AUDIT_PER_IP_PER_MINUTE, MAX_NOTES_PER_DEVICE,
+    AUDIT_PER_DEVICE_PER_MINUTE, AUDIT_PER_IP_PER_MINUTE, MAX_NOTES_PER_SOURCE_DEVICE,
 };
 use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
-use deskhaven_db::entity::file_transfer;
+use deskhaven_db::entity::{connection_session, file_transfer};
 use sea_orm::EntityTrait;
 use serde_json::{Value, json};
 
@@ -129,22 +129,35 @@ async fn a_note_for_an_unknown_id_is_answered_like_any_other() {
     assert_eq!((known.status, known.body.len()), (200, 0));
 }
 
+/// A note that finds no room to wait is dropped, but answered like any other note: a
+/// different reply would tell a prober which ids are registered (a full slot needs one).
 #[tokio::test]
-async fn a_note_that_finds_the_buffer_full_gets_503() {
+async fn a_note_that_finds_no_room_is_dropped_but_answered_200() {
     // Arrange
     let app = app().await;
-    for session in 1..=MAX_NOTES_PER_DEVICE as u64 {
-        assert_eq!(
-            app.send(&note(session, DEVICE_ID)).await.unwrap().status,
-            200
-        );
+    for session in 1..=MAX_NOTES_PER_SOURCE_DEVICE as u64 {
+        let reply = app.send(&note(session, DEVICE_ID)).await.unwrap();
+        assert_eq!((reply.status, reply.body.len()), (200, 0));
     }
 
     // Act
     let reply = app.send(&note(1_000, DEVICE_ID)).await.unwrap();
+    let auth = json!({ "id": DEVICE_ID, "uuid": DEVICE_UUID_B64, "conn_id": 5,
+                       "session_id": 1_000, "nonce": "auth", "peer": ["987654321", "bob"],
+                       "type": 0 });
+    let stored = app
+        .send(&post("/api/audit/conn", Body::Json(auth)))
+        .await
+        .unwrap();
 
     // Assert
-    assert_try_later(&reply, 503);
+    assert_eq!((reply.status, reply.body.len()), (200, 0));
+    assert_eq!(stored.status, 200);
+    let rows = connection_session::Entity::find()
+        .all(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(rows[0].controller_note, None, "the note was not kept");
 }
 
 /// A newer client may add elements to a `[name, size]` pair; the record is still stored.

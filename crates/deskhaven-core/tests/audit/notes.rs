@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use deskhaven_core::audit::{
-    MAX_NOTES_PER_DEVICE, MAX_NOTES_PER_SOURCE, NOTE_TTL, NoteOutcome, PAIRING_WINDOW,
+    MAX_NOTES_PER_SOURCE, MAX_NOTES_PER_SOURCE_DEVICE, NOTE_TTL, NoteOutcome, PAIRING_WINDOW,
 };
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 
@@ -126,10 +126,10 @@ async fn a_note_for_an_unknown_device_is_not_kept() {
     .await;
 }
 
-/// One source (one IPv4 address or IPv6 /64) cannot fill the buffer for everyone, and
-/// waiting notes are never evicted for newer ones.
+/// One source (one IPv4 address or IPv6 /64) cannot fill the buffer, nor a device's slots,
+/// for everyone else, and waiting notes are never evicted for newer ones.
 #[tokio::test]
-async fn waiting_notes_are_capped_per_source_and_per_device() {
+async fn waiting_notes_are_capped_per_source_and_per_source_and_device() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
         let c = ctx(db).await;
@@ -153,12 +153,15 @@ async fn waiting_notes_are_capped_per_source_and_per_device() {
             .await
             .unwrap();
         let mut per_device = Vec::new();
-        for i in 0..=MAX_NOTES_PER_DEVICE {
+        for i in 0..=MAX_NOTES_PER_SOURCE_DEVICE {
             let held = c
                 .audit
                 .record_note(note(ID, 100 + i as u64, "n"), client(2));
             per_device.push(held.await.unwrap());
         }
+        // Source 2 filled its slots for device ID; another source still has its own.
+        let other_source = c.audit.record_note(note(ID, 999, "n"), client(3));
+        let other_source = other_source.await.unwrap();
 
         // Assert
         let b = db.backend;
@@ -169,6 +172,7 @@ async fn waiting_notes_are_capped_per_source_and_per_device() {
             "{b}: {kept:?}"
         );
         assert_eq!(*last, NoteOutcome::Full, "{b}");
+        assert_eq!(other_source, NoteOutcome::Pending, "{b}");
         c.send_from(&devices[0], "a", authorized(1, 1)).await;
         let rows = c.sessions().await;
         assert_eq!(

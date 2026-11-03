@@ -10,8 +10,9 @@
 //! The note carries no uuid, so anyone who knows a registered id can post one. Hence:
 //! - **Bounded three ways**, never evicting: at most [`MAX_NOTES_PER_SOURCE`] waiting notes
 //!   per client network (the rate limiter's key: IPv4 /32, IPv6 /64, one shared key for
-//!   proxy-fallback clients), [`MAX_NOTES_PER_DEVICE`] per device, [`MAX_PENDING_NOTES`] in
-//!   all. A note that does not fit is refused; waiting notes stay until taken or expired.
+//!   proxy-fallback clients), [`MAX_NOTES_PER_SOURCE_DEVICE`] per client network and device,
+//!   [`MAX_PENDING_NOTES`] in all. A note that does not fit is refused; waiting notes stay
+//!   until taken or expired.
 //! - **First wins**: a session's waiting note is not replaced (06 §7).
 //! - **Monotonic**: deadlines run on [`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms).
 //! - **In memory only**: a restart loses waiting notes (the note is a user annotation, the
@@ -33,8 +34,9 @@ pub const NOTE_TTL: Duration = PAIRING_WINDOW;
 pub const MAX_PENDING_NOTES: usize = 1_000;
 /// Waiting notes per client network at most.
 pub const MAX_NOTES_PER_SOURCE: usize = 16;
-/// Waiting notes per device at most (several controllers may be connected at once).
-pub const MAX_NOTES_PER_DEVICE: usize = 8;
+/// Waiting notes per (client network, device) at most: one source cannot take a device's
+/// slots from its other controllers.
+pub const MAX_NOTES_PER_SOURCE_DEVICE: usize = 8;
 /// At most one warning per interval about a full buffer.
 const FULL_WARN_INTERVAL_MS: i64 = 60_000;
 
@@ -136,8 +138,11 @@ fn refusal(notes: &HashMap<Key, Entry>, device: &str, source: Source) -> Option<
     if from_source >= MAX_NOTES_PER_SOURCE {
         return Some(Hold::SourceFull);
     }
-    let of_device = notes.keys().filter(|(d, _)| d == device).count();
-    (of_device >= MAX_NOTES_PER_DEVICE).then_some(Hold::DeviceFull)
+    let from_source_for_device = notes
+        .iter()
+        .filter(|((d, _), e)| d == device && e.source == source)
+        .count();
+    (from_source_for_device >= MAX_NOTES_PER_SOURCE_DEVICE).then_some(Hold::DeviceFull)
 }
 
 fn expired(at: i64, now: i64) -> bool {
@@ -207,10 +212,15 @@ mod tests {
             assert_eq!(hold(&format!("d{i}"), i, 1), Hold::Held);
         }
         assert_eq!(hold("x", 0, 1), Hold::SourceFull);
-        for i in 0..MAX_NOTES_PER_DEVICE as u64 {
-            assert_eq!(hold("x", i, 2 + i as u8), Hold::Held);
+        for i in 0..MAX_NOTES_PER_SOURCE_DEVICE as u64 {
+            assert_eq!(hold("x", i, 2), Hold::Held);
         }
-        assert_eq!(hold("x", 99, 50), Hold::DeviceFull);
+        assert_eq!(hold("x", 99, 2), Hold::DeviceFull);
+        assert_eq!(
+            hold("x", 99, 3),
+            Hold::Held,
+            "another source has its own slots"
+        );
         let mut held = notes.lock().len() as u64;
         while held < MAX_PENDING_NOTES as u64 {
             let last = u8::try_from(100 + held / MAX_NOTES_PER_SOURCE as u64).unwrap_or(255);
