@@ -282,7 +282,7 @@
     "envDetail": "由环境变量 {{name}} 锁定"
   },
   "groups": {
-    "description": "用于策略、地址簿共享与访问控制的用户组。设备组随设备管理一起提供。",
+    "description": "用于策略、地址簿共享与访问控制的用户组。",
     "tableLabel": "用户组",
     "search": "搜索用户组",
     "columns": {
@@ -326,6 +326,11 @@
       "noCandidates": "组外没有匹配的用户。",
       "confirmTitle": "从用户组移除？",
       "confirmDescription": "{{username}} 将失去该用户组授予的权限（共享、策略）。"
+    },
+    "tabs": {
+      "label": "分组类型",
+      "users": "用户组",
+      "devices": "设备组"
     }
   },
   "users": {
@@ -547,5 +552,163 @@
       "confirm": "离开此页"
     },
     "pinnedDropped": "以下设置已被服务器配置固定，你对它们的修改已丢弃：{{keys}}"
+  },
+  "devices": {
+    "tableLabel": "设备",
+    "search": "搜索 ID、名称、系统用户或备注",
+    "columns": {
+      "status": "状态",
+      "id": "ID",
+      "hostname": "名称",
+      "owner": "所有者",
+      "group": "设备组",
+      "os": "系统",
+      "version": "版本",
+      "lastSeen": "最后在线"
+    },
+    "status": {
+      "online": "在线",
+      "offline": "离线",
+      "disabled": "已禁用"
+    },
+    "filters": {
+      "online": "在线状态",
+      "onlineYes": "在线",
+      "onlineNo": "离线",
+      "group": "设备组",
+      "status": "状态",
+      "statusActive": "正常",
+      "statusDisabled": "已禁用"
+    },
+    "unnamed": "未命名",
+    "never": "从未",
+    "drawer": {
+      "title": "设备",
+      "description": "ID {{id}}",
+      "save": "保存修改",
+      "saved": "已保存",
+      "selfReported": "设备自报",
+      "selfReportedHint": "以下信息由设备自行上报，服务器无法核实。",
+      "notReported": "尚未上报",
+      "fields": {
+        "hostname": "主机名",
+        "username": "系统用户",
+        "os": "系统",
+        "cpu": "处理器",
+        "memory": "内存",
+        "version": "客户端版本",
+        "lastIp": "最后 IP",
+        "registerIp": "注册 IP",
+        "firstSeen": "首次出现",
+        "lastSeen": "最后在线"
+      }
+    },
+    "manage": {
+      "title": "归属与备注",
+      "owner": "所有者",
+      "ownerNone": "未指定",
+      "ownerSearch": "搜索用户作为所有者",
+      "ownerCandidates": "匹配的用户",
+      "ownerFound": "找到 {{count}} 个匹配用户，按 Enter 选择高亮项。",
+      "ownerNoMatch": "没有匹配的用户。",
+      "ownerClear": "移除所有者",
+      "group": "设备组",
+      "noGroup": "未分组",
+      "note": "备注"
+    },
+    "connections": {
+      "title": "连接",
+      "none": "当前没有连接。",
+      "connection": "连接 {{id}}",
+      "disconnect": "断开",
+      "disconnectNamed": "断开连接 {{id}}",
+      "confirmTitle": "断开此连接？",
+      "confirmDescription": "设备会在下一次心跳时关闭连接 {{id}}（有连接时约每 3 秒一次）。请求 {{seconds}} 秒内未被设备取走则作废。",
+      "confirmAction": "断开连接",
+      "queued": "已发出断开请求；设备会在下一次心跳时关闭该连接。",
+      "recent": "最近连接",
+      "noRecent": "暂无连接记录。",
+      "from": "来自 {{peer}}",
+      "active": "进行中",
+      "ended": "已结束",
+      "unknownPeer": "未知控制端",
+      "types": {
+        "0": "远程控制",
+        "1": "文件传输",
+        "2": "端口转发",
+        "3": "摄像头",
+        "4": "终端"
+      },
+      "otherType": "类型 {{type}}"
+    },
+    "strategy": {
+      "title": "生效策略",
+      "none": "没有策略作用于此设备。",
+      "layers": "生效的策略（优先级由低到高）",
+      "options": "合并后的选项",
+      "empty": "（空值：客户端删除此选项）",
+      "from": "来源",
+      "scope": {
+        "global": "全局",
+        "group": "所有者所在用户组",
+        "user": "所有者",
+        "device_group": "设备组",
+        "device": "此设备"
+      },
+      "source": "{{scope}}：{{name}}"
+    },
+    "actions": {
+      "title": "操作",
+      "disable": "禁用设备",
+      "enable": "启用设备",
+      "delete": "删除设备"
+    },
+    "confirm": {
+      "disable": {
+        "title": "禁用此设备？",
+        "description": "{{id}} 将被标记为已禁用。设备准入上线前，该状态只作标记，不会阻止设备注册或连接。",
+        "confirm": "禁用设备"
+      },
+      "delete": {
+        "title": "删除此设备？",
+        "description": "{{id}} 的记录及其策略分配将被删除。设备不会被封禁，会重新注册为新设备：UDP 模式的设备在几秒内完成；TCP 模式（代理、WebSocket 或禁用 UDP）的设备只会在下一次重新连接信令服务器时重新注册。",
+        "confirm": "删除设备"
+      }
+    }
+  },
+  "deviceGroups": {
+    "tableLabel": "设备组",
+    "search": "搜索设备组",
+    "description": "把设备分组，以便统一应用策略。设备在其抽屉中加入设备组。",
+    "columns": {
+      "name": "名称",
+      "devices": "设备数",
+      "source": "来源",
+      "note": "备注"
+    },
+    "fields": {
+      "name": "名称",
+      "note": "备注"
+    },
+    "create": {
+      "action": "新建设备组",
+      "title": "新建设备组",
+      "submit": "创建设备组"
+    },
+    "drawer": {
+      "title": "设备组",
+      "devices": "{{count}} 台设备",
+      "readOnly": "由配置文件定义，在此处只读。",
+      "save": "保存修改",
+      "delete": "删除设备组",
+      "viewDevices": "查看这些设备"
+    },
+    "confirmDelete": {
+      "title": "删除此设备组？",
+      "description": "{{name}} 及其策略分配将被删除，组内设备变为未分组，设备本身保留。",
+      "confirm": "删除设备组"
+    },
+    "emptyTitle": "暂无设备组",
+    "emptyDescription": "创建设备组，再在设备抽屉中把设备加入其中。"
   }
 }

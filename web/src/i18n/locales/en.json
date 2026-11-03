@@ -282,7 +282,7 @@
     "envDetail": "Locked by environment variable {{name}}"
   },
   "groups": {
-    "description": "User groups for policies, address book sharing and access. Device groups come with device management.",
+    "description": "User groups for policies, address book sharing and access.",
     "tableLabel": "User groups",
     "search": "Search groups",
     "columns": {
@@ -326,6 +326,11 @@
       "noCandidates": "No matching users outside the group.",
       "confirmTitle": "Remove from the group?",
       "confirmDescription": "{{username}} loses what the group grants (shares, policies)."
+    },
+    "tabs": {
+      "label": "Kind of group",
+      "users": "User groups",
+      "devices": "Device groups"
     }
   },
   "users": {
@@ -547,5 +552,163 @@
       "confirm": "Leave page"
     },
     "pinnedDropped": "These settings were fixed by the server configuration meanwhile; your edits to them were dropped: {{keys}}"
+  },
+  "devices": {
+    "tableLabel": "Devices",
+    "search": "Search ID, name, device user or note",
+    "columns": {
+      "status": "Status",
+      "id": "ID",
+      "hostname": "Name",
+      "owner": "Owner",
+      "group": "Device group",
+      "os": "System",
+      "version": "Version",
+      "lastSeen": "Last seen"
+    },
+    "status": {
+      "online": "Online",
+      "offline": "Offline",
+      "disabled": "Disabled"
+    },
+    "filters": {
+      "online": "Online status",
+      "onlineYes": "Online",
+      "onlineNo": "Offline",
+      "group": "Device group",
+      "status": "Status",
+      "statusActive": "Active",
+      "statusDisabled": "Disabled"
+    },
+    "unnamed": "Unnamed",
+    "never": "Never",
+    "drawer": {
+      "title": "Device",
+      "description": "ID {{id}}",
+      "save": "Save changes",
+      "saved": "Saved",
+      "selfReported": "Self-reported",
+      "selfReportedHint": "The device reports this about itself; the server cannot verify it.",
+      "notReported": "Not reported yet",
+      "fields": {
+        "hostname": "Hostname",
+        "username": "System user",
+        "os": "System",
+        "cpu": "Processor",
+        "memory": "Memory",
+        "version": "Client version",
+        "lastIp": "Last IP",
+        "registerIp": "Registration IP",
+        "firstSeen": "First seen",
+        "lastSeen": "Last seen"
+      }
+    },
+    "manage": {
+      "title": "Ownership and note",
+      "owner": "Owner",
+      "ownerNone": "Unassigned",
+      "ownerSearch": "Search a user to make owner",
+      "ownerCandidates": "Matching users",
+      "ownerFound": "{{count}} matching users; Enter picks the highlighted one.",
+      "ownerNoMatch": "No matching users.",
+      "ownerClear": "Remove owner",
+      "group": "Device group",
+      "noGroup": "Ungrouped",
+      "note": "Note"
+    },
+    "connections": {
+      "title": "Connections",
+      "none": "No connections right now.",
+      "connection": "Connection {{id}}",
+      "disconnect": "Disconnect",
+      "disconnectNamed": "Disconnect connection {{id}}",
+      "confirmTitle": "Disconnect this connection?",
+      "confirmDescription": "The device closes connection {{id}} at its next heartbeat (about every 3 s while it has connections). The request expires after {{seconds}} s if the device does not pick it up.",
+      "confirmAction": "Disconnect",
+      "queued": "Disconnect requested; the device closes the connection at its next heartbeat.",
+      "recent": "Recent connections",
+      "noRecent": "No connections recorded yet.",
+      "from": "From {{peer}}",
+      "active": "In progress",
+      "ended": "Ended",
+      "unknownPeer": "unknown controller",
+      "types": {
+        "0": "Remote control",
+        "1": "File transfer",
+        "2": "Port forward",
+        "3": "Camera",
+        "4": "Terminal"
+      },
+      "otherType": "Type {{type}}"
+    },
+    "strategy": {
+      "title": "Effective strategy",
+      "none": "No strategy applies to this device.",
+      "layers": "Strategies in effect (lowest priority first)",
+      "options": "Merged options",
+      "empty": "(empty: the client deletes this option)",
+      "from": "Source",
+      "scope": {
+        "global": "Global",
+        "group": "Owner’s user group",
+        "user": "Owner",
+        "device_group": "Device group",
+        "device": "This device"
+      },
+      "source": "{{scope}}: {{name}}"
+    },
+    "actions": {
+      "title": "Actions",
+      "disable": "Disable device",
+      "enable": "Enable device",
+      "delete": "Delete device"
+    },
+    "confirm": {
+      "disable": {
+        "title": "Disable this device?",
+        "description": "{{id}} is marked disabled. Until device admission ships, this is a mark only: it does not stop the device from registering or connecting.",
+        "confirm": "Disable device"
+      },
+      "delete": {
+        "title": "Delete this device?",
+        "description": "The record of {{id}} and its strategy assignment are deleted. The device is not blocked and registers again as a new device: a UDP device within seconds, a device in TCP mode (proxy, WebSocket or UDP disabled) only when it next reconnects to the signal server.",
+        "confirm": "Delete device"
+      }
+    }
+  },
+  "deviceGroups": {
+    "tableLabel": "Device groups",
+    "search": "Search device groups",
+    "description": "Group devices to apply strategies together. Add a device to a group in its drawer.",
+    "columns": {
+      "name": "Name",
+      "devices": "Devices",
+      "source": "Source",
+      "note": "Note"
+    },
+    "fields": {
+      "name": "Name",
+      "note": "Note"
+    },
+    "create": {
+      "action": "New device group",
+      "title": "New device group",
+      "submit": "Create device group"
+    },
+    "drawer": {
+      "title": "Device group",
+      "devices": "{{count}} devices",
+      "readOnly": "Defined in the configuration file; read-only here.",
+      "save": "Save changes",
+      "delete": "Delete device group",
+      "viewDevices": "View these devices"
+    },
+    "confirmDelete": {
+      "title": "Delete this device group?",
+      "description": "{{name}} and its strategy assignment are deleted. Its devices become ungrouped; the devices stay.",
+      "confirm": "Delete device group"
+    },
+    "emptyTitle": "No device groups yet",
+    "emptyDescription": "Create a device group, then add devices to it from the device drawer."
   }
 }

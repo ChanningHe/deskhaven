@@ -4,11 +4,19 @@ import { describe, expect, it } from 'vitest'
 import { LANGUAGE_STORAGE_KEY } from '@/i18n'
 import { THEME_STORAGE_KEY } from '@/lib/theme/theme'
 import { renderApp } from '@/test/render-app'
+import type { RenderAppOptions } from '@/test/render-app'
 
 import { SIDEBAR_COLLAPSED_STORAGE_KEY } from '../use-sidebar-collapsed'
 
-async function renderShell(path = '/') {
-  const app = renderApp(path)
+const EMPTY_PAGE = { body: { items: [], total: 0, page: 1, page_size: 20 } }
+/** The lists the devices page loads, both empty. */
+const EMPTY_DEVICE_LISTS = {
+  'GET /admin/api/v1/devices': EMPTY_PAGE,
+  'GET /admin/api/v1/device-groups': EMPTY_PAGE,
+}
+
+async function renderShell(path = '/', api: RenderAppOptions['api'] = {}) {
+  const app = renderApp(path, { api })
   await screen.findByRole('navigation', { name: '主导航' })
   return app
 }
@@ -39,12 +47,12 @@ describe('app shell', () => {
   })
 
   it('navigates to a page that shows its header and empty state', async () => {
-    const { user } = await renderShell()
+    const { user } = await renderShell('/', EMPTY_DEVICE_LISTS)
 
     await user.click(screen.getByRole('link', { name: '设备' }))
 
     expect(await screen.findByRole('heading', { level: 1, name: '设备' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: '暂无设备' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: '暂无设备' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '前往客户端配置' })).toHaveAttribute(
       'href',
       '/client-setup',

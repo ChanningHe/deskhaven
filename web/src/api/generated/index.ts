@@ -1,4 +1,6 @@
 export * from './auth/auth'
+export * from './device-groups/device-groups'
+export * from './devices/devices'
 export * from './groups/groups'
 export * from './me/me'
 export * from './settings/settings'
