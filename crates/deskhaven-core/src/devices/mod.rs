@@ -76,7 +76,6 @@ pub struct RegisteredKeys {
 
 /// Why a device operation failed.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum DeviceError {
     /// The id is registered with another uuid; nothing changed.
     #[error("device {rustdesk_id} is registered with another uuid")]
@@ -102,6 +101,10 @@ pub enum DeviceError {
     /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
+
+    /// Too many devices have pending disconnect requests ([`MAX_QUEUED_DEVICES`]).
+    #[error("too many devices have pending disconnects")]
+    QueueFull,
 
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.

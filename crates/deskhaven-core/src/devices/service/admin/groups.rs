@@ -196,6 +196,7 @@ impl DeviceService {
     }
 
     /// Renames the group or changes its note, with `guard` deciding on it before and after.
+    /// An empty update changes and records nothing.
     pub async fn update_group_guarded(
         &self,
         id: i64,
@@ -215,6 +216,9 @@ impl DeviceService {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
             let current = writable_group(&tx, id).await?;
+            if name.is_none() && note.is_none() {
+                return Ok(DeviceGroup::from(current));
+            }
             let before = DeviceGroup::from(current.clone());
             let mut changes: device_group::ActiveModel = current.into();
             if let Some(name) = name {

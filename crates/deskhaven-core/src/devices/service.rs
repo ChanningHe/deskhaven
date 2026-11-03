@@ -264,7 +264,8 @@ impl DeviceService {
     }
 
     /// Deletes device group `id` and its strategy assignment; its devices become ungrouped
-    /// (foreign key `SET NULL`). `false` if it did not exist.
+    /// (foreign key `SET NULL`). `false` if it did not exist; a group defined in the
+    /// configuration file is not deleted ([`DeviceError::ManagedByConfig`]).
     pub async fn delete_group(&self, id: i64) -> Result<bool, DeviceError> {
         match self.delete_group_guarded(id, TxGuard::none()).await {
             Ok(()) => Ok(true),

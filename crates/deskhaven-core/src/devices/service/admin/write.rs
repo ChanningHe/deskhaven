@@ -32,10 +32,16 @@ impl DeviceUpdate {
     fn moves_device(&self) -> bool {
         self.owner_user_id.is_some() || self.device_group_id.is_some()
     }
+
+    /// Nothing to change: applying it writes nothing and records nothing.
+    fn is_empty(&self) -> bool {
+        !self.moves_device() && self.note.is_none() && self.status.is_none()
+    }
 }
 
 impl DeviceService {
     /// Applies `update` to device `id`, with `guard` deciding on the device before and after.
+    /// An empty `update` changes and records nothing.
     pub async fn update_guarded(
         &self,
         id: i64,
@@ -57,6 +63,9 @@ impl DeviceService {
                 .one(&tx)
                 .await?
                 .ok_or(DeviceError::NotFound)?;
+            if update.is_empty() {
+                return Ok(DeviceRecord::from(current));
+            }
             check_references(&tx, &update).await?;
             let before = DeviceRecord::from(current.clone());
             let mut changes: device::ActiveModel = current.into();
@@ -81,6 +90,30 @@ impl DeviceService {
                 inner.strategies.cache().invalidate();
             }
             Ok(updated)
+        })
+        .await
+    }
+
+    /// Asks device `id` to close connection `conn_id` at its next heartbeat. The guard checks
+    /// the actor and its audit row commits first; only then is the request queued
+    /// ([`DeviceError::QueueFull`] if the queue has no room). Runs in its own task, so a
+    /// dropped request cannot leave a queued request without its row.
+    pub async fn disconnect_guarded(
+        &self,
+        id: i64,
+        conn_id: i32,
+        guard: TxGuard<DeviceRecord>,
+    ) -> Result<(), DeviceError> {
+        self.detached(move |inner| async move {
+            let tx = begin_write(&inner.db).await?;
+            let row = device::Entity::find_by_id(id).one(&tx).await?;
+            let record = DeviceRecord::from(row.ok_or(DeviceError::NotFound)?);
+            guard.check(&tx, Some(&record), Some(&record)).await?;
+            tx.commit().await?;
+            inner
+                .disconnects
+                .disconnect(&record.rustdesk_id, &[conn_id])
+                .map_err(|_| DeviceError::QueueFull)
         })
         .await
     }
@@ -145,14 +178,26 @@ fn unknown(field: &'static str, reason: &str) -> DeviceError {
     }
 }
 
+/// Names of the foreign keys of `devices` (PostgreSQL puts them in its error text).
+const FK_OWNER: &str = "fk_devices_owner_user";
+const FK_GROUP: &str = "fk_devices_device_group";
+
 /// A referenced row vanished between the check and the write (PostgreSQL; SQLite's write
-/// transaction excludes that).
+/// transaction excludes that). The violated key names the reference; without a name the
+/// owner, if the update sets one, is blamed first.
 fn missing(err: DbErr, update: &DeviceUpdate) -> DeviceError {
     if !is_foreign_key_violation(&err) {
         return DeviceError::Database(err);
     }
-    match update.owner_user_id {
-        Some(Some(_)) => unknown("owner_user_id", "no such user"),
-        _ => unknown("device_group_id", "no such device group"),
+    let text = err.to_string();
+    let owner_set = matches!(update.owner_user_id, Some(Some(_)));
+    let blame_owner = match (text.contains(FK_OWNER), text.contains(FK_GROUP)) {
+        (true, _) => true,
+        (false, true) => false,
+        (false, false) => owner_set,
+    };
+    match blame_owner {
+        true => unknown("owner_user_id", "no such user"),
+        false => unknown("device_group_id", "no such device group"),
     }
 }
