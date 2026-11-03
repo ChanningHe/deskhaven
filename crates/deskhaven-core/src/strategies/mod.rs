@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 
+pub(crate) use assign::{assign_in, assignment_in, id_by_name_in};
 pub use assign::{forget_device, forget_device_group, forget_group, forget_user};
 pub use cache::StrategyCache;
 pub use effective::{DeviceInputs, EffectiveStrategy};

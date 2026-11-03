@@ -93,6 +93,45 @@ impl StrategyService {
     }
 }
 
+/// [`StrategyService::assign`] inside the caller's write transaction, for a change that must
+/// commit with other writes (`--assign`). The caller invalidates the cache after commit.
+pub(crate) async fn assign_in(
+    tx: &impl ConnectionTrait,
+    target: Target,
+    strategy_id: i64,
+) -> Result<(), StrategyError> {
+    ensure_strategy(tx, strategy_id).await?;
+    ensure_target(tx, target).await?;
+    upsert(tx, target, strategy_id).await?;
+    Ok(())
+}
+
+/// The strategy id assigned to `target`, read on `conn`.
+pub(crate) async fn assignment_in(
+    conn: &impl ConnectionTrait,
+    target: Target,
+) -> Result<Option<i64>, DbErr> {
+    let row = strategy_assignment::Entity::find()
+        .filter(target_filter(target))
+        .one(conn)
+        .await?;
+    Ok(row.map(|r| r.strategy_id))
+}
+
+/// The id of the strategy named `name` (surrounding blanks ignored), share-locked until the
+/// transaction ends.
+pub(crate) async fn id_by_name_in(
+    tx: &impl ConnectionTrait,
+    name: &str,
+) -> Result<Option<i64>, DbErr> {
+    let found = strategy::Entity::find()
+        .filter(strategy::Column::Name.eq(name.trim()))
+        .lock_shared()
+        .one(tx)
+        .await?;
+    Ok(found.map(|s| s.id))
+}
+
 /// Removes the assignment of a deleted user. Call in the transaction that deletes the row.
 pub async fn forget_user(tx: &impl ConnectionTrait, id: i64) -> Result<(), DbErr> {
     forget_target(tx, Target::User(id)).await.map(drop)

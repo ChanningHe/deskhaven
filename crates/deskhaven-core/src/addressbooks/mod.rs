@@ -32,6 +32,7 @@ mod contents;
 mod error;
 mod peer;
 mod peers;
+mod placement;
 mod shares;
 mod tags;
 

@@ -186,22 +186,30 @@ impl AddressBookService {
     /// administrative tools that address books by name. Several matches are
     /// [`AddressBookError::AmbiguousName`], none is [`AddressBookError::NotFound`].
     pub async fn find_shared_by_name(&self, name: &str) -> Result<Book, AddressBookError> {
-        let wanted = name.trim().to_lowercase();
-        let ids: Vec<i64> = shared_names(&self.db)
-            .await?
-            .into_iter()
-            .filter(|(_, n)| n.to_lowercase() == wanted)
-            .map(|(id, _)| id)
-            .collect();
-        let [id] = ids[..] else {
-            return Err(match ids.is_empty() {
-                true => AddressBookError::NotFound,
-                false => AddressBookError::AmbiguousName,
-            });
-        };
-        let found = address_book::Entity::find_by_id(id).one(&self.db).await?;
-        found.map(Book::from).ok_or(AddressBookError::NotFound)
+        shared_by_name(&self.db, name).await
     }
+}
+
+/// [`AddressBookService::find_shared_by_name`] on `db` (e.g. a write transaction).
+pub(crate) async fn shared_by_name(
+    db: &impl ConnectionTrait,
+    name: &str,
+) -> Result<Book, AddressBookError> {
+    let wanted = name.trim().to_lowercase();
+    let ids: Vec<i64> = shared_names(db)
+        .await?
+        .into_iter()
+        .filter(|(_, n)| n.to_lowercase() == wanted)
+        .map(|(id, _)| id)
+        .collect();
+    let [id] = ids[..] else {
+        return Err(match ids.is_empty() {
+            true => AddressBookError::NotFound,
+            false => AddressBookError::AmbiguousName,
+        });
+    };
+    let found = address_book::Entity::find_by_id(id).one(db).await?;
+    found.map(Book::from).ok_or(AddressBookError::NotFound)
 }
 
 /// Sets `updated_at` of `book` (after a change of its contents).

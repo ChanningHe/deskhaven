@@ -165,7 +165,7 @@ pub(super) fn check_tag(tag: &Tag) -> Result<(), AddressBookError> {
     Ok(())
 }
 
-async fn find_tag(
+pub(super) async fn find_tag(
     tx: &DatabaseTransaction,
     book_id: i64,
     name: &str,
@@ -176,7 +176,10 @@ async fn find_tag(
     Ok(found)
 }
 
-async fn ensure_room(tx: &DatabaseTransaction, book_id: i64) -> Result<(), AddressBookError> {
+pub(super) async fn ensure_room(
+    tx: &DatabaseTransaction,
+    book_id: i64,
+) -> Result<(), AddressBookError> {
     let count = address_book_tag::Entity::find()
         .filter(address_book_tag::Column::AddressBookId.eq(book_id))
         .count(tx)
@@ -190,7 +193,7 @@ async fn ensure_room(tx: &DatabaseTransaction, book_id: i64) -> Result<(), Addre
     }
 }
 
-async fn insert_tag(
+pub(super) async fn insert_tag(
     tx: &DatabaseTransaction,
     book_id: i64,
     tag: Tag,

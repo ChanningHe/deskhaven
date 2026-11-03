@@ -344,7 +344,7 @@ pub(crate) fn parse_extra(row: &address_book_peer::Model) -> Map<String, Value> 
 
 /// The id was inserted concurrently (cannot happen while the book row is locked, kept as a
 /// safety net).
-fn peer_conflict(err: sea_orm::DbErr) -> AddressBookError {
+pub(super) fn peer_conflict(err: sea_orm::DbErr) -> AddressBookError {
     match err.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(_)) => AddressBookError::PeerExists,
         _ => err.into(),
