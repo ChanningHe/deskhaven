@@ -69,6 +69,8 @@ pub(crate) enum Data {
     // deskhaven (M2-12): re-read one registration from the store (`SignalHandle::reload_peer`;
     // a deleted device is forgotten, so its next RegisterPk registers it again).
     ReloadPeer(String),
+    // deskhaven (M2-19): the uuid the peer map holds for an id (`SignalHandle::live_uuid`).
+    LiveUuid(String, crate::server::ReplySlot<Option<Vec<u8>>>),
     // deskhaven (M1-06): test-only fault injection into the server loop.
     #[cfg(any(test, feature = "testing"))]
     Inject(crate::server::Fault),
@@ -619,6 +621,17 @@ impl RendezvousServer {
                     if let Err(err) = pm.reload(&id).await {
                         log::warn!("peer store: reloading {id} failed: {err:?}");
                     }
+                });
+            }
+            // deskhaven (M2-19): memory only (a registration may not be stored yet); off the loop.
+            Data::LiveUuid(id, reply) => {
+                let pm = self.pm.clone();
+                self.tasks.spawn(async move {
+                    let uuid = match pm.get_in_memory(&id).await {
+                        Some(peer) => Some(peer.read().await.uuid.to_vec()),
+                        None => None,
+                    };
+                    reply.send(uuid.filter(|uuid| !uuid.is_empty()));
                 });
             }
             #[cfg(any(test, feature = "testing"))]

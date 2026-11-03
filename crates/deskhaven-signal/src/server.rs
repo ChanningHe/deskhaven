@@ -13,7 +13,7 @@ use hbb_common::{
     log,
     tokio::{
         self,
-        sync::{mpsc, watch},
+        sync::{mpsc, oneshot, watch},
     },
 };
 use ipnetwork::Ipv4Network;
@@ -236,6 +236,36 @@ pub struct SignalHandle {
     serving: watch::Receiver<bool>,
 }
 
+/// deskhaven (M2-19): a one-shot reply carried in the loop's `Data` (which is `Clone` +
+/// `Debug`): the first `send` delivers, later ones and clones find it taken.
+#[derive(Clone)]
+pub(crate) struct ReplySlot<T>(Arc<std::sync::Mutex<Option<oneshot::Sender<T>>>>);
+
+impl<T> ReplySlot<T> {
+    fn new() -> (Self, oneshot::Receiver<T>) {
+        let (tx, rx) = oneshot::channel();
+        (Self(Arc::new(std::sync::Mutex::new(Some(tx)))), rx)
+    }
+
+    pub(crate) fn send(&self, value: T) {
+        let taken = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(tx) = taken {
+            // The asker may have given up; nothing to do then.
+            let _ = tx.send(value);
+        }
+    }
+}
+
+impl<T> std::fmt::Debug for ReplySlot<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReplySlot")
+    }
+}
+
 /// The runtime switches the handle sets and every connection reads (lock-free).
 #[derive(Clone, Debug)]
 pub(crate) struct Switches {
@@ -352,6 +382,17 @@ impl SignalHandle {
         self.tx
             .send(Data::ReloadPeer(id.to_owned()))
             .map_err(|_| SignalError::Stopped)
+    }
+
+    /// The uuid of `id`'s registration in the server's memory (`None`: not registered, or no
+    /// uuid yet), whether or not the store has it yet: registrations are written behind.
+    /// For changes made behind the server's back that must not contradict a live device.
+    pub async fn live_uuid(&self, id: &str) -> Result<Option<Vec<u8>>, SignalError> {
+        let (slot, rx) = ReplySlot::new();
+        self.tx
+            .send(Data::LiveUuid(id.to_owned(), slot))
+            .map_err(|_| SignalError::Stopped)?;
+        rx.await.map_err(|_| SignalError::Stopped)
     }
 
     fn ensure_running(&self) -> Result<(), SignalError> {
