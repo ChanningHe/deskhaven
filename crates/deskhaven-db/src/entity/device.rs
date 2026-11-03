@@ -49,6 +49,12 @@ pub struct Model {
     pub device_group_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub note: Option<String>,
+    /// The administrator's name for the device; sysinfo never writes it.
+    #[sea_orm(column_type = "Text", nullable)]
+    pub display_name: Option<String>,
+    /// The administrator's name for the device's user; sysinfo never writes it.
+    #[sea_orm(column_type = "Text", nullable)]
+    pub display_username: Option<String>,
     pub status: DeviceStatus,
     /// `None` = not deployed (P1 admission).
     pub deployed_at: Option<TimestampMs>,

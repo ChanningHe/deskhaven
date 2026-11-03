@@ -57,6 +57,40 @@ async fn device_round_trips_with_binary_keys_and_nullable_columns() {
     .await;
 }
 
+/// `display_name` / `display_username` (M2-19): the administrator's names for the device,
+/// NULL until set, independent of the self-reported hostname / username.
+#[tokio::test]
+async fn display_names_are_nullable_and_separate_from_the_reported_ones() {
+    each_migrated_backend(async |db: &TestDb| {
+        let plain = device::ActiveModel {
+            status: Set(DeviceStatus::Active),
+            hostname: Set(Some("reported".to_owned())),
+            ..device_row("111111111")
+        };
+        let named = device::ActiveModel {
+            status: Set(DeviceStatus::Active),
+            display_name: Set(Some("reception-01".to_owned())),
+            display_username: Set(Some("frontdesk".to_owned())),
+            ..device_row("222222222")
+        };
+
+        let plain = plain.insert(&db.conn).await.unwrap();
+        let named = named.insert(&db.conn).await.unwrap();
+
+        let b = db.backend;
+        assert_eq!(
+            (plain.display_name, plain.display_username),
+            (None, None),
+            "{b}"
+        );
+        assert_eq!(plain.hostname.as_deref(), Some("reported"), "{b}");
+        assert_eq!(named.display_name.as_deref(), Some("reception-01"), "{b}");
+        assert_eq!(named.display_username.as_deref(), Some("frontdesk"), "{b}");
+        assert_eq!(named.hostname, None, "{b}");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn rustdesk_id_is_unique() {
     each_migrated_backend(async |db: &TestDb| {
