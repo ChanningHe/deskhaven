@@ -405,6 +405,64 @@
         ]
       }
     },
+    "/admin/api/v1/client-config": {
+      "get": {
+        "tags": [
+          "client-config"
+        ],
+        "summary": "The server addresses, the public key and the ways to hand them to clients: the config\nstring (import box, `rustdesk --config`), its QR code, and Windows file names. Without\n`public_url` the ID server is the host the console was opened with, flagged by\n`host_source`; with no usable host there is no config string.",
+        "operationId": "get_client_config",
+        "responses": {
+          "200": {
+            "description": "Client configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConfigView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/device-groups": {
       "get": {
         "tags": [
@@ -4201,6 +4259,78 @@
           "oidc"
         ]
       },
+      "ClientConfigView": {
+        "type": "object",
+        "description": "What a RustDesk client needs to use this server. Public data only.",
+        "required": [
+          "id_server",
+          "relay_server",
+          "api_server",
+          "public_key",
+          "relay_servers",
+          "host_source"
+        ],
+        "properties": {
+          "api_server": {
+            "type": "string",
+            "description": "API server base URL (`public_url`); empty when unset."
+          },
+          "config_string": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The string for the client's import box and `rustdesk --config`; `null` without an\nID server address."
+          },
+          "host_source": {
+            "$ref": "#/components/schemas/HostSourceView"
+          },
+          "id_server": {
+            "type": "string",
+            "description": "ID server, `host[:port]` (the default port 21116 is left out); empty when unknown."
+          },
+          "public_key": {
+            "type": "string",
+            "description": "The hbbs public key (base64), the clients' \"Key\"."
+          },
+          "qr": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QrCode",
+                "description": "QR code of `config=<config_string>` for the mobile clients' scanner."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relay_server": {
+            "type": "string",
+            "description": "Relay server written into the configuration: the only configured relay, else empty\n(the ID server then hands one out)."
+          },
+          "relay_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every configured relay (`signal.relay_servers`) as `host:port`."
+          },
+          "windows_filename_encoded": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`rustdesk-licensed-<config string>.exe`; `null` without a config string."
+          },
+          "windows_filename_plain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`rustdesk-host=…,key=…,.exe`; `null` when a value cannot be in a Windows file name\n(an API URL, a port, an IPv6 address, a `/` in the key)."
+          }
+        }
+      },
       "ConnectionView": {
         "type": "object",
         "description": "One connection to a device, as the device reported it.",
@@ -4803,6 +4933,15 @@
             "description": "The version the stored row had after this change."
           }
         }
+      },
+      "HostSourceView": {
+        "type": "string",
+        "description": "Where the ID server host came from.",
+        "enum": [
+          "public_url",
+          "request_host",
+          "unknown"
+        ]
       },
       "ImportBody": {
         "type": "object",

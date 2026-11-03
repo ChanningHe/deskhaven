@@ -144,8 +144,48 @@
     },
     "clientSetup": {
       "description": "RustDesk 客户端所需的服务器地址、公钥与配置字符串。",
-      "emptyTitle": "客户端配置暂不可用",
-      "emptyDescription": "服务器配置完成后，这里会显示连接信息。"
+      "loadFailed": "无法加载客户端配置",
+      "copy": "复制 {{label}}",
+      "warning": {
+        "requestHost": "未设置 public_url，ID 服务器地址取自你打开此控制台时使用的地址，客户端可能无法访问。请在服务器配置中设置 public_url。",
+        "unknown": "服务器无法确定客户端应使用的地址。请在服务器配置中设置 public_url。"
+      },
+      "addresses": {
+        "title": "服务器地址",
+        "idServer": "ID 服务器",
+        "relayServer": "中继服务器",
+        "apiServer": "API 服务器",
+        "publicKey": "Key（公钥）",
+        "relayAuto": "未固定：由 ID 服务器分配中继。",
+        "relayList": "未固定（配置了多个中继）：由 ID 服务器从 {{list}} 中选择。",
+        "apiUnset": "未设置：设置 public_url 后客户端才有 API 地址。"
+      },
+      "string": {
+        "title": "配置字符串",
+        "label": "配置字符串",
+        "hint": "在客户端中复制后选择“导入服务器配置”，或用 rustdesk --config 执行。",
+        "unavailable": "知道 ID 服务器地址后才可用。",
+        "qrLabel": "RustDesk 客户端配置二维码",
+        "qrHint": "用 RustDesk 移动端扫描，导入同一份配置。"
+      },
+      "windows": {
+        "title": "Windows 文件名",
+        "description": "把 RustDesk 可执行文件改成下列名称之一，它启动时就使用本服务器的设置。",
+        "encoded": "完整文件名",
+        "encodedHint": "包含全部配置值。",
+        "plain": "可读文件名",
+        "plainHint": "只含主机和 Key，便于手工修改。",
+        "plainUnavailable": "此处无法生成可读文件名：Windows 文件名无法包含 API 地址、端口、IPv6 地址或 Key 中的“/”。请使用完整文件名。"
+      },
+      "commands": {
+        "title": "命令行",
+        "description": "在已安装的客户端上以管理员或 root 权限运行。请把 dhk_YOUR_API_TOKEN 换成 API Token。",
+        "config": "应用服务器设置",
+        "deploy": "登记设备（deploy）",
+        "deployHint": "把设备登记到本服务器。",
+        "assign": "分配设备（assign）",
+        "assignHint": "把设备分配给用户和设备组。"
+      }
     },
     "tokens": {
       "description": "用于自动化与集成的访问令牌。",

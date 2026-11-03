@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { copyToClipboard } from '@/lib/clipboard'
 
 export interface SecretRevealDialogProps {
   open: boolean
@@ -30,17 +31,6 @@ export interface SecretRevealDialogProps {
 }
 
 type CopyState = 'idle' | 'copied' | 'failed'
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  // The Clipboard API exists only in secure contexts (https or localhost).
-  if (typeof navigator.clipboard === 'undefined') return false
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
 
 function SecretBody({
   title,

@@ -1,4 +1,5 @@
 export * from './auth/auth'
+export * from './client-config/client-config'
 export * from './device-groups/device-groups'
 export * from './devices/devices'
 export * from './groups/groups'

@@ -144,8 +144,48 @@
     },
     "clientSetup": {
       "description": "Server addresses, public key and configuration string for RustDesk clients.",
-      "emptyTitle": "Client configuration is not available yet",
-      "emptyDescription": "Connection details appear here once the server is configured."
+      "loadFailed": "Could not load the client configuration",
+      "copy": "Copy {{label}}",
+      "warning": {
+        "requestHost": "public_url is not set, so the ID server address is the one you opened this console with. Clients may not be able to reach it: set public_url in the server configuration.",
+        "unknown": "The server cannot tell which address clients should use. Set public_url in the server configuration."
+      },
+      "addresses": {
+        "title": "Server addresses",
+        "idServer": "ID server",
+        "relayServer": "Relay server",
+        "apiServer": "API server",
+        "publicKey": "Key (public key)",
+        "relayAuto": "Not pinned: the ID server hands out a relay.",
+        "relayList": "Not pinned (several relays): the ID server picks one of {{list}}.",
+        "apiUnset": "Not set: set public_url to give clients an API address."
+      },
+      "string": {
+        "title": "Configuration string",
+        "label": "Configuration string",
+        "hint": "In the client, copy it and choose “Import server config”, or run it with rustdesk --config.",
+        "unavailable": "Available once the ID server address is known.",
+        "qrLabel": "QR code of the RustDesk client configuration",
+        "qrHint": "Scan it in the RustDesk mobile app to import the same configuration."
+      },
+      "windows": {
+        "title": "Windows file name",
+        "description": "Rename the RustDesk executable to one of these names and it starts with this server's settings.",
+        "encoded": "Full file name",
+        "encodedHint": "Carries every value.",
+        "plain": "Readable file name",
+        "plainHint": "Host and key only, easy to edit by hand.",
+        "plainUnavailable": "A readable file name is not possible here: a Windows file name cannot contain the API URL, a port, an IPv6 address or a “/” in the key. Use the full file name."
+      },
+      "commands": {
+        "title": "Command line",
+        "description": "Run on an installed client with administrator or root rights. Replace dhk_YOUR_API_TOKEN with an API token.",
+        "config": "Apply the server settings",
+        "deploy": "Register the device (deploy)",
+        "deployHint": "Registers the device with this server.",
+        "assign": "Assign the device (assign)",
+        "assignHint": "Assigns the device to a user and a device group."
+      }
     },
     "tokens": {
       "description": "Tokens for automation and integrations.",
