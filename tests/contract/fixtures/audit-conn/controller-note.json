@@ -1,0 +1,22 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/ui_session_interface.rs:592-600",
+    "src/ui_session_interface.rs:2104-2107"
+  ],
+  "description": "The controlling side posts the note its user typed for the session: the remote device's id, the session id and the note, without uuid or conn_id. The client ignores the reply; success is 200 with an empty body like every audit record.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "session_id": 8123456789012345678,
+        "note": "Fixing the printer driver"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

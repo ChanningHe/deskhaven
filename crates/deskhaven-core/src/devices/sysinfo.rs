@@ -11,6 +11,8 @@
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
 
+use crate::text::is_dropped;
+
 /// Longest stored sysinfo field, in characters (a hostname is at most 253 bytes; real
 /// `os` / `cpu` strings are well under 100).
 pub const MAX_FIELD_CHARS: usize = 256;
@@ -82,21 +84,6 @@ fn clean(raw: String) -> String {
         .filter(|c| !is_dropped(*c))
         .take(MAX_FIELD_CHARS)
         .collect()
-}
-
-/// Control characters, bidi embedding / override / isolate controls (which can make a
-/// hostname read as something else in the console, "Trojan Source") and zero-width
-/// characters (which make look-alike names).
-fn is_dropped(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{200B}'..='\u{200F}'   // zero-width space / (non-)joiner, LRM, RLM
-                | '\u{202A}'..='\u{202E}' // LRE, RLE, PDF, LRO, RLO
-                | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
-                | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI
-                | '\u{FEFF}' // zero-width no-break space (BOM)
-        )
 }
 
 #[cfg(test)]

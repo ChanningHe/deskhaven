@@ -15,6 +15,28 @@ pub(crate) fn problem(raw: &str, max: usize, multiline: bool) -> Option<String> 
         .then(|| "must not contain control characters".to_owned())
 }
 
+/// Characters dropped from self-reported device text: control characters, bidi embedding /
+/// override / isolate controls (which can make a hostname read as something else in the
+/// console, "Trojan Source") and zero-width characters (which make look-alike names).
+pub(crate) fn is_dropped(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{200B}'..='\u{200F}'   // zero-width space / (non-)joiner, LRM, RLM
+                | '\u{202A}'..='\u{202E}' // LRE, RLE, PDF, LRO, RLO
+                | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
+                | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI
+                | '\u{FEFF}' // zero-width no-break space (BOM)
+        )
+}
+
+/// `raw` without [`is_dropped`] characters (newline and tab kept when `multiline`), cut to
+/// `max` characters: self-reported text is stored cleaned rather than refused.
+pub(crate) fn clean(raw: &str, max: usize, multiline: bool) -> String {
+    let kept = |c: &char| !is_dropped(*c) || (multiline && matches!(c, '\n' | '\t'));
+    raw.chars().filter(kept).take(max).collect()
+}
+
 /// Escape character of `LIKE` patterns built from user input.
 const LIKE_ESCAPE: char = '\\';
 

@@ -1,0 +1,27 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1527-1534",
+    "src/server/connection.rs:1563-1576",
+    "src/server/connection.rs:1711-1716"
+  ],
+  "description": "The controlled device reports a connection as it opens, before the login request, so session_id is still 0. Success is 200 with an empty body: anything else in a 2xx makes the client retry.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "ip": "198.51.100.4",
+        "action": "new",
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "conn_id": 1042,
+        "session_id": 0,
+        "nonce": "0f6e2b1c-4d3a-4b5e-9f8a-7c6d5e4f3a2b"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

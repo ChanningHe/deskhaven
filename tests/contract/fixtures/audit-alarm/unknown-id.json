@@ -1,0 +1,31 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1631-1660",
+    "src/server/connection.rs:1737-1746"
+  ],
+  "description": "An alarm from an id the signal server never registered: 404, nothing stored, the client drops it.",
+  "seed": [],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/alarm",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "135792468",
+        "uuid": "Y29udHJhY3QtZGV2aWNlLXV1aWQ=",
+        "typ": 1,
+        "info": "{\"ip\":\"198.51.100.4\"}",
+        "conn_id": 1043,
+        "nonce": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+      }
+    }
+  },
+  "expect": {
+    "status": 404,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "ID_NOT_FOUND" }
+  }
+}

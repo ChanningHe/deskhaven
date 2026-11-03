@@ -1,0 +1,29 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1594-1629",
+    "src/server/connection.rs:6560-6563",
+    "src/server/connection.rs:1711-1716"
+  ],
+  "description": "The device reports files it sent to the controller (type 0 RemoteSend): info is a JSON string with the address, the controller's name, the file count and the ten largest files. 200 with an empty body means stored.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/file",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "peer_id": "987654321",
+        "conn_id": 1042,
+        "type": 0,
+        "path": "/home/alice/reports",
+        "is_file": false,
+        "info": "{\"files\":[[\"q3.pdf\",48213],[\"q2.pdf\",40112]],\"ip\":\"198.51.100.4\",\"name\":\"alice@laptop\",\"num\":2}",
+        "nonce": "6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

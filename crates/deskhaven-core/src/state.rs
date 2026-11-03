@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 
+use crate::audit::AuditService;
 use crate::auth::limiter::LoginThrottle;
 use crate::clock::SharedClock;
 use crate::console_audit::ConsoleAuditLog;
@@ -53,6 +54,8 @@ pub struct AppState {
     /// Device registry operations and the presence table (`devices.presence()`), which the
     /// signal server's liveness notifications feed.
     pub devices: DeviceService,
+    /// Audit ingest of the device endpoints (`/api/audit/*`).
+    pub audit: AuditService,
     /// First-run owner setup.
     pub setup: SetupService,
     /// See [`StateConfig::console_url`].
@@ -118,6 +121,7 @@ impl AppState {
             strategies.clone(),
             Arc::clone(&clock),
         );
+        let audit = AuditService::new(db.clone(), devices.clone(), Arc::clone(&clock));
         let setup = SetupService::new(db.clone(), users.clone(), Arc::clone(&clock));
         let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
         Self {
@@ -135,6 +139,7 @@ impl AppState {
             groups,
             strategies,
             devices,
+            audit,
             setup,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
             public_url: config.public_url.trim().to_owned(),

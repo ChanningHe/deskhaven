@@ -5,6 +5,7 @@
 
 mod ab;
 mod account;
+mod audit;
 mod auth;
 mod client;
 mod error;
@@ -25,6 +26,7 @@ use axum::routing::{get, post};
 use deskhaven_core::state::AppState;
 
 pub use ab::{MAX_AB_BODY, MAX_LEGACY_AB_BODY};
+pub use audit::MAX_AUDIT_BODY;
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use heartbeat::MAX_HEARTBEAT_BODY;
@@ -59,4 +61,5 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .merge(oidc::routes())
         .merge(ab::routes())
+        .merge(audit::routes())
 }

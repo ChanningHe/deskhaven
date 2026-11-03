@@ -1,0 +1,26 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1240-1242",
+    "src/server/connection.rs:1563-1576",
+    "src/server/connection.rs:1711-1716"
+  ],
+  "description": "The device reports the end of a connection. A close that arrives before the other messages of its connection is stored all the same: whichever message comes first creates the row.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "action": "close",
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "conn_id": 1042,
+        "session_id": 8123456789012345678,
+        "nonce": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

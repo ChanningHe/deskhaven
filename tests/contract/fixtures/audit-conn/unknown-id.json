@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1717-1736",
+    "src/server/connection.rs:1737-1746"
+  ],
+  "description": "An id the signal server never registered (06 §2: refused, nothing stored). Any 4xx other than 408 / 429 is a deterministic rejection: the client drops the record at once instead of retrying.",
+  "seed": [],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "ip": "198.51.100.4",
+        "action": "new",
+        "id": "135792468",
+        "uuid": "Y29udHJhY3QtZGV2aWNlLXV1aWQ=",
+        "conn_id": 1042,
+        "session_id": 0,
+        "nonce": "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f"
+      }
+    }
+  },
+  "expect": {
+    "status": 404,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "ID_NOT_FOUND" }
+  }
+}

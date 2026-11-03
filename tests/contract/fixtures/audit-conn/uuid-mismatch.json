@@ -1,0 +1,31 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1717-1736",
+    "src/server/connection.rs:1737-1746"
+  ],
+  "description": "A registered id with another uuid (06 §2): answered exactly like an unknown id, nothing stored; the client drops the record.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "action": "close",
+        "id": "${device_id}",
+        "uuid": "YW5vdGhlci11dWlk",
+        "conn_id": 1042,
+        "session_id": 8123456789012345678,
+        "nonce": "4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a"
+      }
+    }
+  },
+  "expect": {
+    "status": 404,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "ID_NOT_FOUND" }
+  }
+}

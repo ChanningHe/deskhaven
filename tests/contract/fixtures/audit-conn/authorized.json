@@ -1,0 +1,29 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1944-1952",
+    "src/server/connection.rs:1563-1576",
+    "src/server/connection.rs:1711-1716"
+  ],
+  "description": "After a successful login the device reports the controller ([my_id, my_name] of the login request), the connection type and how it authenticated, with the controller's session id. 200 with an empty body means stored.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/conn",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "peer": ["987654321", "alice@laptop"],
+        "type": 0,
+        "primary_auth": 2,
+        "two_factor": 1,
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "conn_id": 1042,
+        "session_id": 8123456789012345678,
+        "nonce": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}

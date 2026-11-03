@@ -1,0 +1,27 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/server/connection.rs:1443-1446",
+    "src/server/connection.rs:1631-1660",
+    "src/server/connection.rs:6546-6558",
+    "src/server/connection.rs:1711-1716"
+  ],
+  "description": "The device reports a connection refused by its IP whitelist (typ 0); info is a JSON string. 200 with an empty body means stored.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/audit/alarm",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "typ": 0,
+        "info": "{\"ip\":\"198.51.100.4\"}",
+        "conn_id": 1043,
+        "nonce": "8b9c0d1e-2f3a-4b4c-9d5e-6f7a8b9c0d1e"
+      }
+    }
+  },
+  "expect": { "status": 200, "body_kind": "empty" }
+}
