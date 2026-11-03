@@ -10,10 +10,12 @@ mod auth;
 mod client;
 mod devices;
 mod error;
+mod groups;
 mod heartbeat;
 mod login;
 mod login_options;
 mod oidc;
+mod query;
 mod stack_error;
 mod sysinfo;
 mod user_payload;
@@ -64,4 +66,5 @@ pub fn router() -> Router<Arc<AppState>> {
         .merge(ab::routes())
         .merge(audit::routes())
         .merge(devices::routes())
+        .merge(groups::routes())
 }

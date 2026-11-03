@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:103-158", "flutter/lib/common/hbbs/hbbs.dart:288-302"],
+  "description": "Device groups holding at least one device the caller can see, by name: Office (alice's) and Lab (tess's). Secret (a stranger's device) and Lobby (an unowned device) are not reachable and stay out.",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/device-group/accessible?current=1&pageSize=100",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<DeviceGroupPayload>",
+    "json_subset": { "total": 2, "data": [{ "name": "Lab" }, { "name": "Office" }] }
+  }
+}

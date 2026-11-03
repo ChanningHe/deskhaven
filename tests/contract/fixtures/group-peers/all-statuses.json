@@ -1,0 +1,25 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:224-282"],
+  "description": "Without the status filter the caller's disabled device is listed too, with status 0; devices out of reach are still not.",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/peers?current=1&pageSize=100",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<PeerPayload>",
+    "json_subset": {
+      "total": 4,
+      "data": [
+        { "id": "700000001", "status": 1 },
+        { "id": "700000002", "status": 1 },
+        { "id": "700000003", "status": 1 },
+        { "id": "700000006", "status": 0 }
+      ]
+    }
+  }
+}

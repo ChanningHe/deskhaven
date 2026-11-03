@@ -14,8 +14,11 @@ deskhaven = { path = "../deskhaven" }
 deskhaven-admin-api = { workspace = true }
 deskhaven-config = { workspace = true }
 deskhaven-core = { workspace = true }
+# Seeds and flow tests write rows no service offers (device owner, group), and read them back.
+deskhaven-db = { workspace = true }
 deskhaven-http = { workspace = true }
 anyhow = { workspace = true }
+sea-orm = { workspace = true }
 flate2 = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
@@ -29,9 +32,6 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 deskhaven-client-api = { workspace = true }
-# Flow tests inspect rows (login_events) and break state behind the services' back.
-deskhaven-db = { workspace = true }
-sea-orm = { workspace = true }
 # The mock IdP shared with the core tests (deskhaven-core/tests/common/oidc_idp.rs).
 base64_022 = { workspace = true }
 chrono = { workspace = true }

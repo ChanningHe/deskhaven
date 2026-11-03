@@ -1,0 +1,23 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:160-222", "flutter/lib/common/hbbs/hbbs.dart:19-52"],
+  "description": "The panel's user list (status=1): the caller and the active users sharing a group with them, by username. A disabled teammate and a user of another group stay out. total counts the whole visible set.",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/users?current=1&pageSize=100&accessible=&status=1",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<ClientUserPayload>",
+    "json_subset": {
+      "total": 2,
+      "data": [
+        { "name": "alice", "status": 1, "is_admin": false, "info": {} },
+        { "name": "tess", "status": 1, "is_admin": false, "info": {} }
+      ]
+    }
+  }
+}

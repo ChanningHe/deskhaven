@@ -1,5 +1,6 @@
 //! Domain services. No HTTP and no protobuf types live here.
 
+pub mod accessible;
 pub mod addressbooks;
 pub mod api_tokens;
 pub mod audit;

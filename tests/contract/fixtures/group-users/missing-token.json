@@ -1,0 +1,16 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:60-62", "flutter/lib/models/group_model.dart:160-222"],
+  "description": "No Authorization header: 401 {\"error\": \"Unauthorized\"}; the client resets its login on a 401 (group_model.dart:60-62).",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/users?current=1&pageSize=100&accessible=&status=1"
+  },
+  "expect": {
+    "status": 401,
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unauthorized" }
+  }
+}

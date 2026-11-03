@@ -21,7 +21,6 @@
 mod books;
 mod legacy;
 mod peers;
-mod query;
 mod tags;
 
 use std::sync::Arc;

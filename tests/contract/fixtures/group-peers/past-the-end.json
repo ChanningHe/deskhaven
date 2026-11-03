@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:224-282"],
+  "description": "A page past the end is an empty list with the true total, not an error.",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/peers?current=9&pageSize=100&accessible=&status=1",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<PeerPayload>",
+    "json_subset": { "total": 3, "data": [] }
+  }
+}

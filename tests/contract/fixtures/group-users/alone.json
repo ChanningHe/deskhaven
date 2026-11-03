@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:160-222"],
+  "description": "A user in no group sees only themselves; the panel then shows just their own devices.",
+  "seed": ["client-session"],
+  "request": {
+    "method": "GET",
+    "path": "/api/users?current=1&pageSize=100&accessible=&status=1",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<ClientUserPayload>",
+    "json_subset": { "total": 1, "data": [{ "name": "alice" }] }
+  }
+}

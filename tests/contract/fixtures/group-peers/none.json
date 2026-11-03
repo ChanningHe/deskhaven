@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:224-282"],
+  "description": "A user with no devices and no group gets an empty page (total 0), which the client shows as an empty panel.",
+  "seed": ["client-session"],
+  "request": {
+    "method": "GET",
+    "path": "/api/peers?current=1&pageSize=100&accessible=&status=1",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<PeerPayload>",
+    "json_subset": { "total": 0, "data": [] }
+  }
+}

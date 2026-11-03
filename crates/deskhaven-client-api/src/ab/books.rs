@@ -8,7 +8,8 @@ use deskhaven_core::addressbooks::{Profile, Rule};
 use deskhaven_core::state::AppState;
 use serde::Serialize;
 
-use super::{ab_error, query, service};
+use super::{ab_error, service};
+use crate::query::{self, PageReply};
 use crate::{BearerUser, ClientApiError};
 
 #[derive(Serialize)]
@@ -19,13 +20,6 @@ pub struct PersonalReply {
 #[derive(Serialize)]
 pub struct SettingsReply {
     max_peer_one_ab: u32,
-}
-
-/// `{total, data}` (03 §1.3).
-#[derive(Serialize)]
-pub struct PageReply<T> {
-    pub total: u64,
-    pub data: Vec<T>,
 }
 
 /// `AbProfile.fromJson` (`flutter/lib/common/hbbs/hbbs.dart:268-274`); `info` is left

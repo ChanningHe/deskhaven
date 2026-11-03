@@ -19,6 +19,7 @@
 mod ab;
 mod account;
 mod device;
+mod group;
 mod hbb;
 mod legacy_ab;
 
@@ -30,6 +31,7 @@ pub use account::{
     LoginResponse, OidcAuthUrl, SecondFactorChallenge, UserInfo, WhitelistItem,
 };
 pub use device::{DeployResponse, HeartbeatResponse, StrategyOptions};
+pub use group::{DeviceGroupPayload, PeerInfo, PeerPayload};
 pub use hbb::HbbData;
 pub use legacy_ab::{LegacyAbData, LegacyAbReply};
 

@@ -1,0 +1,36 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": ["flutter/lib/models/group_model.dart:224-282", "flutter/lib/common/hbbs/hbbs.dart:77-128"],
+  "description": "The panel's device list (status=1): active devices of the caller and of users sharing a group with them (06 section 4.2), by RustDesk id. The stranger's device, an unowned device and the caller's disabled device stay out. user_name is the owner's username, which the panel matches against the selected user; info carries username / os / device_name.",
+  "seed": ["client-session", "group-scope"],
+  "request": {
+    "method": "GET",
+    "path": "/api/peers?current=1&pageSize=100&accessible=&status=1",
+    "headers": { "authorization": "Bearer ${session_token}" }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "PagedResponse<PeerPayload>",
+    "json_subset": {
+      "total": 3,
+      "data": [
+        {
+          "id": "700000001", "status": 1, "user": "alice", "user_name": "alice",
+          "device_group_name": "Office", "note": "mine",
+          "info": { "username": "alice", "os": "linux / Ubuntu 24.04", "device_name": "alice-box" }
+        },
+        {
+          "id": "700000002", "status": 1, "user": "tess", "user_name": "tess",
+          "device_group_name": "Lab", "note": "",
+          "info": { "username": "tess", "os": "windows / 11", "device_name": "tess-pc" }
+        },
+        {
+          "id": "700000003", "status": 1, "user": "tom", "user_name": "tom",
+          "device_group_name": "", "note": "",
+          "info": { "username": "tom", "os": "macos / 15", "device_name": "tom-mac" }
+        }
+      ]
+    }
+  }
+}

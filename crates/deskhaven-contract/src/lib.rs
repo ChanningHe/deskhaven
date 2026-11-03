@@ -14,6 +14,7 @@ pub mod app;
 pub mod check;
 pub mod device_seeds;
 pub mod fixture;
+pub mod group_seeds;
 pub mod mirror;
 pub mod requests;
 pub mod runner;

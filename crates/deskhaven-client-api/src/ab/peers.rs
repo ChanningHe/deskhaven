@@ -12,8 +12,8 @@ use deskhaven_core::addressbooks::{Actor, PeerPatch};
 use deskhaven_core::state::AppState;
 use serde_json::{Map, Value};
 
-use super::books::PageReply;
-use super::{ab_error, parse_body, query, service};
+use super::{ab_error, parse_body, service};
+use crate::query::{self, PageReply};
 use crate::{BearerUser, ClientApiError};
 
 /// One page of a book's peers (rule 1).
