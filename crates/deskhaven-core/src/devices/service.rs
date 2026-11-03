@@ -169,6 +169,15 @@ impl DeviceService {
         Ok(identity.map(|identity| identity.device_id))
     }
 
+    /// Whether `rustdesk_id` is a registered device, without a uuid (the controller's audit
+    /// note carries none). Served from the same identity cache as [`verify`](Self::verify).
+    pub async fn is_registered(&self, rustdesk_id: &str) -> Result<bool, DeviceError> {
+        if self.inner.presence.identity(rustdesk_id).is_some() {
+            return Ok(true);
+        }
+        Ok(self.load_identity(rustdesk_id).await?.is_some())
+    }
+
     /// [`verify`](Self::verify) with the whole cached identity.
     async fn identify(
         &self,

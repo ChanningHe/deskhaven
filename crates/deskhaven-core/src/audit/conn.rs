@@ -16,8 +16,14 @@
 //! per-process counter of the client, so the window keeps a reused id (after a client
 //! restart) from joining an old row.
 //!
+//! The unique key leaves one unbound row per (device, conn id). When a record with session
+//! id 0 finds that row but it belongs to an earlier connection (outside the window, or
+//! already holding this kind of record: a client restart reused the id), the old row is
+//! **retired** (re-keyed, contents kept) and the record starts a row of its own.
+//!
 //! Each slot is filled once: the first record of a kind wins (06 §7, audit records are
 //! append-only for the API). Times are the server's receipt times; the client sends none.
+//! On PostgreSQL the records of one (device, conn id) are serialized (`lock_connection`).
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -26,8 +32,8 @@ use deskhaven_db::entity::connection_session::{self, ActiveModel, Column, Entity
 use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 
 use super::SessionId;
@@ -41,6 +47,11 @@ pub const PAIRING_WINDOW: Duration = Duration::from_secs(10 * 60);
 /// Longest stored peer id (hbbs `MAX_PEER_ID_LEN`) and peer name, in characters.
 const PEER_ID_MAX_CHARS: usize = 253;
 const PEER_NAME_MAX_CHARS: usize = 256;
+/// Session id prefix of a retired unbound row (see `retire`). Not a decimal, so it never
+/// meets a client's session id; the console shows such a row as "no session".
+pub const RETIRED_PREFIX: &str = "0#";
+/// `pg_advisory_xact_lock` namespace of [`lock_connection`] ("dhac").
+const PG_CONN_LOCK_NS: i32 = 0x6468_6163;
 
 /// One connection record of the controlled device.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,14 +95,69 @@ pub(super) async fn merge(
     report: &ConnReport,
     now: TimestampMs,
 ) -> Result<(), DbErr> {
-    let found = match find_exact(tx, device, report).await? {
-        Some(row) => Some(row),
-        None => find_partner(tx, device, report, now).await?,
-    };
-    match found {
+    lock_connection(tx, device, report.conn_id).await?;
+    if let Some(row) = find_exact(tx, device, report).await? {
+        if same_connection(&row, report, now) {
+            return update(tx, row, report, now).await;
+        }
+        retire(tx, row).await?;
+    }
+    match find_partner(tx, device, report, now).await? {
         Some(row) => update(tx, row, report, now).await,
         None => insert(tx, device, report, now).await,
     }
+}
+
+/// PostgreSQL: serializes the records of one (device, conn id) with a transaction-scoped
+/// advisory lock. Under READ COMMITTED an opening and an authorization arriving at once would
+/// both find no row (`FOR UPDATE` on nothing locks nothing) and insert two rows under
+/// different keys that never merge. SQLite: `BEGIN IMMEDIATE` already serializes writers. A
+/// hash collision only makes two connections wait for each other.
+async fn lock_connection(
+    tx: &DatabaseTransaction,
+    device: &str,
+    conn_id: i64,
+) -> Result<(), DbErr> {
+    if tx.get_database_backend() != DbBackend::Postgres {
+        return Ok(());
+    }
+    let sql = "SELECT pg_advisory_xact_lock($1, hashtext($2))";
+    let values = [
+        PG_CONN_LOCK_NS.into(),
+        // Unambiguous: the number ends at the first ':' (PostgreSQL text cannot hold NUL).
+        format!("{conn_id}:{device}").into(),
+    ];
+    let statement = Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
+    tx.execute_raw(statement).await.map(drop)
+}
+
+/// A row found by its exact key belongs to this record's connection, unless it is an unbound
+/// row (session id 0) of an earlier connection with the same conn id: created outside the
+/// pairing window, or already holding this kind of record.
+fn same_connection(row: &Model, report: &ConnReport, now: TimestampMs) -> bool {
+    !report.session_id.is_unbound()
+        || (within_window(row.created_at, now) && !is_filled(row, &report.event))
+}
+
+/// Moves an earlier connection's unbound row off the key (session id
+/// [`RETIRED_PREFIX`]`<row id>`, never a normalized decimal), so the new connection gets a
+/// row of its own. The old row keeps everything it recorded.
+async fn retire(tx: &DatabaseTransaction, row: Model) -> Result<(), DbErr> {
+    tracing::debug!(
+        conn_id = row.conn_id,
+        "retiring an earlier connection's unbound row"
+    );
+    let retired = format!("{RETIRED_PREFIX}{}", row.id);
+    let mut active = row.into_active_model();
+    active.session_id = Set(retired);
+    active.update(tx).await.map(drop)
+}
+
+fn within_window(created_at: TimestampMs, now: TimestampMs) -> bool {
+    let window = i64::try_from(PAIRING_WINDOW.as_millis()).unwrap_or(i64::MAX);
+    now.timestamp_millis()
+        .saturating_sub(created_at.timestamp_millis())
+        <= window
 }
 
 async fn find_exact(
@@ -131,7 +197,9 @@ async fn find_partner(
         query = query.filter(Column::CreatedAt.gte(since));
     }
     query = match unbound {
-        true => query.filter(Column::SessionId.ne(UNBOUND)),
+        true => query
+            .filter(Column::SessionId.ne(UNBOUND))
+            .filter(Column::SessionId.not_like(format!("{RETIRED_PREFIX}%"))),
         false => query
             .filter(Column::SessionId.eq(UNBOUND))
             .filter(Column::EndedAt.is_null()),

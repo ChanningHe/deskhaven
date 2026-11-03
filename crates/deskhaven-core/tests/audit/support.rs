@@ -12,8 +12,10 @@ use base64_022::Engine as _;
 use base64_022::engine::general_purpose::STANDARD;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::audit::{
-    AuditService, Authorization, ConnEvent, ConnReport, Envelope, Ingest, Record, SessionId,
+    AuditService, Authorization, ConnEvent, ConnReport, ControllerNote, Envelope, Ingest, Record,
+    SessionId,
 };
+use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::clock::ManualClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::{DeviceRepository, DeviceService, Registration};
@@ -61,6 +63,22 @@ pub fn envelope(nonce: &str) -> Envelope {
         rustdesk_id: ID.to_owned(),
         uuid: uuid_b64(ID),
         nonce: Some(nonce.to_owned()),
+    }
+}
+
+/// A client at 198.51.100.`n`.
+pub fn client(n: u8) -> ClientAddr {
+    ClientAddr {
+        addr: IpAddr::V4(Ipv4Addr::new(198, 51, 100, n)),
+        is_proxy_fallback: false,
+    }
+}
+
+pub fn note(rustdesk_id: &str, session_id: u64, text: &str) -> ControllerNote {
+    ControllerNote {
+        rustdesk_id: rustdesk_id.to_owned(),
+        session_id: session(session_id),
+        note: text.to_owned(),
     }
 }
 
@@ -120,6 +138,16 @@ impl Ctx {
     /// Ingests `record` from device [`ID`] under `nonce`.
     pub async fn send(&self, nonce: &str, record: Record) -> Ingest {
         self.audit.ingest(envelope(nonce), record).await.unwrap()
+    }
+
+    /// Ingests `record` from the registered device `rustdesk_id` under `nonce`.
+    pub async fn send_from(&self, rustdesk_id: &str, nonce: &str, record: Record) -> Ingest {
+        let envelope = Envelope {
+            rustdesk_id: rustdesk_id.to_owned(),
+            uuid: uuid_b64(rustdesk_id),
+            nonce: Some(nonce.to_owned()),
+        };
+        self.audit.ingest(envelope, record).await.unwrap()
     }
 
     pub async fn sessions(&self) -> Vec<connection_session::Model> {

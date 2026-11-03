@@ -7,32 +7,64 @@
 //! each, `src/server/connection.rs:1331-1336`), while the controller's note goes out at once.
 //! Such a note waits here until a record binds the session, at most [`NOTE_TTL`].
 //!
-//! - **Bounded**: at most [`MAX_PENDING_NOTES`] notes; expired ones are dropped when full,
-//!   and a note that still does not fit is refused (the caller logs it).
+//! The note carries no uuid, so anyone who knows a registered id can post one. Hence:
+//! - **Bounded three ways**, never evicting: at most [`MAX_NOTES_PER_SOURCE`] waiting notes
+//!   per client network (the rate limiter's key: IPv4 /32, IPv6 /64, one shared key for
+//!   proxy-fallback clients), [`MAX_NOTES_PER_DEVICE`] per device, [`MAX_PENDING_NOTES`] in
+//!   all. A note that does not fit is refused; waiting notes stay until taken or expired.
+//! - **First wins**: a session's waiting note is not replaced (06 §7).
 //! - **Monotonic**: deadlines run on [`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms).
 //! - **In memory only**: a restart loses waiting notes (the note is a user annotation, the
 //!   connection records themselves are stored).
 
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use super::SessionId;
+use super::{PAIRING_WINDOW, SessionId};
+use crate::auth::limiter::{ClientAddr, ip_key};
 use crate::clock::SharedClock;
 
-/// How long a note waits for its session: the device's opening record may take two retries
-/// within the client's 120 s deadline, its authorization record as long again.
-pub const NOTE_TTL: Duration = Duration::from_secs(5 * 60);
-/// Notes waiting at most (a few hundred KiB at the longest notes).
+/// How long a note waits for its session: as long as a connection's records pair.
+pub const NOTE_TTL: Duration = PAIRING_WINDOW;
+/// Notes waiting at most (a few MiB at the longest notes).
 pub const MAX_PENDING_NOTES: usize = 1_000;
+/// Waiting notes per client network at most.
+pub const MAX_NOTES_PER_SOURCE: usize = 16;
+/// Waiting notes per device at most (several controllers may be connected at once).
+pub const MAX_NOTES_PER_DEVICE: usize = 8;
+/// At most one warning per interval about a full buffer.
+const FULL_WARN_INTERVAL_MS: i64 = 60_000;
 
+/// The client network a note came from; `None`: a proxy-fallback client.
+type Source = Option<IpAddr>;
 type Key = (String, SessionId);
 
-/// Waiting notes by (device RustDesk id, session id): the note and when it arrived
-/// (monotonic ms).
+struct Entry {
+    note: String,
+    /// Arrival, monotonic ms.
+    at: i64,
+    source: Source,
+}
+
+/// What [`PendingNotes::hold`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Hold {
+    Held,
+    /// A note of the session was already waiting; it stays.
+    AlreadyWaiting,
+    SourceFull,
+    DeviceFull,
+    Full,
+}
+
 pub(super) struct PendingNotes {
     clock: SharedClock,
-    notes: Mutex<HashMap<Key, (String, i64)>>,
+    notes: Mutex<HashMap<Key, Entry>>,
+    /// Monotonic ms + 1 of the last "full" warning; 0 = never.
+    warned: AtomicI64,
 }
 
 impl PendingNotes {
@@ -40,36 +72,72 @@ impl PendingNotes {
         Self {
             clock,
             notes: Mutex::default(),
+            warned: AtomicI64::new(0),
         }
     }
 
-    /// Keeps `note` for the session (replacing an older one); `false` if it does not fit.
-    pub fn hold(&self, device: &str, session: &SessionId, note: String) -> bool {
+    /// Keeps `note` for the session if it fits (see the module documentation).
+    pub fn hold(&self, device: &str, session: &SessionId, note: String, from: ClientAddr) -> Hold {
         let now = self.clock.elapsed_ms();
+        let source = (!from.is_proxy_fallback).then(|| ip_key(from.addr));
         let key = (device.to_owned(), session.clone());
         let mut notes = self.lock();
-        if notes.len() >= MAX_PENDING_NOTES && !notes.contains_key(&key) {
-            notes.retain(|_, (_, at)| !expired(*at, now));
-            if notes.len() >= MAX_PENDING_NOTES {
-                return false;
-            }
+        notes.retain(|_, entry| !expired(entry.at, now));
+        if notes.contains_key(&key) {
+            return Hold::AlreadyWaiting;
         }
-        notes.insert(key, (note, now));
-        true
+        let hold = refusal(&notes, device, source).unwrap_or(Hold::Held);
+        if hold == Hold::Held {
+            notes.insert(
+                key,
+                Entry {
+                    note,
+                    at: now,
+                    source,
+                },
+            );
+        }
+        hold
     }
 
     /// Removes and returns the session's note, unless it expired.
     pub fn take(&self, device: &str, session: &SessionId) -> Option<String> {
         let now = self.clock.elapsed_ms();
         let key = (device.to_owned(), session.clone());
-        let (note, at) = self.lock().remove(&key)?;
-        (!expired(at, now)).then_some(note)
+        let entry = self.lock().remove(&key)?;
+        (!expired(entry.at, now)).then_some(entry.note)
     }
 
-    fn lock(&self) -> MutexGuard<'_, HashMap<Key, (String, i64)>> {
+    /// `true` at most once per minute: whether to warn that the buffer is full.
+    pub fn warn_due(&self) -> bool {
+        let now = self.clock.elapsed_ms();
+        let last = self.warned.load(Ordering::Relaxed);
+        let due = last == 0 || now.saturating_sub(last - 1) >= FULL_WARN_INTERVAL_MS;
+        // Of concurrent callers, the one that moves the mark warns.
+        let (set, order) = (now.saturating_add(1), Ordering::Relaxed);
+        due && self
+            .warned
+            .compare_exchange(last, set, order, order)
+            .is_ok()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, HashMap<Key, Entry>> {
         // Map operations cannot leave it inconsistent.
         self.notes.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Why a new note of `device` from `source` does not fit, if it does not.
+fn refusal(notes: &HashMap<Key, Entry>, device: &str, source: Source) -> Option<Hold> {
+    if notes.len() >= MAX_PENDING_NOTES {
+        return Some(Hold::Full);
+    }
+    let from_source = notes.values().filter(|e| e.source == source).count();
+    if from_source >= MAX_NOTES_PER_SOURCE {
+        return Some(Hold::SourceFull);
+    }
+    let of_device = notes.keys().filter(|(d, _)| d == device).count();
+    (of_device >= MAX_NOTES_PER_DEVICE).then_some(Hold::DeviceFull)
 }
 
 fn expired(at: i64, now: i64) -> bool {
@@ -79,6 +147,7 @@ fn expired(at: i64, now: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
     use std::sync::Arc;
 
     use serde_json::json;
@@ -90,15 +159,26 @@ mod tests {
         SessionId::from_json(&json!(id)).unwrap()
     }
 
+    fn from(last: u8) -> ClientAddr {
+        ClientAddr {
+            addr: IpAddr::V4(Ipv4Addr::new(192, 0, 2, last)),
+            is_proxy_fallback: false,
+        }
+    }
+
     #[test]
-    fn a_note_is_taken_once_and_a_newer_one_replaces_it() {
+    fn a_note_is_taken_once_and_the_first_one_stays() {
         let notes = PendingNotes::new(Arc::new(ManualClock::at(1_000)));
 
-        assert!(notes.hold("a", &session(1), "old".to_owned()));
-        assert!(notes.hold("a", &session(1), "new".to_owned()));
+        assert_eq!(
+            notes.hold("a", &session(1), "old".to_owned(), from(1)),
+            Hold::Held
+        );
+        let again = notes.hold("a", &session(1), "new".to_owned(), from(2));
+        assert_eq!(again, Hold::AlreadyWaiting);
 
         assert_eq!(notes.take("b", &session(1)), None, "per device");
-        assert_eq!(notes.take("a", &session(1)).as_deref(), Some("new"));
+        assert_eq!(notes.take("a", &session(1)).as_deref(), Some("old"));
         assert_eq!(notes.take("a", &session(1)), None);
     }
 
@@ -106,8 +186,8 @@ mod tests {
     fn a_note_expires_on_the_monotonic_clock() {
         let clock = Arc::new(ManualClock::at(1_000));
         let notes = PendingNotes::new(clock.clone());
-        notes.hold("a", &session(1), "x".to_owned());
-        notes.hold("a", &session(2), "y".to_owned());
+        notes.hold("a", &session(1), "x".to_owned(), from(1));
+        notes.hold("a", &session(2), "y".to_owned(), from(1));
 
         clock.step_wall(-3_600_000);
         clock.advance(NOTE_TTL - Duration::from_millis(1));
@@ -117,21 +197,41 @@ mod tests {
     }
 
     #[test]
-    fn a_full_buffer_drops_expired_notes_then_refuses() {
+    fn caps_per_source_per_device_and_overall_never_evict() {
         let clock = Arc::new(ManualClock::at(1_000));
         let notes = PendingNotes::new(clock.clone());
-        for i in 0..MAX_PENDING_NOTES as u64 {
-            assert!(notes.hold("a", &session(i), String::new()));
+        let hold = |device: &str, id: u64, last: u8| {
+            notes.hold(device, &session(id), String::new(), from(last))
+        };
+        for i in 0..MAX_NOTES_PER_SOURCE as u64 {
+            assert_eq!(hold(&format!("d{i}"), i, 1), Hold::Held);
         }
+        assert_eq!(hold("x", 0, 1), Hold::SourceFull);
+        for i in 0..MAX_NOTES_PER_DEVICE as u64 {
+            assert_eq!(hold("x", i, 2 + i as u8), Hold::Held);
+        }
+        assert_eq!(hold("x", 99, 50), Hold::DeviceFull);
+        let mut held = notes.lock().len() as u64;
+        while held < MAX_PENDING_NOTES as u64 {
+            let last = u8::try_from(100 + held / MAX_NOTES_PER_SOURCE as u64).unwrap_or(255);
+            let device = format!("e{held}");
+            assert_eq!(hold(&device, held, last), Hold::Held, "{held}");
+            held += 1;
+        }
+        assert_eq!(hold("y", 0, 0), Hold::Full);
 
-        let refused = notes.hold("a", &session(u64::MAX), String::new());
-        let replaced = notes.hold("a", &session(0), "again".to_owned());
         clock.advance(NOTE_TTL);
-        let after_expiry = notes.hold("a", &session(u64::MAX), String::new());
+        assert_eq!(hold("y", 0, 0), Hold::Held, "expired notes make room");
+    }
 
-        assert!(!refused);
-        assert!(replaced, "a session already waiting takes no new slot");
-        assert!(after_expiry);
-        assert_eq!(notes.lock().len(), 1);
+    #[test]
+    fn the_full_warning_is_rate_limited() {
+        let clock = Arc::new(ManualClock::at(1_000));
+        let notes = PendingNotes::new(clock.clone());
+
+        assert!(notes.warn_due());
+        assert!(!notes.warn_due());
+        clock.advance(Duration::from_secs(60));
+        assert!(notes.warn_due());
     }
 }

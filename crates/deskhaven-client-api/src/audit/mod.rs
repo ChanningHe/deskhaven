@@ -9,12 +9,12 @@
 //! | case | status | body | client |
 //! |---|---|---|---|
 //! | stored, or a nonce already stored (a retry) | 200 | empty | done |
-//! | controller note set, or waiting for its session | 200 | empty | (ignores the reply) |
-//! | unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` | drops the record |
+//! | controller note set, ignored (empty, or the session has one), waiting, or for an unknown id | 200 | empty | (ignores the reply) |
+//! | record of an unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` | drops the record |
 //! | malformed body, missing / oversized / mistyped field | 400 | `{"error": ...}` | drops the record |
 //! | body over [`MAX_AUDIT_BODY`] | 413 | stack renderer | drops the record |
-//! | over the per-IP quota ([`AUDIT_PER_IP_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_IP_PER_MINUTE)) | 429 + `Retry-After` | `{"error": "Please try later"}` | retries (10 s, 30 s) |
-//! | too many controller notes waiting | 503 + `Retry-After` | `{"error": "Please try later"}` | (ignores the reply) |
+//! | over the per-IP quota ([`AUDIT_PER_IP_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_IP_PER_MINUTE)), or a verified device over its quota ([`AUDIT_PER_DEVICE_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_DEVICE_PER_MINUTE)) | 429 + `Retry-After` | `{"error": "Please try later"}` | retries (10 s, 30 s) |
+//! | controller note with no room to wait (per source, per device or in all) | 503 + `Retry-After` | `{"error": "Please try later"}` | (ignores the reply) |
 //! | storage failure | 500 | `{"error": ...}` | retries; the nonce was not claimed |
 //!
 //! Every reply but 200 carries a body, so no failure reads as "stored".
@@ -59,10 +59,14 @@ async fn conn(
             ingest(&state, envelope, Record::Conn(report)).await
         }
         ConnMessage::Note(note) => {
-            let outcome = state.audit.record_note(note).await;
+            let outcome = state.audit.record_note(note, client).await;
             match outcome.map_err(ClientApiError::internal)? {
-                NoteOutcome::Stored | NoteOutcome::Pending => Ok(()),
-                NoteOutcome::NotFound => Err(not_found()),
+                // An unknown id is answered like a known one: the note carries no uuid, so
+                // its reply must not tell which ids are registered.
+                NoteOutcome::Stored
+                | NoteOutcome::Ignored
+                | NoteOutcome::Pending
+                | NoteOutcome::NotFound => Ok(()),
                 NoteOutcome::Full => Err(ClientApiError::Unavailable {
                     retry_after: NOTE_TTL,
                 }),
@@ -108,6 +112,7 @@ async fn ingest(
     match outcome.map_err(ClientApiError::internal)? {
         Ingest::Stored | Ingest::Duplicate => Ok(()),
         Ingest::NotFound => Err(not_found()),
+        Ingest::TooFrequent { retry_after } => Err(ClientApiError::TooManyRequests { retry_after }),
     }
 }
 

@@ -18,6 +18,14 @@ pub const MAX_FILES: usize = 10;
 const PEER_ID_MAX_CHARS: usize = 253;
 const PATH_MAX_CHARS: usize = 4096;
 const FILE_NAME_MAX_CHARS: usize = 1024;
+/// Alarm `info` keys stored at most (the client sends up to five).
+pub const MAX_INFO_KEYS: usize = 16;
+/// Longest stored alarm `info` string, in characters.
+pub const MAX_INFO_TEXT_CHARS: usize = 256;
+const MAX_INFO_KEY_CHARS: usize = 64;
+/// The keys of the client's alarm `info` objects (`src/server/connection.rs:1443-1478`,
+/// `1662-1671`, `4303-4590`), kept before any other.
+const KNOWN_INFO_KEYS: &[&str] = &["ip", "id", "name", "conn_type", "message"];
 
 /// A file transfer the controlled device reports (`src/server/connection.rs:1594-1629`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,7 +57,7 @@ pub struct AlarmReport {
     /// `AlarmAuditType` (`src/server/connection.rs:6546-6558`); unknown values are stored.
     pub typ: i32,
     pub conn_id: i64,
-    /// The decoded `info` JSON string.
+    /// The decoded `info` JSON string; stored flat and cleaned (`clean_info`).
     pub info: Map<String, Value>,
 }
 
@@ -88,7 +96,7 @@ pub(super) async fn insert_alarm(
     let row = alarm::ActiveModel {
         device_rustdesk_id: Set(device.to_owned()),
         typ: Set(report.typ),
-        info: Set(Value::Object(report.info.clone()).to_string()),
+        info: Set(Value::Object(clean_info(&report.info)).to_string()),
         conn_id: Set(report.conn_id),
         created_at: Set(now),
         ..Default::default()
@@ -97,6 +105,34 @@ pub(super) async fn insert_alarm(
         .exec_without_returning(tx)
         .await
         .map(drop)
+}
+
+/// Alarm `info` as stored: a flat object, the keys every client call site uses first
+/// ([`KNOWN_INFO_KEYS`]), then the others in order, at most [`MAX_INFO_KEYS`]; keys and
+/// strings cleaned and cut, numbers and booleans kept, other values (nested, null) dropped.
+fn clean_info(info: &Map<String, Value>) -> Map<String, Value> {
+    let known = KNOWN_INFO_KEYS
+        .iter()
+        .filter_map(|k| info.get_key_value(*k));
+    let others = info
+        .iter()
+        .filter(|(k, _)| !KNOWN_INFO_KEYS.contains(&k.as_str()));
+    known
+        .chain(others)
+        .filter_map(|(key, value)| {
+            let key = text::clean(key, MAX_INFO_KEY_CHARS, false);
+            (!key.is_empty()).then_some(key).zip(scalar(value))
+        })
+        .take(MAX_INFO_KEYS)
+        .collect()
+}
+
+fn scalar(value: &Value) -> Option<Value> {
+    match value {
+        Value::String(s) => Some(Value::String(text::clean(s, MAX_INFO_TEXT_CHARS, false))),
+        Value::Number(_) | Value::Bool(_) => Some(value.clone()),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
 /// `[[name, size], ...]` of the first [`MAX_FILES`] files, names cleaned.

@@ -1,4 +1,5 @@
-//! [`AuditService`]: identity check, nonce claim and the record write, in one transaction.
+//! [`AuditService`]: identity check, rate limits, nonce claim and the record write, in one
+//! transaction.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,24 +11,17 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
-    QueryFilter, SqlErr, TryInsertResult,
+    PaginatorTrait, QueryFilter, TryInsertResult,
 };
 
-use super::notes::PendingNotes;
+use super::limits::{AUDIT_PER_IP_PER_MINUTE, DeviceLimit};
+use super::notes::{Hold, PendingNotes};
 use super::{AuditError, ControllerNote, Envelope, Ingest, NoteOutcome, Record, SessionId};
 use super::{conn, records};
 use crate::auth::limiter::{ClientAddr, IpLimiter};
 use crate::clock::SharedClock;
-use crate::devices::{DeviceRepository, DeviceService};
+use crate::devices::DeviceService;
 use crate::text::{self, NOTE_MAX_LEN};
-
-/// Audit requests per client network per minute (burst the same), every request charged:
-/// each one writes. A device posts a handful per connection; a burst of alarms (failed
-/// logins) or file records stays far below it, an office NAT included.
-pub const AUDIT_PER_IP_PER_MINUTE: u32 = 6_000;
-/// Two transactions racing to create one connection's row: the loser's insert hits the
-/// unique key and it runs again, now merging into the winner's row.
-const MAX_ATTEMPTS: usize = 2;
 
 /// Audit ingest. Cheap to clone (shared state).
 #[derive(Clone)]
@@ -38,23 +32,23 @@ pub struct AuditService {
 struct Inner {
     db: DatabaseConnection,
     devices: DeviceService,
-    registry: DeviceRepository,
     clock: SharedClock,
     notes: PendingNotes,
     ips: IpLimiter,
+    device_limit: DeviceLimit,
 }
 
 impl AuditService {
-    /// `devices` verifies the reporting device; times (rows, rate limit, waiting notes) come
-    /// from `clock`.
+    /// `devices` verifies the reporting device; times (rows, rate limits, waiting notes)
+    /// come from `clock`.
     pub fn new(db: DatabaseConnection, devices: DeviceService, clock: SharedClock) -> Self {
         Self {
             inner: Arc::new(Inner {
-                registry: DeviceRepository::new(db.clone()),
                 db,
                 devices,
                 notes: PendingNotes::new(Arc::clone(&clock)),
                 ips: IpLimiter::fixed(AUDIT_PER_IP_PER_MINUTE, Arc::clone(&clock)),
+                device_limit: DeviceLimit::new(Arc::clone(&clock)),
                 clock,
             }),
         }
@@ -66,71 +60,64 @@ impl AuditService {
     }
 
     /// Stores `record` of the device `envelope` names, unless the device is not verified
-    /// (nothing written, no nonce claimed) or its nonce was stored before. The nonce is
-    /// claimed in the record's transaction, so a failed write leaves it free for the retry.
-    /// The write runs in its own task: a dropped request cannot cut it short.
+    /// (nothing written, no nonce claimed, no quota spent), over its quota, or the nonce was
+    /// stored before. The nonce is claimed in the record's transaction, so a failed write
+    /// leaves it free for the retry. The write runs in its own task: a dropped request cannot
+    /// cut it short.
     pub async fn ingest(&self, envelope: Envelope, record: Record) -> Result<Ingest, AuditError> {
-        let verified = self
-            .inner
+        let inner = &self.inner;
+        let verified = inner
             .devices
             .verify(&envelope.rustdesk_id, &envelope.uuid)
             .await?;
         if verified.is_none() {
             return Ok(Ingest::NotFound);
         }
-        let inner = Arc::clone(&self.inner);
+        if let Err(retry_after) = inner.device_limit.check(&envelope.rustdesk_id) {
+            return Ok(Ingest::TooFrequent { retry_after });
+        }
+        let inner = Arc::clone(inner);
         tokio::spawn(async move { inner.store(&envelope, &record).await })
             .await
             .map_err(|_| AuditError::Aborted)?
+            .map_err(AuditError::from)
     }
 
-    /// Sets the controller's note of a session on its rows, or keeps it until a record binds
-    /// the session (see `notes`). The note carries no uuid: the id must be registered, and
-    /// the session id (a random `u64` of the controller) is what selects the rows.
-    pub async fn record_note(&self, note: ControllerNote) -> Result<NoteOutcome, AuditError> {
+    /// Sets the controller's note on its session's rows unless they have one, or keeps it
+    /// until a record binds the session (see `notes`). The note carries no uuid: the id must
+    /// be registered, and the session id (a random `u64` of the controller) selects the rows.
+    /// `from` is charged for a waiting note.
+    pub async fn record_note(
+        &self,
+        note: ControllerNote,
+        from: ClientAddr,
+    ) -> Result<NoteOutcome, AuditError> {
         let inner = &self.inner;
-        if inner
-            .registry
-            .find_by_rustdesk_id(&note.rustdesk_id)
-            .await?
-            .is_none()
-        {
+        if !inner.devices.is_registered(&note.rustdesk_id).await? {
             return Ok(NoteOutcome::NotFound);
         }
         let text = text::clean(&note.note, NOTE_MAX_LEN, true);
+        if text.trim().is_empty() {
+            return Ok(NoteOutcome::Ignored);
+        }
+        let (device, session) = (note.rustdesk_id.as_str(), &note.session_id);
         // Held before the update: a record binding the session meanwhile takes it after its
         // commit, so the note is never lost between the two.
-        let held = inner
-            .notes
-            .hold(&note.rustdesk_id, &note.session_id, text.clone());
-        let updated = set_controller_note(&inner.db, &note.rustdesk_id, &note.session_id, &text);
-        if updated.await? {
-            inner.notes.take(&note.rustdesk_id, &note.session_id);
+        let hold = inner.notes.hold(device, session, text.clone(), from);
+        if set_controller_note(&inner.db, device, session, &text).await? {
+            inner.notes.take(device, session);
             return Ok(NoteOutcome::Stored);
         }
-        if !held {
-            tracing::warn!(rustdesk_id = %note.rustdesk_id, "controller note dropped: too many waiting");
-            return Ok(NoteOutcome::Full);
+        if has_session(&inner.db, device, session).await? {
+            inner.notes.take(device, session);
+            return Ok(NoteOutcome::Ignored);
         }
-        Ok(NoteOutcome::Pending)
+        Ok(inner.pending(device, hold))
     }
 }
 
 impl Inner {
-    async fn store(&self, envelope: &Envelope, record: &Record) -> Result<Ingest, AuditError> {
-        let mut attempt = 1;
-        loop {
-            match self.store_once(envelope, record).await {
-                Err(err) if attempt < MAX_ATTEMPTS && is_unique_violation(&err) => {
-                    tracing::debug!(error = %err, "audit write raced, retrying");
-                    attempt += 1;
-                }
-                outcome => return outcome.map_err(AuditError::from),
-            }
-        }
-    }
-
-    async fn store_once(&self, envelope: &Envelope, record: &Record) -> Result<Ingest, DbErr> {
+    async fn store(&self, envelope: &Envelope, record: &Record) -> Result<Ingest, DbErr> {
         let now = self.clock.now();
         let device = envelope.rustdesk_id.as_str();
         let tx = begin_write(&self.db).await?;
@@ -166,6 +153,23 @@ impl Inner {
             tracing::error!(rustdesk_id = device, error = %err, "controller note lost");
         }
     }
+
+    /// The outcome of a note whose session has no rows yet.
+    fn pending(&self, device: &str, hold: Hold) -> NoteOutcome {
+        match hold {
+            Hold::Held | Hold::AlreadyWaiting => NoteOutcome::Pending,
+            Hold::SourceFull | Hold::DeviceFull => {
+                tracing::debug!(rustdesk_id = device, ?hold, "controller note refused");
+                NoteOutcome::Full
+            }
+            Hold::Full => {
+                if self.notes.warn_due() {
+                    tracing::warn!("controller notes dropped: too many waiting for sessions");
+                }
+                NoteOutcome::Full
+            }
+        }
+    }
 }
 
 /// Records `nonce`; `false` if it was already stored.
@@ -181,7 +185,8 @@ async fn claim(tx: &DatabaseTransaction, nonce: &str, now: TimestampMs) -> Resul
     Ok(matches!(inserted, TryInsertResult::Inserted(n) if n > 0))
 }
 
-/// `true` if the session had rows.
+/// Sets `note` on the session's rows that have none (the first note stays, 06 §7); `true`
+/// if any row took it.
 async fn set_controller_note(
     db: &impl ConnectionTrait,
     device: &str,
@@ -195,11 +200,21 @@ async fn set_controller_note(
         )
         .filter(connection_session::Column::DeviceRustdeskId.eq(device))
         .filter(connection_session::Column::SessionId.eq(session.as_str()))
+        .filter(connection_session::Column::ControllerNote.is_null())
         .exec(db)
         .await?;
     Ok(updated.rows_affected > 0)
 }
 
-fn is_unique_violation(err: &DbErr) -> bool {
-    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+async fn has_session(
+    db: &DatabaseConnection,
+    device: &str,
+    session: &SessionId,
+) -> Result<bool, DbErr> {
+    let rows = connection_session::Entity::find()
+        .filter(connection_session::Column::DeviceRustdeskId.eq(device))
+        .filter(connection_session::Column::SessionId.eq(session.as_str()))
+        .count(db)
+        .await?;
+    Ok(rows > 0)
 }
