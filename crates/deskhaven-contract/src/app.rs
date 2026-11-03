@@ -233,6 +233,7 @@ fn on_clock(base: &AppState, clock: SharedClock) -> AppState {
         &StateConfig {
             public_url: base.public_url.clone(),
             console_url: base.console_url.clone(),
+            signal_port: base.signal_port,
         },
     )
 }

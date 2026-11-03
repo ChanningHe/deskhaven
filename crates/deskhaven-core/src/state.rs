@@ -68,13 +68,12 @@ pub struct AppState {
     pub console_url: String,
     /// `public_url` as configured (blank: unset).
     pub public_url: String,
-    /// `signal.port`, for the client configuration the console hands out. The default
-    /// until [`AppState::with_signal_port`] sets the configured one.
+    /// See [`StateConfig::signal_port`].
     pub signal_port: u16,
 }
 
 /// Bootstrap values the services need beyond the database and the settings.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct StateConfig {
     /// `public_url`, as validated by the bootstrap loader; blank disables OIDC logins.
     pub public_url: String,
@@ -83,6 +82,18 @@ pub struct StateConfig {
     /// `listen.admin_public_url` when the admin side has its own listener, blank when the
     /// console shares the client API listener (redirects stay relative).
     pub console_url: String,
+    /// `signal.port`, for the client configuration the console hands out.
+    pub signal_port: u16,
+}
+
+impl Default for StateConfig {
+    fn default() -> Self {
+        Self {
+            public_url: String::new(),
+            console_url: String::new(),
+            signal_port: Signal::default().port,
+        }
+    }
 }
 
 impl AppState {
@@ -160,16 +171,7 @@ impl AppState {
             setup,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
             public_url: config.public_url.trim().to_owned(),
-            signal_port: Signal::default().port,
-        }
-    }
-
-    /// The same state with the configured `signal.port`.
-    #[must_use]
-    pub fn with_signal_port(self, signal_port: u16) -> Self {
-        Self {
-            signal_port,
-            ..self
+            signal_port: config.signal_port,
         }
     }
 }

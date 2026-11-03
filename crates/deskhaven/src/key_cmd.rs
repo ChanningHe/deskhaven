@@ -4,7 +4,7 @@ use std::io::Write;
 
 use anyhow::Context;
 use deskhaven_config::bootstrap::{Bootstrap, LoadOptions, Loaded};
-use deskhaven_core::client_config::{ClientConfig, ConfigInput, HostSource};
+use deskhaven_core::client_config::{ClientConfig, ConfigError, ConfigInput, HostSource};
 use deskhaven_core::keys::{
     KeyWarning, SignalKeyPaths, master_key_path, read_master_key, read_signal_key,
 };
@@ -20,10 +20,13 @@ struct KeyReport {
     /// the ID server address is known (`public_url`). The relay is not part of it: the
     /// relay list lives in the database, which this command does not open.
     config_string: Option<String>,
+    /// Why the configuration string could not be made, for a stderr warning. The key is
+    /// the command's result; a failing extra never turns it into a failure.
+    config_error: Option<ConfigError>,
 }
 
 impl KeyReport {
-    fn new(config: &Bootstrap, public_key: String) -> anyhow::Result<Self> {
+    fn new(config: &Bootstrap, public_key: String) -> Self {
         let resolved = ClientConfig::resolve(&ConfigInput {
             public_url: &config.public_url,
             request_host: None,
@@ -31,21 +34,41 @@ impl KeyReport {
             relay_servers: &[],
             public_key: &public_key,
         });
-        let config_string = match resolved.host_source {
-            HostSource::Unknown => None,
-            _ => Some(resolved.server.config_string()?),
+        let (config_string, config_error) = match resolved.host_source {
+            HostSource::Unknown => (None, None),
+            _ => match resolved.server.config_string() {
+                Ok(string) => (Some(string), None),
+                Err(error) => (None, Some(error)),
+            },
         };
-        Ok(Self {
+        Self {
             public_key,
             config_string,
-        })
+            config_error,
+        }
     }
 
+    /// The key line first, then the configuration string if there is one.
     fn write(&self, out: &mut impl Write) -> std::io::Result<()> {
         writeln!(out, "{}", self.public_key)?;
         self.config_string
             .iter()
             .try_for_each(|config| writeln!(out, "{config}"))
+    }
+
+    /// What is missing from the output and why (stderr).
+    fn write_notes(&self, err: &mut impl Write) -> std::io::Result<()> {
+        match (&self.config_string, self.config_error) {
+            (_, Some(error)) => writeln!(
+                err,
+                "warning: client configuration string not printed: {error}"
+            ),
+            (None, None) => writeln!(
+                err,
+                "note: set public_url to also print the client configuration string"
+            ),
+            (Some(_), None) => Ok(()),
+        }
     }
 }
 
@@ -64,14 +87,9 @@ pub fn show(options: &LoadOptions) -> anyhow::Result<()> {
             )
         })?;
     report_warnings(&key.warnings)?;
-    let report = KeyReport::new(&loaded.config, key.value.public_key_base64())?;
-    if report.config_string.is_none() {
-        writeln!(
-            std::io::stderr().lock(),
-            "note: set public_url to also print the client configuration string"
-        )?;
-    }
+    let report = KeyReport::new(&loaded.config, key.value.public_key_base64());
     report.write(&mut std::io::stdout().lock())?;
+    report.write_notes(&mut std::io::stderr().lock())?;
     Ok(())
 }
 
@@ -106,4 +124,29 @@ fn report_warnings(warnings: &[KeyWarning]) -> std::io::Result<()> {
     warnings
         .iter()
         .try_for_each(|warning| writeln!(err, "warning: {warning}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failing_config_string_leaves_the_key_line_and_becomes_a_warning() {
+        let report = KeyReport {
+            public_key: "KEY".to_owned(),
+            config_string: None,
+            config_error: Some(ConfigError::NotAscii),
+        };
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        report.write(&mut out).unwrap();
+        report.write_notes(&mut err).unwrap();
+
+        assert_eq!(String::from_utf8(out).unwrap(), "KEY\n");
+        let err = String::from_utf8(err).unwrap();
+        assert!(
+            err.starts_with("warning:") && err.contains("ASCII"),
+            "{err}"
+        );
+    }
 }

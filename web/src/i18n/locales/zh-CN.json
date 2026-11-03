@@ -153,11 +153,11 @@
       "addresses": {
         "title": "服务器地址",
         "idServer": "ID 服务器",
-        "relayServer": "中继服务器",
+        "relayServer": "中继服务器列表",
         "apiServer": "API 服务器",
         "publicKey": "Key（公钥）",
-        "relayAuto": "未固定：由 ID 服务器分配中继。",
-        "relayList": "未固定（配置了多个中继）：由 ID 服务器从 {{list}} 中选择。",
+        "relayAuto": "未配置：由 ID 服务器分配默认中继。",
+        "relayList": "仅供参考：由 ID 服务器分配，不写入配置字符串，因此修改后无需重新导入。",
         "apiUnset": "未设置：设置 public_url 后客户端才有 API 地址。"
       },
       "string": {

@@ -153,11 +153,11 @@
       "addresses": {
         "title": "Server addresses",
         "idServer": "ID server",
-        "relayServer": "Relay server",
+        "relayServer": "Relay servers",
         "apiServer": "API server",
         "publicKey": "Key (public key)",
-        "relayAuto": "Not pinned: the ID server hands out a relay.",
-        "relayList": "Not pinned (several relays): the ID server picks one of {{list}}.",
+        "relayAuto": "None configured: the ID server hands out its default relay.",
+        "relayList": "For information: the ID server hands these out; they are not written into the configuration string, so changes need no re-import.",
         "apiUnset": "Not set: set public_url to give clients an API address."
       },
       "string": {

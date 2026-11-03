@@ -20,9 +20,14 @@ type CopyState = 'idle' | 'copied' | 'failed'
 /** A read-only value with a copy button; selects itself on focus for manual copying. */
 export function CopyField({ label, value, hint, multiline = false }: CopyFieldProps) {
   const { t } = useTranslation()
-  const [state, setState] = useState<CopyState>('idle')
+  // The outcome belongs to the value that was copied: a different value starts afresh.
+  const [outcome, setOutcome] = useState<{ value: string; state: CopyState }>({
+    value,
+    state: 'idle',
+  })
+  const state: CopyState = outcome.value === value ? outcome.state : 'idle'
   const copy = async () => {
-    setState((await copyToClipboard(value)) ? 'copied' : 'failed')
+    setOutcome({ value, state: (await copyToClipboard(value)) ? 'copied' : 'failed' })
   }
   const field = {
     readOnly: true,

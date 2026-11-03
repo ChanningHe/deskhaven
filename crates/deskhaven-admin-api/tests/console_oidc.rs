@@ -32,7 +32,7 @@ struct Env {
 async fn env(db: &TestDb) -> Env {
     let config = StateConfig {
         public_url: "https://rd.example.com".to_owned(),
-        console_url: String::new(),
+        ..StateConfig::default()
     };
     let h = harness_with(db, AdminRoutes::new(), &config).await;
     let idp = MockIdp::start().await;

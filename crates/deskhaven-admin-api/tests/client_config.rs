@@ -21,7 +21,7 @@ const SIGNAL_KEY: &str = "test-signal-key";
 async fn with_public_url(db: &TestDb, public_url: &str) -> Harness {
     let config = StateConfig {
         public_url: public_url.to_owned(),
-        console_url: String::new(),
+        ..StateConfig::default()
     };
     harness_with(db, AdminRoutes::new(), &config).await
 }
@@ -42,14 +42,15 @@ async fn an_admin_gets_the_addresses_key_and_config_string() {
         assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
         let body = &reply.body;
         assert_eq!(body["id_server"], "rd.example.com");
-        assert_eq!(body["relay_server"], "relay.example.com");
+        assert!(body.get("relay_server").is_none());
         assert_eq!(body["api_server"], "https://rd.example.com");
         assert_eq!(body["public_key"], SIGNAL_KEY);
         assert_eq!(body["host_source"], "public_url");
         assert_eq!(body["relay_servers"], json!(["relay.example.com:21117"]));
         let expected = ServerConfig {
             host: "rd.example.com".to_owned(),
-            relay: "relay.example.com".to_owned(),
+            // The relay is listed above, never pinned into the string.
+            relay: String::new(),
             api: "https://rd.example.com".to_owned(),
             key: SIGNAL_KEY.to_owned(),
         };
@@ -91,6 +92,30 @@ async fn without_a_public_url_the_console_host_is_used_and_flagged() {
             "rustdesk-host=console.test,key=test-signal-key,.exe"
         );
         assert!(reply.body["windows_filename_encoded"].is_string());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_loopback_console_host_gives_no_config_string() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        let admin = h.console("adm", Role::Admin).await;
+
+        for host in ["localhost:21114", "127.0.0.1:21114", "[::1]:21114"] {
+            let reply = h
+                .raw(request(
+                    Method::GET,
+                    PATH,
+                    &auth_headers(&admin, &[("host", host)]),
+                    None,
+                ))
+                .await;
+
+            assert_eq!(reply.status, StatusCode::OK, "{host}");
+            assert_eq!(reply.body["host_source"], "unknown", "{host}");
+            assert_eq!(reply.body["config_string"], Value::Null, "{host}");
+        }
     })
     .await;
 }

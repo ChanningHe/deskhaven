@@ -33,14 +33,12 @@ impl From<HostSource> for HostSourceView {
 pub struct ClientConfigView {
     /// ID server, `host[:port]` (the default port 21116 is left out); empty when unknown.
     pub id_server: String,
-    /// Relay server written into the configuration: the only configured relay, else empty
-    /// (the ID server then hands one out).
-    pub relay_server: String,
     /// API server base URL (`public_url`); empty when unset.
     pub api_server: String,
     /// The hbbs public key (base64), the clients' "Key".
     pub public_key: String,
-    /// Every configured relay (`signal.relay_servers`) as `host:port`.
+    /// Every configured relay (`signal.relay_servers`) as `host:port`, for information: the
+    /// configuration string leaves the relay out, the ID server hands relays out.
     pub relay_servers: Vec<String>,
     pub host_source: HostSourceView,
     /// The string for the client's import box and `rustdesk --config`; `null` without an
@@ -67,7 +65,6 @@ impl ClientConfigView {
         let qr = server.qr_payload().ok().and_then(|text| qr_code(&text));
         Self {
             id_server: server.host,
-            relay_server: server.relay,
             api_server: server.api,
             public_key: server.key,
             relay_servers,

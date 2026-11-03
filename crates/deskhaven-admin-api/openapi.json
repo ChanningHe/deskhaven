@@ -4264,7 +4264,6 @@
         "description": "What a RustDesk client needs to use this server. Public data only.",
         "required": [
           "id_server",
-          "relay_server",
           "api_server",
           "public_key",
           "relay_servers",
@@ -4304,16 +4303,12 @@
               }
             ]
           },
-          "relay_server": {
-            "type": "string",
-            "description": "Relay server written into the configuration: the only configured relay, else empty\n(the ID server then hands one out)."
-          },
           "relay_servers": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Every configured relay (`signal.relay_servers`) as `host:port`."
+            "description": "Every configured relay (`signal.relay_servers`) as `host:port`, for information: the\nconfiguration string leaves the relay out, the ID server hands relays out."
           },
           "windows_filename_encoded": {
             "type": [

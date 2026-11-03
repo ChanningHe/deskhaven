@@ -77,9 +77,9 @@ fn without_a_public_url_the_request_host_is_used_and_flagged() {
 
 #[test]
 fn an_ipv6_request_host_is_unbracketed_then_rebracketed() {
-    let cfg = resolve("", Some("[::1]:8443"), 21126, &[]);
+    let cfg = resolve("", Some("[2001:db8::1]:8443"), 21126, &[]);
 
-    assert_eq!(cfg.server.host, "[::1]:21126");
+    assert_eq!(cfg.server.host, "[2001:db8::1]:21126");
 }
 
 #[test]
@@ -99,36 +99,43 @@ fn an_unusable_request_host_gives_no_host() {
 }
 
 #[test]
-fn a_sole_relay_is_pinned_and_its_default_port_omitted() {
-    let one = resolve(
-        "https://rd.example.com",
-        None,
-        21116,
-        &relays(&["relay.example.com:21117"]),
-    );
-    let other = resolve(
-        "https://rd.example.com",
-        None,
-        21116,
-        &relays(&["relay.example.com:21127"]),
-    );
+fn configured_relays_are_listed_but_never_pinned_into_the_string() {
+    // A `relay-server` on the controlled client wins over the signal server's pick
+    // (07 §relay selection), so pinning one would defeat later rotation.
+    for list in [
+        &["relay.example.com:21117"][..],
+        &["a.example.com:21117", "b.example.com:21127"][..],
+    ] {
+        let cfg = resolve("https://rd.example.com", None, 21116, &relays(list));
 
-    assert_eq!(one.server.relay, "relay.example.com");
-    assert_eq!(other.server.relay, "relay.example.com:21127");
-    assert_eq!(one.relay_servers, ["relay.example.com:21117"]);
+        assert_eq!(cfg.server.relay, "");
+        assert_eq!(cfg.relay_servers, list);
+    }
 }
 
 #[test]
-fn several_relays_are_left_to_the_signal_server() {
-    let cfg = resolve(
-        "https://rd.example.com",
-        None,
-        21116,
-        &relays(&["a.example.com:21117", "b.example.com:21117"]),
-    );
+fn a_loopback_or_unspecified_console_host_is_no_address_for_clients() {
+    for host in [
+        "localhost",
+        "LocalHost:8443",
+        "app.localhost",
+        "127.0.0.1",
+        "127.8.9.10:21114",
+        "[::1]:8443",
+        "0.0.0.0:21114",
+        "[::]:21114",
+    ] {
+        let cfg = resolve("", Some(host), 21116, &[]);
 
-    // A pinned `relay-server` on the controlled client wins over the server's pick
-    // (07 §relay selection), which would defeat the rotation.
-    assert_eq!(cfg.server.relay, "");
-    assert_eq!(cfg.relay_servers.len(), 2);
+        assert_eq!(cfg.host_source, HostSource::Unknown, "{host}");
+        assert!(cfg.server.host.is_empty(), "{host}");
+    }
+}
+
+#[test]
+fn a_loopback_public_url_is_still_what_the_operator_configured() {
+    let cfg = resolve("http://127.0.0.1:21114", None, 21116, &[]);
+
+    assert_eq!(cfg.host_source, HostSource::PublicUrl);
+    assert_eq!(cfg.server.host, "127.0.0.1");
 }

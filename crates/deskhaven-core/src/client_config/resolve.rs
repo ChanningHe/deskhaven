@@ -6,18 +6,21 @@
 //!   default 21116. The port of `public_url` is the HTTP port and never used here.
 //! - API server: `public_url` without a trailing slash (the client strips one itself,
 //!   `common.dart:3589-3593`), empty when unset.
-//! - Relay server: only a *single* configured relay. A `relay-server` set on the controlled
-//!   client overrides the signal server's pick (07-hbbs-fork), so pinning one of several would
-//!   switch the rotation off; with none or several the signal server hands one out.
+//! - Relay server: never written into the string. A `relay-server` set on the controlled
+//!   client overrides the signal server's pick (07-hbbs-fork), which would switch rotation
+//!   and later relay changes off for every client that imported it. The configured relays
+//!   are only listed for information.
+//!
+//! A `Host` header naming this machine (`localhost`, loopback, unspecified) is no address a
+//! client elsewhere can use, so it counts as no host at all.
 
 use deskhaven_config::settings::HostPort;
-use url::Url;
+use url::{Host, Url};
 
 use super::ServerConfig;
 
-/// The ports the client assumes for an address without one (hbbs, hbbr).
+/// The port the client assumes for an ID server address without one (hbbs).
 const DEFAULT_ID_PORT: u16 = 21116;
-const DEFAULT_RELAY_PORT: u16 = 21117;
 
 /// Where the ID server host came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +76,7 @@ impl ClientConfig {
         Self {
             server: ServerConfig {
                 host,
-                relay: pinned_relay(input.relay_servers),
+                relay: String::new(),
                 api: public.as_ref().map_or_else(String::new, api_base),
                 key: input.public_key.to_owned(),
             },
@@ -96,21 +99,6 @@ fn with_port(host: &str, port: u16, default: u16) -> String {
     }
 }
 
-fn pinned_relay(relays: &[HostPort]) -> String {
-    match relays {
-        [relay] => {
-            let host = relay.host();
-            let host = if host.contains(':') {
-                format!("[{host}]")
-            } else {
-                host.to_owned()
-            };
-            with_port(&host, relay.port(), DEFAULT_RELAY_PORT)
-        }
-        _ => String::new(),
-    }
-}
-
 /// `scheme://host[:port][/path]`, no trailing slash.
 fn api_base(url: &Url) -> String {
     let Some(host) = url.host_str() else {
@@ -130,9 +118,17 @@ fn request_host(raw: Option<&str>) -> Option<String> {
         && url.fragment().is_none()
         && url.username().is_empty()
         && url.password().is_none();
-    if is_authority {
-        url.host_str().map(str::to_owned)
-    } else {
-        None
+    if !is_authority || url.host().is_none_or(|host| is_local(&host)) {
+        return None;
+    }
+    url.host_str().map(str::to_owned)
+}
+
+/// This machine, as seen from itself: `localhost`, loopback and unspecified addresses.
+fn is_local(host: &Host<&str>) -> bool {
+    match host {
+        Host::Domain(name) => *name == "localhost" || name.ends_with(".localhost"),
+        Host::Ipv4(ip) => ip.is_loopback() || ip.is_unspecified(),
+        Host::Ipv6(ip) => ip.is_loopback() || ip.is_unspecified(),
     }
 }

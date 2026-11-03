@@ -24,11 +24,9 @@ export interface ClientConfigView {
   public_key: string
   qr?: QrCode | null
   /**
-   * Relay server written into the configuration: the only configured relay, else empty
-   * (the ID server then hands one out).
+   * Every configured relay (`signal.relay_servers`) as `host:port`, for information: the
+   * configuration string leaves the relay out, the ID server hands relays out.
    */
-  relay_server: string
-  /** Every configured relay (`signal.relay_servers`) as `host:port`. */
   relay_servers: string[]
   /**
    * `rustdesk-licensed-<config string>.exe`; `null` without a config string.

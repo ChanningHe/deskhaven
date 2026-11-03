@@ -8,11 +8,9 @@ import { CopyField } from './copy-field'
 export function AddressSection({ config }: { config: ClientConfigView }) {
   const { t } = useTranslation()
   const relayHint =
-    config.relay_server === ''
-      ? config.relay_servers.length === 0
-        ? t('pages.clientSetup.addresses.relayAuto')
-        : t('pages.clientSetup.addresses.relayList', { list: config.relay_servers.join(', ') })
-      : undefined
+    config.relay_servers.length === 0
+      ? t('pages.clientSetup.addresses.relayAuto')
+      : t('pages.clientSetup.addresses.relayList')
   return (
     <section aria-labelledby="client-addresses" className="space-y-4">
       <h2 id="client-addresses" className="text-base font-semibold">
@@ -22,7 +20,7 @@ export function AddressSection({ config }: { config: ClientConfigView }) {
         <CopyField label={t('pages.clientSetup.addresses.idServer')} value={config.id_server} />
         <CopyField
           label={t('pages.clientSetup.addresses.relayServer')}
-          value={config.relay_server}
+          value={config.relay_servers.join(', ')}
           hint={relayHint}
         />
         <CopyField

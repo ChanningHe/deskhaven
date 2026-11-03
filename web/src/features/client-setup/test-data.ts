@@ -8,7 +8,6 @@ export const PUBLIC_KEY = '5Qbwsde3unUcJBtrx9ZkvUmwFNoExHzpryHuPUdqlWM='
 export function clientConfig(overrides: Partial<ClientConfigView> = {}): ClientConfigView {
   return {
     id_server: 'rd.example.com',
-    relay_server: '',
     api_server: 'https://rd.example.com',
     public_key: PUBLIC_KEY,
     relay_servers: [],

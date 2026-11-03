@@ -66,11 +66,16 @@ fn matches_the_golden_strings() {
 
 #[test]
 fn the_clients_own_test_vector_decodes_to_what_we_encode() {
-    // `custom_server.rs:190-198` of the client: the licensed string of this config.
-    let official = "=0nI900VsFHZVBVdIlncwpHS4V0bOZ0dtVldrpVO4JHdCp0YV5WdzUGZzdnYRVjI6ISeltmIsISMuEjLx4SMiojI0N3boJye";
+    // `custom_server.rs:190-198` of the client: the licensed string of this config. The
+    // client's own string is unpadded; `official` is that string with the padding `=` the
+    // Flutter encoder adds (the client's test at `:225` pads it too).
+    let client_unpadded = "0nI900VsFHZVBVdIlncwpHS4V0bOZ0dtVldrpVO4JHdCp0YV5WdzUGZzdnYRVjI6ISeltmIsISMuEjLx4SMiojI0N3boJye";
+    let official = format!("={client_unpadded}");
     let ours = server("1.1.1.1", "", "", KEY);
 
-    assert_eq!(cli_config(official).unwrap(), decoded(&ours));
+    assert_eq!(cli_config(client_unpadded).unwrap(), decoded(&ours));
+    assert_eq!(cli_config(&official).unwrap(), decoded(&ours));
+    assert_eq!(flutter_decode(client_unpadded).unwrap(), decoded(&ours));
     assert_eq!(
         cli_config(&ours.config_string().unwrap()).unwrap(),
         decoded(&ours)

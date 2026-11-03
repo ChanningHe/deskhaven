@@ -206,9 +206,9 @@ pub async fn open_state(
                 Some(_) => config.listen.admin_public_url.clone(),
                 None => String::new(),
             },
+            signal_port: config.signal.port,
         },
-    )
-    .with_signal_port(config.signal.port))
+    ))
 }
 
 #[cfg(unix)]

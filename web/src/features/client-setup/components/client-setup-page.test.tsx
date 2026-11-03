@@ -1,6 +1,7 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { getGetClientConfigQueryKey } from '@/api/generated/client-config/client-config'
 import type { ClientConfigView } from '@/api/generated/model'
 import { ADMIN_ME, USER_ME } from '@/test/fixtures'
 import { errorEnvelope } from '@/test/mock-api'
@@ -103,10 +104,37 @@ describe('client setup page', () => {
     expect(screen.getByRole('textbox', { name: 'Key（公钥）' })).toHaveValue(PUBLIC_KEY)
   })
 
-  it('shows the configured relays when none is pinned', async () => {
+  it('lists the configured relays for information only', async () => {
     await openPage(clientConfig({ relay_servers: ['a.example.com:21117', 'b.example.com:21117'] }))
 
-    expect(screen.getByText(/a\.example\.com:21117, b\.example\.com:21117/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '中继服务器列表' })).toHaveValue(
+      'a.example.com:21117, b.example.com:21117',
+    )
+    expect(screen.getByText(/不写入配置字符串/)).toBeInTheDocument()
+  })
+
+  it('says so when no relay is configured', async () => {
+    await openPage()
+
+    expect(screen.getByRole('textbox', { name: '中继服务器列表' })).toHaveValue('')
+    expect(screen.getByText(/未配置/)).toBeInTheDocument()
+  })
+
+  it('forgets that a value was copied when the value changes', async () => {
+    const { user, queryClient } = await openPage()
+    await user.click(screen.getByRole('button', { name: '复制 配置字符串' }))
+    expect(await screen.findByText('已复制到剪贴板')).toBeInTheDocument()
+
+    await act(async () => {
+      queryClient.setQueryData(
+        getGetClientConfigQueryKey(),
+        clientConfig({ config_string: 'OTHERSTRING=' }),
+      )
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByRole('textbox', { name: '配置字符串' })).toHaveValue('OTHERSTRING=')
+    expect(screen.queryByText('已复制到剪贴板')).not.toBeInTheDocument()
   })
 
   it('shows an API error with a retry', async () => {
