@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use deskhaven_config::bootstrap::Signal;
 use sea_orm::DatabaseConnection;
 
 use crate::api_tokens::ApiTokenService;
@@ -67,6 +68,9 @@ pub struct AppState {
     pub console_url: String,
     /// `public_url` as configured (blank: unset).
     pub public_url: String,
+    /// `signal.port`, for the client configuration the console hands out. The default
+    /// until [`AppState::with_signal_port`] sets the configured one.
+    pub signal_port: u16,
 }
 
 /// Bootstrap values the services need beyond the database and the settings.
@@ -156,6 +160,16 @@ impl AppState {
             setup,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
             public_url: config.public_url.trim().to_owned(),
+            signal_port: Signal::default().port,
+        }
+    }
+
+    /// The same state with the configured `signal.port`.
+    #[must_use]
+    pub fn with_signal_port(self, signal_port: u16) -> Self {
+        Self {
+            signal_port,
+            ..self
         }
     }
 }

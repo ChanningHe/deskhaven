@@ -3,24 +3,49 @@
 use std::io::Write;
 
 use anyhow::Context;
-use deskhaven_config::bootstrap::{LoadOptions, Loaded};
+use deskhaven_config::bootstrap::{Bootstrap, LoadOptions, Loaded};
+use deskhaven_core::client_config::{ClientConfig, ConfigInput, HostSource};
 use deskhaven_core::keys::{
     KeyWarning, SignalKeyPaths, master_key_path, read_master_key, read_signal_key,
 };
 
 use crate::config_cmd;
 
-/// What `key show` prints. Only public data belongs here. The RustDesk
-/// client configuration string (M3-11) becomes a further field, rendered
-/// after the key line so `key show | head -n1` keeps yielding the key.
+/// What `key show` prints. Only public data belongs here. Further lines come after the
+/// key line, so `key show | head -n1` keeps yielding the key.
 struct KeyReport {
     /// Base64 public key, the value clients put in their "Key" field.
     public_key: String,
+    /// The RustDesk client configuration string (import box, `rustdesk --config`), when
+    /// the ID server address is known (`public_url`). The relay is not part of it: the
+    /// relay list lives in the database, which this command does not open.
+    config_string: Option<String>,
 }
 
 impl KeyReport {
+    fn new(config: &Bootstrap, public_key: String) -> anyhow::Result<Self> {
+        let resolved = ClientConfig::resolve(&ConfigInput {
+            public_url: &config.public_url,
+            request_host: None,
+            signal_port: config.signal.port,
+            relay_servers: &[],
+            public_key: &public_key,
+        });
+        let config_string = match resolved.host_source {
+            HostSource::Unknown => None,
+            _ => Some(resolved.server.config_string()?),
+        };
+        Ok(Self {
+            public_key,
+            config_string,
+        })
+    }
+
     fn write(&self, out: &mut impl Write) -> std::io::Result<()> {
-        writeln!(out, "{}", self.public_key)
+        writeln!(out, "{}", self.public_key)?;
+        self.config_string
+            .iter()
+            .try_for_each(|config| writeln!(out, "{config}"))
     }
 }
 
@@ -39,9 +64,13 @@ pub fn show(options: &LoadOptions) -> anyhow::Result<()> {
             )
         })?;
     report_warnings(&key.warnings)?;
-    let report = KeyReport {
-        public_key: key.value.public_key_base64(),
-    };
+    let report = KeyReport::new(&loaded.config, key.value.public_key_base64())?;
+    if report.config_string.is_none() {
+        writeln!(
+            std::io::stderr().lock(),
+            "note: set public_url to also print the client configuration string"
+        )?;
+    }
     report.write(&mut std::io::stdout().lock())?;
     Ok(())
 }

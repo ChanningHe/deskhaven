@@ -5,6 +5,7 @@ pub mod addressbooks;
 pub mod api_tokens;
 pub mod audit;
 pub mod auth;
+pub mod client_config;
 pub mod clock;
 pub mod console_audit;
 pub mod crypto;

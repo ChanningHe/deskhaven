@@ -207,7 +207,8 @@ pub async fn open_state(
                 None => String::new(),
             },
         },
-    ))
+    )
+    .with_signal_port(config.signal.port))
 }
 
 #[cfg(unix)]

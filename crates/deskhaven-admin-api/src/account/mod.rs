@@ -22,6 +22,7 @@ use crate::routes::{AdminRoutes, RouteError};
 
 pub use password::PasswordChange;
 pub use qr::QrCode;
+pub(crate) use qr::encode as qr_code;
 pub use totp::{TotpConfirm, TotpEnabled, TotpEnrolment};
 
 pub(crate) fn routes() -> Result<AdminRoutes, RouteError> {

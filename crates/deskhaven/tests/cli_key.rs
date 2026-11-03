@@ -80,6 +80,56 @@ fn key_show_prints_only_the_public_key() {
 }
 
 #[test]
+fn key_show_without_public_url_hints_at_it_and_prints_only_the_key() {
+    let (dir, data) = prepare("show-no-url");
+    install_fixture(&data);
+
+    let out = run(&dir, &["--data-dir", data.to_str().unwrap(), "key", "show"]);
+
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout).lines().count(), 1);
+    assert!(
+        text(&out.stderr).contains("public_url"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn key_show_prints_the_client_config_string_after_the_key() {
+    let (dir, data) = prepare("show-config");
+    install_fixture(&data);
+    std::fs::write(
+        dir.join("none.toml"),
+        "public_url = \"https://rd.example.com\"\n\n[listen]\nclient_api = \"127.0.0.1:0\"\n\n\
+         [signal]\nenabled = false\nport = 21126\n",
+    )
+    .unwrap();
+
+    let out = run(&dir, &["--data-dir", data.to_str().unwrap(), "key", "show"]);
+
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let key = fixture("id_ed25519.pub");
+    let expected = deskhaven_core::client_config::ServerConfig {
+        host: "rd.example.com:21126".to_owned(),
+        relay: String::new(),
+        api: "https://rd.example.com".to_owned(),
+        key: key.clone(),
+    }
+    .config_string()
+    .unwrap();
+    // `key show | head -n1` keeps yielding the key.
+    assert_eq!(text(&out.stdout), format!("{key}\n{expected}\n"));
+    assert!(
+        !text(&out.stderr).contains("public_url"),
+        "{}",
+        text(&out.stderr)
+    );
+    let all = format!("{}{}", text(&out.stdout), text(&out.stderr));
+    assert!(!all.contains(&fixture("id_ed25519")[..20]), "{all}");
+}
+
+#[test]
 fn key_show_without_key_fails_with_hint_and_creates_nothing() {
     let (dir, data) = prepare("show-missing");
 

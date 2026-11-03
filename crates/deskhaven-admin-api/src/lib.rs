@@ -13,6 +13,7 @@ mod account;
 pub mod account_setup;
 pub mod audit;
 mod auth;
+mod client_config;
 mod device_groups;
 mod devices;
 mod domain_error;
@@ -75,6 +76,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = groups::routes(routes)?;
     let routes = devices::routes(routes)?;
     let routes = device_groups::routes(routes)?;
+    let routes = client_config::routes(routes)?;
     settings::routes(routes)
 }
 
