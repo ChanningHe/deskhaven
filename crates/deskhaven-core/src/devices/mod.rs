@@ -32,10 +32,11 @@ pub use presence::{
 pub use preset_book::PRESET_TAG_COLOR;
 pub use presets::{AddressBookPreset, Presets};
 pub use service::{
-    ConnectionRecord, DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceGroup, DeviceGroupQuery,
-    DeviceGroupSort, DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery,
-    DeviceRecord, DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate,
-    Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
+    ConnectionRecord, DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DEVICE_GROUP_NAME_MAX_LEN, DeletedHook,
+    DeployOutcome, DeployRequest, DeviceAssignment, DeviceGroup, DeviceGroupQuery, DeviceGroupSort,
+    DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord,
+    DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, Heartbeat,
+    HeartbeatOutcome, HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
@@ -105,6 +106,21 @@ pub enum DeviceError {
     /// Too many devices have pending disconnect requests ([`MAX_QUEUED_DEVICES`]).
     #[error("too many devices have pending disconnects")]
     QueueFull,
+    /// No registered device has this id and uuid; nothing changed.
+    #[error("unknown device id or uuid")]
+    UnknownDevice,
+
+    /// Input field `field` names no `kind` that exists; nothing changed.
+    #[error("{field} does not name an existing {kind}")]
+    NameNotFound {
+        field: &'static str,
+        kind: &'static str,
+    },
+
+    /// A step that placed the device through another service (strategy assignment, address
+    /// book entry) failed.
+    #[error("device placement failed")]
+    Placement(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.

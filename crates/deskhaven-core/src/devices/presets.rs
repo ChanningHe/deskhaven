@@ -130,7 +130,7 @@ pub(super) async fn resolve_row(
     })
 }
 
-async fn find_user(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>, DbErr> {
+pub(super) async fn find_user(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>, DbErr> {
     let Some(norm) = username_norm(name.trim()) else {
         return Ok(None);
     };
@@ -142,7 +142,10 @@ async fn find_user(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>,
     Ok(found.map(|u| u.id))
 }
 
-async fn find_device_group(tx: &impl ConnectionTrait, name: &str) -> Result<Option<i64>, DbErr> {
+pub(super) async fn find_device_group(
+    tx: &impl ConnectionTrait,
+    name: &str,
+) -> Result<Option<i64>, DbErr> {
     let found = device_group::Entity::find()
         .filter(device_group::Column::Name.eq(name.trim()))
         .lock(LockType::KeyShare)

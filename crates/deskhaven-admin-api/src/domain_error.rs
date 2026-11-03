@@ -94,8 +94,14 @@ impl From<DeviceError> for AdminApiError {
                 ErrorCode::Unavailable,
                 "too many devices have pending disconnects",
             ),
+            // `--deploy` / `--assign` (client API, API tokens); the console never trips these.
+            DeviceError::UnknownDevice => Self::not_found("device not found"),
+            DeviceError::NameNotFound { field, kind } => {
+                invalid_field(field, format!("does not name an existing {kind}"))
+            }
             // The id/uuid check belongs to the signal server; the console never trips it.
             err @ (DeviceError::UuidMismatch { .. }
+            | DeviceError::Placement(_)
             | DeviceError::Aborted
             | DeviceError::Database(_)) => Self::internal(err),
         }

@@ -27,6 +27,8 @@ use sea_orm::{
 use subtle::ConstantTimeEq;
 
 mod admin;
+mod assign;
+mod deploy;
 mod heartbeat;
 
 pub use admin::{
@@ -34,7 +36,8 @@ pub use admin::{
     DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord, DeviceSort, DeviceSortField,
     DeviceSummary, DeviceUpdate,
 };
-
+pub use assign::DeviceAssignment;
+pub use deploy::{DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DeployOutcome, DeployRequest};
 pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
 
 use super::DeviceError;
