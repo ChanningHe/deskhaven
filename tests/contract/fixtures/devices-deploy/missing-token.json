@@ -1,0 +1,28 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/ui_interface.rs:1153-1159",
+    "src/ui_interface.rs:1195-1201"
+  ],
+  "description": "No Authorization header at all: 401 with the generic message before the body is looked at.",
+  "seed": ["registered-device", "deploy-required"],
+  "request": {
+    "method": "POST",
+    "path": "/api/devices/deploy",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "pk": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="
+      }
+    }
+  },
+  "expect": {
+    "status": 401,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "Unauthorized" }
+  }
+}

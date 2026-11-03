@@ -1,0 +1,39 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/core_main.rs:529-562",
+    "src/core_main.rs:581-614",
+    "src/core_main.rs:615-625"
+  ],
+  "description": "`rustdesk --assign --token <t>` with every option: the body carries id and uuid plus each given option (the address_book_* details only with address_book_name). A token with the assign scope places the device: owner, strategy, device group, note, device names and a shared address book entry. Success is 200 with an empty body (the CLI prints \"Done!\"); what was placed is checked in crates/deskhaven-contract/tests/devices_cli.rs and crates/deskhaven-core/tests/devices/assign.rs.",
+  "seed": ["registered-device", "device-preset-targets", "api-token"],
+  "request": {
+    "method": "POST",
+    "path": "/api/devices/cli",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${api_token}"
+    },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "user_name": "pat",
+        "strategy_name": "Locked",
+        "address_book_name": "Team",
+        "address_book_tag": "printers",
+        "address_book_alias": "Reception",
+        "address_book_password": "s3cret-pass",
+        "address_book_note": "ground floor",
+        "device_group_name": "Office",
+        "note": "front desk",
+        "device_username": "frontdesk",
+        "device_name": "reception-01"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "empty"
+  }
+}

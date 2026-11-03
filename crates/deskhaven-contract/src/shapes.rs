@@ -5,8 +5,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::mirror::{
-    AbPeer, AbPersonal, AbProfile, AbSettings, AbTag, AuthBody, ClientUserPayload, ErrorBody,
-    HbbData, HeartbeatResponse, LegacyAbReply, LoginOptions, LoginResponse, OidcAuthUrl,
+    AbPeer, AbPersonal, AbProfile, AbSettings, AbTag, AuthBody, ClientUserPayload, DeployResponse,
+    ErrorBody, HbbData, HeartbeatResponse, LegacyAbReply, LoginOptions, LoginResponse, OidcAuthUrl,
     PagedResponse, SecondFactorChallenge,
 };
 
@@ -20,6 +20,7 @@ pub type ShapeCheck = fn(&[u8]) -> Result<(), String>;
 const SHAPES: &[(&str, ShapeCheck)] = &[
     ("AuthBody", parse::<HbbData<AuthBody>>),
     ("ClientUserPayload", object::<ClientUserPayload>),
+    ("DeployResponse", object::<DeployResponse>),
     ("ErrorBody", object::<ErrorBody>),
     ("HeartbeatResponse", object::<HeartbeatResponse>),
     ("LoginOptions", parse::<LoginOptions>),

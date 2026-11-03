@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/ui_interface.rs:1145-1153",
+    "src/ui_interface.rs:1193-1194",
+    "src/core_main.rs:670-676"
+  ],
+  "description": "`--deploy --id <id>` where the id is registered to another machine (a different uuid): result ID_TAKEN, the existing device is left alone; the CLI prints \"Id `<id>` is already used by another machine on the server.\" and exits 6.",
+  "seed": ["registered-device", "deploy-required", "api-token"],
+  "request": {
+    "method": "POST",
+    "path": "/api/devices/deploy",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${api_token}"
+    },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "YW5vdGhlci1tYWNoaW5l",
+        "pk": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "DeployResponse",
+    "json_subset": { "result": "ID_TAKEN" }
+  }
+}

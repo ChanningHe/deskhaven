@@ -39,6 +39,17 @@ pub struct HeartbeatResponse {
     pub modified_at: Option<i64>,
 }
 
+/// `POST /api/devices/deploy` response (03 §2.8).
+///
+/// `src/ui_interface.rs:1160-1199`: the client reads `parsed["result"].as_str()` and
+/// matches `OK` / `NOT_ENABLED` / `INVALID_INPUT` / `ID_TAKEN`; anything else (a missing or
+/// non-string `result` included) is "Unknown response" or the raw text. The mirror requires
+/// the string.
+#[derive(Debug, Deserialize)]
+pub struct DeployResponse {
+    pub result: String,
+}
+
 /// `Some` for any present value, `null` included.
 fn present<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Value>, D::Error> {
     Value::deserialize(de).map(Some)

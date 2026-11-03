@@ -24,7 +24,7 @@ use deskhaven_core::tfa::totp::{self, TotpSecret};
 use deskhaven_core::users::{Credential, NewUser, Password, Status};
 
 use crate::app::DEFAULT_PEER;
-use crate::{ab_seeds, device_seeds};
+use crate::{ab_seeds, device_seeds, token_seeds};
 
 /// Output name → value, substituted into `${name}` placeholders.
 pub type SeedOutputs = BTreeMap<String, String>;
@@ -77,6 +77,18 @@ const BUILTIN: &[(&str, Seed)] = &[
     }),
     ("device-disconnect", |state| {
         Box::pin(device_seeds::device_disconnect(state))
+    }),
+    ("api-token", |state| {
+        Box::pin(token_seeds::deploy_and_assign(state))
+    }),
+    ("api-token-deploy-only", |state| {
+        Box::pin(token_seeds::deploy_only(state))
+    }),
+    ("api-token-assign-only", |state| {
+        Box::pin(token_seeds::assign_only(state))
+    }),
+    ("deploy-required", |state| {
+        Box::pin(token_seeds::deploy_required(state))
     }),
 ];
 

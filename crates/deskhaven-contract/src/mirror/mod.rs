@@ -29,7 +29,7 @@ pub use account::{
     AuthBody, ChallengeUser, ClientUserPayload, ClientUserStatus, DeviceInfo, LoginOptions,
     LoginResponse, OidcAuthUrl, SecondFactorChallenge, UserInfo, WhitelistItem,
 };
-pub use device::{HeartbeatResponse, StrategyOptions};
+pub use device::{DeployResponse, HeartbeatResponse, StrategyOptions};
 pub use hbb::HbbData;
 pub use legacy_ab::{LegacyAbData, LegacyAbReply};
 

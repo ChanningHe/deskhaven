@@ -1,0 +1,31 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/core_main.rs:615-625"
+  ],
+  "description": "An option naming nothing that exists (here: no user `nobody`) fails the whole request before anything changes: 400 with a message naming the option, which the CLI prints as it is (any non-empty body).",
+  "seed": ["registered-device", "device-preset-targets", "api-token"],
+  "request": {
+    "method": "POST",
+    "path": "/api/devices/cli",
+    "headers": {
+      "content-type": "application/json",
+      "authorization": "Bearer ${api_token}"
+    },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "user_name": "nobody",
+        "note": "front desk"
+      }
+    }
+  },
+  "expect": {
+    "status": 400,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "user_name does not name an existing user" }
+  }
+}
