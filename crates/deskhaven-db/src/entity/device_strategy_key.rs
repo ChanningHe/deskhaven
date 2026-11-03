@@ -3,7 +3,9 @@
 //! strategy can be sent once more as `""` (the client only touches the keys it receives).
 //!
 //! A superset of what the device may hold: grown before a strategy is sent, shrunk once the
-//! device confirms it. Dropped with the device (`ON DELETE CASCADE`).
+//! device confirms it. Keyed by RustDesk id with no foreign key: deleting a device does not
+//! reset its client, which re-registers as a new `devices` row and must still get the keys it
+//! holds deleted.
 
 use sea_orm::entity::prelude::*;
 
@@ -12,9 +14,9 @@ use crate::time::TimestampMs;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "device_strategy_keys")]
 pub struct Model {
-    /// `devices.id`.
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub device_id: i64,
+    /// `devices.rustdesk_id` (the row may be gone or replaced).
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub rustdesk_id: String,
     /// JSON array of option names, sorted and unique (compared as text when updated).
     #[sea_orm(column_type = "Text")]
     pub option_keys: String,
@@ -22,20 +24,6 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::device::Entity",
-        from = "Column::DeviceId",
-        to = "super::device::Column::Id",
-        on_delete = "Cascade"
-    )]
-    Device,
-}
-
-impl Related<super::device::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Device.def()
-    }
-}
+pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

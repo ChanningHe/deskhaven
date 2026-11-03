@@ -99,7 +99,7 @@ impl DeviceService {
         }
         let disconnect = inner.disconnects.take(&beat.rustdesk_id, &beat.conns);
         let strategy = inner
-            .strategy_for(identity.device_id, beat.modified_at)
+            .strategy_for(id, identity.device_id, beat.modified_at)
             .await;
         Ok(HeartbeatOutcome::Reply(HeartbeatReply {
             sysinfo: !identity.has_sysinfo,
@@ -110,19 +110,25 @@ impl DeviceService {
 }
 
 impl Inner {
-    /// The strategy to send device `device_id` whose client holds `client_version`, if any.
-    async fn strategy_for(&self, device_id: i64, client_version: i64) -> Option<StrategyPush> {
+    /// The strategy to send device `rustdesk_id` (row `device_id`) whose client holds
+    /// `client_version`, if any.
+    async fn strategy_for(
+        &self,
+        rustdesk_id: &str,
+        device_id: i64,
+        client_version: i64,
+    ) -> Option<StrategyPush> {
         let inputs = DeviceInputs {
             device_id,
             ..DeviceInputs::default()
         };
         let current = self.strategies.modified_at(&inputs);
         let result = match client_version == current {
-            true => self.confirm(device_id, current).await,
-            false => self.push(device_id).await,
+            true => self.confirm(rustdesk_id, current).await,
+            false => self.push(rustdesk_id, device_id).await,
         };
         result.unwrap_or_else(|err| {
-            tracing::warn!(device_id, error = %err, "heartbeat strategy skipped");
+            tracing::warn!(rustdesk_id, error = %err, "heartbeat strategy skipped");
             None
         })
     }
@@ -130,19 +136,23 @@ impl Inner {
     /// Confirmation never sends anything.
     async fn confirm(
         &self,
-        device_id: i64,
+        rustdesk_id: &str,
         version: i64,
     ) -> Result<Option<StrategyPush>, PushError> {
-        self.deliveries.confirm(device_id, version).await?;
+        self.deliveries.confirm(rustdesk_id, version).await?;
         Ok(None)
     }
 
-    async fn push(&self, device_id: i64) -> Result<Option<StrategyPush>, PushError> {
+    async fn push(
+        &self,
+        rustdesk_id: &str,
+        device_id: i64,
+    ) -> Result<Option<StrategyPush>, PushError> {
         let Some(row) = Devices::find_by_id(device_id).one(&self.db).await? else {
             return Ok(None);
         };
         let effective = self.strategies.effective(&DeviceInputs::from(&row)).await?;
-        let config_options = self.deliveries.prepare(device_id, &effective).await?;
+        let config_options = self.deliveries.prepare(rustdesk_id, &effective).await?;
         Ok(Some(StrategyPush {
             config_options,
             modified_at: effective.modified_at,

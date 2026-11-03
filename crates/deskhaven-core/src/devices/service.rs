@@ -250,7 +250,6 @@ impl DeviceService {
             tx.commit().await?;
             inner.strategies.cache().invalidate();
             inner.presence.forget(&row.rustdesk_id);
-            inner.deliveries.forget(row.id);
             inner.sysinfo_writes.forget(&row.rustdesk_id);
             inner.run_deleted_hooks(&row.rustdesk_id);
             Ok(true)

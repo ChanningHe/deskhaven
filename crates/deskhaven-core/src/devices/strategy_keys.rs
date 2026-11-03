@@ -19,6 +19,11 @@
 //! is needed and a lost race only leaves a larger set (an extra `""` later, never a missed
 //! one). Sending `""` for a key the device does not hold is harmless.
 //!
+//! **Keyed by RustDesk id**, not by `devices` row: deleting a device does not reset its
+//! client, which registers again as a new row and still holds what it was sent. Rows are
+//! therefore never deleted with the device (an extra `""` for a key the client lacks is
+//! harmless).
+//!
 //! **Restart**: the stored set survives, so a device that was offline while a key was
 //! removed, across any number of restarts, still gets its `""`. What is lost is the pending
 //! confirmation (memory, [`MAX_PENDING`] devices at most): the stored set then stays larger
@@ -68,7 +73,7 @@ struct Pending {
 /// The stored key sets and the pending confirmations.
 pub(crate) struct StrategyDeliveries {
     db: DatabaseConnection,
-    pending: Mutex<HashMap<i64, Pending>>,
+    pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl StrategyDeliveries {
@@ -79,19 +84,19 @@ impl StrategyDeliveries {
         }
     }
 
-    /// The `config_options` to send device `device_id` for `effective`: its options (empty
+    /// The `config_options` to send device `rustdesk_id` for `effective`: its options (empty
     /// values included) plus `""` for every stored key it no longer has. Grows the stored set
     /// first; on error nothing may be sent.
     pub async fn prepare(
         &self,
-        device_id: i64,
+        rustdesk_id: &str,
         effective: &EffectiveStrategy,
     ) -> Result<Options, KeysError> {
         let live: Keys = effective
             .live_options()
             .map(|(k, _)| k.to_owned())
             .collect();
-        let (stored_keys, stored) = self.grow(device_id, &live).await?;
+        let (stored_keys, stored) = self.grow(rustdesk_id, &live).await?;
         let mut options = effective.options.clone();
         for key in stored_keys {
             options.entry(key).or_default();
@@ -102,20 +107,20 @@ impl StrategyDeliveries {
             stored,
         };
         let mut table = self.lock();
-        if table.len() >= MAX_PENDING && !table.contains_key(&device_id) {
+        if table.len() >= MAX_PENDING && !table.contains_key(rustdesk_id) {
             table.clear();
         }
-        table.insert(device_id, pending);
+        table.insert(rustdesk_id.to_owned(), pending);
         Ok(options)
     }
 
-    /// Device `device_id` reports `modified_at`, the server's current value: if that is the
+    /// Device `rustdesk_id` reports `modified_at`, the server's current value: if that is the
     /// strategy it was last sent, the stored set shrinks to that strategy's keys. Memory only
     /// unless such a shrink is due (once per sent strategy).
-    pub async fn confirm(&self, device_id: i64, modified_at: i64) -> Result<(), DbErr> {
+    pub async fn confirm(&self, rustdesk_id: &str, modified_at: i64) -> Result<(), DbErr> {
         let confirmed = self
             .lock()
-            .get(&device_id)
+            .get(rustdesk_id)
             .filter(|p| p.modified_at == modified_at)
             .cloned();
         let Some(pending) = confirmed else {
@@ -127,27 +132,28 @@ impl StrategyDeliveries {
             && *stored != live_text
         {
             // A failed swap means the row changed meanwhile: it stays a superset.
-            self.swap(device_id, stored, &live_text).await?;
+            self.swap(rustdesk_id, stored, &live_text).await?;
         }
         let mut table = self.lock();
         if table
-            .get(&device_id)
+            .get(rustdesk_id)
             .is_some_and(|p| p.modified_at == modified_at)
         {
-            table.remove(&device_id);
+            table.remove(rustdesk_id);
         }
         Ok(())
     }
 
-    /// Drops the pending confirmation of a deleted device (its row cascades).
-    pub fn forget(&self, device_id: i64) {
-        self.lock().remove(&device_id);
-    }
-
     /// Adds `live` to the stored set; returns the set and its stored text.
-    async fn grow(&self, device_id: i64, live: &Keys) -> Result<(Keys, Option<String>), KeysError> {
+    async fn grow(
+        &self,
+        rustdesk_id: &str,
+        live: &Keys,
+    ) -> Result<(Keys, Option<String>), KeysError> {
         for _ in 0..GROW_ATTEMPTS {
-            let row = StoredKeys::find_by_id(device_id).one(&self.db).await?;
+            let row = StoredKeys::find_by_id(rustdesk_id.to_owned())
+                .one(&self.db)
+                .await?;
             let text = row.map(|r| r.option_keys);
             let previous = text.as_deref().map(decode).unwrap_or_default();
             let grown: Keys = previous.union(live).cloned().collect();
@@ -156,8 +162,8 @@ impl StrategyDeliveries {
             }
             let grown_text = encode(&grown);
             let written = match &text {
-                Some(old) => self.swap(device_id, old, &grown_text).await?,
-                None => self.insert(device_id, &grown_text).await?,
+                Some(old) => self.swap(rustdesk_id, old, &grown_text).await?,
+                None => self.insert(rustdesk_id, &grown_text).await?,
             };
             if written {
                 return Ok((grown, Some(grown_text)));
@@ -166,15 +172,15 @@ impl StrategyDeliveries {
         Err(KeysError::Contended)
     }
 
-    /// `true` if the row of `device_id` held `old` and now holds `new`.
-    async fn swap(&self, device_id: i64, old: &str, new: &str) -> Result<bool, DbErr> {
+    /// `true` if the row of `rustdesk_id` held `old` and now holds `new`.
+    async fn swap(&self, rustdesk_id: &str, old: &str, new: &str) -> Result<bool, DbErr> {
         let updated = StoredKeys::update_many()
             .col_expr(device_strategy_key::Column::OptionKeys, Expr::value(new))
             .col_expr(
                 device_strategy_key::Column::UpdatedAt,
                 Expr::value(time::now()),
             )
-            .filter(device_strategy_key::Column::DeviceId.eq(device_id))
+            .filter(device_strategy_key::Column::RustdeskId.eq(rustdesk_id))
             .filter(device_strategy_key::Column::OptionKeys.eq(old))
             .exec(&self.db)
             .await?;
@@ -182,20 +188,20 @@ impl StrategyDeliveries {
     }
 
     /// `true` if the row was created (`false`: one appeared meanwhile).
-    async fn insert(&self, device_id: i64, keys: &str) -> Result<bool, DbErr> {
+    async fn insert(&self, rustdesk_id: &str, keys: &str) -> Result<bool, DbErr> {
         let row = device_strategy_key::ActiveModel {
-            device_id: Set(device_id),
+            rustdesk_id: Set(rustdesk_id.to_owned()),
             option_keys: Set(keys.to_owned()),
             updated_at: Set(time::now()),
         };
         let res = StoredKeys::insert(row)
-            .on_conflict_do_nothing_on([device_strategy_key::Column::DeviceId])
+            .on_conflict_do_nothing_on([device_strategy_key::Column::RustdeskId])
             .exec_without_returning(&self.db)
             .await?;
         Ok(matches!(res, TryInsertResult::Inserted(n) if n > 0))
     }
 
-    fn lock(&self) -> MutexGuard<'_, HashMap<i64, Pending>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Pending>> {
         // Map operations cannot leave it inconsistent.
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }

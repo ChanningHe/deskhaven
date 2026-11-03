@@ -332,6 +332,41 @@ async fn keys_of_a_device_group_it_left_are_deleted() {
     .await;
 }
 
+/// Deleting a device drops its row and its direct assignment; the running client keeps the
+/// options it was sent and registers again as a new row. The keys sent to it are kept by
+/// RustDesk id, so the new row's first strategy still deletes them.
+#[tokio::test]
+async fn a_deleted_and_re_registered_device_still_gets_its_old_keys_deleted() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        let old_row = c.device(ID).await;
+        let created = c
+            .strategies
+            .create(NewStrategy::new("own", opts(&[("k", "v")])));
+        let own = created.await.unwrap();
+        c.strategies
+            .assign(Target::Device(old_row), own.id)
+            .await
+            .unwrap();
+        let mut client = Client { modified_at: 0 };
+        let applied = client.beat(&c).await;
+        client.beat(&c).await;
+
+        // Act
+        assert!(c.devices.delete(old_row).await.unwrap());
+        let new_row = c.device(ID).await;
+        let after = client.beat(&c).await;
+
+        // Assert
+        let b = db.backend;
+        assert_ne!(new_row, old_row, "{b}");
+        assert_eq!(options(&applied), opts(&[("k", "v")]), "{b}");
+        assert_eq!(options(&after), opts(&[("k", "")]), "{b}");
+    })
+    .await;
+}
+
 /// The key set survives a restart: a key removed while the device was offline, with a
 /// restart in between, is still deleted. A restart moves the version, so the device refetches.
 #[tokio::test]
