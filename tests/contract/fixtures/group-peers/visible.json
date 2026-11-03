@@ -1,7 +1,7 @@
 {
   "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
   "source": ["flutter/lib/models/group_model.dart:224-282", "flutter/lib/common/hbbs/hbbs.dart:77-128"],
-  "description": "The panel's device list (status=1): devices in the active state owned by the caller or by a user sharing a group with them (06 section 4.2), by RustDesk id; the owner's own state does not matter, so the disabled teammate's device is listed (disabling an account does not disable its machines). The stranger's device, an unowned device and the caller's disabled device stay out. user_name is the owner's username, which the panel matches against the selected user; info carries username / os / device_name.",
+  "description": "The panel's device list (status=1): devices in the active state owned by the caller or by a user sharing a group with them (06 section 4.2), by RustDesk id; the owner's own state does not matter, so the disabled teammate's device is listed (disabling an account does not disable its machines). The stranger's device, an unowned device and the caller's disabled device stay out. user_name is the owner's username, which the panel matches against the selected user; info carries username / os / device_name, where the administrator's display_username / display_name win over what the device reported (tess's device) and a blank one falls back to it (tom's device).",
   "seed": ["client-session", "group-scope"],
   "request": {
     "method": "GET",
@@ -23,7 +23,7 @@
         {
           "id": "700000002", "status": 1, "user": "tess", "user_name": "tess",
           "device_group_name": "Lab", "note": "",
-          "info": { "username": "tess", "os": "windows / 11", "device_name": "tess-pc" }
+          "info": { "username": "Tess Q", "os": "windows / 11", "device_name": "Tess Workstation" }
         },
         {
           "id": "700000003", "status": 1, "user": "tom", "user_name": "tom",

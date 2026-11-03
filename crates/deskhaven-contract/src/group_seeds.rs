@@ -195,5 +195,26 @@ pub async fn group_scope(state: &AppState) -> anyhow::Result<SeedOutputs> {
     for device in devices {
         add_device(state, device).await?;
     }
+    name_device(state, TEAMMATE_DEVICE, "Tess Workstation", "Tess Q").await?;
+    name_device(state, DISABLED_TEAMMATE_DEVICE, "  ", "").await?;
     Ok(SeedOutputs::new())
+}
+
+/// Sets the administrator's `display_name` / `display_username` of the device.
+async fn name_device(
+    state: &AppState,
+    rustdesk_id: &str,
+    display_name: &str,
+    display_username: &str,
+) -> anyhow::Result<()> {
+    let row = device::Entity::find()
+        .filter(device::Column::RustdeskId.eq(rustdesk_id))
+        .one(&state.db)
+        .await?
+        .context("seeded device is missing")?;
+    let mut row: device::ActiveModel = row.into();
+    row.display_name = Set(Some(display_name.to_owned()));
+    row.display_username = Set(Some(display_username.to_owned()));
+    row.update(&state.db).await?;
+    Ok(())
 }

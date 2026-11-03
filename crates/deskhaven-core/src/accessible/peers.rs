@@ -15,7 +15,9 @@ use crate::pagination::{Page, PageRequest};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccessiblePeer {
     pub rustdesk_id: String,
-    pub hostname: Option<String>,
+    /// The administrator's `display_name`, else the reported hostname.
+    pub device_name: Option<String>,
+    /// The administrator's `display_username`, else the reported username.
     pub username: Option<String>,
     pub os: Option<String>,
     /// Username of the owner. `None` only if the owner vanished since the page was read:
@@ -50,8 +52,8 @@ impl AccessibleService {
                 owner: d.owner_user_id.and_then(|id| owners.get(&id).cloned()),
                 device_group: d.device_group_id.and_then(|id| groups.get(&id).cloned()),
                 rustdesk_id: d.rustdesk_id,
-                hostname: d.hostname,
-                username: d.username,
+                device_name: preferred(d.display_name, d.hostname),
+                username: preferred(d.display_username, d.username),
                 os: d.os,
                 note: d.note.unwrap_or_default(),
                 status: d.status,
@@ -64,6 +66,11 @@ impl AccessibleService {
             page_size: found.page_size,
         })
     }
+}
+
+/// The administrator's name when it holds text, else what the device reported.
+fn preferred(display: Option<String>, reported: Option<String>) -> Option<String> {
+    display.filter(|name| !name.trim().is_empty()).or(reported)
 }
 
 /// Usernames of the owners of `devices`, by user id.

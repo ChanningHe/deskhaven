@@ -73,7 +73,7 @@ impl From<AccessiblePeer> for PeerReply {
             info: PeerInfoReply {
                 username: peer.username.unwrap_or_default(),
                 os: peer.os.unwrap_or_default(),
-                device_name: peer.hostname.unwrap_or_default(),
+                device_name: peer.device_name.unwrap_or_default(),
             },
             status: match peer.status {
                 DeviceStatus::Active => 1,
