@@ -445,7 +445,7 @@ async fn failed_batches_publish_nothing() {
         let refusing = TxGuard::new(&audit_log(db), |_: Option<&AppliedChanges>, _| {
             Err(Refused::new("forbidden"))
         });
-        let mut rx = subscriber(&svc);
+        let rx = subscriber(&svc);
         let before = rx.borrow().clone();
 
         // Refused by the guard, after the rows were written.
