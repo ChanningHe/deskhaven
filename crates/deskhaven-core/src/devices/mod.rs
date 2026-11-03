@@ -9,14 +9,20 @@
 //! the device endpoints: id + uuid verification, sysinfo with its deployment presets, and the
 //! deletion of devices and device groups.
 
+mod disconnects;
 mod limits;
 mod presence;
 mod preset_book;
 mod presets;
 mod service;
+mod strategy_keys;
 mod sysinfo;
 
-pub use limits::{SYSINFO_PER_IP_PER_MINUTE, SYSINFO_WRITE_INTERVAL};
+pub use disconnects::{DISCONNECT_TTL, DisconnectQueue, MAX_QUEUED_DEVICES, QueueFull};
+pub use limits::{
+    HEARTBEAT_MIN_INTERVAL, HEARTBEAT_PER_IP_PER_MINUTE, SYSINFO_PER_IP_PER_MINUTE,
+    SYSINFO_WRITE_INTERVAL,
+};
 pub use presence::{
     DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
     SWEEP_INTERVAL, Seen,
@@ -24,8 +30,10 @@ pub use presence::{
 pub use preset_book::PRESET_TAG_COLOR;
 pub use presets::{AddressBookPreset, Presets};
 pub use service::{
-    DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceService, SysinfoOutcome, SysinfoReport,
+    DEVICE_GROUP_NAME_MAX_LEN, DeletedHook, DeviceService, Heartbeat, HeartbeatOutcome,
+    HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
 };
+pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
 
 use std::net::IpAddr;

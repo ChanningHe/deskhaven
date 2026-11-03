@@ -41,7 +41,10 @@ async fn one_row_per_device_round_trips() {
 
         // Assert
         let b = db.backend;
-        assert!(manager.has_table("device_strategy_keys").await.unwrap(), "{b}");
+        assert!(
+            manager.has_table("device_strategy_keys").await.unwrap(),
+            "{b}"
+        );
         assert!(is_unique_violation(dup), "{b}");
         assert_eq!(found, Some(inserted), "{b}");
     })
@@ -61,7 +64,10 @@ async fn rows_need_a_device_and_go_with_it() {
             .exec(&db.conn)
             .await
             .unwrap();
-        let left = device_strategy_key::Entity::find().all(&db.conn).await.unwrap();
+        let left = device_strategy_key::Entity::find()
+            .all(&db.conn)
+            .await
+            .unwrap();
 
         // Assert
         let b = db.backend;

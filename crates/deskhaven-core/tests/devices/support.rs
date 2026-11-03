@@ -55,27 +55,32 @@ pub struct Ctx {
 }
 
 pub async fn ctx(db: &TestDb) -> Ctx {
+    ctx_on(db.conn.clone(), Arc::new(ManualClock::at(T0_MS))).await
+}
+
+/// Services over `conn` (e.g. a clone carrying a statement counter) on `clock`. Called twice
+/// over one database, it is a restart.
+pub async fn ctx_on(conn: DatabaseConnection, clock: Arc<ManualClock>) -> Ctx {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
-    let (settings, _) = SettingsService::load(db.conn.clone(), crypto.clone(), PinSet::empty())
+    let (settings, _) = SettingsService::load(conn.clone(), crypto.clone(), PinSet::empty())
         .await
         .unwrap();
-    let clock = Arc::new(ManualClock::at(T0_MS));
     let hasher = PasswordHasher::new(FAST).unwrap();
-    let users = UserService::with_clock(db.conn.clone(), settings.clone(), hasher, clock.clone());
-    let groups = GroupService::new(db.conn.clone());
-    let strategies = StrategyService::new(db.conn.clone(), clock.clone());
+    let users = UserService::with_clock(conn.clone(), settings.clone(), hasher, clock.clone());
+    let groups = GroupService::new(conn.clone());
+    let strategies = StrategyService::new(conn.clone(), clock.clone());
     strategies.watch_users(&users);
     strategies.watch_groups(&groups);
-    let books = AddressBookService::new(db.conn.clone(), settings.clone(), crypto.clone());
+    let books = AddressBookService::new(conn.clone(), settings.clone(), crypto.clone());
     let devices = DeviceService::new(
-        db.conn.clone(),
+        conn.clone(),
         settings.clone(),
         crypto,
         strategies.clone(),
         clock.clone(),
     );
     Ctx {
-        conn: db.conn.clone(),
+        conn: conn.clone(),
         clock,
         settings,
         users,

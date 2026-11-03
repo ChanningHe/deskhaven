@@ -28,11 +28,17 @@ use sea_orm::{
 };
 use subtle::ConstantTimeEq;
 
+mod heartbeat;
+
+pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
+
 use super::DeviceError;
-use super::limits::{SYSINFO_PER_IP_PER_MINUTE, WriteLimit};
+use super::disconnects::DisconnectQueue;
+use super::limits::{HEARTBEAT_PER_IP_PER_MINUTE, SYSINFO_PER_IP_PER_MINUTE, WriteLimit};
 use super::presence::{Identity, Presence};
 use super::preset_book;
 use super::presets::{self, Presets, RowPresets};
+use super::strategy_keys::StrategyDeliveries;
 use super::sysinfo::Sysinfo;
 use crate::addressbooks::AddressBookService;
 use crate::auth::limiter::{ClientAddr, IpLimiter};
@@ -88,7 +94,10 @@ struct Inner {
     crypto: Arc<SecretBox>,
     strategies: StrategyService,
     presence: Presence,
+    disconnects: DisconnectQueue,
+    deliveries: StrategyDeliveries,
     sysinfo_ips: IpLimiter,
+    heartbeat_ips: IpLimiter,
     sysinfo_writes: WriteLimit,
     deleted_hooks: RwLock<Vec<DeletedHook>>,
 }
@@ -104,12 +113,15 @@ impl DeviceService {
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
+                deliveries: StrategyDeliveries::new(db.clone()),
                 db,
                 settings,
                 crypto,
                 strategies,
                 presence: Presence::new(Arc::clone(&clock)),
+                disconnects: DisconnectQueue::new(Arc::clone(&clock)),
                 sysinfo_ips: IpLimiter::fixed(SYSINFO_PER_IP_PER_MINUTE, Arc::clone(&clock)),
+                heartbeat_ips: IpLimiter::fixed(HEARTBEAT_PER_IP_PER_MINUTE, Arc::clone(&clock)),
                 sysinfo_writes: WriteLimit::new(clock),
                 deleted_hooks: RwLock::default(),
             }),
@@ -118,6 +130,11 @@ impl DeviceService {
 
     pub fn presence(&self) -> &Presence {
         &self.inner.presence
+    }
+
+    /// Disconnect requests, handed to the devices by their next heartbeat.
+    pub fn disconnects(&self) -> &DisconnectQueue {
+        &self.inner.disconnects
     }
 
     /// Runs `hook` after every committed device deletion. `serve` uses it to make the signal
@@ -138,10 +155,26 @@ impl DeviceService {
         self.inner.sysinfo_ips.check(client)
     }
 
+    /// Takes a token of `client`'s heartbeat bucket, or returns how long until one is free
+    /// ([`HEARTBEAT_PER_IP_PER_MINUTE`](super::HEARTBEAT_PER_IP_PER_MINUTE)).
+    pub fn admit_heartbeat(&self, client: ClientAddr) -> Result<(), Duration> {
+        self.inner.heartbeat_ips.check(client)
+    }
+
     /// The `devices.id` of `rustdesk_id` if `uuid` (base64) identifies it (see the module
     /// documentation). The identity of a known device is cached in [`Presence`], so this
     /// queries the database only for a device not seen since it was evicted, or an unknown id.
     pub async fn verify(&self, rustdesk_id: &str, uuid: &str) -> Result<Option<i64>, DeviceError> {
+        let identity = self.identify(rustdesk_id, uuid).await?;
+        Ok(identity.map(|identity| identity.device_id))
+    }
+
+    /// [`verify`](Self::verify) with the whole cached identity.
+    async fn identify(
+        &self,
+        rustdesk_id: &str,
+        uuid: &str,
+    ) -> Result<Option<Identity>, DeviceError> {
         let presence = &self.inner.presence;
         let identity = match presence.identity(rustdesk_id) {
             Some(identity) => identity,
@@ -153,13 +186,14 @@ impl DeviceService {
                 let identity = Identity {
                     device_id: row.id,
                     uuid: row.uuid,
+                    has_sysinfo: row.sysinfo_hash.is_some(),
                 };
                 presence.remember(rustdesk_id, identity.clone(), epoch);
                 identity
             }
         };
         let verified = self.inner.uuid_matches(&identity.uuid, uuid);
-        Ok(verified.then_some(identity.device_id))
+        Ok(verified.then_some(identity))
     }
 
     /// Stores a device's sysinfo unless it is unchanged (same content hash: no write at all),
@@ -168,6 +202,16 @@ impl DeviceService {
         &self,
         report: SysinfoReport,
     ) -> Result<SysinfoOutcome, DeviceError> {
+        let rustdesk_id = report.rustdesk_id.clone();
+        let outcome = self.store_report(report).await?;
+        if matches!(outcome, SysinfoOutcome::Stored | SysinfoOutcome::Unchanged) {
+            // The heartbeat stops asking for it (see `heartbeat`).
+            self.inner.presence.mark_sysinfo(&rustdesk_id);
+        }
+        Ok(outcome)
+    }
+
+    async fn store_report(&self, report: SysinfoReport) -> Result<SysinfoOutcome, DeviceError> {
         let report = SysinfoReport {
             sysinfo: report.sysinfo.sanitized(),
             ..report
@@ -206,6 +250,7 @@ impl DeviceService {
             tx.commit().await?;
             inner.strategies.cache().invalidate();
             inner.presence.forget(&row.rustdesk_id);
+            inner.deliveries.forget(row.id);
             inner.sysinfo_writes.forget(&row.rustdesk_id);
             inner.run_deleted_hooks(&row.rustdesk_id);
             Ok(true)

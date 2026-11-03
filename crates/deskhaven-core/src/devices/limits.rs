@@ -1,4 +1,5 @@
-//! Rate limits of `POST /api/sysinfo` (06 §2.4: by source IP and by device).
+//! Rate limits of `POST /api/sysinfo` and `POST /api/heartbeat` (06 §2.4: by source IP and
+//! by device). The sysinfo rules:
 //!
 //! - **Per client network** ([`SYSINFO_PER_IP_PER_MINUTE`]): the login limiter's buckets
 //!   (IPv4 /32, IPv6 /64, shared proxy-fallback bucket) with a quota of their own, never the
@@ -21,6 +22,17 @@ use crate::clock::SharedClock;
 
 /// Sysinfo requests per client network per minute (burst the same).
 pub const SYSINFO_PER_IP_PER_MINUTE: u32 = 120;
+/// Heartbeat requests per client network per minute (burst the same), the same buckets as
+/// sysinfo with a quota of their own. A client sends 4 a minute idle and 20 with live
+/// connections (`sync.rs:20, 232-235`), so this lets 300 busy devices (1,500 idle ones)
+/// share one address before a NAT needs a trusted proxy; it caps what unknown ids, which
+/// cost one indexed lookup each, can cost from one network.
+pub const HEARTBEAT_PER_IP_PER_MINUTE: u32 = 6_000;
+/// Minimum time between two accepted heartbeats of one verified device (06 §2.4). The
+/// client sends at most every 3 s; a refused heartbeat (429) loses nothing, the next one
+/// carries the same strategy and disconnects. Checked after verification, so a stranger
+/// cannot use a device's id to starve it.
+pub const HEARTBEAT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 /// Minimum time between two changing sysinfo writes of one device.
 pub const SYSINFO_WRITE_INTERVAL: Duration = Duration::from_secs(30);
 /// Expired entries are dropped once the table holds more than this.

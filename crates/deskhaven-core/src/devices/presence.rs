@@ -68,11 +68,14 @@ pub struct Seen {
     pub ip: Option<IpAddr>,
 }
 
-/// A verified device: its `devices` row id and uuid (both fixed for the row's lifetime).
+/// A verified device: its `devices` row id and uuid (both fixed for the row's lifetime), and
+/// whether the row holds a sysinfo, which only ever turns true for a row (as read, then
+/// [`Presence::mark_sysinfo`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Identity {
     pub device_id: i64,
     pub uuid: Vec<u8>,
+    pub has_sysinfo: bool,
 }
 
 /// Shared handle; clones see the same table.
@@ -160,12 +163,56 @@ impl Presence {
     /// A verified heartbeat of `rustdesk_id` from `ip` reporting the live connections
     /// `conns` (the first [`MAX_CONNS`] are kept).
     pub fn heartbeat(&self, rustdesk_id: &str, ip: IpAddr, conns: &[i32]) {
-        self.update(rustdesk_id, |entry, now| {
-            entry.heartbeat_ms = Some(now);
-            entry.ip = Some(ip);
-            entry.conns = conns.iter().take(MAX_CONNS).copied().collect();
-            entry.unflushed = true;
-        });
+        self.try_heartbeat(rustdesk_id, ip, conns, Duration::ZERO);
+    }
+
+    /// [`heartbeat`](Self::heartbeat), unless the previous accepted heartbeat of `rustdesk_id`
+    /// is less than `min_interval` ago: then `false` and nothing changes (06 §2.4). An id the
+    /// table has no room for is never refused.
+    pub fn try_heartbeat(
+        &self,
+        rustdesk_id: &str,
+        ip: IpAddr,
+        conns: &[i32],
+        min_interval: Duration,
+    ) -> bool {
+        let now = self.now();
+        let mut state = self.lock();
+        let too_soon = |entry: &Entry| {
+            let previous = entry.heartbeat_ms;
+            previous.is_some_and(|t| now.saturating_sub(t) < millis(min_interval))
+        };
+        let tracked = state.entries.get(rustdesk_id).map(too_soon);
+        match tracked {
+            Some(true) => return false,
+            Some(false) => {}
+            None if self.make_room(&mut state, now) => {
+                state
+                    .entries
+                    .insert(rustdesk_id.to_owned(), Entry::default());
+            }
+            None => return true,
+        }
+        let Some(entry) = state.entries.get_mut(rustdesk_id) else {
+            return true;
+        };
+        entry.heartbeat_ms = Some(now);
+        entry.ip = Some(ip);
+        entry.conns = conns.iter().take(MAX_CONNS).copied().collect();
+        entry.unflushed = true;
+        true
+    }
+
+    /// The device's sysinfo was stored: its cached identity (if any) now has one.
+    pub(crate) fn mark_sysinfo(&self, rustdesk_id: &str) {
+        let mut state = self.lock();
+        let identity = state
+            .entries
+            .get_mut(rustdesk_id)
+            .and_then(|entry| entry.identity.as_mut());
+        if let Some(identity) = identity {
+            identity.has_sysinfo = true;
+        }
     }
 
     /// What is known about `rustdesk_id`; `None` if it is not tracked.

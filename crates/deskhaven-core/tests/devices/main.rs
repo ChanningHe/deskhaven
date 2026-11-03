@@ -2,6 +2,7 @@
 //! device and device group deletion. Every test runs on SQLite and PostgreSQL.
 
 mod deletion;
+mod heartbeat;
 mod presets;
 mod support;
 mod sysinfo;

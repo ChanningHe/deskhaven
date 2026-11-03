@@ -223,6 +223,7 @@ fn identity() -> Identity {
     Identity {
         device_id: 7,
         uuid: b"uuid".to_vec(),
+        has_sysinfo: false,
     }
 }
 
@@ -265,6 +266,7 @@ fn a_cached_identity_alone_is_not_online_and_is_evictable() {
     let identity = Identity {
         device_id: 7,
         uuid: b"uuid".to_vec(),
+        has_sysinfo: false,
     };
     p.remember(ID, identity, p.identity_epoch());
 
@@ -276,4 +278,61 @@ fn a_cached_identity_alone_is_not_online_and_is_evictable() {
     assert!(!status.online);
     assert_eq!(status.last_seen_ms, None);
     assert!(p.is_online("other"), "the identity-only entry made room");
+}
+
+#[test]
+fn a_stored_sysinfo_is_marked_on_the_cached_identity_only() {
+    // Arrange
+    let (p, _) = presence(10);
+    p.remember(ID, identity(), p.identity_epoch());
+
+    // Act
+    p.mark_sysinfo(ID);
+    p.mark_sysinfo("unknown");
+
+    // Assert
+    assert!(p.identity(ID).unwrap().has_sysinfo);
+    assert_eq!(p.get("unknown"), None, "marking never creates an entry");
+}
+
+#[test]
+fn heartbeats_closer_than_the_minimum_interval_are_refused_without_effect() {
+    // Arrange
+    let (p, clock) = presence(10);
+    let min = Duration::from_secs(2);
+
+    // Act
+    let first = p.try_heartbeat(ID, ip(1), &[1], min);
+    clock.advance(just_under(min));
+    let early = p.try_heartbeat(ID, ip(2), &[2], min);
+    let early_state = p.get(ID).unwrap();
+    clock.advance(Duration::from_millis(1));
+    let on_time = p.try_heartbeat(ID, ip(3), &[3], min);
+    let other = p.try_heartbeat("other", ip(4), &[], min);
+
+    // Assert
+    assert!(first && on_time && other);
+    assert!(!early);
+    assert_eq!(
+        early_state.conns,
+        vec![1],
+        "a refused heartbeat changes nothing"
+    );
+    assert_eq!(early_state.ip, Some(ip(1)));
+    let state = p.get(ID).unwrap();
+    assert_eq!((state.conns, state.ip), (vec![3], Some(ip(3))));
+    assert_eq!(state.last_seen_ms, Some(T0_MS + 2_000));
+}
+
+#[test]
+fn a_signal_registration_does_not_count_against_the_heartbeat_interval() {
+    // Arrange
+    let (p, _) = presence(10);
+    p.signal_online(ID, ip(1));
+
+    // Act
+    let accepted = p.try_heartbeat(ID, ip(1), &[], Duration::from_secs(2));
+
+    // Assert
+    assert!(accepted);
 }
