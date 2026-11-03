@@ -405,6 +405,1022 @@
         ]
       }
     },
+    "/admin/api/v1/device-groups": {
+      "get": {
+        "tags": [
+          "device-groups"
+        ],
+        "summary": "Device groups with their device counts.",
+        "operationId": "list_device_groups",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`name` or `created_at`, `-` prefix for descending (default `name`).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?(name|created_at)$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the name (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of device groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_DeviceGroupView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "device-groups"
+        ],
+        "summary": "Creates a device group (audited `device_group.create`).",
+        "operationId": "create_device_group",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDeviceGroupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceGroupView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name taken (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/device-groups/{id}": {
+      "get": {
+        "tags": [
+          "device-groups"
+        ],
+        "summary": "One device group.",
+        "operationId": "get_device_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device group id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceGroupView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "device-groups"
+        ],
+        "summary": "Deletes a device group and its strategy assignment; its devices become ungrouped\n(audited `device_group.delete`). Groups from the configuration file are read-only.",
+        "operationId": "delete_device_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device group id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Managed by the configuration file (`managed_by_config`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "device-groups"
+        ],
+        "summary": "Renames a device group or changes its note (audited `device_group.update`). Groups from\nthe configuration file are read-only.",
+        "operationId": "update_device_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device group id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceGroupPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated device group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceGroupView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name taken (`conflict`) or managed by the configuration file (`managed_by_config`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/devices": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Devices, filtered and paginated, with their online status.",
+        "operationId": "list_devices",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`field` ascending or `-field` descending; then by id (default `rustdesk_id`).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?(rustdesk_id|hostname|os|version|status|last_seen_at|created_at)$"
+            },
+            "example": "-last_seen_at"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the RustDesk id, hostname, device username or note (case-insensitive,\nliteral).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "os",
+            "in": "query",
+            "description": "Substring of the reported OS (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "online",
+            "in": "query",
+            "description": "Online now (`true`) or not (`false`).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Devices owned by this user.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "device_group",
+            "in": "query",
+            "description": "Devices in this device group.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/DeviceStatusView"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_DeviceView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/devices/{id}": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "One device with its live connections, effective strategy and recent connections.",
+        "operationId": "get_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Deletes the device and its strategy assignment (audited `device.delete`). The device is\nnot blocked: it registers as a new device again, a UDP device within seconds and a\ndevice in TCP mode only when its connection to the signal server is next re-established.",
+        "operationId": "delete_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Assigns the owner and device group, changes the note, disables or enables the device\n(audited `device.update`; a patch that only sets the status is `device.disable` or\n`device.enable`).",
+        "operationId": "update_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevicePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field, or an owner or device group that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/devices/{id}/disconnect": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Asks the device to close one of its connections. The request waits for the device's next\nheartbeat (every 3 s while it has connections) and expires after `ttl_seconds`; a\nconnection the device does not report stays queued until then (audited\n`device.disconnect`).",
+        "operationId": "disconnect_device",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Device id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisconnectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisconnectQueued"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Too many devices have pending requests (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/groups": {
       "get": {
         "tags": [
@@ -3185,6 +4201,410 @@
           "oidc"
         ]
       },
+      "ConnectionView": {
+        "type": "object",
+        "description": "One connection to a device, as the device reported it.",
+        "required": [
+          "guid",
+          "conn_id"
+        ],
+        "properties": {
+          "conn_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "conn_type": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal; other values\ncome from newer clients."
+          },
+          "controller_user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "ended_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "guid": {
+            "type": "string"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peer_rustdesk_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The controlling device and the name it reported."
+          },
+          "started_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "DeviceDetail": {
+        "type": "object",
+        "description": "A device with everything the console's drawer shows.",
+        "required": [
+          "device",
+          "register_ip",
+          "register_at",
+          "connections",
+          "strategy",
+          "recent_connections"
+        ],
+        "properties": {
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "description": "Connection ids the device reported in its latest heartbeat (the ones that can be\ndisconnected)."
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceView"
+          },
+          "recent_connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionView"
+            },
+            "description": "Newest first; filled by the audit ingest, so it can be empty."
+          },
+          "register_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "register_ip": {
+            "type": "string",
+            "description": "Source address and time of the last signal registration."
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/EffectiveStrategyView"
+          }
+        }
+      },
+      "DeviceGroupPatch": {
+        "type": "object",
+        "description": "Changes to a device group; absent fields stay as they are.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeviceGroupRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "DeviceGroupView": {
+        "type": "object",
+        "description": "A device group with its number of devices. Timestamps are unix milliseconds.",
+        "required": [
+          "id",
+          "name",
+          "note",
+          "managed_by",
+          "device_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "device_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "managed_by": {
+            "$ref": "#/components/schemas/ManagedByView"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DevicePatch": {
+        "type": "object",
+        "description": "Changes to a device; absent fields stay as they are.",
+        "properties": {
+          "device_group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The device group's id; `null` ungroups the device."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An empty string removes the note."
+          },
+          "owner_user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The owner's user id; `null` removes the owner."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeviceStatusView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeviceStatusView": {
+        "type": "string",
+        "description": "`devices.status`.",
+        "enum": [
+          "active",
+          "disabled"
+        ]
+      },
+      "DeviceView": {
+        "type": "object",
+        "description": "A device as administrators see it. Carries neither the uuid nor the public key.",
+        "required": [
+          "id",
+          "rustdesk_id",
+          "note",
+          "status",
+          "online",
+          "last_seen_at",
+          "last_ip",
+          "first_seen_at",
+          "created_at"
+        ],
+        "properties": {
+          "cpu": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "device_group": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeviceGroupRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_seen_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_ip": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Latest contact: the presence table when it is newer than the stored value."
+          },
+          "memory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported."
+          },
+          "note": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean",
+            "description": "Signal registration within 30 s or heartbeat within 45 s (from memory, not stored)."
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported."
+          },
+          "owner": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OwnerRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rustdesk_id": {
+            "type": "string",
+            "description": "The id clients connect to."
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeviceStatusView"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported: the OS user running the client."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device-reported: the client version."
+          }
+        }
+      },
+      "DisconnectBody": {
+        "type": "object",
+        "description": "A connection to close, by the id the device reports in its heartbeat.",
+        "required": [
+          "conn_id"
+        ],
+        "properties": {
+          "conn_id": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisconnectQueued": {
+        "type": "object",
+        "description": "The request is queued; the device closes the connection at its next heartbeat.",
+        "required": [
+          "ttl_seconds"
+        ],
+        "properties": {
+          "ttl_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long the device has to pick it up before the request expires.",
+            "minimum": 0
+          }
+        }
+      },
+      "EffectiveStrategyView": {
+        "type": "object",
+        "description": "The strategy a device ends up with.",
+        "required": [
+          "modified_at",
+          "layers",
+          "options"
+        ],
+        "properties": {
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StrategyLayerView"
+            },
+            "description": "Strategies that apply, lowest priority first."
+          },
+          "modified_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Version the clients compare (unix milliseconds)."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StrategyOptionView"
+            },
+            "description": "The merged options, by name."
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -3634,6 +5054,22 @@
           }
         }
       },
+      "NewDeviceGroupBody": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters, unique."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "NewGroupBody": {
         "type": "object",
         "required": [
@@ -3753,6 +5189,238 @@
           }
         },
         "additionalProperties": false
+      },
+      "OwnerRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "username"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "Paginated_DeviceGroupView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A device group with its number of devices. Timestamps are unix milliseconds.",
+              "required": [
+                "id",
+                "name",
+                "note",
+                "managed_by",
+                "device_count",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "device_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "managed_by": {
+                  "$ref": "#/components/schemas/ManagedByView"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
+      "Paginated_DeviceView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A device as administrators see it. Carries neither the uuid nor the public key.",
+              "required": [
+                "id",
+                "rustdesk_id",
+                "note",
+                "status",
+                "online",
+                "last_seen_at",
+                "last_ip",
+                "first_seen_at",
+                "created_at"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported."
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "device_group": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DeviceGroupRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "first_seen_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "hostname": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported."
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "last_ip": {
+                  "type": "string"
+                },
+                "last_seen_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Latest contact: the presence table when it is newer than the stored value."
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported."
+                },
+                "note": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean",
+                  "description": "Signal registration within 30 s or heartbeat within 45 s (from memory, not stored)."
+                },
+                "os": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported."
+                },
+                "owner": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/OwnerRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "rustdesk_id": {
+                  "type": "string",
+                  "description": "The id clients connect to."
+                },
+                "status": {
+                  "$ref": "#/components/schemas/DeviceStatusView"
+                },
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported: the OS user running the client."
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Device-reported: the client version."
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
       },
       "Paginated_GroupView": {
         "type": "object",
@@ -4503,6 +6171,67 @@
           "active",
           "disabled",
           "unverified"
+        ]
+      },
+      "StrategyLayerView": {
+        "type": "object",
+        "description": "One strategy applying to the device.",
+        "required": [
+          "scope",
+          "strategy_id",
+          "strategy_name"
+        ],
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/StrategyScopeView"
+          },
+          "strategy_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "strategy_name": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The group, user or device group id; absent for `global`."
+          }
+        }
+      },
+      "StrategyOptionView": {
+        "type": "object",
+        "description": "One option of the merged result and the layer it comes from.",
+        "required": [
+          "key",
+          "value",
+          "source"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StrategyLayerView"
+          },
+          "value": {
+            "type": "string",
+            "description": "Empty: the client deletes the option."
+          }
+        }
+      },
+      "StrategyScopeView": {
+        "type": "string",
+        "description": "What a strategy is assigned to; later layers win.",
+        "enum": [
+          "global",
+          "group",
+          "user",
+          "device_group",
+          "device"
         ]
       },
       "TemporaryPassword": {

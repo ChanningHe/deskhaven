@@ -13,6 +13,8 @@ mod account;
 pub mod account_setup;
 pub mod audit;
 mod auth;
+mod device_groups;
+mod devices;
 mod domain_error;
 mod error;
 mod extract;
@@ -71,6 +73,8 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
         .merge(setup::routes()?)?;
     let routes = users::routes(routes)?;
     let routes = groups::routes(routes)?;
+    let routes = devices::routes(routes)?;
+    let routes = device_groups::routes(routes)?;
     settings::routes(routes)
 }
 

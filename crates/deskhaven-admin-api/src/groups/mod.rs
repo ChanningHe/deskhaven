@@ -9,6 +9,8 @@ mod view;
 
 use utoipa_axum::routes;
 
+pub(crate) use view::ManagedByView;
+
 use crate::users::list;
 use crate::{AdminRoutes, RouteError};
 

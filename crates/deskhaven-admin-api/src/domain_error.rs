@@ -2,6 +2,7 @@
 //! `details` carries only field names and policy reasons, never input values.
 
 use deskhaven_core::console_audit::Refused;
+use deskhaven_core::devices::DeviceError;
 use deskhaven_core::groups::GroupError;
 use deskhaven_core::sessions::SessionError;
 use deskhaven_core::tfa::TfaError;
@@ -71,6 +72,24 @@ impl From<GroupError> for AdminApiError {
                 "the group is managed by the configuration file",
             ),
             GroupError::Refused(r) => refused(r),
+            other => Self::internal(other),
+        }
+    }
+}
+
+impl From<DeviceError> for AdminApiError {
+    fn from(err: DeviceError) -> Self {
+        match err {
+            DeviceError::NotFound => Self::not_found("device not found"),
+            DeviceError::GroupNotFound => Self::not_found("device group not found"),
+            DeviceError::Conflict { field } => Self::conflict(format!("{field} is already taken"))
+                .with_details(json!({ "field": field })),
+            DeviceError::Invalid { field, reason } => invalid_field(field, reason),
+            DeviceError::ManagedByConfig => Self::new(
+                ErrorCode::ManagedByConfig,
+                "the device group is managed by the configuration file",
+            ),
+            DeviceError::Refused(r) => refused(r),
             other => Self::internal(other),
         }
     }
