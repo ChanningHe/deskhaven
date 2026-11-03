@@ -6,8 +6,11 @@
 //!   service once, at creation.
 //! - **Authority**: a token carries its creator's. It authenticates only while unrevoked,
 //!   unexpired, holding the requested [`Scope`], and while its creator (if any) exists, is
-//!   `active` and still an administrator, checked on every use. Deleting the creator
-//!   deletes the token (foreign key). A token without creator is a system token.
+//!   `active` and still an administrator, checked on every use. Disabling the creator or
+//!   demoting them to `user` also revokes their tokens durably, in the same transaction
+//!   ([`revoke_created_by`], `users::admin`), so re-enabling or re-promoting the account
+//!   brings none back. Deleting the creator deletes the token (foreign key). A token without
+//!   creator is a system token.
 //! - **Use**: `last_used_at` is written at most once per [`TOUCH_INTERVAL`].
 //! - Tokens are looked up by hash on every use (no cache): their endpoints are rare, and a
 //!   revocation therefore takes effect on the next request.
@@ -26,8 +29,8 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
-    SqlErr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, QueryOrder, SqlErr,
 };
 
 pub use authenticate::ApiTokenPrincipal;
@@ -41,6 +44,23 @@ use crate::text;
 
 /// Longest token name, in characters.
 pub const NAME_MAX_LEN: usize = 64;
+
+/// Sets `revoked_at` on every unrevoked token `user_id` created. For account changes that
+/// take the creator's authority away (disable, demotion to `user`), in their own write
+/// transaction; returns the number revoked.
+pub(crate) async fn revoke_created_by<C: ConnectionTrait>(
+    conn: &C,
+    user_id: i64,
+    now: TimestampMs,
+) -> Result<u64, DbErr> {
+    let result = api_token::Entity::update_many()
+        .col_expr(api_token::Column::RevokedAt, Expr::value(now))
+        .filter(api_token::Column::CreatedBy.eq(user_id))
+        .filter(api_token::Column::RevokedAt.is_null())
+        .exec(conn)
+        .await?;
+    Ok(result.rows_affected)
+}
 
 /// What [`ApiTokenService::create`] needs.
 #[derive(Clone, Debug, PartialEq, Eq)]

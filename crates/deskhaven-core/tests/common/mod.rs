@@ -14,6 +14,7 @@ use deskhaven_db::testing::TestDb;
 use serde_json::Value as Json;
 
 pub mod ab;
+pub mod api_tokens;
 pub mod lockout;
 pub mod oidc;
 pub mod oidc_idp;

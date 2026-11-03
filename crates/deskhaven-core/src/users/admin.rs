@@ -115,7 +115,8 @@ impl UserService {
     /// Applies `edit` in one transaction. A different email (case-insensitively) resets
     /// `email_verified` unless set explicitly. Demoting or deactivating the last active
     /// owner is refused; entering `disabled` revokes every session in the same transaction
-    /// and emits [`UserEvent::Disabled`]; role and other status changes reach commit hooks,
+    /// and emits [`UserEvent::Disabled`]; entering `disabled` or the `user` role revokes the
+    /// account's API tokens in the same transaction; role and other status changes reach commit hooks,
     /// as does a set `must_change_password` ([`UserChange::AccountChanged`]).
     /// `guard` sees the account before and after (a no-op edit included).
     pub async fn edit(
@@ -155,6 +156,10 @@ impl UserService {
             if status == Some(Status::Disabled) {
                 // Durable: re-enabling the account must not resurrect old sessions.
                 crate::sessions::revoke_user_sessions(&tx, id, now).await?;
+            }
+            // Likewise its API tokens, which carry its (administrator) authority.
+            if status == Some(Status::Disabled) || role == Some(Role::User) {
+                crate::api_tokens::revoke_created_by(&tx, id, now).await?;
             }
             tx.commit().await?;
             if must_change_set {
