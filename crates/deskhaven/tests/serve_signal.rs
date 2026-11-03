@@ -182,8 +182,7 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
 fn taken_signal_port_fails_startup_with_a_clear_error() {
     // Arrange
     let dir = workdir("signal-port-taken");
-    let port = free_signal_port();
-    let _taken = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port + 2))).unwrap();
+    let (port, _taken) = signal_port_with_ws_taken();
     let mut server = start(&dir, &signal_config(&dir, port, ""), &[]);
 
     // Act

@@ -4,12 +4,13 @@
 // Each test binary uses a different subset.
 #![allow(dead_code)]
 
+use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -88,9 +89,16 @@ const SIGNAL_BLOCK: u16 = 4;
 /// ports some other program holds.
 pub fn free_signal_port() -> u16 {
     static CURSOR: AtomicU16 = AtomicU16::new(0);
+    // Random per process, not pid-derived: CI jobs in separate containers have similar small
+    // pids but may share the host network, and would otherwise walk the same blocks at once.
+    static START: OnceLock<u32> = OnceLock::new();
     let any = |port: u16| SocketAddr::from(([0, 0, 0, 0], port));
     let blocks = (ephemeral_floor().saturating_sub(SIGNAL_PORT_FLOOR + 2) / SIGNAL_BLOCK).max(1);
-    let start = std::process::id() % u32::from(blocks);
+    let seed = *START.get_or_init(|| {
+        let random = RandomState::new().hash_one(std::process::id());
+        u32::try_from(random % u64::from(u32::MAX)).unwrap()
+    });
+    let start = seed % u32::from(blocks);
     for _ in 0..blocks {
         let step = CURSOR.fetch_add(1, Ordering::Relaxed);
         let block = (start + u32::from(step)) % u32::from(blocks);
@@ -103,6 +111,22 @@ pub fn free_signal_port() -> u16 {
         }
     }
     panic!("no free signal port block below the ephemeral range");
+}
+
+/// A free signal port block whose WebSocket port (`port + 2`) the caller then holds. Another
+/// process can take a probed port before the test binds it, so a lost race moves on to the
+/// next block instead of failing the test.
+pub fn signal_port_with_ws_taken() -> (u16, TcpListener) {
+    const ATTEMPTS: usize = 32;
+    for _ in 0..ATTEMPTS {
+        let port = free_signal_port();
+        match TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port + 2))) {
+            Ok(taken) => return (port, taken),
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(err) => panic!("binding the WebSocket port {}: {err}", port + 2),
+        }
+    }
+    panic!("every signal port block was taken by someone else");
 }
 
 pub struct Server {
