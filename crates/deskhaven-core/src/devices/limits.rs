@@ -38,7 +38,7 @@ pub const SYSINFO_WRITE_INTERVAL: Duration = Duration::from_secs(30);
 /// Expired entries are dropped once the table holds more than this.
 const PRUNE_ABOVE: usize = 10_000;
 
-/// Last changing write per device (unix ms).
+/// Last changing write per device (monotonic ms, [`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)).
 pub(super) struct WriteLimit {
     clock: SharedClock,
     last: Mutex<HashMap<String, i64>>,
@@ -54,7 +54,7 @@ impl WriteLimit {
 
     /// `true` (and the write counts from now) unless `rustdesk_id` wrote within the interval.
     pub fn try_acquire(&self, rustdesk_id: &str) -> bool {
-        let now = self.clock.now_ms();
+        let now = self.clock.elapsed_ms();
         let interval = i64::try_from(SYSINFO_WRITE_INTERVAL.as_millis()).unwrap_or(i64::MAX);
         let recent = |at: i64| now.saturating_sub(at) < interval;
         let mut last = self.lock();
@@ -100,5 +100,19 @@ mod tests {
         assert!(limit.try_acquire("a"), "interval elapsed");
         limit.forget("b");
         assert!(limit.try_acquire("b"), "forgotten");
+    }
+
+    /// The interval runs on the monotonic clock: a wall clock stepped back does not block
+    /// writes until it catches up.
+    #[test]
+    fn a_wall_clock_step_back_does_not_extend_the_interval() {
+        let clock = Arc::new(ManualClock::at(1_000_000));
+        let limit = WriteLimit::new(clock.clone());
+        assert!(limit.try_acquire("a"));
+
+        clock.step_wall(-3_600_000);
+        clock.advance(SYSINFO_WRITE_INTERVAL);
+
+        assert!(limit.try_acquire("a"));
     }
 }

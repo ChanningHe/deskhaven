@@ -46,7 +46,7 @@ enum Request {
 #[derive(Debug)]
 struct Pending {
     request: Request,
-    /// Unix ms of the latest request (a newer one extends the deadline).
+    /// Monotonic ms ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)) of the latest request.
     queued_ms: i64,
 }
 
@@ -104,7 +104,7 @@ impl DisconnectQueue {
     /// The connection ids to put in the heartbeat reply of `rustdesk_id`, which reports the
     /// live connections `active`; removes its request.
     pub(crate) fn take(&self, rustdesk_id: &str, active: &[i32]) -> Vec<i32> {
-        let now = self.inner.clock.now_ms();
+        let now = self.inner.clock.elapsed_ms();
         let Some(pending) = self.lock().remove(rustdesk_id) else {
             return Vec::new();
         };
@@ -128,7 +128,7 @@ impl DisconnectQueue {
         rustdesk_id: &str,
         merge: impl FnOnce(Option<Request>) -> Request,
     ) -> Result<(), QueueFull> {
-        let now = self.inner.clock.now_ms();
+        let now = self.inner.clock.elapsed_ms();
         let mut pending = self.lock();
         let previous = pending
             .remove(rustdesk_id)

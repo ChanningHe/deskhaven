@@ -19,6 +19,10 @@
 //! - **Flush**: nothing here writes to the database. The `last_seen_at` flush task
 //!   ([`LastSeenFlusher`](super::LastSeenFlusher)) calls [`Presence::take_unflushed`] every
 //!   `devices.last_seen_flush`, which also evicts the flushed offline entries.
+//! - **Clocks**: liveness, the heartbeat interval and the sweep / warning timers run on the
+//!   monotonic clock ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)); only the
+//!   reported `last_seen_ms` is wall time. A wall clock stepped back therefore neither keeps
+//!   silent devices online nor refuses heartbeats until it catches up.
 //! - **Cheap**: one mutex over a map, short critical sections, no I/O: the signal server
 //!   calls in from its UDP loop.
 //! - It also caches the verified identity of a device (row id and uuid, both immutable for a
@@ -93,7 +97,7 @@ struct Inner {
 #[derive(Default)]
 struct State {
     entries: HashMap<String, Entry>,
-    /// Unix ms of the last eviction pass (`None`: never).
+    /// Monotonic ms of the last eviction pass (`None`: never); the timers below likewise.
     last_sweep_ms: Option<i64>,
     last_full_warn_ms: Option<i64>,
     last_precision_warn_ms: Option<i64>,
@@ -103,8 +107,12 @@ struct State {
 
 #[derive(Default)]
 struct Entry {
-    signal_ms: Option<i64>,
-    heartbeat_ms: Option<i64>,
+    /// Monotonic ms ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)) of the latest
+    /// signal registration / heartbeat: liveness and the heartbeat interval.
+    signal_at: Option<i64>,
+    heartbeat_at: Option<i64>,
+    /// Wall time (unix ms) of the latest contact: what `last_seen_at` stores.
+    seen_wall: Option<i64>,
     ip: Option<IpAddr>,
     conns: Vec<i32>,
     /// Seen since the last flush.
@@ -114,12 +122,18 @@ struct Entry {
 
 impl Entry {
     fn last_seen_ms(&self) -> Option<i64> {
-        self.signal_ms.max(self.heartbeat_ms)
+        self.seen_wall
     }
 
+    /// Monotonic ms of the latest contact (eviction order).
+    fn last_contact(&self) -> Option<i64> {
+        self.signal_at.max(self.heartbeat_at)
+    }
+
+    /// `now` is monotonic ms.
     fn is_online(&self, now: i64) -> bool {
         let within = |at: Option<i64>, ttl: Duration| at.is_some_and(|t| now - t < millis(ttl));
-        within(self.signal_ms, SIGNAL_TTL) || within(self.heartbeat_ms, HEARTBEAT_TTL)
+        within(self.signal_at, SIGNAL_TTL) || within(self.heartbeat_at, HEARTBEAT_TTL)
     }
 
     /// Nothing would be lost by dropping it.
@@ -145,8 +159,10 @@ impl Presence {
 
     /// The signal server refreshed the registration of `rustdesk_id`, seen from `ip`.
     pub fn signal_online(&self, rustdesk_id: &str, ip: IpAddr) {
+        let wall = self.wall();
         self.update(rustdesk_id, |entry, now| {
-            entry.signal_ms = Some(now);
+            entry.signal_at = Some(now);
+            entry.seen_wall = Some(wall);
             entry.ip = Some(ip);
             entry.unflushed = true;
         });
@@ -156,7 +172,7 @@ impl Presence {
     /// may still keep it online). Unknown ids are ignored.
     pub fn signal_offline(&self, rustdesk_id: &str) {
         if let Some(entry) = self.lock().entries.get_mut(rustdesk_id) {
-            entry.signal_ms = None;
+            entry.signal_at = None;
         }
     }
 
@@ -176,10 +192,10 @@ impl Presence {
         conns: &[i32],
         min_interval: Duration,
     ) -> bool {
-        let now = self.now();
+        let (now, wall) = (self.now(), self.wall());
         let mut state = self.lock();
         let too_soon = |entry: &Entry| {
-            let previous = entry.heartbeat_ms;
+            let previous = entry.heartbeat_at;
             previous.is_some_and(|t| now.saturating_sub(t) < millis(min_interval))
         };
         let tracked = state.entries.get(rustdesk_id).map(too_soon);
@@ -196,7 +212,8 @@ impl Presence {
         let Some(entry) = state.entries.get_mut(rustdesk_id) else {
             return true;
         };
-        entry.heartbeat_ms = Some(now);
+        entry.heartbeat_at = Some(now);
+        entry.seen_wall = Some(wall);
         entry.ip = Some(ip);
         entry.conns = conns.iter().take(MAX_CONNS).copied().collect();
         entry.unflushed = true;
@@ -352,7 +369,14 @@ impl Presence {
         false
     }
 
+    /// Monotonic ms: every in-memory window (liveness, interval, sweeps) uses it, so a stepped
+    /// wall clock neither freezes nor stretches them.
     fn now(&self) -> i64 {
+        self.inner.clock.elapsed_ms()
+    }
+
+    /// Wall ms, for the stored `last_seen_at` only.
+    fn wall(&self) -> i64 {
         self.inner.clock.now_ms()
     }
 
@@ -372,7 +396,7 @@ fn evict_oldest_offline(state: &mut State, now: i64, target: usize) {
         .entries
         .iter()
         .filter(|(_, e)| !e.is_online(now))
-        .map(|(id, e)| (e.last_seen_ms(), id.clone()))
+        .map(|(id, e)| (e.last_contact(), id.clone()))
         .collect();
     offline.sort_unstable();
     let excess = state.entries.len().saturating_sub(target);

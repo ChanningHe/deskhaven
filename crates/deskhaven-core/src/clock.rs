@@ -28,6 +28,12 @@ pub trait Clock: Send + Sync + fmt::Debug {
     fn now_ms(&self) -> i64 {
         self.now().timestamp_millis()
     }
+
+    /// [`Clock::elapsed`] in milliseconds, for in-memory windows (liveness, intervals, TTLs)
+    /// that must neither freeze nor shorten when the wall clock is stepped.
+    fn elapsed_ms(&self) -> i64 {
+        i64::try_from(self.elapsed().as_millis()).unwrap_or(i64::MAX)
+    }
 }
 
 /// A clock shared by the services of one process.
@@ -49,10 +55,13 @@ impl Clock for SystemClock {
 }
 
 /// A clock that only moves when told to. For tests; safe to share across tasks.
-/// [`Clock::elapsed`] is the wall reading as a duration (clamped at 0), so both move together.
+/// [`Clock::elapsed`] is the wall reading as a duration (clamped at 0), so both move together,
+/// unless [`ManualClock::step_wall`] moved the wall reading alone.
 #[derive(Debug)]
 pub struct ManualClock {
     ms: AtomicI64,
+    /// Wall minus monotonic reading, in ms (moved by `step_wall`).
+    wall_offset: AtomicI64,
 }
 
 impl ManualClock {
@@ -60,6 +69,7 @@ impl ManualClock {
     pub fn at(ms: i64) -> Self {
         Self {
             ms: AtomicI64::new(ms),
+            wall_offset: AtomicI64::new(0),
         }
     }
 
@@ -68,14 +78,22 @@ impl ManualClock {
         self.ms.fetch_add(by, Ordering::SeqCst);
     }
 
+    /// Both readings to `ms` (undoes [`step_wall`](Self::step_wall)).
     pub fn set(&self, ms: i64) {
         self.ms.store(ms, Ordering::SeqCst);
+        self.wall_offset.store(0, Ordering::SeqCst);
+    }
+
+    /// Steps the wall reading by `by_ms` (negative: back) while the monotonic one stays, as
+    /// an NTP correction or a manual change of the system time does.
+    pub fn step_wall(&self, by_ms: i64) {
+        self.wall_offset.fetch_add(by_ms, Ordering::SeqCst);
     }
 }
 
 impl Clock for ManualClock {
     fn now(&self) -> TimestampMs {
-        let ms = self.ms.load(Ordering::SeqCst);
+        let ms = self.ms.load(Ordering::SeqCst) + self.wall_offset.load(Ordering::SeqCst);
         // Out of chrono's range only if a test sets an absurd value.
         time::from_millis(ms).unwrap_or(TimestampMs(DateTime::UNIX_EPOCH))
     }
@@ -101,6 +119,18 @@ mod tests {
 
         clock.set(42);
         assert_eq!(clock.now_ms(), 42);
+    }
+
+    #[test]
+    fn a_wall_step_moves_only_the_wall_reading() {
+        let clock = ManualClock::at(10_000);
+
+        clock.step_wall(-4_000);
+        clock.advance(Duration::from_millis(500));
+
+        assert_eq!(clock.now_ms(), 6_500);
+        assert_eq!(clock.elapsed(), Duration::from_millis(10_500));
+        assert_eq!(clock.elapsed_ms(), 10_500);
     }
 
     #[test]

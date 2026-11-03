@@ -336,3 +336,31 @@ fn a_signal_registration_does_not_count_against_the_heartbeat_interval() {
     // Assert
     assert!(accepted);
 }
+
+/// Liveness and the heartbeat interval run on the monotonic clock: a wall clock stepped back
+/// an hour neither refuses every heartbeat nor keeps silent devices online.
+#[test]
+fn a_wall_clock_step_back_neither_refuses_heartbeats_nor_keeps_devices_online() {
+    // Arrange
+    let (p, clock) = presence(10);
+    let min = Duration::from_secs(2);
+    p.try_heartbeat(ID, ip(1), &[], min);
+    p.signal_online("signal", ip(2));
+
+    // Act
+    clock.step_wall(-3_600_000);
+    clock.advance(min);
+    let accepted = p.try_heartbeat(ID, ip(1), &[], min);
+    let seen = p.get(ID).unwrap().last_seen_ms;
+    clock.advance(HEARTBEAT_TTL);
+    let still_online = p.is_online(ID) || p.is_online("signal");
+
+    // Assert
+    assert!(accepted);
+    assert_eq!(
+        seen,
+        Some(T0_MS - 3_600_000 + 2_000),
+        "stored times stay wall times"
+    );
+    assert!(!still_online);
+}

@@ -128,3 +128,20 @@ fn a_full_queue_refuses_new_devices_until_requests_expire() {
     assert_eq!(merged, Ok(()), "a device already queued can still add ids");
     assert_eq!(after_expiry, Ok(()));
 }
+
+/// The deadline runs on the monotonic clock: a wall clock stepped back does not keep a
+/// request alive past it.
+#[test]
+fn a_wall_clock_step_back_does_not_extend_a_request() {
+    // Arrange
+    let (q, clock) = queue();
+    q.disconnect(ID, &[12]).unwrap();
+
+    // Act
+    clock.step_wall(-3_600_000);
+    clock.advance(DISCONNECT_TTL);
+    let late = q.take(ID, &[12]);
+
+    // Assert
+    assert!(late.is_empty());
+}
