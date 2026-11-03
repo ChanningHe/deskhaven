@@ -15,7 +15,9 @@ use deskhaven_db::entity::{device, device_group, user};
 use deskhaven_db::migration::Migrator;
 use deskhaven_db::testing::{TestDb, each_backend, each_migrated_backend};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
+};
 use sea_orm_migration::prelude::*;
 
 const FK_MIGRATION: &str = "m20261102_000021_devices_foreign_keys";
@@ -26,6 +28,25 @@ fn device_with(rustdesk_id: &str, owner: Option<i64>, group: Option<i64>) -> dev
         device_group_id: Set(group),
         ..device_row(rustdesk_id)
     }
+}
+
+/// Inserts `row` into a schema older than the entity (no `RETURNING` of columns a later
+/// migration adds); returns its `devices.id`.
+async fn insert_old(conn: &DatabaseConnection, row: device::ActiveModel) -> i64 {
+    let rustdesk_id = row.rustdesk_id.clone().unwrap();
+    device::Entity::insert(row)
+        .exec_without_returning(conn)
+        .await
+        .unwrap();
+    device::Entity::find()
+        .select_only()
+        .column(device::Column::Id)
+        .filter(device::Column::RustdeskId.eq(rustdesk_id))
+        .into_tuple::<i64>()
+        .one(conn)
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 /// Applies the next `steps` pending migrations (all when `None`) in one write transaction,
@@ -223,9 +244,9 @@ async fn upgrade_does_not_reuse_deleted_device_ids() {
             .position(|m| m.name() == FK_MIGRATION)
             .unwrap();
         migrate_steps(conn, Some(before_fk)).await;
-        device_with("1", None, None).insert(conn).await.unwrap();
-        let highest = device_with("2", None, None).insert(conn).await.unwrap();
-        device::Entity::delete_by_id(highest.id)
+        insert_old(conn, device_with("1", None, None)).await;
+        let highest = insert_old(conn, device_with("2", None, None)).await;
+        device::Entity::delete_by_id(highest)
             .exec(conn)
             .await
             .unwrap();
@@ -233,7 +254,7 @@ async fn upgrade_does_not_reuse_deleted_device_ids() {
         migrate_steps(conn, None).await;
 
         let next = device_with("3", None, None).insert(conn).await.unwrap();
-        assert!(next.id > highest.id, "{}: id reused", db.backend);
+        assert!(next.id > highest, "{}: id reused", db.backend);
     })
     .await;
 }
@@ -250,24 +271,32 @@ async fn upgrade_keeps_devices_and_clears_dangling_references() {
             .position(|m| m.name() == FK_MIGRATION)
             .unwrap();
         migrate_steps(conn, Some(before_fk)).await;
-        let dangling = device_with("1", Some(42), Some(7))
-            .insert(conn)
-            .await
-            .unwrap();
-        let plain = device_with("2", None, None).insert(conn).await.unwrap();
+        let dangling = insert_old(conn, device_with("1", Some(42), Some(7))).await;
+        let plain = insert_old(conn, device_with("2", None, None)).await;
+        let template = device_with("0", None, None);
 
         migrate_steps(conn, None).await;
 
         let b = db.backend;
-        let migrated = device::Entity::find().all(conn).await.unwrap();
+        let mut migrated = device::Entity::find().all(conn).await.unwrap();
+        migrated.sort_by_key(|row| row.id);
         assert_eq!(migrated.len(), 2, "{b}");
-        let cleared = device::Model {
-            owner_user_id: None,
-            device_group_id: None,
-            ..dangling
-        };
-        assert!(migrated.contains(&cleared), "{b}: dangling refs cleared");
-        assert!(migrated.contains(&plain), "{b}: plain row unchanged");
+        // Every column as inserted, the references cleared, the columns added later empty.
+        for (row, id, rustdesk_id) in [(&migrated[0], dangling, "1"), (&migrated[1], plain, "2")] {
+            let seen = (row.id, row.rustdesk_id.as_str(), &row.uuid, &row.pk);
+            assert_eq!(seen.0, id, "{b}: ids kept in order");
+            assert_eq!(seen.1, rustdesk_id, "{b}");
+            assert_eq!(
+                (seen.2, seen.3),
+                (template.uuid.as_ref(), template.pk.as_ref()),
+                "{b}"
+            );
+            assert_eq!(row.register_at, *template.register_at.as_ref(), "{b}");
+            let refs = (row.owner_user_id, row.device_group_id);
+            assert_eq!(refs, (None, None), "{b}: dangling refs cleared");
+            let names = (&row.display_name, &row.display_username);
+            assert_eq!(names, (&None, &None), "{b}");
+        }
         let alice = user_row("alice").insert(conn).await.unwrap();
         let after = device_with("3", Some(alice.id), None).insert(conn).await;
         assert!(after.is_ok(), "{b}");
