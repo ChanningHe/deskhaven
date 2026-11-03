@@ -24,13 +24,18 @@ fn setting_row(key: &str, version: i64) -> setting::ActiveModel {
     }
 }
 
-fn history_row(key: &str, old: Option<&str>, new: &str) -> setting_history::ActiveModel {
+fn history_row(
+    key: &str,
+    version: i64,
+    old: Option<&str>,
+    new: &str,
+) -> setting_history::ActiveModel {
     setting_history::ActiveModel {
         id: NotSet,
         key: Set(key.to_owned()),
         old_value: Set(old.map(str::to_owned)),
         new_value: Set(new.to_owned()),
-        version: Set(1),
+        version: Set(version),
         updated_by: Set(Some(7)),
         updated_at: Set(time::now()),
         reason: Set(None),
@@ -85,8 +90,11 @@ async fn setting_value_is_not_null() {
 #[tokio::test]
 async fn history_ids_are_generated_and_increasing() {
     each_migrated_backend(async |db: &TestDb| {
-        let first = history_row("k", None, "1").insert(&db.conn).await.unwrap();
-        let second = history_row("k", Some("1"), "2")
+        let first = history_row("k", 1, None, "1")
+            .insert(&db.conn)
+            .await
+            .unwrap();
+        let second = history_row("k", 2, Some("1"), "2")
             .insert(&db.conn)
             .await
             .unwrap();
@@ -102,13 +110,36 @@ async fn history_ids_are_generated_and_increasing() {
     .await;
 }
 
+/// Migration 000026: a key's history never repeats a version (backstop for the service's
+/// version line), while other keys may use the same numbers.
+#[tokio::test]
+async fn history_rejects_a_duplicate_key_and_version() {
+    each_migrated_backend(async |db: &TestDb| {
+        history_row("k", 1, None, "1")
+            .insert(&db.conn)
+            .await
+            .unwrap();
+
+        let duplicate = history_row("k", 1, Some("1"), "2").insert(&db.conn).await;
+        let other_key = history_row("other", 1, None, "1").insert(&db.conn).await;
+        let next_version = history_row("k", 2, Some("1"), "2").insert(&db.conn).await;
+
+        assert!(duplicate.is_err(), "{}", db.backend);
+        assert!(other_key.is_ok() && next_version.is_ok(), "{}", db.backend);
+    })
+    .await;
+}
+
 /// Migration 000026: an entry is a plain change unless it says it is a reset, and a reset
 /// keeps the value that applies afterwards in the NOT NULL `new_value`.
 #[tokio::test]
 async fn history_reset_flag_defaults_to_false_and_round_trips() {
     each_migrated_backend(async |db: &TestDb| {
-        let plain = history_row("k", None, "1").insert(&db.conn).await.unwrap();
-        let mut reset = history_row("k", Some("1"), "\"30d\"");
+        let plain = history_row("k", 1, None, "1")
+            .insert(&db.conn)
+            .await
+            .unwrap();
+        let mut reset = history_row("k", 2, Some("1"), "\"30d\"");
         reset.reset = Set(true);
         let reset = reset.insert(&db.conn).await.unwrap();
 
