@@ -18,12 +18,14 @@ use deskhaven_http::ServeError;
 use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+use crate::last_seen::{FINAL_FLUSH_TIMEOUT, FlushTask};
 use crate::signal_server::SignalStatus;
 use crate::startup::{self, Prepared, Started};
 use crate::{http, log_safe, logging, shutdown};
 
 /// Hard bound from the signal to process exit (02 §7), split into
-/// [`DRAIN_TIMEOUT`] + [`DB_CLOSE_TIMEOUT`] + [`RUNTIME_SHUTDOWN_GRACE`].
+/// [`DRAIN_TIMEOUT`] + [`FINAL_FLUSH_TIMEOUT`] + [`DB_CLOSE_TIMEOUT`] +
+/// [`RUNTIME_SHUTDOWN_GRACE`].
 /// The signal server stops during the drain share, in parallel with HTTP
 /// (its own write-behind flush is bounded by 5 s), and before the database
 /// closes, so its last registrations still reach the store.
@@ -32,10 +34,12 @@ pub const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
 const RUNTIME_SHUTDOWN_GRACE: Duration = Duration::from_millis(500);
 /// Closing the database pool.
 const DB_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-/// Inside the runtime: HTTP drain plus database close.
+/// Inside the runtime: HTTP drain, the last `last_seen_at` flush, database close.
 const IN_RUNTIME_DEADLINE: Duration = SHUTDOWN_DEADLINE.saturating_sub(RUNTIME_SHUTDOWN_GRACE);
 /// HTTP drain share of the deadline.
-pub const DRAIN_TIMEOUT: Duration = IN_RUNTIME_DEADLINE.saturating_sub(DB_CLOSE_TIMEOUT);
+pub const DRAIN_TIMEOUT: Duration = IN_RUNTIME_DEADLINE
+    .saturating_sub(DB_CLOSE_TIMEOUT)
+    .saturating_sub(FINAL_FLUSH_TIMEOUT);
 
 pub fn run(options: &LoadOptions) -> ExitCode {
     let loaded = match load(options).context("failed to load configuration") {
@@ -116,11 +120,14 @@ async fn serve_until_shutdown(
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }
     });
+    let last_seen = FlushTask::start(&state, token.clone());
     tracing::info!("ready");
-    drive(serving, signal_task, signal_status.as_ref(), &token, || {
-        close_db(&state)
-    })
-    .await
+    // The last `last_seen_at` flush runs after HTTP and the signal server stopped.
+    let close = move || async move {
+        last_seen.finish().await;
+        close_db(&state).await;
+    };
+    drive(serving, signal_task, signal_status.as_ref(), &token, close).await
 }
 
 /// Runs the serving phase to its end: waits for the shutdown request (or a fault), then
@@ -255,7 +262,7 @@ mod tests {
     #[test]
     fn shutdown_budget_adds_up_to_the_deadline() {
         assert_eq!(
-            DRAIN_TIMEOUT + DB_CLOSE_TIMEOUT + RUNTIME_SHUTDOWN_GRACE,
+            DRAIN_TIMEOUT + FINAL_FLUSH_TIMEOUT + DB_CLOSE_TIMEOUT + RUNTIME_SHUTDOWN_GRACE,
             SHUTDOWN_DEADLINE
         );
         assert!(!DRAIN_TIMEOUT.is_zero());

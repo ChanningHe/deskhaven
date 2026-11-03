@@ -11,6 +11,7 @@ pub mod database;
 pub mod http;
 pub mod instance_lock;
 pub mod key_cmd;
+pub mod last_seen;
 pub mod log_safe;
 pub mod logging;
 pub mod serve;
