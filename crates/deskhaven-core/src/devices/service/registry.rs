@@ -22,14 +22,20 @@ pub struct Requester {
     pub client: ClientAddr,
 }
 
+/// The signal server is running but did not say in time whether it holds an id: no answer
+/// is no green light (a registration not stored yet could be lost to the deploy).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiveUnknown;
+
+/// A pending [`LiveRegistrations::uuid_of`].
+pub type LiveLookup<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, LiveUnknown>> + Send + 'a>>;
+
 /// The signal server's in-memory registrations (`SignalHandle::live_uuid`).
 pub trait LiveRegistrations: Send + Sync {
-    /// The uuid the signal server holds for `rustdesk_id`, stored or not; `None` when it
-    /// holds none or cannot tell (not running).
-    fn uuid_of<'a>(
-        &'a self,
-        rustdesk_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Option<Vec<u8>>> + Send + 'a>>;
+    /// The uuid the signal server holds for `rustdesk_id`, stored or not; `Ok(None)` when it
+    /// holds none or is not running (it loads the database when it starts).
+    fn uuid_of<'a>(&'a self, rustdesk_id: &'a str) -> LiveLookup<'a>;
 }
 
 #[derive(Default)]
@@ -74,14 +80,21 @@ impl Inner {
         }
     }
 
-    pub(super) async fn live_uuid(&self, rustdesk_id: &str) -> Option<Vec<u8>> {
+    /// `Ok(None)` without a signal server in this process.
+    pub(super) async fn live_uuid(
+        &self,
+        rustdesk_id: &str,
+    ) -> Result<Option<Vec<u8>>, LiveUnknown> {
         let live = self
             .registry
             .live
             .read()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()?;
-        live.uuid_of(rustdesk_id).await
+            .clone();
+        match live {
+            Some(live) => live.uuid_of(rustdesk_id).await,
+            None => Ok(None),
+        }
     }
 }
 

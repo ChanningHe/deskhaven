@@ -39,9 +39,11 @@ pub use admin::{
     DeviceSummary, DeviceUpdate,
 };
 pub use assign::DeviceAssignment;
-pub use deploy::{DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DeployOutcome, DeployRequest};
+pub use deploy::{
+    DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DeployOutcome, DeployRequest, LIVE_RETRY_AFTER,
+};
 pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
-pub use registry::{LiveRegistrations, Requester};
+pub use registry::{LiveLookup, LiveRegistrations, LiveUnknown, Requester};
 
 use super::DeviceError;
 use super::disconnects::DisconnectQueue;

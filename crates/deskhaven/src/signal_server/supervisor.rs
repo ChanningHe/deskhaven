@@ -6,14 +6,12 @@
 //! logged and restarted with exponential backoff ([`Backoff`]), re-reading the settings and
 //! re-loading the peer registry, until shutdown.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
 use deskhaven_config::settings::Snapshot;
-use deskhaven_core::devices::LiveRegistrations;
+use deskhaven_core::devices::{LiveLookup, LiveRegistrations, LiveUnknown};
 use deskhaven_signal::{ControlPlane, PeerStore, SignalConfig, SignalHandle, SignalServer};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -133,10 +131,7 @@ pub struct SignalStatus(watch::Receiver<SignalHandle>);
 pub const LIVE_UUID_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl LiveRegistrations for SignalStatus {
-    fn uuid_of<'a>(
-        &'a self,
-        rustdesk_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Option<Vec<u8>>> + Send + 'a>> {
+    fn uuid_of<'a>(&'a self, rustdesk_id: &'a str) -> LiveLookup<'a> {
         Box::pin(self.live_uuid(rustdesk_id))
     }
 }
@@ -155,20 +150,20 @@ impl SignalStatus {
         }
     }
 
-    /// The uuid the current server holds in memory for `id` (stored yet or not). `None` when
-    /// it holds none, is not running (it preloads the database when it starts), or does not
-    /// answer within [`LIVE_UUID_TIMEOUT`] (logged).
-    pub async fn live_uuid(&self, id: &str) -> Option<Vec<u8>> {
+    /// The uuid the current server holds in memory for `id` (stored yet or not): `Ok(None)` when
+    /// it holds none or is not running (it preloads the database when it starts), `Err` when
+    /// it does not answer within [`LIVE_UUID_TIMEOUT`] (logged).
+    pub async fn live_uuid(&self, id: &str) -> Result<Option<Vec<u8>>, LiveUnknown> {
         let handle = self.0.borrow().clone();
         match tokio::time::timeout(LIVE_UUID_TIMEOUT, handle.live_uuid(id)).await {
-            Ok(Ok(uuid)) => uuid,
+            Ok(Ok(uuid)) => Ok(uuid),
             Ok(Err(err)) => {
                 tracing::debug!(error = %err, "signal server not running; no live registration");
-                None
+                Ok(None)
             }
             Err(_) => {
                 tracing::warn!("signal server did not report its live registration in time");
-                None
+                Err(LiveUnknown)
             }
         }
     }

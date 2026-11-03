@@ -139,7 +139,7 @@ pub(super) fn book_view(a: &DeviceAssignment) -> serde_json::Value {
     };
     serde_json::json!({
         "name": b.name, "tag": b.tag, "alias": b.alias, "note": b.note,
-        "has_password": b.password.is_some(),
+        "has_password": b.password.is_some().then_some(true),
     })
 }
 

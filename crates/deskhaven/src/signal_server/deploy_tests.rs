@@ -86,7 +86,15 @@ async fn deploy_follows_and_feeds_the_signal_servers_registry() {
         assert_eq!(own.unwrap(), DeployOutcome::Deployed, "{b}");
         assert_eq!(new.unwrap(), DeployOutcome::Deployed, "{b}");
         let deadline = Instant::now() + STEP;
-        while running.status.live_uuid(NEW_ID).await.as_deref() != Some(b"new-machine") {
+        while running
+            .status
+            .live_uuid(NEW_ID)
+            .await
+            .ok()
+            .flatten()
+            .as_deref()
+            != Some(b"new-machine")
+        {
             assert!(Instant::now() < deadline, "{b}: never loaded into memory");
             sleep(POLL).await;
         }

@@ -38,8 +38,8 @@ pub use service::{
     DeployOutcome, DeployRequest, DeviceAssignment, DeviceGroup, DeviceGroupQuery, DeviceGroupSort,
     DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord,
     DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, Heartbeat,
-    HeartbeatOutcome, HeartbeatReply, LiveRegistrations, Requester, StrategyPush, SysinfoOutcome,
-    SysinfoReport,
+    HeartbeatOutcome, HeartbeatReply, LIVE_RETRY_AFTER, LiveLookup, LiveRegistrations, LiveUnknown,
+    Requester, StrategyPush, SysinfoOutcome, SysinfoReport,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};

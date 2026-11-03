@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 
 use common::api_tokens::{Env, T0_MS, sha256_hex};
 use deskhaven_core::api_tokens::{API_TOKEN_PREFIX, ApiTokenError, NewApiToken, Scope};
+use deskhaven_core::users::{Role, Status};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time;
 
@@ -98,6 +99,40 @@ async fn create_for_an_unknown_creator_fails() {
         assert!(
             matches!(result, Err(ApiTokenError::CreatorNotFound)),
             "{}: {result:?}",
+            db.backend
+        );
+    })
+    .await;
+}
+
+/// The creator is checked (and locked) in the creating transaction: a disabled or demoted
+/// account cannot mint a token that the revocation of its tokens would have missed.
+#[tokio::test]
+async fn create_needs_an_active_administrator_as_creator() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let disabled = env.admin("dora").await;
+        let demoted = env.admin("dean").await;
+        env.users
+            .set_status(disabled, Status::Disabled)
+            .await
+            .unwrap();
+        env.users.set_role(demoted, Role::User).await.unwrap();
+
+        for creator in [disabled, demoted] {
+            let result = env
+                .tokens
+                .create(env.new_token(Some(creator), &[Scope::Deploy]))
+                .await;
+            assert!(
+                matches!(result, Err(ApiTokenError::CreatorInactive)),
+                "{}: {result:?}",
+                db.backend
+            );
+        }
+        assert!(
+            env.tokens.list().await.unwrap().is_empty(),
+            "{}",
             db.backend
         );
     })

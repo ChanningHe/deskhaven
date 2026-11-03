@@ -55,7 +55,7 @@ impl Inner {
         let row = lock_device(&tx, &a).await?;
         let found = resolve(&tx, &books, &a).await?;
         let held = strategies::assignment_in(&tx, Target::Device(row.id)).await?;
-        let before = placement(&row, held);
+        let before = before_view(&tx, &books, &row, found.book.as_deref(), held).await?;
         let moves = found.owner.is_some_and(|o| row.owner_user_id != Some(o))
             || found.group.is_some_and(|g| row.device_group_id != Some(g));
         let stored = write_row(&tx, row, &a, &found, now).await?;
@@ -66,7 +66,7 @@ impl Inner {
                 .map_err(strategy_error)?;
         }
         if let (Some(guid), Some(preset)) = (&found.book, &a.address_book) {
-            place_entry(&tx, &books, guid, &stored, preset)
+            place_entry(&tx, &books, guid, &a, preset)
                 .await
                 .map_err(book_error)?;
         }
@@ -180,13 +180,37 @@ async fn place_entry(
     tx: &DatabaseTransaction,
     books: &AddressBookService,
     guid: &str,
-    device: &device::Model,
+    a: &DeviceAssignment,
     preset: &presets::AddressBookPreset,
 ) -> Result<(), AddressBookError> {
-    let patch = preset_book::assign_patch(device, preset)?;
+    let names = (a.device_name.as_deref(), a.device_username.as_deref());
+    let patch = preset_book::assign_patch(&a.rustdesk_id, preset, names.0, names.1)?;
     let tag = preset_book::new_tag(preset);
     let admin = addressbooks::Actor::Admin;
     books.place_entry_in(tx, admin, guid, patch, tag).await
+}
+
+/// The placement before the assignment, with the device's entry in the named book.
+async fn before_view(
+    tx: &DatabaseTransaction,
+    books: &AddressBookService,
+    row: &device::Model,
+    guid: Option<&str>,
+    held: Option<i64>,
+) -> Result<serde_json::Value, DeviceError> {
+    let mut before = placement(row, held);
+    let Some(guid) = guid else {
+        return Ok(before);
+    };
+    let admin = addressbooks::Actor::Admin;
+    let entry = books.entry_view_in(tx, admin, guid, &row.rustdesk_id).await;
+    let entry = entry
+        .map_err(book_error)?
+        .unwrap_or(serde_json::Value::Null);
+    if let Some(before) = before.as_object_mut() {
+        before.insert("address_book".to_owned(), entry);
+    }
+    Ok(before)
 }
 
 fn audit_entry(

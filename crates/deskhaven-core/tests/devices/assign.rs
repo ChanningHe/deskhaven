@@ -7,6 +7,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
+use deskhaven_core::addressbooks::{Actor, PeerPatch};
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::devices::{
     AddressBookPreset, DeviceAssignment, DeviceError, Heartbeat, HeartbeatOutcome, HeartbeatReply,
@@ -198,6 +199,54 @@ async fn an_existing_book_entry_is_updated() {
         assert_eq!(peers[0].alias, "Changed", "{b}");
         assert_eq!(peers[0].note, "ab note", "{b}: not given, kept");
         assert_eq!(peers[0].tags, ["printers", "lobby"], "{b}");
+        let audit = c.audit_rows().await;
+        let before = audit[1].before.clone().unwrap();
+        let before: serde_json::Value = serde_json::from_str(&before).unwrap();
+        assert_eq!(before["address_book"]["alias"], "Reception", "{b}");
+        assert!(
+            !before["address_book"]["had_password"].is_null(),
+            "{b}: it had one"
+        );
+        assert!(
+            !audit[1].before.clone().unwrap().contains("s3cret-pass"),
+            "{b}"
+        );
+    })
+    .await;
+}
+
+/// The entry's hostname and username change only when the assignment names the device:
+/// otherwise what an administrator wrote into the entry stays.
+#[tokio::test]
+async fn an_entry_keeps_its_names_unless_the_assignment_gives_some() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        c.device(ID).await;
+        let t = c.targets().await;
+        c.report(report(ID, sysinfo("DESKTOP-4F2K"), Presets::default()))
+            .await;
+        let manual = serde_json::json!({ "id": ID, "hostname": "front-pc", "username": "kim" });
+        let manual = PeerPatch::from_json(manual).unwrap();
+        c.books
+            .add_peer(Actor::Admin, &t.book, manual)
+            .await
+            .unwrap();
+        let alias_only = DeviceAssignment {
+            address_book: Some(AddressBookPreset {
+                name: "Team".to_owned(),
+                alias: Some("Reception".to_owned()),
+                ..AddressBookPreset::default()
+            }),
+            ..assignment()
+        };
+
+        c.assign(alias_only).await.unwrap();
+
+        let b = db.backend;
+        let peers = c.book_peers(&t.book).await;
+        let names = (peers[0].hostname.as_str(), peers[0].username.as_str());
+        assert_eq!(names, ("front-pc", "kim"), "{b}");
+        assert_eq!(peers[0].alias, "Reception", "{b}");
     })
     .await;
 }

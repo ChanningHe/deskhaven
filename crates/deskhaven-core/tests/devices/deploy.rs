@@ -11,7 +11,7 @@ use deskhaven_core::console_audit::Actor;
 use deskhaven_core::devices::{DeployOutcome, DeployRequest, Requester};
 use deskhaven_db::entity::console_audit::{self, ActorKind};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::EntityTrait;
+use sea_orm::{EntityTrait, QueryOrder};
 
 use super::support::{Ctx, ID, b64, ctx, uuid_of};
 
@@ -49,7 +49,8 @@ impl Ctx {
     }
 
     pub async fn audit_rows(&self) -> Vec<console_audit::Model> {
-        console_audit::Entity::find().all(&self.conn).await.unwrap()
+        let rows = console_audit::Entity::find().order_by_asc(console_audit::Column::Id);
+        rows.all(&self.conn).await.unwrap()
     }
 }
 
@@ -116,6 +117,8 @@ async fn deploying_a_registered_device_marks_it_and_keeps_its_key() {
 
         // Act
         let first = c.deploy(request(ID, &uuid_of(ID), &PK)).await;
+        let deployed_at = c.row(ID).await.deployed_at;
+        c.clock.advance(std::time::Duration::from_secs(60));
         let again = c.deploy(request(ID, &uuid_of(ID), &PK)).await;
 
         // Assert
@@ -126,10 +129,14 @@ async fn deploying_a_registered_device_marks_it_and_keeps_its_key() {
         );
         let row = c.row(ID).await;
         assert_eq!(row.id, device_id, "{b}");
-        assert!(row.deployed_at.is_some(), "{b}");
+        assert!(deployed_at.is_some(), "{b}");
+        assert_eq!(
+            row.deployed_at, deployed_at,
+            "{b}: the first deploy time is kept"
+        );
         assert_eq!(row.pk, vec![9; 32], "{b}: the registration owns the key");
         let audit = c.audit_rows().await;
-        assert_eq!(audit.len(), 2, "{b}");
+        assert_eq!(audit.len(), 1, "{b}: a repeated deploy writes nothing");
         let after = audit[0].after.clone().unwrap_or_default();
         assert!(after.contains("\"registered\":false"), "{b}: {after}");
     })

@@ -14,11 +14,15 @@
 //!   `devices.verify_uuid` says.
 //! - An unknown id is registered here, bound to this uuid and key, as the signal server
 //!   would on its first RegisterPk, within the new-id quota (`new_ids`;
-//!   [`DeployOutcome::TooMany`] beyond it).
+//!   [`DeployOutcome::TooMany`] beyond it). If the signal server does not say in time
+//!   whether it holds the id, [`DeployOutcome::Unavailable`] (retry); a stopped one holds
+//!   nothing.
+//! - An id already deployed with this uuid is answered OK at once: no lookup, no write, no
+//!   audit row, and the first deploy time is kept.
 //!
 //! The write and its console audit row (as the requester) share one write transaction, run
-//! in its own task; after the commit the registry-changed hooks make the signal server
-//! re-read the id.
+//! in its own task; after the commit of a new id the registry-changed hooks make the signal
+//! server load it.
 //!
 //! [`LiveRegistrations`]: super::LiveRegistrations
 
@@ -38,7 +42,7 @@ use sea_orm::{
 use serde_json::json;
 
 use super::registry::same_uuid;
-use super::{DeviceService, Inner, Requester};
+use super::{DeviceService, Inner, LiveUnknown, Requester};
 use crate::console_audit::{self, NewConsoleAudit};
 use crate::crypto::b64::KEY_B64;
 use crate::devices::DeviceError;
@@ -77,7 +81,13 @@ pub enum DeployOutcome {
     IdTaken,
     /// The new-id quota of the requester's network or actor is used up (HTTP 429).
     TooMany { retry_after: Duration },
+    /// The signal server did not say in time whether it holds the id (HTTP 503); nothing
+    /// was written.
+    Unavailable { retry_after: Duration },
 }
+
+/// `Retry-After` of [`DeployOutcome::Unavailable`].
+pub const LIVE_RETRY_AFTER: Duration = Duration::from_secs(5);
 
 /// A validated request.
 struct Keys {
@@ -96,8 +106,21 @@ impl DeviceService {
         let Some(keys) = parse(req) else {
             return Ok(DeployOutcome::InvalidInput);
         };
-        // Asked before the write lock is taken: a round trip to the signal server.
-        let live = self.inner.live_uuid(&keys.rustdesk_id).await;
+        let existing = self.inner.find(&keys.rustdesk_id).await?;
+        let live = match &existing {
+            Some(row) if same_uuid(&row.uuid, &keys.uuid) && row.deployed_at.is_some() => {
+                return Ok(DeployOutcome::Deployed);
+            }
+            Some(_) => None,
+            // Asked before the write lock is taken: a round trip to the signal server.
+            None => match self.inner.live_uuid(&keys.rustdesk_id).await {
+                Ok(live) => live,
+                Err(LiveUnknown) => {
+                    let retry_after = LIVE_RETRY_AFTER;
+                    return Ok(DeployOutcome::Unavailable { retry_after });
+                }
+            },
+        };
         self.detached(move |inner| inner.deploy_keys(keys, live, by))
             .await
     }
@@ -136,7 +159,11 @@ impl Inner {
         let entry = audit_entry(&keys.rustdesk_id, registered, by);
         console_audit::insert(&tx, &entry, now.timestamp_millis()).await?;
         tx.commit().await?;
-        self.registry_changed(&keys.rustdesk_id);
+        // Only a new row is news to the signal server (it never reads `deployed_at`), and a
+        // reload of an id it holds could undo a newer key it has not stored yet.
+        if registered {
+            self.registry_changed(&keys.rustdesk_id);
+        }
         Ok(DeployOutcome::Deployed)
     }
 }
@@ -190,12 +217,13 @@ async fn insert_or_match(
         .map(|_| false))
 }
 
-/// Sets `deployed_at` of the (locked) row.
+/// Sets `deployed_at` of the (locked) row, unless set: the first deploy time is kept.
 async fn mark(tx: &DatabaseTransaction, id: &str, now: TimestampMs) -> Result<(), DbErr> {
     Devices::update_many()
         .col_expr(device::Column::DeployedAt, Expr::value(now))
         .col_expr(device::Column::UpdatedAt, Expr::value(now))
         .filter(device::Column::RustdeskId.eq(id))
+        .filter(device::Column::DeployedAt.is_null())
         .exec(tx)
         .await
         .map(drop)

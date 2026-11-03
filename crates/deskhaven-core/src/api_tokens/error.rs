@@ -22,7 +22,8 @@ pub enum ApiTokenError {
     Expired,
 
     /// The creator is disabled, unverified or no longer an administrator: the token carried
-    /// their authority, so it has none left.
+    /// their authority, so it has none left. From `create`: such an account cannot create
+    /// one (a request error there, not a 401).
     #[error("API token creator is not an active administrator")]
     CreatorInactive,
 

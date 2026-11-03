@@ -24,13 +24,14 @@ mod secret;
 
 use std::collections::BTreeSet;
 
-use deskhaven_db::entity::api_token;
+use deskhaven_db::begin_write;
+use deskhaven_db::entity::{api_token, user};
 use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, LockType};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, SqlErr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbErr,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
 pub use authenticate::ApiTokenPrincipal;
@@ -128,6 +129,10 @@ impl ApiTokenService {
         let now = self.now()?;
         let name = validate(&new, now)?;
         let secret = ApiTokenSecret::generate().map_err(ApiTokenError::Random)?;
+        let tx = begin_write(&self.db).await?;
+        if let Some(creator) = new.created_by {
+            ensure_creator(&tx, creator).await?;
+        }
         let row = api_token::ActiveModel {
             id: NotSet,
             name: Set(name),
@@ -140,7 +145,8 @@ impl ApiTokenService {
             last_used_at: Set(None),
             revoked_at: Set(None),
         };
-        let stored = row.insert(&self.db).await.map_err(creator_missing)?;
+        let stored = row.insert(&tx).await.map_err(creator_missing)?;
+        tx.commit().await?;
         Ok((stored.into(), secret))
     }
 
@@ -196,6 +202,21 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
     match problem {
         Some((field, reason)) => Err(ApiTokenError::Invalid { field, reason }),
         None => Ok(name.to_owned()),
+    }
+}
+
+/// The creator exists and is an active administrator, and stays so until `tx` ends: the
+/// key-share lock makes a concurrent disable or demotion (which locks the account row for
+/// update and revokes its tokens) wait for this token, so the revocation sees it.
+async fn ensure_creator(tx: &DatabaseTransaction, creator: i64) -> Result<(), ApiTokenError> {
+    let found = user::Entity::find_by_id(creator)
+        .lock(LockType::KeyShare)
+        .one(tx)
+        .await?;
+    let user = found.ok_or(ApiTokenError::CreatorNotFound)?;
+    match authenticate::is_active_admin(&user) {
+        true => Ok(()),
+        false => Err(ApiTokenError::CreatorInactive),
     }
 }
 

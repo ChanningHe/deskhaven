@@ -9,8 +9,10 @@
 use deskhaven_db::entity::address_book_peer;
 use deskhaven_db::time;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter,
 };
+use serde_json::{Value, json};
 
 use super::access::{Actor, authorize};
 use super::books::{shared_by_name, touch};
@@ -28,6 +30,30 @@ impl AddressBookService {
         name: &str,
     ) -> Result<Book, AddressBookError> {
         shared_by_name(tx, name).await
+    }
+
+    /// The audit view of `rustdesk_id`'s entry in book `guid`, read in `tx` as `actor`
+    /// (`None`: no entry): alias, note, tags and whether it has a password, never the password.
+    pub(crate) async fn entry_view_in(
+        &self,
+        tx: &DatabaseTransaction,
+        actor: Actor,
+        guid: &str,
+        rustdesk_id: &str,
+    ) -> Result<Option<Value>, AddressBookError> {
+        let (book, _) = authorize(tx, actor, guid, Rule::ReadOnly, false).await?;
+        let row = address_book_peer::Entity::find_by_id((book.id, rustdesk_id.to_owned()))
+            .one(tx)
+            .await?;
+        Ok(row.map(|row| {
+            let tags: Value = serde_json::from_str(&row.tags).unwrap_or(Value::Null);
+            json!({
+                "alias": row.alias, "note": row.note, "tags": tags,
+                "hostname": row.hostname, "username": row.username,
+                // `null` without one; the audit redactor masks the `true` but keeps `null`.
+                "had_password": row.password_enc.is_some().then_some(true),
+            })
+        }))
     }
 
     /// Adds or updates `patch`'s entry in book `guid` as `actor`, inside `tx` (see the module
@@ -53,7 +79,7 @@ impl AddressBookService {
             .await?;
         match existing {
             Some(current) => {
-                let tags = merged_tags(&current.tags, patch.tags.clone());
+                let tags = merged_tags(&current.tags, patch.tags.clone())?;
                 let patch = PeerPatch { tags, ..patch };
                 self.changes(&book, current, patch)?.update(tx).await?;
             }
@@ -84,15 +110,23 @@ impl AddressBookService {
 }
 
 /// The stored tags plus `added` (in order, without duplicates); `None` when nothing is added.
-fn merged_tags(stored: &str, added: Option<Vec<String>>) -> Option<Vec<String>> {
-    let added = added?;
-    let mut tags: Vec<String> = serde_json::from_str(stored).unwrap_or_default();
+/// Unreadable stored tags are an error: rewriting them would silently drop them.
+fn merged_tags(
+    stored: &str,
+    added: Option<Vec<String>>,
+) -> Result<Option<Vec<String>>, AddressBookError> {
+    let Some(added) = added else {
+        return Ok(None);
+    };
+    let mut tags: Vec<String> = serde_json::from_str(stored).map_err(|err| {
+        AddressBookError::Database(DbErr::Custom(format!("unreadable peer tags: {err}")))
+    })?;
     for tag in added {
         if !tags.contains(&tag) {
             tags.push(tag);
         }
     }
-    Some(tags)
+    Ok(Some(tags))
 }
 
 #[cfg(test)]
@@ -106,9 +140,19 @@ mod tests {
         let merged = merged_tags(stored, Some(vec!["lobby".to_owned(), "new".to_owned()]));
 
         assert_eq!(
-            merged,
+            merged.unwrap(),
             Some(vec!["printers".into(), "lobby".into(), "new".into()])
         );
-        assert_eq!(merged_tags(stored, None), None);
+        assert_eq!(merged_tags(stored, None).unwrap(), None);
+    }
+
+    #[test]
+    fn unreadable_stored_tags_are_an_error_not_dropped() {
+        let merged = merged_tags("not json", Some(vec!["new".to_owned()]));
+
+        assert!(
+            matches!(merged, Err(AddressBookError::Database(_))),
+            "{merged:?}"
+        );
     }
 }

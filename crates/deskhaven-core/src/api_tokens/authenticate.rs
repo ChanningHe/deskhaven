@@ -109,13 +109,14 @@ fn check(
     let Some(created_by) = row.created_by else {
         return Ok(());
     };
-    let authorized = creator.is_some_and(|u| {
-        u.id == created_by
-            && u.status == Status::Active
-            && matches!(u.role, Role::Owner | Role::Admin)
-    });
+    let authorized = creator.is_some_and(|u| u.id == created_by && is_active_admin(u));
     match authorized {
         true => Ok(()),
         false => Err(ApiTokenError::CreatorInactive),
     }
+}
+
+/// An account whose authority a token can carry.
+pub(super) fn is_active_admin(user: &user::Model) -> bool {
+    user.status == Status::Active && matches!(user.role, Role::Owner | Role::Admin)
 }

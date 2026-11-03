@@ -96,28 +96,18 @@ pub(super) fn check(rustdesk_id: &str, preset: &AddressBookPreset) -> Result<(),
     PeerPatch::from_json(Value::Object(peer)).map(drop)
 }
 
-/// An assignment's entry for `device` (written as an administrator, in the assignment's
-/// transaction): the preset's fields, the administrator's names for the device (else the
-/// reported ones), and the tag to add.
+/// An assignment's entry for device `rustdesk_id` (written as an administrator, in the
+/// assignment's transaction): the preset's fields, the tag to add, and the entry's hostname /
+/// username only when the assignment names the device (`device_name` / `device_username`),
+/// so an existing entry keeps the names written into it.
 pub(super) fn assign_patch(
-    device: &device::Model,
+    rustdesk_id: &str,
     preset: &AddressBookPreset,
+    hostname: Option<&str>,
+    username: Option<&str>,
 ) -> Result<PeerPatch, AddressBookError> {
-    let mut peer = entry_fields(&device.rustdesk_id, preset);
-    let names = [
-        (
-            "hostname",
-            device.display_name.as_ref().or(device.hostname.as_ref()),
-        ),
-        (
-            "username",
-            device
-                .display_username
-                .as_ref()
-                .or(device.username.as_ref()),
-        ),
-    ];
-    for (key, value) in names {
+    let mut peer = entry_fields(rustdesk_id, preset);
+    for (key, value) in [("hostname", hostname), ("username", username)] {
         if let Some(value) = value {
             peer.insert(key.to_owned(), json!(value));
         }

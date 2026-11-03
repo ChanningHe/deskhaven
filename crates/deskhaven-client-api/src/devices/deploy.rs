@@ -9,7 +9,8 @@
 //! | malformed body, unusable id / uuid / pk | 200 | `{"result": "INVALID_INPUT"}` |
 //! | id bound to another uuid (stored, or live in the signal server) | 200 | `{"result": "ID_TAKEN"}` |
 //! | a new id beyond the new-id quota of the network or token | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//! | deployed | 200 | `{"result": "OK"}` |
+//! | a new id the signal server did not say in time whether it holds | 503 + `Retry-After` | `{"error": "Please try later"}` |
+//! | deployed (or already deployed: nothing written) | 200 | `{"result": "OK"}` |
 //! | body over [`MAX_DEPLOY_BODY`] | 413 | stack renderer |
 //!
 //! The client reads only `result` (anything else it prints as an error), so every outcome
@@ -70,6 +71,9 @@ pub async fn deploy(
         DeployOutcome::IdTaken => "ID_TAKEN",
         DeployOutcome::TooMany { retry_after } => {
             return Err(ClientApiError::TooManyRequests { retry_after });
+        }
+        DeployOutcome::Unavailable { retry_after } => {
+            return Err(ClientApiError::Unavailable { retry_after });
         }
     };
     Ok(Json(json!({ "result": result })))
