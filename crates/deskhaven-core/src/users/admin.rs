@@ -116,8 +116,8 @@ impl UserService {
     /// `email_verified` unless set explicitly. Demoting or deactivating the last active
     /// owner is refused; entering `disabled` revokes every session in the same transaction
     /// and emits [`UserEvent::Disabled`]; entering `disabled` or the `user` role revokes the
-    /// account's API tokens in the same transaction; role and other status changes reach commit hooks,
-    /// as does a set `must_change_password` ([`UserChange::AccountChanged`]).
+    /// account's API tokens in the same transaction; role and other status changes reach
+    /// commit hooks, as does a set `must_change_password` ([`UserChange::AccountChanged`]).
     /// `guard` sees the account before and after (a no-op edit included).
     pub async fn edit(
         &self,
