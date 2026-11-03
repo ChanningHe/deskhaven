@@ -580,8 +580,6 @@
       "statusActive": "Active",
       "statusDisabled": "Disabled"
     },
-    "unnamed": "Unnamed",
-    "never": "Never",
     "drawer": {
       "title": "Device",
       "description": "ID {{id}}",
@@ -601,7 +599,9 @@
         "registerIp": "Registration IP",
         "firstSeen": "First seen",
         "lastSeen": "Last seen"
-      }
+      },
+      "gone": "This device no longer exists; another administrator may have deleted it.",
+      "stale": "Could not refresh; showing the data loaded last"
     },
     "manage": {
       "title": "Ownership and note",
@@ -609,12 +609,14 @@
       "ownerNone": "Unassigned",
       "ownerSearch": "Search a user to make owner",
       "ownerCandidates": "Matching users",
-      "ownerFound": "{{count}} matching users; Enter picks the highlighted one.",
       "ownerNoMatch": "No matching users.",
       "ownerClear": "Remove owner",
       "group": "Device group",
       "noGroup": "Ungrouped",
-      "note": "Note"
+      "note": "Note",
+      "conflict": "Someone else just changed what you are editing; saving overwrites it.",
+      "ownerFound_one": "{{count}} matching user; Enter picks the highlighted one.",
+      "ownerFound_other": "{{count}} matching users; Enter picks the highlighted one."
     },
     "connections": {
       "title": "Connections",
@@ -625,7 +627,7 @@
       "confirmTitle": "Disconnect this connection?",
       "confirmDescription": "The device closes connection {{id}} at its next heartbeat (about every 3 s while it has connections). The request expires after {{seconds}} s if the device does not pick it up.",
       "confirmAction": "Disconnect",
-      "queued": "Disconnect requested; the device closes the connection at its next heartbeat.",
+      "queued": "Disconnect requested for connection {{id}}; the device closes it at its next heartbeat.",
       "recent": "Recent connections",
       "noRecent": "No connections recorded yet.",
       "from": "From {{peer}}",
@@ -647,7 +649,6 @@
       "layers": "Strategies in effect (lowest priority first)",
       "options": "Merged options",
       "empty": "(empty: the client deletes this option)",
-      "from": "Source",
       "scope": {
         "global": "Global",
         "group": "Owner’s user group",
@@ -661,12 +662,13 @@
       "title": "Actions",
       "disable": "Disable device",
       "enable": "Enable device",
-      "delete": "Delete device"
+      "delete": "Delete device",
+      "disableHint": "Disabling is only a marker for now; it does not block the device."
     },
     "confirm": {
       "disable": {
         "title": "Disable this device?",
-        "description": "{{id}} is marked disabled. Until device admission ships, this is a mark only: it does not stop the device from registering or connecting.",
+        "description": "{{id}} is marked disabled. This is a marker only: it does not stop the device from registering or connecting yet.",
         "confirm": "Disable device"
       },
       "delete": {
@@ -697,11 +699,13 @@
     },
     "drawer": {
       "title": "Device group",
-      "devices": "{{count}} devices",
       "readOnly": "Defined in the configuration file; read-only here.",
       "save": "Save changes",
       "delete": "Delete device group",
-      "viewDevices": "View these devices"
+      "viewDevices": "View these devices",
+      "conflict": "Someone else just changed what you are editing; saving overwrites it.",
+      "devices_one": "{{count}} device",
+      "devices_other": "{{count}} devices"
     },
     "confirmDelete": {
       "title": "Delete this device group?",

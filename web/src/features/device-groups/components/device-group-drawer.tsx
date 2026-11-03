@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 
 import {
   deleteDeviceGroup,
+  getGetDeviceGroupQueryKey,
   useGetDeviceGroup,
   useUpdateDeviceGroup,
 } from '@/api/generated/device-groups/device-groups'
@@ -24,6 +25,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { invalidateDevices } from '@/features/devices/invalidate'
+import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 interface DeviceGroupDrawerProps {
   groupId: number | undefined
@@ -96,20 +98,29 @@ function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: ()
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const [name, setName] = useState(group.name)
-  const [note, setNote] = useState(group.note)
   const [confirming, setConfirming] = useState(false)
+  const { draft, changed, conflicts, set, reset } = useRebasedDraft({
+    name: group.name,
+    note: group.note,
+  })
   const mutation = useUpdateDeviceGroup()
-  const dirty = name !== group.name || note !== group.note
+  const dirty = changed.length > 0
+  const detailKey = getGetDeviceGroupQueryKey(group.id)
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // Only what the user edited: an unrelated field must not write a stale value back.
     const data = {
-      ...(name === group.name ? {} : { name }),
-      ...(note === group.note ? {} : { note }),
+      ...(changed.includes('name') ? { name: draft.name } : {}),
+      ...(changed.includes('note') ? { note: draft.note } : {}),
     }
     const saved = await mutation.mutateAsync({ id: group.id, data }).catch(() => undefined)
-    if (saved !== undefined) void invalidateDevices(queryClient)
+    if (saved === undefined) return
+    // The response is the newest copy: a refetch still in flight must not overwrite it.
+    await queryClient.cancelQueries({ queryKey: detailKey })
+    queryClient.setQueryData<DeviceGroupView>(detailKey, saved)
+    reset({ name: saved.name, note: saved.note })
+    void invalidateDevices(queryClient)
   }
 
   // The confirm dialog is a sibling of the form, never inside it: React bubbles its submit
@@ -122,19 +133,24 @@ function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: ()
           id={`${id}-name`}
           required
           maxLength={64}
-          value={name}
+          value={draft.name}
           onChange={(e) => {
-            setName(e.target.value)
+            set({ name: e.target.value })
           }}
         />
         <Label htmlFor={`${id}-note`}>{t('deviceGroups.fields.note')}</Label>
         <Input
           id={`${id}-note`}
-          value={note}
+          value={draft.note}
           onChange={(e) => {
-            setNote(e.target.value)
+            set({ note: e.target.value })
           }}
         />
+        {conflicts.length > 0 ? (
+          <p role="status" className="text-xs text-warning">
+            {t('deviceGroups.drawer.conflict')}
+          </p>
+        ) : null}
         {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
@@ -162,6 +178,8 @@ function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: ()
         onConfirm={async () => {
           await deleteDeviceGroup(group.id)
           onDeleted()
+          // Nothing to refetch: the group is gone.
+          queryClient.removeQueries({ queryKey: detailKey })
           await invalidateDevices(queryClient)
         }}
       />

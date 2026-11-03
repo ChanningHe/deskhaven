@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { getGetDeviceGroupQueryKey } from '@/api/generated/device-groups/device-groups'
 import { renderApp } from '@/test/render-app'
 import { DEVICE_GROUPS_PATH, deviceGroupView } from '@/features/devices/test-data'
 import { pageOf } from '@/features/users/test-data'
@@ -106,6 +107,41 @@ describe('device groups tab', () => {
     await waitFor(() => {
       expect(router.state.location.search).toEqual({ tab: 'devices' })
     })
+  })
+
+  it('saves only the edited field when another admin changed the other one meanwhile', async () => {
+    let served = OFFICE
+    const bodies: unknown[] = []
+    const { user, queryClient } = renderApp('/groups?tab=devices&group=3', {
+      api: {
+        [`GET ${DEVICE_GROUPS_PATH}`]: pageOf([OFFICE]),
+        [`GET ${DEVICE_GROUPS_PATH}/3`]: () => ({ body: served }),
+        [`PATCH ${DEVICE_GROUPS_PATH}/3`]: ({ init }) => {
+          bodies.push(JSON.parse(init.body as string))
+          served = { ...served, name: 'HQ' }
+          return { body: served }
+        },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'Office' })
+    const name = within(drawer).getByLabelText('名称')
+    await user.clear(name)
+    await user.type(name, 'HQ')
+
+    served = { ...OFFICE, note: 'moved to floor 2' }
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: getGetDeviceGroupQueryKey(3) })
+    })
+    await waitFor(() => {
+      expect(within(drawer).getByLabelText('备注')).toHaveValue('moved to floor 2')
+    })
+    expect(name).toHaveValue('HQ')
+
+    await user.click(within(drawer).getByRole('button', { name: '保存修改' }))
+    await waitFor(() => {
+      expect(bodies).toEqual([{ name: 'HQ' }])
+    })
+    expect(within(drawer).getByLabelText('备注')).toHaveValue('moved to floor 2')
   })
 
   it('shows a config-managed group read-only', async () => {

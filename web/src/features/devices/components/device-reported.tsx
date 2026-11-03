@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { DeviceDetail } from '@/api/generated/model'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, nonBlank } from '@/lib/format'
 
 const REPORTED = ['hostname', 'username', 'os', 'cpu', 'memory', 'version'] as const
 
@@ -26,7 +26,7 @@ export function DeviceReported({ detail }: { detail: DeviceDetail }) {
         <Fields>
           {REPORTED.map((key) => (
             <Field key={key} name={t(`devices.drawer.fields.${key}`)}>
-              {device[key] ?? (
+              {nonBlank(device[key]) ?? (
                 <span className="text-muted-foreground">{t('devices.drawer.notReported')}</span>
               )}
             </Field>

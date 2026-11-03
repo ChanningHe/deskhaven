@@ -44,6 +44,7 @@ export type PaginatedDeviceViewItemsItem = {
   owner?: OwnerRef | null
   /** The id clients connect to. */
   rustdesk_id: string
+  /** `disabled` is a marker only: it does not block the device yet. */
   status: DeviceStatusView
   /**
    * Device-reported: the OS user running the client.

@@ -2,42 +2,17 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { DeviceDetail, DeviceView } from '@/api/generated/model'
-import type { MockResponse } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
-import type { RenderAppOptions } from '@/test/render-app'
 import { pageOf, userView } from '@/features/users/test-data'
 
-import {
-  DEVICE_GROUPS_PATH,
-  DEVICES_PATH,
-  deviceDetail,
-  deviceGroupView,
-  deviceView,
-} from '../test-data'
+import { ALPHA, ALPHA_PATH, deviceDetail, drawerApi } from '../test-data'
 
-const ALPHA = deviceView(1, '100200300', {
-  online: true,
-  owner: { id: 5, username: 'bob' },
-  note: 'front desk',
-})
-const ONE = `${DEVICES_PATH}/1`
+const ONE = ALPHA_PATH
 const USERS = '/admin/api/v1/users'
-const OFFICE = deviceGroupView(3, 'Office')
+const api = drawerApi
 
 function detailWith(patch: Partial<DeviceDetail> = {}, device: DeviceView = ALPHA) {
   return { body: deviceDetail(device, patch) }
-}
-
-type Api = NonNullable<RenderAppOptions['api']>
-
-/** The routes every drawer test needs, plus `extra`; `detail` answers the device. */
-function api(extra: Api = {}, detail: MockResponse = detailWith()): Api {
-  return {
-    [`GET ${DEVICES_PATH}`]: pageOf([ALPHA]),
-    [`GET ${DEVICE_GROUPS_PATH}`]: pageOf([OFFICE]),
-    [`GET ${ONE}`]: detail,
-    ...extra,
-  }
 }
 
 async function openDrawer(path = '/devices?device=1') {
@@ -192,7 +167,7 @@ describe('device drawer: actions', () => {
     await waitFor(() => {
       expect(posted).toEqual({ conn_id: 9 })
     })
-    expect(await within(drawer).findByText(/已发出断开请求/)).toBeInTheDocument()
+    expect(await within(drawer).findByText(/已请求断开连接 9/)).toBeInTheDocument()
   })
 
   it('disables after confirming and enables a disabled device at once', async () => {

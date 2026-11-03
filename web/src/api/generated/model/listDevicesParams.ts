@@ -18,6 +18,8 @@ export type ListDevicesParams = {
   page_size?: number
   /**
    * `field` ascending or `-field` descending; then by id (default `rustdesk_id`).
+   * `last_seen_at` sorts by the stored value, which is flushed from memory in batches and
+   * can trail the `last_seen_at` shown for a device by one flush interval.
    * @pattern ^-?(rustdesk_id|hostname|os|version|status|last_seen_at|created_at)$
    */
   sort?: string

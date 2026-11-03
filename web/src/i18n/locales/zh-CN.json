@@ -580,8 +580,6 @@
       "statusActive": "正常",
       "statusDisabled": "已禁用"
     },
-    "unnamed": "未命名",
-    "never": "从未",
     "drawer": {
       "title": "设备",
       "description": "ID {{id}}",
@@ -601,7 +599,9 @@
         "registerIp": "注册 IP",
         "firstSeen": "首次出现",
         "lastSeen": "最后在线"
-      }
+      },
+      "gone": "该设备已不存在，可能已被其他管理员删除。",
+      "stale": "无法刷新，以下为上次加载的数据"
     },
     "manage": {
       "title": "归属与备注",
@@ -609,12 +609,14 @@
       "ownerNone": "未指定",
       "ownerSearch": "搜索用户作为所有者",
       "ownerCandidates": "匹配的用户",
-      "ownerFound": "找到 {{count}} 个匹配用户，按 Enter 选择高亮项。",
       "ownerNoMatch": "没有匹配的用户。",
       "ownerClear": "移除所有者",
       "group": "设备组",
       "noGroup": "未分组",
-      "note": "备注"
+      "note": "备注",
+      "conflict": "他人刚修改了你正在编辑的内容，保存会覆盖它。",
+      "ownerFound_one": "找到 {{count}} 个匹配用户，按 Enter 选择高亮项。",
+      "ownerFound_other": "找到 {{count}} 个匹配用户，按 Enter 选择高亮项。"
     },
     "connections": {
       "title": "连接",
@@ -625,7 +627,7 @@
       "confirmTitle": "断开此连接？",
       "confirmDescription": "设备会在下一次心跳时关闭连接 {{id}}（有连接时约每 3 秒一次）。请求 {{seconds}} 秒内未被设备取走则作废。",
       "confirmAction": "断开连接",
-      "queued": "已发出断开请求；设备会在下一次心跳时关闭该连接。",
+      "queued": "已请求断开连接 {{id}}；设备会在下一次心跳时关闭它。",
       "recent": "最近连接",
       "noRecent": "暂无连接记录。",
       "from": "来自 {{peer}}",
@@ -647,7 +649,6 @@
       "layers": "生效的策略（优先级由低到高）",
       "options": "合并后的选项",
       "empty": "（空值：客户端删除此选项）",
-      "from": "来源",
       "scope": {
         "global": "全局",
         "group": "所有者所在用户组",
@@ -661,12 +662,13 @@
       "title": "操作",
       "disable": "禁用设备",
       "enable": "启用设备",
-      "delete": "删除设备"
+      "delete": "删除设备",
+      "disableHint": "禁用目前只是标记，不会阻止设备连接。"
     },
     "confirm": {
       "disable": {
         "title": "禁用此设备？",
-        "description": "{{id}} 将被标记为已禁用。设备准入上线前，该状态只作标记，不会阻止设备注册或连接。",
+        "description": "{{id}} 将被标记为已禁用。这只是标记，目前不会阻止该设备注册或连接。",
         "confirm": "禁用设备"
       },
       "delete": {
@@ -697,11 +699,13 @@
     },
     "drawer": {
       "title": "设备组",
-      "devices": "{{count}} 台设备",
       "readOnly": "由配置文件定义，在此处只读。",
       "save": "保存修改",
       "delete": "删除设备组",
-      "viewDevices": "查看这些设备"
+      "viewDevices": "查看这些设备",
+      "conflict": "他人刚修改了你正在编辑的内容，保存会覆盖它。",
+      "devices_one": "{{count}} 台设备",
+      "devices_other": "{{count}} 台设备"
     },
     "confirmDelete": {
       "title": "删除此设备组？",

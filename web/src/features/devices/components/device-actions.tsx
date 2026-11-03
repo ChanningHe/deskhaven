@@ -2,7 +2,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { deleteDevice, updateDevice } from '@/api/generated/devices/devices'
+import {
+  getGetDeviceQueryKey,
+  useDeleteDevice,
+  useUpdateDevice,
+} from '@/api/generated/devices/devices'
 import type { DeviceView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
@@ -25,37 +29,34 @@ export function DeviceActions({ device, onDeleted }: DeviceActionsProps) {
   // `action` outlives `open`: the dialog keeps its texts while it animates closed.
   const [action, setAction] = useState<Confirmed>('disable')
   const [confirming, setConfirming] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(undefined)
+  const update = useUpdateDevice()
+  const remove = useDeleteDevice()
   const refresh = () => invalidateDevices(queryClient)
 
-  /** Enabling needs no confirmation; the button stays disabled until it settles. */
-  const enable = async () => {
-    if (busy) return
-    setBusy(true)
-    setError(undefined)
-    try {
-      await updateDevice(device.id, { status: 'active' })
-      await refresh()
-    } catch (caught) {
-      setError(caught)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const confirmed: Record<Confirmed, () => Promise<unknown>> = {
-    disable: async () => updateDevice(device.id, { status: 'disabled' }).then(refresh),
-    delete: async () =>
-      deleteDevice(device.id).then(() => {
-        onDeleted()
-        return refresh()
-      }),
+    disable: async () =>
+      update.mutateAsync({ id: device.id, data: { status: 'disabled' } }).then(refresh),
+    delete: async () => {
+      await remove.mutateAsync({ id: device.id })
+      onDeleted()
+      // Gone: nothing to refetch (it would only 404).
+      queryClient.removeQueries({ queryKey: getGetDeviceQueryKey(device.id) })
+      await refresh()
+    },
   }
 
   const ask = (next: Confirmed) => () => {
     setAction(next)
     setConfirming(true)
+  }
+
+  /** Enabling needs no confirmation; the button stays disabled until it settles. */
+  const enable = () => {
+    if (update.isPending) return
+    update.mutate(
+      { id: device.id, data: { status: 'active' } },
+      { onSuccess: () => void refresh() },
+    )
   }
 
   return (
@@ -70,9 +71,9 @@ export function DeviceActions({ device, onDeleted }: DeviceActionsProps) {
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
-            aria-busy={busy}
-            onClick={() => void enable()}
+            disabled={update.isPending}
+            aria-busy={update.isPending}
+            onClick={enable}
           >
             {t('devices.actions.enable')}
           </Button>
@@ -81,7 +82,8 @@ export function DeviceActions({ device, onDeleted }: DeviceActionsProps) {
           {t('devices.actions.delete')}
         </Button>
       </div>
-      {error === undefined ? null : <ErrorAlert error={error} />}
+      <p className="text-xs text-muted-foreground">{t('devices.actions.disableHint')}</p>
+      {update.error ? <ErrorAlert error={update.error} /> : null}
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}

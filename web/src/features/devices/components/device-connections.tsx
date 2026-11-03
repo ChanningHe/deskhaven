@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
@@ -7,6 +8,8 @@ import type { ConnectionView, DeviceDetail } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { formatDateTime } from '@/lib/format'
+
+import { invalidateDevices } from '../invalidate'
 
 /** Connection types the console names (`conn_type` of the audit message). */
 const KNOWN_TYPES = [0, 1, 2, 3, 4] as const
@@ -27,7 +30,8 @@ function LiveConnections({ deviceId, connections }: { deviceId: number; connecti
   const [target, setTarget] = useState(0)
   const [confirming, setConfirming] = useState(false)
   const [ttl, setTtl] = useState<number | undefined>(undefined)
-  const [queued, setQueued] = useState(false)
+  const [queuedId, setQueuedId] = useState<number | undefined>(undefined)
+  const queryClient = useQueryClient()
   return (
     <section aria-label={t('devices.connections.title')} className="grid gap-2">
       <h3 className="text-sm font-medium">{t('devices.connections.title')}</h3>
@@ -54,7 +58,9 @@ function LiveConnections({ deviceId, connections }: { deviceId: number; connecti
         </ul>
       )}
       <p role="status" className="text-xs text-muted-foreground">
-        {queued ? t('devices.connections.queued') : null}
+        {queuedId !== undefined && connections.includes(queuedId)
+          ? t('devices.connections.queued', { id: queuedId })
+          : null}
       </p>
       <ConfirmDialog
         open={confirming}
@@ -68,7 +74,8 @@ function LiveConnections({ deviceId, connections }: { deviceId: number; connecti
         onConfirm={async () => {
           const result = await disconnectDevice(deviceId, { conn_id: target })
           setTtl(result.ttl_seconds)
-          setQueued(true)
+          setQueuedId(target)
+          void invalidateDevices(queryClient)
         }}
       />
     </section>

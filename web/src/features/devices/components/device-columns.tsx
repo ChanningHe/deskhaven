@@ -39,7 +39,7 @@ export function deviceColumns(
     }),
     column.accessor('hostname', {
       header: t('devices.columns.hostname'),
-      meta: { label: t('devices.columns.hostname') },
+      meta: { label: t('devices.columns.hostname'), className: 'max-w-40 truncate' },
       cell: ({ getValue }) => getValue() ?? '',
     }),
     column.display({

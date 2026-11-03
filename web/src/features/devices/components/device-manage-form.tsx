@@ -1,14 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import type { SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { useUpdateDevice } from '@/api/generated/devices/devices'
-import type { DevicePatch, DeviceView, OwnerRef } from '@/api/generated/model'
+import { getGetDeviceQueryKey, useUpdateDevice } from '@/api/generated/devices/devices'
+import type { DeviceDetail, DevicePatch, DeviceView, OwnerRef } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { NativeSelect } from '@/components/common/native-select'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { invalidateDevices } from '../invalidate'
 import { useDeviceGroupOptions } from '../use-device-group-options'
@@ -28,13 +29,12 @@ function draftOf(device: DeviceView): Draft {
   }
 }
 
-/** Only the fields that changed (`null` removes the owner or the group). */
-function patchOf(device: DeviceView, draft: Draft): DevicePatch {
-  const before = draftOf(device)
+/** Only the fields the user edited (`null` removes the owner or the group). */
+function patchOf(draft: Draft, changed: (keyof Draft)[]): DevicePatch {
   return {
-    ...(draft.owner?.id === before.owner?.id ? {} : { owner_user_id: draft.owner?.id ?? null }),
-    ...(draft.groupId === before.groupId ? {} : { device_group_id: draft.groupId }),
-    ...(draft.note === before.note ? {} : { note: draft.note }),
+    ...(changed.includes('owner') ? { owner_user_id: draft.owner?.id ?? null } : {}),
+    ...(changed.includes('groupId') ? { device_group_id: draft.groupId } : {}),
+    ...(changed.includes('note') ? { note: draft.note } : {}),
   }
 }
 
@@ -44,13 +44,9 @@ export function DeviceManageForm({ device }: { device: DeviceView }) {
   const id = useId()
   const queryClient = useQueryClient()
   const groups = useDeviceGroupOptions()
-  const [draft, setDraft] = useState(() => draftOf(device))
+  const { draft, changed, conflicts, set, reset } = useRebasedDraft(draftOf(device))
   const mutation = useUpdateDevice()
-  const patch = patchOf(device, draft)
-  const dirty = Object.keys(patch).length > 0
-  const set = (change: Partial<Draft>) => {
-    setDraft((previous) => ({ ...previous, ...change }))
-  }
+  const dirty = changed.length > 0
   // The current group stays listed even if the options do not include it.
   const current = device.device_group
   const options =
@@ -58,9 +54,16 @@ export function DeviceManageForm({ device }: { device: DeviceView }) {
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const patch = patchOf(draft, changed)
     const saved = await mutation.mutateAsync({ id: device.id, data: patch }).catch(() => undefined)
     if (saved === undefined) return
-    setDraft(draftOf(saved))
+    // The response is the newest copy: a poll still in flight must not overwrite it.
+    const key = getGetDeviceQueryKey(device.id)
+    await queryClient.cancelQueries({ queryKey: key })
+    queryClient.setQueryData<DeviceDetail>(key, (old) =>
+      old === undefined ? old : { ...old, device: saved },
+    )
+    reset(draftOf(saved))
     void invalidateDevices(queryClient)
   }
 
@@ -104,6 +107,11 @@ export function DeviceManageForm({ device }: { device: DeviceView }) {
         }}
         className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
+      {conflicts.length > 0 ? (
+        <p role="status" className="text-xs text-warning">
+          {t('devices.manage.conflict')}
+        </p>
+      ) : null}
       {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
       <div className="flex items-center gap-2">
         <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
