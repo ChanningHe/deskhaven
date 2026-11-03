@@ -22,7 +22,7 @@ use deskhaven_core::accessible::{
     AccessibleError, AccessiblePeer, AccessibleService, DeviceStatus,
 };
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::Status;
+use deskhaven_core::users::{Status, User};
 use serde::Serialize;
 
 use crate::query::{self, PageReply};
@@ -94,9 +94,34 @@ fn service(state: &AppState) -> AccessibleService {
 fn list_error(err: AccessibleError) -> ClientApiError {
     match err {
         AccessibleError::Invalid { field, reason } => {
+            let field = client_param(field);
             ClientApiError::BadRequest(format!("Invalid {field}: {reason}").into())
         }
         other => ClientApiError::internal(other),
+    }
+}
+
+/// The query parameter a core page problem is about, as the client spells it.
+fn client_param(field: &str) -> &str {
+    match field {
+        "page" => "current",
+        "page_size" => "pageSize",
+        other => other,
+    }
+}
+
+/// The row of `user` for `viewer`. Other users' rows carry only what the panel shows (name,
+/// display name, avatar, status, `is_admin`): the admin-written `note` and the `email` are
+/// the viewer's own business.
+fn user_row(viewer: i64, user: &User) -> UserPayload {
+    let payload = UserPayload::from(user);
+    if user.id == viewer {
+        return payload;
+    }
+    UserPayload {
+        note: String::new(),
+        email: None,
+        ..payload
     }
 }
 
@@ -139,7 +164,11 @@ async fn users(
         .map_err(list_error)?;
     Ok(Json(PageReply {
         total: found.total,
-        data: found.items.iter().map(UserPayload::from).collect(),
+        data: found
+            .items
+            .iter()
+            .map(|user| user_row(principal.user_id, user))
+            .collect(),
     }))
 }
 

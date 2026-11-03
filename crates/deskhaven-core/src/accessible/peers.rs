@@ -18,7 +18,8 @@ pub struct AccessiblePeer {
     pub hostname: Option<String>,
     pub username: Option<String>,
     pub os: Option<String>,
-    /// Username of the owner (always set: unowned devices are out of scope).
+    /// Username of the owner. `None` only if the owner vanished since the page was read:
+    /// unowned devices are out of scope.
     pub owner: Option<String>,
     pub device_group: Option<String>,
     pub note: String,

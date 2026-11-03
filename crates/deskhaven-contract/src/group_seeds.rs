@@ -7,7 +7,7 @@ use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::devices::{DeviceRepository, Registration};
 use deskhaven_core::groups::NewGroup;
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::{Credential, NewUser, Password, Status};
+use deskhaven_core::users::{Credential, NewUser, Password, ProfileUpdate, Status};
 use deskhaven_db::entity::device::{self, DeviceStatus};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
@@ -19,6 +19,10 @@ pub const TEAMMATE: &str = "tess";
 pub const DISABLED_TEAMMATE: &str = "tom";
 /// In the group `Elsewhere` only: nothing of hers is visible to `alice`.
 pub const STRANGER: &str = "sam";
+/// Shares `Team` with `alice`; unverified.
+pub const UNVERIFIED_TEAMMATE: &str = "uma";
+/// Every seeded user has the email `<name>@example.com` and the note `admin note on <name>`.
+pub const EMAIL_DOMAIN: &str = "example.com";
 
 /// Devices of `group-scope`, by RustDesk id.
 pub const ALICE_DEVICE: &str = "700000001";
@@ -46,7 +50,20 @@ async fn create_user(state: &AppState, username: &str, status: Status) -> anyhow
         status,
         ..NewUser::new(username, Credential::Local { password })
     };
-    Ok(state.users.create(new).await?.id)
+    let id = state.users.create(new).await?.id;
+    describe(state, id, username).await?;
+    Ok(id)
+}
+
+/// Gives the user the email and the admin-written note the panel must not hand to others.
+async fn describe(state: &AppState, id: i64, username: &str) -> anyhow::Result<()> {
+    let update = ProfileUpdate {
+        email: Some(Some(format!("{username}@{EMAIL_DOMAIN}"))),
+        note: Some(format!("admin note on {username}")),
+        ..ProfileUpdate::default()
+    };
+    state.users.update_profile(id, update).await?;
+    Ok(())
 }
 
 async fn create_team(state: &AppState, name: &str, members: &[i64]) -> anyhow::Result<()> {
@@ -94,8 +111,10 @@ pub async fn group_scope(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let alice = state.users.get_by_username(SEED_USERNAME).await?.id;
     let tess = create_user(state, TEAMMATE, Status::Active).await?;
     let tom = create_user(state, DISABLED_TEAMMATE, Status::Disabled).await?;
+    let uma = create_user(state, UNVERIFIED_TEAMMATE, Status::Unverified).await?;
     let sam = create_user(state, STRANGER, Status::Active).await?;
-    create_team(state, "Team", &[alice, tess, tom]).await?;
+    describe(state, alice, SEED_USERNAME).await?;
+    create_team(state, "Team", &[alice, tess, tom, uma]).await?;
     create_team(state, "Elsewhere", &[sam]).await?;
     let mut groups = Vec::new();
     for name in ["Office", "Lab", "Secret", "Lobby"] {

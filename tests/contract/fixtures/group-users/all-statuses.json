@@ -1,7 +1,7 @@
 {
   "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
   "source": ["flutter/lib/models/group_model.dart:160-222", "flutter/lib/common/hbbs/hbbs.dart:19-52"],
-  "description": "Without the status filter a disabled teammate is listed too, with status 0 (the client maps 1 / 0 / -1).",
+  "description": "Without the status filter a disabled teammate (status 0) and an unverified one (status -1) are listed too, like any member of the shared group (the client maps 1 / 0 / -1).",
   "seed": ["client-session", "group-scope"],
   "request": {
     "method": "GET",
@@ -13,11 +13,12 @@
     "body_kind": "json",
     "shape": "PagedResponse<ClientUserPayload>",
     "json_subset": {
-      "total": 3,
+      "total": 4,
       "data": [
         { "name": "alice", "status": 1 },
         { "name": "tess", "status": 1 },
-        { "name": "tom", "status": 0 }
+        { "name": "tom", "status": 0 },
+        { "name": "uma", "status": -1 }
       ]
     }
   }

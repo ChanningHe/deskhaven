@@ -18,9 +18,9 @@ deskhaven-core = { workspace = true }
 deskhaven-db = { workspace = true }
 deskhaven-http = { workspace = true }
 anyhow = { workspace = true }
-sea-orm = { workspace = true }
 flate2 = { workspace = true }
 axum = { workspace = true }
+sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
