@@ -1,5 +1,6 @@
 export * from './auth/auth'
 export * from './groups/groups'
 export * from './me/me'
+export * from './settings/settings'
 export * from './setup/setup'
 export * from './users/users'

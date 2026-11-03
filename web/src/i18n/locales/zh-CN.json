@@ -81,7 +81,9 @@
       "self_delete": "不能删除自己的账户。",
       "self_service": "请在“我的”页面管理自己账户的此项设置。",
       "managed_by_config": "此项由配置文件管理，在此处只读。",
-      "not_local_account": "该账号通过单点登录或 LDAP 登录，其密码与第二因素由身份提供方管理。"
+      "not_local_account": "该账号通过单点登录或 LDAP 登录，其密码与第二因素由身份提供方管理。",
+      "setting_pinned": "该设置由服务器配置固定，无法在此修改。",
+      "version_conflict": "该设置已被他人修改，请重新载入后再试。"
     }
   },
   "theme": {
@@ -149,11 +151,6 @@
       "description": "用于自动化与集成的访问令牌。",
       "emptyTitle": "暂无 API Token",
       "emptyDescription": "创建 Token 以便在脚本中调用管理 API。"
-    },
-    "settings": {
-      "description": "服务器全局设置及每项取值来源。",
-      "emptyTitle": "设置暂不可用",
-      "emptyDescription": "接入服务器 API 后即可在此编辑设置。"
     },
     "me": {
       "description": "你的账户、密码与双因素认证。",
@@ -458,5 +455,96 @@
     "owner": "所有者",
     "admin": "管理员",
     "user": "用户"
+  },
+  "settings": {
+    "description": "服务器全局设置：每项取值的来源、最后修改人。修改会一并保存。",
+    "categories": {
+      "auth": "认证与会话",
+      "smtp": "邮件（SMTP）",
+      "devices": "设备",
+      "addressbook": "地址簿",
+      "audit": "审计保留",
+      "signal": "信令"
+    },
+    "row": {
+      "unsaved": "未保存",
+      "reset": "恢复默认",
+      "undo": "撤销",
+      "history": "历史",
+      "willReset": "保存后将恢复为默认值。",
+      "serverRefused": "服务器拒绝了该值：{{reason}}"
+    },
+    "pinned": {
+      "env": "由环境变量 {{name}} 固定，此处只读。",
+      "file": "由配置文件 {{path}} 固定，此处只读。",
+      "other": "由服务器配置固定，此处只读。"
+    },
+    "control": {
+      "enabled": "启用",
+      "listPlaceholder": "relay.example.com:21117",
+      "secretKeep": "已设置。输入新值可替换。",
+      "secretEmpty": "未设置。输入即可设置。"
+    },
+    "hint": {
+      "range": "范围 {{min}} 至 {{max}}。",
+      "rangeOrZero": "范围 {{min}} 至 {{max}}，或 0。",
+      "list": "每行一个 host:port，最多 {{max}} 个。",
+      "secret": "只写：已保存的值不会显示。"
+    },
+    "problem": {
+      "required": "请输入值。",
+      "wholeNumber": "请输入整数。",
+      "range": "必须在 {{min}} 到 {{max}} 之间。",
+      "duration": "请使用数字加单位，例如 15m、7d 或 1h30m。",
+      "maxLength": "最多 {{max}} 个字符。",
+      "maxItems": "最多 {{max}} 项。",
+      "variant": "请从列表中选择。"
+    },
+    "value": {
+      "on": "开",
+      "off": "关",
+      "none": "（空）",
+      "secretSet": "已设置",
+      "secretUnset": "未设置"
+    },
+    "save": {
+      "save": "保存更改",
+      "discard": "放弃更改",
+      "nothing": "没有未保存的更改。",
+      "pending": "{{count}} 项未保存的更改",
+      "saved": "已保存 {{count}} 项设置。",
+      "failed": "无法保存设置"
+    },
+    "conflict": {
+      "title": "已被他人修改",
+      "description": "打开此页后，下列设置又被修改过。可以采用对方的值，或在其基础上保留你的值。",
+      "mine": "你的值",
+      "theirs": "当前值",
+      "resetToDefault": "恢复为默认值",
+      "secretReplaced": "新的密钥",
+      "changedBy": "由 {{by}} 于 {{at}} 修改",
+      "changedElsewhere": "打开此页后在别处被修改",
+      "someone": "其他人",
+      "back": "继续编辑",
+      "reload": "采用对方的值",
+      "overwrite": "保留我的值"
+    },
+    "history": {
+      "title": "修改历史",
+      "empty": "该设置从未在此修改过。",
+      "meta": "版本 {{version}} · {{by}} · {{at}}",
+      "system": "系统",
+      "unset": "（未存储）",
+      "reset": "已恢复默认",
+      "pagination": "历史分页",
+      "previous": "较新",
+      "next": "较旧",
+      "page": "第 {{page}} / {{pages}} 页"
+    },
+    "leave": {
+      "title": "不保存就离开？",
+      "description": "设置中有未保存的更改，离开此页将丢失。",
+      "confirm": "离开此页"
+    }
   }
 }

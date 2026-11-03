@@ -40,4 +40,6 @@ export const ErrorCode = {
   self_service: 'self_service',
   managed_by_config: 'managed_by_config',
   not_local_account: 'not_local_account',
+  setting_pinned: 'setting_pinned',
+  version_conflict: 'version_conflict',
 } as const

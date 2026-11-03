@@ -81,7 +81,9 @@
       "self_delete": "You cannot delete your own account.",
       "self_service": "Manage this for your own account on your account page.",
       "managed_by_config": "This item is managed by the configuration file and is read-only here.",
-      "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there."
+      "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there.",
+      "setting_pinned": "This setting is fixed by the server configuration and cannot be changed here.",
+      "version_conflict": "The setting was changed by someone else. Reload and try again."
     }
   },
   "theme": {
@@ -149,11 +151,6 @@
       "description": "Tokens for automation and integrations.",
       "emptyTitle": "No API tokens yet",
       "emptyDescription": "Create a token to call the management API from scripts."
-    },
-    "settings": {
-      "description": "Server-wide settings and where each value comes from.",
-      "emptyTitle": "Settings are not available yet",
-      "emptyDescription": "Settings will be editable here once the server API is connected."
     },
     "me": {
       "description": "Your account, password and two-factor authentication.",
@@ -458,5 +455,96 @@
     "owner": "Owner",
     "admin": "Admin",
     "user": "User"
+  },
+  "settings": {
+    "description": "Server-wide settings, where each value comes from, and who changed it last. Changes are saved together.",
+    "categories": {
+      "auth": "Authentication and sessions",
+      "smtp": "Email (SMTP)",
+      "devices": "Devices",
+      "addressbook": "Address books",
+      "audit": "Audit retention",
+      "signal": "Signalling"
+    },
+    "row": {
+      "unsaved": "Unsaved",
+      "reset": "Reset to default",
+      "undo": "Undo",
+      "history": "History",
+      "willReset": "Will be reset to the default when you save.",
+      "serverRefused": "The server refused this value: {{reason}}"
+    },
+    "pinned": {
+      "env": "Fixed by environment variable {{name}}; read-only here.",
+      "file": "Fixed by config file {{path}}; read-only here.",
+      "other": "Fixed by the server configuration; read-only here."
+    },
+    "control": {
+      "enabled": "Enabled",
+      "listPlaceholder": "relay.example.com:21117",
+      "secretKeep": "A value is set. Type to replace it.",
+      "secretEmpty": "Not set. Type to set it."
+    },
+    "hint": {
+      "range": "From {{min}} to {{max}}.",
+      "rangeOrZero": "From {{min}} to {{max}}, or 0.",
+      "list": "One host:port per line, at most {{max}}.",
+      "secret": "Write-only: the stored value is never shown."
+    },
+    "problem": {
+      "required": "Enter a value.",
+      "wholeNumber": "Enter a whole number.",
+      "range": "Must be between {{min}} and {{max}}.",
+      "duration": "Use a number with a unit, for example 15m, 7d or 1h30m.",
+      "maxLength": "At most {{max}} characters.",
+      "maxItems": "At most {{max}} items.",
+      "variant": "Pick one of the listed values."
+    },
+    "value": {
+      "on": "On",
+      "off": "Off",
+      "none": "(none)",
+      "secretSet": "Set",
+      "secretUnset": "Not set"
+    },
+    "save": {
+      "save": "Save changes",
+      "discard": "Discard changes",
+      "nothing": "No unsaved changes.",
+      "pending": "{{count}} unsaved changes",
+      "saved": "Saved {{count}} settings.",
+      "failed": "The settings could not be saved"
+    },
+    "conflict": {
+      "title": "Changed by someone else",
+      "description": "These settings were changed after you opened this page. Take their values, or keep yours on top of theirs.",
+      "mine": "Your value",
+      "theirs": "Current value",
+      "resetToDefault": "Reset to the default",
+      "secretReplaced": "A new secret",
+      "changedBy": "Changed by {{by}} at {{at}}",
+      "changedElsewhere": "Changed elsewhere since you opened this page",
+      "someone": "someone",
+      "back": "Keep editing",
+      "reload": "Take their values",
+      "overwrite": "Keep my values"
+    },
+    "history": {
+      "title": "Change history",
+      "empty": "This setting has never been changed here.",
+      "meta": "Version {{version}} · {{by}} · {{at}}",
+      "system": "system",
+      "unset": "(not stored)",
+      "reset": "reset to default",
+      "pagination": "History pages",
+      "previous": "Newer",
+      "next": "Older",
+      "page": "Page {{page}} of {{pages}}"
+    },
+    "leave": {
+      "title": "Leave without saving?",
+      "description": "You have unsaved changes to the settings. They are lost if you leave this page.",
+      "confirm": "Leave page"
+    }
   }
 }
