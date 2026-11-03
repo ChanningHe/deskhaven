@@ -11,20 +11,25 @@
 //! the same database is not otherwise observed.
 
 mod apply;
+mod changes;
 mod error;
+mod history;
 mod store;
 
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use deskhaven_config::settings::{self, Change, LoadWarning, PinSet, Problem, Snapshot};
+use deskhaven_config::settings::{self, Change, LoadWarning, PinSet, Problem, Reset, Snapshot};
 use deskhaven_db::entity::setting;
 use sea_orm::DatabaseConnection;
 use tokio::sync::{Mutex, watch};
 
+pub use changes::{AppliedChanges, SettingChange};
 pub use error::SettingsError;
+pub use history::HistoryEntry;
 pub use store::value_context;
 
+use crate::console_audit::TxGuard;
 use crate::crypto::SecretBox;
 
 /// Longest accepted history note.
@@ -115,13 +120,27 @@ impl SettingsService {
     /// runs in its own task, so dropping this future cannot leave the
     /// database and the snapshot apart.
     pub async fn update(&self, request: UpdateRequest) -> Result<Arc<Snapshot>, SettingsError> {
+        self.update_guarded(request, Vec::new(), TxGuard::none())
+            .await
+    }
+
+    /// [`update`](Self::update) for the console: `resets` drop the stored value of their keys
+    /// (the default applies again; `version` as for a change, 0 when nothing is stored), and
+    /// `guard` decides on the written keys and records the audit row inside the write
+    /// transaction. A batch that changes nothing runs no guard and records nothing.
+    pub async fn update_guarded(
+        &self,
+        request: UpdateRequest,
+        resets: Vec<Reset>,
+        guard: TxGuard<AppliedChanges>,
+    ) -> Result<Arc<Snapshot>, SettingsError> {
         check_reason(request.reason.as_deref())?;
-        let accepted = settings::prepare(&self.inner.pins, &request.changes)?;
+        let accepted = settings::prepare_batch(&self.inner.pins, &request.changes, &resets)?;
         if accepted.is_empty() {
             return Ok(self.snapshot());
         }
         let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move { inner.apply(&accepted, &request).await })
+        tokio::spawn(async move { inner.apply(&accepted, &request, guard).await })
             .await
             .map_err(|_| SettingsError::Aborted)?
     }

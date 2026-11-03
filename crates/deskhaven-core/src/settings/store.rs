@@ -4,12 +4,14 @@
 //! its `SecretBox` seal under [`value_context`]; history never holds a
 //! secret or its ciphertext, only the `{"set": bool}` marker.
 
+use std::collections::BTreeMap;
+
 use deskhaven_config::settings::{Accepted, LoadWarning, Stored, lookup};
 use deskhaven_db::entity::{setting, setting_history};
 use deskhaven_db::time::TimestampMs;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseTransaction, DbBackend, DbErr, EntityTrait, QueryFilter, SqlErr,
+    DatabaseTransaction, DbBackend, DbErr, EntityTrait, QueryFilter, QuerySelect, SqlErr,
 };
 use serde_json::Value as Json;
 
@@ -102,7 +104,8 @@ fn open(crypto: &SecretBox, key: &str, value: &Json) -> Option<Json> {
 /// Writes one accepted change and its history row. `old` is the current row
 /// (its version was already checked) with the public JSON text of its
 /// previous effective value (`null` when the row was unreadable), which is
-/// what the history records.
+/// what the history records. `version` is the one the row gets (the history
+/// entry of a reset gets it too: the row is gone, the version is not reused).
 ///
 /// Lock order note: once `updated_by` references `users(id)`, these writes
 /// take a key-share lock on the user row after the settings table lock; any
@@ -113,20 +116,27 @@ pub(super) async fn write(
     crypto: &SecretBox,
     accepted: &Accepted,
     old: Option<(&setting::Model, String)>,
+    version: i64,
     stamp: &Stamp<'_>,
 ) -> Result<(), SettingsError> {
     let key = accepted.key();
-    let version = old.as_ref().map_or(0, |(row, _)| row.version) + 1;
-    let row = setting::ActiveModel {
-        key: Set(key.to_owned()),
-        value: Set(storage_text(crypto, accepted)?),
-        version: Set(version),
-        updated_by: Set(stamp.by),
-        updated_at: Set(stamp.at),
-    };
-    match &old {
-        Some((current, _)) => update_row(tx, row, key, current.version).await?,
-        None => insert_row(tx, row, key).await?,
+    match (&old, accepted.is_reset()) {
+        (Some((current, _)), true) => delete_row(tx, key, current.version).await?,
+        // Nothing stored, nothing to drop (the service filters these out).
+        (None, true) => return Ok(()),
+        (existing, false) => {
+            let row = setting::ActiveModel {
+                key: Set(key.to_owned()),
+                value: Set(storage_text(crypto, accepted)?),
+                version: Set(version),
+                updated_by: Set(stamp.by),
+                updated_at: Set(stamp.at),
+            };
+            match existing {
+                Some((current, _)) => update_row(tx, row, key, current.version).await?,
+                None => insert_row(tx, row, key).await?,
+            }
+        }
     }
     let history = setting_history::ActiveModel {
         id: NotSet,
@@ -137,10 +147,52 @@ pub(super) async fn write(
         updated_by: Set(stamp.by),
         updated_at: Set(stamp.at),
         reason: Set(stamp.reason.map(str::to_owned)),
-        reset: Set(false),
+        reset: Set(accepted.is_reset()),
     };
     history.insert(tx).await?;
     Ok(())
+}
+
+/// The highest history version of each of `keys` that has one. A key without a
+/// row continues after it, so no version is ever reused.
+pub(super) async fn version_floors<'a>(
+    conn: &impl ConnectionTrait,
+    keys: impl IntoIterator<Item = &'a str>,
+) -> Result<BTreeMap<String, i64>, DbErr> {
+    let keys: Vec<&str> = keys.into_iter().collect();
+    if keys.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let rows = setting_history::Entity::find()
+        .select_only()
+        .column(setting_history::Column::Key)
+        .column_as(setting_history::Column::Version.max(), "floor")
+        .filter(setting_history::Column::Key.is_in(keys))
+        .group_by(setting_history::Column::Key)
+        .into_tuple::<(String, i64)>()
+        .all(conn)
+        .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// Compare-and-set deletion on `version`: a reset of a row that changed meanwhile
+/// is a conflict.
+async fn delete_row(
+    tx: &DatabaseTransaction,
+    key: &str,
+    expected: i64,
+) -> Result<(), SettingsError> {
+    let result = setting::Entity::delete_many()
+        .filter(setting::Column::Key.eq(key))
+        .filter(setting::Column::Version.eq(expected))
+        .exec(tx)
+        .await?;
+    match result.rows_affected {
+        0 => Err(SettingsError::VersionConflict {
+            keys: vec![key.to_owned()],
+        }),
+        _ => Ok(()),
+    }
 }
 
 /// A row that appeared since the locked read (only possible if the lock
@@ -220,12 +272,12 @@ mod tests {
                 reason: None,
             };
             let tx = begin_write(&db.conn).await.unwrap();
-            write(&tx, &crypto, &accepted[0], None, &stamp)
+            write(&tx, &crypto, &accepted[0], None, 1, &stamp)
                 .await
                 .unwrap();
 
             // As if the locked read had missed the row just inserted.
-            let err = write(&tx, &crypto, &accepted[0], None, &stamp)
+            let err = write(&tx, &crypto, &accepted[0], None, 1, &stamp)
                 .await
                 .unwrap_err();
 
