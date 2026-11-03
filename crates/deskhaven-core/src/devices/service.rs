@@ -175,25 +175,27 @@ impl DeviceService {
         rustdesk_id: &str,
         uuid: &str,
     ) -> Result<Option<Identity>, DeviceError> {
-        let presence = &self.inner.presence;
-        let identity = match presence.identity(rustdesk_id) {
-            Some(identity) => identity,
-            None => {
-                let epoch = presence.identity_epoch();
-                let Some(row) = self.inner.find(rustdesk_id).await? else {
-                    return Ok(None);
-                };
-                let identity = Identity {
-                    device_id: row.id,
-                    uuid: row.uuid,
-                    has_sysinfo: row.sysinfo_hash.is_some(),
-                };
-                presence.remember(rustdesk_id, identity.clone(), epoch);
-                identity
-            }
+        let identity = match self.inner.presence.identity(rustdesk_id) {
+            Some(identity) => Some(identity),
+            None => self.load_identity(rustdesk_id).await?,
         };
-        let verified = self.inner.uuid_matches(&identity.uuid, uuid);
-        Ok(verified.then_some(identity))
+        Ok(identity.filter(|identity| self.inner.uuid_matches(&identity.uuid, uuid)))
+    }
+
+    /// The identity of `rustdesk_id` read from the database (`None`: unknown id) and cached.
+    async fn load_identity(&self, rustdesk_id: &str) -> Result<Option<Identity>, DeviceError> {
+        let presence = &self.inner.presence;
+        let epoch = presence.identity_epoch();
+        let Some(row) = self.inner.find(rustdesk_id).await? else {
+            return Ok(None);
+        };
+        let identity = Identity {
+            device_id: row.id,
+            uuid: row.uuid,
+            has_sysinfo: row.sysinfo_hash.is_some(),
+        };
+        presence.remember(rustdesk_id, identity.clone(), epoch);
+        Ok(Some(identity))
     }
 
     /// Stores a device's sysinfo unless it is unchanged (same content hash: no write at all),

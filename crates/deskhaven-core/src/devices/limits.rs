@@ -22,11 +22,11 @@ use crate::clock::SharedClock;
 
 /// Sysinfo requests per client network per minute (burst the same).
 pub const SYSINFO_PER_IP_PER_MINUTE: u32 = 120;
-/// Heartbeat requests per client network per minute (burst the same), the same buckets as
-/// sysinfo with a quota of their own. A client sends 4 a minute idle and 20 with live
-/// connections (`sync.rs:20, 232-235`), so this lets 300 busy devices (1,500 idle ones)
-/// share one address before a NAT needs a trusted proxy; it caps what unknown ids, which
-/// cost one indexed lookup each, can cost from one network.
+/// Heartbeat requests that need a database lookup (malformed, unknown id, identity not cached,
+/// uuid mismatch) per client network per minute (burst the same), the same buckets as
+/// sysinfo with a quota of their own. Heartbeats of known devices cost no lookup and are
+/// not charged (they have [`HEARTBEAT_MIN_INTERVAL`]), so a large NAT of verified devices is
+/// never throttled as a whole; this caps what unknown ids can cost from one network.
 pub const HEARTBEAT_PER_IP_PER_MINUTE: u32 = 6_000;
 /// Minimum time between two accepted heartbeats of one verified device (06 §2.4). The
 /// client sends at most every 3 s; a refused heartbeat (429) loses nothing, the next one

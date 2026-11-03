@@ -18,12 +18,13 @@
 //! client keeps its `modified_at` and asks again next time); disconnects already taken are
 //! not lost that way.
 
-use std::net::IpAddr;
+use std::time::Duration;
 
 use deskhaven_db::entity::device::Entity as Devices;
 use sea_orm::{DbErr, EntityTrait};
 
 use super::{DeviceService, Inner};
+use crate::auth::limiter::ClientAddr;
 use crate::devices::DeviceError;
 use crate::devices::limits::HEARTBEAT_MIN_INTERVAL;
 use crate::devices::strategy_keys::KeysError;
@@ -35,8 +36,8 @@ pub struct Heartbeat {
     pub rustdesk_id: String,
     /// As sent: base64 of the device uuid.
     pub uuid: String,
-    /// Source address (the resolved client IP).
-    pub ip: IpAddr,
+    /// The resolved client address (presence IP, per-network quota).
+    pub client: ClientAddr,
     /// Live connection ids (`conns`; absent = none).
     pub conns: Vec<i32>,
     /// The strategy version the client holds (`modified_at`; 0 before the first).
@@ -51,6 +52,11 @@ pub enum HeartbeatOutcome {
     NotFound,
     /// Within [`HEARTBEAT_MIN_INTERVAL`] of the device's previous heartbeat: nothing changed.
     TooFrequent,
+    /// The request needed a lookup (unknown or not cached identity, uuid mismatch) and the
+    /// client network is over [`HEARTBEAT_PER_IP_PER_MINUTE`](crate::devices::HEARTBEAT_PER_IP_PER_MINUTE).
+    RateLimited {
+        retry_after: Duration,
+    },
 }
 
 /// What the reply carries; every part is optional on the wire.
@@ -85,15 +91,32 @@ enum PushError {
 
 impl DeviceService {
     /// Serves one heartbeat (see the module documentation).
+    /// Only a request that needs a lookup (identity not cached, unknown id, uuid mismatch)
+    /// is charged to the client network's quota: a known device costs no database access and
+    /// is limited per device instead.
     pub async fn heartbeat(&self, beat: Heartbeat) -> Result<HeartbeatOutcome, DeviceError> {
-        let Some(identity) = self.identify(&beat.rustdesk_id, &beat.uuid).await? else {
-            return Ok(HeartbeatOutcome::NotFound);
-        };
         let inner = &self.inner;
         let (id, conns) = (&beat.rustdesk_id, &beat.conns);
+        let cached = inner.presence.identity(id);
+        let was_cached = cached.is_some();
+        let known = match cached {
+            Some(identity) => Some(identity),
+            None => match self.admit_heartbeat(beat.client) {
+                Ok(()) => self.load_identity(id).await?,
+                Err(retry_after) => return Ok(HeartbeatOutcome::RateLimited { retry_after }),
+            },
+        };
+        let verified = known.filter(|identity| inner.uuid_matches(&identity.uuid, &beat.uuid));
+        let Some(identity) = verified else {
+            // A mismatch against a cached identity is charged too (once): it is a probe.
+            if was_cached && let Err(retry_after) = self.admit_heartbeat(beat.client) {
+                return Ok(HeartbeatOutcome::RateLimited { retry_after });
+            }
+            return Ok(HeartbeatOutcome::NotFound);
+        };
         if !inner
             .presence
-            .try_heartbeat(id, beat.ip, conns, HEARTBEAT_MIN_INTERVAL)
+            .try_heartbeat(id, beat.client.addr, conns, HEARTBEAT_MIN_INTERVAL)
         {
             return Ok(HeartbeatOutcome::TooFrequent);
         }

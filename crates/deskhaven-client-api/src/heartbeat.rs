@@ -11,7 +11,7 @@
 //! | unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` (identical for both) |
 //! | malformed body, missing / oversized `id` or `uuid` | 400 | `{"error": ...}` |
 //! | body over [`MAX_HEARTBEAT_BODY`] | 413 | stack renderer |
-//! | over the per-IP quota, or within 2 s of the device's previous heartbeat | 429 + `Retry-After` | `{"error": "Please try later"}` |
+//! | within 2 s of the device's previous heartbeat, or a request needing a lookup (malformed, unknown id, identity not cached, uuid mismatch) over the per-IP quota | 429 + `Retry-After` | `{"error": "Please try later"}` |
 //!
 //! Reply keys (each only when it applies): `sysinfo: true` (server lacks the device's
 //! sysinfo), `disconnect: [ids]` (queued and still live), `strategy: {config_options}` and
@@ -23,6 +23,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
+use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::devices::{
     HEARTBEAT_MIN_INTERVAL, Heartbeat, HeartbeatOutcome, HeartbeatReply,
 };
@@ -59,11 +60,17 @@ pub async fn heartbeat(
     Client(client): Client,
     body: Bytes,
 ) -> Result<Json<Value>, ClientApiError> {
-    state
-        .devices
-        .admit_heartbeat(client)
-        .map_err(|retry_after| ClientApiError::TooManyRequests { retry_after })?;
-    let beat = parse(&body, client.addr)?;
+    let beat = match parse(&body, client) {
+        Ok(beat) => beat,
+        // Garbage is charged to the client network's quota like a lookup.
+        Err(invalid) => {
+            let admitted = state.devices.admit_heartbeat(client);
+            return Err(admitted.map_or_else(
+                |retry_after| ClientApiError::TooManyRequests { retry_after },
+                |()| invalid,
+            ));
+        }
+    };
     let outcome = state
         .devices
         .heartbeat(beat)
@@ -75,10 +82,13 @@ pub async fn heartbeat(
         HeartbeatOutcome::TooFrequent => Err(ClientApiError::TooManyRequests {
             retry_after: HEARTBEAT_MIN_INTERVAL,
         }),
+        HeartbeatOutcome::RateLimited { retry_after } => {
+            Err(ClientApiError::TooManyRequests { retry_after })
+        }
     }
 }
 
-fn parse(raw: &[u8], ip: std::net::IpAddr) -> Result<Heartbeat, ClientApiError> {
+fn parse(raw: &[u8], client: ClientAddr) -> Result<Heartbeat, ClientApiError> {
     let body: Body = serde_json::from_slice(raw).map_err(|_| invalid())?;
     let rustdesk_id = body.id.filter(|id| bounded(id, ID_MAX_LEN));
     let uuid = body.uuid.filter(|uuid| bounded(uuid, UUID_MAX_LEN));
@@ -88,7 +98,7 @@ fn parse(raw: &[u8], ip: std::net::IpAddr) -> Result<Heartbeat, ClientApiError> 
     Ok(Heartbeat {
         rustdesk_id,
         uuid,
-        ip,
+        client,
         conns: body.conns.unwrap_or_default(),
         modified_at: body.modified_at.unwrap_or_default(),
     })
@@ -130,10 +140,13 @@ mod tests {
 
     use super::*;
 
-    const IP: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    const CLIENT: ClientAddr = ClientAddr {
+        addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        is_proxy_fallback: false,
+    };
 
     fn parse_json(value: Value) -> Result<Heartbeat, ClientApiError> {
-        parse(&serde_json::to_vec(&value).unwrap(), IP)
+        parse(&serde_json::to_vec(&value).unwrap(), CLIENT)
     }
 
     #[test]
@@ -147,7 +160,10 @@ mod tests {
 
         assert_eq!(full.conns, vec![12, 13]);
         assert_eq!(full.modified_at, 1_730_000_000_000);
-        assert_eq!((full.rustdesk_id.as_str(), full.ip), ("123456789", IP));
+        assert_eq!(
+            (full.rustdesk_id.as_str(), full.client),
+            ("123456789", CLIENT)
+        );
         assert_eq!((idle.conns, idle.modified_at), (Vec::new(), 0));
     }
 

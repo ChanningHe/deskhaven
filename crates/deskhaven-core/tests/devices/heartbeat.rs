@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::clock::{Clock, ManualClock};
 use deskhaven_core::devices::{
     HEARTBEAT_MIN_INTERVAL, Heartbeat, HeartbeatOutcome, HeartbeatReply, Presets,
@@ -32,7 +33,10 @@ fn beat(conns: &[i32], modified_at: i64) -> Heartbeat {
     Heartbeat {
         rustdesk_id: ID.to_owned(),
         uuid: b64(&uuid_of(ID)),
-        ip: IP,
+        client: ClientAddr {
+            addr: IP,
+            is_proxy_fallback: false,
+        },
         conns: conns.to_vec(),
         modified_at,
     }

@@ -188,10 +188,10 @@ async fn a_heartbeat_within_the_minimum_interval_is_429() {
     assert_eq!(on_time.status, 200);
 }
 
-/// Requests count against the client network's quota before anything else, malformed ones
-/// included, so even garbage cannot exceed it.
+/// Malformed requests and unknown ids (each costs a lookup) count against the client
+/// network's quota; another network has its own.
 #[tokio::test]
-async fn heartbeats_over_the_per_ip_quota_are_429() {
+async fn malformed_and_unknown_heartbeats_over_the_per_ip_quota_are_429() {
     // Arrange
     let h = Harness::start(&[]).await;
     let garbage = heartbeat_request(json!({ "id": DEVICE_ID }));
@@ -202,6 +202,7 @@ async fn heartbeats_over_the_per_ip_quota_are_429() {
 
     // Act
     let limited = h.app.send(&garbage).await.unwrap();
+    let unknown = h.app.send(&Client::default().request(&[])).await.unwrap();
     let elsewhere = h
         .app
         .send(&from(garbage, "198.51.100.9:4000"))
@@ -211,7 +212,37 @@ async fn heartbeats_over_the_per_ip_quota_are_429() {
     // Assert
     assert_eq!(limited.status, 429);
     assert!(limited.headers.contains_key("retry-after"));
+    assert_eq!(unknown.status, 429, "an unknown id needs a lookup");
     assert_eq!(elsewhere.status, 400, "another network has its own quota");
+}
+
+/// A known device (identity cached) costs no lookup: its heartbeats are not charged to the
+/// network's quota, so a large NAT of verified devices is limited only per device.
+#[tokio::test]
+async fn heartbeats_of_known_devices_are_not_charged_to_the_network_quota() {
+    // Arrange
+    let h = Harness::start(&["registered-device"]).await;
+    let mut client = Client::default();
+    h.beat(&mut client).await;
+    // Past the per-device interval before the quota is drained (time refills it).
+    h.clock.advance(TICK);
+    let garbage = heartbeat_request(json!({ "id": DEVICE_ID }));
+    let mut drained = false;
+    for _ in 0..=HEARTBEAT_PER_IP_PER_MINUTE {
+        if h.app.send(&garbage).await.unwrap().status == 429 {
+            drained = true;
+            break;
+        }
+    }
+
+    // Act
+    let known = h.app.send(&client.request(&[])).await.unwrap();
+    let malformed = h.app.send(&garbage).await.unwrap();
+
+    // Assert
+    assert!(drained, "the quota was used up");
+    assert_eq!(known.status, 200, "{}", text(&known));
+    assert_eq!(malformed.status, 429);
 }
 
 #[tokio::test]
