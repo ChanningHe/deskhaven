@@ -83,7 +83,7 @@ impl FromRequestParts<Arc<AppState>> for BearerUser {
     }
 }
 
-fn too_many(retry_after: Duration) -> ClientApiError {
+pub(crate) fn too_many(retry_after: Duration) -> ClientApiError {
     ClientApiError::TooManyRequests { retry_after }
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn unauthorized() -> ClientApiError {
 /// The token of the one `Authorization` header: scheme `Bearer` (case-insensitive), one or
 /// more spaces (RFC 7235 `1*SP`), then exactly one non-empty token without whitespace.
 /// Several `Authorization` headers are ambiguous and rejected.
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(header::AUTHORIZATION).iter();
     let value = values.next()?;
     if values.next().is_some() {

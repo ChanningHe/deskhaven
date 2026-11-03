@@ -8,6 +8,7 @@ mod account;
 mod audit;
 mod auth;
 mod client;
+mod devices;
 mod error;
 mod heartbeat;
 mod login;
@@ -62,4 +63,5 @@ pub fn router() -> Router<Arc<AppState>> {
         .merge(oidc::routes())
         .merge(ab::routes())
         .merge(audit::routes())
+        .merge(devices::routes())
 }
