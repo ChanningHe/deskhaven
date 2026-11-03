@@ -32,6 +32,8 @@ const SORT_FIELDS: [(&str, DeviceSortField); 7] = [
 #[into_params(parameter_in = Query)]
 pub struct DeviceFilter {
     /// `field` ascending or `-field` descending; then by id (default `rustdesk_id`).
+    /// `last_seen_at` sorts by the stored value, which is flushed from memory in batches and
+    /// can trail the `last_seen_at` shown for a device by one flush interval.
     #[garde(length(max = 32))]
     #[param(
         pattern = "^-?(rustdesk_id|hostname|os|version|status|last_seen_at|created_at)$",

@@ -90,7 +90,14 @@ impl From<DeviceError> for AdminApiError {
                 "the device group is managed by the configuration file",
             ),
             DeviceError::Refused(r) => refused(r),
-            other => Self::internal(other),
+            DeviceError::QueueFull => Self::new(
+                ErrorCode::Unavailable,
+                "too many devices have pending disconnects",
+            ),
+            // The id/uuid check belongs to the signal server; the console never trips it.
+            err @ (DeviceError::UuidMismatch { .. }
+            | DeviceError::Aborted
+            | DeviceError::Database(_)) => Self::internal(err),
         }
     }
 }

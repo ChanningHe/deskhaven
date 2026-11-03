@@ -5,6 +5,7 @@ use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::devices::DeviceRecord;
 use deskhaven_core::state::AppState;
 use serde::Serialize;
+use serde_json::json;
 
 use super::view::DeviceStatusView;
 use crate::{Audit, AuditCtx};
@@ -29,6 +30,28 @@ impl<'a> From<&'a DeviceRecord> for DeviceSnapshot<'a> {
             status: d.status.into(),
         }
     }
+}
+
+/// The guard of a disconnect request: the actor is re-checked in the transaction and the row
+/// names the connection (`after`: `{rustdesk_id, conn_id}`).
+pub(super) fn disconnect_guard(
+    state: &AppState,
+    ctx: &AuditCtx,
+    device_id: i64,
+    conn_id: i32,
+) -> TxGuard<DeviceRecord> {
+    let entry_ctx = ctx.clone();
+    ctx.admin_guard(
+        &state.console_audit,
+        move |_, _before: Option<&DeviceRecord>, after: Option<&DeviceRecord>| {
+            let rustdesk_id = after.map_or("", |d| d.rustdesk_id.as_str());
+            let snapshot = json!({ "rustdesk_id": rustdesk_id, "conn_id": conn_id });
+            let audit = Audit::new("device.disconnect")
+                .target("device", device_id)
+                .after(&snapshot);
+            Ok(entry_ctx.entry(audit))
+        },
+    )
 }
 
 pub(super) fn device_guard(

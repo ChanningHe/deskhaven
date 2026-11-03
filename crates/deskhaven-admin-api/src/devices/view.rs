@@ -65,6 +65,7 @@ pub struct DeviceView {
     pub owner: Option<OwnerRef>,
     pub device_group: Option<DeviceGroupRef>,
     pub note: String,
+    /// `disabled` is a marker only: it does not block the device yet.
     pub status: DeviceStatusView,
     /// Signal registration within 30 s or heartbeat within 45 s (from memory, not stored).
     pub online: bool,
@@ -168,6 +169,7 @@ pub struct DevicePatch {
     /// An empty string removes the note.
     #[garde(length(chars, max = 2000))]
     pub note: Option<String>,
+    /// `disabled` is a marker only: it does not block the device yet.
     #[garde(skip)]
     pub status: Option<DeviceStatusView>,
 }

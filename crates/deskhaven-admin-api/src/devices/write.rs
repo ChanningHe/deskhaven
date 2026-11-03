@@ -7,11 +7,10 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use deskhaven_core::devices::{DISCONNECT_TTL, DeviceStatus, DeviceUpdate};
 use deskhaven_core::state::AppState;
-use serde_json::json;
 
-use super::guard::device_guard;
+use super::guard::{device_guard, disconnect_guard};
 use super::view::{DevicePatch, DeviceView, DisconnectBody, DisconnectQueued};
-use crate::{AdminApiError, Audit, AuditCtx, Audited, ErrorCode, ValidJson, ValidPath};
+use crate::{AdminApiError, AuditCtx, Audited, ValidJson, ValidPath};
 
 type Problem = crate::ErrorEnvelope<'static>;
 
@@ -107,26 +106,11 @@ pub async fn disconnect_device(
     ValidPath(id): ValidPath<i64>,
     ValidJson(body): ValidJson<DisconnectBody>,
 ) -> Result<(StatusCode, Audited, Json<DisconnectQueued>), AdminApiError> {
-    let device = state.devices.summary(id).await?.record;
+    let guard = disconnect_guard(&state, &ctx, id, body.conn_id);
     state
         .devices
-        .disconnects()
-        .disconnect(&device.rustdesk_id, &[body.conn_id])
-        .map_err(|_| {
-            AdminApiError::new(
-                ErrorCode::Unavailable,
-                "too many devices have pending disconnects",
-            )
-        })?;
-    let snapshot = json!({ "rustdesk_id": device.rustdesk_id, "conn_id": body.conn_id });
-    let audit = Audit::new("device.disconnect")
-        .target("device", id)
-        .after(&snapshot);
-    state
-        .console_audit
-        .record(&ctx.entry(audit))
-        .await
-        .map_err(AdminApiError::internal)?;
+        .disconnect_guarded(id, body.conn_id, guard)
+        .await?;
     let queued = DisconnectQueued {
         ttl_seconds: DISCONNECT_TTL.as_secs(),
     };

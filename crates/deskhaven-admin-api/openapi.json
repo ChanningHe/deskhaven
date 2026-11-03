@@ -928,7 +928,7 @@
           {
             "name": "sort",
             "in": "query",
-            "description": "`field` ascending or `-field` descending; then by id (default `rustdesk_id`).",
+            "description": "`field` ascending or `-field` descending; then by id (default `rustdesk_id`).\n`last_seen_at` sorts by the stored value, which is flushed from memory in batches and\ncan trail the `last_seen_at` shown for a device by one flush interval.",
             "required": false,
             "schema": {
               "type": "string",
@@ -4415,7 +4415,8 @@
           "status": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/DeviceStatusView"
+                "$ref": "#/components/schemas/DeviceStatusView",
+                "description": "`disabled` is a marker only: it does not block the device yet."
               },
               {
                 "type": "null"
@@ -4528,7 +4529,8 @@
             "description": "The id clients connect to."
           },
           "status": {
-            "$ref": "#/components/schemas/DeviceStatusView"
+            "$ref": "#/components/schemas/DeviceStatusView",
+            "description": "`disabled` is a marker only: it does not block the device yet."
           },
           "username": {
             "type": [
@@ -5385,7 +5387,8 @@
                   "description": "The id clients connect to."
                 },
                 "status": {
-                  "$ref": "#/components/schemas/DeviceStatusView"
+                  "$ref": "#/components/schemas/DeviceStatusView",
+                  "description": "`disabled` is a marker only: it does not block the device yet."
                 },
                 "username": {
                   "type": [

@@ -344,6 +344,27 @@ async fn update_rejects_unknown_references_and_devices_and_keeps_the_row() {
 }
 
 #[tokio::test]
+async fn an_empty_patch_changes_and_records_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, admin) = setup(db).await;
+        let id = register(&h, "100").await;
+        let before = h.state.devices.summary(id).await.unwrap().record;
+
+        let reply = h.write(Method::PATCH, &path(id), &admin, json!({})).await;
+
+        assert_eq!(reply.status, 200, "{}", reply.body);
+        let after = h.state.devices.summary(id).await.unwrap().record;
+        assert_eq!(after.updated_at, before.updated_at);
+        assert!(h.audit_rows().await.is_empty());
+        let missing = h
+            .write(Method::PATCH, &path(id + 1000), &admin, json!({}))
+            .await;
+        assert_eq!(missing.status, 404);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn moving_a_device_changes_its_effective_strategy_at_once() {
     each_migrated_backend(async |db: &TestDb| {
         let (h, admin) = setup(db).await;

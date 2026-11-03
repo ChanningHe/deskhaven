@@ -111,6 +111,24 @@ async fn device_groups_are_created_listed_updated_and_deleted() {
 }
 
 #[tokio::test]
+async fn an_empty_patch_changes_and_records_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, admin) = setup(db).await;
+        let id = create(&h, &admin, "Office").await;
+        let group = format!("{GROUPS}/{id}");
+        let before = h.get(&group, &admin).await.body;
+        let audits = h.audit_rows().await.len();
+
+        let reply = h.write(Method::PATCH, &group, &admin, json!({})).await;
+
+        assert_eq!(reply.status, 200, "{}", reply.body);
+        assert_eq!(reply.body["updated_at"], before["updated_at"]);
+        assert_eq!(h.audit_rows().await.len(), audits);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn deleting_a_group_drops_its_strategy_assignment() {
     each_migrated_backend(async |db: &TestDb| {
         let (h, admin) = setup(db).await;

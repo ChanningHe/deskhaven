@@ -25,6 +25,7 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 
 [dev-dependencies]
+deskhaven-client-api = { workspace = true }
 deskhaven-db = { workspace = true, features = ["testing"] }
 sea-orm = { workspace = true }
 tokio = { workspace = true }

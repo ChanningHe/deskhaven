@@ -6,15 +6,21 @@
 #![allow(dead_code)]
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
 
+use axum::body::to_bytes;
+use axum::http::{Method, StatusCode};
 use base64_022::Engine as _;
 use base64_022::engine::general_purpose::STANDARD;
 use deskhaven_core::devices::{
     DeviceRepository, Presets, Registration, Sysinfo, SysinfoOutcome, SysinfoReport,
 };
 use deskhaven_db::time;
+use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
+use serde_json::{Value, json};
+use tower::ServiceExt;
 
-use super::Harness;
+use super::{Harness, request};
 
 pub const DEVICE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7));
 
@@ -72,4 +78,33 @@ pub fn heartbeat(h: &Harness, rustdesk_id: &str, conns: &[i32]) {
 
 pub fn path(device_id: i64) -> String {
     format!("/admin/api/v1/devices/{device_id}")
+}
+
+/// `POST /api/heartbeat` of the official client API (the real router and middleware stack)
+/// as device `rustdesk_id`, holding strategy version `modified_at` and reporting `conns`.
+/// Returns the status and the JSON reply the client would act on.
+pub async fn heartbeat_http(
+    h: &Harness,
+    rustdesk_id: &str,
+    conns: &[i32],
+    modified_at: i64,
+) -> (StatusCode, Value) {
+    let router = apply_middleware(
+        deskhaven_client_api::router().with_state(Arc::clone(&h.state)),
+        &HttpConfig::default(),
+        ErrorBodies::uniform(deskhaven_client_api::render_stack_error),
+    );
+    let body = json!({
+        "id": rustdesk_id,
+        "uuid": uuid_b64(rustdesk_id),
+        "conns": conns,
+        "modified_at": modified_at,
+    });
+    let response = router
+        .oneshot(request(Method::POST, "/api/heartbeat", &[], Some(body)))
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
 }
