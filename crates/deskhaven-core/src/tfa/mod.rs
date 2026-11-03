@@ -49,6 +49,7 @@ use deskhaven_config::settings::{AUTH_TFA_ENFORCE, TfaEnforce};
 use deskhaven_db::time::TimestampMs;
 use sea_orm::DatabaseConnection;
 
+pub(crate) use challenge::finished_challenges;
 pub use challenge::{ChallengeSecret, LoginBinding, PendingLogin, SecondStep};
 pub use enrol::{Enrolment, TfaStatus};
 pub use error::{ChallengeError, TfaError};

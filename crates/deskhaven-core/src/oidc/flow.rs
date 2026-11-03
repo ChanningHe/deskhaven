@@ -6,7 +6,7 @@ use deskhaven_db::entity::oidc_flow::{self, Flow};
 use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, Condition};
 use url::Url;
 
 use super::context;
@@ -14,6 +14,7 @@ use super::discovery::Freshness;
 use super::error::OidcError;
 use super::protocol::{self, FlowSecrets, RelyingParty};
 use super::{FLOW_TTL, OidcService};
+use crate::jobs::{Doomed, Plain, Purge};
 use crate::sessions::{ClientDevice, SessionToken};
 
 /// The polling `code` of a client flow. Exposed once; `Debug` never shows it.
@@ -175,14 +176,24 @@ impl OidcService {
         ))
     }
 
-    /// Deletes expired flows; returns how many (periodic job, M2-20).
+    /// Deletes expired flows in batches; returns how many. The expiry job (M2-20) deletes
+    /// [`expired_flows`] with its own batch settings.
     pub async fn cleanup_flows(&self) -> Result<u64, OidcError> {
         let now = timestamp(self.inner.now_ms())?;
-        let result = oidc_flow::Entity::delete_many()
-            .filter(oidc_flow::Column::ExpiresAt.lte(now))
-            .exec(&self.inner.db)
+        let deleted = Purge::default()
+            .run(&self.inner.db, &expired_flows(now), &mut Plain)
             .await?;
-        Ok(result.rows_affected)
+        Ok(deleted)
+    }
+}
+
+/// Flows expired at `now`: what cleanup deletes.
+pub(crate) fn expired_flows(now: TimestampMs) -> Doomed<oidc_flow::Entity> {
+    use oidc_flow::Column as C;
+    Doomed {
+        key: C::Id,
+        order: C::ExpiresAt,
+        cond: Condition::all().add(C::ExpiresAt.lte(now)),
     }
 }
 

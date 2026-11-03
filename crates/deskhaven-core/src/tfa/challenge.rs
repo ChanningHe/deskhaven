@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 
 use super::{CHALLENGE_TTL, ChallengeError, Inner, MAX_CHALLENGE_ATTEMPTS, TfaError, TfaService};
 use crate::auth::limiter::PendingSubject;
+use crate::jobs::{Doomed, Plain, Purge};
 use crate::sessions::{ClientDevice, SessionToken, TokenHash};
 use crate::users::{CredentialStamp, username_norm};
 
@@ -151,17 +152,25 @@ impl TfaService {
         Ok(ChallengeSecret(secret))
     }
 
-    /// Deletes expired and consumed challenges; returns how many (periodic job, M2-20).
+    /// Deletes expired and consumed challenges in batches; returns how many. The expiry job
+    /// (M2-20) deletes [`finished_challenges`] with its own batch settings.
     pub async fn cleanup_challenges(&self) -> Result<u64, TfaError> {
-        let now = self.inner.now();
-        let done = Condition::any()
-            .add(Column::ExpiresAt.lte(now))
-            .add(Column::ConsumedAt.is_not_null());
-        let result = auth_challenge::Entity::delete_many()
-            .filter(done)
-            .exec(&self.inner.db)
+        let doomed = finished_challenges(self.inner.now());
+        let deleted = Purge::default()
+            .run(&self.inner.db, &doomed, &mut Plain)
             .await?;
-        Ok(result.rows_affected)
+        Ok(deleted)
+    }
+}
+
+/// Challenges expired at `now` or consumed: what cleanup deletes.
+pub(crate) fn finished_challenges(now: time::TimestampMs) -> Doomed<auth_challenge::Entity> {
+    Doomed {
+        key: Column::Id,
+        order: Column::Id,
+        cond: Condition::any()
+            .add(Column::ExpiresAt.lte(now))
+            .add(Column::ConsumedAt.is_not_null()),
     }
 }
 

@@ -37,33 +37,24 @@ pub(crate) struct Doomed<E: EntityTrait> {
     pub cond: Condition,
 }
 
-/// Runs inside each batch's transaction; what it stages is applied only once that
-/// transaction committed.
+/// Runs inside each deleting batch's transaction: what it writes commits (or rolls back)
+/// with that batch.
 pub(crate) trait BatchHook {
-    type Staged: Send;
-
     /// `deleted` (> 0) rows are gone in `tx`, not yet committed.
     fn on_batch(
-        &self,
+        &mut self,
         tx: &DatabaseTransaction,
         deleted: u64,
-    ) -> impl Future<Output = Result<Self::Staged, DbErr>> + Send;
-
-    /// The batch committed.
-    fn committed(&mut self, staged: Self::Staged);
+    ) -> impl Future<Output = Result<(), DbErr>> + Send;
 }
 
 /// No hook.
 pub(crate) struct Plain;
 
 impl BatchHook for Plain {
-    type Staged = ();
-
-    async fn on_batch(&self, _: &DatabaseTransaction, _: u64) -> Result<(), DbErr> {
+    async fn on_batch(&mut self, _: &DatabaseTransaction, _: u64) -> Result<(), DbErr> {
         Ok(())
     }
-
-    fn committed(&mut self, (): ()) {}
 }
 
 impl Purge {
@@ -92,14 +83,10 @@ impl Purge {
         loop {
             let tx = begin_write(db).await?;
             let deleted = self.delete_batch(&tx, doomed).await?;
-            let staged = match deleted {
-                0 => None,
-                _ => Some(hook.on_batch(&tx, deleted).await?),
-            };
-            tx.commit().await?;
-            if let Some(staged) = staged {
-                hook.committed(staged);
+            if deleted > 0 {
+                hook.on_batch(&tx, deleted).await?;
             }
+            tx.commit().await?;
             total += deleted;
             if deleted < self.batch {
                 return Ok(total);

@@ -6,16 +6,14 @@
 //! | `setup_tokens` | used (or retired), or expired |
 //! | `device_strategy_keys` | no device row with its RustDesk id, and not written for [`STRATEGY_KEYS_GRACE`] (deleting the device writes it: see `devices::strategy_keys`) |
 //! | `sessions` | revoked, or expired (absolute or idle): [`SessionService::cleanup`] |
-//! | `oidc_flows` | expired: [`OidcService::cleanup_flows`] |
-//! | `auth_challenges` | expired or consumed: [`TfaService::cleanup_challenges`] |
+//! | `oidc_flows` | expired (the criterion of `OidcService::cleanup_flows`) |
+//! | `auth_challenges` | expired or consumed (the criterion of `TfaService::cleanup_challenges`) |
 //! | `auth_lockouts` | no longer affecting any decision: [`LoginThrottle::cleanup`] |
 //!
-//! The first three are batched here ([`Purge`]); the services' own cleanups are small
-//! tables bounded by the login rate limits.
+//! All but the last two are batched here ([`Purge`]); sessions batch their own cleanup, and
+//! the lockout cleanup selects with `SKIP LOCKED` over a capped table.
 //!
 //! [`SessionService::cleanup`]: crate::sessions::SessionService::cleanup
-//! [`OidcService::cleanup_flows`]: crate::oidc::OidcService::cleanup_flows
-//! [`TfaService::cleanup_challenges`]: crate::tfa::TfaService::cleanup_challenges
 //! [`LoginThrottle::cleanup`]: crate::auth::limiter::LoginThrottle::cleanup
 
 use std::sync::Arc;
@@ -27,10 +25,9 @@ use sea_orm::{ColumnTrait, Condition, DbErr};
 
 use super::purge::{Doomed, Plain, Purge};
 use super::{chain, cutoff};
-use crate::oidc::OidcError;
 use crate::sessions::SessionError;
 use crate::state::AppState;
-use crate::tfa::TfaError;
+use crate::{oidc, tfa};
 
 /// Audit nonces are kept this long (04 §7), far past the client's 120 s retry window.
 pub const NONCE_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -72,10 +69,6 @@ enum StepError {
     Database(#[from] DbErr),
     #[error(transparent)]
     Session(#[from] SessionError),
-    #[error(transparent)]
-    Oidc(#[from] OidcError),
-    #[error(transparent)]
-    Tfa(#[from] TfaError),
 }
 
 /// Counts failed steps, logging each.
@@ -126,8 +119,8 @@ impl ExpiryCleanup {
         let setup_tokens = tally.take("setup_tokens", self.setup_tokens(now_ms).await);
         let strategy_keys = tally.take("device_strategy_keys", self.strategy_keys(now_ms).await);
         let sessions = tally.take("sessions", s.sessions.cleanup().await);
-        let oidc_flows = tally.take("oidc_flows", s.oidc.cleanup_flows().await);
-        let auth_challenges = tally.take("auth_challenges", s.tfa.cleanup_challenges().await);
+        let oidc_flows = tally.take("oidc_flows", self.oidc_flows(now_ms).await);
+        let auth_challenges = tally.take("auth_challenges", self.challenges(now_ms).await);
         let auth_lockouts = tally.take("auth_lockouts", s.login_throttle.cleanup().await);
         ExpiryReport {
             audit_nonces,
@@ -162,6 +155,16 @@ impl ExpiryCleanup {
                 .add(C::UsedAt.is_not_null())
                 .add(C::ExpiresAt.lte(now)),
         };
+        self.purge.run(&self.state.db, &doomed, &mut Plain).await
+    }
+
+    async fn oidc_flows(&self, now_ms: i64) -> Result<u64, DbErr> {
+        let doomed = oidc::expired_flows(cutoff(now_ms, Duration::ZERO)?);
+        self.purge.run(&self.state.db, &doomed, &mut Plain).await
+    }
+
+    async fn challenges(&self, now_ms: i64) -> Result<u64, DbErr> {
+        let doomed = tfa::finished_challenges(cutoff(now_ms, Duration::ZERO)?);
         self.purge.run(&self.state.db, &doomed, &mut Plain).await
     }
 

@@ -95,6 +95,7 @@ use url::Url;
 pub use callback::{CallbackParams, CallbackReport, FlowKind, OidcLogin};
 pub use discovery::NEGATIVE_TTL;
 pub use error::{CallbackError, Failure, OidcError, PollError, ProviderError};
+pub(crate) use flow::expired_flows;
 pub use flow::{BrowserBinding, ClientCode, ClientFlowStart, ConsoleFlowStart};
 pub use http::{
     CONNECT_TIMEOUT, FetchError, FetchFuture, HttpFetch, MAX_RESPONSE_BYTES, REQUEST_TIMEOUT,

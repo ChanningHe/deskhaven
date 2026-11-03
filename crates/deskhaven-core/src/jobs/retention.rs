@@ -1,13 +1,14 @@
 //! [`AuditRetention`]: audit records older than their `audit.retention.*` setting are
-//! deleted, by `created_at` (indexed). `connection_sessions` rows retired by the audit
-//! ingest (session id [`RETIRED_PREFIX`](crate::audit::RETIRED_PREFIX)…) are ordinary rows
-//! here.
+//! deleted, by `created_at` (indexed); a record created exactly at the cutoff is kept.
+//! `connection_sessions` rows retired by the audit ingest (session id
+//! [`RETIRED_PREFIX`](crate::audit::RETIRED_PREFIX)…) are ordinary rows here.
 //!
-//! **Its own audit row** (06 §7): a run that deletes anything records one `console_audit`
-//! row (actor `system`, action [`RETENTION_ACTION`]) with the cutoffs and the counts. The
-//! row is inserted in the transaction of the run's first deleting batch and updated in the
-//! transaction of every later one, so whatever has been deleted, however the run ends, is
-//! committed together with a row that counts it. A run that deletes nothing writes nothing.
+//! **Its own audit trail** (06 §7), append-only: every batch that deletes anything inserts,
+//! in its own transaction, one `console_audit` row (actor `system`, action
+//! [`RETENTION_ACTION`], target `audit` / the run's id) with the type, the rows deleted, the
+//! cutoff and the batch's number within the run. Whatever has been deleted, however the run
+//! ends, is committed together with the row that records it; nothing is ever updated. A
+//! run that deletes nothing writes nothing.
 
 use std::time::Duration;
 
@@ -17,12 +18,10 @@ use deskhaven_config::settings::{
 };
 use deskhaven_db::entity::{alarm, connection_session, console_audit, file_transfer, login_event};
 use deskhaven_db::time::TimestampMs;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
-    QueryFilter,
 };
-use serde_json::{Map, Value, json};
+use serde_json::json;
 
 use super::purge::{BatchHook, Doomed, Purge};
 use super::{chain, cutoff};
@@ -30,10 +29,10 @@ use crate::clock::SharedClock;
 use crate::console_audit::{self as audit_log, Actor, NewConsoleAudit};
 use crate::settings::SettingsService;
 
-/// `console_audit.action` of a retention run.
+/// `console_audit.action` of a retention batch.
 pub const RETENTION_ACTION: &str = "audit.retention.purge";
-/// `console_audit.target_type` of a retention run.
-const TARGET_TYPE: &str = "audit";
+/// `console_audit.target_type` of a retention batch (`target_id`: the run's id).
+pub const RETENTION_TARGET: &str = "audit";
 
 /// The audit record types with a retention setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,7 +53,7 @@ impl AuditKind {
         Self::Console,
     ];
 
-    /// The name in `audit.retention.<name>` and in the run's audit row.
+    /// The name in `audit.retention.<name>` and in the audit rows.
     pub fn name(self) -> &'static str {
         match self {
             Self::Connection => "connection",
@@ -79,12 +78,12 @@ impl AuditKind {
 /// What one [`AuditRetention::run`] did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RetentionReport {
-    /// Records deleted, per type; a type kept forever is absent.
+    /// The run's id (`console_audit.target_id` of its rows).
+    pub run_id: String,
+    /// Records deleted, per type purged without error; a type kept forever is absent.
     pub deleted: Vec<(AuditKind, u64)>,
     /// Types whose purge failed (logged; retried by the next run).
     pub failed: Vec<AuditKind>,
-    /// The run's `console_audit` row, if it deleted anything.
-    pub audit_id: Option<i64>,
 }
 
 impl RetentionReport {
@@ -123,84 +122,97 @@ impl AuditRetention {
         Self { purge, ..self }
     }
 
-    /// Deletes the expired records of every type (see the module documentation).
+    /// Deletes the expired records of every type (see the module documentation); a type
+    /// that fails does not stop the others.
     pub async fn run(&self) -> RetentionReport {
-        let mut run = self.plan();
-        for (kind, before) in run.cutoffs.clone() {
-            if let Err(err) = self.purge_kind(&mut run, kind, before).await {
-                tracing::warn!(kind = kind.name(), error = %chain(&err), "audit retention failed; retrying next run");
-                run.report.failed.push(kind);
+        let now_ms = self.clock.now_ms();
+        let mut report = RetentionReport {
+            run_id: uuid::Uuid::now_v7().to_string(),
+            ..RetentionReport::default()
+        };
+        let mut hook = AuditBatch {
+            run_id: report.run_id.clone(),
+            now_ms,
+            kind: AuditKind::Connection,
+            before: 0,
+            batches: 0,
+        };
+        for (kind, before) in self.cutoffs(now_ms, &mut report.failed) {
+            hook.kind = kind;
+            hook.before = before.timestamp_millis();
+            match self.purge_kind(&mut hook, before).await {
+                Ok(deleted) => report.deleted.push((kind, deleted)),
+                Err(err) => {
+                    tracing::warn!(kind = kind.name(), error = %chain(&err), "audit retention failed; retrying next run");
+                    report.failed.push(kind);
+                }
             }
         }
-        run.report
+        report
     }
 
-    /// The cutoff of every type not kept forever, all from one reading of the clock and the
-    /// settings.
-    fn plan(&self) -> Summary {
-        let now_ms = self.clock.now_ms();
+    /// The cutoff of every type not kept forever, from one reading of the settings.
+    fn cutoffs(&self, now_ms: i64, failed: &mut Vec<AuditKind>) -> Vec<(AuditKind, TimestampMs)> {
         let snapshot = self.settings.snapshot();
-        let mut run = Summary::new(now_ms);
+        let mut cutoffs = Vec::new();
         for kind in AuditKind::ALL {
             let retention: Duration = snapshot.get(kind.setting()).as_std();
             if retention.is_zero() {
                 continue;
             }
             match cutoff(now_ms, retention) {
-                Ok(before) => run.start(kind, before),
+                Ok(before) => cutoffs.push((kind, before)),
                 Err(err) => {
                     tracing::warn!(kind = kind.name(), error = %err, "audit retention cutoff out of range");
-                    run.report.failed.push(kind);
+                    failed.push(kind);
                 }
             }
         }
-        run
+        cutoffs
     }
 
-    async fn purge_kind(
-        &self,
-        run: &mut Summary,
-        kind: AuditKind,
-        before: TimestampMs,
-    ) -> Result<(), DbErr> {
-        let mut hook = SummaryHook { run, kind };
+    async fn purge_kind(&self, hook: &mut AuditBatch, before: TimestampMs) -> Result<u64, DbErr> {
         let (db, purge) = (&self.db, &self.purge);
-        let deleted = match kind {
+        let deleted = match hook.kind {
             AuditKind::Connection => {
                 use connection_session::Column as C;
                 purge
-                    .run(db, &older(C::Id, C::CreatedAt, before), &mut hook)
+                    .run(db, &older(C::Id, C::CreatedAt, before), hook)
                     .await
             }
             AuditKind::File => {
                 use file_transfer::Column as C;
                 purge
-                    .run(db, &older(C::Id, C::CreatedAt, before), &mut hook)
+                    .run(db, &older(C::Id, C::CreatedAt, before), hook)
                     .await
             }
             AuditKind::Alarm => {
                 use alarm::Column as C;
                 purge
-                    .run(db, &older(C::Id, C::CreatedAt, before), &mut hook)
+                    .run(db, &older(C::Id, C::CreatedAt, before), hook)
                     .await
             }
             AuditKind::Login => {
                 use login_event::Column as C;
                 purge
-                    .run(db, &older(C::Id, C::CreatedAt, before), &mut hook)
+                    .run(db, &older(C::Id, C::CreatedAt, before), hook)
                     .await
             }
             AuditKind::Console => {
                 use console_audit::Column as C;
                 purge
-                    .run(db, &older(C::Id, C::CreatedAt, before), &mut hook)
+                    .run(db, &older(C::Id, C::CreatedAt, before), hook)
                     .await
             }
         }?;
         if deleted > 0 {
-            tracing::info!(kind = kind.name(), deleted, "expired audit records deleted");
+            tracing::info!(
+                kind = hook.kind.name(),
+                deleted,
+                "expired audit records deleted"
+            );
         }
-        Ok(())
+        Ok(deleted)
     }
 }
 
@@ -216,118 +228,34 @@ where
     }
 }
 
-/// One run: its cutoffs, its committed counts and its audit row.
-struct Summary {
+/// Inserts the audit row of each deleting batch, in its transaction.
+struct AuditBatch {
+    run_id: String,
     now_ms: i64,
-    cutoffs: Vec<(AuditKind, TimestampMs)>,
-    report: RetentionReport,
-}
-
-impl Summary {
-    fn new(now_ms: i64) -> Self {
-        Self {
-            now_ms,
-            cutoffs: Vec::new(),
-            report: RetentionReport::default(),
-        }
-    }
-
-    fn start(&mut self, kind: AuditKind, before: TimestampMs) {
-        self.cutoffs.push((kind, before));
-        self.report.deleted.push((kind, 0));
-    }
-
-    /// The counts with `more` deleted records of `kind`.
-    fn counts_with(&self, kind: AuditKind, more: u64) -> Vec<(AuditKind, u64)> {
-        let mut counts = self.report.deleted.clone();
-        if let Some((_, n)) = counts.iter_mut().find(|(k, _)| *k == kind) {
-            *n += more;
-        }
-        counts
-    }
-
-    /// The audit row's `after`.
-    fn snapshot(&self, counts: &[(AuditKind, u64)]) -> Value {
-        let named = |pairs: Vec<(AuditKind, i64)>| -> Value {
-            let map: Map<String, Value> = pairs
-                .into_iter()
-                .map(|(k, v)| (k.name().to_owned(), Value::from(v)))
-                .collect();
-            Value::Object(map)
-        };
-        let deleted = counts
-            .iter()
-            .map(|(k, n)| (*k, i64::try_from(*n).unwrap_or(i64::MAX)))
-            .collect();
-        let cutoffs = self
-            .cutoffs
-            .iter()
-            .map(|(k, before)| (*k, before.timestamp_millis()))
-            .collect();
-        json!({ "deleted": named(deleted), "cutoff": named(cutoffs) })
-    }
-}
-
-/// Writes the run's audit row in each batch's transaction.
-struct SummaryHook<'a> {
-    run: &'a mut Summary,
     kind: AuditKind,
+    /// The current type's cutoff (unix ms).
+    before: i64,
+    /// Batches recorded so far in this run (a rolled-back one leaves a gap).
+    batches: u64,
 }
 
-/// A batch's counts and the run's audit row, once committed.
-struct Staged {
-    counts: Vec<(AuditKind, u64)>,
-    audit_id: i64,
-}
-
-impl BatchHook for SummaryHook<'_> {
-    type Staged = Staged;
-
-    async fn on_batch(&self, tx: &DatabaseTransaction, deleted: u64) -> Result<Staged, DbErr> {
-        let counts = self.run.counts_with(self.kind, deleted);
-        let after = self.run.snapshot(&counts);
-        let audit_id = match self.run.report.audit_id {
-            Some(id) => update_row(tx, id, after, self.run.now_ms).await?,
-            None => insert_row(tx, after, self.run.now_ms).await?,
+impl BatchHook for AuditBatch {
+    async fn on_batch(&mut self, tx: &DatabaseTransaction, deleted: u64) -> Result<(), DbErr> {
+        self.batches += 1;
+        let entry = NewConsoleAudit {
+            actor: Actor::System,
+            action: RETENTION_ACTION.to_owned(),
+            target_type: RETENTION_TARGET.to_owned(),
+            target_id: self.run_id.clone(),
+            before: None,
+            after: Some(json!({
+                "kind": self.kind.name(),
+                "deleted": deleted,
+                "cutoff": self.before,
+                "batch": self.batches,
+            })),
+            ip: None,
         };
-        Ok(Staged { counts, audit_id })
+        audit_log::insert(tx, &entry, self.now_ms).await.map(|_| ())
     }
-
-    fn committed(&mut self, staged: Staged) {
-        self.run.report.deleted = staged.counts;
-        self.run.report.audit_id = Some(staged.audit_id);
-    }
-}
-
-async fn insert_row(tx: &DatabaseTransaction, after: Value, now_ms: i64) -> Result<i64, DbErr> {
-    let entry = NewConsoleAudit {
-        actor: Actor::System,
-        action: RETENTION_ACTION.to_owned(),
-        target_type: TARGET_TYPE.to_owned(),
-        target_id: String::new(),
-        before: None,
-        after: Some(after),
-        ip: None,
-    };
-    audit_log::insert(tx, &entry, now_ms).await
-}
-
-/// Updates the run's row; a row that is gone (never expected) is recreated, so the batch
-/// still commits with a row that counts it.
-async fn update_row(
-    tx: &DatabaseTransaction,
-    id: i64,
-    after: Value,
-    now_ms: i64,
-) -> Result<i64, DbErr> {
-    let text = audit_log::redact(&after).to_string();
-    let updated = console_audit::Entity::update_many()
-        .col_expr(console_audit::Column::After, Expr::value(text))
-        .filter(console_audit::Column::Id.eq(id))
-        .exec(tx)
-        .await?;
-    if updated.rows_affected == 1 {
-        return Ok(id);
-    }
-    insert_row(tx, after, now_ms).await
 }

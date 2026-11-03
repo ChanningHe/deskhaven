@@ -1,15 +1,16 @@
 //! Batched deletes: each batch commits on its own, other writers get in between two
-//! batches, and a run stopped between batches keeps its audit row in step with what it
-//! deleted.
+//! batches, each batch appends its own audit row (none is rewritten), a run stopped between
+//! batches has recorded what it deleted, and a row locked elsewhere (PostgreSQL) is skipped.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use deskhaven_core::jobs::{AuditRetention, Purge, RETENTION_ACTION};
-use deskhaven_db::entity::login_event;
-use deskhaven_db::testing::{TestDb, each_migrated_backend};
+use deskhaven_core::jobs::{AuditKind, AuditRetention, Purge, RETENTION_ACTION};
+use deskhaven_db::entity::{console_audit, login_event};
+use deskhaven_db::testing::{Backend, TestDb, each_migrated_backend};
+use sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, TransactionTrait};
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 
@@ -98,8 +99,12 @@ async fn another_writer_commits_between_two_batches() {
     .await;
 }
 
+fn after(row: &console_audit::Model) -> Value {
+    serde_json::from_str(row.after.as_deref().unwrap()).unwrap()
+}
+
 #[tokio::test]
-async fn a_run_stopped_between_batches_has_counted_what_it_deleted() {
+async fn a_run_stopped_between_batches_has_recorded_what_it_deleted() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
         let c = ctx(db).await;
@@ -115,14 +120,13 @@ async fn a_run_stopped_between_batches_has_counted_what_it_deleted() {
         assert_eq!(logins(&c).await, 6, "{b}: one batch deleted");
         let rows = c.audit_rows(RETENTION_ACTION).await;
         assert_eq!(rows.len(), 1, "{b}");
-        let after: Value = serde_json::from_str(rows[0].after.as_deref().unwrap()).unwrap();
-        assert_eq!(after["deleted"]["login"], json!(BATCH), "{b}: {after}");
+        assert_eq!(after(&rows[0])["deleted"], json!(BATCH), "{b}");
     })
     .await;
 }
 
 #[tokio::test]
-async fn later_batches_update_the_same_audit_row() {
+async fn every_batch_appends_a_row_and_none_is_rewritten() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
         let c = ctx(db).await;
@@ -134,16 +138,52 @@ async fn later_batches_update_the_same_audit_row() {
         run.await.unwrap();
         let done = c.audit_rows(RETENTION_ACTION).await;
 
-        // Assert
+        // Assert: the rows seen midway are unchanged at the end, one more was appended.
         let b = db.backend;
-        let count = |rows: &[deskhaven_db::entity::console_audit::Model]| -> Value {
-            let after: Value = serde_json::from_str(rows[0].after.as_deref().unwrap()).unwrap();
-            after["deleted"]["login"].clone()
-        };
-        assert_eq!((midway.len(), done.len()), (1, 1), "{b}");
-        assert_eq!(midway[0].id, done[0].id, "{b}");
-        assert_eq!(count(&midway), json!(6), "{b}");
-        assert_eq!(count(&done), json!(9), "{b}");
+        assert_eq!((midway.len(), done.len()), (2, 3), "{b}");
+        assert_eq!(midway[..], done[..2], "{b}");
+        let batches: Vec<Value> = done.iter().map(|r| after(r)["batch"].clone()).collect();
+        assert_eq!(batches, [json!(1), json!(2), json!(3)], "{b}");
+        assert!(done.iter().all(|r| r.target_id == done[0].target_id), "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_row_locked_by_another_transaction_is_skipped_not_waited_for() {
+    each_migrated_backend(async |db: &TestDb| {
+        if db.backend != Backend::Postgres {
+            return; // SQLite has no row locks.
+        }
+        // Arrange: three expired login events, one of them locked by another transaction.
+        let c = ctx(db).await;
+        for _ in 0..3 {
+            c.login(ago(200 * DAY)).await;
+        }
+        let locked = login_event::Entity::find()
+            .order_by_asc(login_event::Column::Id)
+            .one(&c.conn)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let holder = c.conn.begin().await.unwrap();
+        let sql = format!("SELECT id FROM login_events WHERE id = {locked} FOR UPDATE");
+        holder.execute_unprepared(&sql).await.unwrap();
+        let s = &c.state;
+        let job = AuditRetention::new(s.db.clone(), s.settings.clone(), s.clock.clone())
+            .with_purge(Purge::new(BATCH, Duration::ZERO));
+
+        // Act
+        let report = tokio::time::timeout(PATIENCE, job.run()).await;
+        holder.rollback().await.unwrap();
+
+        // Assert
+        let report = report.expect("the purge waited for the locked row");
+        assert_eq!(report.deleted(AuditKind::Login), 2);
+        let left = login_event::Entity::find().all(&c.conn).await.unwrap();
+        let ids: Vec<i64> = left.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![locked], "the locked row is left for the next run");
     })
     .await;
 }

@@ -4,11 +4,14 @@
 //!
 //! - **Independent**: one task per job, so a long retention purge never delays the
 //!   `last_seen_at` flush.
-//! - **Never dies**: a run that panics is logged and the job runs again at its next tick,
-//!   like a run that failed (jobs log their own errors).
+//! - **Never dies**: every call into a job (its waits, runs and finish) is guarded; a panic
+//!   is logged with its message and the job goes on at its next tick, like a run that
+//!   failed (jobs log their own errors). So the loop always hands the job back and its
+//!   [`Job::finish`] (the final flush) always runs.
 //! - **Shutdown**: cancellation drops a run at its next await; jobs are cancel-safe (see
 //!   `deskhaven_core::jobs`).
 
+use std::any::Any;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
@@ -17,6 +20,9 @@ use std::time::Duration;
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+
+/// The wait used when a job's [`Job::interval`] or [`Job::first_delay`] panicked.
+pub const FALLBACK_WAIT: Duration = Duration::from_secs(60);
 
 /// A periodic background job.
 pub trait Job: Send + 'static {
@@ -63,8 +69,16 @@ impl Scheduler {
         let handle: JoinHandle<J> = tokio::spawn(run_loop(job, self.token.clone()));
         self.finishing.push(Box::pin(async move {
             match handle.await {
-                Ok(mut job) => job.finish().await,
-                Err(err) => tracing::warn!(job = J::NAME, error = %err, "job task failed"),
+                Ok(mut job) => {
+                    if let Err(panic) = CatchUnwind(Box::pin(job.finish())).await {
+                        tracing::error!(
+                            job = J::NAME,
+                            panic = panic_message(&panic),
+                            "job finish panicked"
+                        );
+                    }
+                }
+                Err(err) => tracing::error!(job = J::NAME, error = %err, "job task failed"),
             }
         }));
     }
@@ -86,7 +100,7 @@ impl Scheduler {
 }
 
 async fn run_loop<J: Job>(mut job: J, token: CancellationToken) -> J {
-    let mut wait = job.first_delay();
+    let mut wait = wait_of(&job, J::first_delay);
     loop {
         tokio::select! {
             // A run due after the cancellation is left to `finish`.
@@ -97,11 +111,32 @@ async fn run_loop<J: Job>(mut job: J, token: CancellationToken) -> J {
         tokio::select! {
             biased;
             () = token.cancelled() => return job,
-            outcome = CatchUnwind(Box::pin(job.run())) => if outcome.is_err() {
-                tracing::error!(job = J::NAME, "job run panicked; running again at the next tick");
+            outcome = CatchUnwind(Box::pin(job.run())) => if let Err(panic) = outcome {
+                tracing::error!(job = J::NAME, panic = panic_message(&panic), "job run panicked; running again at the next tick");
             },
         }
-        wait = job.interval();
+        wait = wait_of(&job, J::interval);
+    }
+}
+
+/// `read(job)`, or [`FALLBACK_WAIT`] if it panicked.
+fn wait_of<J: Job>(job: &J, read: fn(&J) -> Duration) -> Duration {
+    std::panic::catch_unwind(AssertUnwindSafe(|| read(job))).unwrap_or_else(|panic| {
+        tracing::error!(job = J::NAME, panic = panic_message(&panic), wait = ?FALLBACK_WAIT, "job interval panicked");
+        FALLBACK_WAIT
+    })
+}
+
+type Panic = Box<dyn Any + Send>;
+
+/// The message a panic was raised with, when it has one.
+fn panic_message(panic: &Panic) -> &str {
+    if let Some(text) = panic.downcast_ref::<&'static str>() {
+        text
+    } else if let Some(text) = panic.downcast_ref::<String>() {
+        text
+    } else {
+        "<non-string panic payload>"
     }
 }
 
@@ -109,14 +144,14 @@ async fn run_loop<J: Job>(mut job: J, token: CancellationToken) -> J {
 struct CatchUnwind<F>(Pin<Box<F>>);
 
 impl<F: Future> Future for CatchUnwind<F> {
-    type Output = Result<F::Output, ()>;
+    type Output = Result<F::Output, Panic>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let inner = self.get_mut().0.as_mut();
         match std::panic::catch_unwind(AssertUnwindSafe(|| inner.poll(cx))) {
             Ok(Poll::Pending) => Poll::Pending,
             Ok(Poll::Ready(output)) => Poll::Ready(Ok(output)),
-            Err(_) => Poll::Ready(Err(())),
+            Err(panic) => Poll::Ready(Err(panic)),
         }
     }
 }
@@ -305,5 +340,65 @@ mod tests {
         assert!(!done);
         assert_eq!(finished.load(Ordering::SeqCst), 0);
         token.cancel();
+    }
+
+    /// Its interval panics after the first run; its finish counts.
+    struct BadInterval {
+        runs: Arc<AtomicUsize>,
+        finished: Arc<AtomicUsize>,
+    }
+
+    impl Job for BadInterval {
+        const NAME: &'static str = "bad_interval";
+
+        fn interval(&self) -> Duration {
+            panic!("setting unreadable");
+        }
+
+        fn first_delay(&self) -> Duration {
+            TICK
+        }
+
+        async fn run(&mut self) {
+            self.runs.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async fn finish(&mut self) {
+            self.finished.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_panicking_interval_keeps_the_job_and_its_finish() {
+        // Arrange
+        let token = CancellationToken::new();
+        let mut scheduler = Scheduler::new(token.clone());
+        let runs = Arc::new(AtomicUsize::new(0));
+        let finished = Arc::new(AtomicUsize::new(0));
+        scheduler.spawn(BadInterval {
+            runs: Arc::clone(&runs),
+            finished: Arc::clone(&finished),
+        });
+
+        // Act: the first run, then a panicking interval (the loop waits the fallback).
+        until(|| runs.load(Ordering::SeqCst) == 1).await;
+        tokio::time::sleep(TICK * 4).await;
+        token.cancel();
+        let done = scheduler.finish(PATIENCE).await;
+
+        // Assert: the task survived, so the final work still ran.
+        assert!(done);
+        assert_eq!(finished.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn panic_messages_are_read_from_str_and_string_payloads() {
+        let text: Panic = Box::new("static text");
+        let owned: Panic = Box::new(String::from("formatted 7"));
+        let other: Panic = Box::new(7_u8);
+
+        assert_eq!(panic_message(&text), "static text");
+        assert_eq!(panic_message(&owned), "formatted 7");
+        assert_eq!(panic_message(&other), "<non-string panic payload>");
     }
 }

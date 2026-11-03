@@ -3,12 +3,12 @@
 //! [`devices`](crate::devices::LastSeenFlusher).
 //!
 //! - [`AuditRetention`]: deletes audit records older than `audit.retention.*` (per type, `0`
-//!   keeps them forever) and records every run that deleted anything in `console_audit`
-//!   (06 §7), atomically with the deletes.
+//!   keeps them forever) and records each deleting batch in `console_audit` (06 §7), with
+//!   one immutable row inserted in that batch's transaction.
 //! - [`ExpiryCleanup`]: drops state that has expired or can no longer matter: audit nonces
 //!   (after [`NONCE_RETENTION`]), finished setup tokens, `device_strategy_keys` of deleted
-//!   devices (after [`STRATEGY_KEYS_GRACE`]), and, through their services, dead sessions,
-//!   expired OIDC flows, finished login challenges and stale lockout counters.
+//!   devices (after [`STRATEGY_KEYS_GRACE`]), expired OIDC flows and finished login
+//!   challenges, and, through their services, dead sessions and stale lockout counters.
 //!
 //! **Batches** ([`Purge`]): every delete here removes at most one batch of rows per write
 //! transaction (`BEGIN IMMEDIATE` on SQLite), selected with `FOR UPDATE SKIP LOCKED` on
@@ -27,8 +27,11 @@ mod purge;
 mod retention;
 
 pub use expiry::{ExpiryCleanup, ExpiryReport, NONCE_RETENTION, STRATEGY_KEYS_GRACE};
+pub(crate) use purge::{Doomed, Plain};
 pub use purge::{PURGE_BATCH, PURGE_PAUSE, Purge};
-pub use retention::{AuditKind, AuditRetention, RETENTION_ACTION, RetentionReport};
+pub use retention::{
+    AuditKind, AuditRetention, RETENTION_ACTION, RETENTION_TARGET, RetentionReport,
+};
 
 use std::error::Error;
 use std::time::Duration;
