@@ -164,6 +164,32 @@ impl Core {
         revoked
     }
 
+    /// Like [`revoke_all_for_user`](Self::revoke_all_for_user), but spares the sessions
+    /// created at or after the user's last password change: the change itself already
+    /// revoked the older ones in its transaction, and a session minted after it (the user
+    /// signing in again, or the self-service change handing out a fresh one) is legitimate
+    /// even when this late, asynchronous follow-up runs after it. A missing user (deleted)
+    /// revokes everything.
+    pub(super) async fn revoke_sessions_before_password_change(
+        &self,
+        user_id: i64,
+    ) -> Result<u64, DbErr> {
+        self.cache.invalidate_user(user_id);
+        let changed_at = user::Entity::find_by_id(user_id)
+            .select_only()
+            .column(user::Column::PasswordChangedAt)
+            .into_tuple::<Option<TimestampMs>>()
+            .one(&self.db)
+            .await?;
+        let mut which = Condition::all().add(session::Column::UserId.eq(user_id));
+        if let Some(Some(changed_at)) = changed_at {
+            which = which.add(session::Column::CreatedAt.lt(changed_at));
+        }
+        let revoked = self.revoke(which).await;
+        self.cache.invalidate_user(user_id);
+        revoked
+    }
+
     async fn revoke_all_guarded(
         &self,
         user_id: i64,

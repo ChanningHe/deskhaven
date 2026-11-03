@@ -917,14 +917,50 @@ async fn the_event_consumer_revokes_every_session_of_the_user() {
         env.auth(&bob_token).await.unwrap();
         let (events, receiver) = broadcast::channel(8);
 
+        events.send(UserEvent::Disabled { user_id: alice }).unwrap();
+        drop(events);
+        env.sessions.spawn_event_consumer(receiver).await.unwrap();
+
+        assert!(matches!(env.auth(&token).await, Err(SessionError::Revoked)));
+        assert_eq!(env.auth(&bob_token).await.unwrap(), bob);
+    })
+    .await;
+}
+
+/// The password change revokes the old sessions in its own transaction and the user signs
+/// in again right after; the event consumer runs later and must not revoke that new session.
+#[tokio::test]
+async fn a_late_password_change_event_spares_sessions_created_after_the_change() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (alice, old) = env.client_session("alice").await;
+        env.clock.advance(MINUTE);
+        let new_password = Password::new("another-Phrase-7");
+        env.users
+            .set_password(alice, &new_password, false)
+            .await
+            .unwrap();
+        env.clock.advance(MINUTE);
+        let login = env
+            .users
+            .authenticate_local("alice", &new_password)
+            .await
+            .unwrap();
+        let (_, fresh) = env
+            .sessions
+            .create_client(alice, &login.stamp, &device(), None)
+            .await
+            .unwrap();
+        let (events, receiver) = broadcast::channel(8);
+
         events
             .send(UserEvent::PasswordChanged { user_id: alice })
             .unwrap();
         drop(events);
         env.sessions.spawn_event_consumer(receiver).await.unwrap();
 
-        assert!(matches!(env.auth(&token).await, Err(SessionError::Revoked)));
-        assert_eq!(env.auth(&bob_token).await.unwrap(), bob);
+        assert!(matches!(env.auth(&old).await, Err(SessionError::Revoked)));
+        assert_eq!(env.auth(&fresh).await.unwrap(), alice);
     })
     .await;
 }
