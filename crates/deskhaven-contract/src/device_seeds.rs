@@ -8,10 +8,12 @@ use anyhow::Context;
 use deskhaven_config::settings::{Change, DEVICES_ACCEPT_PRESETS};
 use deskhaven_core::addressbooks::{Actor, AddressBookService, NewSharedBook, Rule, Subject};
 use deskhaven_core::clock::{Clock, SystemClock};
-use deskhaven_core::devices::{DeviceRepository, Registration};
+use deskhaven_core::devices::{
+    DeviceRepository, Presets, Registration, Sysinfo, SysinfoOutcome, SysinfoReport,
+};
 use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::AppState;
-use deskhaven_core::strategies::{NewStrategy, Options};
+use deskhaven_core::strategies::{NewStrategy, Options, Target};
 use deskhaven_core::users::{Credential, NewUser, Password};
 
 use crate::seeds::{SEED_PASSWORD, SeedOutputs};
@@ -97,5 +99,68 @@ pub async fn presets_accepted(state: &AppState) -> anyhow::Result<SeedOutputs> {
         reason: None,
     };
     state.settings.update(request).await?;
+    Ok(SeedOutputs::new())
+}
+
+/// `global-strategy`: what the global strategy [`GLOBAL_STRATEGY`] carries; the empty value
+/// tells the client to delete that option.
+pub const GLOBAL_STRATEGY: &str = "Defaults";
+pub const GLOBAL_OPTIONS: &[(&str, &str)] = &[
+    ("enable-file-transfer", "N"),
+    ("allow-remote-config-modification", ""),
+];
+/// `device-disconnect`: the connections queued for closing on [`DEVICE_ID`].
+pub const QUEUED_DISCONNECTS: &[i32] = &[12, 13];
+
+/// `device-sysinfo`: stores a sysinfo of [`DEVICE_ID`] (after `registered-device`), so its
+/// heartbeat no longer asks for one. No outputs.
+pub async fn device_sysinfo(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let report = SysinfoReport {
+        rustdesk_id: DEVICE_ID.to_owned(),
+        uuid: DEVICE_UUID_B64.to_owned(),
+        sysinfo: Sysinfo {
+            hostname: Some("office-pc".to_owned()),
+            os: Some("linux / Ubuntu 24.04".to_owned()),
+            version: Some("1.4.1".to_owned()),
+            ..Sysinfo::default()
+        },
+        presets: Presets::default(),
+    };
+    let outcome = state.devices.report_sysinfo(report).await?;
+    anyhow::ensure!(
+        outcome == SysinfoOutcome::Stored,
+        "sysinfo not stored: {outcome:?}"
+    );
+    Ok(SeedOutputs::new())
+}
+
+/// `global-strategy`: strategy [`GLOBAL_STRATEGY`] with [`GLOBAL_OPTIONS`], assigned to
+/// every device. No outputs (it moves the strategy version: seed `strategy-version` after it).
+pub async fn global_strategy(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let options: Options = GLOBAL_OPTIONS
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
+    let strategy = NewStrategy::new(GLOBAL_STRATEGY, options);
+    let strategy = state.strategies.create(strategy).await?;
+    state.strategies.assign(Target::Global, strategy.id).await?;
+    Ok(SeedOutputs::new())
+}
+
+/// `strategy-version`: outputs `strategy_modified_at`, the strategy version the client of an
+/// up-to-date device holds (send it as `"${int:strategy_modified_at}"`).
+pub async fn strategy_version(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let version = state.strategies.cache().version();
+    Ok(SeedOutputs::from([(
+        "strategy_modified_at".to_owned(),
+        version.to_string(),
+    )]))
+}
+
+/// `device-disconnect`: queues [`QUEUED_DISCONNECTS`] for closing on [`DEVICE_ID`]. No
+/// outputs.
+pub async fn device_disconnect(state: &AppState) -> anyhow::Result<SeedOutputs> {
+    let queue = state.devices.disconnects();
+    queue.disconnect(DEVICE_ID, QUEUED_DISCONNECTS)?;
     Ok(SeedOutputs::new())
 }

@@ -60,7 +60,10 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
    token the real login service issued); refer to them as `${session_token}`
    in `request.path`, header values and body strings. Seeds run in order; an
    output name defined twice, or a placeholder without an output, fails the
-   fixture. There is no escape for a literal `${`. Built-in seeds (every
+   fixture. There is no escape for a literal `${`. A body string that is
+   exactly `"${int:name}"` becomes the JSON integer of that output (the
+   client sends some values, like the heartbeat's `modified_at`, as
+   numbers). Built-in seeds (every
    account's password is `contract-Seed-pass-1`):
    - `client-session`: active local user `alice` logged in from device
      `123456789` / `contract-seed-device-uuid`; outputs `session_token`,
@@ -92,7 +95,14 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
      `device-preset-targets` (user `pat`, device group `Office`, strategy
      `Locked`, admin-managed shared book `Team` with `pat` at rule 2: what
      sysinfo presets name), `device-presets-accepted`
-     (`devices.accept_presets` = `all`; presets are off by default).
+     (`devices.accept_presets` = `all`; presets are off by default),
+     `device-sysinfo` (a stored sysinfo for `registered-device`, so its
+     heartbeat stops asking), `global-strategy` (strategy `Defaults`
+     `{"enable-file-transfer": "N", "allow-remote-config-modification": ""}`
+     assigned globally), `strategy-version` (outputs
+     `strategy_modified_at`, the version an up-to-date client holds; seed it
+     after anything that changes strategies), `device-disconnect`
+     (connections 12 and 13 of `registered-device` queued for closing).
 5. Run the contract test. Watch it fail before the endpoint exists (red),
    then implement the endpoint until it passes.
 
@@ -139,16 +149,18 @@ async fn login_options_still_answers_after_a_rejected_method() {
 Prepare state with the same seeds (`Seeds::builtin().apply(&names,
 &app.state)`), directly through `app.state`'s services, or with
 `app.set_setting(key, value)` (hot-reloaded runtime settings);
-`TestApp::start_with_options(TestOptions { routes, hasher, trusted_proxies, public_url, .. })`
+`TestApp::start_with_options(TestOptions { routes, hasher, trusted_proxies, public_url, clock, .. })`
 adds test routes, rebuilds users and sessions around a given password hasher
-(e.g. one slot, to provoke `Busy`), trusts proxy ranges or sets `public_url` (OIDC). `requests::{login,
+(e.g. one slot, to provoke `Busy`), trusts proxy ranges, sets `public_url` (OIDC) or runs
+every service on a given clock (a `ManualClock` steps past rate-limit intervals,
+`tests/heartbeat.rs`). `requests::{login,
 second_step, bearer, oidc_auth, oidc_query, oidc_callback, from}` build the requests (the 2FA second step
 included) exactly as the client sends them. Set
 `Request::headers`/`body` for the client's exact request, and carry values
 from one reply into the next request in plain Rust.
 
-Time: there is no clock control yet, so expiry cannot be tested without
-waiting. M2-05 introduces an injectable clock; expiry tests start there.
+Time: `TestOptions::clock` runs every service on a given clock (e.g. a
+`ManualClock` you advance between requests); by default it is the system clock.
 
 ## Provenance rules
 

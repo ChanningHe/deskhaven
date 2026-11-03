@@ -19,7 +19,7 @@ use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::UpdateRequest;
-use deskhaven_core::state::AppState;
+use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{ErrorBodies, apply_middleware, redirect_client_root, single_listener_router};
 use flate2::read::GzDecoder;
@@ -63,6 +63,9 @@ pub struct TestOptions {
     pub listen: Listen,
     /// Bootstrap `public_url` (default unset: OIDC logins are refused).
     pub public_url: String,
+    /// Every service rebuilt on this clock (default: the system clock), e.g. a
+    /// `ManualClock` to step past rate-limit intervals. Not combined with `hasher`.
+    pub clock: Option<SharedClock>,
 }
 
 impl TestApp {
@@ -98,6 +101,7 @@ impl TestApp {
             trusted_proxies,
             listen,
             public_url,
+            clock,
         } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let mut config = Bootstrap {
@@ -115,9 +119,10 @@ impl TestApp {
         )
         .await?;
         // One instance: the routers and the seeds share it.
-        let state = Arc::new(match hasher {
-            Some(hasher) => with_hasher(base, hasher),
-            None => base,
+        let state = Arc::new(match (hasher, clock) {
+            (Some(hasher), _) => with_hasher(base, hasher),
+            (None, Some(clock)) => on_clock(&base, clock),
+            (None, None) => base,
         });
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(
@@ -216,6 +221,22 @@ fn decode(headers: &HeaderMap, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
 
 /// `base` with users and sessions on `hasher` (same database, settings and
 /// throttle; the clock is the production one, as in `open_state`).
+/// A state like `base` (same database, settings and keys) whose services run on `clock`.
+fn on_clock(base: &AppState, clock: SharedClock) -> AppState {
+    AppState::new(
+        base.db.clone(),
+        base.settings.clone(),
+        Arc::clone(&base.crypto),
+        base.signal_public_key.clone(),
+        PasswordHasher::default(),
+        clock,
+        &StateConfig {
+            public_url: base.public_url.clone(),
+            console_url: base.console_url.clone(),
+        },
+    )
+}
+
 fn with_hasher(base: AppState, hasher: PasswordHasher) -> AppState {
     let clock: SharedClock = Arc::new(SystemClock);
     let users = UserService::with_clock(

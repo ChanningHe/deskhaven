@@ -1,7 +1,7 @@
 //! [`DisconnectQueue`] (02 §3, 03 §2.1): connections an administrator (or, later, an ACL
 //! change) wants closed, waiting for the device's next heartbeat. The heartbeat reply lists
-//! them in `disconnect` and the client closes each one it still has ("Closed manually by web
-//! console", `src/server/connection.rs:1390`).
+//! them in `disconnect` and the client closes each one it still has ("Closed manually by the
+//! web console", `src/server/connection.rs:1389-1392`).
 //!
 //! - **Once**: a request is handed out by one heartbeat and then gone, whether or not the
 //!   reply arrives. Losing it costs a click; replaying it could close a later connection.

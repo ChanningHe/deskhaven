@@ -66,6 +66,18 @@ const BUILTIN: &[(&str, Seed)] = &[
     ("device-preset-targets", |state| {
         Box::pin(device_seeds::preset_targets(state))
     }),
+    ("device-sysinfo", |state| {
+        Box::pin(device_seeds::device_sysinfo(state))
+    }),
+    ("global-strategy", |state| {
+        Box::pin(device_seeds::global_strategy(state))
+    }),
+    ("strategy-version", |state| {
+        Box::pin(device_seeds::strategy_version(state))
+    }),
+    ("device-disconnect", |state| {
+        Box::pin(device_seeds::device_disconnect(state))
+    }),
 ];
 
 /// `client-session` / `local-user` values (fixed, so fixtures may also spell

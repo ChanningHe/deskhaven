@@ -1,0 +1,29 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:251-255",
+    "src/hbbs_http/sync.rs:109-131"
+  ],
+  "description": "The server holds no sysinfo of this device (e.g. its row was deleted and registered anew while the client kept running, so the client believes it already uploaded). The presence of the sysinfo key, whatever its value, makes the client reset info_uploaded and upload again on a following tick.",
+  "seed": ["registered-device", "strategy-version"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "ver": 1004001,
+        "modified_at": "${int:strategy_modified_at}"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "HeartbeatResponse",
+    "json_subset": { "sysinfo": true },
+    "json_absent": ["/strategy", "/modified_at", "/disconnect"]
+  }
+}

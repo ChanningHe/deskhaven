@@ -308,10 +308,30 @@ fn substitute(text: &str, outputs: &SeedOutputs) -> Result<String, String> {
     Ok(resolved)
 }
 
+/// A JSON string that is exactly `${int:name}` becomes the number `outputs[name]` (the
+/// client sends some values, e.g. the heartbeat's `modified_at`, as JSON integers).
+const INT_PLACEHOLDER: (&str, &str) = ("${int:", "}");
+
+fn substitute_int(text: &str, outputs: &SeedOutputs) -> Option<Result<Value, String>> {
+    let name = text
+        .strip_prefix(INT_PLACEHOLDER.0)?
+        .strip_suffix(INT_PLACEHOLDER.1)?;
+    let resolved = substitute(&format!("${{{name}}}"), outputs).and_then(|value| {
+        value
+            .parse::<i64>()
+            .map(Value::from)
+            .map_err(|_| format!("seed output {name:?} = {value:?} is not an integer"))
+    });
+    Some(resolved)
+}
+
 /// Substitutes inside every string of a JSON value (keys stay as written).
 fn substitute_json(value: &Value, outputs: &SeedOutputs) -> Result<Value, String> {
     Ok(match value {
-        Value::String(text) => Value::String(substitute(text, outputs)?),
+        Value::String(text) => match substitute_int(text, outputs) {
+            Some(number) => number?,
+            None => Value::String(substitute(text, outputs)?),
+        },
         Value::Array(items) => Value::Array(
             items
                 .iter()
@@ -534,5 +554,27 @@ mod tests {
         assert_eq!(body, json!({ "${id}": ["t1", 1, { "n": "42" }] }));
         // The original is untouched.
         assert_eq!(request.path, "/api/x/${id}");
+    }
+
+    #[test]
+    fn an_int_placeholder_becomes_a_json_number() {
+        let request = fixture(json!({ "request": {
+            "path": "/api/x",
+            "body": { "json": { "n": "${int:id}", "s": "x${id}" } }
+        } }))
+        .request;
+        let not_int = fixture(json!({ "request": {
+            "path": "/api/x", "body": { "json": { "n": "${int:token}" } }
+        } }))
+        .request;
+
+        let resolved = request.resolve(&outputs()).unwrap();
+
+        let Body::Json(body) = resolved.body else {
+            panic!("json body expected");
+        };
+        assert_eq!(body, json!({ "n": 42, "s": "x42" }));
+        let err = not_int.resolve(&outputs()).err().unwrap().to_string();
+        assert!(err.contains("not an integer"), "{err}");
     }
 }

@@ -8,6 +8,7 @@ mod account;
 mod auth;
 mod client;
 mod error;
+mod heartbeat;
 mod login;
 mod login_options;
 mod oidc;
@@ -26,6 +27,7 @@ use deskhaven_core::state::AppState;
 pub use ab::{MAX_AB_BODY, MAX_LEGACY_AB_BODY};
 pub use auth::{BearerUser, UNAUTHORIZED_MESSAGE};
 pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
+pub use heartbeat::MAX_HEARTBEAT_BODY;
 pub use login::MAX_LOGIN_BODY;
 pub use oidc::{
     INVALID_LOGIN_MESSAGE as OIDC_INVALID_LOGIN_MESSAGE, PENDING_MESSAGE as OIDC_PENDING_MESSAGE,
@@ -50,6 +52,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/api/sysinfo",
             post(sysinfo::sysinfo).layer(DefaultBodyLimit::max(sysinfo::MAX_SYSINFO_BODY)),
+        )
+        .route(
+            "/api/heartbeat",
+            post(heartbeat::heartbeat).layer(DefaultBodyLimit::max(MAX_HEARTBEAT_BODY)),
         )
         .merge(oidc::routes())
         .merge(ab::routes())

@@ -1,0 +1,32 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:107",
+    "src/hbbs_http/sync.rs:240-242",
+    "src/hbbs_http/sync.rs:256-260",
+    "src/server/connection.rs:1389-1392"
+  ],
+  "description": "Connections 12 and 13 were queued for closing; the device reports its live connections 12 and 14 in conns. The reply lists only 12: 13 already ended, 14 was not asked for. The client broadcasts the list (Vec<i32>) to its connections and each one whose id is listed closes (\"Closed manually by the web console\").",
+  "seed": ["registered-device", "device-sysinfo", "strategy-version", "device-disconnect"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "ver": 1004001,
+        "conns": [12, 14],
+        "modified_at": "${int:strategy_modified_at}"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body_kind": "json",
+    "shape": "HeartbeatResponse",
+    "json_subset": { "disconnect": [12] },
+    "json_absent": ["/strategy", "/modified_at", "/sysinfo"]
+  }
+}

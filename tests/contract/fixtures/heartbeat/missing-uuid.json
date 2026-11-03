@@ -1,0 +1,25 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:236-245"
+  ],
+  "description": "A body without uuid is not something the client sends (it always sets id, uuid, ver and modified_at). 400 with the usual error body; the client ignores it like any reply without known keys.",
+  "seed": ["registered-device"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "ver": 1004001,
+        "modified_at": 0
+      }
+    }
+  },
+  "expect": {
+    "status": 400,
+    "body_kind": "json",
+    "shape": "ErrorBody"
+  }
+}

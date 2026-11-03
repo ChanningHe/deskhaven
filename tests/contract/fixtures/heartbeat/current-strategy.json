@@ -1,0 +1,30 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:236-245",
+    "src/hbbs_http/sync.rs:248-277"
+  ],
+  "description": "The steady state: a device with a stored sysinfo whose client already holds the server's strategy version. Every reply key is optional and the client acts only on those present, so the reply is an empty object: no strategy, no modified_at (the client keeps its strategy_timestamp), no sysinfo request, nothing to disconnect.",
+  "seed": ["registered-device", "device-sysinfo", "global-strategy", "strategy-version"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "ver": 1004001,
+        "modified_at": "${int:strategy_modified_at}"
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "HeartbeatResponse",
+    "json_subset": {},
+    "json_absent": ["/strategy", "/modified_at", "/sysinfo", "/disconnect"]
+  }
+}

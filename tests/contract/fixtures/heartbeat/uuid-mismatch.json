@@ -1,0 +1,30 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:238",
+    "src/hbbs_http/sync.rs:245-250"
+  ],
+  "description": "A registered id with another device's uuid (devices.verify_uuid, default on): the same 404 as an unknown id, so the reply does not tell whether the id exists, and nothing is handed out (strategy, disconnects) or recorded (presence).",
+  "seed": ["registered-device", "device-disconnect"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "c29tZS1vdGhlci1kZXZpY2UtdXVpZA==",
+        "ver": 1004001,
+        "conns": [12],
+        "modified_at": 0
+      }
+    }
+  },
+  "expect": {
+    "status": 404,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "ErrorBody",
+    "json_subset": { "error": "ID_NOT_FOUND" }
+  }
+}

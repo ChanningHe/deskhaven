@@ -1,0 +1,41 @@
+{
+  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "source": [
+    "src/hbbs_http/sync.rs:236-245",
+    "src/hbbs_http/sync.rs:261-277",
+    "src/hbbs_http/sync.rs:45-51",
+    "src/hbbs_http/sync.rs:295-311",
+    "src/common.rs:1760"
+  ],
+  "description": "A client whose strategy_timestamp differs from the server's version (here 0: never got one) receives the full effective strategy: config_options with every option, the empty value included (the client deletes that option, or keeps it empty when an advanced default exists), and the version to store as strategy_timestamp. The device has no sysinfo on the server yet, so the reply also asks for one.",
+  "seed": ["registered-device", "global-strategy"],
+  "request": {
+    "method": "POST",
+    "path": "/api/heartbeat",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "json": {
+        "id": "${device_id}",
+        "uuid": "${device_uuid}",
+        "ver": 1004001,
+        "modified_at": 0
+      }
+    }
+  },
+  "expect": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body_kind": "json",
+    "shape": "HeartbeatResponse",
+    "json_subset": {
+      "sysinfo": true,
+      "strategy": {
+        "config_options": {
+          "enable-file-transfer": "N",
+          "allow-remote-config-modification": ""
+        }
+      }
+    },
+    "json_absent": ["/disconnect"]
+  }
+}
