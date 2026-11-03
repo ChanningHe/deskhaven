@@ -28,8 +28,10 @@ use subtle::ConstantTimeEq;
 
 mod admin;
 mod assign;
+mod assign_steps;
 mod deploy;
 mod heartbeat;
+mod registry;
 
 pub use admin::{
     ConnectionRecord, DeviceGroup, DeviceGroupQuery, DeviceGroupSort, DeviceGroupSortField,
@@ -39,10 +41,12 @@ pub use admin::{
 pub use assign::DeviceAssignment;
 pub use deploy::{DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DeployOutcome, DeployRequest};
 pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
+pub use registry::{LiveRegistrations, Requester};
 
 use super::DeviceError;
 use super::disconnects::DisconnectQueue;
 use super::limits::{HEARTBEAT_PER_IP_PER_MINUTE, SYSINFO_PER_IP_PER_MINUTE, WriteLimit};
+use super::new_ids::NewIdQuota;
 use super::presence::{Identity, Presence};
 use super::preset_book;
 use super::presets::{self, Presets, RowPresets};
@@ -56,6 +60,7 @@ use crate::crypto::{SecretBox, b64::KEY_B64};
 use crate::settings::SettingsService;
 use crate::strategies::StrategyService;
 use base64_022::Engine as _;
+use registry::SignalRegistry;
 use std::time::Duration;
 
 /// Longest device group name, in characters.
@@ -108,6 +113,10 @@ struct Inner {
     heartbeat_ips: IpLimiter,
     sysinfo_writes: WriteLimit,
     deleted_hooks: RwLock<Vec<DeletedHook>>,
+    /// `--deploy` / `--assign` (M2-19): audit timestamps, new-id quota, signal registry.
+    clock: SharedClock,
+    new_ids: NewIdQuota,
+    registry: SignalRegistry,
 }
 
 impl DeviceService {
@@ -130,8 +139,11 @@ impl DeviceService {
                 disconnects: DisconnectQueue::new(Arc::clone(&clock)),
                 sysinfo_ips: IpLimiter::fixed(SYSINFO_PER_IP_PER_MINUTE, Arc::clone(&clock)),
                 heartbeat_ips: IpLimiter::fixed(HEARTBEAT_PER_IP_PER_MINUTE, Arc::clone(&clock)),
-                sysinfo_writes: WriteLimit::new(clock),
+                sysinfo_writes: WriteLimit::new(Arc::clone(&clock)),
                 deleted_hooks: RwLock::default(),
+                new_ids: NewIdQuota::new(Arc::clone(&clock)),
+                registry: SignalRegistry::default(),
+                clock,
             }),
         }
     }

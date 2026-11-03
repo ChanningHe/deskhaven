@@ -4,8 +4,10 @@
 
 mod admin;
 mod assign;
+mod assign_failures;
 mod deletion;
 mod deploy;
+mod deploy_guards;
 mod flush;
 mod heartbeat;
 mod presets;

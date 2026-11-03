@@ -5,12 +5,14 @@
 //! A preset entry is written **as the device's owner** (`Actor::User`, the owner the presets
 //! just set or the one it already had), through the normal rule checks: a device without an
 //! owner, or whose owner lacks read-write access (rule 2) to the book, gets no entry. So a
-//! device can only add itself where its owner could have added it by hand. An assignment
-//! writes as `Actor::Admin`.
+//! device can only add itself where its owner could have added it by hand. A preset never
+//! replaces an existing entry (and then creates no tag). The tag is created in the book only
+//! after the entry was added, and not beyond the book's tag limit: then the entry stays
+//! without it.
 //!
-//! An existing entry is never replaced (and then no tag is created). The tag is created in
-//! the book only after the entry was added, and not beyond the book's tag limit: then the
-//! entry stays without it (presets) or the assignment fails after the entry was added.
+//! An assignment writes as `Actor::Admin`, inside its own transaction
+//! (`AddressBookService::place_entry_in`): it adds the entry or updates an existing one
+//! (given fields replaced, the tag added), and any failure rolls the whole assignment back.
 
 use deskhaven_db::entity::device;
 use serde_json::{Map, Value, json};
@@ -92,6 +94,46 @@ pub(super) fn check(rustdesk_id: &str, preset: &AddressBookPreset) -> Result<(),
         peer.insert("tags".to_owned(), json!([tag]));
     }
     PeerPatch::from_json(Value::Object(peer)).map(drop)
+}
+
+/// An assignment's entry for `device` (written as an administrator, in the assignment's
+/// transaction): the preset's fields, the administrator's names for the device (else the
+/// reported ones), and the tag to add.
+pub(super) fn assign_patch(
+    device: &device::Model,
+    preset: &AddressBookPreset,
+) -> Result<PeerPatch, AddressBookError> {
+    let mut peer = entry_fields(&device.rustdesk_id, preset);
+    let names = [
+        (
+            "hostname",
+            device.display_name.as_ref().or(device.hostname.as_ref()),
+        ),
+        (
+            "username",
+            device
+                .display_username
+                .as_ref()
+                .or(device.username.as_ref()),
+        ),
+    ];
+    for (key, value) in names {
+        if let Some(value) = value {
+            peer.insert(key.to_owned(), json!(value));
+        }
+    }
+    if let Some(tag) = &preset.tag {
+        peer.insert("tags".to_owned(), json!([tag]));
+    }
+    PeerPatch::from_json(Value::Object(peer))
+}
+
+/// The tag a preset or assignment creates in the book.
+pub(super) fn new_tag(preset: &AddressBookPreset) -> Option<Tag> {
+    preset.tag.as_ref().map(|name| Tag {
+        name: name.clone(),
+        color: PRESET_TAG_COLOR,
+    })
 }
 
 /// Creates `tag` in the book if missing (and room is left), then puts it on the entry.

@@ -8,25 +8,38 @@
 //!   register, or a uuid / key that is not base64 of a usable value, is
 //!   [`DeployOutcome::InvalidInput`].
 //! - An id registered with this uuid is marked deployed (`deployed_at`); its key stays the
-//!   one the signal server registered. An unknown id is registered here, bound to this uuid
-//!   and key, as the signal server would on its first RegisterPk. An id bound to another
-//!   uuid is [`DeployOutcome::IdTaken`] and left alone.
+//!   one the signal server registered. An id bound to another uuid, in the database or in
+//!   the signal server's memory (a registration not stored yet, [`LiveRegistrations`]), is
+//!   [`DeployOutcome::IdTaken`] and left alone (logged). The uuid is always compared, whatever
+//!   `devices.verify_uuid` says.
+//! - An unknown id is registered here, bound to this uuid and key, as the signal server
+//!   would on its first RegisterPk, within the new-id quota (`new_ids`;
+//!   [`DeployOutcome::TooMany`] beyond it).
 //!
-//! Each statement is atomic on both backends, so this needs no transaction or lock, exactly
-//! like [`DeviceRepository::upsert_registration`](crate::devices::DeviceRepository): the
-//! update is conditional on the uuid, the insert does nothing on a conflicting id.
+//! The write and its console audit row (as the requester) share one write transaction, run
+//! in its own task; after the commit the registry-changed hooks make the signal server
+//! re-read the id.
+//!
+//! [`LiveRegistrations`]: super::LiveRegistrations
 
-use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use base64_022::Engine as _;
 use deskhaven_config::settings::DEVICES_REQUIRE_DEPLOY;
+use deskhaven_db::begin_write;
 use deskhaven_db::entity::device::{self, DeviceStatus, Entity as Devices};
-use deskhaven_db::time::{self, TimestampMs};
+use deskhaven_db::time::TimestampMs;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, TryInsertResult};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QuerySelect, TryInsertResult,
+};
+use serde_json::json;
 
-use super::DeviceService;
+use super::registry::same_uuid;
+use super::{DeviceService, Inner, Requester};
+use crate::console_audit::{self, NewConsoleAudit};
 use crate::crypto::b64::KEY_B64;
 use crate::devices::DeviceError;
 
@@ -47,11 +60,11 @@ pub struct DeployRequest {
     pub uuid: String,
     /// Base64 of the device public key.
     pub pk: String,
-    /// The caller's address, recorded as the registration address of a new id.
-    pub ip: IpAddr,
+    /// Who asks; its address is recorded as the registration address of a new id.
+    pub by: Requester,
 }
 
-/// The `result` of a deploy (the client matches these four).
+/// The `result` of a deploy (the client matches the first four).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeployOutcome {
     /// `OK`.
@@ -62,6 +75,8 @@ pub enum DeployOutcome {
     InvalidInput,
     /// `ID_TAKEN`: the id belongs to another uuid.
     IdTaken,
+    /// The new-id quota of the requester's network or actor is used up (HTTP 429).
+    TooMany { retry_after: Duration },
 }
 
 /// A validated request.
@@ -69,28 +84,60 @@ struct Keys {
     rustdesk_id: String,
     uuid: Vec<u8>,
     pk: Vec<u8>,
-    ip: String,
 }
 
 impl DeviceService {
-    /// Deploys a device (see the module documentation).
+    /// Deploys a device on behalf of `req.by` (see the module documentation).
     pub async fn deploy(&self, req: DeployRequest) -> Result<DeployOutcome, DeviceError> {
         if !self.inner.settings.snapshot().get(&DEVICES_REQUIRE_DEPLOY) {
             return Ok(DeployOutcome::NotEnabled);
         }
+        let by = req.by;
         let Some(keys) = parse(req) else {
             return Ok(DeployOutcome::InvalidInput);
         };
-        let db = &self.inner.db;
-        let now = time::now();
-        let deployed = mark(db, &keys, now).await?
-            || insert(db, &keys, now).await?
-            // Lost an insert race: fine if the winner registered the same uuid.
-            || mark(db, &keys, now).await?;
-        Ok(match deployed {
-            true => DeployOutcome::Deployed,
-            false => DeployOutcome::IdTaken,
-        })
+        // Asked before the write lock is taken: a round trip to the signal server.
+        let live = self.inner.live_uuid(&keys.rustdesk_id).await;
+        self.detached(move |inner| inner.deploy_keys(keys, live, by))
+            .await
+    }
+}
+
+impl Inner {
+    async fn deploy_keys(
+        self: Arc<Self>,
+        keys: Keys,
+        live: Option<Vec<u8>>,
+        by: Requester,
+    ) -> Result<DeployOutcome, DeviceError> {
+        let now = self.now()?;
+        let tx = begin_write(&self.db).await?;
+        let registered = match find_locked(&tx, &keys.rustdesk_id).await? {
+            Some(row) => same_uuid(&row.uuid, &keys.uuid).then_some(false),
+            None if live
+                .as_deref()
+                .is_some_and(|uuid| !same_uuid(uuid, &keys.uuid)) =>
+            {
+                None
+            }
+            None => {
+                if let Err(retry_after) = self.new_ids.try_charge(by.client, by.actor) {
+                    return Ok(DeployOutcome::TooMany { retry_after });
+                }
+                insert_or_match(&tx, &keys, &by, now).await?
+            }
+        };
+        let Some(registered) = registered else {
+            let id = keys.rustdesk_id.as_str();
+            tracing::warn!(rustdesk_id = id, actor = ?by.actor, ip = %by.client.addr, "deploy refused: the id belongs to another device");
+            return Ok(DeployOutcome::IdTaken);
+        };
+        mark(&tx, &keys.rustdesk_id, now).await?;
+        let entry = audit_entry(&keys.rustdesk_id, registered, by);
+        console_audit::insert(&tx, &entry, now.timestamp_millis()).await?;
+        tx.commit().await?;
+        self.registry_changed(&keys.rustdesk_id);
+        Ok(DeployOutcome::Deployed)
     }
 }
 
@@ -101,11 +148,10 @@ fn parse(req: DeployRequest) -> Option<Keys> {
     let uuid = KEY_B64.decode(&req.uuid).ok()?;
     let pk = KEY_B64.decode(&req.pk).ok()?;
     let usable = !uuid.is_empty() && uuid.len() <= UUID_MAX_BYTES && pk.len() == PK_BYTES;
-    usable.then(|| Keys {
+    usable.then_some(Keys {
         rustdesk_id: req.rustdesk_id,
         uuid,
         pk,
-        ip: req.ip.to_string(),
     })
 }
 
@@ -118,31 +164,61 @@ fn is_deployable_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// `true` if the id is registered with this uuid (now marked deployed).
-async fn mark(db: &DatabaseConnection, keys: &Keys, now: TimestampMs) -> Result<bool, DbErr> {
-    let updated = Devices::update_many()
-        .col_expr(device::Column::DeployedAt, Expr::value(now))
-        .col_expr(device::Column::UpdatedAt, Expr::value(now))
-        .filter(device::Column::RustdeskId.eq(&keys.rustdesk_id))
-        .filter(device::Column::Uuid.eq(keys.uuid.clone()))
-        .exec(db)
-        .await?;
-    Ok(updated.rows_affected > 0)
+async fn find_locked(tx: &DatabaseTransaction, id: &str) -> Result<Option<device::Model>, DbErr> {
+    Devices::find()
+        .filter(device::Column::RustdeskId.eq(id))
+        .lock_exclusive()
+        .one(tx)
+        .await
 }
 
-/// `true` if the id was unknown and is now registered, deployed.
-async fn insert(db: &DatabaseConnection, keys: &Keys, now: TimestampMs) -> Result<bool, DbErr> {
+/// Registers the unknown id: `Some(true)`. A concurrent registration of the same id
+/// (PostgreSQL) makes the insert do nothing; then `Some(false)` if the winner has this uuid,
+/// else `None` (taken).
+async fn insert_or_match(
+    tx: &DatabaseTransaction,
+    keys: &Keys,
+    by: &Requester,
+    now: TimestampMs,
+) -> Result<Option<bool>, DbErr> {
+    if insert(tx, keys, by, now).await? {
+        return Ok(Some(true));
+    }
+    let winner = find_locked(tx, &keys.rustdesk_id).await?;
+    Ok(winner
+        .filter(|row| same_uuid(&row.uuid, &keys.uuid))
+        .map(|_| false))
+}
+
+/// Sets `deployed_at` of the (locked) row.
+async fn mark(tx: &DatabaseTransaction, id: &str, now: TimestampMs) -> Result<(), DbErr> {
+    Devices::update_many()
+        .col_expr(device::Column::DeployedAt, Expr::value(now))
+        .col_expr(device::Column::UpdatedAt, Expr::value(now))
+        .filter(device::Column::RustdeskId.eq(id))
+        .exec(tx)
+        .await
+        .map(drop)
+}
+
+/// `true` if the id was unknown and is now registered.
+async fn insert(
+    tx: &DatabaseTransaction,
+    keys: &Keys,
+    by: &Requester,
+    now: TimestampMs,
+) -> Result<bool, DbErr> {
+    let ip = by.client.addr.to_string();
     let row = device::ActiveModel {
         id: NotSet,
         rustdesk_id: Set(keys.rustdesk_id.clone()),
         uuid: Set(keys.uuid.clone()),
         pk: Set(keys.pk.clone()),
         status: Set(DeviceStatus::Active),
-        deployed_at: Set(Some(now)),
         first_seen_at: Set(now),
         last_seen_at: Set(now),
-        last_ip: Set(keys.ip.clone()),
-        register_ip: Set(keys.ip.clone()),
+        last_ip: Set(ip.clone()),
+        register_ip: Set(ip),
         register_at: Set(now),
         created_at: Set(now),
         updated_at: Set(now),
@@ -150,9 +226,22 @@ async fn insert(db: &DatabaseConnection, keys: &Keys, now: TimestampMs) -> Resul
     };
     let res = Devices::insert(row)
         .on_conflict_do_nothing_on([device::Column::RustdeskId])
-        .exec_without_returning(db)
+        .exec_without_returning(tx)
         .await?;
     Ok(matches!(res, TryInsertResult::Inserted(n) if n > 0))
+}
+
+/// `registered`: the deploy created the row (else it marked an existing one).
+fn audit_entry(rustdesk_id: &str, registered: bool, by: Requester) -> NewConsoleAudit {
+    NewConsoleAudit {
+        actor: by.actor,
+        action: "device.deploy".to_owned(),
+        target_type: "device".to_owned(),
+        target_id: rustdesk_id.to_owned(),
+        before: None,
+        after: Some(json!({ "deployed": true, "registered": registered })),
+        ip: Some(by.client.addr),
+    }
 }
 
 #[cfg(test)]

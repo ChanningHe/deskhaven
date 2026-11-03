@@ -12,6 +12,7 @@
 mod disconnects;
 mod flush;
 mod limits;
+mod new_ids;
 mod presence;
 mod preset_book;
 mod presets;
@@ -25,6 +26,7 @@ pub use limits::{
     HEARTBEAT_MIN_INTERVAL, HEARTBEAT_PER_IP_PER_MINUTE, SYSINFO_PER_IP_PER_MINUTE,
     SYSINFO_WRITE_INTERVAL,
 };
+pub use new_ids::{DEPLOY_NEW_IDS_PER_ACTOR_PER_DAY, DEPLOY_NEW_IDS_PER_IP_PER_DAY};
 pub use presence::{
     DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
     SWEEP_INTERVAL, Seen,
@@ -36,7 +38,8 @@ pub use service::{
     DeployOutcome, DeployRequest, DeviceAssignment, DeviceGroup, DeviceGroupQuery, DeviceGroupSort,
     DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord,
     DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, Heartbeat,
-    HeartbeatOutcome, HeartbeatReply, StrategyPush, SysinfoOutcome, SysinfoReport,
+    HeartbeatOutcome, HeartbeatReply, LiveRegistrations, Requester, StrategyPush, SysinfoOutcome,
+    SysinfoReport,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};
@@ -117,10 +120,13 @@ pub enum DeviceError {
         kind: &'static str,
     },
 
-    /// A step that placed the device through another service (strategy assignment, address
-    /// book entry) failed.
-    #[error("device placement failed")]
-    Placement(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// The strategy assignment of a placement failed (nothing was written).
+    #[error("device strategy assignment failed")]
+    Strategy(#[source] crate::strategies::StrategyError),
+
+    /// The address book entry of a placement failed (nothing was written).
+    #[error("device address book entry failed")]
+    AddressBook(#[source] crate::addressbooks::AddressBookError),
 
     /// The operation's task panicked or the runtime is shutting down; whether it committed
     /// is unknown until the next read.

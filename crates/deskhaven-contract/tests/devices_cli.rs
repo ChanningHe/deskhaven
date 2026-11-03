@@ -140,7 +140,7 @@ async fn an_assignment_places_the_device_and_is_audited_as_the_token() {
         .unwrap();
     assert!(row.owner_user_id.is_some() && row.device_group_id.is_some());
     assert_eq!(row.note.as_deref(), Some("front desk"));
-    assert_eq!(row.hostname.as_deref(), Some("reception-01"));
+    assert_eq!(row.display_name.as_deref(), Some("reception-01"));
     let assigned = state.strategies.assignment(Target::Device(row.id)).await;
     assert!(assigned.unwrap().is_some());
     let audit = console_audit::Entity::find().all(&state.db).await.unwrap();

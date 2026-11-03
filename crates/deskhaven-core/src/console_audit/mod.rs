@@ -39,7 +39,7 @@ use crate::clock::SharedClock;
 pub const MAX_LABEL_CHARS: usize = 256;
 
 /// Who performed an audited action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Actor {
     User(i64),
     ApiToken(i64),

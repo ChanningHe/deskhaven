@@ -8,7 +8,7 @@
 //! | no, unknown, revoked or expired token, or one without `assign` | 401 | `{"error": "Unauthorized"}` |
 //! | uncached token from an address over its bearer budget | 429 + `Retry-After` | `{"error": "Please try later"}` |
 //! | malformed body, missing `id` / `uuid`, nothing to assign, a malformed value | 400 | `{"error": ...}` naming the field |
-//! | a name that matches nothing | 400 | `{"error": "<field> does not name an existing <kind>"}` |
+//! | a name that matches nothing (checked only once the device is known) | 400 | `{"error": "<field> does not name an existing <kind>"}` |
 //! | unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` |
 //! | body over [`MAX_ASSIGN_BODY`] | 413 | stack renderer |
 //!
@@ -23,9 +23,8 @@ use deskhaven_core::api_tokens::Scope;
 use deskhaven_core::devices::{AddressBookPreset, DeviceAssignment, DeviceError};
 use deskhaven_core::state::AppState;
 use serde::Deserialize;
-use serde_json::json;
 
-use super::{audit, token_auth};
+use super::{requester, token_auth};
 use crate::ClientApiError;
 use crate::client::Client;
 
@@ -61,19 +60,8 @@ pub async fn assign(
 ) -> Result<(), ClientApiError> {
     let principal = token_auth::authorize(&state, &headers, client, Scope::Assign).await?;
     let assignment = parse(&body)?;
-    let after = audit_view(&assignment);
-    let rustdesk_id = assignment.rustdesk_id.clone();
-    state.devices.assign(assignment).await.map_err(error)?;
-    audit(
-        &state,
-        &principal,
-        "device.assign",
-        &rustdesk_id,
-        after,
-        client.addr,
-    )
-    .await;
-    Ok(())
+    let by = requester(&principal, client);
+    state.devices.assign(assignment, by).await.map_err(error)
 }
 
 fn parse(raw: &[u8]) -> Result<DeviceAssignment, ClientApiError> {
@@ -103,22 +91,6 @@ fn parse(raw: &[u8]) -> Result<DeviceAssignment, ClientApiError> {
     })
 }
 
-/// What the audit row records: the request without its secret (whether one was given only).
-fn audit_view(a: &DeviceAssignment) -> serde_json::Value {
-    let book = a.address_book.as_ref().map(|b| {
-        json!({
-            "name": b.name, "tag": b.tag, "alias": b.alias, "note": b.note,
-            "has_password": b.password.is_some(),
-        })
-    });
-    json!({
-        "user_name": a.user_name, "strategy_name": a.strategy_name,
-        "device_group_name": a.device_group_name, "note": a.note,
-        "device_username": a.device_username, "device_name": a.device_name,
-        "address_book": book,
-    })
-}
-
 fn error(err: DeviceError) -> ClientApiError {
     match err {
         DeviceError::UnknownDevice => ClientApiError::NotFound(ID_NOT_FOUND.into()),
@@ -135,6 +107,8 @@ fn invalid_body() -> ClientApiError {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     fn parse_json(value: serde_json::Value) -> Result<DeviceAssignment, ClientApiError> {
@@ -183,19 +157,5 @@ mod tests {
                 "{body}"
             );
         }
-    }
-
-    #[test]
-    fn the_audit_view_never_holds_the_password() {
-        let a = parse_json(json!({
-            "id": "123456789", "uuid": "dXVpZA==",
-            "address_book_name": "Team", "address_book_password": "s3cret"
-        }))
-        .unwrap();
-
-        let shown = audit_view(&a).to_string();
-
-        assert!(!shown.contains("s3cret"), "{shown}");
-        assert!(shown.contains("\"has_password\":true"), "{shown}");
     }
 }

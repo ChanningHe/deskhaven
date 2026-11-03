@@ -1,6 +1,6 @@
 //! `--assign` (M2-19, 03 §2.9): an API token places a device by name: owner, device group,
-//! note, strategy, address book entry and the device names. Unlike presets it replaces what
-//! is set, and an unknown name fails the whole request before anything changes.
+//! note, strategy, address book entry and the administrator's names for the device. Unlike
+//! presets it replaces what is set. Failures: `assign_failures`.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -10,14 +10,16 @@ use std::time::Duration;
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::devices::{
     AddressBookPreset, DeviceAssignment, DeviceError, Heartbeat, HeartbeatOutcome, HeartbeatReply,
+    Presets, SysinfoOutcome,
 };
 use deskhaven_core::strategies::Target;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use zeroize::Zeroizing;
 
-use super::support::{Ctx, ID, Targets, b64, ctx, uuid_of};
+use super::deploy::{IP, requester};
+use super::support::{Ctx, ID, b64, ctx, report, sysinfo, uuid_of};
 
-fn assignment() -> DeviceAssignment {
+pub fn assignment() -> DeviceAssignment {
     DeviceAssignment {
         rustdesk_id: ID.to_owned(),
         uuid: b64(&uuid_of(ID)),
@@ -25,7 +27,7 @@ fn assignment() -> DeviceAssignment {
     }
 }
 
-fn everything() -> DeviceAssignment {
+pub fn everything() -> DeviceAssignment {
     DeviceAssignment {
         user_name: Some("Alice".to_owned()),
         strategy_name: Some("Locked".to_owned()),
@@ -45,8 +47,8 @@ fn everything() -> DeviceAssignment {
 }
 
 impl Ctx {
-    async fn assign(&self, a: DeviceAssignment) -> Result<(), DeviceError> {
-        self.devices.assign(a).await
+    pub async fn assign(&self, a: DeviceAssignment) -> Result<(), DeviceError> {
+        self.devices.assign(a, requester(IP)).await
     }
 
     /// One heartbeat of [`ID`] holding strategy version `modified_at`, 3 s after the last.
@@ -69,21 +71,6 @@ impl Ctx {
     }
 }
 
-/// Nothing placed on device [`ID`] (`devices.id` = `device_id`).
-async fn assert_untouched(c: &Ctx, t: &Targets, device_id: i64, b: impl std::fmt::Display) {
-    let row = c.row(ID).await;
-    let placed = (
-        row.owner_user_id,
-        row.device_group_id,
-        row.note,
-        row.hostname,
-    );
-    assert_eq!(placed, (None, None, None, None), "{b}");
-    let assigned = c.strategies.assignment(Target::Device(device_id)).await;
-    assert_eq!(assigned.unwrap(), None, "{b}");
-    assert!(c.book_peers(&t.book).await.is_empty(), "{b}");
-}
-
 #[tokio::test]
 async fn assign_places_the_device_by_name() {
     each_migrated_backend(async |db: &TestDb| {
@@ -101,8 +88,13 @@ async fn assign_places_the_device_by_name() {
         assert_eq!(row.owner_user_id, Some(t.alice), "{b}");
         assert_eq!(row.device_group_id, Some(t.group), "{b}");
         assert_eq!(row.note.as_deref(), Some("front desk"), "{b}");
-        assert_eq!(row.hostname.as_deref(), Some("reception-01"), "{b}");
-        assert_eq!(row.username.as_deref(), Some("frontdesk"), "{b}");
+        assert_eq!(row.display_name.as_deref(), Some("reception-01"), "{b}");
+        assert_eq!(row.display_username.as_deref(), Some("frontdesk"), "{b}");
+        assert_eq!(
+            (row.hostname, row.username),
+            (None, None),
+            "{b}: self-reported only"
+        );
         let assigned = c.strategies.assignment(Target::Device(device_id)).await;
         assert_eq!(assigned.unwrap(), Some(t.strategy), "{b}");
         let peers = c.book_peers(&t.book).await;
@@ -115,6 +107,30 @@ async fn assign_places_the_device_by_name() {
         );
         assert_eq!(entry, (ID, "Reception", "ab note", "reception-01"), "{b}");
         assert_eq!(peers[0].tags, ["printers"], "{b}");
+    })
+    .await;
+}
+
+/// The names an administrator gave survive the device's own sysinfo uploads, which right
+/// after a deploy carry the machine's hostname and user.
+#[tokio::test]
+async fn the_assigned_names_survive_the_next_sysinfo() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        c.device(ID).await;
+        c.targets().await;
+        c.assign(everything()).await.unwrap();
+
+        let outcome = c
+            .report(report(ID, sysinfo("DESKTOP-4F2K"), Presets::default()))
+            .await;
+
+        let b = db.backend;
+        assert_eq!(outcome, SysinfoOutcome::Stored, "{b}");
+        let row = c.row(ID).await;
+        assert_eq!(row.hostname.as_deref(), Some("DESKTOP-4F2K"), "{b}");
+        assert_eq!(row.display_name.as_deref(), Some("reception-01"), "{b}");
+        assert_eq!(row.display_username.as_deref(), Some("frontdesk"), "{b}");
     })
     .await;
 }
@@ -155,124 +171,10 @@ async fn assign_replaces_an_existing_placement() {
     .await;
 }
 
+/// The address book entry follows the same replace semantics: an existing entry takes the
+/// given alias and password, and the tag is added to its tags.
 #[tokio::test]
-async fn an_unknown_name_fails_and_changes_nothing() {
-    each_migrated_backend(async |db: &TestDb| {
-        let c = ctx(db).await;
-        let device_id = c.device(ID).await;
-        let t = c.targets().await;
-        let unknown = "nobody".to_owned();
-        let book = |name: &str| AddressBookPreset {
-            name: name.to_owned(),
-            ..AddressBookPreset::default()
-        };
-        let cases = [
-            (
-                "user_name",
-                DeviceAssignment {
-                    user_name: Some(unknown.clone()),
-                    ..everything()
-                },
-            ),
-            (
-                "device_group_name",
-                DeviceAssignment {
-                    device_group_name: Some(unknown.clone()),
-                    ..everything()
-                },
-            ),
-            (
-                "strategy_name",
-                DeviceAssignment {
-                    strategy_name: Some(unknown.clone()),
-                    ..everything()
-                },
-            ),
-            (
-                "address_book_name",
-                DeviceAssignment {
-                    address_book: Some(book(&unknown)),
-                    ..everything()
-                },
-            ),
-        ];
-
-        for (field, case) in cases {
-            let err = c.assign(case).await.unwrap_err();
-            assert!(
-                matches!(err, DeviceError::NameNotFound { field: f, .. } if f == field),
-                "{}: {field}: {err:?}",
-                db.backend
-            );
-            assert_untouched(&c, &t, device_id, db.backend).await;
-        }
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn an_unknown_device_or_a_wrong_uuid_is_refused() {
-    each_migrated_backend(async |db: &TestDb| {
-        let c = ctx(db).await;
-        c.device(ID).await;
-        c.targets().await;
-        let cases = [
-            DeviceAssignment {
-                rustdesk_id: "987654321".to_owned(),
-                ..everything()
-            },
-            DeviceAssignment {
-                uuid: b64(b"another-machine"),
-                ..everything()
-            },
-        ];
-
-        for case in cases {
-            let err = c.assign(case).await.unwrap_err();
-            assert!(
-                matches!(err, DeviceError::UnknownDevice),
-                "{}: {err:?}",
-                db.backend
-            );
-        }
-        assert_eq!(c.row(ID).await.owner_user_id, None, "{}", db.backend);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn empty_and_malformed_assignments_are_invalid() {
-    each_migrated_backend(async |db: &TestDb| {
-        let c = ctx(db).await;
-        c.device(ID).await;
-        c.targets().await;
-        let cases = [
-            assignment(),
-            DeviceAssignment {
-                note: Some("bad\u{0}note".to_owned()),
-                ..everything()
-            },
-            DeviceAssignment {
-                device_name: Some("x".repeat(1000)),
-                ..everything()
-            },
-        ];
-
-        for case in cases {
-            let err = c.assign(case).await.unwrap_err();
-            assert!(
-                matches!(err, DeviceError::Invalid { .. }),
-                "{}: {err:?}",
-                db.backend
-            );
-        }
-        assert_eq!(c.row(ID).await.owner_user_id, None, "{}", db.backend);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn an_entry_the_book_already_has_is_left_as_it_is() {
+async fn an_existing_book_entry_is_updated() {
     each_migrated_backend(async |db: &TestDb| {
         let c = ctx(db).await;
         c.device(ID).await;
@@ -282,6 +184,7 @@ async fn an_entry_the_book_already_has_is_left_as_it_is() {
             address_book: Some(AddressBookPreset {
                 name: "Team".to_owned(),
                 alias: Some("Changed".to_owned()),
+                tag: Some("lobby".to_owned()),
                 ..AddressBookPreset::default()
             }),
             ..assignment()
@@ -289,9 +192,12 @@ async fn an_entry_the_book_already_has_is_left_as_it_is() {
 
         c.assign(again).await.unwrap();
 
+        let b = db.backend;
         let peers = c.book_peers(&t.book).await;
-        assert_eq!(peers.len(), 1, "{}", db.backend);
-        assert_eq!(peers[0].alias, "Reception", "{}", db.backend);
+        assert_eq!(peers.len(), 1, "{b}");
+        assert_eq!(peers[0].alias, "Changed", "{b}");
+        assert_eq!(peers[0].note, "ab note", "{b}: not given, kept");
+        assert_eq!(peers[0].tags, ["printers", "lobby"], "{b}");
     })
     .await;
 }

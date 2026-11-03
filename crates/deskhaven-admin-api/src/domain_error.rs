@@ -101,7 +101,8 @@ impl From<DeviceError> for AdminApiError {
             }
             // The id/uuid check belongs to the signal server; the console never trips it.
             err @ (DeviceError::UuidMismatch { .. }
-            | DeviceError::Placement(_)
+            | DeviceError::Strategy(_)
+            | DeviceError::AddressBook(_)
             | DeviceError::Aborted
             | DeviceError::Database(_)) => Self::internal(err),
         }
