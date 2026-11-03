@@ -5,7 +5,10 @@
 use deskhaven_db::entity::{setting, setting_history};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time::{self, TimestampMs};
-use sea_orm::{ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    EntityTrait, QueryFilter,
+};
 
 fn ts(ms: i64) -> TimestampMs {
     time::from_millis(ms).unwrap()
@@ -31,6 +34,7 @@ fn history_row(key: &str, old: Option<&str>, new: &str) -> setting_history::Acti
         updated_by: Set(Some(7)),
         updated_at: Set(time::now()),
         reason: Set(None),
+        reset: Set(false),
     }
 }
 
@@ -94,6 +98,37 @@ async fn history_ids_are_generated_and_increasing() {
 
         let all = setting_history::Entity::find().all(&db.conn).await.unwrap();
         assert_eq!(all, vec![first, second], "{}", db.backend);
+    })
+    .await;
+}
+
+/// Migration 000026: an entry is a plain change unless it says it is a reset, and a reset
+/// keeps the value that applies afterwards in the NOT NULL `new_value`.
+#[tokio::test]
+async fn history_reset_flag_defaults_to_false_and_round_trips() {
+    each_migrated_backend(async |db: &TestDb| {
+        let plain = history_row("k", None, "1").insert(&db.conn).await.unwrap();
+        let mut reset = history_row("k", Some("1"), "\"30d\"");
+        reset.reset = Set(true);
+        let reset = reset.insert(&db.conn).await.unwrap();
+
+        assert!(!plain.reset && reset.reset, "{}", db.backend);
+
+        // Rows written before the migration (no value for the column) are plain changes.
+        db.conn
+            .execute_unprepared(
+                "INSERT INTO settings_history (key, new_value, version, updated_at) \
+                 VALUES ('legacy', '1', 1, 0)",
+            )
+            .await
+            .unwrap();
+        let legacy = setting_history::Entity::find()
+            .filter(setting_history::Column::Key.eq("legacy"))
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!legacy.reset, "{}", db.backend);
     })
     .await;
 }

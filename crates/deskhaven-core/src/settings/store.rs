@@ -137,6 +137,7 @@ pub(super) async fn write(
         updated_by: Set(stamp.by),
         updated_at: Set(stamp.at),
         reason: Set(stamp.reason.map(str::to_owned)),
+        reset: Set(false),
     };
     history.insert(tx).await?;
     Ok(())

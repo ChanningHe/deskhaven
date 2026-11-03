@@ -14,7 +14,7 @@ pub struct Model {
     /// JSON-encoded previous value; `None` when the key had no stored value.
     #[sea_orm(column_type = "Text", nullable)]
     pub old_value: Option<String>,
-    /// JSON-encoded new value.
+    /// JSON-encoded new value; for a reset, the value that applies afterwards (the default).
     #[sea_orm(column_type = "Text")]
     pub new_value: String,
     pub version: i64,
@@ -22,6 +22,8 @@ pub struct Model {
     pub updated_at: TimestampMs,
     #[sea_orm(column_type = "Text", nullable)]
     pub reason: Option<String>,
+    /// A reset to the default: the stored row was deleted (migration 000026).
+    pub reset: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
