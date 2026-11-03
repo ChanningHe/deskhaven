@@ -10,6 +10,7 @@
 //! deletion of devices and device groups.
 
 mod disconnects;
+mod flush;
 mod limits;
 mod presence;
 mod preset_book;
@@ -19,6 +20,7 @@ mod strategy_keys;
 mod sysinfo;
 
 pub use disconnects::{DISCONNECT_TTL, DisconnectQueue, MAX_QUEUED_DEVICES, QueueFull};
+pub use flush::{FLUSH_BATCH, FlushReport, LastSeenFlusher, MAX_RETRY};
 pub use limits::{
     HEARTBEAT_MIN_INTERVAL, HEARTBEAT_PER_IP_PER_MINUTE, SYSINFO_PER_IP_PER_MINUTE,
     SYSINFO_WRITE_INTERVAL,

@@ -16,9 +16,9 @@
 //!   most once per minute) while every tracked id keeps updating. Each entry keeps at most
 //!   [`MAX_CONNS`] connection ids. Inputs only come from ids the signal server holds a key for
 //!   and from verified heartbeats, so the bound is a safety net, not the normal regime.
-//! - **Flush**: nothing here writes to the database. The `last_seen_at` flush task (M2-14)
-//!   must call [`Presence::take_unflushed`] every `devices.last_seen_flush`; it also evicts
-//!   the flushed offline entries. Until it is wired, entries stay until the table fills.
+//! - **Flush**: nothing here writes to the database. The `last_seen_at` flush task
+//!   ([`LastSeenFlusher`](super::LastSeenFlusher)) calls [`Presence::take_unflushed`] every
+//!   `devices.last_seen_flush`, which also evicts the flushed offline entries.
 //! - **Cheap**: one mutex over a map, short critical sections, no I/O: the signal server
 //!   calls in from its UDP loop.
 //! - It also caches the verified identity of a device (row id and uuid, both immutable for a
