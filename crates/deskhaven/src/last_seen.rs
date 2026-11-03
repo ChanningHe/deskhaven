@@ -95,11 +95,21 @@ async fn run(
             // A due flush after the cancellation is left to `finish`.
             biased;
             () = token.cancelled() => return flusher,
-            () = tokio::time::sleep(interval()) => {
-                let report = flusher.flush().await;
-                tracing::debug!(written = report.written, batches = report.batches, failed = report.failed, "last_seen_at flushed");
-            }
+            () = tokio::time::sleep(interval()) => {}
         }
+        // Cancellation also interrupts a flush in progress, so it never overlaps the final
+        // flush or the database close; `flush` is cancel-safe (nothing taken is lost).
+        let report = tokio::select! {
+            biased;
+            () = token.cancelled() => return flusher,
+            report = flusher.flush() => report,
+        };
+        tracing::debug!(
+            written = report.written,
+            batches = report.batches,
+            failed = report.failed,
+            "last_seen_at flushed"
+        );
     }
 }
 

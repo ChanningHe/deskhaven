@@ -4,14 +4,16 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
 use std::time::Duration;
 
+use deskhaven_core::clock::ManualClock;
 use deskhaven_core::devices::{FlushReport, HEARTBEAT_TTL, LastSeenFlusher};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use deskhaven_db::time;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, IntoActiveModel};
 
-use super::support::{Ctx, T0_MS, ctx};
+use super::support::{Ctx, T0_MS, counted, ctx, ctx_on, take};
 
 const IDS: [&str; 5] = [
     "100000001",
@@ -136,6 +138,75 @@ async fn a_failed_batch_is_written_by_the_next_flush() {
         assert_eq!(retried.written, 1, "{b}");
         let written = c.last_seen(IDS[0]).await;
         assert_eq!(written, (T0_MS + 3_000, ip(7).to_string()), "{b}");
+    })
+    .await;
+}
+
+/// A batch is one statement (no transaction, no statement per device).
+#[tokio::test]
+async fn each_batch_is_a_single_update() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let (conn, log) = counted(&db.conn);
+        let c = ctx_on(conn, Arc::new(ManualClock::at(T0_MS))).await;
+        for id in IDS {
+            c.device(id).await;
+        }
+        c.clock.advance(Duration::from_secs(3));
+        for (n, id) in (1..).zip(IDS) {
+            c.devices.presence().heartbeat(id, ip(n), &[]);
+        }
+        let mut flusher = c.flusher(2);
+        take(&log);
+
+        // Act
+        let report = flusher.flush().await;
+        let statements = take(&log);
+
+        // Assert
+        let b = db.backend;
+        assert_eq!(report.batches, 3, "{b}");
+        assert_eq!(statements.len(), 3, "{b}: {statements:?}");
+        assert!(statements.iter().all(|s| s.starts_with("UPDATE")), "{b}");
+        for (n, id) in (1..).zip(IDS) {
+            let written = c.last_seen(id).await;
+            assert_eq!(written, (T0_MS + 3_000, ip(n).to_string()), "{b}: {id}");
+        }
+    })
+    .await;
+}
+
+/// The flush task's flush is dropped when shutdown cancels it mid-way; what it had taken
+/// from the presence table is written by the next flush (the final one).
+#[tokio::test]
+async fn a_flush_dropped_midway_loses_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        for id in IDS {
+            c.device(id).await;
+        }
+        c.clock.advance(Duration::from_secs(3));
+        for id in IDS {
+            c.devices.presence().heartbeat(id, ip(1), &[]);
+        }
+        let mut flusher = c.flusher(2);
+
+        // Act: polled once (it takes the contacts and starts a statement), then dropped.
+        let dropped = tokio::time::timeout(Duration::ZERO, flusher.flush()).await;
+        let report = flusher.flush().await;
+
+        // Assert
+        let b = db.backend;
+        assert!(dropped.is_err(), "{b}: the first flush did not finish");
+        assert_eq!(report.failed, 0, "{b}");
+        assert!(
+            report.written > 0,
+            "{b}: the rest was written by the next flush"
+        );
+        for id in IDS {
+            assert_eq!(c.last_seen(id).await.0, T0_MS + 3_000, "{b}: {id}");
+        }
     })
     .await;
 }

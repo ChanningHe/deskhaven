@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use base64_022::Engine as _;
 use base64_022::engine::general_purpose::STANDARD;
@@ -263,3 +263,17 @@ pub struct Targets {
 
 /// `addressbooks::tags::MAX_BOOK_TAGS`.
 const MAX_BOOK_TAGS: u64 = 1000;
+
+/// A clone of `conn` that records the SQL of every statement it runs.
+pub fn counted(conn: &DatabaseConnection) -> (DatabaseConnection, Arc<Mutex<Vec<String>>>) {
+    let mut conn = conn.clone();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&log);
+    conn.set_metric_callback(move |info| sink.lock().unwrap().push(info.statement.sql.clone()));
+    (conn, log)
+}
+
+/// The statements recorded so far (and forgets them).
+pub fn take(log: &Mutex<Vec<String>>) -> Vec<String> {
+    std::mem::take(&mut *log.lock().unwrap())
+}

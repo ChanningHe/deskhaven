@@ -2,45 +2,51 @@
 //! batches (02 §3: every `devices.last_seen_flush`), so neither the heartbeat nor the signal
 //! server writes per contact.
 //!
-//! Each flush takes what [`Presence::take_unflushed`] reports (which also evicts offline
-//! entries already flushed) and writes it in transactions of at most [`FLUSH_BATCH`] rows.
-//! A row only moves forward (`last_seen_at < new`), so a late or repeated flush never undoes
-//! a newer value. A batch that fails is kept and merged into the next flush (newest contact
-//! per device; at most [`MAX_RETRY`] devices, beyond that the oldest contacts are dropped and
-//! logged), because the presence table no longer holds it.
+//! - **Batches**: each flush takes what [`Presence::take_unflushed`] reports (which also
+//!   evicts offline entries already flushed) and writes it with one statement per
+//!   [`FLUSH_BATCH`] rows, `UPDATE devices … FROM (VALUES …)`, rows sorted by RustDesk id so
+//!   concurrent writers on PostgreSQL lock them in the same order. Supported by PostgreSQL
+//!   and SQLite ≥ 3.33 (the bundled SQLite is newer).
+//! - **Never backwards**: a row only moves forward (`last_seen_at < new`), so a late or
+//!   repeated write never undoes a newer value.
+//! - **Nothing lost**: contacts stay in the flusher until their batch succeeded. A failed
+//!   batch is retried by the next flush, and so is everything a flush did not get to when
+//!   its future was dropped (shutdown cancels the periodic flush; the final one writes the
+//!   rest). The presence table no longer holds them, so at most [`MAX_RETRY`] devices are
+//!   kept (oldest contacts dropped beyond that, logged).
 
 use std::collections::HashMap;
 
-use deskhaven_db::begin_write;
-use deskhaven_db::entity::device::{self, Entity as Devices};
 use deskhaven_db::time;
-use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, DbErr, Statement, Value};
 
 use super::presence::{DEFAULT_CAPACITY, Presence, Seen};
 
-/// Rows per transaction.
+/// Rows per statement.
 pub const FLUSH_BATCH: usize = 500;
 /// Devices kept for retry after failed batches, at most.
 pub const MAX_RETRY: usize = DEFAULT_CAPACITY;
+/// Bound parameters per row of the `VALUES` list.
+const PARAMS_PER_ROW: usize = 3;
 
 /// What one [`LastSeenFlusher::flush`] did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FlushReport {
     /// Devices whose contact was written (rows already newer count too).
     pub written: usize,
-    /// Transactions committed.
+    /// Statements that succeeded.
     pub batches: usize,
     /// Devices whose batch failed, kept for the next flush.
     pub failed: usize,
 }
 
-/// Owned by the flush task; keeps the failed batches between flushes.
+/// Owned by the flush task; keeps unwritten contacts between flushes.
 pub struct LastSeenFlusher {
     db: DatabaseConnection,
     presence: Presence,
     batch: usize,
-    retry: HashMap<String, Seen>,
+    /// Contacts not written yet, newest per device.
+    pending: HashMap<String, Seen>,
 }
 
 impl LastSeenFlusher {
@@ -49,11 +55,11 @@ impl LastSeenFlusher {
             db,
             presence,
             batch: FLUSH_BATCH,
-            retry: HashMap::new(),
+            pending: HashMap::new(),
         }
     }
 
-    /// Rows per transaction (at least 1); [`FLUSH_BATCH`] by default.
+    /// Rows per statement (at least 1); [`FLUSH_BATCH`] by default.
     pub fn with_batch_size(self, batch: usize) -> Self {
         Self {
             batch: batch.max(1),
@@ -61,48 +67,60 @@ impl LastSeenFlusher {
         }
     }
 
-    /// Writes every contact seen since the previous flush, plus the failed ones before it.
-    /// Never fails: errors are logged and the batch is retried next time.
+    /// Writes every contact seen since the previous flush, plus those an earlier flush did
+    /// not write. Never fails: errors are logged and the batch is retried next time.
+    /// Cancel-safe: dropping the future loses nothing.
     pub async fn flush(&mut self) -> FlushReport {
-        let mut due = std::mem::take(&mut self.retry);
         for seen in self.presence.take_unflushed() {
-            keep_newest(&mut due, seen);
+            keep_newest(&mut self.pending, seen);
         }
-        let due: Vec<Seen> = due.into_values().collect();
+        let mut due: Vec<Seen> = self.pending.values().cloned().collect();
+        due.sort_unstable_by(|a, b| a.rustdesk_id.cmp(&b.rustdesk_id));
         let mut report = FlushReport::default();
         for batch in due.chunks(self.batch) {
             match write_batch(&self.db, batch).await {
                 Ok(()) => {
                     report.written += batch.len();
                     report.batches += 1;
+                    self.forget_written(batch);
                 }
                 Err(err) => {
                     tracing::warn!(error = %err, rows = batch.len(), "last_seen_at flush failed; retrying next time");
                     report.failed += batch.len();
-                    for seen in batch {
-                        keep_newest(&mut self.retry, seen.clone());
-                    }
                 }
             }
         }
-        self.cap_retry();
+        self.cap_pending();
         report
     }
 
+    /// Drops the written contacts, unless a newer one arrived meanwhile.
+    fn forget_written(&mut self, batch: &[Seen]) {
+        for seen in batch {
+            let same = self
+                .pending
+                .get(&seen.rustdesk_id)
+                .is_some_and(|kept| kept.last_seen_ms == seen.last_seen_ms);
+            if same {
+                self.pending.remove(&seen.rustdesk_id);
+            }
+        }
+    }
+
     /// Drops the oldest contacts beyond [`MAX_RETRY`].
-    fn cap_retry(&mut self) {
-        let excess = self.retry.len().saturating_sub(MAX_RETRY);
+    fn cap_pending(&mut self) {
+        let excess = self.pending.len().saturating_sub(MAX_RETRY);
         if excess == 0 {
             return;
         }
         let mut by_age: Vec<(i64, String)> = self
-            .retry
+            .pending
             .values()
             .map(|s| (s.last_seen_ms, s.rustdesk_id.clone()))
             .collect();
         by_age.sort_unstable();
         for (_, id) in by_age.into_iter().take(excess) {
-            self.retry.remove(&id);
+            self.pending.remove(&id);
         }
         tracing::warn!(
             dropped = excess,
@@ -120,22 +138,46 @@ fn keep_newest(due: &mut HashMap<String, Seen>, seen: Seen) {
     }
 }
 
+/// One `UPDATE … FROM (VALUES …)` for `batch` (columns `column1..3` = id, unix ms, ip; a
+/// NULL ip keeps the stored one).
 async fn write_batch(db: &DatabaseConnection, batch: &[Seen]) -> Result<(), DbErr> {
-    let tx = begin_write(db).await?;
-    for seen in batch {
-        let Some(at) = time::from_millis(seen.last_seen_ms) else {
-            continue;
-        };
-        let mut update =
-            Devices::update_many().col_expr(device::Column::LastSeenAt, Expr::value(at));
-        if let Some(ip) = seen.ip {
-            update = update.col_expr(device::Column::LastIp, Expr::value(ip.to_string()));
-        }
-        update
-            .filter(device::Column::RustdeskId.eq(&seen.rustdesk_id))
-            .filter(device::Column::LastSeenAt.lt(at))
-            .exec(&tx)
-            .await?;
+    let backend = db.get_database_backend();
+    let mut values = Vec::with_capacity(batch.len() * PARAMS_PER_ROW);
+    let mut rows = Vec::with_capacity(batch.len());
+    for seen in batch
+        .iter()
+        .filter(|s| time::from_millis(s.last_seen_ms).is_some())
+    {
+        let n = values.len();
+        rows.push(format!(
+            "(CAST({} AS TEXT), CAST({} AS BIGINT), CAST({} AS TEXT))",
+            placeholder(backend, n + 1),
+            placeholder(backend, n + 2),
+            placeholder(backend, n + 3),
+        ));
+        values.push(Value::from(seen.rustdesk_id.clone()));
+        values.push(Value::from(seen.last_seen_ms));
+        values.push(Value::from(seen.ip.map(|ip| ip.to_string())));
     }
-    tx.commit().await
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let sql = format!(
+        "UPDATE devices SET last_seen_at = v.column2, \
+         last_ip = COALESCE(v.column3, devices.last_ip) \
+         FROM (VALUES {}) AS v \
+         WHERE devices.rustdesk_id = v.column1 AND devices.last_seen_at < v.column2",
+        rows.join(", ")
+    );
+    db.execute_raw(Statement::from_sql_and_values(backend, sql, values))
+        .await?;
+    Ok(())
+}
+
+/// The `n`-th (1-based) bound parameter in `backend`'s syntax.
+fn placeholder(backend: DbBackend, n: usize) -> String {
+    match backend {
+        DbBackend::Postgres => format!("${n}"),
+        _ => "?".to_owned(),
+    }
 }

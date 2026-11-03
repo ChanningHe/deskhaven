@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use deskhaven_core::auth::limiter::ClientAddr;
@@ -14,9 +14,8 @@ use deskhaven_core::devices::{
 };
 use deskhaven_core::strategies::{NewStrategy, Options, StrategyUpdate, Target};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::DatabaseConnection;
 
-use super::support::{Ctx, ID, T0_MS, b64, ctx, ctx_on, report, sysinfo, uuid_of};
+use super::support::{Ctx, ID, T0_MS, b64, counted, ctx, ctx_on, report, sysinfo, take, uuid_of};
 
 const IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 4));
 /// The client's idle period is 15 s; 3 s with live connections.
@@ -95,19 +94,6 @@ impl Ctx {
         };
         self.strategies.update(strategy_id, update).await.unwrap();
     }
-}
-
-/// A clone of `conn` that records the SQL of every statement it runs.
-fn counted(conn: &DatabaseConnection) -> (DatabaseConnection, Arc<Mutex<Vec<String>>>) {
-    let mut conn = conn.clone();
-    let log = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&log);
-    conn.set_metric_callback(move |info| sink.lock().unwrap().push(info.statement.sql.clone()));
-    (conn, log)
-}
-
-fn take(log: &Mutex<Vec<String>>) -> Vec<String> {
-    std::mem::take(&mut *log.lock().unwrap())
 }
 
 #[tokio::test]
