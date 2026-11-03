@@ -22,7 +22,10 @@
 //! **Keyed by RustDesk id**, not by `devices` row: deleting a device does not reset its
 //! client, which registers again as a new row and still holds what it was sent. Rows are
 //! therefore never deleted with the device (an extra `""` for a key the client lacks is
-//! harmless).
+//! harmless). Deleting the device stamps its row's `updated_at` instead
+//! ([`stamp_deleted`]); the expiry job (`jobs::ExpiryCleanup`) removes a row once its id has
+//! had no device row and the row no write for `STRATEGY_KEYS_GRACE`, i.e. a client that
+//! stays away that long after its device was deleted gets no `""` for what it was sent.
 //!
 //! **Restart**: the stored set survives, so a device that was offline while a key was
 //! removed, across any number of restarts, still gets its `""`. What is lost is the pending
@@ -38,7 +41,10 @@ use deskhaven_db::entity::device_strategy_key::{self, Entity as StoredKeys};
 use deskhaven_db::time;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, TryInsertResult};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
+    TryInsertResult,
+};
 
 use crate::strategies::{EffectiveStrategy, Options};
 
@@ -217,6 +223,23 @@ impl StrategyDeliveries {
         // Map operations cannot leave it inconsistent.
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Marks the row of `rustdesk_id` as written now, in the transaction that deletes its
+/// device, so the expiry job's grace period runs from the deletion (see the module docs).
+pub(crate) async fn stamp_deleted<C: ConnectionTrait>(
+    conn: &C,
+    rustdesk_id: &str,
+) -> Result<(), DbErr> {
+    StoredKeys::update_many()
+        .col_expr(
+            device_strategy_key::Column::UpdatedAt,
+            Expr::value(time::now()),
+        )
+        .filter(device_strategy_key::Column::RustdeskId.eq(rustdesk_id))
+        .exec(conn)
+        .await?;
+    Ok(())
 }
 
 /// Sorted JSON array: one text per set, so compare-and-set can compare text.

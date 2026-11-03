@@ -18,7 +18,7 @@ use deskhaven_http::ServeError;
 use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
-use crate::last_seen::{FINAL_FLUSH_TIMEOUT, FlushTask};
+use crate::jobs::{self, FINAL_FLUSH_TIMEOUT};
 use crate::signal_server::SignalStatus;
 use crate::startup::{self, Prepared, Started};
 use crate::{http, log_safe, logging, shutdown};
@@ -120,11 +120,11 @@ async fn serve_until_shutdown(
         let token = token.clone();
         async move { listeners.serve(apps, &http_config, token).await }
     });
-    let last_seen = FlushTask::start(&state, token.clone());
+    let background = jobs::start(&state, token.clone());
     tracing::info!("ready");
-    // The last `last_seen_at` flush runs after HTTP and the signal server stopped.
+    // The jobs finish (the last `last_seen_at` flush) after HTTP and the signal server stopped.
     let close = move || async move {
-        last_seen.finish().await;
+        background.finish(FINAL_FLUSH_TIMEOUT).await;
         close_db(&state).await;
     };
     drive(serving, signal_task, signal_status.as_ref(), &token, close).await

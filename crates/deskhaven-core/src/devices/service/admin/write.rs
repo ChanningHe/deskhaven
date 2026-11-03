@@ -14,6 +14,7 @@ use super::DeviceRecord;
 use crate::console_audit::TxGuard;
 use crate::devices::DeviceError;
 use crate::devices::service::DeviceService;
+use crate::devices::strategy_keys;
 use crate::strategies;
 use crate::text::{self, NOTE_MAX_LEN};
 
@@ -121,7 +122,8 @@ impl DeviceService {
         .await
     }
 
-    /// Deletes device `id` and its strategy assignment, with `guard` deciding on the device
+    /// Deletes device `id` and its strategy assignment (its `device_strategy_keys` row stays,
+    /// stamped with the deletion time), with `guard` deciding on the device
     /// (no `after`); `false` if it did not exist. Then runs the deleted hooks.
     pub async fn delete_guarded(
         &self,
@@ -142,6 +144,7 @@ impl DeviceService {
                 .await?;
             strategies::forget_device(&tx, row.id).await?;
             device::Entity::delete_by_id(row.id).exec(&tx).await?;
+            strategy_keys::stamp_deleted(&tx, &row.rustdesk_id).await?;
             tx.commit().await?;
             inner.strategies.cache().invalidate();
             inner.presence.forget(&row.rustdesk_id);

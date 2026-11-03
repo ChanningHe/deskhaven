@@ -29,6 +29,8 @@ pub struct AppState {
     pub db: DatabaseConnection,
     /// Effective runtime settings with hot reload.
     pub settings: SettingsService,
+    /// The clock every service runs on (background jobs included).
+    pub clock: SharedClock,
     /// Master-key cipher for secrets at rest.
     pub crypto: Arc<SecretBox>,
     /// hbbs public key (base64), the value clients enter as "Key". Public data.
@@ -127,10 +129,16 @@ impl AppState {
         let audit = AuditService::new(db.clone(), devices.clone(), Arc::clone(&clock));
         let setup = SetupService::new(db.clone(), users.clone(), Arc::clone(&clock));
         let api_tokens = ApiTokenService::new(db.clone(), Arc::clone(&clock));
-        let sessions = SessionService::new(db.clone(), settings.clone(), users.clone(), clock);
+        let sessions = SessionService::new(
+            db.clone(),
+            settings.clone(),
+            users.clone(),
+            Arc::clone(&clock),
+        );
         Self {
             db,
             settings,
+            clock,
             crypto,
             signal_public_key,
             users,

@@ -10,6 +10,7 @@ pub mod console_audit;
 pub mod crypto;
 pub mod devices;
 pub mod groups;
+pub mod jobs;
 pub mod keys;
 pub mod login_events;
 pub mod oidc;
