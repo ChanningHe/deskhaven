@@ -73,15 +73,27 @@ struct Pending {
 /// The stored key sets and the pending confirmations.
 pub(crate) struct StrategyDeliveries {
     db: DatabaseConnection,
+    /// Pending confirmations at most ([`MAX_PENDING`]).
+    capacity: usize,
     pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl StrategyDeliveries {
     pub fn new(db: DatabaseConnection) -> Self {
+        Self::with_capacity(db, MAX_PENDING)
+    }
+
+    pub fn with_capacity(db: DatabaseConnection, capacity: usize) -> Self {
         Self {
             db,
+            capacity,
             pending: Mutex::default(),
         }
+    }
+
+    #[cfg(test)]
+    fn pending_len(&self) -> usize {
+        self.lock().len()
     }
 
     /// The `config_options` to send device `rustdesk_id` for `effective`: its options (empty
@@ -107,7 +119,7 @@ impl StrategyDeliveries {
             stored,
         };
         let mut table = self.lock();
-        if table.len() >= MAX_PENDING && !table.contains_key(rustdesk_id) {
+        if table.len() >= self.capacity && !table.contains_key(rustdesk_id) {
             table.clear();
         }
         table.insert(rustdesk_id.to_owned(), pending);
@@ -220,3 +232,6 @@ fn decode(text: &str) -> Keys {
         Keys::new()
     })
 }
+
+#[cfg(test)]
+mod tests;
