@@ -15,6 +15,7 @@ pub mod connection_session;
 pub mod console_audit;
 pub mod device;
 pub mod device_group;
+pub mod device_strategy_key;
 pub mod file_transfer;
 pub mod group;
 pub mod group_member;

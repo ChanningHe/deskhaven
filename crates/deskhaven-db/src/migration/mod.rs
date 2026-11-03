@@ -21,6 +21,7 @@ mod m20261102_000023_strategies;
 mod m20261102_000024_audit;
 mod m20261103_000025_address_book_peer_hash_enc;
 mod m20261103_000026_settings_history_reset;
+mod m20261103_000027_device_strategy_keys;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261102_000024_audit::Migration),
             Box::new(m20261103_000025_address_book_peer_hash_enc::Migration),
             Box::new(m20261103_000026_settings_history_reset::Migration),
+            Box::new(m20261103_000027_device_strategy_keys::Migration),
         ]
     }
 }
