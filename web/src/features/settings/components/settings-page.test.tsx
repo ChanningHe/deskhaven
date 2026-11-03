@@ -319,6 +319,94 @@ describe('settings page conflicts', () => {
   })
 })
 
+describe('settings page failed saves', () => {
+  const SECRET_TEXT = 'my-new-secret'
+
+  function cachedMutations(client: ReturnType<typeof renderApp>['queryClient']): string {
+    return JSON.stringify(
+      client
+        .getMutationCache()
+        .getAll()
+        .map((m) => m.state.variables),
+    )
+  }
+
+  it('shows the failure and keeps no request with a plaintext secret around', async () => {
+    const { user, queryClient } = await openPage(sampleSettings(), () => ({
+      status: 500,
+      body: errorEnvelope('internal'),
+    }))
+
+    await user.type(screen.getByLabelText('smtp.password'), SECRET_TEXT)
+    await user.click(screen.getByRole('button', { name: '保存更改' }))
+
+    expect(await screen.findByText('无法保存设置')).toBeInTheDocument()
+    expect(screen.getByLabelText('smtp.password')).toHaveValue(SECRET_TEXT)
+    await waitFor(() => {
+      expect(cachedMutations(queryClient)).not.toContain(SECRET_TEXT)
+    })
+  })
+
+  it('keeps no secret request after a conflict either', async () => {
+    const theirs = one(sampleSettings(), 'smtp.password')
+    const { user, queryClient } = await openPage(sampleSettings(), () => ({
+      status: 409,
+      body: {
+        error: {
+          code: 'version_conflict',
+          message: 'conflict',
+          details: { keys: [theirs.key], conflicts: [{ ...theirs, version: 2 }] },
+        },
+      },
+    }))
+
+    await user.type(screen.getByLabelText('smtp.password'), SECRET_TEXT)
+    await user.click(screen.getByRole('button', { name: '保存更改' }))
+
+    await screen.findByRole('alertdialog', { name: '已被他人修改' })
+    await waitFor(() => {
+      expect(cachedMutations(queryClient)).not.toContain(SECRET_TEXT)
+    })
+  })
+
+  it('drops edits of a key that became pinned and says so', async () => {
+    const pinned = withSetting(sampleSettings(), TTL, {
+      value: '7d',
+      pinned: true,
+      source: { kind: 'env', var: 'DESKHAVEN_SETTINGS__AUTH__SESSION_TTL' },
+    })
+    let refreshed = false
+    const { user, state } = await openPage(sampleSettings(), () => {
+      // The server pinned the key meanwhile: the next list shows it.
+      refreshed = true
+      return {
+        status: 409,
+        body: {
+          error: { code: 'setting_pinned', message: 'pinned', details: { keys: [TTL] } },
+        },
+      }
+    })
+
+    const input = screen.getByLabelText(TTL)
+    await user.clear(input)
+    await user.type(input, '60d')
+    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    state.settings = pinned
+    await user.click(screen.getByRole('button', { name: '保存更改' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(TTL)).toBeDisabled()
+    })
+    expect(refreshed).toBe(true)
+    expect(screen.getByLabelText(TTL)).toHaveValue('7d')
+    expect(
+      screen.getByText('以下设置已被服务器配置固定，你对它们的修改已丢弃：auth.session_ttl'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('1 项未保存的更改')).toBeInTheDocument()
+    expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
+  })
+})
+
 describe('settings page history and guards', () => {
   it('opens the history of a key, newest first, with resets marked', async () => {
     const history = {

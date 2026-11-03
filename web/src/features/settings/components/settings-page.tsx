@@ -49,6 +49,14 @@ function SettingsForm({ settings }: { settings: readonly SettingView[] }) {
 
   return (
     <>
+      {editor.droppedPinned.length === 0 ? null : (
+        <p
+          role="status"
+          className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-sm text-warning"
+        >
+          {t('settings.pinnedDropped', { keys: editor.droppedPinned.join(', ') })}
+        </p>
+      )}
       <div className="space-y-8">
         {groupByCategory(settings).map((category) => (
           <section key={category.name} aria-labelledby={`category-${category.name}`}>

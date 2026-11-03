@@ -25,39 +25,50 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
   const queryClient = useQueryClient()
   // The secrets in the request are dropped from the mutation cache as soon as it settles.
   const mutation = useUpdateSettings(SECRET_MUTATION)
-  const [drafts, setDrafts] = useState<Drafts>(NO_DRAFTS)
+  const [staged, setDrafts] = useState<Drafts>(NO_DRAFTS)
   const [problems, setProblems] = useState<Problems>({})
   const [conflicts, setConflicts] = useState<SettingView[]>([])
+  const [failure, setFailure] = useState<unknown>(undefined)
   const [savedCount, setSavedCount] = useState<number | undefined>(undefined)
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListSettingsQueryKey() })
+  // A key the server pinned since it was edited can no longer be saved: its draft is dropped
+  // (and the page says so) instead of being sent into a 409.
+  const droppedPinned = Object.keys(staged).filter((key) =>
+    settings.some((setting) => setting.key === key && setting.pinned),
+  )
+  const drafts = droppedPinned.length === 0 ? staged : discardDrafts(staged, droppedPinned)
 
   /** Saves `batch` (the drafts, possibly rebased); the outcome lands in the state below. */
   const run = async (batch: Drafts) => {
     const changes = toChanges(batch, settings)
     setProblems({})
+    setFailure(undefined)
     setSavedCount(undefined)
     try {
       const updated = await mutation.mutateAsync({ data: { changes } })
       queryClient.setQueryData(getListSettingsQueryKey(), updated)
       setDrafts(NO_DRAFTS)
       setSavedCount(changes.length)
-      // Drop the request (it may hold a plaintext secret) as soon as it has been saved.
-      mutation.reset()
     } catch (error) {
       setConflicts(conflictsOf(error))
       setProblems(fieldProblemsOf(error))
+      setFailure(error)
       // A key pinned meanwhile: show what the server has now.
       void refresh()
+    } finally {
+      // The request may hold a plaintext secret: the outcome is kept above, the request is not.
+      mutation.reset()
     }
   }
 
   return {
     drafts,
+    droppedPinned,
     problems,
     conflicts,
     savedCount,
     saving: mutation.isPending,
-    error: mutation.error,
+    error: failure,
     edit: (setting: SettingView, editor: Editor) => {
       setSavedCount(undefined)
       setDrafts((current) => editSetting(current, setting, editor))
@@ -72,7 +83,7 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
     discardAll: () => {
       setDrafts(NO_DRAFTS)
       setProblems({})
-      mutation.reset()
+      setFailure(undefined)
     },
     save: () => run(drafts),
     /** Keep my values: save again against the versions the server has now. */
@@ -90,7 +101,7 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
         ),
       )
       setConflicts([])
-      mutation.reset()
+      setFailure(undefined)
       return refresh()
     },
     dismissConflict: () => {

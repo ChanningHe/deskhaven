@@ -545,6 +545,7 @@
       "title": "Leave without saving?",
       "description": "You have unsaved changes to the settings. They are lost if you leave this page.",
       "confirm": "Leave page"
-    }
+    },
+    "pinnedDropped": "These settings were fixed by the server configuration meanwhile; your edits to them were dropped: {{keys}}"
   }
 }
