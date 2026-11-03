@@ -59,7 +59,7 @@ async fn an_admin_gets_the_addresses_key_and_config_string() {
             expected.windows_names().encoded.unwrap()
         );
         assert_eq!(body["windows_filename_plain"], Value::Null);
-        assert_eq!(body["qr"]["size"].as_i64().unwrap() > 0, true);
+        assert!(body["qr"]["size"].as_i64().unwrap() > 0);
         assert!(body["qr"]["path"].as_str().unwrap().starts_with('M'));
     })
     .await;
