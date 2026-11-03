@@ -94,7 +94,7 @@ impl Inner {
         }
         let keys: Vec<(&'static str, bool)> =
             changes.iter().map(|c| (c.key(), c.is_reset())).collect();
-        let applied = AppliedChanges::between(&current, &next, &keys);
+        let applied = AppliedChanges::between(&current, &next, &keys, request.reason.as_deref());
         guard.check(&tx, Some(&applied), Some(&applied)).await?;
         Ok(Some(Staged { tx, next, written }))
     }

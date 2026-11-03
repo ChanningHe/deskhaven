@@ -215,7 +215,7 @@ pub(crate) fn authors(views: &[CoreView]) -> Vec<i64> {
 }
 
 /// One requested change: a new `value`, or `reset` to drop the stored value (exactly one).
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[derive(Deserialize, Validate, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SettingChangeBody {
     #[garde(length(chars, min = 1, max = 128))]
@@ -233,6 +233,17 @@ pub struct SettingChangeBody {
     #[serde(default)]
     #[garde(skip)]
     pub reset: bool,
+}
+
+/// The value may be a plaintext secret, so it is not shown (like `config::Change`).
+impl std::fmt::Debug for SettingChangeBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SettingChangeBody")
+            .field("key", &self.key)
+            .field("version", &self.version)
+            .field("reset", &self.reset)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A batch of changes, applied together or not at all.
@@ -287,6 +298,23 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn debug_output_of_a_patch_hides_the_values() {
+        let patch: SettingsPatch = serde_json::from_value(json!({
+            "changes": [{ "key": "smtp.password", "version": 2, "value": "hunter2-secret" }],
+            "reason": "rotate",
+        }))
+        .unwrap();
+
+        let shown = format!("{patch:?}");
+
+        assert!(!shown.contains("hunter2-secret"), "{shown}");
+        assert!(
+            shown.contains("smtp.password") && shown.contains("rotate"),
+            "{shown}"
+        );
+    }
 
     #[test]
     fn every_registry_setting_has_an_exportable_schema() {

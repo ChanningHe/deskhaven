@@ -430,6 +430,102 @@ async fn a_refusing_guard_rolls_the_whole_batch_back() {
     .await;
 }
 
+/// A subscriber of `svc`, with nothing pending yet.
+fn subscriber(svc: &SettingsService) -> tokio::sync::watch::Receiver<Arc<settings::Snapshot>> {
+    let mut rx = svc.subscribe();
+    rx.mark_unchanged();
+    rx
+}
+
+#[tokio::test]
+async fn failed_batches_publish_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db).await;
+        set(&svc, "auth.session_ttl", json!("60d"), 0).await;
+        let refusing = TxGuard::new(&audit_log(db), |_: Option<&AppliedChanges>, _| {
+            Err(Refused::new("forbidden"))
+        });
+        let mut rx = subscriber(&svc);
+        let before = rx.borrow().clone();
+
+        // Refused by the guard, after the rows were written.
+        let refused = svc
+            .update_guarded(
+                request(vec![change("smtp.port", json!(2525), 0)]),
+                Vec::new(),
+                refusing,
+            )
+            .await;
+        // Stale version.
+        let stale = svc
+            .update_guarded(
+                request(vec![change("auth.session_ttl", json!("90d"), 0)]),
+                Vec::new(),
+                recording_guard(db),
+            )
+            .await;
+        // A cross-key rule that does not hold on the candidate.
+        let rule = svc
+            .update_guarded(
+                request(vec![change("auth.email_code.enabled", json!(true), 0)]),
+                Vec::new(),
+                recording_guard(db),
+            )
+            .await;
+
+        assert!(
+            matches!(refused, Err(SettingsError::Refused(_))),
+            "{}",
+            db.backend
+        );
+        assert!(matches!(stale, Err(SettingsError::VersionConflict { .. })));
+        assert!(matches!(rule, Err(SettingsError::Invalid { .. })));
+        assert!(!rx.has_changed().unwrap(), "{}", db.backend);
+        assert_eq!(*rx.borrow(), before, "{}", db.backend);
+        assert_eq!(*svc.snapshot(), *before, "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn committed_updates_and_resets_deliver_their_snapshot_to_subscribers() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db).await;
+        let mut rx = subscriber(&svc);
+
+        let updated = svc
+            .update_guarded(
+                request(vec![change("auth.session_ttl", json!("60d"), 0)]),
+                Vec::new(),
+                recording_guard(db),
+            )
+            .await
+            .unwrap();
+
+        assert!(rx.has_changed().unwrap(), "{}", db.backend);
+        assert_eq!(*rx.borrow_and_update(), updated, "{}", db.backend);
+        assert_eq!(
+            rx.borrow().view("auth.session_ttl").unwrap().value,
+            json!("60d")
+        );
+
+        let reset_to_default = svc
+            .update_guarded(
+                request(Vec::new()),
+                vec![reset("auth.session_ttl", 1)],
+                recording_guard(db),
+            )
+            .await
+            .unwrap();
+
+        assert!(rx.has_changed().unwrap(), "{}", db.backend);
+        assert_eq!(*rx.borrow_and_update(), reset_to_default, "{}", db.backend);
+        let view = rx.borrow().view("auth.session_ttl").unwrap();
+        assert_eq!((view.value, view.source), (json!("30d"), Source::Default));
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn history_pages_newest_first_and_masks_secrets() {
     each_migrated_backend(async |db: &TestDb| {

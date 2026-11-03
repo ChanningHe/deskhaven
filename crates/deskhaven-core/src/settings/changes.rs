@@ -20,6 +20,8 @@ pub struct SettingChange {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppliedChanges {
     pub changes: Vec<SettingChange>,
+    /// The note the caller gave the batch (also in the history).
+    pub reason: Option<String>,
 }
 
 impl AppliedChanges {
@@ -28,6 +30,7 @@ impl AppliedChanges {
         before: &Snapshot,
         after: &Snapshot,
         written: &[(&'static str, bool)],
+        reason: Option<&str>,
     ) -> Self {
         let value = |snapshot: &Snapshot, key: &str, usable_only: bool| {
             snapshot
@@ -44,6 +47,9 @@ impl AppliedChanges {
                 reset,
             })
             .collect();
-        Self { changes }
+        Self {
+            changes,
+            reason: reason.map(str::to_owned),
+        }
     }
 }

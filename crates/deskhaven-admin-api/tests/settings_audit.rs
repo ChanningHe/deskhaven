@@ -167,7 +167,7 @@ async fn audit_rows_hold_before_and_after_values_and_never_a_secret() {
                     { "key": "auth.password.min_length", "version": 0, "value": 12 },
                     { "key": "smtp.password", "version": 0, "value": SECRET },
                     { "key": "smtp.port", "version": 0, "value": 2525 },
-                ] }),
+                ], "reason": "tuning the mail relay" }),
             )
             .await;
         assert_eq!(update.status, 200, "{}", update.body);
@@ -202,24 +202,28 @@ async fn audit_rows_hold_before_and_after_values_and_never_a_secret() {
         // Defaults before; the password key name does not blank the number behind it.
         assert_eq!(
             before,
-            json!([
+            json!({ "changes": [
                 { "key": "auth.password.min_length", "value": 10 },
                 { "key": "smtp.password", "value": { "set": false } },
                 { "key": "smtp.port", "value": 587 },
-            ])
+            ] })
         );
+        // The note travels with the change; a batch without one has no `reason`.
         assert_eq!(
             after,
-            json!([
-                { "key": "auth.password.min_length", "value": 12 },
-                { "key": "smtp.password", "value": { "set": true } },
-                { "key": "smtp.port", "value": 2525 },
-            ])
+            json!({
+                "changes": [
+                    { "key": "auth.password.min_length", "value": 12 },
+                    { "key": "smtp.password", "value": { "set": true } },
+                    { "key": "smtp.port", "value": 2525 },
+                ],
+                "reason": "tuning the mail relay",
+            })
         );
         let reset_after: Value = serde_json::from_str(rows[1].after.as_deref().unwrap()).unwrap();
         assert_eq!(
             reset_after,
-            json!([{ "key": "smtp.password", "value": { "set": false }, "reset": true }])
+            json!({ "changes": [{ "key": "smtp.password", "value": { "set": false }, "reset": true }] })
         );
         let everything = format!("{rows:?}");
         assert!(!everything.contains(SECRET));
