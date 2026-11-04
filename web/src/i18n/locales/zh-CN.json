@@ -973,7 +973,8 @@
         "device_group": "设备组",
         "device": "此设备"
       },
-      "source": "{{scope}}：{{name}}"
+      "source": "{{scope}}：{{name}}",
+      "redacted": "（已隐藏）"
     },
     "actions": {
       "title": "操作",
@@ -1176,5 +1177,129 @@
     },
     "emptyTitle": "暂无设备组",
     "emptyDescription": "创建设备组，再在设备抽屉中把设备加入其中。"
+  },
+  "strategies": {
+    "search": "按名称搜索策略",
+    "columns": {
+      "name": "名称",
+      "options": "选项数",
+      "assignments": "分配数",
+      "source": "来源",
+      "updated": "更新时间",
+      "note": "备注"
+    },
+    "fields": {
+      "name": "名称",
+      "note": "备注"
+    },
+    "create": {
+      "action": "新建策略",
+      "title": "新建策略",
+      "submit": "创建策略"
+    },
+    "delete": {
+      "action": "删除策略",
+      "title": "删除策略",
+      "description": "{{name}} 及其 {{count}} 个分配将被删除。其设备在下一次心跳时删除它设置的选项。",
+      "confirm": "删除策略"
+    },
+    "drawer": {
+      "title": "策略",
+      "summary": "{{options}} 个选项，{{assignments}} 个分配",
+      "readOnly": "由配置文件定义：此处只读。",
+      "gone": "此策略已不存在。",
+      "stale": "无法刷新此策略，显示的是上一次的内容。",
+      "tabsLabel": "策略分区",
+      "tabs": {
+        "options": "选项",
+        "assignments": "分配",
+        "preview": "预览"
+      }
+    },
+    "groups": {
+      "security": "安全",
+      "permissions": "权限",
+      "display": "显示与性能",
+      "network": "网络",
+      "recording": "录制",
+      "presets": "部署预设",
+      "other": "其他"
+    },
+    "option": {
+      "unmanaged": "不管理",
+      "set": "设为…",
+      "reset": "恢复客户端默认",
+      "kept": "保留已保存的值",
+      "keptHint": "已保存（不再显示）",
+      "on": "开启",
+      "off": "关闭",
+      "default": "客户端默认：{{value}}",
+      "valueOf": "{{name}} 的值"
+    },
+    "problems": {
+      "bool": "只能是开启或关闭。",
+      "choice": "不是允许的值。",
+      "number": "必须是整数。",
+      "range": "超出允许范围。",
+      "tooLong": "最多 4096 个字符。",
+      "control": "不能包含换行或控制字符。"
+    },
+    "advanced": {
+      "title": "高级",
+      "description": "上方表单未收录的客户端选项。值会按原样下发给设备。",
+      "key": "选项名",
+      "value": "值",
+      "add": "添加",
+      "remove": "移除 {{key}}",
+      "hint": "空值会让客户端删除该选项。",
+      "problems": {
+        "empty": "请输入选项名。",
+        "tooLong": "选项名最多 128 个字符。",
+        "charset": "选项名只能包含字母、数字、'.'、'_' 和 '-'。",
+        "known": "此选项在上方表单中。",
+        "taken": "此选项已在列表中。"
+      }
+    },
+    "editor": {
+      "save": "保存",
+      "saved": "已保存",
+      "conflict": "他人同时修改了此策略；保存时会保留你的修改。"
+    },
+    "targets": {
+      "global": "全局",
+      "group": "用户组",
+      "user": "用户",
+      "device_group": "设备组",
+      "device": "设备"
+    },
+    "assignments": {
+      "title": "分配对象",
+      "none": "尚未分配：此策略不作用于任何设备。",
+      "priority": "优先级由低到高：全局、用户组、所有者、设备组、设备。每个选项取自设置它的最高层。",
+      "target": "{{kind}}：{{name}}",
+      "missing": "#{{id}}",
+      "remove": "移除 {{target}}",
+      "confirmTitle": "移除分配",
+      "confirmDescription": "{{name}} 将不再作用于{{target}}。其设备在下一次心跳时删除它设置的选项。",
+      "confirm": "移除",
+      "add": "分配到",
+      "kind": "分配对象类型",
+      "choose": "请选择…",
+      "assign": "分配",
+      "replaces": "每个对象至多一个策略：分配会替换它原有的策略。",
+      "userCandidates": "匹配的用户",
+      "usersFound": "找到 {{count}} 个用户",
+      "noUser": "没有匹配的用户",
+      "clearUser": "{{name}}（更换）"
+    },
+    "devicePicker": {
+      "search": "搜索设备",
+      "device": "设备",
+      "choose": "请选择设备…",
+      "option": "{{id}}（{{name}}）"
+    },
+    "preview": {
+      "description": "设备最终生效的策略：分配给它的所有策略合并后的结果，并标注每个选项的来源。显示已保存的修改，下一次心跳即下发。"
+    }
   }
 }

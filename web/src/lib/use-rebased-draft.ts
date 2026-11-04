@@ -38,14 +38,24 @@ function isUntouched<T extends object>(state: DraftState<T>, key: keyof T): bool
 /**
  * Untouched fields follow the server copy, edited ones keep the user's text. A field the
  * user edited and then typed back to its baseline is untouched again, so it follows too.
+ * A key the server copy no longer has (a record of options) is dropped when untouched.
  */
 function rebase<T extends object>(state: DraftState<T>, server: T): DraftState<T> {
   const baseline = { ...state.baseline }
   const draft = { ...state.draft }
-  for (const key of keysOf(server)) {
+  const keys = new Set([...keysOf(server), ...keysOf(state.baseline)])
+  for (const key of keys) {
     if (!isUntouched(state, key)) continue
-    baseline[key] = server[key]
-    draft[key] = server[key]
+    if (key in server) {
+      baseline[key] = server[key]
+      draft[key] = server[key]
+    } else {
+      // Fresh copies: removing the key changes nothing the caller holds.
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete baseline[key]
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete draft[key]
+    }
   }
   return { server, baseline, draft }
 }

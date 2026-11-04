@@ -973,7 +973,8 @@
         "device_group": "Device group",
         "device": "This device"
       },
-      "source": "{{scope}}: {{name}}"
+      "source": "{{scope}}: {{name}}",
+      "redacted": "(withheld: secret option)"
     },
     "actions": {
       "title": "Actions",
@@ -1176,5 +1177,129 @@
     },
     "emptyTitle": "No device groups yet",
     "emptyDescription": "Create a device group, then add devices to it from the device drawer."
+  },
+  "strategies": {
+    "search": "Search strategies by name",
+    "columns": {
+      "name": "Name",
+      "options": "Options",
+      "assignments": "Assignments",
+      "source": "Source",
+      "updated": "Updated",
+      "note": "Note"
+    },
+    "fields": {
+      "name": "Name",
+      "note": "Note"
+    },
+    "create": {
+      "action": "New strategy",
+      "title": "New strategy",
+      "submit": "Create strategy"
+    },
+    "delete": {
+      "action": "Delete strategy",
+      "title": "Delete strategy",
+      "description": "{{name}} and its {{count}} assignments are deleted. On their next heartbeat its devices delete the options it set.",
+      "confirm": "Delete strategy"
+    },
+    "drawer": {
+      "title": "Strategy",
+      "summary": "{{options}} options, {{assignments}} assignments",
+      "readOnly": "Defined in the configuration file: read-only here.",
+      "gone": "This strategy no longer exists.",
+      "stale": "Could not refresh this strategy; showing the last copy.",
+      "tabsLabel": "Strategy sections",
+      "tabs": {
+        "options": "Options",
+        "assignments": "Assignments",
+        "preview": "Preview"
+      }
+    },
+    "groups": {
+      "security": "Security",
+      "permissions": "Permissions",
+      "display": "Display and performance",
+      "network": "Network",
+      "recording": "Recording",
+      "presets": "Deployment presets",
+      "other": "Other"
+    },
+    "option": {
+      "unmanaged": "Not managed",
+      "set": "Set to…",
+      "reset": "Reset to the client default",
+      "kept": "Keep the saved value",
+      "keptHint": "Saved (never shown again)",
+      "on": "On",
+      "off": "Off",
+      "default": "Client default: {{value}}",
+      "valueOf": "Value of {{name}}"
+    },
+    "problems": {
+      "bool": "Must be on or off.",
+      "choice": "Not one of the allowed values.",
+      "number": "Must be a whole number.",
+      "range": "Out of the allowed range.",
+      "tooLong": "At most 4096 characters.",
+      "control": "Must not contain line breaks or control characters."
+    },
+    "advanced": {
+      "title": "Advanced",
+      "description": "Client options the form above does not know. Values are sent to the devices as typed.",
+      "key": "Option name",
+      "value": "Value",
+      "add": "Add",
+      "remove": "Remove {{key}}",
+      "hint": "An empty value makes the client delete the option.",
+      "problems": {
+        "empty": "Enter an option name.",
+        "tooLong": "Option names are at most 128 characters.",
+        "charset": "Option names may only contain letters, digits, '.', '_' and '-'.",
+        "known": "This option is in the form above.",
+        "taken": "This option is already listed."
+      }
+    },
+    "editor": {
+      "save": "Save",
+      "saved": "Saved",
+      "conflict": "Someone else changed this strategy meanwhile; saving keeps your edits."
+    },
+    "targets": {
+      "global": "Global",
+      "group": "User group",
+      "user": "User",
+      "device_group": "Device group",
+      "device": "Device"
+    },
+    "assignments": {
+      "title": "Assigned to",
+      "none": "Not assigned yet: the strategy applies to no device.",
+      "priority": "Priority, lowest first: global, user groups, owner, device group, device. Each option comes from the highest layer that sets it.",
+      "target": "{{kind}}: {{name}}",
+      "missing": "#{{id}}",
+      "remove": "Remove {{target}}",
+      "confirmTitle": "Remove assignment",
+      "confirmDescription": "{{name}} no longer applies to {{target}}. Its devices delete the options it set on their next heartbeat.",
+      "confirm": "Remove",
+      "add": "Assign to",
+      "kind": "Target type",
+      "choose": "Choose…",
+      "assign": "Assign",
+      "replaces": "A target has at most one strategy: assigning replaces the one it had.",
+      "userCandidates": "Matching users",
+      "usersFound": "{{count}} users found",
+      "noUser": "No matching user",
+      "clearUser": "{{name}} (change)"
+    },
+    "devicePicker": {
+      "search": "Search devices",
+      "device": "Device",
+      "choose": "Choose a device…",
+      "option": "{{id}} ({{name}})"
+    },
+    "preview": {
+      "description": "The strategy a device ends up with: every strategy assigned to it merged, with the source of each option. Shows saved changes; the next heartbeat delivers them."
+    }
   }
 }

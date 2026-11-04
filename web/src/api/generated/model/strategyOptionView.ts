@@ -9,7 +9,9 @@ import type { StrategyLayerView } from './strategyLayerView'
  */
 export interface StrategyOptionView {
   key: string
+  /** A secret option's value, withheld here (`value` is empty). */
+  redacted: boolean
   source: StrategyLayerView
-  /** Empty: the client deletes the option. */
+  /** Empty: the client deletes the option (unless `redacted`). */
   value: string
 }

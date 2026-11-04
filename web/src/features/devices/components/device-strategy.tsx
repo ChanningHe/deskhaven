@@ -35,7 +35,11 @@ export function DeviceStrategy({ strategy }: { strategy: EffectiveStrategyView }
                     {option.key}
                   </th>
                   <td className="py-1 pr-2 break-all">
-                    {option.value === '' ? (
+                    {option.redacted ? (
+                      <span className="text-muted-foreground">
+                        {t('devices.strategy.redacted')}
+                      </span>
+                    ) : option.value === '' ? (
                       <span className="text-muted-foreground">{t('devices.strategy.empty')}</span>
                     ) : (
                       option.value

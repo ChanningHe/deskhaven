@@ -79,4 +79,21 @@ describe('useRebasedDraft', () => {
     expect(result.current.draft.note).toBe('sent (normalised)')
     expect(result.current.changed).toEqual([])
   })
+
+  it('drops an untouched key the server copy no longer has and keeps an edited one', () => {
+    const initial: Record<string, string | undefined> = { a: '1', b: '2' }
+    const { result, rerender } = renderHook(({ server }) => useRebasedDraft(server), {
+      initialProps: { server: initial },
+    })
+    act(() => {
+      result.current.set({ b: 'mine', c: 'new' })
+    })
+
+    rerender({ server: {} })
+
+    expect(result.current.draft.a).toBeUndefined()
+    expect(result.current.draft).toMatchObject({ b: 'mine', c: 'new' })
+    expect(result.current.changed.sort()).toEqual(['b', 'c'])
+    expect(result.current.conflicts).toEqual(['b'])
+  })
 })

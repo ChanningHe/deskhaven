@@ -41,9 +41,14 @@ describe('device drawer: details', () => {
       modified_at: 1,
       layers: [layer('global', 1, 'base'), layer('device_group', 2, 'night')],
       options: [
-        { key: 'lang', value: 'en', source: layer('global', 1, 'base') },
-        { key: 'theme', value: 'light', source: layer('device_group', 2, 'night') },
-        { key: 'wallpaper', value: '', source: layer('device_group', 2, 'night') },
+        { key: 'lang', value: 'en', redacted: false, source: layer('global', 1, 'base') },
+        {
+          key: 'theme',
+          value: 'light',
+          redacted: false,
+          source: layer('device_group', 2, 'night'),
+        },
+        { key: 'wallpaper', value: '', redacted: false, source: layer('device_group', 2, 'night') },
       ],
     }
     renderApp('/devices?device=1', { api: api({}, detailWith({ strategy })) })
