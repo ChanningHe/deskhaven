@@ -23,7 +23,8 @@ use common::settings;
 use deskhaven_core::groups::{GroupService, NewGroup};
 use deskhaven_core::ldap::{Ldap3Connector, LdapService, NewDirectory, Step, StepStatus};
 use deskhaven_core::users::{
-    AuthError, AuthSource, HashParams, Password, PasswordHasher, Role, UserService,
+    AuthError, AuthSource, Credential, HashParams, NewUser, Password, PasswordHasher, Role,
+    UserService,
 };
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 
@@ -61,6 +62,15 @@ fn directory(url: &str) -> NewDirectory {
 struct Env {
     ldap: LdapService,
     groups: GroupService,
+    users: UserService,
+}
+
+impl Env {
+    /// The directory account alice, as an earlier login left it.
+    async fn alice(&self) {
+        let new = NewUser::new("alice", Credential::Ldap);
+        self.users.create(new).await.unwrap();
+    }
 }
 
 async fn env(db: &TestDb, new: NewDirectory) -> Env {
@@ -69,7 +79,11 @@ async fn env(db: &TestDb, new: NewDirectory) -> Env {
     let groups = GroupService::new(db.conn.clone());
     let ldap = service(db, &users, &groups, Arc::new(Ldap3Connector::new()));
     ldap.create_directory(new).await.unwrap();
-    Env { ldap, groups }
+    Env {
+        ldap,
+        groups,
+        users,
+    }
 }
 
 async fn login(
@@ -133,6 +147,7 @@ async fn an_unreachable_directory_fails_the_login() {
     each_migrated_backend(async |db: &TestDb| {
         // Nothing listens on port 1 of the loopback host.
         let env = env(db, directory("ldap://127.0.0.1:1")).await;
+        env.alice().await;
 
         let outcome = login(&env, "alice", ALICE_PASSWORD).await;
 
@@ -181,6 +196,7 @@ async fn ldaps_verifies_the_certificate_unless_told_not_to() {
         let settings = verified.ldap.stored_settings(id).await.unwrap();
 
         let refused = verified.ldap.test_connection(&settings).await;
+        verified.alice().await;
         let login_refused = login(&verified, "alice", ALICE_PASSWORD).await;
         verified.ldap.delete_directory(id).await.unwrap();
         let mut unchecked = directory(&url);

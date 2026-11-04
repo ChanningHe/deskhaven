@@ -54,6 +54,10 @@ pub struct FakeUser {
 #[derive(Default)]
 struct State {
     down: bool,
+    /// Connects never complete (a directory that accepts TCP and then stalls).
+    hang: bool,
+    /// User binds fail with this LDAP result code (e.g. 51 busy).
+    bind_refusal: Option<u32>,
     users: Vec<FakeUser>,
     /// Group DN -> member DNs.
     groups: BTreeMap<String, Vec<String>>,
@@ -116,6 +120,14 @@ impl FakeDirectory {
         self.state.lock().unwrap().down = down;
     }
 
+    pub fn set_hang(&self, hang: bool) {
+        self.state.lock().unwrap().hang = hang;
+    }
+
+    pub fn set_bind_refusal(&self, code: Option<u32>) {
+        self.state.lock().unwrap().bind_refusal = code;
+    }
+
     pub fn log(&self) -> Vec<Op> {
         self.state.lock().unwrap().log.clone()
     }
@@ -163,10 +175,16 @@ impl FakeDirectory {
 impl Connector for FakeDirectory {
     fn connect<'a>(&'a self, target: &'a Target) -> DirectoryFuture<'a, Box<dyn Session>> {
         Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            state.log.push(Op::Connect(target.clone()));
-            if state.down {
-                return Err(DirectoryFault::Unreachable("connection refused".to_owned()));
+            let hang = {
+                let mut state = self.state.lock().unwrap();
+                state.log.push(Op::Connect(target.clone()));
+                if state.down {
+                    return Err(DirectoryFault::Unreachable("connection refused".to_owned()));
+                }
+                state.hang
+            };
+            if hang {
+                std::future::pending::<()>().await;
             }
             let session: Box<dyn Session> = Box::new(FakeSession {
                 state: Arc::clone(&self.state),
@@ -192,6 +210,10 @@ impl Session for FakeSession {
                 return Err(DirectoryFault::Unreachable("connection reset".to_owned()));
             }
             let service = dn == SERVICE_DN && password == SERVICE_PASSWORD;
+            if let (false, Some(code)) = (service, state.bind_refusal) {
+                let message = "refused".to_owned();
+                return Err(DirectoryFault::Refused { code, message });
+            }
             let user = state
                 .users
                 .iter()
@@ -241,23 +263,29 @@ fn user_entries(state: &State, request: &SearchRequest) -> Vec<Entry> {
             })
         })
         .map(|u| {
-            let mut attrs = BTreeMap::new();
-            for wanted in &request.attrs {
-                let key = wanted.to_ascii_lowercase();
-                if key == "memberof" {
-                    let groups = member_of(state, &u.dn);
-                    if !groups.is_empty() {
-                        attrs.insert(key, groups);
-                    }
-                } else if let Some(values) = u.attrs.get(&key) {
-                    attrs.insert(key, values.clone());
-                }
+            let mut all = u.attrs.clone();
+            let groups = member_of(state, &u.dn);
+            if !groups.is_empty() {
+                all.insert("memberof".to_owned(), groups);
             }
             Entry {
                 dn: u.dn.clone(),
-                attrs,
+                attrs: selected(all, &request.attrs),
             }
         })
+        .collect()
+}
+
+/// RFC 4511 §4.5.1.8: no attributes listed means all user attributes, `1.1` means none.
+fn selected(
+    all: BTreeMap<String, Vec<String>>,
+    wanted: &[String],
+) -> BTreeMap<String, Vec<String>> {
+    if wanted.is_empty() {
+        return all;
+    }
+    all.into_iter()
+        .filter(|(key, _)| wanted.iter().any(|w| w.eq_ignore_ascii_case(key)))
         .collect()
 }
 
@@ -281,9 +309,13 @@ fn group_entries(state: &State, request: &SearchRequest) -> Vec<Entry> {
                 request.filter.contains(&escaped)
             })
         })
-        .map(|(group, _)| Entry {
-            dn: group.clone(),
-            attrs: BTreeMap::new(),
+        .map(|(group, members)| {
+            let mut all = BTreeMap::new();
+            all.insert("member".to_owned(), members.clone());
+            Entry {
+                dn: group.clone(),
+                attrs: selected(all, &request.attrs),
+            }
         })
         .collect()
 }

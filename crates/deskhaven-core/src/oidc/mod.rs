@@ -106,6 +106,7 @@ pub use preview::{CallbackPreview, DeviceSummary};
 pub use providers::{
     LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
 };
+pub(crate) use resolver::is_forbidden;
 pub use resolver::{Lookup, LookupFuture, system_lookup};
 pub use url_policy::MAX_ISSUER_LEN;
 

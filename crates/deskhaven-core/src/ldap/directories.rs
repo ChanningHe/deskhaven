@@ -2,7 +2,10 @@
 //! `ldap_directories.bind_password_enc:<id>` (06 §5); a new row is inserted first and the
 //! password written in the same transaction, once the id is known. Rows with
 //! `managed_by = config` (05 §4.1) are read-only here. P0 allows one enabled directory
-//! (unique partial index): a second is a [`DirectoryError::Conflict`] on `enabled`.
+//! (unique partial index): a second is a [`DirectoryError::Conflict`] on `enabled`. An
+//! update that changes the URL, StartTLS, certificate verification or the bind DN must
+//! carry the bind password again (else `Invalid` on `bind_password`), so console access
+//! alone cannot redirect the stored password to another server.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::ldap_directory::{self, Column};
@@ -68,6 +71,16 @@ impl LdapService {
         let tx = begin_write(&self.inner.db).await?;
         let current = writable(&tx, id).await?;
         let fields = Fields::updated(&current, &update)?;
+        // The stored password must not follow a changed destination (or lose its TLS)
+        // without whoever changes it knowing it: it could be sent to their server.
+        let moved = fields.url != current.url
+            || fields.start_tls != current.start_tls
+            || fields.tls_verify != current.tls_verify
+            || fields.bind_dn != current.bind_dn;
+        if moved && fields.bind_dn.is_some() && update.bind_password.is_none() {
+            let reason = "re-enter when the connection changes";
+            return Err(validate::invalid("bind_password", reason));
+        }
         let password = match &update.bind_password {
             Some(raw) => Some(validate::bind_password(raw.as_deref())?.map(Zeroizing::new)),
             None => None,

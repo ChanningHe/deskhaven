@@ -34,6 +34,11 @@ pub enum UserError {
     #[error("the current password is wrong")]
     WrongPassword,
 
+    /// Re-authentication of a directory (LDAP) account: the directory could not be asked
+    /// (nothing was verified; APIs: 503).
+    #[error("the directory is unavailable")]
+    DirectoryUnavailable,
+
     #[error("password hashing failed")]
     Password(#[source] PasswordError),
 

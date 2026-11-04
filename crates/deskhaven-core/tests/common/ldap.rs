@@ -101,6 +101,14 @@ impl Env {
             .unwrap()
     }
 
+    /// An existing directory account (as a previous login would have left it).
+    pub async fn ldap_user(&self, username: &str) -> User {
+        self.users
+            .create(NewUser::new(username, Credential::Ldap))
+            .await
+            .unwrap()
+    }
+
     pub async fn group(&self, name: &str) -> i64 {
         self.groups.create(NewGroup::new(name)).await.unwrap().id
     }

@@ -10,10 +10,11 @@ use common::ldap::Env;
 use common::ldap_fake::{FakeUser, SERVICE_DN, USER_BASE, USER_PASSWORD, group_dn};
 use deskhaven_core::groups::ManagedBy;
 use deskhaven_core::users::{Credential, NewUser, Role};
+use deskhaven_db::entity::console_audit::{self, ActorKind};
 use deskhaven_db::entity::group;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, EntityTrait};
+use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder};
 
 #[tokio::test]
 async fn group_mapping_follows_the_directory_at_every_login() {
@@ -110,9 +111,64 @@ async fn group_search_uses_the_filter_template_with_escaped_values() {
             format!("(&(objectClass=groupOfNames)(member=uid=star\\2a,{USER_BASE}))")
         );
         assert_eq!(env.group_names(id).await, ["ops"]);
+        // Only DNs are wanted: `1.1`, not the empty list (which means all attributes).
+        assert_eq!(searches[1].attrs, ["1.1"]);
         // The group search runs as the service account, after the user's bind.
         let binds = env.fake.binds();
         assert_eq!(binds, [SERVICE_DN.to_owned(), dn, SERVICE_DN.to_owned()]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_username_placeholder_is_the_directory_value_that_matched() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |d| {
+            d.group_filter = Some("(memberUid={username})".to_owned());
+        })
+        .await;
+        let dn = env.fake.add_user("alice");
+        env.fake.set_attr(&dn, "uid", &["a-alias", "alice"]);
+
+        env.login("ALICE", USER_PASSWORD).await.unwrap();
+
+        let searches = env.fake.searches();
+        assert_eq!(searches[1].filter, "(memberUid=alice)", "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn directory_changes_to_roles_and_groups_are_audited_as_the_system() {
+    each_migrated_backend(async |db: &TestDb| {
+        let admins = group_dn("admins");
+        let admin_dn = admins.clone();
+        let env = Env::with(db, move |d| d.admin_group_dn = Some(admin_dn)).await;
+        let dn = env.fake.add_user("alice");
+        env.group("ops").await;
+        env.fake.set_members(&group_dn("ops"), &[&dn]);
+        env.fake.set_members(&admins, &[&dn]);
+
+        env.login("alice", USER_PASSWORD).await.unwrap();
+        env.fake.set_members(&group_dn("ops"), &[]);
+        env.login("alice", USER_PASSWORD).await.unwrap();
+        // Nothing changed: nothing more is audited.
+        env.login("alice", USER_PASSWORD).await.unwrap();
+
+        let rows = console_audit::Entity::find()
+            .order_by_asc(console_audit::Column::Id)
+            .all(&db.conn)
+            .await
+            .unwrap();
+        let actions: Vec<&str> = rows.iter().map(|r| r.action.as_str()).collect();
+        assert_eq!(
+            actions,
+            ["user.update", "group.member_add", "group.member_remove"],
+            "{}",
+            db.backend
+        );
+        assert!(rows.iter().all(|r| r.actor_kind == ActorKind::System));
+        assert!(rows[0].after.as_deref().unwrap().contains("admin"));
     })
     .await;
 }

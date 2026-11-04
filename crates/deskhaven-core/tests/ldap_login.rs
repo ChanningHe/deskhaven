@@ -109,8 +109,9 @@ async fn an_unreachable_directory_fails_the_login_and_never_falls_back() {
             "{}: {existing:?}",
             db.backend
         );
+        // An unknown name answers like a wrong local password (no 503 vs 401 oracle).
         assert!(
-            matches!(unknown, Err(AuthError::DirectoryUnavailable)),
+            matches!(unknown, Err(AuthError::InvalidCredentials)),
             "{unknown:?}"
         );
         // Local accounts never depend on the directory.
@@ -124,6 +125,7 @@ async fn a_wrong_service_password_is_an_outage_not_a_wrong_user_password() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::with(db, |d| d.bind_password = Some("stale".to_owned())).await;
         env.fake.add_user("alice");
+        env.ldap_user("alice").await;
 
         let outcome = env.login("alice", USER_PASSWORD).await;
 
@@ -315,6 +317,21 @@ async fn provisioning_keeps_an_address_another_account_holds_off_the_new_one() {
         let alice = env.login("alice", USER_PASSWORD).await.unwrap().user;
 
         assert_eq!(alice.email, None, "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn provisioned_display_names_lose_control_bidi_and_zero_width_characters() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let dn = env.fake.add_user("alice");
+        env.fake
+            .set_attr(&dn, "cn", &["Ali\u{202E}ce\u{200B} Lid\u{7}dell"]);
+
+        let alice = env.login("alice", USER_PASSWORD).await.unwrap().user;
+
+        assert_eq!(alice.display_name, "Alice Liddell", "{}", db.backend);
     })
     .await;
 }

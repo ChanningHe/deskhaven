@@ -13,6 +13,10 @@ pub(crate) const MAX_GROUPS: usize = 256;
 const USER_SEARCH_LIMIT: usize = 1;
 /// Random bytes of the decoy DN's RDN value.
 const DECOY_BYTES: usize = 12;
+/// LDAP result codes of a bind the directory could not decide: busy, unavailable, other.
+const UNDECIDED_CODES: [u32; 3] = [51, 52, 80];
+/// Attribute list asking for no attributes (RFC 4511 §4.5.1.8; an empty list means all).
+const NO_ATTRIBUTES: &str = "1.1";
 
 /// The directory entry of a username.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,16 +37,15 @@ impl DirectoryUser {
                 .and_then(|a| entry.first(a))
                 .map(str::to_owned)
         };
+        let member_of = entry.values(MEMBER_OF);
+        if member_of.len() > MAX_GROUPS {
+            tracing::warn!(directory = %settings.name, "memberOf truncated at {MAX_GROUPS} groups");
+        }
         Self {
             usernames: entry.values(&settings.username_attr).to_vec(),
             email: first(&settings.email_attr),
             display_name: first(&settings.display_name_attr),
-            member_of: entry
-                .values(MEMBER_OF)
-                .iter()
-                .take(MAX_GROUPS)
-                .cloned()
-                .collect(),
+            member_of: member_of.iter().take(MAX_GROUPS).cloned().collect(),
             dn: entry.dn,
         }
     }
@@ -101,7 +104,8 @@ pub(crate) async fn find_user(
 }
 
 /// `Ok(false)` for a refused bind (wrong password, or the directory refusing the account,
-/// e.g. locked); `Err` only when the directory could not answer.
+/// e.g. locked); `Err` when the directory could not decide: unreachable, or result code
+/// busy (51), unavailable (52) or other (80).
 pub(crate) async fn bind_user(
     session: &mut dyn Session,
     dn: &str,
@@ -113,7 +117,7 @@ pub(crate) async fn bind_user(
     match session.bind(dn, password).await {
         Ok(()) => Ok(true),
         Err(DirectoryFault::InvalidCredentials) => Ok(false),
-        Err(DirectoryFault::Refused { code, .. }) => {
+        Err(DirectoryFault::Refused { code, .. }) if !UNDECIDED_CODES.contains(&code) => {
             tracing::debug!(code, "the directory refused a user bind");
             Ok(false)
         }
@@ -140,11 +144,13 @@ pub(crate) async fn decoy_bind(
 
 /// The user's group DNs: a group search as the service account (after the user's own
 /// bind) when a group filter is set, else the entry's `memberOf`. Empty when neither group
-/// mapping nor the admin flag needs them.
+/// mapping nor the admin flag needs them. `username` (the matched username attribute
+/// value) fills the filter's `{username}`.
 pub(crate) async fn groups_of(
     session: &mut dyn Session,
     settings: &DirectorySettings,
     user: &DirectoryUser,
+    username: &str,
 ) -> Result<Vec<String>, DirectoryFault> {
     if !settings.wants_groups() {
         return Ok(Vec::new());
@@ -157,12 +163,11 @@ pub(crate) async fn groups_of(
         return Ok(user.member_of.clone());
     };
     bind_service(session, settings).await?;
-    let username = user.usernames.first().map_or("", String::as_str);
     let request = SearchRequest {
         base: base.clone(),
         scope: Scope::Subtree,
         filter: filter::group_search(settings.group_template(), &user.dn, username),
-        attrs: Vec::new(),
+        attrs: vec![NO_ATTRIBUTES.to_owned()],
         size_limit: MAX_GROUPS,
     };
     let found = session.search(&request).await?;

@@ -34,7 +34,8 @@ pub struct SearchRequest {
     pub scope: Scope,
     /// An RFC 4515 filter; every value taken from input is already escaped.
     pub filter: String,
-    /// Attributes to return (none: only the DN).
+    /// Attributes to return. RFC 4511 §4.5.1.8: an empty list asks for all user
+    /// attributes; `["1.1"]` asks for none (the DN only).
     pub attrs: Vec<String>,
     /// Most entries wanted; more matches set [`Found::truncated`].
     pub size_limit: usize,

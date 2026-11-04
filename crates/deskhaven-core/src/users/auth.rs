@@ -30,18 +30,8 @@ impl CredentialStamp {
         }
     }
 
-    /// For carrying a local login's stamp across the two steps of a 2FA login (`tfa`,
-    /// stored server side with the challenge, never sent to the client).
-    pub(crate) fn to_stored(self) -> Option<i64> {
-        self.password_changed_at
-    }
-
-    /// A local login's stamp, read back from [`to_stored`](Self::to_stored).
-    pub(crate) fn from_stored(password_changed_at: Option<i64>) -> Self {
-        Self::from_parts(password_changed_at, AuthSource::Local)
-    }
-
-    /// Both parts, for storing a stamp of any source (OIDC flows).
+    /// Both parts, for storing a stamp of any source server side (the 2FA challenge between
+    /// the two login steps, OIDC flows); never sent to a client.
     pub(crate) fn parts(self) -> (Option<i64>, AuthSource) {
         (self.password_changed_at, self.auth_source)
     }

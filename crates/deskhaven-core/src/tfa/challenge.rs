@@ -21,7 +21,8 @@ use super::{CHALLENGE_TTL, ChallengeError, Inner, MAX_CHALLENGE_ATTEMPTS, TfaErr
 use crate::auth::limiter::PendingSubject;
 use crate::jobs::{Doomed, Plain, Purge};
 use crate::sessions::{ClientDevice, SessionToken, TokenHash};
-use crate::users::{CredentialStamp, username_norm};
+use crate::users::{AuthSource, CredentialStamp, username_norm};
+use sea_orm::ActiveEnum;
 
 /// `context` marker of a console challenge (instead of a device).
 const CONSOLE_KEY: &str = "console";
@@ -119,10 +120,12 @@ impl TfaService {
         let now = inner.clock.now_ms();
         let ttl = i64::try_from(CHALLENGE_TTL.as_millis()).unwrap_or(i64::MAX);
         let (name, source) = login.lockout.parts();
+        let (password_changed_at, auth_source) = login.stamp.parts();
         let mut context = json!({
             "lockout_name": name,
             "lockout_source": source,
-            "password_changed_at": login.stamp.to_stored(),
+            "password_changed_at": password_changed_at,
+            "auth_source": auth_source.to_value(),
         });
         if let Value::Object(fields) = &mut context {
             match login.binding {
@@ -220,11 +223,17 @@ fn parse_context(row: &auth_challenge::Model) -> Result<Bound, ChallengeError> {
         _ => return Err(corrupt()),
     };
     let lockout = PendingSubject::from_parts(&name, &source).ok_or_else(corrupt)?;
-    let stamp = match value.get("password_changed_at") {
-        Some(Value::Null) => CredentialStamp::from_stored(None),
-        Some(ms) => CredentialStamp::from_stored(Some(ms.as_i64().ok_or_else(corrupt)?)),
+    let password_changed_at = match value.get("password_changed_at") {
+        Some(Value::Null) => None,
+        Some(ms) => Some(ms.as_i64().ok_or_else(corrupt)?),
         None => return Err(corrupt()),
     };
+    // Challenges issued before the key existed were all local logins.
+    let auth_source = match text("auth_source") {
+        None => AuthSource::Local,
+        Some(raw) => AuthSource::try_from_value(&raw).map_err(|_| corrupt())?,
+    };
+    let stamp = CredentialStamp::from_parts(password_changed_at, auth_source);
     Ok(Bound {
         binding,
         lockout,

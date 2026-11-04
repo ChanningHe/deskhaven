@@ -94,7 +94,7 @@ mod tests {
     fn malformed_contexts_read_as_absent() {
         assert!(client_device("[]").is_none());
         assert!(client_device(r#"{"rustdesk_id": 1, "uuid": "u"}"#).is_none());
-        assert!(with_stamp("[]", CredentialStamp::from_stored(None)).is_none());
+        assert!(with_stamp("[]", CredentialStamp::from_parts(None, AuthSource::Local)).is_none());
         assert!(stamp(r#"{"stamp": {"password_changed_at": null, "auth_source": "x"}}"#).is_none());
     }
 }

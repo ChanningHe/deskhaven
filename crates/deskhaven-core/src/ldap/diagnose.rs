@@ -206,7 +206,13 @@ impl LdapService {
         if !probe_user_bind(session, &user, password, recorder).await {
             return;
         }
-        match protocol::groups_of(session, settings, &user).await {
+        // As a login would (an unmatched test name falls back to the first value).
+        let name = user
+            .username_matching(username)
+            .or(user.usernames.first().map(String::as_str))
+            .unwrap_or_default()
+            .to_owned();
+        match protocol::groups_of(session, settings, &user, &name).await {
             Ok(group_dns) => self.probe_mapping(settings, group_dns, recorder).await,
             Err(fault) => {
                 recorder.record(Step::GroupMapping, StepStatus::Failed, fault.to_string())

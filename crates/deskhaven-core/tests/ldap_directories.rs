@@ -1,6 +1,7 @@
 //! Directory management (04 §3 `ldap_directories`, 06 §3.5, §5): validation (TLS by
-//! default, parseable filters, attribute names), the sealed bind password, one enabled
-//! directory, config-managed rows. Both backends.
+//! default, no link-local or metadata addresses, parseable filters, attribute names), the
+//! sealed bind password (re-entered when the connection changes), one enabled directory,
+//! config-managed rows. Both backends.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -103,6 +104,13 @@ async fn plain_ldap_needs_start_tls_except_on_loopback() {
             "ldaps://user:pw@ldap.example.org",
             "ldaps://ldap.example.org/dc=x?uid",
             "ldaps://",
+            // Link-local and cloud metadata addresses (as with OIDC).
+            "ldaps://169.254.169.254",
+            "ldap://[fe80::1]:389",
+            "ldaps://[::ffff:169.254.1.1]",
+            "ldaps://[fd00:ec2::254]",
+            // ldap3 cannot verify a certificate for a bracketed IPv6 literal.
+            "ldaps://[2001:db8::1]:636",
         ] {
             let result = env.ldap.create_directory(with("e", bad, false)).await;
             assert_eq!(invalid_field(result), "url", "{bad}");
@@ -157,8 +165,9 @@ async fn filters_dns_and_attribute_names_are_validated() {
                 db.backend
             );
         }
+        // The server names attributes in results, so an OID would never match.
         let numeric_oid = try_with(&|d| d.username_attr = "0.9.2342.19200300.100.1.1".to_owned());
-        assert!(numeric_oid.await.is_ok());
+        assert_eq!(invalid_field(numeric_oid.await), "username_attr");
     })
     .await;
 }
@@ -241,6 +250,56 @@ async fn updates_change_fields_and_the_password_and_config_rows_are_read_only() 
         assert_eq!(invalid_field(half), "bind_password");
         assert!(matches!(read_only, Err(DirectoryError::ManagedByConfig)));
         assert!(matches!(delete, Err(DirectoryError::ManagedByConfig)));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn changing_where_the_bind_password_goes_needs_it_entered_again() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let id = env.directory.id;
+        // Each of these would send the stored password somewhere else, or unprotected.
+        let redirects = [
+            DirectoryUpdate {
+                url: Some("ldaps://attacker.example.net".to_owned()),
+                ..DirectoryUpdate::default()
+            },
+            DirectoryUpdate {
+                tls_verify: Some(false),
+                ..DirectoryUpdate::default()
+            },
+            DirectoryUpdate {
+                url: Some("ldap://ldap.example.org".to_owned()),
+                start_tls: Some(true),
+                ..DirectoryUpdate::default()
+            },
+            DirectoryUpdate {
+                bind_dn: Some(Some("cn=other,dc=example,dc=org".to_owned())),
+                ..DirectoryUpdate::default()
+            },
+        ];
+        for update in redirects {
+            let refused = env.ldap.update_directory(id, update.clone()).await;
+            assert_eq!(
+                invalid_field(refused),
+                "bind_password",
+                "{}: {update:?}",
+                db.backend
+            );
+            let with_password = DirectoryUpdate {
+                bind_password: Some(Some("re-entered".to_owned())),
+                ..update
+            };
+            env.ldap.update_directory(id, with_password).await.unwrap();
+        }
+        // Unchanged connection fields (or other fields) keep the stored password.
+        let same_url = DirectoryUpdate {
+            url: Some("ldap://ldap.example.org".to_owned()),
+            user_filter: Some("(objectClass=person)".to_owned()),
+            ..DirectoryUpdate::default()
+        };
+        env.ldap.update_directory(id, same_url).await.unwrap();
     })
     .await;
 }

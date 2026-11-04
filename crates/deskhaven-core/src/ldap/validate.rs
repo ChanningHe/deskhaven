@@ -8,6 +8,7 @@ use url::{Host, Url};
 use super::error::DirectoryError;
 use super::filter;
 use super::model::{DEFAULT_USER_FILTER, DEFAULT_USERNAME_ATTR};
+use crate::oidc::is_forbidden;
 use crate::text;
 
 const MAX_NAME_LEN: usize = 64;
@@ -60,6 +61,14 @@ pub(crate) fn url(raw: &str, start_tls: bool) -> Result<(), DirectoryError> {
     if !bare || parsed.query().is_some() || parsed.fragment().is_some() {
         return bad("must be scheme, host and port only");
     }
+    let ip = host_ip(&parsed);
+    if ip.is_some_and(is_forbidden) {
+        return bad("link-local and cloud metadata addresses are not allowed");
+    }
+    let tls = parsed.scheme() == "ldaps" || start_tls;
+    if tls && matches!(ip, Some(IpAddr::V6(_))) {
+        return bad("an IPv6 address cannot be used with TLS here: use a host name");
+    }
     match (parsed.scheme(), start_tls) {
         ("ldaps", true) => Err(invalid(
             "start_tls",
@@ -72,17 +81,22 @@ pub(crate) fn url(raw: &str, start_tls: bool) -> Result<(), DirectoryError> {
     }
 }
 
-/// `ldap:` is not a special scheme, so `url` leaves IPv4 literals as domain strings.
-fn is_loopback(url: &Url) -> bool {
-    match url.host() {
-        Some(Host::Domain(name)) => {
-            name.eq_ignore_ascii_case("localhost")
-                || name.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
-        }
-        Some(Host::Ipv4(addr)) => IpAddr::V4(addr).is_loopback(),
-        Some(Host::Ipv6(addr)) => IpAddr::V6(addr).is_loopback(),
-        None => false,
+/// The host as an IP address, when it is a literal. `ldap:` is not a special scheme, so
+/// `url` leaves IPv4 literals as domain strings. Host names are resolved by ldap3 when
+/// connecting and are not filtered (admin-configured).
+fn host_ip(url: &Url) -> Option<IpAddr> {
+    match url.host()? {
+        Host::Domain(name) => name.parse().ok(),
+        Host::Ipv4(addr) => Some(IpAddr::V4(addr)),
+        Host::Ipv6(addr) => Some(IpAddr::V6(addr)),
     }
+}
+
+fn is_loopback(url: &Url) -> bool {
+    let named = url
+        .host_str()
+        .is_some_and(|h| h.eq_ignore_ascii_case("localhost"));
+    named || host_ip(url).is_some_and(|ip| ip.is_loopback())
 }
 
 pub(crate) fn dn(field: &'static str, raw: &str) -> Result<String, DirectoryError> {
@@ -136,25 +150,19 @@ pub(crate) fn group_filter(raw: Option<&str>) -> Result<Option<String>, Director
     plain("group_filter", value, MAX_FILTER_LEN).map(Some)
 }
 
-/// An attribute description as RFC 4512 names it: a name (`[A-Za-z][A-Za-z0-9-]*`) or a
-/// numeric OID.
+/// An attribute name as RFC 4512 spells one (`[A-Za-z][A-Za-z0-9-]*`). Numeric OIDs are
+/// refused: servers name attributes in results, so an OID would never match an entry.
 fn is_attr(value: &str) -> bool {
-    let name = value.starts_with(|c: char| c.is_ascii_alphabetic())
-        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-    let oid = value.split('.').all(|n| {
-        !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) && (n == "0" || !n.starts_with('0'))
-    });
-    value.len() <= MAX_ATTR_LEN && (name || oid)
+    value.len() <= MAX_ATTR_LEN
+        && value.starts_with(|c: char| c.is_ascii_alphabetic())
+        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 fn attr(field: &'static str, value: &str) -> Result<String, DirectoryError> {
     if is_attr(value) {
         Ok(value.to_owned())
     } else {
-        Err(invalid(
-            field,
-            "must be an attribute name such as uid, or a numeric OID",
-        ))
+        Err(invalid(field, "must be an attribute name such as uid"))
     }
 }
 
@@ -214,13 +222,7 @@ mod tests {
 
     #[test]
     fn attribute_names_follow_rfc_4512() {
-        for ok in [
-            "uid",
-            "sAMAccountName",
-            "x-custom-1",
-            "2.5.4.3",
-            "0.9.2342.19200300.100.1.1",
-        ] {
+        for ok in ["uid", "sAMAccountName", "x-custom-1"] {
             assert!(is_attr(ok), "{ok}");
         }
         for bad in [
@@ -228,8 +230,7 @@ mod tests {
             "1uid",
             "u id",
             "uid;binary",
-            "01.2",
-            "2..5",
+            "2.5.4.3",
             "uid*",
             &"a".repeat(65),
         ] {
@@ -246,5 +247,8 @@ mod tests {
         assert!(url("ldap://127.0.0.1:3389", false).is_ok());
         assert!(url("ldap://10.0.0.1", false).is_err());
         assert!(url("ldap://localhost.example.org", false).is_err());
+        assert!(url("ldaps://100.100.100.200", false).is_err());
+        assert!(url("ldap://[::1]:389", true).is_err());
+        assert!(url("ldaps://10.0.0.1", false).is_ok());
     }
 }
