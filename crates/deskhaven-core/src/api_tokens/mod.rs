@@ -15,8 +15,10 @@
 //! - Tokens are looked up by hash on every use (no cache): their endpoints are rare, and a
 //!   revocation therefore takes effect on the next request.
 //!
-//! Creation, listing and revocation are the console's (M3-12), which also audits them.
+//! Creation, listing and revocation are the console's (M3-12): the `*_guarded` operations
+//! and [`ApiTokenService::page`] (in `admin`), audited in the write's own transaction.
 
+mod admin;
 mod authenticate;
 mod error;
 mod scope;
@@ -34,17 +36,26 @@ use sea_orm::{
     EntityTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
+pub use admin::{
+    ApiTokenEntry, ApiTokenQuery, ApiTokenSort, ApiTokenSortField, TokenCreator, TokenTarget,
+};
 pub use authenticate::ApiTokenPrincipal;
 pub use error::ApiTokenError;
 pub use scope::Scope;
 pub use secret::{API_TOKEN_PREFIX, ApiTokenSecret, DISPLAY_PREFIX_LEN};
 
 use crate::clock::SharedClock;
+use crate::console_audit::TxGuard;
 pub use crate::sessions::TOUCH_INTERVAL;
 use crate::text;
 
 /// Longest token name, in characters.
 pub const NAME_MAX_LEN: usize = 64;
+
+/// The expiry instant for a unix-millisecond count from the wire; `None` when out of range.
+pub fn expiry_from_millis(ms: i64) -> Option<TimestampMs> {
+    time::from_millis(ms)
+}
 
 /// Sets `revoked_at` on every unrevoked token `user_id` created. For account changes that
 /// take the creator's authority away (disable, demotion to `user`), in their own write
@@ -126,13 +137,32 @@ impl ApiTokenService {
         &self,
         new: NewApiToken,
     ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
+        self.create_in_tx(new, TxGuard::none()).await
+    }
+
+    /// [`create`](Self::create) with `guard` deciding on the new token (no `before`) and
+    /// recording the audit row in the same transaction.
+    pub async fn create_guarded(
+        &self,
+        new: NewApiToken,
+        guard: TxGuard<TokenTarget>,
+    ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
+        self.create_in_tx(new, guard).await
+    }
+
+    async fn create_in_tx(
+        &self,
+        new: NewApiToken,
+        guard: TxGuard<TokenTarget>,
+    ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
         let now = self.now()?;
         let name = validate(&new, now)?;
         let secret = ApiTokenSecret::generate().map_err(ApiTokenError::Random)?;
         let tx = begin_write(&self.db).await?;
-        if let Some(creator) = new.created_by {
-            ensure_creator(&tx, creator).await?;
-        }
+        let creator_role = match new.created_by {
+            Some(creator) => Some(ensure_creator(&tx, creator).await?),
+            None => None,
+        };
         let row = api_token::ActiveModel {
             id: NotSet,
             name: Set(name),
@@ -145,9 +175,14 @@ impl ApiTokenService {
             last_used_at: Set(None),
             revoked_at: Set(None),
         };
-        let stored = row.insert(&tx).await.map_err(creator_missing)?;
+        let stored: ApiToken = row.insert(&tx).await.map_err(creator_missing)?.into();
+        let target = TokenTarget {
+            token: stored.clone(),
+            creator_role,
+        };
+        guard.check(&tx, None, Some(&target)).await?;
         tx.commit().await?;
-        Ok((stored.into(), secret))
+        Ok((stored, secret))
     }
 
     /// Every token, revoked and expired ones included, oldest first.
@@ -208,14 +243,17 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
 /// The creator exists and is an active administrator, and stays so until `tx` ends: the
 /// key-share lock makes a concurrent disable or demotion (which locks the account row for
 /// update and revokes its tokens) wait for this token, so the revocation sees it.
-async fn ensure_creator(tx: &DatabaseTransaction, creator: i64) -> Result<(), ApiTokenError> {
+async fn ensure_creator(
+    tx: &DatabaseTransaction,
+    creator: i64,
+) -> Result<user::Role, ApiTokenError> {
     let found = user::Entity::find_by_id(creator)
         .lock(LockType::KeyShare)
         .one(tx)
         .await?;
     let user = found.ok_or(ApiTokenError::CreatorNotFound)?;
     match authenticate::is_active_admin(&user) {
-        true => Ok(()),
+        true => Ok(user.role),
         false => Err(ApiTokenError::CreatorInactive),
     }
 }

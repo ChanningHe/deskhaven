@@ -497,6 +497,64 @@
       }
     }
   },
+  "tokens": {
+    "search": "按名称搜索令牌",
+    "system": "系统",
+    "neverExpires": "永不",
+    "neverUsed": "从未使用",
+    "columns": {
+      "name": "名称",
+      "prefix": "令牌",
+      "scopes": "权限范围",
+      "createdBy": "创建者",
+      "createdAt": "创建时间",
+      "expires": "过期时间",
+      "lastUsed": "最近使用",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "statuses": {
+      "active": "有效",
+      "revoked": "已吊销",
+      "expired": "已过期"
+    },
+    "scopes": {
+      "deploy": "注册设备（rustdesk --deploy）",
+      "assign": "把设备分配给用户和组（rustdesk --assign）",
+      "adminRead": "通过管理 API 读取数据",
+      "adminWrite": "通过管理 API 修改数据"
+    },
+    "fields": {
+      "name": "名称",
+      "namePlaceholder": "例如：部署脚本",
+      "scopes": "权限范围",
+      "expiry": "有效期"
+    },
+    "expiry": {
+      "30": "30 天后过期",
+      "90": "90 天后过期",
+      "365": "1 年后过期",
+      "never": "永不过期",
+      "neverWarning": "永不过期的令牌一旦泄露，只要它存在就一直有效。建议设置有效期并定期轮换。"
+    },
+    "create": {
+      "action": "新建令牌",
+      "title": "新建 API 令牌",
+      "submit": "创建令牌"
+    },
+    "reveal": {
+      "title": "令牌「{{name}}」",
+      "description": "令牌以你的权限行事。把它用作 rustdesk --deploy 或 --assign 的 `--token`，或用于脚本。"
+    },
+    "revoke": {
+      "action": "吊销",
+      "row": "吊销令牌 {{name}}",
+      "ownerOnly": "所有者的令牌和系统令牌只能由所有者吊销。",
+      "title": "吊销此令牌？",
+      "description": "{{name}} 在下次使用时即失效。此操作无法撤销，需要时请创建新令牌替换。",
+      "confirm": "吊销令牌"
+    }
+  },
   "roles": {
     "owner": "所有者",
     "admin": "管理员",

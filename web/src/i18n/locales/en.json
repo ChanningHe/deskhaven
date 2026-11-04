@@ -497,6 +497,64 @@
       }
     }
   },
+  "tokens": {
+    "search": "Search tokens by name",
+    "system": "System",
+    "neverExpires": "Never",
+    "neverUsed": "Never used",
+    "columns": {
+      "name": "Name",
+      "prefix": "Token",
+      "scopes": "Scopes",
+      "createdBy": "Created by",
+      "createdAt": "Created",
+      "expires": "Expires",
+      "lastUsed": "Last used",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "statuses": {
+      "active": "Active",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "scopes": {
+      "deploy": "Register devices (rustdesk --deploy)",
+      "assign": "Assign devices to users and groups (rustdesk --assign)",
+      "adminRead": "Read through the management API",
+      "adminWrite": "Change data through the management API"
+    },
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "e.g. Deployment script",
+      "scopes": "Scopes",
+      "expiry": "Expires"
+    },
+    "expiry": {
+      "30": "After 30 days",
+      "90": "After 90 days",
+      "365": "After 1 year",
+      "never": "Never",
+      "neverWarning": "A token that never expires stays valid for as long as it exists if it leaks. Prefer an expiry and rotate the token."
+    },
+    "create": {
+      "action": "New token",
+      "title": "New API token",
+      "submit": "Create token"
+    },
+    "reveal": {
+      "title": "Token \"{{name}}\"",
+      "description": "The token acts with your authority. Use it as `--token` for rustdesk --deploy or --assign, or in scripts."
+    },
+    "revoke": {
+      "action": "Revoke",
+      "row": "Revoke token {{name}}",
+      "ownerOnly": "Only an owner can revoke an owner's tokens and system tokens.",
+      "title": "Revoke this token?",
+      "description": "{{name}} stops working on its next use. This cannot be undone; create a new token to replace it.",
+      "confirm": "Revoke token"
+    }
+  },
   "roles": {
     "owner": "Owner",
     "admin": "Admin",

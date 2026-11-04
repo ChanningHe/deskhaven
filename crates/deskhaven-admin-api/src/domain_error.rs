@@ -1,6 +1,7 @@
 //! Core service errors -> enveloped admin API errors. Messages are fixed English text;
 //! `details` carries only field names and policy reasons, never input values.
 
+use deskhaven_core::api_tokens::ApiTokenError;
 use deskhaven_core::console_audit::Refused;
 use deskhaven_core::devices::DeviceError;
 use deskhaven_core::groups::GroupError;
@@ -105,6 +106,20 @@ impl From<DeviceError> for AdminApiError {
             | DeviceError::AddressBook(_)
             | DeviceError::Aborted
             | DeviceError::Database(_)) => Self::internal(err),
+        }
+    }
+}
+
+impl From<ApiTokenError> for AdminApiError {
+    fn from(err: ApiTokenError) -> Self {
+        match err {
+            ApiTokenError::Invalid { field, reason } => invalid_field(field, reason),
+            // The creator is the signed-in actor: gone, disabled or demoted since the
+            // session was read. A request error, not the 401 of the token-use path (the
+            // console treats 401 as logged out).
+            ApiTokenError::CreatorInactive | ApiTokenError::CreatorNotFound => Self::forbidden(),
+            ApiTokenError::Refused(r) => refused(r),
+            other => Self::internal(other),
         }
     }
 }
