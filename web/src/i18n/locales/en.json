@@ -505,7 +505,8 @@
       "email": "Email",
       "verified": "Verified",
       "unverified": "Unverified",
-      "emailChangeHint": "A new email address is marked unverified until an administrator verifies it again.",
+      "emailAdminHint": "Your email can only be changed by an administrator. Ask one if it needs updating.",
+      "noEmail": "Not set",
       "save": "Save profile"
     },
     "password": {
@@ -533,10 +534,11 @@
       "enrolTitle": "Enable two-factor authentication",
       "enrolDescription": "Scan the QR code with an authenticator app, then enter your current password and the code the app shows.",
       "disableTitle": "Turn off two-factor authentication",
-      "disableDescription": "Signing in will need only your password, and the recovery codes stop working. Enter your current password to confirm.",
+      "disableDescription": "Signing in will need only your password, the recovery codes stop working and your other sessions are signed out. Enter your current password and a code from your authenticator app (or a recovery code) to confirm.",
+      "proofCode": "Authenticator or recovery code",
       "disableSubmit": "Turn off",
       "regenerateTitle": "Regenerate recovery codes",
-      "regenerateDescription": "All old recovery codes stop working. Enter your current password to confirm.",
+      "regenerateDescription": "All old recovery codes stop working. Enter your current password and a code from your authenticator app (or a recovery code) to confirm.",
       "regenerateSubmit": "Regenerate"
     },
     "sessions": {
@@ -602,6 +604,7 @@
         "fullControl": "Full control"
       },
       "adminManaged": "Managed by administrators",
+      "truncated": "Showing {{shown}} of {{total}} shared address books.",
       "editInClient": "Edit address book entries in the client."
     }
   },

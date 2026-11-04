@@ -126,8 +126,7 @@ async fn my_address_books_are_the_personal_book_and_the_shared_ones_with_my_rule
         let mine = h.get(BOOKS, &alice).await;
 
         assert_eq!(mine.status, 200, "{b}: {:?}", mine.body);
-        let seen: Vec<(String, String, i64)> = mine
-            .body
+        let seen: Vec<(String, String, i64)> = mine.body["items"]
             .as_array()
             .unwrap()
             .iter()
@@ -150,7 +149,8 @@ async fn my_address_books_are_the_personal_book_and_the_shared_ones_with_my_rule
             ],
             "{b}"
         );
-        let readonly = &mine.body[2];
+        assert_eq!(mine.body["shared_total"], 2, "{b}");
+        let readonly = &mine.body["items"][2];
         assert_eq!(readonly["owner"], "bob", "{b}");
         assert_eq!(readonly["guid"], shared.guid, "{b}");
         assert!(!mine.body.to_string().contains("bob-private"), "{b}");
@@ -170,7 +170,11 @@ fn routes() -> Vec<Route> {
     vec![
         route(Method::GET, ACCOUNT, None),
         route(Method::PATCH, ME, Some(json!({ "display_name": "x" }))),
-        route(Method::POST, DISABLE, password()),
+        route(
+            Method::POST,
+            DISABLE,
+            Some(json!({ "current_password": "x", "code": "123456" })),
+        ),
         route(Method::POST, RECOVERY, password()),
         route(Method::GET, SESSIONS, None),
         route(Method::DELETE, "/admin/api/v1/me/sessions/1", None),

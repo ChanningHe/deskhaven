@@ -119,8 +119,9 @@ export function TwoFactorCard({ account }: { account: MyAccount }) {
         title={t('me.tfa.disableTitle')}
         description={t('me.tfa.disableDescription')}
         submitLabel={t('me.tfa.disableSubmit')}
-        onSubmit={async (currentPassword) => {
-          const me = await disable.mutateAsync({ data: { current_password: currentPassword } })
+        onSubmit={async (currentPassword, code) => {
+          const data = { current_password: currentPassword, code }
+          const me = await disable.mutateAsync({ data })
           await refreshAccount(queryClient, me)
         }}
       />
@@ -132,8 +133,8 @@ export function TwoFactorCard({ account }: { account: MyAccount }) {
         title={t('me.tfa.regenerateTitle')}
         description={t('me.tfa.regenerateDescription')}
         submitLabel={t('me.tfa.regenerateSubmit')}
-        onSubmit={async (currentPassword) => {
-          await regenerate.mutateAsync({ data: { current_password: currentPassword } })
+        onSubmit={async (currentPassword, code) => {
+          await regenerate.mutateAsync({ data: { current_password: currentPassword, code } })
           await refreshAccount(queryClient)
         }}
       />

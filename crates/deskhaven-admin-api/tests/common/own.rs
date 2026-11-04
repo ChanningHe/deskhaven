@@ -10,7 +10,11 @@ use axum::body::to_bytes;
 use axum::http::{Method, StatusCode};
 use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::tfa::totp::{self, TotpSecret};
+use deskhaven_core::users::Role;
+use deskhaven_db::entity::user::{self, AuthSource};
 use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
+use sea_orm::ActiveModelTrait;
+use sea_orm::ActiveValue::Set;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -34,6 +38,30 @@ pub struct Enrolled {
     pub recovery: Vec<String>,
     /// The console session the confirmation handed out (the old one is rotated away).
     pub console: Console,
+}
+
+impl Enrolled {
+    /// A code of the step after the current one: inside the accepted window and after the
+    /// step the enrolment recorded. Only one such code can be spent.
+    pub fn next_code(&self) -> String {
+        totp::code_at_step(&self.secret, totp::step_at(SystemClock.now_ms()) + 1)
+    }
+}
+
+/// Signs `username` in with its password, then turns the account into a `source` account
+/// (no local password) and drops the cached session principal.
+pub async fn external_console(h: &Harness, username: &str, source: AuthSource) -> Console {
+    let id = h.create_user(username, Role::User).await;
+    let console = h.signed_in(username).await;
+    let row = user::ActiveModel {
+        id: Set(id),
+        auth_source: Set(source),
+        password_hash: Set(None),
+        ..Default::default()
+    };
+    row.update(&h.state.db).await.unwrap();
+    h.state.sessions.cache().flush();
+    console
 }
 
 impl Harness {
@@ -67,11 +95,17 @@ impl Harness {
 
     /// Enables TOTP through the self-service endpoints (begin, then confirm).
     pub async fn enrol_through_console(&self, console: &Console) -> Enrolled {
+        self.enrol_with_password(console, PASSWORD).await
+    }
+
+    /// [`enrol_through_console`](Self::enrol_through_console) for an account whose current
+    /// password is `password` (a directory account's differs).
+    pub async fn enrol_with_password(&self, console: &Console, password: &str) -> Enrolled {
         let begun = self.post(ENROL, Some(console), json!({})).await;
         assert_eq!(begun.status, 200, "{:?}", begun.body);
         let secret = TotpSecret::from_base32(begun.body["secret"].as_str().unwrap()).unwrap();
         let code = totp::code_at(&secret, SystemClock.now_ms());
-        let body = json!({ "current_password": PASSWORD, "code": code });
+        let body = json!({ "current_password": password, "code": code });
         let done = self.post(CONFIRM, Some(console), body).await;
         assert_eq!(done.status, 200, "{:?}", done.body);
         let recovery = done.body["recovery_codes"].as_array().unwrap();

@@ -19,7 +19,7 @@ use utoipa_axum::routes;
 
 use crate::routes::{AdminRoutes, RouteError};
 
-pub use address_books::{BookKindView, MyAddressBook};
+pub use address_books::{BookKindView, MyAddressBook, MyAddressBooks};
 pub use devices::MyDevice;
 pub use sessions::{MySession, MySessionsRevoked};
 

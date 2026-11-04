@@ -141,9 +141,39 @@ impl TfaService {
         user_id: i64,
         guard: TxGuard<User>,
     ) -> Result<(), TfaError> {
+        self.disable_checked(user_id, None, guard).await
+    }
+
+    /// Turns TOTP off for its owner, who proves possession of the factor: `code` is a
+    /// current TOTP code or an unused recovery code, spent in the same transaction as the
+    /// removal (a wrong one changes nothing: [`TfaError::InvalidCode`]).
+    /// [`TfaError::NotEnabled`] while TOTP is off.
+    pub async fn disable_verified(
+        &self,
+        user_id: i64,
+        code: &str,
+        guard: TxGuard<User>,
+    ) -> Result<(), TfaError> {
+        self.disable_checked(user_id, Some(code), guard).await
+    }
+
+    async fn disable_checked(
+        &self,
+        user_id: i64,
+        code: Option<&str>,
+        guard: TxGuard<User>,
+    ) -> Result<(), TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
         let current = locked_user(&txn, user_id).await?;
+        if let Some(code) = code {
+            if current.totp_enabled_at.is_none() {
+                return Err(TfaError::NotEnabled);
+            }
+            if !inner.spend_code(&txn, &current, code).await? {
+                return Err(TfaError::InvalidCode);
+            }
+        }
         let cleared = user::Model {
             totp_secret_enc: None,
             totp_enabled_at: None,
@@ -169,22 +199,26 @@ impl TfaService {
 
     /// Replaces every recovery code (used or not) with fresh ones, returned once.
     pub async fn regenerate_recovery_codes(&self, user_id: i64) -> Result<RecoveryCodes, TfaError> {
-        self.regenerate(user_id, None).await
+        self.regenerate(user_id, None, None).await
     }
 
-    /// [`regenerate_recovery_codes`](Self::regenerate_recovery_codes), recording `audit` in
-    /// its transaction.
-    pub async fn regenerate_recovery_codes_audited(
+    /// [`regenerate_recovery_codes`](Self::regenerate_recovery_codes) for the owner, who
+    /// proves possession of the factor: `code` is a current TOTP code or an unused recovery
+    /// code, spent in the same transaction (a wrong one changes nothing:
+    /// [`TfaError::InvalidCode`]); `audit` is recorded there too.
+    pub async fn regenerate_recovery_codes_verified(
         &self,
         user_id: i64,
+        code: &str,
         audit: &NewConsoleAudit,
     ) -> Result<RecoveryCodes, TfaError> {
-        self.regenerate(user_id, Some(audit)).await
+        self.regenerate(user_id, Some(code), Some(audit)).await
     }
 
     async fn regenerate(
         &self,
         user_id: i64,
+        code: Option<&str>,
         audit: Option<&NewConsoleAudit>,
     ) -> Result<RecoveryCodes, TfaError> {
         let inner = &self.inner;
@@ -192,6 +226,11 @@ impl TfaService {
         let user = locked_user(&txn, user_id).await?;
         if user.totp_enabled_at.is_none() {
             return Err(TfaError::NotEnabled);
+        }
+        if let Some(code) = code {
+            if !inner.spend_code(&txn, &user, code).await? {
+                return Err(TfaError::InvalidCode);
+            }
         }
         let codes = replace_recovery_codes(&txn, inner, user_id).await?;
         record(&txn, inner, audit).await?;

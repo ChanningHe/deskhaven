@@ -505,7 +505,8 @@
       "email": "邮箱",
       "verified": "已验证",
       "unverified": "未验证",
-      "emailChangeHint": "新的邮箱地址将标记为未验证，需由管理员重新验证。",
+      "emailAdminHint": "邮箱只能由管理员修改，如需更换请联系管理员。",
+      "noEmail": "未设置",
       "save": "保存资料"
     },
     "password": {
@@ -533,10 +534,11 @@
       "enrolTitle": "启用两步验证",
       "enrolDescription": "用验证器应用扫描二维码，再输入当前密码和应用显示的验证码。",
       "disableTitle": "关闭两步验证",
-      "disableDescription": "关闭后登录只需密码，恢复码也会失效。请输入当前密码确认。",
+      "disableDescription": "关闭后登录只需密码，恢复码也会失效，你的其他会话将被注销。请输入当前密码和验证器应用的验证码（或一个恢复码）确认。",
+      "proofCode": "验证码或恢复码",
       "disableSubmit": "确认关闭",
       "regenerateTitle": "重新生成恢复码",
-      "regenerateDescription": "旧的恢复码将全部失效。请输入当前密码确认。",
+      "regenerateDescription": "旧的恢复码将全部失效。请输入当前密码和验证器应用的验证码（或一个恢复码）确认。",
       "regenerateSubmit": "重新生成"
     },
     "sessions": {
@@ -602,6 +604,7 @@
         "fullControl": "完全控制"
       },
       "adminManaged": "由管理员管理",
+      "truncated": "仅显示 {{shown}} / {{total}} 个共享地址簿。",
       "editInClient": "地址簿内容请在客户端中编辑。"
     }
   },

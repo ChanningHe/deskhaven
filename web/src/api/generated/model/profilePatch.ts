@@ -4,17 +4,9 @@
  */
 
 /**
- * Changes to the user's own profile; absent fields stay as they are.
+ * The user's own profile edit.
  */
 export interface ProfilePatch {
-  /**
-   * Blank: the username.
-   * @nullable
-   */
-  display_name?: string | null
-  /**
-   * An empty string removes the address. A new address is unverified.
-   * @nullable
-   */
-  email?: string | null
+  /** Blank: the username. */
+  display_name: string
 }

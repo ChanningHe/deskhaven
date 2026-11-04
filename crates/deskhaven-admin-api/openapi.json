@@ -5827,7 +5827,7 @@
         "tags": [
           "me"
         ],
-        "summary": "Changes the signed-in user's display name and email.",
+        "summary": "Changes the signed-in user's display name.",
         "operationId": "update_my_profile",
         "parameters": [
           {
@@ -5881,18 +5881,8 @@
               }
             }
           },
-          "409": {
-            "description": "The email belongs to another account (`conflict`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
           "422": {
-            "description": "Nothing to change, or an invalid field (`validation_failed`)",
+            "description": "An invalid or unknown field (`validation_failed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5992,10 +5982,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MyAddressBook"
-                  }
+                  "$ref": "#/components/schemas/MyAddressBooks"
                 }
               }
             }
@@ -6467,7 +6454,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Reauthenticate"
+                "$ref": "#/components/schemas/TotpProof"
               }
             }
           },
@@ -6475,7 +6462,7 @@
         },
         "responses": {
           "200": {
-            "description": "Off",
+            "description": "Off; the user's other sessions are revoked",
             "content": {
               "application/json": {
                 "schema": {
@@ -6505,7 +6492,7 @@
             }
           },
           "409": {
-            "description": "Not enabled (`conflict`), required by `auth.tfa.enforce` (`tfa_enforced`), or an OIDC account (`not_local_account`)",
+            "description": "Not enabled (`conflict`), required by `auth.tfa.enforce` (`tfa_enforced`), or an OIDC account without TOTP (`not_local_account`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6515,7 +6502,7 @@
             }
           },
           "422": {
-            "description": "Wrong current password (`wrong_password`)",
+            "description": "Wrong current password (`wrong_password`), wrong code (`invalid_code`), or a missing password (`validation_failed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6535,7 +6522,7 @@
             }
           },
           "503": {
-            "description": "Password hashing saturated (`unavailable`)",
+            "description": "Password hashing saturated or directory unreachable (`unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6764,7 +6751,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Reauthenticate"
+                "$ref": "#/components/schemas/TotpProof"
               }
             }
           },
@@ -6802,7 +6789,7 @@
             }
           },
           "409": {
-            "description": "TOTP is not enabled (`conflict`), or an OIDC account (`not_local_account`)",
+            "description": "TOTP is not enabled (`conflict`), or an OIDC account without TOTP (`not_local_account`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6812,7 +6799,7 @@
             }
           },
           "422": {
-            "description": "Wrong current password (`wrong_password`)",
+            "description": "Wrong current password (`wrong_password`), wrong code (`invalid_code`), or a missing password (`validation_failed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6832,7 +6819,7 @@
             }
           },
           "503": {
-            "description": "Password hashing saturated (`unavailable`)",
+            "description": "Password hashing saturated or directory unreachable (`unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -12216,6 +12203,29 @@
           }
         }
       },
+      "MyAddressBooks": {
+        "type": "object",
+        "description": "The user's address books.",
+        "required": [
+          "items",
+          "shared_total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyAddressBook"
+            },
+            "description": "The personal book first, then the shared ones by name (at most\n[`MAX_SHARED_PAGES`] pages of them)."
+          },
+          "shared_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many shared books the user can reach: more than the shared books in `items`\nwhen the list was capped.",
+            "minimum": 0
+          }
+        }
+      },
       "MyDevice": {
         "type": "object",
         "description": "A device of the user. Everything but the id and the status is what the device reported\nabout itself. Carries neither the uuid, the key nor the address.",
@@ -14606,21 +14616,14 @@
       },
       "ProfilePatch": {
         "type": "object",
-        "description": "Changes to the user's own profile; absent fields stay as they are.",
+        "description": "The user's own profile edit.",
+        "required": [
+          "display_name"
+        ],
         "properties": {
           "display_name": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "description": "Blank: the username."
-          },
-          "email": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "An empty string removes the address. A new address is unverified."
           }
         },
         "additionalProperties": false
@@ -14643,20 +14646,6 @@
             "description": "Side length in modules, quiet zone included (the SVG `viewBox` is `0 0 size size`)."
           }
         }
-      },
-      "Reauthenticate": {
-        "type": "object",
-        "description": "Re-authentication: the account's current password. Never logged.",
-        "required": [
-          "current_password"
-        ],
-        "properties": {
-          "current_password": {
-            "type": "string",
-            "format": "password"
-          }
-        },
-        "additionalProperties": false
       },
       "RecoveryCodesIssued": {
         "type": "object",
@@ -15587,6 +15576,28 @@
           "username": {
             "type": "string",
             "description": "The username the password step was for."
+          }
+        },
+        "additionalProperties": false
+      },
+      "TotpProof": {
+        "type": "object",
+        "description": "Proof of possession for a change of the second factor: the password and a code of the\nfactor. Never logged.",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "A current TOTP code, or an unused recovery code."
+          },
+          "current_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "description": "The account's current password; required except for accounts without a local\npassword (OIDC), which send the code alone."
           }
         },
         "additionalProperties": false

@@ -9,7 +9,7 @@ use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, Condition, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect};
 
 use super::challenge::{Bound, SecondStep};
-use super::{ChallengeError, Inner, TfaService, recovery, totp};
+use super::{ChallengeError, Inner, TfaError, TfaService, recovery, totp};
 use crate::auth::limiter::PendingSubject;
 use crate::users::{CredentialStamp, User};
 
@@ -82,6 +82,24 @@ impl TfaService {
 }
 
 impl Inner {
+    /// Spends `code` as a TOTP code or, when it is not six digits, as a recovery code.
+    pub(super) async fn spend_code(
+        &self,
+        txn: &DatabaseTransaction,
+        user: &user::Model,
+        code: &str,
+    ) -> Result<bool, TfaError> {
+        let spent = match SecondFactorMethod::of_code(code) {
+            SecondFactorMethod::Totp => self.spend_totp(txn, user, code).await,
+            SecondFactorMethod::Recovery => self.spend_recovery(txn, user.id, code).await,
+        };
+        spent.map_err(|err| match err {
+            ChallengeError::Internal(inner) => inner,
+            // The spend functions report only storage failures as errors.
+            ChallengeError::Invalid | ChallengeError::WrongCode => TfaError::InvalidCode,
+        })
+    }
+
     /// Accepts `code` for a step after `totp_last_step` and records that step; the
     /// conditional UPDATE keeps a concurrent request from using the same step.
     async fn spend_totp(

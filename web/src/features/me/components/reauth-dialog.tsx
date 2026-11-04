@@ -20,8 +20,8 @@ interface ReauthDialogProps {
   title: string
   description: string
   submitLabel: string
-  /** Performs the action with the typed password; a rejection is shown and keeps the dialog open. */
-  onSubmit: (currentPassword: string) => Promise<unknown>
+  /** Performs the action with the typed password and code; a rejection is shown and keeps the dialog open. */
+  onSubmit: (currentPassword: string, code: string) => Promise<unknown>
 }
 
 // Rendered inside the popup, which unmounts on close: every opening starts empty.
@@ -32,6 +32,7 @@ function ReauthForm({
 }: Pick<ReauthDialogProps, 'submitLabel' | 'onSubmit'> & { onDone: () => void }) {
   const { t } = useTranslation()
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<unknown>(undefined)
 
@@ -43,11 +44,12 @@ function ReauthForm({
     setPending(true)
     setError(undefined)
     try {
-      await onSubmit(password)
+      await onSubmit(password, code.trim())
       onDone()
     } catch (caught) {
       setError(caught)
       setPassword('')
+      setCode('')
     } finally {
       setPending(false)
     }
@@ -64,6 +66,17 @@ function ReauthForm({
         value={password}
         onChange={(event) => {
           setPassword(event.target.value)
+        }}
+      />
+      <TextField
+        id="me-reauth-code"
+        label={t('me.tfa.proofCode')}
+        autoComplete="one-time-code"
+        spellCheck={false}
+        required
+        value={code}
+        onChange={(event) => {
+          setCode(event.target.value)
         }}
       />
       {error === undefined ? null : <ErrorAlert error={error} />}

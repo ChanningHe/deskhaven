@@ -64,15 +64,17 @@ pub use stack_error::render_stack_error;
 pub use users::{MAX_CSV_BYTES, MAX_IMPORT_ROWS};
 
 pub use account::{
-    MyAccount, PasswordChange, ProfilePatch, QrCode, Reauthenticate, RecoveryCodesIssued,
-    TotpConfirm, TotpEnabled, TotpEnrolment,
+    MyAccount, PasswordChange, ProfilePatch, QrCode, RecoveryCodesIssued, TotpConfirm, TotpEnabled,
+    TotpEnrolment, TotpProof,
 };
 pub use account_setup::SetupStep;
 pub use auth::{
     LoginRequest, LoginResponse, OIDC_BINDING_COOKIE, OidcCompleteRequest, OidcProvider, OidcStart,
     OidcStartRequest, TotpLoginRequest,
 };
-pub use mine::{BookKindView, MyAddressBook, MyDevice, MySession, MySessionsRevoked};
+pub use mine::{
+    BookKindView, MyAddressBook, MyAddressBooks, MyDevice, MySession, MySessionsRevoked,
+};
 pub use setup::{SetupRequest, SetupStatus};
 
 /// Every production admin API route. Fails when an operation declares no valid

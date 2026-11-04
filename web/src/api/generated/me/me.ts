@@ -24,17 +24,17 @@ import type {
   ListMyDevicesParams,
   Me,
   MyAccount,
-  MyAddressBook,
+  MyAddressBooks,
   MySession,
   MySessionsRevoked,
   PaginatedMyDevice,
   PasswordChange,
   ProfilePatch,
-  Reauthenticate,
   RecoveryCodesIssued,
   TotpConfirm,
   TotpEnabled,
   TotpEnrolment,
+  TotpProof,
 } from '../model'
 
 import { apiFetch } from '../../client'
@@ -173,7 +173,7 @@ export const getUpdateMyProfileUrl = () => {
 }
 
 /**
- * @summary Changes the signed-in user's display name and email.
+ * @summary Changes the signed-in user's display name.
  */
 export const updateMyProfile = async (
   profilePatch: ProfilePatch,
@@ -250,7 +250,7 @@ export type UpdateMyProfileMutationError = ErrorType<ErrorEnvelope>
 export type UpdateMyProfileMutationVariables = { data: ProfilePatch }
 
 /**
- * @summary Changes the signed-in user's display name and email.
+ * @summary Changes the signed-in user's display name.
  */
 export const useUpdateMyProfile = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {
@@ -393,8 +393,8 @@ export const getListMyAddressBooksUrl = () => {
  */
 export const listMyAddressBooks = async (
   options?: Parameters<typeof apiFetch>[1],
-): Promise<MyAddressBook[]> => {
-  return apiFetch<MyAddressBook[]>(getListMyAddressBooksUrl(), {
+): Promise<MyAddressBooks> => {
+  return apiFetch<MyAddressBooks>(getListMyAddressBooksUrl(), {
     ...options,
     method: 'GET',
   })
@@ -1015,7 +1015,7 @@ export const getDisableTotpUrl = () => {
  * @summary Turns the user's TOTP off.
  */
 export const disableTotp = async (
-  reauthenticate: Reauthenticate,
+  totpProof: TotpProof,
   options?: Parameters<typeof apiFetch>[1],
 ): Promise<Me> => {
   const getHeaders = (
@@ -1041,7 +1041,7 @@ export const disableTotp = async (
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(reauthenticate),
+    body: JSON.stringify(totpProof),
   })
 }
 
@@ -1084,9 +1084,9 @@ export const getDisableTotpMutationOptions = <
 }
 
 export type DisableTotpMutationResult = NonNullable<Awaited<ReturnType<typeof disableTotp>>>
-export type DisableTotpMutationBody = Reauthenticate
+export type DisableTotpMutationBody = TotpProof
 export type DisableTotpMutationError = ErrorType<ErrorEnvelope>
-export type DisableTotpMutationVariables = { data: Reauthenticate }
+export type DisableTotpMutationVariables = { data: TotpProof }
 
 /**
  * @summary Turns the user's TOTP off.
@@ -1290,7 +1290,7 @@ export const getRegenerateRecoveryCodesUrl = () => {
  * @summary Replaces the user's recovery codes.
  */
 export const regenerateRecoveryCodes = async (
-  reauthenticate: Reauthenticate,
+  totpProof: TotpProof,
   options?: Parameters<typeof apiFetch>[1],
 ): Promise<RecoveryCodesIssued> => {
   const getHeaders = (
@@ -1316,7 +1316,7 @@ export const regenerateRecoveryCodes = async (
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(reauthenticate),
+    body: JSON.stringify(totpProof),
   })
 }
 
@@ -1361,9 +1361,9 @@ export const getRegenerateRecoveryCodesMutationOptions = <
 export type RegenerateRecoveryCodesMutationResult = NonNullable<
   Awaited<ReturnType<typeof regenerateRecoveryCodes>>
 >
-export type RegenerateRecoveryCodesMutationBody = Reauthenticate
+export type RegenerateRecoveryCodesMutationBody = TotpProof
 export type RegenerateRecoveryCodesMutationError = ErrorType<ErrorEnvelope>
-export type RegenerateRecoveryCodesMutationVariables = { data: Reauthenticate }
+export type RegenerateRecoveryCodesMutationVariables = { data: TotpProof }
 
 /**
  * @summary Replaces the user's recovery codes.

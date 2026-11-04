@@ -18,7 +18,7 @@ function open(overrides: Parameters<typeof account>[0]) {
 }
 
 describe('My account: profile', () => {
-  it('shows the profile and sends only the field that changed', async () => {
+  it('shows the profile and saves the display name', async () => {
     let sent: unknown
     const { user: actor } = renderApp('/me', {
       me: USER_ME,
@@ -46,29 +46,26 @@ describe('My account: profile', () => {
     })
   })
 
-  it('says an edited address will be unverified, and never offers to verify it', async () => {
-    const { user: actor } = open({})
+  it('shows the email read-only and says an administrator changes it', async () => {
+    open({})
 
     const email = await screen.findByLabelText('邮箱')
-    await actor.clear(email)
-    await actor.type(email, 'new@example.test')
-
-    expect(screen.getByText(/需由管理员重新验证/)).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /验证/ })).not.toBeInTheDocument()
+    expect(email).toHaveValue('alice@example.test')
+    expect(email).toHaveAttribute('readonly')
+    expect(screen.getByText(/只能由管理员修改/)).toBeInTheDocument()
   })
 
-  it('shows a rejected address in the form', async () => {
+  it('shows a rejected name in the form', async () => {
     const { user: actor } = renderApp('/me', {
       me: USER_ME,
       api: {
         [`GET ${ACCOUNT_PATH}`]: { body: account() },
-        [`PATCH ${PROFILE_PATH}`]: { status: 409, body: errorEnvelope('conflict') },
+        [`PATCH ${PROFILE_PATH}`]: { status: 422, body: errorEnvelope('validation_failed') },
       },
     })
 
-    const email = await screen.findByLabelText('邮箱')
-    await actor.clear(email)
-    await actor.type(email, 'taken@example.test')
+    const name = await screen.findByLabelText('显示名称')
+    await actor.type(name, ' B')
     await actor.click(screen.getByRole('button', { name: '保存资料' }))
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
@@ -186,16 +183,22 @@ describe('My account: two-factor authentication', () => {
     await actor.click(screen.getByRole('button', { name: '关闭两步验证' }))
     const dialog = await screen.findByRole('dialog', { name: '关闭两步验证' })
     await actor.type(within(dialog).getByLabelText('当前密码'), 'nope')
+    await actor.type(within(dialog).getByLabelText('验证码或恢复码'), '123456')
     await actor.click(within(dialog).getByRole('button', { name: '确认关闭' }))
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument()
-    await actor.clear(within(dialog).getByLabelText('当前密码'))
+    // A failed attempt clears both secrets.
+    expect(within(dialog).getByLabelText('验证码或恢复码')).toHaveValue('')
     await actor.type(within(dialog).getByLabelText('当前密码'), 'right')
+    await actor.type(within(dialog).getByLabelText('验证码或恢复码'), ' abcd-efgh ')
     await actor.click(within(dialog).getByRole('button', { name: '确认关闭' }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
-    expect(sent).toEqual([{ current_password: 'nope' }, { current_password: 'right' }])
+    expect(sent).toEqual([
+      { current_password: 'nope', code: '123456' },
+      { current_password: 'right', code: 'abcd-efgh' },
+    ])
     expect(await screen.findByText('未启用')).toBeInTheDocument()
   })
 
@@ -208,12 +211,14 @@ describe('My account: two-factor authentication', () => {
   })
 
   it('regenerates the recovery codes after the password and shows them once', async () => {
+    let sent: unknown
     const { user: actor } = renderApp('/me', {
       me: USER_ME,
       api: {
         [`GET ${ACCOUNT_PATH}`]: { body: account({ totp_enabled: true, recovery_codes_left: 2 }) },
-        [`POST ${API}/me/totp/recovery-codes`]: {
-          body: { recovery_codes: ['new1-new1', 'new2-new2'] },
+        [`POST ${API}/me/totp/recovery-codes`]: ({ init }) => {
+          sent = JSON.parse(init.body as string)
+          return { body: { recovery_codes: ['new1-new1', 'new2-new2'] } }
         },
       },
     })
@@ -221,9 +226,11 @@ describe('My account: two-factor authentication', () => {
     await actor.click(await screen.findByRole('button', { name: '重新生成恢复码' }))
     const dialog = await screen.findByRole('dialog', { name: '重新生成恢复码' })
     await actor.type(within(dialog).getByLabelText('当前密码'), 'pw')
+    await actor.type(within(dialog).getByLabelText('验证码或恢复码'), '654321')
     await actor.click(within(dialog).getByRole('button', { name: '重新生成' }))
 
     const reveal = await screen.findByRole('dialog', { name: '恢复码' })
+    expect(sent).toEqual({ current_password: 'pw', code: '654321' })
     expect(within(reveal).getByRole('textbox')).toHaveValue('new1-new1\nnew2-new2')
   })
 

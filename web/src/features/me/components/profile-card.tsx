@@ -16,30 +16,24 @@ import { refreshAccount } from '../invalidate'
 import { Section } from './section'
 
 const NAME_MAX_LENGTH = 128
-const EMAIL_MAX_LENGTH = 254
 
-function fieldsOf(account: Pick<MyAccount, 'display_name' | 'email'>) {
-  return { display_name: account.display_name, email: account.email ?? '' }
-}
-
-/** Display name and email. An address that changes is unverified until an administrator vouches. */
+/**
+ * The display name is editable. The email is shown read-only: an administrator changes it
+ * (an address typed by its holder would be unverified yet reserve the real owner's).
+ */
 export function ProfileCard({ account }: { account: MyAccount }) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const { draft, changed, set, reset } = useRebasedDraft(fieldsOf(account))
+  const { draft, changed, set, reset } = useRebasedDraft({ display_name: account.display_name })
   const mutation = useUpdateMyProfile()
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    // Only what the user edited: an unrelated field must not write a stale value back.
-    const data: Partial<ReturnType<typeof fieldsOf>> = {
-      ...(changed.includes('display_name') ? { display_name: draft.display_name } : {}),
-      ...(changed.includes('email') ? { email: draft.email } : {}),
-    }
+    const data = { display_name: draft.display_name }
     const saved = await mutation.mutateAsync({ data }).catch(() => undefined)
     if (saved === undefined) return
-    reset(fieldsOf(saved), data)
+    reset({ display_name: saved.display_name }, data)
     await refreshAccount(queryClient, saved)
   }
 
@@ -67,16 +61,11 @@ export function ProfileCard({ account }: { account: MyAccount }) {
         <Input
           id={`${id}-email`}
           type="email"
-          maxLength={EMAIL_MAX_LENGTH}
-          value={draft.email}
-          autoComplete="email"
-          onChange={(e) => {
-            set({ email: e.target.value })
-          }}
+          readOnly
+          value={account.email ?? ''}
+          placeholder={t('me.profile.noEmail')}
         />
-        {changed.includes('email') ? (
-          <p className="text-xs text-muted-foreground">{t('me.profile.emailChangeHint')}</p>
-        ) : null}
+        <p className="text-xs text-muted-foreground">{t('me.profile.emailAdminHint')}</p>
         {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
         <Button
           type="submit"

@@ -35,7 +35,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::qr::{self, QrCode};
-use super::reauth::{MAX_PASSWORD_INPUT, not_local, user_error, with_current_password};
+use super::reauth::{
+    MAX_CODE_INPUT, MAX_PASSWORD_INPUT, not_local, user_error, with_current_password,
+};
 use crate::account_setup::{SetupStep, pending_step, setup_required};
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::auth::{user_agent, with_session};
@@ -43,9 +45,6 @@ use crate::me::Me;
 use crate::session::{Client, ConsoleUser};
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode, ValidJson};
-
-/// Longest accepted code input (characters).
-const MAX_CODE_INPUT: usize = 16;
 
 /// A pending enrolment, shown once.
 // Not `Debug`: it carries the seed.

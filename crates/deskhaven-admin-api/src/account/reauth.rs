@@ -20,6 +20,8 @@ use crate::{AdminApiError, ErrorCode};
 
 /// Longest accepted password input (characters; the policy maximum is 256).
 pub(super) const MAX_PASSWORD_INPUT: usize = 1024;
+/// Longest accepted code input (characters): a TOTP code or a recovery code.
+pub(super) const MAX_CODE_INPUT: usize = 16;
 
 /// Runs `verify` (which checks the current password of `username`'s account first) under
 /// the login throttle; see the module docs.
@@ -28,6 +30,37 @@ pub(super) async fn with_current_password<T>(
     client: ClientAddr,
     username: &str,
     verify: impl Future<Output = Result<T, UserError>>,
+) -> Result<T, AdminApiError> {
+    let checked = async { verify.await.map_err(password_failure) };
+    throttled(state, client, username, checked).await
+}
+
+/// A failed re-authentication step: whether it counts against the login throttle.
+pub(super) enum Failed {
+    /// A wrong secret (password or code): a counted failure.
+    Counted(AdminApiError),
+    /// Anything else (busy hasher, policy violation, server error): the attempt is refunded.
+    Refunded(AdminApiError),
+}
+
+/// The failure of a password check.
+pub(super) fn password_failure(err: UserError) -> Failed {
+    match err {
+        UserError::WrongPassword => Failed::Counted(AdminApiError::new(
+            ErrorCode::WrongPassword,
+            "the current password is wrong",
+        )),
+        other => Failed::Refunded(user_error(other)),
+    }
+}
+
+/// Runs `verify`, one or more re-authentication steps, as a single attempt of the login
+/// throttle: `pre_check`, then `on_success`, `on_failure` or `refund` by its outcome.
+pub(super) async fn throttled<T>(
+    state: &AppState,
+    client: ClientAddr,
+    username: &str,
+    verify: impl Future<Output = Result<T, Failed>>,
 ) -> Result<T, AdminApiError> {
     let throttle = &state.login_throttle;
     let attempt = throttle
@@ -41,18 +74,15 @@ pub(super) async fn with_current_password<T>(
             }
             Ok(value)
         }
-        Err(UserError::WrongPassword) => {
+        Err(Failed::Counted(err)) => {
             let _ = throttle.on_failure(attempt);
-            Err(AdminApiError::new(
-                ErrorCode::WrongPassword,
-                "the current password is wrong",
-            ))
+            Err(err)
         }
-        Err(err) => {
+        Err(Failed::Refunded(err)) => {
             if let Err(refund) = throttle.refund(attempt).await {
                 tracing::warn!(error = %refund, "cannot refund a re-authentication attempt");
             }
-            Err(user_error(err))
+            Err(err)
         }
     }
 }

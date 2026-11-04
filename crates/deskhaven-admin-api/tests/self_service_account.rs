@@ -1,26 +1,26 @@
-//! "My account" (M3-13), credentials and profile: the account view, the profile edit
-//! (an email change drops `email_verified`; a user cannot verify their own address), TOTP
-//! disable and recovery code regeneration (both re-authenticate; the first is refused when
-//! `auth.tfa.enforce` covers the user), and the acceptance flow: enrol through the console
-//! endpoints, then the client's `/api/login` asks for the code. Both backends.
+//! "My account" (M3-13), credentials and profile: the account view, the profile edit (the
+//! display name only: the email is not editable here), recovery code regeneration
+//! (re-authenticates), and the acceptance flow: enrol through the console endpoints, then
+//! the client's `/api/login` asks for the code. TOTP disable is in `self_service_totp`.
+//! Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
 
 use axum::http::Method;
+use common::own::external_console;
 use common::own::{
     ACCOUNT, DISABLE, ME, RECOVERY, client_code_step, client_login, client_password_step,
 };
-use common::{Console, Harness, PASSWORD, harness};
+use common::{PASSWORD, harness};
 use deskhaven_admin_api::AdminRoutes;
 use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::tfa::totp;
 use deskhaven_core::users::{ProfileUpdate, Role};
 use deskhaven_db::entity::console_audit;
-use deskhaven_db::entity::user::{self, AuthSource};
+use deskhaven_db::entity::user::AuthSource;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 
 async fn audit_rows(db: &TestDb, action: &str) -> Vec<console_audit::Model> {
@@ -29,22 +29,6 @@ async fn audit_rows(db: &TestDb, action: &str) -> Vec<console_audit::Model> {
         .all(&db.conn)
         .await
         .unwrap()
-}
-
-/// Signs `username` in with its password, then turns the account into a `source` account
-/// (no local password) and drops the cached session principal.
-async fn external_console(h: &Harness, username: &str, source: AuthSource) -> Console {
-    let id = h.user(username, Role::User).await;
-    let console = h.signed_in(username).await;
-    let row = user::ActiveModel {
-        id: Set(id),
-        auth_source: Set(source),
-        password_hash: Set(None),
-        ..Default::default()
-    };
-    row.update(&h.state.db).await.unwrap();
-    h.state.sessions.cache().flush();
-    console
 }
 
 #[tokio::test]
@@ -72,18 +56,16 @@ async fn the_account_view_states_what_the_account_may_do() {
 }
 
 #[tokio::test]
-async fn directory_and_sso_accounts_have_no_local_password() {
+async fn directory_and_sso_accounts_have_no_local_password_to_change_or_codes_to_regenerate() {
     each_migrated_backend(async |db: &TestDb| {
         let h = harness(db, AdminRoutes::new()).await;
         let ldap = external_console(&h, "lena", AuthSource::Ldap).await;
         let oidc = external_console(&h, "oscar", AuthSource::Oidc).await;
         let b = db.backend;
-        let body = json!({ "current_password": "x" });
+        let body = json!({ "current_password": "x", "code": "123456" });
 
         let ldap_view = h.get(ACCOUNT, &ldap).await;
         let oidc_view = h.get(ACCOUNT, &oidc).await;
-        let ldap_off = h.post(DISABLE, Some(&ldap), body.clone()).await;
-        let oidc_off = h.post(DISABLE, Some(&oidc), body.clone()).await;
         let oidc_codes = h.post(RECOVERY, Some(&oidc), body).await;
 
         assert_eq!(ldap_view.body["auth_source"], "ldap", "{b}");
@@ -94,32 +76,25 @@ async fn directory_and_sso_accounts_have_no_local_password() {
         );
         assert_eq!(oidc_view.body["can_change_password"], false, "{b}");
         assert_eq!(oidc_view.body["can_use_totp"], false, "{b}: OIDC is exempt");
-        assert_eq!(ldap_off.code(), "conflict", "{b}: nothing to disable");
-        assert_eq!(oidc_off.code(), "not_local_account", "{b}");
         assert_eq!(oidc_codes.code(), "not_local_account", "{b}");
     })
     .await;
 }
 
 #[tokio::test]
-async fn editing_the_profile_changes_the_session_users_row_and_never_verifies_the_email() {
+async fn the_profile_edits_the_display_name_of_the_session_user_only() {
     each_migrated_backend(async |db: &TestDb| {
         let h = harness(db, AdminRoutes::new()).await;
         let alice_id = h.user("alice", Role::User).await;
         let bob_id = h.user("bob", Role::User).await;
-        let verified = |email: &str| ProfileUpdate {
-            email: Some(Some(email.to_owned())),
+        let verified = ProfileUpdate {
+            email: Some(Some("alice@example.test".to_owned())),
             email_verified: Some(true),
             ..ProfileUpdate::default()
         };
         h.state
             .users
-            .update_profile(alice_id, verified("alice@example.test"))
-            .await
-            .unwrap();
-        h.state
-            .users
-            .update_profile(bob_id, verified("bob@example.test"))
+            .update_profile(alice_id, verified)
             .await
             .unwrap();
         let alice = h.signed_in("alice").await;
@@ -127,126 +102,39 @@ async fn editing_the_profile_changes_the_session_users_row_and_never_verifies_th
         let patch = |body: Value| h.as_console(Method::PATCH, ME, &alice, Some(body));
 
         let renamed = patch(json!({ "display_name": "Alice A." })).await;
-        let same_address = patch(json!({ "email": "ALICE@example.test" })).await;
-        let verified_after_rename = h.get(ACCOUNT, &alice).await.body["email_verified"].clone();
-        let moved = patch(json!({ "email": "alice@new.example.test" })).await;
+        // Saying the same again changes nothing: 200, and no second audit row.
+        let unchanged = patch(json!({ "display_name": " Alice A. " })).await;
         let account = h.get(ACCOUNT, &alice).await;
-        let taken = patch(json!({ "email": "bob@example.test" })).await;
-        let invalid = patch(json!({ "email": "not an address" })).await;
+        // The email is not editable here, and nothing else about the account is either.
+        let email = patch(json!({ "email": "alice@new.example.test" })).await;
+        let both = patch(json!({ "display_name": "x", "email": "" })).await;
         let self_verify = patch(json!({ "email_verified": true })).await;
         let promote = patch(json!({ "role": "owner" })).await;
         let foreign = patch(json!({ "id": bob_id, "display_name": "pwned" })).await;
         let empty = patch(json!({})).await;
-        let removed = patch(json!({ "email": "" })).await;
 
         assert_eq!(renamed.status, 200, "{b}: {:?}", renamed.body);
         assert_eq!(renamed.body["display_name"], "Alice A.", "{b}");
-        assert_eq!(same_address.status, 200, "{b}");
-        assert_eq!(verified_after_rename, true, "{b}");
-        assert_eq!(moved.status, 200, "{b}");
-        assert_eq!(account.body["email"], "alice@new.example.test", "{b}");
-        assert_eq!(account.body["email_verified"], false, "{b}: new address");
-        assert_eq!(taken.status, 409, "{b}: {:?}", taken.body);
-        assert_eq!(invalid.status, 422, "{b}");
-        for refused in [&self_verify, &promote, &foreign] {
+        assert_eq!(unchanged.status, 200, "{b}: {:?}", unchanged.body);
+        assert_eq!(unchanged.body["display_name"], "Alice A.", "{b}");
+        assert_eq!(account.body["email"], "alice@example.test", "{b}");
+        assert_eq!(account.body["email_verified"], true, "{b}");
+        for refused in [&email, &both, &self_verify, &promote, &foreign, &empty] {
             assert_eq!(refused.status, 422, "{b}: {:?}", refused.body);
         }
-        assert_eq!(empty.status, 422, "{b}");
-        assert_eq!(removed.status, 200, "{b}");
-        assert_eq!(removed.body["email"], Value::Null, "{b}");
         let bob = h.state.users.get(bob_id).await.unwrap();
         assert_eq!(bob.display_name, "bob", "{b}: another account is untouched");
-        assert!(bob.email_verified, "{b}");
         let alice_row = h.state.users.get(alice_id).await.unwrap();
         assert_eq!(alice_row.role, Role::User, "{b}");
+        assert_eq!(
+            alice_row.email.as_deref(),
+            Some("alice@example.test"),
+            "{b}"
+        );
         let rows = audit_rows(db, "user.profile_update").await;
-        assert_eq!(rows.len(), 4, "{b}: one per applied change");
-        assert!(rows.iter().all(|r| r.actor_id == Some(alice_id)), "{b}");
-        assert!(
-            rows.iter().all(|r| r.target_id == alice_id.to_string()),
-            "{b}"
-        );
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn disabling_totp_re_authenticates_and_is_refused_when_enforced() {
-    each_migrated_backend(async |db: &TestDb| {
-        let h = harness(db, AdminRoutes::new()).await;
-        let alice_id = h.user("alice", Role::User).await;
-        h.user("adam", Role::Admin).await;
-        let alice = h.signed_in("alice").await;
-        let enrolled = h.enrol_through_console(&alice).await;
-        let alice = enrolled.console;
-        let b = db.backend;
-        let again = |password: &str| {
-            h.post(
-                DISABLE,
-                Some(&alice),
-                json!({ "current_password": password }),
-            )
-        };
-
-        let wrong = again("nope").await;
-        assert_eq!(wrong.status, 422, "{b}: never 401");
-        assert_eq!(wrong.code(), "wrong_password", "{b}");
-        assert_eq!(
-            h.get(ACCOUNT, &alice).await.body["totp_enabled"],
-            true,
-            "{b}"
-        );
-
-        // `admins` does not cover a plain user.
-        h.set_setting("auth.tfa.enforce", json!("admins")).await;
-        let done = again(PASSWORD).await;
-        assert_eq!(done.status, 200, "{b}: {:?}", done.body);
-        assert_eq!(done.body["totp_enabled"], false, "{b}");
-        let rows = audit_rows(db, "user.totp_disable").await;
-        assert_eq!(rows.len(), 1, "{b}");
+        assert_eq!(rows.len(), 1, "{b}: one per applied change");
         assert_eq!(rows[0].actor_id, Some(alice_id), "{b}");
-        assert_eq!(h.get(ME, &alice).await.status, 200, "{b}: session kept");
-        assert_eq!(
-            h.login("alice", PASSWORD).await.body["status"],
-            "signed_in",
-            "{b}"
-        );
-
-        let not_enabled = again(PASSWORD).await;
-        assert_eq!(not_enabled.status, 409, "{b}");
-        assert_eq!(not_enabled.code(), "conflict", "{b}");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn enforcement_blocks_disabling_before_the_password_is_even_checked() {
-    each_migrated_backend(async |db: &TestDb| {
-        let h = harness(db, AdminRoutes::new()).await;
-        h.user("adam", Role::Admin).await;
-        h.user("alice", Role::User).await;
-        let adam = h.signed_in("adam").await;
-        let adam = h.enrol_through_console(&adam).await.console;
-        let alice = h.signed_in("alice").await;
-        let alice = h.enrol_through_console(&alice).await.console;
-        h.set_setting("auth.tfa.enforce", json!("admins")).await;
-        let b = db.backend;
-        let body = json!({ "current_password": PASSWORD });
-
-        let admin = h.post(DISABLE, Some(&adam), body.clone()).await;
-        let still = h.get(ACCOUNT, &adam).await;
-        h.set_setting("auth.tfa.enforce", json!("all")).await;
-        let user = h.post(DISABLE, Some(&alice), body).await;
-        let required = h.get(ACCOUNT, &alice).await;
-
-        assert_eq!(admin.status, 409, "{b}: {:?}", admin.body);
-        assert_eq!(admin.code(), "tfa_enforced", "{b}");
-        assert_eq!(still.body["totp_enabled"], true, "{b}");
-        assert_eq!(still.body["tfa_required"], true, "{b}");
-        assert_eq!(user.code(), "tfa_enforced", "{b}");
-        assert_eq!(required.body["tfa_required"], true, "{b}");
-        assert_eq!(required.body["totp_enabled"], true, "{b}");
-        assert!(audit_rows(db, "user.totp_disable").await.is_empty(), "{b}");
+        assert_eq!(rows[0].target_id, alice_id.to_string(), "{b}");
     })
     .await;
 }
@@ -257,35 +145,45 @@ async fn regenerating_recovery_codes_re_authenticates_and_replaces_every_code() 
         let h = harness(db, AdminRoutes::new()).await;
         let alice_id = h.user("alice", Role::User).await;
         let alice = h.signed_in("alice").await;
+        let proof =
+            |password: &str, code: &str| json!({ "current_password": password, "code": code });
         let early = h
-            .post(
-                RECOVERY,
-                Some(&alice),
-                json!({ "current_password": PASSWORD }),
-            )
+            .post(RECOVERY, Some(&alice), proof(PASSWORD, "123456"))
             .await;
         let enrolled = h.enrol_through_console(&alice).await;
-        let alice = enrolled.console;
+        let alice = enrolled.console.clone();
         let b = db.backend;
+        let code = enrolled.next_code();
 
-        let wrong = h
-            .post(
-                RECOVERY,
-                Some(&alice),
-                json!({ "current_password": "nope" }),
-            )
+        let wrong_password = h.post(RECOVERY, Some(&alice), proof("nope", &code)).await;
+        let wrong_code = h
+            .post(RECOVERY, Some(&alice), proof(PASSWORD, "000000"))
             .await;
-        let fresh = h
+        let password_only = h
             .post(
                 RECOVERY,
                 Some(&alice),
                 json!({ "current_password": PASSWORD }),
             )
             .await;
+        // The failures spent nothing: the same code still works, once.
+        let fresh = h.post(RECOVERY, Some(&alice), proof(PASSWORD, &code)).await;
+        let replayed = h.post(RECOVERY, Some(&alice), proof(PASSWORD, &code)).await;
 
         assert_eq!(early.status, 409, "{b}: nothing to regenerate");
-        assert_eq!(wrong.status, 422, "{b}");
-        assert_eq!(wrong.code(), "wrong_password", "{b}");
+        assert_eq!(wrong_password.status, 422, "{b}");
+        assert_eq!(wrong_password.code(), "wrong_password", "{b}");
+        assert_eq!(
+            wrong_code.code(),
+            "invalid_code",
+            "{b}: a password alone is not enough"
+        );
+        assert_eq!(password_only.code(), "validation_failed", "{b}");
+        assert_eq!(
+            replayed.code(),
+            "invalid_code",
+            "{b}: a spent step is not reusable"
+        );
         assert_eq!(fresh.status, 200, "{b}: {:?}", fresh.body);
         assert_eq!(fresh.headers["cache-control"], "no-store", "{b}");
         let codes: Vec<&str> = fresh.body["recovery_codes"]
@@ -348,7 +246,7 @@ async fn a_user_who_enrols_through_the_console_is_asked_for_the_code_by_the_clie
             .post(
                 DISABLE,
                 Some(&enrolled.console),
-                json!({ "current_password": PASSWORD }),
+                json!({ "current_password": PASSWORD, "code": enrolled.recovery[0] }),
             )
             .await;
         let after = client_login(&h, client_password_step("alice", PASSWORD)).await;

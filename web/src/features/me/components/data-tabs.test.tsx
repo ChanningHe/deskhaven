@@ -56,11 +56,14 @@ describe('My account: address books', () => {
   it('lists the personal book and the shared ones with the rule the user holds', async () => {
     const { user: actor } = open({
       [`GET ${BOOKS_PATH}`]: {
-        body: [
-          book('My address book', { kind: 'personal', rule: 3 }),
-          book('Team', { owner: 'bob', rule: 1 }),
-          book('Ops', { owner: null, rule: 2 }),
-        ],
+        body: {
+          items: [
+            book('My address book', { kind: 'personal', rule: 3 }),
+            book('Team', { owner: 'bob', rule: 1 }),
+            book('Ops', { owner: null, rule: 2 }),
+          ],
+          shared_total: 7,
+        },
       },
     })
 
@@ -76,5 +79,6 @@ describe('My account: address books', () => {
     const ops = screen.getByText('Ops').closest('tr') as HTMLElement
     expect(within(ops).getByText('读写')).toBeInTheDocument()
     expect(screen.getByText(/在客户端中编辑/)).toBeInTheDocument()
+    expect(screen.getByText('仅显示 2 / 7 个共享地址簿。')).toBeInTheDocument()
   })
 })

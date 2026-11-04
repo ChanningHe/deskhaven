@@ -24,7 +24,9 @@ function ruleKey(rule: number) {
 export function BooksTab() {
   const { t } = useTranslation()
   const query = useListMyAddressBooks()
-  const books = query.data ?? []
+  const books = query.data?.items ?? []
+  const shown = books.filter((book) => book.kind === 'shared').length
+  const sharedTotal = query.data?.shared_total ?? 0
 
   return (
     <Section title={t('me.books.title')} description={t('me.books.description')}>
@@ -59,6 +61,11 @@ export function BooksTab() {
           ))}
         </TableBody>
       </Table>
+      {sharedTotal > shown ? (
+        <p className="text-xs text-muted-foreground">
+          {t('me.books.truncated', { shown, total: sharedTotal })}
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground">{t('me.books.editInClient')}</p>
     </Section>
   )

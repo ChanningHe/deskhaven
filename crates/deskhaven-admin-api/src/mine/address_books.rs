@@ -72,6 +72,17 @@ impl MyAddressBook {
     }
 }
 
+/// The user's address books.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct MyAddressBooks {
+    /// The personal book first, then the shared ones by name (at most
+    /// [`MAX_SHARED_PAGES`] pages of them).
+    pub items: Vec<MyAddressBook>,
+    /// How many shared books the user can reach: more than the shared books in `items`
+    /// when the list was capped.
+    pub shared_total: u64,
+}
+
 /// The user's address books: the personal one first, then the shared ones by name.
 #[utoipa::path(
     get,
@@ -79,12 +90,12 @@ impl MyAddressBook {
     operation_id = "list_my_address_books",
     tag = "me",
     security(("console_session" = ["self"])),
-    responses((status = 200, description = "The books", body = Vec<MyAddressBook>))
+    responses((status = 200, description = "The books", body = MyAddressBooks))
 )]
 pub async fn list(
     State(state): State<Arc<AppState>>,
     ConsoleUser(principal): ConsoleUser,
-) -> Result<Json<Vec<MyAddressBook>>, AdminApiError> {
+) -> Result<Json<MyAddressBooks>, AdminApiError> {
     let service = AddressBookService::new(
         state.db.clone(),
         state.settings.clone(),
@@ -92,18 +103,25 @@ pub async fn list(
     );
     let user_id = principal.user_id;
     let personal = service.personal(user_id).await?;
-    let mut books = vec![MyAddressBook::personal(personal)];
+    let mut items = vec![MyAddressBook::personal(personal)];
+    let (mut shared_total, mut read) = (0, 0_u64);
     for page in 1..=MAX_SHARED_PAGES {
         let request = PageRequest {
             page,
             page_size: MAX_PAGE_SIZE,
         };
         let found = service.shared_profiles(user_id, request).await?;
-        let last = found.items.len() < usize::try_from(MAX_PAGE_SIZE).unwrap_or(usize::MAX);
-        books.extend(found.items.into_iter().map(MyAddressBook::shared));
-        if last {
+        shared_total = found.total;
+        read += u64::try_from(found.items.len()).unwrap_or(u64::MAX);
+        let empty = found.items.is_empty();
+        items.extend(found.items.into_iter().map(MyAddressBook::shared));
+        // Truncation is decided by the total the service reports, not by a short page.
+        if empty || read >= shared_total {
             break;
         }
     }
-    Ok(Json(books))
+    Ok(Json(MyAddressBooks {
+        items,
+        shared_total,
+    }))
 }

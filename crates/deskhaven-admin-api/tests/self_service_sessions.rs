@@ -178,6 +178,46 @@ async fn revoking_one_session_never_reaches_another_users_session() {
 }
 
 #[tokio::test]
+async fn a_revocation_that_matches_nothing_writes_nothing_and_invalidates_nothing() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        h.user("alice", Role::User).await;
+        h.user("bob", Role::User).await;
+        let alice = h.signed_in("alice").await;
+        let bob = h.signed_in("bob").await;
+        let theirs = session_id_of(&h, &bob).await;
+        let b = db.backend;
+        // Warm entries of both users: the cache must keep them.
+        assert_eq!(h.get(ME, &alice).await.status, 200, "{b}");
+        assert_eq!(h.get(ME, &bob).await.status, 200, "{b}");
+        let before = h.state.sessions.cache().generation();
+
+        let foreign = h
+            .as_console(Method::DELETE, &path(theirs), &alice, None)
+            .await;
+        let unknown = h
+            .as_console(Method::DELETE, &path(999_999), &alice, None)
+            .await;
+        let none = h
+            .as_console(Method::POST, REVOKE_OTHERS, &alice, None)
+            .await;
+
+        assert_eq!(foreign.status, 404, "{b}");
+        assert_eq!(unknown.status, 404, "{b}");
+        assert_eq!(none.status, 200, "{b}: {:?}", none.body);
+        assert_eq!(none.body["revoked"], 0, "{b}");
+        assert!(audit_actions(db).await.is_empty(), "{b}: nothing recorded");
+        assert_eq!(
+            h.state.sessions.cache().generation(),
+            before,
+            "{b}: no invalidation"
+        );
+        assert_eq!(h.get(ME, &bob).await.status, 200, "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn revoking_the_current_session_signs_the_user_out() {
     each_migrated_backend(async |db: &TestDb| {
         let h = harness(db, AdminRoutes::new()).await;
@@ -217,6 +257,9 @@ async fn revoke_others_keeps_the_current_console_session_and_other_users() {
         let bob = h.signed_in("bob").await;
         let (_, bob_token) = client_session(&h, "bob", "222222222").await;
         let b = db.backend;
+        // The sessions are warm in the cache; revoking must still end them at once.
+        assert_eq!(h.get(ME, &other).await.status, 200, "{b}");
+        assert_eq!(h.get(ME, &alice).await.status, 200, "{b}");
 
         let done = h
             .as_console(Method::POST, REVOKE_OTHERS, &alice, Some(json!({})))

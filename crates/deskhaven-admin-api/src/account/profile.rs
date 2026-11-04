@@ -3,10 +3,10 @@
 //! - `GET /me/account`: what the account page shows and which actions the account has
 //!   (password change: local accounts; TOTP: password accounts, local or LDAP; whether
 //!   `auth.tfa.enforce` makes the second factor mandatory).
-//! - `PATCH /me`: display name and email. The user is the session's, never a request value;
-//!   an address that differs from the stored one (case-insensitively) is unverified again
-//!   (core rule), and `email_verified` cannot be sent at all: only an administrator or the
-//!   identity provider vouches for an address. Audited as `user.profile_update`.
+//! - `PATCH /me {display_name}`: the display name only. The user is the session's, never a
+//!   request value. The email is not editable here (an administrator sets it): an address
+//!   typed by its holder would be unverified yet hold the real owner's address (unique
+//!   index), which the OIDC linking refuses to match. Audited as `user.profile_update`.
 
 use std::sync::Arc;
 
@@ -21,15 +21,13 @@ use utoipa::ToSchema;
 
 use super::reauth::user_error;
 use crate::audit::{Audit, AuditCtx, Audited};
-use crate::domain_error::invalid_field;
 use crate::me::Me;
 use crate::session::ConsoleUser;
 use crate::users::view::AuthSourceView;
 use crate::{AdminApiError, RoleView, ValidJson};
 
-/// Longest accepted display name and email (characters), as for administrators.
+/// Longest accepted display name (characters), as for administrators.
 const MAX_NAME_CHARS: usize = 128;
-const MAX_EMAIL_CHARS: usize = 254;
 
 /// The user's own account page. Carries no secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -54,16 +52,13 @@ pub struct MyAccount {
     pub created_at: i64,
 }
 
-/// Changes to the user's own profile; absent fields stay as they are.
+/// The user's own profile edit.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePatch {
     /// Blank: the username.
     #[garde(length(chars, max = MAX_NAME_CHARS))]
-    pub display_name: Option<String>,
-    /// An empty string removes the address. A new address is unverified.
-    #[garde(length(chars, max = MAX_EMAIL_CHARS))]
-    pub email: Option<String>,
+    pub display_name: String,
 }
 
 /// The signed-in user's account standing.
@@ -108,7 +103,7 @@ pub async fn view(
     }))
 }
 
-/// Changes the signed-in user's display name and email.
+/// Changes the signed-in user's display name.
 #[utoipa::path(
     patch,
     path = "/me",
@@ -118,8 +113,7 @@ pub async fn view(
     request_body = ProfilePatch,
     responses(
         (status = 200, description = "The updated user", body = Me),
-        (status = 409, description = "The email belongs to another account (`conflict`)", body = crate::ErrorEnvelope),
-        (status = 422, description = "Nothing to change, or an invalid field (`validation_failed`)", body = crate::ErrorEnvelope),
+        (status = 422, description = "An invalid or unknown field (`validation_failed`)", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn edit(
@@ -128,14 +122,16 @@ pub async fn edit(
     ctx: AuditCtx,
     ValidJson(body): ValidJson<ProfilePatch>,
 ) -> Result<(Audited, Json<Me>), AdminApiError> {
-    if body.display_name.is_none() && body.email.is_none() {
-        return Err(invalid_field("body", "nothing to change"));
-    }
     let user_id = principal.user_id;
+    let current = state.users.get(user_id).await?;
+    if !renames(&current, &body.display_name) {
+        // Nothing to change: no lock, no write, no audit row (`Audited` also keeps the
+        // gate from recording a default one).
+        return Ok((Audited, Json(Me::of(&state, current))));
+    }
     let edit = AccountEdit {
         profile: ProfileUpdate {
-            display_name: body.display_name,
-            email: body.email.map(|e| Some(e).filter(|e| !e.is_empty())),
+            display_name: Some(body.display_name),
             ..ProfileUpdate::default()
         },
         ..AccountEdit::default()
@@ -143,6 +139,17 @@ pub async fn edit(
     let guard = profile_guard(&state, ctx, user_id);
     let user = state.users.edit(user_id, edit, guard).await?;
     Ok((Audited, Json(Me::of(&state, user))))
+}
+
+/// Whether `requested` (blank means the username) differs from the stored display name.
+fn renames(user: &User, requested: &str) -> bool {
+    let requested = requested.trim();
+    let wanted = if requested.is_empty() {
+        user.username.as_str()
+    } else {
+        requested
+    };
+    wanted != user.display_name
 }
 
 /// The audited view of the profile fields.
