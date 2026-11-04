@@ -1,14 +1,16 @@
-//! Console audit of strategy writes: the guards and the snapshots they record. Values of
-//! secret catalog options are masked here; the console audit log masks credential-like
-//! option names on top (it errs on the side of masking).
-
-use std::collections::BTreeMap;
+//! Console audit of strategy writes: the guards and the snapshots they record.
+//!
+//! Options are recorded as `[{key, value}]`, not as an object keyed by option name: the
+//! console audit log masks members whose *name* looks like a credential, which would blind
+//! harmless options such as `temporary-password-length`. Secret catalog options are masked
+//! here instead; in an `after` snapshot they carry `changed` (whether the value differs from
+//! `before`), so a change stays visible without its value.
 
 use deskhaven_config::REDACTED;
 use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::state::AppState;
 use deskhaven_core::strategies::catalog;
-use deskhaven_core::strategies::{Assignment, Strategy};
+use deskhaven_core::strategies::{Assignment, Options, Strategy};
 use serde::Serialize;
 
 use super::view::{TargetKind, kind_of};
@@ -19,19 +21,35 @@ use crate::{Audit, AuditCtx};
 struct StrategySnapshot<'a> {
     name: &'a str,
     note: &'a str,
-    options: BTreeMap<&'a str, &'a str>,
+    options: Vec<OptionEntry<'a>>,
 }
 
-fn masked<'a>(key: &'a str, value: &'a str) -> (&'a str, &'a str) {
-    let secret = !value.is_empty() && catalog::is_secret(key);
-    (key, if secret { REDACTED } else { value })
+#[derive(Serialize)]
+struct OptionEntry<'a> {
+    key: &'a str,
+    value: &'a str,
+    /// Secret options of an `after` snapshot: the value differs from `before`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changed: Option<bool>,
 }
 
-fn snapshot(s: &Strategy) -> StrategySnapshot<'_> {
+/// `previous`: the options of `before` when `s` is the `after` snapshot (empty for a
+/// creation); `None` for a `before` snapshot.
+fn snapshot<'a>(s: &'a Strategy, previous: Option<&Options>) -> StrategySnapshot<'a> {
+    let entry = |(key, value): (&'a String, &'a String)| {
+        let secret = !value.is_empty() && catalog::is_secret(key);
+        OptionEntry {
+            key,
+            value: if secret { REDACTED } else { value },
+            changed: previous
+                .filter(|_| secret)
+                .map(|old| old.get(key) != Some(value)),
+        }
+    };
     StrategySnapshot {
         name: &s.name,
         note: &s.note,
-        options: s.options.iter().map(|(k, v)| masked(k, v)).collect(),
+        options: s.options.iter().map(entry).collect(),
     }
 }
 
@@ -66,10 +84,12 @@ pub(super) fn strategy_guard(
             let id = after.or(before).map_or(0, |s| s.id);
             let mut audit = Audit::new(action).target("strategy", id);
             if let Some(s) = before {
-                audit = audit.before(&snapshot(s));
+                audit = audit.before(&snapshot(s, None));
             }
             if let Some(s) = after {
-                audit = audit.after(&snapshot(s));
+                let empty = Options::new();
+                let previous = before.map_or(&empty, |b| &b.options);
+                audit = audit.after(&snapshot(s, Some(previous)));
             }
             Ok(entry_ctx.entry(audit))
         },
@@ -102,35 +122,64 @@ pub(super) fn assignment_guard(
 
 #[cfg(test)]
 mod tests {
-    use deskhaven_core::strategies::Options;
     use deskhaven_db::entity::managed_by::ManagedBy;
     use deskhaven_db::time;
+    use serde_json::{Value, json};
 
     use super::*;
 
-    #[test]
-    fn secret_option_values_are_masked_and_empty_ones_kept() {
+    fn strategy(pairs: &[(&str, &str)]) -> Strategy {
         let now = time::now();
-        let options = Options::from([
-            ("proxy-password".to_owned(), "pw".to_owned()),
-            ("preset-address-book-password".to_owned(), String::new()),
-            ("whitelist".to_owned(), "10.0.0.0/8".to_owned()),
-        ]);
-        let strategy = Strategy {
+        Strategy {
             id: 1,
             name: "s".to_owned(),
-            options,
+            options: pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
             options_corrupt: false,
             note: String::new(),
             managed_by: ManagedBy::Ui,
             created_at: now,
             updated_at: now,
-        };
+        }
+    }
 
-        let json = serde_json::to_value(snapshot(&strategy)).unwrap();
+    fn entries(snapshot: &StrategySnapshot<'_>) -> Value {
+        serde_json::to_value(snapshot).unwrap()["options"].clone()
+    }
 
-        assert_eq!(json["options"]["proxy-password"], REDACTED);
-        assert_eq!(json["options"]["preset-address-book-password"], "");
-        assert_eq!(json["options"]["whitelist"], "10.0.0.0/8");
+    #[test]
+    fn secrets_are_masked_with_a_change_marker_and_other_names_stay_readable() {
+        let before = strategy(&[
+            ("proxy-password", "old"),
+            ("temporary-password-length", "8"),
+        ]);
+        let after = strategy(&[
+            ("proxy-password", "new"),
+            ("preset-address-book-password", ""),
+            ("temporary-password-length", "10"),
+        ]);
+
+        let shown = entries(&snapshot(&after, Some(&before.options)));
+
+        assert_eq!(
+            shown,
+            json!([
+                { "key": "preset-address-book-password", "value": "" },
+                { "key": "proxy-password", "value": REDACTED, "changed": true },
+                { "key": "temporary-password-length", "value": "10" },
+            ])
+        );
+        let same = entries(&snapshot(&before, Some(&before.options)));
+        assert_eq!(same[0]["changed"], false);
+        assert!(
+            entries(&snapshot(&before, None))[0]
+                .get("changed")
+                .is_none()
+        );
+        // The audit log's name-based redaction leaves this shape alone.
+        let stored = deskhaven_core::console_audit::redact(&shown);
+        assert_eq!(stored[2]["value"], "10");
     }
 }

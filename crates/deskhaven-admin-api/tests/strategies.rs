@@ -167,10 +167,22 @@ async fn strategies_are_created_patched_listed_and_deleted_with_audit() {
         );
         let audit = audit_text(&h).await;
         assert!(!audit.contains(SECRET), "{audit}");
-        let first: Value =
-            serde_json::from_str(h.audit_rows().await[0].after.as_ref().unwrap()).unwrap();
-        assert_eq!(first["options"]["enable-keyboard"], "N");
+        let rows = h.audit_rows().await;
+        let first: Value = serde_json::from_str(rows[0].after.as_ref().unwrap()).unwrap();
         assert_eq!(first["name"], "kiosk");
+        assert_eq!(
+            first["options"],
+            json!([
+                { "key": "custom-x", "value": "1" },
+                { "key": "enable-keyboard", "value": "N" },
+                { "key": "proxy-password", "value": "<redacted>", "changed": true },
+            ])
+        );
+        // The first patch keeps the secret: recorded as unchanged.
+        let patched: Value = serde_json::from_str(rows[1].after.as_ref().unwrap()).unwrap();
+        let secret = patched["options"].as_array().unwrap().iter();
+        let secret = secret.clone().find(|o| o["key"] == "proxy-password");
+        assert_eq!(secret.unwrap()["changed"], false);
     })
     .await;
 }
@@ -254,7 +266,20 @@ async fn strategies_from_the_configuration_file_are_read_only() {
             .write(Method::PATCH, &one(id), &admin, json!({ "note": "x" }))
             .await;
         let deleted = h.act(Method::DELETE, &one(id), &admin).await;
+        // Its assignments belong to the configuration file too.
+        let assignments = format!("{}/assignments", one(id));
+        let global = json!({ "target_type": "global" });
+        let assigned = h.write(Method::POST, &assignments, &admin, global).await;
+        let unassign = format!("{assignments}?target_type=global");
+        let unassigned = h.act(Method::DELETE, &unassign, &admin).await;
 
+        for (call, reply) in [("assign", &assigned), ("unassign", &unassigned)] {
+            assert_eq!(
+                (reply.status, reply.code()),
+                (StatusCode::CONFLICT, "managed_by_config"),
+                "{call}"
+            );
+        }
         assert_eq!(shown.body["managed_by"], "config");
         assert_eq!(
             (patched.status, patched.code()),

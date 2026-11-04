@@ -7,6 +7,7 @@
 //! (users and groups: `StrategyService::watch_users` / `watch_groups`).
 
 use deskhaven_db::begin_write;
+use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::strategy_assignment;
 use deskhaven_db::entity::{device, device_group, group, strategy, user};
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -25,28 +26,45 @@ impl StrategyService {
     /// Makes `strategy_id` the strategy of `target`, replacing the one it had. Assigning the
     /// strategy it already has is a no-op that still advances the version.
     pub async fn assign(&self, target: Target, strategy_id: i64) -> Result<(), StrategyError> {
-        self.assign_guarded(target, strategy_id, TxGuard::none())
+        self.assign_with(target, strategy_id, TxGuard::none(), false)
             .await
     }
 
-    /// [`assign`](Self::assign) with `guard` deciding on the assignment it replaces (if
-    /// any) and the new one.
+    /// [`assign`](Self::assign) for the console, with `guard` deciding on the assignment it
+    /// replaces (if any) and the new one. The assignments of a strategy from the
+    /// configuration file belong to that file: assigning such a strategy, or replacing a
+    /// target's assignment to one, fails with [`StrategyError::ManagedByConfig`].
     pub async fn assign_guarded(
         &self,
         target: Target,
         strategy_id: i64,
         guard: TxGuard<Assignment>,
     ) -> Result<(), StrategyError> {
+        self.assign_with(target, strategy_id, guard, true).await
+    }
+
+    async fn assign_with(
+        &self,
+        target: Target,
+        strategy_id: i64,
+        guard: TxGuard<Assignment>,
+        console: bool,
+    ) -> Result<(), StrategyError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
-            ensure_strategy(&tx, strategy_id).await?;
+            let managed = ensure_strategy(&tx, strategy_id).await?;
             ensure_target(&tx, target).await?;
-            let before = assignment_in(&tx, target)
-                .await?
-                .map(|strategy_id| Assignment {
-                    target,
-                    strategy_id,
-                });
+            let replaced = assignment_in(&tx, target).await?;
+            if console {
+                refuse_config(managed)?;
+                if let Some(old) = replaced {
+                    refuse_config(ensure_strategy(&tx, old).await?)?;
+                }
+            }
+            let before = replaced.map(|strategy_id| Assignment {
+                target,
+                strategy_id,
+            });
             upsert(&tx, target, strategy_id).await?;
             let after = Assignment {
                 target,
@@ -62,7 +80,8 @@ impl StrategyService {
 
     /// Removes the assignment of `target` if it is `strategy_id`, with `guard` deciding on
     /// it; `false` (nothing changed, nothing recorded) if the target has another strategy
-    /// or none.
+    /// or none. A strategy from the configuration file fails with
+    /// [`StrategyError::ManagedByConfig`] (see [`assign_guarded`](Self::assign_guarded)).
     pub async fn unassign_guarded(
         &self,
         target: Target,
@@ -71,6 +90,7 @@ impl StrategyService {
     ) -> Result<bool, StrategyError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
+            refuse_config(ensure_strategy(&tx, strategy_id).await?)?;
             let removed = strategy_assignment::Entity::delete_many()
                 .filter(target_filter(target))
                 .filter(strategy_assignment::Column::StrategyId.eq(strategy_id))
@@ -227,13 +247,20 @@ fn target_filter(target: Target) -> Condition {
 }
 
 /// The strategy exists, and keeps existing until the transaction ends (shared row lock on
-/// PostgreSQL; SQLite's write transaction excludes other writers).
-async fn ensure_strategy(tx: &impl ConnectionTrait, id: i64) -> Result<(), StrategyError> {
+/// PostgreSQL; SQLite's write transaction excludes other writers); who manages it.
+async fn ensure_strategy(tx: &impl ConnectionTrait, id: i64) -> Result<ManagedBy, StrategyError> {
     let found = strategy::Entity::find_by_id(id)
         .lock_shared()
         .one(tx)
         .await?;
-    found.map(drop).ok_or(StrategyError::NotFound)
+    found.map(|s| s.managed_by).ok_or(StrategyError::NotFound)
+}
+
+fn refuse_config(managed: ManagedBy) -> Result<(), StrategyError> {
+    match managed {
+        ManagedBy::Config => Err(StrategyError::ManagedByConfig),
+        ManagedBy::Ui => Ok(()),
+    }
 }
 
 /// The target exists (and cannot be deleted before commit). A deletion path removes its

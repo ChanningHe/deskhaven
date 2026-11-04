@@ -11,9 +11,12 @@ use deskhaven_core::strategies::{
     AssignedTarget, Assignment, NewStrategy, OptionsPatch, Strategy, StrategyError, StrategyQuery,
     StrategySort, StrategySortField, StrategyUpdate, Target,
 };
-use deskhaven_db::entity::console_audit;
+use deskhaven_db::entity::managed_by::ManagedBy;
+use deskhaven_db::entity::{console_audit, strategy};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{EntityTrait, PaginatorTrait};
+use deskhaven_db::time;
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait};
 
 use super::support::{Ctx, ctx, device_inputs, opts};
 
@@ -272,6 +275,83 @@ async fn the_page_filters_sorts_and_counts_assignments() {
             c.svc.assigned_targets(office.id + 99).await,
             Err(StrategyError::NotFound)
         ));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn concurrent_patches_of_different_options_both_survive() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let s = c.strategy("s", &[("keep", "1")]).await;
+        let patch = |key: &str, value: &str| StrategyUpdate {
+            options_patch: OptionsPatch::from([(key.to_owned(), Some(value.to_owned()))]),
+            ..StrategyUpdate::default()
+        };
+        let log: Seen<Strategy> = seen();
+
+        let (a, b) = tokio::join!(
+            c.svc.update_guarded(
+                s.id,
+                patch("a", "x"),
+                recording(&c, "strategy.update", &log)
+            ),
+            c.svc.update_guarded(
+                s.id,
+                patch("b", "y"),
+                recording(&c, "strategy.update", &log)
+            ),
+        );
+
+        a.unwrap();
+        b.unwrap();
+        let stored = c.svc.get(s.id).await.unwrap().options;
+        assert_eq!(stored, opts(&[("keep", "1"), ("a", "x"), ("b", "y")]));
+        assert_eq!(audit_count(&c).await, 2);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_console_cannot_change_assignments_of_configuration_strategies() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let now = time::now();
+        let pinned = strategy::ActiveModel {
+            name: Set("pinned".to_owned()),
+            options: Set("{}".to_owned()),
+            note: Set(String::new()),
+            managed_by: Set(ManagedBy::Config),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let pinned = pinned.insert(&c.conn).await.unwrap().id;
+        let ui = c.strategy("ui", &[]).await;
+        let (group, other) = (c.device_group("a").await, c.device_group("b").await);
+        let target = Target::DeviceGroup(group);
+        let log: Seen<Assignment> = seen();
+        let guard = || recording(&c, "assign", &log);
+
+        let assigned = c.svc.assign_guarded(target, pinned, guard()).await;
+        assert!(matches!(assigned, Err(StrategyError::ManagedByConfig)));
+        // The configuration file (here: the unguarded path) may still assign it.
+        c.svc.assign(target, pinned).await.unwrap();
+        let replaced = c.svc.assign_guarded(target, ui.id, guard()).await;
+        assert!(matches!(replaced, Err(StrategyError::ManagedByConfig)));
+        let removed = c.svc.unassign_guarded(target, pinned, guard()).await;
+        assert!(matches!(removed, Err(StrategyError::ManagedByConfig)));
+
+        assert_eq!(c.svc.assignment(target).await.unwrap(), Some(pinned));
+        let elsewhere = c
+            .svc
+            .assign_guarded(Target::DeviceGroup(other), ui.id, guard());
+        elsewhere.await.unwrap();
+        assert_eq!(
+            audit_count(&c).await,
+            1,
+            "only the allowed assignment is recorded"
+        );
     })
     .await;
 }

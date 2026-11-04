@@ -1,7 +1,9 @@
 //! Strategy administration (M3-07): the client option catalog, strategies (CRUD with
 //! option merge patches), their assignments to targets, and the preview of a device's
 //! effective strategy. Admin routes; strategies from the configuration file are read-only
-//! (`managed_by_config`). Every write records its audit row in its own transaction.
+//! (`managed_by_config`), and so are their assignments: the configuration file owns them,
+//! so assigning such a strategy, replacing a target's assignment to one or removing one is
+//! refused with 409 too. Every write records its audit row in its own transaction.
 //!
 //! Option values reach the devices of a strategy in clear (the client applies them as
 //! sent). Values of secret catalog options are still never returned by this API and are

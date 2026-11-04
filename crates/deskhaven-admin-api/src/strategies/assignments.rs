@@ -37,7 +37,9 @@ pub async fn list_assignments(
 }
 
 /// Assigns the strategy to a target, replacing the strategy the target had (audited
-/// `strategy.assign`, with the replaced assignment as `before`).
+/// `strategy.assign`, with the replaced assignment as `before`). Assignments of a strategy
+/// from the configuration file are read-only: neither it nor a target that has it can be
+/// (re)assigned here.
 #[utoipa::path(
     post,
     path = "/strategies/{id}/assignments",
@@ -49,6 +51,7 @@ pub async fn list_assignments(
     responses(
         (status = 204, description = "Assigned"),
         (status = 404, description = "No such strategy", body = Problem),
+        (status = 409, description = "The strategy, or the one the target has, is managed by the configuration file (`managed_by_config`)", body = Problem),
         (status = 422, description = "Invalid or unknown target", body = Problem),
     )
 )]
@@ -64,7 +67,8 @@ pub async fn assign_strategy(
     Ok((Audited, StatusCode::NO_CONTENT))
 }
 
-/// Removes the strategy from a target (audited `strategy.unassign`).
+/// Removes the strategy from a target (audited `strategy.unassign`). Assignments of a
+/// strategy from the configuration file are read-only.
 #[utoipa::path(
     delete,
     path = "/strategies/{id}/assignments",
@@ -75,6 +79,7 @@ pub async fn assign_strategy(
     responses(
         (status = 204, description = "Removed"),
         (status = 404, description = "The target does not have this strategy", body = Problem),
+        (status = 409, description = "Managed by the configuration file (`managed_by_config`)", body = Problem),
         (status = 422, description = "Invalid target", body = Problem),
     )
 )]

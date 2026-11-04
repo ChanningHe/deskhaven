@@ -76,6 +76,8 @@ pub struct CatalogOptionView {
     pub default: Option<String>,
     /// A credential: never shown back once saved, masked in audit rows.
     pub secret: bool,
+    /// Left out of the typed form (custom-client settings); set it in the advanced editor.
+    pub advanced_only: bool,
     /// The allowed values of a `choice` option.
     pub choices: Vec<ChoiceView>,
     pub min: Option<i64>,
@@ -98,6 +100,7 @@ impl From<&CatalogOption> for CatalogOptionView {
             group: o.group.into(),
             default: o.default.map(str::to_owned),
             secret: o.secret,
+            advanced_only: o.advanced_only,
             choices: choices
                 .iter()
                 .map(|c| ChoiceView {
