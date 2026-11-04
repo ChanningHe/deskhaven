@@ -948,8 +948,10 @@
       "save": "保存更改",
       "discard": "放弃更改",
       "nothing": "没有未保存的更改。",
-      "pending": "{{count}} 项未保存的更改",
-      "saved": "已保存 {{count}} 项设置。",
+      "pending_one": "{{count}} 项未保存的更改",
+      "pending_other": "{{count}} 项未保存的更改",
+      "saved_one": "已保存 {{count}} 项设置。",
+      "saved_other": "已保存 {{count}} 项设置。",
       "failed": "无法保存设置"
     },
     "conflict": {

@@ -948,8 +948,10 @@
       "save": "Save changes",
       "discard": "Discard changes",
       "nothing": "No unsaved changes.",
-      "pending": "{{count}} unsaved changes",
-      "saved": "Saved {{count}} settings.",
+      "pending_one": "{{count}} unsaved change",
+      "pending_other": "{{count}} unsaved changes",
+      "saved_one": "Saved {{count}} setting.",
+      "saved_other": "Saved {{count}} settings.",
       "failed": "The settings could not be saved"
     },
     "conflict": {
