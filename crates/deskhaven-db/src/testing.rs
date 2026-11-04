@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use tempfile::TempDir;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::{DbOptions, connect, migrate};
 
@@ -21,6 +22,15 @@ pub const PG_URL_ENV: &str = "DESKHAVEN_TEST_PG_URL";
 pub const REQUIRE_PG_ENV: &str = "DESKHAVEN_TEST_REQUIRE_PG";
 
 const SCHEMA_PREFIX: &str = "dh_test";
+
+/// PostgreSQL test databases one test process holds at once. libtest runs a test per core and CI's
+/// service container keeps the server default `max_connections` (100), so connections are budgeted:
+/// `PG_CONCURRENT_DBS * (1 + PG_POOL_CONNECTIONS)` = 72 stays under it. Test binaries run one at a
+/// time, so a per-process limit is enough.
+const PG_CONCURRENT_DBS: usize = 8;
+/// Pool size of a test's schema connection; concurrency tests queue on it rather than fail.
+const PG_POOL_CONNECTIONS: u32 = 8;
+static PG_SLOTS: Semaphore = Semaphore::const_new(PG_CONCURRENT_DBS);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Backend {
@@ -51,6 +61,8 @@ enum Guard {
     Postgres {
         admin: DatabaseConnection,
         schema: String,
+        /// Released once the schema is dropped (or the test unwinds).
+        _slot: SemaphorePermit<'static>,
     },
 }
 
@@ -137,27 +149,39 @@ async fn sqlite_db() -> TestDb {
 }
 
 async fn postgres_db(base_url: &str) -> TestDb {
-    let admin = must(connect(&DbOptions::new(base_url)).await, "connect postgres");
+    let slot = must(PG_SLOTS.acquire().await, "acquire pg slot");
+    let admin = must(connect(&pool(base_url, 1)).await, "connect postgres");
     let schema = unique_schema_name();
     let create = format!("CREATE SCHEMA \"{schema}\"");
     must(admin.execute_unprepared(&create).await, "create schema");
     let url = with_search_path(base_url, &schema);
     let conn = must(
-        connect(&DbOptions::new(url.clone())).await,
+        connect(&pool(&url, PG_POOL_CONNECTIONS)).await,
         "connect schema",
     );
     TestDb {
         conn,
         backend: Backend::Postgres,
         url,
-        guard: Guard::Postgres { admin, schema },
+        guard: Guard::Postgres {
+            admin,
+            schema,
+            _slot: slot,
+        },
+    }
+}
+
+fn pool(url: &str, max_connections: u32) -> DbOptions {
+    DbOptions {
+        max_connections,
+        ..DbOptions::new(url)
     }
 }
 
 impl TestDb {
     async fn cleanup(self) {
         let _ = self.conn.close().await;
-        if let Guard::Postgres { admin, schema } = self.guard {
+        if let Guard::Postgres { admin, schema, .. } = self.guard {
             let drop = format!("DROP SCHEMA \"{schema}\" CASCADE");
             must(admin.execute_unprepared(&drop).await, "drop schema");
             let _ = admin.close().await;

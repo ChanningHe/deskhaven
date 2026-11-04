@@ -8,7 +8,7 @@ publish.workspace = true
 
 [features]
 # Dual-backend (SQLite / PostgreSQL) test helpers, for tests of this and downstream crates.
-testing = ["dep:tempfile"]
+testing = ["dep:tempfile", "dep:tokio"]
 
 [dependencies]
 chrono = { workspace = true }
@@ -16,6 +16,7 @@ sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"], optional = true }
 
 [dev-dependencies]
 deskhaven-db = { workspace = true, features = ["testing"] }
