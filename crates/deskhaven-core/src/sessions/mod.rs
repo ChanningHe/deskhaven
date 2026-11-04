@@ -28,6 +28,7 @@ mod error;
 mod events;
 mod model;
 mod revoke;
+mod revoke_own;
 mod token;
 mod verify;
 

@@ -18,6 +18,9 @@ use serde_json::json;
 use crate::auth::{BUSY_RETRY_AFTER, throttle_error};
 use crate::{AdminApiError, ErrorCode};
 
+/// Longest accepted password input (characters; the policy maximum is 256).
+pub(super) const MAX_PASSWORD_INPUT: usize = 1024;
+
 /// Runs `verify` (which checks the current password of `username`'s account first) under
 /// the login throttle; see the module docs.
 pub(super) async fn with_current_password<T>(

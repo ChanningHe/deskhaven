@@ -19,16 +19,13 @@ use garde::Validate;
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-use super::reauth::{not_local, user_error, with_current_password};
+use super::reauth::{MAX_PASSWORD_INPUT, not_local, user_error, with_current_password};
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::auth::{user_agent, with_session};
 use crate::me::Me;
 use crate::session::{Client, ConsoleUser};
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ValidJson};
-
-/// Longest accepted password input (characters; the policy maximum is 256).
-const MAX_PASSWORD_INPUT: usize = 1024;
 
 /// Never logged.
 #[derive(Deserialize, Validate, ToSchema)]

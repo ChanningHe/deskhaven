@@ -80,6 +80,8 @@ pub enum ErrorCode {
     /// The account has no local password or local second factor (OIDC sign-in; LDAP and
     /// OIDC accounts for a password reset).
     NotLocalAccount,
+    /// `auth.tfa.enforce` requires a second factor of this account: it cannot be turned off.
+    TfaEnforced,
     // Settings (05 §3.2, §3.4).
     /// The setting is fixed by the configuration file or an environment variable
     /// (`details.keys`).
@@ -120,6 +122,7 @@ impl ErrorCode {
             | Self::SelfService
             | Self::ManagedByConfig
             | Self::NotLocalAccount
+            | Self::TfaEnforced
             | Self::SettingPinned
             | Self::VersionConflict => StatusCode::CONFLICT,
         }
@@ -158,6 +161,7 @@ impl ErrorCode {
             Self::SelfService => "self_service",
             Self::ManagedByConfig => "managed_by_config",
             Self::NotLocalAccount => "not_local_account",
+            Self::TfaEnforced => "tfa_enforced",
             Self::SettingPinned => "setting_pinned",
             Self::VersionConflict => "version_conflict",
         }

@@ -7,7 +7,7 @@ mod detail;
 mod guard;
 mod list;
 mod strategy;
-mod view;
+pub(crate) mod view;
 mod write;
 
 use utoipa_axum::routes;

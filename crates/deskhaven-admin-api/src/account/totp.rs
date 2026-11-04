@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::qr::{self, QrCode};
-use super::reauth::{not_local, user_error, with_current_password};
+use super::reauth::{MAX_PASSWORD_INPUT, not_local, user_error, with_current_password};
 use crate::account_setup::{SetupStep, pending_step, setup_required};
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::auth::{user_agent, with_session};
@@ -46,8 +46,6 @@ use crate::{AdminApiError, ErrorCode, ValidJson};
 
 /// Longest accepted code input (characters).
 const MAX_CODE_INPUT: usize = 16;
-/// Longest accepted password input (characters; the policy maximum is 256).
-const MAX_PASSWORD_INPUT: usize = 1024;
 
 /// A pending enrolment, shown once.
 // Not `Debug`: it carries the seed.
@@ -197,18 +195,20 @@ async fn may_enrol(state: &AppState, user_id: i64) -> Result<User, AdminApiError
     Ok(user)
 }
 
-fn no_store() -> [(header::HeaderName, HeaderValue); 1] {
+pub(super) fn no_store() -> [(header::HeaderName, HeaderValue); 1] {
     [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))]
 }
 
-fn tfa_error(err: TfaError) -> AdminApiError {
+pub(super) fn tfa_error(err: TfaError) -> AdminApiError {
     match err {
         TfaError::AlreadyEnabled => {
             AdminApiError::conflict("two-factor authentication is already enabled")
         }
         TfaError::NoPendingEnrolment => AdminApiError::conflict("no enrolment is pending"),
+        TfaError::NotEnabled => AdminApiError::conflict("two-factor authentication is not enabled"),
         TfaError::InvalidCode => AdminApiError::new(ErrorCode::InvalidCode, "wrong code"),
         TfaError::NotFound => AdminApiError::unauthorized(),
+        TfaError::Refused(refused) => crate::domain_error::refused(refused),
         other => AdminApiError::internal(other),
     }
 }

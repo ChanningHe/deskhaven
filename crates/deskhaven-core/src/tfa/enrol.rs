@@ -169,6 +169,24 @@ impl TfaService {
 
     /// Replaces every recovery code (used or not) with fresh ones, returned once.
     pub async fn regenerate_recovery_codes(&self, user_id: i64) -> Result<RecoveryCodes, TfaError> {
+        self.regenerate(user_id, None).await
+    }
+
+    /// [`regenerate_recovery_codes`](Self::regenerate_recovery_codes), recording `audit` in
+    /// its transaction.
+    pub async fn regenerate_recovery_codes_audited(
+        &self,
+        user_id: i64,
+        audit: &NewConsoleAudit,
+    ) -> Result<RecoveryCodes, TfaError> {
+        self.regenerate(user_id, Some(audit)).await
+    }
+
+    async fn regenerate(
+        &self,
+        user_id: i64,
+        audit: Option<&NewConsoleAudit>,
+    ) -> Result<RecoveryCodes, TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
         let user = locked_user(&txn, user_id).await?;
@@ -176,6 +194,7 @@ impl TfaService {
             return Err(TfaError::NotEnabled);
         }
         let codes = replace_recovery_codes(&txn, inner, user_id).await?;
+        record(&txn, inner, audit).await?;
         txn.commit().await?;
         Ok(codes)
     }

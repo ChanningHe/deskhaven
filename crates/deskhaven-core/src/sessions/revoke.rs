@@ -208,7 +208,7 @@ impl Core {
     }
 
     /// Sessions last used at or before this instant are idle-expired.
-    fn idle_cutoff(&self, now: i64) -> i64 {
+    pub(super) fn idle_cutoff(&self, now: i64) -> i64 {
         now.saturating_sub(self.idle_ttl_ms())
     }
 }

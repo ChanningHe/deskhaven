@@ -5822,6 +5822,306 @@
             ]
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Changes the signed-in user's display name and email.",
+        "operationId": "update_my_profile",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The email belongs to another account (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing to change, or an invalid field (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/account": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The signed-in user's account standing.",
+        "operationId": "get_my_account",
+        "responses": {
+          "200": {
+            "description": "The account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyAccount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/address-books": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The user's address books: the personal one first, then the shared ones by name.",
+        "operationId": "list_my_address_books",
+        "responses": {
+          "200": {
+            "description": "The books",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MyAddressBook"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/devices": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The devices owned by the user.",
+        "operationId": "list_my_devices",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the user's devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_MyDevice"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
       }
     },
     "/admin/api/v1/me/password": {
@@ -5928,6 +6228,327 @@
           {
             "console_session": [
               "session"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/sessions": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The user's usable client and console sessions, most recently used first.",
+        "operationId": "list_my_sessions",
+        "responses": {
+          "200": {
+            "description": "The sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MySession"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/sessions/revoke-others": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Revokes every session of the user except the current one.",
+        "operationId": "revoke_my_other_sessions",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many sessions were revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySessionsRevoked"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Revokes one of the user's sessions.",
+        "operationId": "revoke_my_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; for the current session the cookies are cleared"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session of the user (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/totp/disable": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Turns the user's TOTP off.",
+        "operationId": "disable_totp",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reauthenticate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not enabled (`conflict`), required by `auth.tfa.enforce` (`tfa_enforced`), or an OIDC account (`not_local_account`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong current password (`wrong_password`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
             ]
           }
         ]
@@ -6116,6 +6737,115 @@
           {
             "console_session": [
               "session"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/totp/recovery-codes": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Replaces the user's recovery codes.",
+        "operationId": "regenerate_recovery_codes",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reauthenticate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new codes, shown once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesIssued"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "TOTP is not enabled (`conflict`), or an OIDC account (`not_local_account`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong current password (`wrong_password`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
             ]
           }
         ]
@@ -9333,6 +10063,13 @@
           "oidc"
         ]
       },
+      "BookKindView": {
+        "type": "string",
+        "enum": [
+          "personal",
+          "shared"
+        ]
+      },
       "BookPatch": {
         "type": "object",
         "description": "Changes to a book; absent fields stay as they are.",
@@ -10314,6 +11051,7 @@
           "self_service",
           "managed_by_config",
           "not_local_account",
+          "tfa_enforced",
           "setting_pinned",
           "version_conflict"
         ]
@@ -11359,6 +12097,259 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "MyAccount": {
+        "type": "object",
+        "description": "The user's own account page. Carries no secret.",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "email_verified",
+          "auth_source",
+          "role",
+          "totp_enabled",
+          "recovery_codes_left",
+          "can_change_password",
+          "can_use_totp",
+          "tfa_required",
+          "created_at"
+        ],
+        "properties": {
+          "auth_source": {
+            "$ref": "#/components/schemas/AuthSourceView"
+          },
+          "can_change_password": {
+            "type": "boolean",
+            "description": "The account has a local password to change (not LDAP or OIDC accounts)."
+          },
+          "can_use_totp": {
+            "type": "boolean",
+            "description": "The account can hold a TOTP second factor (OIDC sign-ins never ask for one)."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_login_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "recovery_codes_left": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unused recovery codes (0 while TOTP is off).",
+            "minimum": 0
+          },
+          "role": {
+            "$ref": "#/components/schemas/RoleView"
+          },
+          "tfa_required": {
+            "type": "boolean",
+            "description": "`auth.tfa.enforce` covers this account: TOTP cannot be turned off."
+          },
+          "totp_enabled": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "MyAddressBook": {
+        "type": "object",
+        "description": "A book the user can use in the client.",
+        "required": [
+          "guid",
+          "kind",
+          "name",
+          "note",
+          "rule"
+        ],
+        "properties": {
+          "guid": {
+            "type": "string",
+            "description": "The identifier clients use."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BookKindView"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Username of the owner of a shared book; `null`: managed by the administrators."
+          },
+          "rule": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The user's rule: 1 read-only, 2 read-write, 3 full control.",
+            "minimum": 0
+          }
+        }
+      },
+      "MyDevice": {
+        "type": "object",
+        "description": "A device of the user. Everything but the id and the status is what the device reported\nabout itself. Carries neither the uuid, the key nor the address.",
+        "required": [
+          "rustdesk_id",
+          "status",
+          "online",
+          "last_seen_at"
+        ],
+        "properties": {
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rustdesk_id": {
+            "type": "string",
+            "description": "The id clients connect to."
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeviceStatusView"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The OS user running the client."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The client version."
+          }
+        }
+      },
+      "MySession": {
+        "type": "object",
+        "description": "One of the user's usable sessions. Carries no token. The device and browser texts are\nwhat the other end reported about itself: the console labels them so.",
+        "required": [
+          "id",
+          "kind",
+          "current",
+          "created_at",
+          "last_used_at",
+          "expires_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "current": {
+            "type": "boolean",
+            "description": "The session making this request."
+          },
+          "device_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client sessions, device-reported."
+          },
+          "device_os": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client sessions, device-reported."
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SessionKindView"
+          },
+          "last_used_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rustdesk_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client sessions: the RustDesk id of the device."
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Console sessions, browser-reported."
+          }
+        }
+      },
+      "MySessionsRevoked": {
+        "type": "object",
+        "description": "How many sessions `POST /me/sessions/revoke-others` ended.",
+        "required": [
+          "revoked"
+        ],
+        "properties": {
+          "revoked": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -13078,6 +14069,89 @@
           }
         }
       },
+      "Paginated_MyDevice": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A device of the user. Everything but the id and the status is what the device reported\nabout itself. Carries neither the uuid, the key nor the address.",
+              "required": [
+                "rustdesk_id",
+                "status",
+                "online",
+                "last_seen_at"
+              ],
+              "properties": {
+                "hostname": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_seen_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "os": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rustdesk_id": {
+                  "type": "string",
+                  "description": "The id clients connect to."
+                },
+                "status": {
+                  "$ref": "#/components/schemas/DeviceStatusView"
+                },
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The OS user running the client."
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The client version."
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
       "Paginated_PeerView": {
         "type": "object",
         "description": "One page of a list.",
@@ -13530,6 +14604,27 @@
           }
         }
       },
+      "ProfilePatch": {
+        "type": "object",
+        "description": "Changes to the user's own profile; absent fields stay as they are.",
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Blank: the username."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An empty string removes the address. A new address is unverified."
+          }
+        },
+        "additionalProperties": false
+      },
       "QrCode": {
         "type": "object",
         "description": "A QR code to draw: a square of `size` units, dark modules in `path`.",
@@ -13546,6 +14641,35 @@
             "type": "integer",
             "format": "int32",
             "description": "Side length in modules, quiet zone included (the SVG `viewBox` is `0 0 size size`)."
+          }
+        }
+      },
+      "Reauthenticate": {
+        "type": "object",
+        "description": "Re-authentication: the account's current password. Never logged.",
+        "required": [
+          "current_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecoveryCodesIssued": {
+        "type": "object",
+        "description": "Fresh recovery codes, shown once.",
+        "required": [
+          "recovery_codes"
+        ],
+        "properties": {
+          "recovery_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

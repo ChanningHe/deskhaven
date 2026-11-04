@@ -95,6 +95,7 @@ fn codes_are_stable_snake_case_with_fixed_statuses() {
             "not_local_account",
             StatusCode::CONFLICT,
         ),
+        (ErrorCode::TfaEnforced, "tfa_enforced", StatusCode::CONFLICT),
     ];
     for (code, wire, status) in cases {
         assert_eq!(serde_json::to_value(code).unwrap(), json!(wire));

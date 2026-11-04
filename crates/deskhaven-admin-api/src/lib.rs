@@ -26,6 +26,7 @@ mod gate;
 mod groups;
 mod identity;
 mod me;
+mod mine;
 mod openapi;
 mod origin;
 mod overview;
@@ -62,12 +63,16 @@ pub use session::{
 pub use stack_error::render_stack_error;
 pub use users::{MAX_CSV_BYTES, MAX_IMPORT_ROWS};
 
-pub use account::{PasswordChange, QrCode, TotpConfirm, TotpEnabled, TotpEnrolment};
+pub use account::{
+    MyAccount, PasswordChange, ProfilePatch, QrCode, Reauthenticate, RecoveryCodesIssued,
+    TotpConfirm, TotpEnabled, TotpEnrolment,
+};
 pub use account_setup::SetupStep;
 pub use auth::{
     LoginRequest, LoginResponse, OIDC_BINDING_COOKIE, OidcCompleteRequest, OidcProvider, OidcStart,
     OidcStartRequest, TotpLoginRequest,
 };
+pub use mine::{BookKindView, MyAddressBook, MyDevice, MySession, MySessionsRevoked};
 pub use setup::{SetupRequest, SetupStatus};
 
 /// Every production admin API route. Fails when an operation declares no valid
@@ -77,6 +82,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
         .routes(routes!(me::get_me))?
         .merge(auth::routes()?)?
         .merge(account::routes()?)?
+        .merge(mine::routes()?)?
         .merge(setup::routes()?)?;
     let routes = users::routes(routes)?;
     let routes = groups::routes(routes)?;

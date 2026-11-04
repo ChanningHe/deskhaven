@@ -32,6 +32,7 @@ pub mod audit_rows;
 pub mod client;
 pub mod devices;
 pub mod login;
+pub mod own;
 pub mod probe;
 pub mod tokens;
 

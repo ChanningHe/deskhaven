@@ -14,7 +14,7 @@ mod guard;
 mod peers;
 mod shares;
 mod tags;
-mod view;
+pub(crate) mod view;
 
 use std::sync::Arc;
 
