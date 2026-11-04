@@ -9,6 +9,8 @@
 /web/dist/
 /web/coverage/
 /web/.tanstack/
+/web/e2e-results/
+/web/e2e/.auth/
 
 # Nix
 /result

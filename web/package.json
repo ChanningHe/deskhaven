@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "e2e": "playwright test",
     "test:watch": "vitest",
     "i18n:check": "node scripts/i18n-check.ts",
     "gen:api": "orval && node scripts/encode-path-params.ts && eslint --fix src/api/generated && prettier --write --log-level warn src/api/generated"
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.59.1",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/router-plugin": "1.168.48",
     "@testing-library/dom": "10.4.2",
