@@ -21,6 +21,7 @@
 //! - Rows keep their raw stored shape; the interpretation of derived values (a retired
 //!   session id, a malformed file list) is on the entry types.
 
+mod activity;
 mod alarms;
 mod connections;
 mod console;
@@ -32,6 +33,7 @@ mod stored;
 
 use sea_orm::{DatabaseConnection, DbErr};
 
+pub use activity::Activity;
 pub use alarms::{AlarmQuery, alarm_info};
 pub use connections::{ConnectionEntry, ConnectionQuery};
 pub use console::{ConsoleActor, ConsoleEntry, ConsoleQuery, UNREADABLE_SNAPSHOT, parse_snapshot};

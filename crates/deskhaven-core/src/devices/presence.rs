@@ -63,6 +63,15 @@ pub struct DevicePresence {
     pub conns: Vec<i32>,
 }
 
+/// What [`Presence::live`] counts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LiveCounts {
+    /// Devices online now.
+    pub devices: usize,
+    /// Connection ids those devices reported in their latest heartbeat.
+    pub connections: usize,
+}
+
 /// A device seen since the previous [`Presence::take_unflushed`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Seen {
@@ -254,6 +263,18 @@ impl Presence {
         let now = self.now();
         let state = self.lock();
         state.entries.values().filter(|e| e.is_online(now)).count()
+    }
+
+    /// Online devices and their live connections, in one pass over the table. Only online
+    /// devices count: the connections an offline device reported last are stale.
+    pub fn live(&self) -> LiveCounts {
+        let now = self.now();
+        let state = self.lock();
+        let online = state.entries.values().filter(|e| e.is_online(now));
+        online.fold(LiveCounts::default(), |counts, entry| LiveCounts {
+            devices: counts.devices + 1,
+            connections: counts.connections + entry.conns.len(),
+        })
     }
 
     /// Tracked entries (online or not).

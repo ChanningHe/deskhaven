@@ -27,6 +27,7 @@ mod groups;
 mod me;
 mod openapi;
 mod origin;
+mod overview;
 mod pagination;
 pub mod permission;
 mod routes;
@@ -83,6 +84,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = client_config::routes(routes)?;
     let routes = api_tokens::routes(routes)?;
     let routes = audit_views::routes(routes)?;
+    let routes = overview::routes(routes)?;
     settings::routes(routes)
 }
 

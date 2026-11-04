@@ -36,6 +36,33 @@
     "cancel": "Cancel",
     "close": "Close"
   },
+  "overview": {
+    "loadFailed": "Could not load the overview",
+    "refreshFailed": "Could not refresh the overview; the numbers below may be out of date",
+    "tiles": {
+      "devices": "Devices online",
+      "devicesHint": "Online now / registered",
+      "devicesMeter": "Share of devices online",
+      "activeConnections": "Active connections",
+      "activeConnectionsHint": "Reported by online devices",
+      "connections24h": "Connections",
+      "failedLogins": "Failed logins",
+      "window": "Last 24 hours"
+    },
+    "versions": {
+      "title": "Client versions",
+      "selfReported": "Reported by the devices themselves; the server cannot verify them.",
+      "empty": "No device has reported a version yet.",
+      "other": "Other versions",
+      "unknown": "Unknown"
+    },
+    "alarms": {
+      "title": "Recent alarms",
+      "viewAll": "View all alarms",
+      "empty": "No alarms.",
+      "selfReported": "Alarm details are reported by the devices and are not verified by the server."
+    }
+  },
   "audit": {
     "tabs": {
       "label": "Kinds of audit record",
@@ -295,9 +322,7 @@
   },
   "pages": {
     "overview": {
-      "description": "Health of your deskhaven server at a glance.",
-      "emptyTitle": "No data yet",
-      "emptyDescription": "Statistics appear here once devices start connecting."
+      "description": "Health of your deskhaven server at a glance."
     },
     "devices": {
       "description": "Every RustDesk client registered with this server.",

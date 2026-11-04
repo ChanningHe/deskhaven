@@ -36,7 +36,7 @@ mod registry;
 pub use admin::{
     ConnectionRecord, DeviceGroup, DeviceGroupQuery, DeviceGroupSort, DeviceGroupSortField,
     DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord, DeviceSort, DeviceSortField,
-    DeviceSummary, DeviceUpdate,
+    DeviceSummary, DeviceUpdate, FleetStats, VersionCount,
 };
 pub use assign::DeviceAssignment;
 pub use deploy::{

@@ -18,6 +18,8 @@ mod view;
 
 use utoipa_axum::routes;
 
+pub(crate) use alarms::AlarmAuditView;
+
 use crate::{AdminRoutes, RouteError};
 
 /// The `/audit/*` routes.

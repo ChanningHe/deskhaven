@@ -5478,6 +5478,64 @@
         ]
       }
     },
+    "/admin/api/v1/overview": {
+      "get": {
+        "tags": [
+          "overview"
+        ],
+        "summary": "The overview: device and connection counts, 24 hour activity, latest alarms and the\nclient version distribution.",
+        "operationId": "get_overview",
+        "responses": {
+          "200": {
+            "description": "The overview numbers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/settings": {
       "get": {
         "tags": [
@@ -7365,6 +7423,36 @@
           }
         }
       },
+      "ClientVersions": {
+        "type": "object",
+        "description": "How the client versions the devices report are spread.",
+        "required": [
+          "versions",
+          "other",
+          "unknown"
+        ],
+        "properties": {
+          "other": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Devices on a version that is not listed.",
+            "minimum": 0
+          },
+          "unknown": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Devices that never reported a version.",
+            "minimum": 0
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionShare"
+            },
+            "description": "The most common versions, most devices first."
+          }
+        }
+      },
       "ConnectionAuditView": {
         "type": "object",
         "description": "One connection, as the controlled device reported it (everything but `id`, `guid`,\n`controller` and `created_at` is device self-reported).",
@@ -7796,6 +7884,26 @@
           "active",
           "disabled"
         ]
+      },
+      "DeviceTotals": {
+        "type": "object",
+        "required": [
+          "online",
+          "total"
+        ],
+        "properties": {
+          "online": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Devices online now (signal registration or heartbeat within their liveness window).",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "DeviceView": {
         "type": "object",
@@ -8913,6 +9021,58 @@
           }
         },
         "additionalProperties": false
+      },
+      "OverviewView": {
+        "type": "object",
+        "description": "The overview page's numbers.",
+        "required": [
+          "generated_at",
+          "devices",
+          "active_connections",
+          "connections_24h",
+          "failed_logins_24h",
+          "recent_alarms",
+          "client_versions"
+        ],
+        "properties": {
+          "active_connections": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Connections the online devices report right now.",
+            "minimum": 0
+          },
+          "client_versions": {
+            "$ref": "#/components/schemas/ClientVersions",
+            "description": "Self-reported by the devices."
+          },
+          "connections_24h": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Connections that started in the last 24 hours.",
+            "minimum": 0
+          },
+          "devices": {
+            "$ref": "#/components/schemas/DeviceTotals"
+          },
+          "failed_logins_24h": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Failed login attempts (console and client) in the last 24 hours.",
+            "minimum": 0
+          },
+          "generated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the numbers were taken (unix ms)."
+          },
+          "recent_alarms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlarmAuditView"
+            },
+            "description": "The latest alarms, newest first."
+          }
+        }
       },
       "OwnerRef": {
         "type": "object",
@@ -11289,6 +11449,25 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "VersionShare": {
+        "type": "object",
+        "description": "Devices that report one client version.",
+        "required": [
+          "version",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string",
+            "description": "As the device reported it: untrusted text."
           }
         }
       }

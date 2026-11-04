@@ -28,7 +28,7 @@ pub use limits::{
 };
 pub use new_ids::{DEPLOY_NEW_IDS_PER_ACTOR_PER_DAY, DEPLOY_NEW_IDS_PER_IP_PER_DAY};
 pub use presence::{
-    DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, MAX_CONNS, Presence, SIGNAL_TTL,
+    DEFAULT_CAPACITY, DevicePresence, HEARTBEAT_TTL, LiveCounts, MAX_CONNS, Presence, SIGNAL_TTL,
     SWEEP_INTERVAL, Seen,
 };
 pub use preset_book::PRESET_TAG_COLOR;
@@ -37,9 +37,9 @@ pub use service::{
     ConnectionRecord, DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DEVICE_GROUP_NAME_MAX_LEN, DeletedHook,
     DeployOutcome, DeployRequest, DeviceAssignment, DeviceGroup, DeviceGroupQuery, DeviceGroupSort,
     DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord,
-    DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, Heartbeat,
+    DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, FleetStats, Heartbeat,
     HeartbeatOutcome, HeartbeatReply, LIVE_RETRY_AFTER, LiveLookup, LiveRegistrations, LiveUnknown,
-    Requester, StrategyPush, SysinfoOutcome, SysinfoReport,
+    Requester, StrategyPush, SysinfoOutcome, SysinfoReport, VersionCount,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};

@@ -4,11 +4,13 @@
 //! console audit row in the write's own transaction.
 
 mod connections;
+mod fleet;
 mod groups;
 mod list;
 mod write;
 
 pub use connections::ConnectionRecord;
+pub use fleet::{FleetStats, VersionCount};
 pub use groups::{
     DeviceGroup, DeviceGroupQuery, DeviceGroupSort, DeviceGroupSortField, DeviceGroupSummary,
     DeviceGroupUpdate,

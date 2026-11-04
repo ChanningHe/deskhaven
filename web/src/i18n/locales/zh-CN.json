@@ -36,6 +36,33 @@
     "cancel": "取消",
     "close": "关闭"
   },
+  "overview": {
+    "loadFailed": "无法加载概览",
+    "refreshFailed": "无法刷新概览，下方数字可能已过期",
+    "tiles": {
+      "devices": "在线设备",
+      "devicesHint": "当前在线 / 已注册",
+      "devicesMeter": "在线设备占比",
+      "activeConnections": "活跃连接",
+      "activeConnectionsHint": "由在线设备上报",
+      "connections24h": "连接数",
+      "failedLogins": "登录失败",
+      "window": "最近 24 小时"
+    },
+    "versions": {
+      "title": "客户端版本",
+      "selfReported": "由设备自行上报，服务器无法验证。",
+      "empty": "尚无设备上报版本。",
+      "other": "其他版本",
+      "unknown": "未知"
+    },
+    "alarms": {
+      "title": "最近告警",
+      "viewAll": "查看全部告警",
+      "empty": "暂无告警。",
+      "selfReported": "告警详情由设备上报，服务器不做验证。"
+    }
+  },
   "audit": {
     "tabs": {
       "label": "审计记录类型",
@@ -295,9 +322,7 @@
   },
   "pages": {
     "overview": {
-      "description": "deskhaven 服务器运行状况一览。",
-      "emptyTitle": "暂无数据",
-      "emptyDescription": "设备开始连接后，这里会显示统计信息。"
+      "description": "deskhaven 服务器运行状况一览。"
     },
     "devices": {
       "description": "注册到本服务器的所有 RustDesk 客户端。",

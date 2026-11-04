@@ -65,6 +65,15 @@ pub enum LoginResult {
 }
 
 impl LoginResult {
+    /// Outcomes that are not a failed login: it succeeded, or the right password is waiting
+    /// for its second step, or a policy (not the credentials) stopped it. Every other
+    /// outcome, including ones added later, counts as a failure.
+    pub const NOT_FAILURES: [Self; 3] = [
+        Self::Success,
+        Self::SecondFactorRequired,
+        Self::SecondFactorSetupRequired,
+    ];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",

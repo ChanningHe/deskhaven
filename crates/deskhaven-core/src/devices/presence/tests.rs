@@ -364,3 +364,38 @@ fn a_wall_clock_step_back_neither_refuses_heartbeats_nor_keeps_devices_online() 
     );
     assert!(!still_online);
 }
+
+#[test]
+fn live_counts_the_online_devices_and_their_connections_only() {
+    // Arrange
+    let (p, clock) = presence(10);
+    p.heartbeat("a", ip(1), &[1, 2, 3]);
+    p.signal_online("b", ip(2));
+    clock.advance(just_under(SIGNAL_TTL));
+    p.heartbeat("c", ip(3), &[9]);
+
+    // Act
+    let all = p.live();
+    clock.advance(Duration::from_secs(1));
+    // "b" has no heartbeat and its registration expired; "a" and "c" still beat.
+    let later = p.live();
+    clock.advance(HEARTBEAT_TTL);
+    let none = p.live();
+
+    // Assert
+    assert_eq!(
+        all,
+        LiveCounts {
+            devices: 3,
+            connections: 4
+        }
+    );
+    assert_eq!(
+        later,
+        LiveCounts {
+            devices: 2,
+            connections: 4
+        }
+    );
+    assert_eq!(none, LiveCounts::default());
+}
