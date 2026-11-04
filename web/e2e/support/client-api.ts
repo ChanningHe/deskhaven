@@ -26,26 +26,63 @@ async function post(
   return { status: response.status, body: parsed as Record<string, unknown> }
 }
 
-/** `POST /api/login` with a password from `device`; the access token on success. */
+function deviceFields(device: Device) {
+  return {
+    id: device.rustdeskId,
+    uuid: device.uuid.toString('base64'),
+    deviceInfo: { os: 'linux', type: 'client', name: 'e2e' },
+  }
+}
+
+/** The access token of a login reply; throws on anything else. */
+export function accessToken(reply: ClientReply): string {
+  const token = reply.body.access_token
+  if (reply.status !== 200 || typeof token !== 'string') {
+    throw new Error(`client login failed: ${String(reply.status)} ${JSON.stringify(reply.body)}`)
+  }
+  return token
+}
+
+/** The password step of `POST /api/login` from `device`. */
+export function passwordLogin(
+  baseUrl: string,
+  device: Device,
+  username: string,
+  password: string,
+): Promise<ClientReply> {
+  return post(baseUrl, '/api/login', {
+    type: 'account',
+    username,
+    password,
+    ...deviceFields(device),
+  })
+}
+
+/** The second step: the TOTP `code` for the challenge `secret` of the password step. */
+export function codeLogin(
+  baseUrl: string,
+  device: Device,
+  username: string,
+  secret: string,
+  code: string,
+): Promise<ClientReply> {
+  return post(baseUrl, '/api/login', {
+    type: 'email_code',
+    username,
+    secret,
+    tfaCode: code,
+    ...deviceFields(device),
+  })
+}
+
+/** A password login without a second factor; the access token. */
 export async function clientLogin(
   baseUrl: string,
   device: Device,
   username: string,
   password: string,
 ): Promise<string> {
-  const reply = await post(baseUrl, '/api/login', {
-    type: 'account',
-    username,
-    password,
-    id: device.rustdeskId,
-    uuid: device.uuid.toString('base64'),
-    deviceInfo: { os: 'linux', type: 'client', name: 'e2e' },
-  })
-  const token = reply.body.access_token
-  if (reply.status !== 200 || typeof token !== 'string') {
-    throw new Error(`client login failed: ${String(reply.status)} ${JSON.stringify(reply.body)}`)
-  }
-  return token
+  return accessToken(await passwordLogin(baseUrl, device, username, password))
 }
 
 /** `POST /api/currentUser` with `token`. */

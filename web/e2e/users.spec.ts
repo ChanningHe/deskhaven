@@ -1,6 +1,7 @@
 // M3-04: create a user -> add them to a group -> revoke their sessions -> the client's
 // token is refused (401).
 import { clientLogin, currentUser } from './support/client-api.ts'
+import { createUser } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
 import type { Device } from './support/rendezvous.ts'
 
@@ -14,15 +15,7 @@ test('a new user in a group loses the client session an admin revokes', async ({
   serverUrl,
 }) => {
   await test.step('create the user with a chosen password', async () => {
-    await page.goto('/users')
-    await page.getByRole('button', { name: 'New user' }).click()
-    const dialog = page.getByRole('dialog', { name: 'New user' })
-    await dialog.getByLabel('Username').fill(USER.username)
-    await dialog.getByText('Set the initial password myself').click()
-    await dialog.getByRole('textbox', { name: 'Initial password' }).fill(USER.password)
-    await dialog.getByRole('button', { name: 'Create user' }).click()
-    await expect(dialog).toBeHidden()
-    await expect(page.getByRole('button', { name: USER.username })).toBeVisible()
+    await createUser(page, USER)
   })
 
   await test.step('create a group and add the user', async () => {

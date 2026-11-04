@@ -1,9 +1,10 @@
 # Forgejo Actions CI for deskhaven (Forgejo 15, git.homielab.cc).
 #
-# No JavaScript actions are used: the job image (rust:*-bookworm) has no node, and
-# bare `actions/*` resolution depends on the instance's DEFAULT_ACTIONS_URL. Sources
-# are fetched with plain git (the repository is public; a private repo would need a
-# token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
+# No JavaScript actions are used, except the e2e job's failure upload (that job installs
+# node; the action is referenced by full URL): the job image (rust:*-bookworm) has no
+# node, and bare `actions/*` resolution depends on the instance's DEFAULT_ACTIONS_URL.
+# Sources are fetched with plain git (the repository is public; a private repo would need
+# a token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
 #
 # Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
 # To change it, set the repository/org variable CI_RUNNER_LABEL (Settings ->
@@ -11,12 +12,13 @@
 # line below. Jobs run inside the `container:` image, so the runner only needs
 # Docker access (label must map to a docker-capable runner).
 #
-# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage;
-# the web console job runs in parallel with all of it.
+# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
+# + e2e; the web console job runs in parallel with all of it.
 # The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
 # Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
-# github.com (cargo-deny fetches the RustSec advisory DB from GitHub) and
-# registry.npmjs.org (web job).
+# github.com (cargo-deny fetches the RustSec advisory DB from GitHub),
+# registry.npmjs.org (web, e2e), and for e2e nodejs.org, the Playwright browser CDN
+# (cdn.playwright.dev and its mirrors) and data.forgejo.org (upload action).
 
 name: ci
 
@@ -218,3 +220,76 @@ jobs:
       # Report only until the end of M2. To enforce the gate, append
       # `--fail-under-lines 80` to the command below.
       - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only # --fail-under-lines 80
+
+  # Console end-to-end flows (web/e2e, Playwright) against the real binary with the
+  # embedded console, once on SQLite and once on the service's empty PostgreSQL database.
+  # The Rust image gets the web job's Node (tarball checked against the release's
+  # SHASUMS256.txt) and Playwright's Chromium with its system libraries.
+  e2e:
+    needs: [clippy, deny]
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    container: rust:1.99.1-bookworm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: deskhaven
+          POSTGRES_PASSWORD: deskhaven
+          POSTGRES_DB: deskhaven_e2e
+        options: >-
+          --health-cmd "pg_isready -U deskhaven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The same Node as the web job's image and the Nix devshell.
+      NODE_VERSION: "24.21.0"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - name: checkout
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - run: .forgejo/ci-setup.sh
+      - name: node
+        run: |
+          case "$(dpkg --print-architecture)" in amd64) arch=x64 ;; arm64) arch=arm64 ;; *) exit 1 ;; esac
+          tarball="node-v$NODE_VERSION-linux-$arch.tar.gz"
+          curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/$tarball"
+          curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" | grep "  $tarball\$" | sha256sum -c -
+          tar -xzf "$tarball" -C /usr/local --strip-components=1
+          rm "$tarball"
+          node --version
+      - name: pnpm
+        working-directory: web
+        run: |
+          corepack enable pnpm
+          pnpm --version
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: web
+      # The console first: the binary embeds web/dist when it is built.
+      - run: pnpm build
+        working-directory: web
+      - run: cargo build -p deskhaven
+      # The Chromium build of the locked @playwright/test, plus its apt dependencies.
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
+      - name: e2e (SQLite)
+        run: pnpm e2e
+        working-directory: web
+      - name: e2e (PostgreSQL)
+        if: success() || failure()
+        run: pnpm e2e
+        working-directory: web
+        env:
+          # Throwaway CI-only credentials for the service container above.
+          DESKHAVEN_E2E_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_e2e
+      # Reports, traces and server logs of both runs (web/e2e-results/{sqlite,postgres}).
+      - name: upload Playwright results
+        if: failure()
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: web/e2e-results
+          retention-days: 14
