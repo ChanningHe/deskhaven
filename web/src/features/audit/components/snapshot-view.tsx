@@ -63,7 +63,9 @@ function ChangeRow({ change }: { change: SnapshotChange }) {
   const { t } = useTranslation()
   return (
     <li className="grid gap-1 rounded-lg border p-2">
-      <span className="font-mono text-xs font-medium">{change.key}</span>
+      <span className="font-mono text-xs font-medium">
+        <bdi>{change.key}</bdi>
+      </span>
       {change.kind === 'added' ? null : (
         <Value label={t('audit.snapshot.before')} value={change.before} />
       )}
@@ -79,7 +81,7 @@ function Value({ label, value }: { label: string; value: unknown }) {
     <div className="grid grid-cols-[4rem_1fr] gap-2">
       <span className="text-xs text-muted-foreground">{label}</span>
       <pre className="min-w-0 font-mono text-xs break-words whitespace-pre-wrap">
-        {showValue(value)}
+        <bdi>{showValue(value)}</bdi>
       </pre>
     </div>
   )
@@ -90,7 +92,7 @@ function Json({ title, value }: { title: string; value: unknown }) {
     <div className="grid gap-1">
       <h4 className="text-xs font-medium text-muted-foreground">{title}</h4>
       <pre className="rounded-lg border p-2 font-mono text-xs break-words whitespace-pre-wrap">
-        {showValue(value)}
+        <bdi>{showValue(value)}</bdi>
       </pre>
     </div>
   )

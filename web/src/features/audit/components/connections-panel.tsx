@@ -2,7 +2,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { Cable } from 'lucide-react'
 import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { useListConnectionAudit } from '@/api/generated/audit/audit'
 import type { ConnectionAuditView } from '@/api/generated/model'
@@ -37,18 +37,19 @@ function connectionColumns(t: TFunction, language: string, onOpen: (id: number) 
     column.accessor('device_id', {
       header: t('audit.columns.device'),
       meta: { label: t('audit.columns.device'), className: 'font-mono' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.display({
       id: 'peer',
       header: t('audit.columns.peer'),
       meta: { label: t('audit.columns.peer'), className: 'max-w-48 truncate' },
-      cell: ({ row }) => row.original.peer_name ?? row.original.peer_id ?? '',
+      cell: ({ row }) => <bdi>{row.original.peer_name ?? row.original.peer_id ?? ''}</bdi>,
     }),
     column.display({
       id: 'controller',
       header: t('audit.columns.controller'),
       meta: { label: t('audit.columns.controller') },
-      cell: ({ row }) => row.original.controller?.username ?? '',
+      cell: ({ row }) => <bdi>{row.original.controller?.username ?? ''}</bdi>,
     }),
     column.display({
       id: 'conn_type',
@@ -60,7 +61,7 @@ function connectionColumns(t: TFunction, language: string, onOpen: (id: number) 
     column.accessor('ip', {
       header: t('audit.columns.ip'),
       meta: { label: t('audit.columns.ip'), className: 'font-mono text-xs' },
-      cell: ({ getValue }) => getValue() ?? '',
+      cell: ({ getValue }) => <bdi>{getValue() ?? ''}</bdi>,
     }),
     column.display({
       id: 'ended',
@@ -122,7 +123,13 @@ export function ConnectionsPanel({ search, onSearchChange }: PanelProps) {
         title: t('audit.empty.connections.title'),
         description: t('audit.empty.connections.description'),
       }}
-      detailTitle={(item) => t('audit.detail.connectionTitle', { device: item.device_id })}
+      detailTitle={(item) => (
+        <Trans
+          i18nKey="audit.detail.connectionTitle"
+          values={{ device: item.device_id }}
+          components={{ bdi: <bdi /> }}
+        />
+      )}
       detail={(item) => <ConnectionDetail item={item} />}
     />
   )

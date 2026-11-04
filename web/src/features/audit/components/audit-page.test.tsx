@@ -139,6 +139,39 @@ describe('audit page: connections', () => {
     })
   })
 
+  it('drops the end of the window when the start is moved past it, and the reverse', async () => {
+    const start = new Date(2026, 2, 10).getTime()
+    const end = new Date(2026, 2, 13).getTime()
+    const { router } = renderApp(`/audit?from=${String(start)}&to=${String(end)}`, {
+      api: { [`GET ${CONNECTIONS_PATH}`]: pageOf([BOB_CONNECTION]) },
+    })
+    await screen.findByText('Reception PC')
+
+    fireEvent.change(screen.getByLabelText('起始日期'), { target: { value: '2026-03-20' } })
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ from: new Date(2026, 2, 20).getTime() })
+    })
+
+    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-03-05' } })
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ to: new Date(2026, 2, 6).getTime() })
+    })
+  })
+
+  it('isolates device-supplied text from the text around it', async () => {
+    renderApp('/audit?item=1', {
+      api: { [`GET ${CONNECTIONS_PATH}`]: pageOf([BOB_CONNECTION]) },
+    })
+
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).getByText('Reception PC').closest('bdi')).not.toBeNull()
+    expect(
+      within(drawer).getByRole('heading', { level: 2 }).querySelector('bdi'),
+    ).toHaveTextContent('100200300')
+    const table = screen.getByRole('table', { name: '连接', hidden: true })
+    expect(within(table).getByText('Reception PC').closest('bdi')).not.toBeNull()
+  })
+
   it('applies a device id on Enter', async () => {
     const { router, user } = renderApp('/audit', {
       api: { [`GET ${CONNECTIONS_PATH}`]: pageOf([BOB_CONNECTION]) },
@@ -192,6 +225,16 @@ describe('audit page: tabs', () => {
     const request = requestsTo(fetchSpy, LOGINS_PATH)[0]
     expect(request?.searchParams.get('from')).toBe('1700000000000')
     expect(request?.searchParams.has('conn_type')).toBe(false)
+  })
+
+  it('marks the attempted username and client device id of a login as client-supplied', async () => {
+    renderApp('/audit?tab=logins', {
+      api: { [`GET ${LOGINS_PATH}`]: pageOf([loginView(1)]) },
+    })
+
+    expect(
+      await screen.findByText(/尝试登录的用户名和客户端设备 ID 由客户端自行提供/),
+    ).toBeInTheDocument()
   })
 
   it('reads the tab and its filters from the URL', async () => {

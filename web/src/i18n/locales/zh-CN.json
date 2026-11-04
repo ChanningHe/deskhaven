@@ -46,6 +46,7 @@
       "console": "控制台"
     },
     "selfReportedNote": "对端名称、路径、备注和告警详情由设备自行上报，服务器无法验证。",
+    "loginSelfReportedNote": "尝试登录的用户名和客户端设备 ID 由客户端自行提供，服务器无法验证。",
     "search": {
       "connections": "搜索对端或地址",
       "files": "搜索路径、对端或地址",
@@ -122,10 +123,10 @@
       "hint": "只读记录。",
       "selfReported": "设备自报",
       "selfReportedHint": "服务器无法验证这些值。",
-      "connectionTitle": "连接到 {{device}}",
-      "fileTitle": "{{device}} 上的文件传输",
-      "alarmTitle": "来自 {{device}} 的告警",
-      "loginTitle": "登录尝试：{{name}}",
+      "connectionTitle": "连接到 <bdi>{{device}}</bdi>",
+      "fileTitle": "<bdi>{{device}}</bdi> 上的文件传输",
+      "alarmTitle": "来自 <bdi>{{device}}</bdi> 的告警",
+      "loginTitle": "登录尝试：<bdi>{{name}}</bdi>",
       "received": "收到时间",
       "when": "时间",
       "sessionId": "会话 ID",

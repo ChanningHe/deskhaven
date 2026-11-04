@@ -39,7 +39,7 @@ interface AuditPanelProps<T extends { id: number }> extends PanelProps {
   searchPlaceholder?: string
   empty: { icon: LucideIcon; title: string; description: string }
   /** Title of the drawer for the open record. */
-  detailTitle: (item: T) => string
+  detailTitle: (item: T) => ReactNode
   detail: (item: T) => ReactNode
 }
 

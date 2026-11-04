@@ -63,9 +63,10 @@ impl From<ConsoleActor> for ConsoleActorView {
     }
 }
 
-/// One audited change. `before` and `after` are the snapshots as stored (secrets were
-/// masked when they were written); a retention run (`audit.retention.purge`, actor
-/// `system`) carries `{kind, deleted, cutoff, batch}` in `after`.
+/// One audited change. `before` and `after` are the snapshots, masked when they were written
+/// and masked again on read; one that is not valid JSON reads as the string `<unreadable>`. A
+/// retention run (`audit.retention.purge`, actor `system`) carries `{kind, deleted, cutoff,
+/// batch}` in `after`.
 #[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 pub struct ConsoleAuditView {
     pub id: i64,

@@ -14,8 +14,13 @@ import { ConsolePanel } from './console-panel'
 import { FilesPanel } from './files-panel'
 import { LoginsPanel } from './logins-panel'
 
-/** What the device reports is not verified by the server (06 §2): said once, above the tabs. */
-const REPORTED_BY_DEVICES: readonly AuditTab[] = ['connections', 'files', 'alarms']
+/** What devices and clients report is not verified by the server (06 §2): said above the table. */
+const SELF_REPORTED_NOTE = {
+  connections: 'audit.selfReportedNote',
+  files: 'audit.selfReportedNote',
+  alarms: 'audit.selfReportedNote',
+  logins: 'audit.loginSelfReportedNote',
+} as const
 
 /** Audit: one tab per kind of record; the tab, filters and open record are in the URL. */
 export function AuditPage() {
@@ -59,9 +64,9 @@ export function AuditPage() {
             </TabsTab>
           ))}
         </TabsList>
-        {REPORTED_BY_DEVICES.includes(tab) ? (
-          <p className="text-sm text-muted-foreground">{t('audit.selfReportedNote')}</p>
-        ) : null}
+        {tab === 'console' ? null : (
+          <p className="text-sm text-muted-foreground">{t(SELF_REPORTED_NOTE[tab])}</p>
+        )}
         <TabsPanel value="connections">
           <ConnectionsPanel {...panel} />
         </TabsPanel>

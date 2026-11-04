@@ -2,7 +2,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { LogIn } from 'lucide-react'
 import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { useListLoginAudit } from '@/api/generated/audit/audit'
 import type { LoginAuditView } from '@/api/generated/model'
@@ -45,6 +45,7 @@ function loginColumns(t: TFunction, language: string, onOpen: (id: number) => vo
     column.accessor('username_attempted', {
       header: t('audit.columns.username'),
       meta: { label: t('audit.columns.username'), className: 'max-w-48 truncate' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('method', {
       header: t('audit.columns.method'),
@@ -64,7 +65,7 @@ function loginColumns(t: TFunction, language: string, onOpen: (id: number) => vo
     column.accessor('ip', {
       header: t('audit.columns.ip'),
       meta: { label: t('audit.columns.ip'), className: 'font-mono text-xs' },
-      cell: ({ getValue }) => getValue() ?? '',
+      cell: ({ getValue }) => <bdi>{getValue() ?? ''}</bdi>,
     }),
   ])
 }
@@ -126,7 +127,13 @@ export function LoginsPanel({ search, onSearchChange }: PanelProps) {
         title: t('audit.empty.logins.title'),
         description: t('audit.empty.logins.description'),
       }}
-      detailTitle={(item) => t('audit.detail.loginTitle', { name: item.username_attempted })}
+      detailTitle={(item) => (
+        <Trans
+          i18nKey="audit.detail.loginTitle"
+          values={{ name: item.username_attempted }}
+          components={{ bdi: <bdi /> }}
+        />
+      )}
       detail={(item) => <LoginDetail item={item} />}
     />
   )

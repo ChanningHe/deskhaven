@@ -46,7 +46,7 @@ function consoleColumns(t: TFunction, language: string, onOpen: (id: number) => 
       id: 'actor',
       header: t('audit.columns.actor'),
       meta: { label: t('audit.columns.actor') },
-      cell: ({ row }) => actorText(t, row.original.actor),
+      cell: ({ row }) => <bdi>{actorText(t, row.original.actor)}</bdi>,
     }),
     column.accessor('action', {
       header: t('audit.columns.action'),
@@ -56,12 +56,14 @@ function consoleColumns(t: TFunction, language: string, onOpen: (id: number) => 
       id: 'target',
       header: t('audit.columns.target'),
       meta: { label: t('audit.columns.target'), className: 'max-w-56 truncate font-mono text-xs' },
-      cell: ({ row }) => [row.original.target_type, row.original.target_id].join(' ').trim(),
+      cell: ({ row }) => (
+        <bdi>{[row.original.target_type, row.original.target_id].join(' ').trim()}</bdi>
+      ),
     }),
     column.accessor('ip', {
       header: t('audit.columns.ip'),
       meta: { label: t('audit.columns.ip'), className: 'font-mono text-xs' },
-      cell: ({ getValue }) => getValue() ?? '',
+      cell: ({ getValue }) => <bdi>{getValue() ?? ''}</bdi>,
     }),
   ])
 }
@@ -121,7 +123,7 @@ export function ConsolePanel({ search, onSearchChange }: PanelProps) {
         title: t('audit.empty.console.title'),
         description: t('audit.empty.console.description'),
       }}
-      detailTitle={(item) => item.action}
+      detailTitle={(item) => <bdi>{item.action}</bdi>}
       detail={(item) => <ConsoleDetail item={item} />}
     />
   )

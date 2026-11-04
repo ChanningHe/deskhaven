@@ -46,6 +46,7 @@
       "console": "Console"
     },
     "selfReportedNote": "Peer names, paths, notes and alarm details are reported by the devices themselves and are not verified by the server.",
+    "loginSelfReportedNote": "The attempted username and the client device ID are what the client sent; the server cannot verify them.",
     "search": {
       "connections": "Search peer or address",
       "files": "Search path, peer or address",
@@ -122,10 +123,10 @@
       "hint": "Read-only record.",
       "selfReported": "Self-reported by the device",
       "selfReportedHint": "The server cannot verify these values.",
-      "connectionTitle": "Connection to {{device}}",
-      "fileTitle": "File transfer on {{device}}",
-      "alarmTitle": "Alarm from {{device}}",
-      "loginTitle": "Login attempt: {{name}}",
+      "connectionTitle": "Connection to <bdi>{{device}}</bdi>",
+      "fileTitle": "File transfer on <bdi>{{device}}</bdi>",
+      "alarmTitle": "Alarm from <bdi>{{device}}</bdi>",
+      "loginTitle": "Login attempt: <bdi>{{name}}</bdi>",
       "received": "Received",
       "when": "Time",
       "sessionId": "Session ID",

@@ -9,11 +9,13 @@ export function Fields({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">{children}</dl>
 }
 
-export function Field({ name, children }: { name: string; children: ReactNode }) {
+export function Field({ name, children }: { name: ReactNode; children: ReactNode }) {
   return (
     <>
       <dt className="text-muted-foreground">{name}</dt>
-      <dd className="min-w-0 break-words whitespace-pre-wrap">{children}</dd>
+      <dd className="min-w-0 break-words whitespace-pre-wrap">
+        <bdi>{children}</bdi>
+      </dd>
     </>
   )
 }
@@ -21,7 +23,10 @@ export function Field({ name, children }: { name: string; children: ReactNode })
 /** `value`, or a dash for a missing or empty one. */
 export function Optional({ value }: { value: string | null | undefined }) {
   const { t } = useTranslation()
-  return nonBlank(value) ?? <span className="text-muted-foreground">{t('audit.notReported')}</span>
+  const shown = nonBlank(value)
+  if (shown === undefined)
+    return <span className="text-muted-foreground">{t('audit.notReported')}</span>
+  return <bdi>{shown}</bdi>
 }
 
 export function Time({ at }: { at: number | null | undefined }) {

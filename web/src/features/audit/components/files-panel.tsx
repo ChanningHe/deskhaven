@@ -2,7 +2,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { FileUp } from 'lucide-react'
 import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { useListFileAudit } from '@/api/generated/audit/audit'
 import type { FileAuditView } from '@/api/generated/model'
@@ -37,10 +37,12 @@ function fileColumns(t: TFunction, language: string, onOpen: (id: number) => voi
     column.accessor('device_id', {
       header: t('audit.columns.device'),
       meta: { label: t('audit.columns.device'), className: 'font-mono' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('peer_id', {
       header: t('audit.columns.peer'),
       meta: { label: t('audit.columns.peer'), className: 'font-mono' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('direction', {
       header: t('audit.columns.direction'),
@@ -50,6 +52,7 @@ function fileColumns(t: TFunction, language: string, onOpen: (id: number) => voi
     column.accessor('path', {
       header: t('audit.columns.path'),
       meta: { label: t('audit.columns.path'), className: 'max-w-72 truncate font-mono text-xs' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('file_count', {
       header: t('audit.columns.files'),
@@ -105,7 +108,13 @@ export function FilesPanel({ search, onSearchChange }: PanelProps) {
         title: t('audit.empty.files.title'),
         description: t('audit.empty.files.description'),
       }}
-      detailTitle={(item) => t('audit.detail.fileTitle', { device: item.device_id })}
+      detailTitle={(item) => (
+        <Trans
+          i18nKey="audit.detail.fileTitle"
+          values={{ device: item.device_id }}
+          components={{ bdi: <bdi /> }}
+        />
+      )}
       detail={(item) => <FileDetail item={item} />}
     />
   )
@@ -139,7 +148,9 @@ function FileDetail({ item }: { item: FileAuditView }) {
             {item.files.map((file, index) => (
               // The device may list one name twice: position is part of the identity.
               <li key={`${String(index)}:${file.name}`} className="flex justify-between gap-4">
-                <span className="min-w-0 break-words">{file.name}</span>
+                <span className="min-w-0 break-words">
+                  <bdi>{file.name}</bdi>
+                </span>
                 <span className="text-muted-foreground">{formatBytes(file.size)}</span>
               </li>
             ))}

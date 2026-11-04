@@ -7588,7 +7588,7 @@
       },
       "ConsoleAuditView": {
         "type": "object",
-        "description": "One audited change. `before` and `after` are the snapshots as stored (secrets were\nmasked when they were written); a retention run (`audit.retention.purge`, actor\n`system`) carries `{kind, deleted, cutoff, batch}` in `after`.",
+        "description": "One audited change. `before` and `after` are the snapshots, masked when they were written\nand masked again on read; one that is not valid JSON reads as the string `<unreadable>`. A\nretention run (`audit.retention.purge`, actor `system`) carries `{kind, deleted, cutoff,\nbatch}` in `after`.",
         "required": [
           "id",
           "actor",
@@ -9370,7 +9370,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "One audited change. `before` and `after` are the snapshots as stored (secrets were\nmasked when they were written); a retention run (`audit.retention.purge`, actor\n`system`) carries `{kind, deleted, cutoff, batch}` in `after`.",
+              "description": "One audited change. `before` and `after` are the snapshots, masked when they were written\nand masked again on read; one that is not valid JSON reads as the string `<unreadable>`. A\nretention run (`audit.retention.purge`, actor `system`) carries `{kind, deleted, cutoff,\nbatch}` in `after`.",
               "required": [
                 "id",
                 "actor",

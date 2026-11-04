@@ -28,7 +28,10 @@ export function WindowFilter({ search, onChange }: ChangeProps) {
         value={startField(search.from)}
         max={endField(search.to) || undefined}
         onChange={(event) => {
-          onChange({ from: windowStart(event.target.value) })
+          const from = windowStart(event.target.value)
+          // A start after the end would be an empty window (the API refuses it): drop the end.
+          const past = from !== undefined && search.to !== undefined && from >= search.to
+          onChange(past ? { from, to: undefined } : { from })
         }}
       />
       <Input
@@ -38,7 +41,9 @@ export function WindowFilter({ search, onChange }: ChangeProps) {
         value={endField(search.to)}
         min={startField(search.from) || undefined}
         onChange={(event) => {
-          onChange({ to: windowEnd(event.target.value) })
+          const to = windowEnd(event.target.value)
+          const before = to !== undefined && search.from !== undefined && to <= search.from
+          onChange(before ? { to, from: undefined } : { to })
         }}
       />
     </>

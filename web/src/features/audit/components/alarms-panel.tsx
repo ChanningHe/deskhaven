@@ -2,7 +2,7 @@ import { keepPreviousData } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { BellRing } from 'lucide-react'
 import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { useListAlarmAudit } from '@/api/generated/audit/audit'
 import type { AlarmAuditView } from '@/api/generated/model'
@@ -37,6 +37,7 @@ function alarmColumns(t: TFunction, language: string, onOpen: (id: number) => vo
     column.accessor('device_id', {
       header: t('audit.columns.device'),
       meta: { label: t('audit.columns.device'), className: 'font-mono' },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('typ', {
       header: t('audit.columns.type'),
@@ -47,7 +48,9 @@ function alarmColumns(t: TFunction, language: string, onOpen: (id: number) => vo
       id: 'info',
       header: t('audit.columns.info'),
       meta: { label: t('audit.columns.info'), className: 'max-w-72 truncate font-mono text-xs' },
-      cell: ({ row }) => row.original.info.map((entry) => `${entry.key}=${entry.value}`).join(' '),
+      cell: ({ row }) => (
+        <bdi>{row.original.info.map((entry) => `${entry.key}=${entry.value}`).join(' ')}</bdi>
+      ),
     }),
   ])
 }
@@ -101,7 +104,13 @@ export function AlarmsPanel({ search, onSearchChange }: PanelProps) {
         title: t('audit.empty.alarms.title'),
         description: t('audit.empty.alarms.description'),
       }}
-      detailTitle={(item) => t('audit.detail.alarmTitle', { device: item.device_id })}
+      detailTitle={(item) => (
+        <Trans
+          i18nKey="audit.detail.alarmTitle"
+          values={{ device: item.device_id }}
+          components={{ bdi: <bdi /> }}
+        />
+      )}
       detail={(item) => <AlarmDetail item={item} />}
     />
   )
@@ -122,7 +131,7 @@ function AlarmDetail({ item }: { item: AlarmAuditView }) {
           <Field name={t('audit.columns.type')}>{alarmTypeLabel(t, item.typ)}</Field>
           <Field name={t('audit.detail.connId')}>{item.conn_id}</Field>
           {item.info.map((entry) => (
-            <Field key={entry.key} name={entry.key}>
+            <Field key={entry.key} name={<bdi>{entry.key}</bdi>}>
               {entry.value}
             </Field>
           ))}
