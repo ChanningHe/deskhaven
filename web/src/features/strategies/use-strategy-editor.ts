@@ -10,7 +10,7 @@ import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { useCatalog } from './catalog'
 import { invalidateStrategies } from './invalidate'
-import { draftOf, patchOf, valueProblem } from './option-draft'
+import { draftOf, MAX_OPTIONS, optionCount, patchOf, valueProblem } from './option-draft'
 import type { OptionDraft, OptionValue, ValueProblem } from './option-draft'
 
 export interface Details {
@@ -23,15 +23,31 @@ function problemsOf(
   draft: OptionDraft,
   changed: string[],
   catalog: Map<string, CatalogOptionView>,
+  formKeys: Set<string>,
 ) {
   const problems = new Map<string, ValueProblem>()
   for (const key of changed) {
     const value = draft[key]
     if (value?.kind !== 'set') continue
-    const problem = valueProblem(catalog.get(key), value.value)
+    // "Set to" an empty value would silently mean "reset": the form asks for the reset.
+    const problem =
+      value.value === '' && formKeys.has(key)
+        ? 'emptySet'
+        : valueProblem(catalog.get(key), value.value)
     if (problem !== undefined) problems.set(key, problem)
   }
   return problems
+}
+
+/** Catalog keys of the typed form (the advanced-only ones are edited as free keys). */
+function formKeysOf(options: CatalogOptionView[]): Set<string> {
+  return new Set(options.filter((o) => !o.advanced_only).map((o) => o.key))
+}
+
+/** Options whose value must not be shown: catalog secrets and withheld saved values. */
+function secretKeysOf(options: CatalogOptionView[], strategy: StrategyView): Set<string> {
+  const secret = options.filter((o) => o.secret).map((o) => o.key)
+  return new Set([...secret, ...strategy.secret_options])
 }
 
 function patchFor(
@@ -52,7 +68,9 @@ export function useStrategyEditor(strategy: StrategyView) {
   const details = useRebasedDraft<Details>({ name: strategy.name, note: strategy.note })
   const options = useRebasedDraft<OptionDraft>(draftOf(strategy))
   const mutation = useUpdateStrategy()
-  const known = new Map((catalog.data?.options ?? []).map((o) => [o.key, o]))
+  const catalogOptions = catalog.data?.options ?? []
+  const known = new Map(catalogOptions.map((o) => [o.key, o]))
+  const formKeys = formKeysOf(catalogOptions)
   const changedKeys = options.changed.map(String)
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -76,13 +94,15 @@ export function useStrategyEditor(strategy: StrategyView) {
     details,
     options,
     mutation,
-    known,
-    problems: problemsOf(options.draft, changedKeys, known),
+    formKeys,
+    secretKeys: secretKeysOf(catalogOptions, strategy),
+    problems: problemsOf(options.draft, changedKeys, known, formKeys),
+    tooMany: optionCount(options.draft) > MAX_OPTIONS,
     dirty: details.changed.length > 0 || changedKeys.length > 0,
     conflicts: details.conflicts.length + options.conflicts.length > 0,
-    /** Options outside the catalog that the draft sets. */
+    /** Options outside the typed form that the draft sets. */
     free: Object.entries(options.draft).filter(
-      (entry): entry is [string, OptionValue] => entry[1] !== undefined && !known.has(entry[0]),
+      (entry): entry is [string, OptionValue] => entry[1] !== undefined && !formKeys.has(entry[0]),
     ),
     setOption: (key: string, value: OptionValue | undefined) => {
       options.set({ [key]: value })

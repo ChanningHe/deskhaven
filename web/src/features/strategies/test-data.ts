@@ -43,6 +43,7 @@ export function catalogOption(
     group: 'security',
     default: null,
     secret: false,
+    advanced_only: false,
     choices: [],
     min: null,
     max: null,
@@ -74,9 +75,13 @@ export const CATALOG: CatalogView = {
       max: 65535,
       label: { en: 'Direct access port', zh: '直接访问端口' },
     }),
+    catalogOption('whitelist', 'text', {
+      label: { en: 'IP whitelist', zh: 'IP 白名单' },
+    }),
     catalogOption('proxy-password', 'text', {
       group: 'network',
       secret: true,
+      advanced_only: true,
       label: { en: 'Proxy password', zh: '代理密码' },
     }),
   ],

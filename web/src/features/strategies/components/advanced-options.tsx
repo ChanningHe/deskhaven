@@ -11,18 +11,20 @@ import { KEY_MAX_LENGTH, keyProblem, setTo, VALUE_MAX_LENGTH, valueProblem } fro
 import type { KeyProblem, OptionValue, ValueProblem } from '../option-draft'
 
 interface AdvancedOptionsProps {
-  /** Options outside the catalog that the draft sets, by name. */
+  /** Options outside the typed form that the draft sets, by name. */
   entries: [string, OptionValue][]
   /** Option names the typed form above covers. */
   known: Set<string>
+  /** Option names whose value is never shown (password inputs, withheld saved values). */
+  secret: Set<string>
   problems: Map<string, ValueProblem>
   onChange: (key: string, value: OptionValue | undefined) => void
   disabled: boolean
 }
 
-/** Free option names and values, for options the catalog does not know. */
+/** Free option names and values, for options the typed form does not cover. */
 export function AdvancedOptions(props: AdvancedOptionsProps) {
-  const { entries, onChange, problems, disabled } = props
+  const { entries, problems } = props
   const { t } = useTranslation()
   return (
     <fieldset className="grid gap-2 rounded-lg border p-3">
@@ -30,36 +32,69 @@ export function AdvancedOptions(props: AdvancedOptionsProps) {
       <p className="text-xs text-muted-foreground">{t('strategies.advanced.description')}</p>
       {entries.map(([key, value]) => (
         <div key={key} className="grid gap-1">
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate text-xs">{key}</code>
-            <Input
-              aria-label={t('strategies.option.valueOf', { name: key })}
-              className="flex-[2]"
-              maxLength={VALUE_MAX_LENGTH}
-              disabled={disabled}
-              value={value.kind === 'set' ? value.value : ''}
-              onChange={(e) => {
-                onChange(key, setTo(e.target.value))
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('strategies.advanced.remove', { key })}
-              disabled={disabled}
-              onClick={() => {
-                onChange(key, undefined)
-              }}
-            >
-              <X aria-hidden />
-            </Button>
-          </div>
+          <FreeRow {...props} optionKey={key} value={value} />
           <ProblemLine problem={problems.get(key)} />
         </div>
       ))}
-      {disabled ? null : <AddOption {...props} />}
+      {props.disabled ? null : <AddOption {...props} />}
     </fieldset>
+  )
+}
+
+interface FreeRowProps extends AdvancedOptionsProps {
+  optionKey: string
+  value: OptionValue
+}
+
+/** One free option: its value (a password input for secrets, a note for a withheld one). */
+function FreeRow({ optionKey: key, value, secret, onChange, disabled }: FreeRowProps) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center gap-2">
+      <code className="min-w-0 flex-1 truncate text-xs">{key}</code>
+      {value.kind === 'kept' ? (
+        <span className="flex flex-[2] items-center gap-2 text-xs text-muted-foreground">
+          {t('strategies.option.keptHint')}
+          {disabled ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => {
+                onChange(key, setTo(''))
+              }}
+            >
+              {t('strategies.advanced.replace')}
+            </Button>
+          )}
+        </span>
+      ) : (
+        <Input
+          aria-label={t('strategies.option.valueOf', { name: key })}
+          className="flex-[2]"
+          type={secret.has(key) ? 'password' : 'text'}
+          autoComplete="off"
+          maxLength={VALUE_MAX_LENGTH}
+          disabled={disabled}
+          value={value.kind === 'set' ? value.value : ''}
+          onChange={(e) => {
+            onChange(key, setTo(e.target.value))
+          }}
+        />
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('strategies.advanced.remove', { key })}
+        disabled={disabled}
+        onClick={() => {
+          onChange(key, undefined)
+        }}
+      >
+        <X aria-hidden />
+      </Button>
+    </div>
   )
 }
 
@@ -92,7 +127,7 @@ function addProblem(
   return invalid === undefined ? undefined : `strategies.problems.${invalid}`
 }
 
-function AddOption({ entries, known, onChange }: AdvancedOptionsProps) {
+function AddOption({ entries, known, secret, onChange }: AdvancedOptionsProps) {
   const { t } = useTranslation()
   const id = useId()
   const [key, setKey] = useState('')
@@ -134,6 +169,8 @@ function AddOption({ entries, known, onChange }: AdvancedOptionsProps) {
           <Label htmlFor={`${id}-value`}>{t('strategies.advanced.value')}</Label>
           <Input
             id={`${id}-value`}
+            type={secret.has(key.trim()) ? 'password' : 'text'}
+            autoComplete="off"
             maxLength={VALUE_MAX_LENGTH}
             value={value}
             onKeyDown={onEnter}

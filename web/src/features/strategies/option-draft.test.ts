@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import { catalogOption, strategyView } from './test-data'
-import { draftOf, KEPT, keyProblem, patchOf, RESET, setTo, valueProblem } from './option-draft'
+import {
+  draftOf,
+  KEPT,
+  keyProblem,
+  optionCount,
+  patchOf,
+  RESET,
+  setTo,
+  valueProblem,
+} from './option-draft'
 
 describe('option drafts', () => {
   it('reads set, reset and withheld secret options from the server copy', () => {
@@ -55,6 +64,13 @@ describe('option drafts', () => {
     expect(valueProblem(port, '1.5')).toBe('number')
     expect(valueProblem(undefined, 'v'.repeat(4097))).toBe('tooLong')
     expect(valueProblem(undefined, 'line\nbreak')).toBe('control')
+    expect(valueProblem(undefined, 'del\u007f')).toBe('control')
+    expect(valueProblem(undefined, 'c1\u0085')).toBe('control')
+    expect(valueProblem(undefined, 'ü€ ')).toBeUndefined()
     expect(valueProblem(undefined, '')).toBeUndefined()
+  })
+
+  it('counts the options a draft keeps', () => {
+    expect(optionCount({ a: setTo('1'), b: RESET, c: KEPT, gone: undefined })).toBe(3)
   })
 })

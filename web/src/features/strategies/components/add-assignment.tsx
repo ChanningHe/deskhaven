@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useListGroups } from '@/api/generated/groups/groups'
 import { useAssignStrategy } from '@/api/generated/strategies/strategies'
 import type { TargetBody, TargetKind } from '@/api/generated/model'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { NativeSelect } from '@/components/common/native-select'
 import { UserCombobox } from '@/components/common/user-combobox'
@@ -32,20 +33,22 @@ export function AddAssignment({ strategyId }: { strategyId: number }) {
   const [kind, setKind] = useState<TargetKind>('global')
   const [picked, setPicked] = useState<Picked | undefined>(undefined)
   const mutation = useAssignStrategy()
+  // Global reaches every device: it is confirmed first.
+  const [confirming, setConfirming] = useState(false)
   const ready = kind === 'global' || picked !== undefined
 
-  const assign = async () => {
+  const send = async () => {
     const data: TargetBody =
       kind === 'global' || picked === undefined
         ? { target_type: kind }
         : { target_type: kind, target_id: picked.id }
-    const done = await mutation.mutateAsync({ id: strategyId, data }).then(
-      () => true,
-      () => false,
-    )
-    if (!done) return
+    await mutation.mutateAsync({ id: strategyId, data })
     setPicked(undefined)
     void invalidateStrategies(queryClient)
+  }
+  const assign = () => {
+    if (kind === 'global') setConfirming(true)
+    else void send().catch(() => undefined)
   }
 
   return (
@@ -70,17 +73,21 @@ export function AddAssignment({ strategyId }: { strategyId: number }) {
           </NativeSelect>
         </div>
         <TargetPicker kind={kind} picked={picked} onPick={setPicked} />
-        <Button
-          type="button"
-          size="sm"
-          disabled={!ready || mutation.isPending}
-          onClick={() => void assign()}
-        >
+        <Button type="button" size="sm" disabled={!ready || mutation.isPending} onClick={assign}>
           {t('strategies.assignments.assign')}
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{t('strategies.assignments.replaces')}</p>
-      {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
+      {mutation.error && !confirming ? <ErrorAlert error={mutation.error} /> : null}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('strategies.assignments.globalTitle')}
+        description={t('strategies.assignments.globalDescription')}
+        confirmLabel={t('strategies.assignments.globalConfirm')}
+        destructive={false}
+        onConfirm={send}
+      />
     </div>
   )
 }

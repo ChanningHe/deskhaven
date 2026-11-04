@@ -110,6 +110,64 @@ describe('strategies page', () => {
     })
   })
 
+  it('keeps custom-client options out of the form and refuses an empty "set to"', async () => {
+    const { user } = renderApp('/strategies?strategy=1', {
+      ...base({
+        [`GET ${KIOSK_PATH}`]: {
+          body: { ...KIOSK, options_corrupt: true, options: {}, secret_options: [] },
+        },
+      }),
+    })
+
+    const whitelist = await screen.findByRole('combobox', { name: 'IP 白名单' })
+    expect(screen.queryByRole('combobox', { name: '代理密码' })).not.toBeInTheDocument()
+    expect(screen.getByText(/保存的选项已损坏/)).toBeInTheDocument()
+    await user.selectOptions(whitelist, 'set')
+
+    expect(await screen.findByText(/空值不会作为值保存/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+    await user.type(screen.getByLabelText('IP 白名单 的值'), '10.0.0.0/8')
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+  })
+
+  it('shows withheld secrets as password inputs when the catalog fails to load', async () => {
+    const { user } = renderApp('/strategies?strategy=1', {
+      ...base({ [`GET ${CATALOG_PATH}`]: { status: 500, body: { error: { code: 'internal' } } } }),
+    })
+
+    const advanced = await screen.findByRole('group', { name: '高级' })
+    expect(await within(advanced).findByText('已保存（不再显示）')).toBeInTheDocument()
+    await user.click(within(advanced).getByRole('button', { name: '替换' }))
+
+    expect(within(advanced).getByLabelText('proxy-password 的值')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    expect(within(advanced).getByLabelText('custom-x 的值')).toHaveAttribute('type', 'text')
+  })
+
+  it('asks before assigning globally', async () => {
+    let assigned: unknown
+    const { user } = renderApp('/strategies?strategy=1&tab=assignments', {
+      ...base({
+        [`GET ${ASSIGNMENTS_PATH}`]: { body: { items: [] } },
+        [`POST ${ASSIGNMENTS_PATH}`]: ({ init }) => {
+          assigned = body(init)
+          return { status: 204 }
+        },
+      }),
+    })
+
+    await user.click(await screen.findByRole('button', { name: '分配' }))
+    const confirm = await screen.findByRole('alertdialog')
+    expect(assigned).toBeUndefined()
+    await user.click(within(confirm).getByRole('button', { name: '全局分配' }))
+
+    await waitFor(() => {
+      expect(assigned).toEqual({ target_type: 'global' })
+    })
+  })
+
   it('assigns the strategy to a device group and removes an assignment', async () => {
     let assigned: unknown
     let removed: URL | undefined

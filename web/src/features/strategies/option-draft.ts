@@ -21,10 +21,18 @@ export function setTo(value: string): OptionValue {
 
 export const KEY_MAX_LENGTH = 128
 export const VALUE_MAX_LENGTH = 4096
+/** Most options one strategy may carry (the admin API's limit). */
+export const MAX_OPTIONS = 256
 const KEY_PATTERN = /^[A-Za-z0-9._-]+$/
-/** C0 controls and DEL; the admin API rejects them in values. */
+/** Unicode `Cc` (C0, DEL and C1), as Rust's `char::is_control`: the admin API rejects them. */
 const LAST_C0 = 0x1f
-const DEL = 0x7f
+const FIRST_DEL_C1 = 0x7f
+const LAST_C1 = 0x9f
+
+/** Options the draft keeps in the strategy (set, reset or a withheld secret). */
+export function optionCount(draft: OptionDraft): number {
+  return Object.values(draft).filter((value) => value !== undefined).length
+}
 
 /** The draft of a server copy. */
 export function draftOf(strategy: StrategyView): OptionDraft {
@@ -56,12 +64,13 @@ export function keyProblem(key: string): KeyProblem | undefined {
   return KEY_PATTERN.test(key) ? undefined : 'charset'
 }
 
-export type ValueProblem = 'tooLong' | 'control' | 'bool' | 'choice' | 'number' | 'range'
+export type ValueProblem =
+  'tooLong' | 'control' | 'bool' | 'choice' | 'number' | 'range' | 'emptySet'
 
 function hasControl(value: string): boolean {
   for (const c of value) {
     const code = c.charCodeAt(0)
-    if (code <= LAST_C0 || code === DEL) return true
+    if (code <= LAST_C0 || (code >= FIRST_DEL_C1 && code <= LAST_C1)) return true
   }
   return false
 }

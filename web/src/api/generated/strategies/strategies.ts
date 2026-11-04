@@ -753,7 +753,9 @@ export const getAssignStrategyUrl = (id: number) => {
 
 /**
  * @summary Assigns the strategy to a target, replacing the strategy the target had (audited
-`strategy.assign`, with the replaced assignment as `before`).
+`strategy.assign`, with the replaced assignment as `before`). Assignments of a strategy
+from the configuration file are read-only: neither it nor a target that has it can be
+(re)assigned here.
  */
 export const assignStrategy = async (
   id: number,
@@ -832,7 +834,9 @@ export type AssignStrategyMutationVariables = { id: number; data: TargetBody }
 
 /**
  * @summary Assigns the strategy to a target, replacing the strategy the target had (audited
-`strategy.assign`, with the replaced assignment as `before`).
+`strategy.assign`, with the replaced assignment as `before`). Assignments of a strategy
+from the configuration file are read-only: neither it nor a target that has it can be
+(re)assigned here.
  */
 export const useAssignStrategy = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {
@@ -870,7 +874,8 @@ export const getUnassignStrategyUrl = (id: number, params: UnassignStrategyParam
 }
 
 /**
- * @summary Removes the strategy from a target (audited `strategy.unassign`).
+ * @summary Removes the strategy from a target (audited `strategy.unassign`). Assignments of a
+strategy from the configuration file are read-only.
  */
 export const unassignStrategy = async (
   id: number,
@@ -929,7 +934,8 @@ export type UnassignStrategyMutationError = ErrorType<ErrorEnvelope>
 export type UnassignStrategyMutationVariables = { id: number; params: UnassignStrategyParams }
 
 /**
- * @summary Removes the strategy from a target (audited `strategy.unassign`).
+ * @summary Removes the strategy from a target (audited `strategy.unassign`). Assignments of a
+strategy from the configuration file are read-only.
  */
 export const useUnassignStrategy = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {

@@ -11,6 +11,8 @@ import type { TextView } from './textView'
  * One known client option.
  */
 export interface CatalogOptionView {
+  /** Left out of the typed form (custom-client settings); set it in the advanced editor. */
+  advanced_only: boolean
   /** The allowed values of a `choice` option. */
   choices: ChoiceView[]
   /**

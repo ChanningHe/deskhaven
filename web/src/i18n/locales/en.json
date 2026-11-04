@@ -1242,7 +1242,8 @@
       "number": "Must be a whole number.",
       "range": "Out of the allowed range.",
       "tooLong": "At most 4096 characters.",
-      "control": "Must not contain line breaks or control characters."
+      "control": "Must not contain line breaks or control characters.",
+      "emptySet": "An empty value is not saved as a value. To make the client delete this option, choose \"Reset to the client default\"."
     },
     "advanced": {
       "title": "Advanced",
@@ -1258,12 +1259,15 @@
         "charset": "Option names may only contain letters, digits, '.', '_' and '-'.",
         "known": "This option is in the form above.",
         "taken": "This option is already listed."
-      }
+      },
+      "replace": "Replace"
     },
     "editor": {
       "save": "Save",
       "saved": "Saved",
-      "conflict": "Someone else changed this strategy meanwhile; saving keeps your edits."
+      "conflict": "Someone else changed this strategy meanwhile; saving keeps your edits.",
+      "corrupt": "The stored options of this strategy are damaged and are not sent to devices. Saving options replaces them with what this form shows.",
+      "tooMany": "A strategy holds at most {{max}} options."
     },
     "targets": {
       "global": "Global",
@@ -1290,7 +1294,10 @@
       "userCandidates": "Matching users",
       "usersFound": "{{count}} users found",
       "noUser": "No matching user",
-      "clearUser": "{{name}} (change)"
+      "clearUser": "{{name}} (change)",
+      "globalTitle": "Assign to every device",
+      "globalDescription": "The global assignment is the lowest layer of every device; it replaces the global strategy if there is one.",
+      "globalConfirm": "Assign globally"
     },
     "devicePicker": {
       "search": "Search devices",

@@ -4,6 +4,7 @@ import type { StrategyView } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Button } from '@/components/ui/button'
 
+import { MAX_OPTIONS } from '../option-draft'
 import { useStrategyEditor } from '../use-strategy-editor'
 import { AdvancedOptions } from './advanced-options'
 import { OptionGroups } from './option-groups'
@@ -38,12 +39,17 @@ export function StrategyEditor({ strategy }: { strategy: StrategyView }) {
   const editable = strategy.managed_by === 'ui'
   return (
     <form className="grid gap-4" onSubmit={(event) => void editor.submit(event)}>
+      {strategy.options_corrupt ? (
+        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {t('strategies.editor.corrupt')}
+        </p>
+      ) : null}
       <StrategyDetails draft={details.draft} onChange={details.set} disabled={!editable} />
       {catalog.error ? (
         <ErrorAlert error={catalog.error} onRetry={() => void catalog.refetch()} />
       ) : null}
       <OptionGroups
-        options={catalog.data?.options ?? []}
+        options={(catalog.data?.options ?? []).filter((o) => !o.advanced_only)}
         draft={options.draft}
         saved={new Set(strategy.secret_options)}
         problems={problems}
@@ -52,7 +58,8 @@ export function StrategyEditor({ strategy }: { strategy: StrategyView }) {
       />
       <AdvancedOptions
         entries={editor.free}
-        known={new Set(editor.known.keys())}
+        known={editor.formKeys}
+        secret={editor.secretKeys}
         problems={problems}
         onChange={editor.setOption}
         disabled={!editable}
@@ -62,11 +69,16 @@ export function StrategyEditor({ strategy }: { strategy: StrategyView }) {
           {t('strategies.editor.conflict')}
         </p>
       ) : null}
+      {editor.tooMany ? (
+        <p role="alert" className="text-xs text-destructive">
+          {t('strategies.editor.tooMany', { max: MAX_OPTIONS })}
+        </p>
+      ) : null}
       {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
       {editable ? (
         <SaveBar
           dirty={editor.dirty}
-          blocked={problems.size > 0}
+          blocked={problems.size > 0 || editor.tooMany}
           pending={mutation.isPending}
           saved={mutation.isSuccess}
         />

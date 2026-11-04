@@ -1242,7 +1242,8 @@
       "number": "必须是整数。",
       "range": "超出允许范围。",
       "tooLong": "最多 4096 个字符。",
-      "control": "不能包含换行或控制字符。"
+      "control": "不能包含换行或控制字符。",
+      "emptySet": "空值不会作为值保存。如需让客户端删除此选项，请选择“恢复客户端默认”。"
     },
     "advanced": {
       "title": "高级",
@@ -1258,12 +1259,15 @@
         "charset": "选项名只能包含字母、数字、'.'、'_' 和 '-'。",
         "known": "此选项在上方表单中。",
         "taken": "此选项已在列表中。"
-      }
+      },
+      "replace": "替换"
     },
     "editor": {
       "save": "保存",
       "saved": "已保存",
-      "conflict": "他人同时修改了此策略；保存时会保留你的修改。"
+      "conflict": "他人同时修改了此策略；保存时会保留你的修改。",
+      "corrupt": "此策略保存的选项已损坏，不会下发给设备。保存选项会用此表单显示的内容替换它们。",
+      "tooMany": "一个策略最多 {{max}} 个选项。"
     },
     "targets": {
       "global": "全局",
@@ -1290,7 +1294,10 @@
       "userCandidates": "匹配的用户",
       "usersFound": "找到 {{count}} 个用户",
       "noUser": "没有匹配的用户",
-      "clearUser": "{{name}}（更换）"
+      "clearUser": "{{name}}（更换）",
+      "globalTitle": "分配到所有设备",
+      "globalDescription": "全局分配是每台设备的最低层；若已有全局策略，将被替换。",
+      "globalConfirm": "全局分配"
     },
     "devicePicker": {
       "search": "搜索设备",
