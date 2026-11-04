@@ -67,6 +67,7 @@ jobs:
     # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
     # like the rust image above, a digest would also freeze out Debian security
     # rebuilds of this tag, and the tag already fixes Node itself.
+    # Keep in step with NODE_VERSION (and its pinned tarball hashes) of the e2e job.
     container: node:24.21.0-bookworm
     env:
       # pnpm comes from web/package.json `packageManager` (version + sha512 of the
@@ -223,8 +224,8 @@ jobs:
 
   # Console end-to-end flows (web/e2e, Playwright) against the real binary with the
   # embedded console, once on SQLite and once on the service's empty PostgreSQL database.
-  # The Rust image gets the web job's Node (tarball checked against the release's
-  # SHASUMS256.txt) and Playwright's Chromium with its system libraries.
+  # The Rust image gets the web job's Node (official tarball, sha256 pinned below) and
+  # Playwright's Chromium with its system libraries.
   e2e:
     needs: [clippy, deny]
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
@@ -252,12 +253,18 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
       - run: .forgejo/ci-setup.sh
+      # The tarball must match the sha256 pinned here (from the release's SHASUMS256.txt);
+      # bump both with NODE_VERSION.
       - name: node
         run: |
-          case "$(dpkg --print-architecture)" in amd64) arch=x64 ;; arm64) arch=arm64 ;; *) exit 1 ;; esac
+          case "$(dpkg --print-architecture)" in
+            amd64) arch=x64 sha=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff ;;
+            arm64) arch=arm64 sha=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5 ;;
+            *) echo "unsupported architecture" >&2; exit 1 ;;
+          esac
           tarball="node-v$NODE_VERSION-linux-$arch.tar.gz"
           curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/$tarball"
-          curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" | grep "  $tarball\$" | sha256sum -c -
+          echo "$sha  $tarball" | sha256sum -c -
           tar -xzf "$tarball" -C /usr/local --strip-components=1
           rm "$tarball"
           node --version
@@ -276,10 +283,12 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: web
       - name: e2e (SQLite)
+        id: e2e-sqlite
         run: pnpm e2e
         working-directory: web
+      # Also after a failed SQLite run, but not when the setup before it failed.
       - name: e2e (PostgreSQL)
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.e2e-sqlite.conclusion != 'skipped' }}
         run: pnpm e2e
         working-directory: web
         env:
@@ -288,7 +297,7 @@ jobs:
       # Reports, traces and server logs of both runs (web/e2e-results/{sqlite,postgres}).
       - name: upload Playwright results
         if: failure()
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        uses: https://data.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e # v4
         with:
           name: playwright-results
           path: web/e2e-results
