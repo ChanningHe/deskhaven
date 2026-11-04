@@ -25,6 +25,7 @@ pub(crate) enum Failure {
     InvalidChallenge,
     /// A verified failure (one of the above) that started a lockout.
     LockStarted(Box<Failure>),
+    /// Nothing verified: the password hasher is saturated or the directory is unavailable.
     Busy,
     Internal(BoxError),
 }
@@ -80,7 +81,10 @@ impl From<AuthError> for Failure {
             AuthError::InvalidCredentials => Self::InvalidCredentials,
             AuthError::Disabled => Self::Disabled,
             AuthError::Unverified => Self::Unverified,
-            AuthError::Password(PasswordError::Busy) => Self::Busy,
+            // Nothing verified either way: refunded, 503.
+            AuthError::Password(PasswordError::Busy) | AuthError::DirectoryUnavailable => {
+                Self::Busy
+            }
             other => Self::Internal(other.into()),
         }
     }

@@ -65,6 +65,41 @@ pub async fn harness_with(
     Harness { state, router }
 }
 
+/// [`super::harness`] whose LDAP service talks to `connector` (a fake directory).
+pub async fn harness_with_ldap(
+    db: &deskhaven_db::testing::TestDb,
+    connector: std::sync::Arc<dyn deskhaven_core::ldap::Connector>,
+) -> Harness {
+    use std::sync::Arc;
+
+    let base = super::harness(db, deskhaven_admin_api::AdminRoutes::new()).await;
+    let state = deskhaven_core::state::AppState::new(
+        db.conn.clone(),
+        base.state.settings.clone(),
+        Arc::clone(&base.state.crypto),
+        "test-signal-key".to_owned(),
+        deskhaven_core::users::PasswordHasher::default(),
+        Arc::new(SystemClock),
+        &deskhaven_core::state::StateConfig::default(),
+    );
+    let ldap = deskhaven_core::ldap::LdapService::new(
+        state.db.clone(),
+        Arc::clone(&state.crypto),
+        state.users.clone(),
+        state.groups.clone(),
+        Arc::clone(&state.clock),
+        connector,
+    );
+    let state = Arc::new(deskhaven_core::state::AppState { ldap, ..state });
+    let routes = deskhaven_admin_api::api_routes().unwrap();
+    let router = deskhaven_http::apply_middleware(
+        routes.into_router(Arc::clone(&state)),
+        &deskhaven_http::HttpConfig::default(),
+        deskhaven_http::ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
+    );
+    Harness { state, router }
+}
+
 impl Harness {
     /// A state-changing request from the console origin; `console` adds its cookie and
     /// CSRF token, else the anonymous CSRF value is sent.

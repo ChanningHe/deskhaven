@@ -17,6 +17,7 @@ use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::{Change, PinSet};
 use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
+use deskhaven_core::ldap::{Connector, Ldap3Connector, LdapService};
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::{AppState, StateConfig};
@@ -66,6 +67,8 @@ pub struct TestOptions {
     /// Every service rebuilt on this clock (default: the system clock), e.g. a
     /// `ManualClock` to step past rate-limit intervals. Not combined with `hasher`.
     pub clock: Option<SharedClock>,
+    /// The LDAP service talks to this directory (a fake) instead of a real server.
+    pub ldap: Option<Arc<dyn Connector>>,
 }
 
 impl TestApp {
@@ -102,6 +105,7 @@ impl TestApp {
             listen,
             public_url,
             clock,
+            ldap,
         } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let mut config = Bootstrap {
@@ -118,11 +122,15 @@ impl TestApp {
             TEST_SIGNAL_PUBLIC_KEY.to_owned(),
         )
         .await?;
-        // One instance: the routers and the seeds share it.
-        let state = Arc::new(match (hasher, clock) {
+        let state = match (hasher, clock) {
             (Some(hasher), _) => with_hasher(base, hasher),
             (None, Some(clock)) => on_clock(&base, clock),
             (None, None) => base,
+        };
+        // One instance: the routers and the seeds share it.
+        let state = Arc::new(match ldap {
+            Some(connector) => with_ldap(state, connector),
+            None => state,
         });
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(
@@ -246,13 +254,42 @@ fn with_hasher(base: AppState, hasher: PasswordHasher) -> AppState {
         hasher,
         Arc::clone(&clock),
     );
-    let sessions =
-        SessionService::new(base.db.clone(), base.settings.clone(), users.clone(), clock);
+    let sessions = SessionService::new(
+        base.db.clone(),
+        base.settings.clone(),
+        users.clone(),
+        Arc::clone(&clock),
+    );
+    // Password logins go through the LDAP service, which must use the same users.
+    let ldap = ldap_service(&base, &users, clock, Arc::new(Ldap3Connector::new()));
     AppState {
         users,
         sessions,
+        ldap,
         ..base
     }
+}
+
+/// `base` whose LDAP service talks to `connector`.
+fn with_ldap(base: AppState, connector: Arc<dyn Connector>) -> AppState {
+    let ldap = ldap_service(&base, &base.users, Arc::clone(&base.clock), connector);
+    AppState { ldap, ..base }
+}
+
+fn ldap_service(
+    base: &AppState,
+    users: &UserService,
+    clock: SharedClock,
+    connector: Arc<dyn Connector>,
+) -> LdapService {
+    LdapService::new(
+        base.db.clone(),
+        Arc::clone(&base.crypto),
+        users.clone(),
+        base.groups.clone(),
+        clock,
+        connector,
+    )
 }
 
 fn build(request: &fixture::Request) -> anyhow::Result<Request<Body>> {

@@ -4,11 +4,13 @@
 //! 1. `pre_check`: per-IP token, then one attempt reserved (counted) for the username from
 //!    this source. Locked or over the limit -> 429; a database error fails closed (500, no
 //!    verification).
-//! 2. `authenticate_local`: one Argon2id verification, real or dummy (unknown accounts), so
-//!    unknown user and wrong password cost the same and answer the same 401, whether or not
-//!    the account has 2FA.
+//! 2. `LdapService::authenticate_password`: the local password, or the directory for LDAP
+//!    accounts (and unknown names while a directory is enabled), never both. One Argon2id
+//!    verification either way, real or dummy (unknown accounts), so unknown user and wrong
+//!    password cost the same and answer the same 401, whether or not the account has 2FA.
 //! 3. Wrong password, unknown, disabled or unverified account -> `on_failure` (the attempt
-//!    stays counted). Hasher busy -> `refund` (never counted) and 503.
+//!    stays counted). Hasher busy or directory unavailable -> `refund` (never counted) and
+//!    503: nothing was verified, and an LDAP account never falls back to a local password.
 //! 4. Right password, by the user's second factor (`TfaService::requirement`):
 //!    - none: the client session (bound to the request's device, re-checking the
 //!      credential stamp; a credential changed meanwhile is a counted 401), then
@@ -88,8 +90,8 @@ async fn authenticate(
     let throttle = &state.login_throttle;
     let attempt = throttle.pre_check(client, &request.username).await?;
     let verified = state
-        .users
-        .authenticate_local(&request.username, &request.password)
+        .ldap
+        .authenticate_password(&request.username, &request.password)
         .await;
     let Authenticated { user, stamp } = match verified {
         Ok(verified) => verified,

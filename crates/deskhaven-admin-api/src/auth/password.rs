@@ -2,10 +2,11 @@
 //!
 //! 1. `pre_check` (per-IP token, then one attempt reserved for the username from this
 //!    source): locked or over the limit -> 429, nothing verified.
-//! 2. `authenticate_local`: one Argon2id verification, real or dummy, so unknown account
-//!    and wrong password cost the same and answer the same 401 `invalid_credentials`,
-//!    whether or not the account has 2FA. Disabled / unverified (right password only):
-//!    403. Busy hasher: refunded, 503.
+//! 2. `LdapService::authenticate_password`: the local password, or the directory for LDAP
+//!    accounts (never both); one Argon2id verification either way, real or dummy, so
+//!    unknown account and wrong password cost the same and answer the same 401
+//!    `invalid_credentials`, whether or not the account has 2FA. Disabled / unverified
+//!    (right password only): 403. Busy hasher or unavailable directory: refunded, 503.
 //! 3. Right password, by the second factor (`TfaService::requirement`):
 //!    - TOTP enabled: `on_password_ok_pending_2fa` (the attempt stays counted), a console
 //!      challenge holding that subject, `totp_required`; **no session**;
@@ -133,8 +134,8 @@ async fn authenticate(
     let attempt = throttle.pre_check(client, &request.username).await?;
     let password = Password::new(request.password.as_str());
     let verified = state
-        .users
-        .authenticate_local(&request.username, &password)
+        .ldap
+        .authenticate_password(&request.username, &password)
         .await;
     let Authenticated { user, stamp } = match verified {
         Ok(verified) => verified,
