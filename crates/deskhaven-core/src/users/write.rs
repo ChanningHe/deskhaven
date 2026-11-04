@@ -455,7 +455,7 @@ pub(super) async fn lock_user(tx: &DatabaseTransaction, id: i64) -> Result<user:
 
 /// Ids of all active owners, locked in id order (a consistent order, so concurrent
 /// owner-affecting transactions queue instead of deadlocking).
-pub(super) async fn lock_active_owners(tx: &DatabaseTransaction) -> Result<Vec<i64>, DbErr> {
+pub(crate) async fn lock_active_owners(tx: &DatabaseTransaction) -> Result<Vec<i64>, DbErr> {
     user::Entity::find()
         .select_only()
         .column(user::Column::Id)

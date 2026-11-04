@@ -6,7 +6,8 @@ import type { ScopeView } from './scopeView'
 
 export interface NewApiTokenBody {
   /**
-   * Unix milliseconds, in the future; absent or `null`: never expires.
+   * Unix milliseconds, in the future and at most ten years away; absent or `null`: never
+   * expires.
    * @nullable
    */
   expires_at?: number | null

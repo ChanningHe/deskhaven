@@ -46,6 +46,7 @@ pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
 // unlock` input; OIDC derives usernames by it.
 pub use normalize::username_norm;
 pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char};
+pub(crate) use write::lock_active_owners;
 
 use crate::clock::{SharedClock, SystemClock};
 use crate::pagination::Page;

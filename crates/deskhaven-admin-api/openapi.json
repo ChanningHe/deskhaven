@@ -5571,7 +5571,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Unix milliseconds, in the future; absent or `null`: never expires."
+            "description": "Unix milliseconds, in the future and at most ten years away; absent or `null`: never\nexpires."
           },
           "name": {
             "type": "string",

@@ -126,14 +126,14 @@ pub async fn create_api_token(
         expires_at,
     };
     let guard = token_guard(&ctx, &state.console_audit, "api_token.create", None);
-    let (token, secret) = state.api_tokens.create_guarded(new, guard).await?;
+    let (entry, secret) = state.api_tokens.create_guarded(new, guard).await?;
     tracing::info!(
-        token_id = token.id,
+        token_id = entry.token.id,
         actor = principal.user_id,
         "API token created"
     );
     let created = ApiTokenCreated {
-        token: view(&state, entry_of(&state, token.id).await?),
+        token: view(&state, entry),
         secret: ShownToken::new(&secret),
     };
     let no_store = [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))];

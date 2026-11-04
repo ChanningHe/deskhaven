@@ -153,7 +153,8 @@ pub struct NewApiTokenBody {
     /// At least one.
     #[garde(length(min = 1, max = 4))]
     pub scopes: Vec<ScopeView>,
-    /// Unix milliseconds, in the future; absent or `null`: never expires.
+    /// Unix milliseconds, in the future and at most ten years away; absent or `null`: never
+    /// expires.
     #[serde(default)]
     #[garde(skip)]
     pub expires_at: Option<i64>,

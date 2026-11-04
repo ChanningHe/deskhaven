@@ -52,6 +52,11 @@ use crate::text;
 /// Longest token name, in characters.
 pub const NAME_MAX_LEN: usize = 64;
 
+/// Furthest expiry a token can be given (ten years); "never" is `None`, which the console
+/// warns about, not a date far away.
+pub const MAX_LIFETIME_DAYS: i64 = 3650;
+const MAX_LIFETIME_MS: i64 = MAX_LIFETIME_DAYS * 24 * 60 * 60 * 1000;
+
 /// The expiry instant for a unix-millisecond count from the wire; `None` when out of range.
 pub fn expiry_from_millis(ms: i64) -> Option<TimestampMs> {
     time::from_millis(ms)
@@ -137,16 +142,18 @@ impl ApiTokenService {
         &self,
         new: NewApiToken,
     ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
-        self.create_in_tx(new, TxGuard::none()).await
+        let (entry, secret) = self.create_in_tx(new, TxGuard::none()).await?;
+        Ok((entry.token, secret))
     }
 
     /// [`create`](Self::create) with `guard` deciding on the new token (no `before`) and
-    /// recording the audit row in the same transaction.
+    /// recording the audit row in the same transaction. Returns the token with its creator
+    /// as committed, so the caller needs no further read to answer with the secret.
     pub async fn create_guarded(
         &self,
         new: NewApiToken,
         guard: TxGuard<TokenTarget>,
-    ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
+    ) -> Result<(ApiTokenEntry, ApiTokenSecret), ApiTokenError> {
         self.create_in_tx(new, guard).await
     }
 
@@ -154,15 +161,16 @@ impl ApiTokenService {
         &self,
         new: NewApiToken,
         guard: TxGuard<TokenTarget>,
-    ) -> Result<(ApiToken, ApiTokenSecret), ApiTokenError> {
+    ) -> Result<(ApiTokenEntry, ApiTokenSecret), ApiTokenError> {
         let now = self.now()?;
         let name = validate(&new, now)?;
         let secret = ApiTokenSecret::generate().map_err(ApiTokenError::Random)?;
         let tx = begin_write(&self.db).await?;
-        let creator_role = match new.created_by {
-            Some(creator) => Some(ensure_creator(&tx, creator).await?),
+        let creator = match new.created_by {
+            Some(id) => Some(TokenCreator::from(ensure_creator(&tx, id).await?)),
             None => None,
         };
+        let creator_role = creator.as_ref().map(|c| c.role);
         let row = api_token::ActiveModel {
             id: NotSet,
             name: Set(name),
@@ -182,7 +190,11 @@ impl ApiTokenService {
         };
         guard.check(&tx, None, Some(&target)).await?;
         tx.commit().await?;
-        Ok((stored, secret))
+        let entry = ApiTokenEntry {
+            token: stored,
+            creator,
+        };
+        Ok((entry, secret))
     }
 
     /// Every token, revoked and expired ones included, oldest first.
@@ -222,7 +234,11 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
     let name = new.name.trim();
     let name_problem = match name.is_empty() {
         true => Some("must not be blank".to_owned()),
-        false => text::problem(name, NAME_MAX_LEN, false),
+        // Bidi controls and zero-width characters make look-alike names in the console.
+        false => text::problem(name, NAME_MAX_LEN, false).or_else(|| {
+            let hidden = name.chars().any(text::is_dropped);
+            hidden.then(|| "must not contain control or invisible characters".to_owned())
+        }),
     };
     let problem = name_problem.map(|reason| ("name", reason)).or_else(|| {
         let none = new.scopes.is_empty();
@@ -233,6 +249,17 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
             .expires_at
             .is_some_and(|at| at.timestamp_millis() <= now.timestamp_millis());
         past.then(|| ("expires_at", "must be in the future".to_owned()))
+    });
+    let problem = problem.or_else(|| {
+        let limit = now.timestamp_millis().saturating_add(MAX_LIFETIME_MS);
+        let far = new
+            .expires_at
+            .is_some_and(|at| at.timestamp_millis() > limit);
+        far.then(|| {
+            let reason =
+                format!("must be at most {MAX_LIFETIME_DAYS} days away; omit it for no expiry");
+            ("expires_at", reason)
+        })
     });
     match problem {
         Some((field, reason)) => Err(ApiTokenError::Invalid { field, reason }),
@@ -246,14 +273,14 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
 async fn ensure_creator(
     tx: &DatabaseTransaction,
     creator: i64,
-) -> Result<user::Role, ApiTokenError> {
+) -> Result<user::Model, ApiTokenError> {
     let found = user::Entity::find_by_id(creator)
         .lock(LockType::KeyShare)
         .one(tx)
         .await?;
     let user = found.ok_or(ApiTokenError::CreatorNotFound)?;
     match authenticate::is_active_admin(&user) {
-        true => Ok(user.role),
+        true => Ok(user),
         false => Err(ApiTokenError::CreatorInactive),
     }
 }

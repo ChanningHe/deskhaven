@@ -31,6 +31,7 @@ use tower::ServiceExt;
 pub mod devices;
 pub mod login;
 pub mod probe;
+pub mod tokens;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
 /// Cheap Argon2id parameters: tests create many accounts.

@@ -16,6 +16,7 @@ use super::{ApiToken, ApiTokenError, ApiTokenService};
 use crate::console_audit::TxGuard;
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
+use crate::users::lock_active_owners;
 
 /// What a [`TxGuard`] of a token write sees: the token and its creator's committed role
 /// (`None`: a system token without creator).
@@ -45,11 +46,17 @@ impl From<(api_token::Model, Option<user::Model>)> for ApiTokenEntry {
     fn from((token, creator): (api_token::Model, Option<user::Model>)) -> Self {
         Self {
             token: token.into(),
-            creator: creator.map(|u| TokenCreator {
-                id: u.id,
-                username: u.username,
-                role: u.role,
-            }),
+            creator: creator.map(TokenCreator::from),
+        }
+    }
+}
+
+impl From<user::Model> for TokenCreator {
+    fn from(u: user::Model) -> Self {
+        Self {
+            id: u.id,
+            username: u.username,
+            role: u.role,
         }
     }
 }
@@ -128,10 +135,11 @@ impl ApiTokenService {
     /// committed role. Revoking a revoked token changes and records nothing. `false`: no
     /// such token.
     ///
-    /// Locks are taken creator, acting account, token: the order in which disabling or
-    /// demoting an account locks it and then revokes its tokens, so the two cannot
-    /// deadlock. Two revocations racing: the second finds the token revoked and rolls
-    /// its audit row back with it.
+    /// Locks are taken in the order `UserService::edit` takes them: all active owners, then
+    /// the creator, then the acting account (in the guard), the token last. Disabling or
+    /// demoting the creator revokes its tokens under that order, so the two cannot
+    /// deadlock. Two revocations racing: the second finds the token revoked and rolls its
+    /// audit row back with it.
     pub async fn revoke_guarded(
         &self,
         id: i64,
@@ -146,6 +154,7 @@ impl ApiTokenService {
         if row.revoked_at.is_some() {
             return Ok(true);
         }
+        lock_active_owners(&tx).await?;
         let creator_role = creator_role(&tx, row.created_by).await?;
         let before = TokenTarget {
             token: row.clone().into(),
