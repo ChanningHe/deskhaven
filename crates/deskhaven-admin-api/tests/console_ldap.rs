@@ -110,6 +110,10 @@ async fn enforced_2fa_makes_a_directory_admin_enrol_with_the_directory_password(
         let console = console_of(&signed_in);
         let me = h.get(ME, &console).await;
         assert_eq!(me.body["setup_required"], "totp_enrolment", "{b}");
+        // The session is restricted to the enrolment until then.
+        let gated = h.get("/admin/api/v1/users", &console).await;
+        assert_eq!(gated.status, 403, "{b}: {:?}", gated.body);
+        assert_eq!(gated.code(), "setup_required");
         let begun = h.post(ENROL, Some(&console), json!({})).await;
         assert_eq!(begun.status, 200, "{b}: {:?}", begun.body);
         let secret = TotpSecret::from_base32(begun.body["secret"].as_str().unwrap()).unwrap();

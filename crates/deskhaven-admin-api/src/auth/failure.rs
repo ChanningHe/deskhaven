@@ -27,6 +27,11 @@ pub(crate) enum Failure {
     LockStarted(Box<Failure>),
     /// Nothing verified: the password hasher is saturated or the directory is unavailable.
     Busy,
+    /// The directory stopped answering after the password was sent: 503 like [`Busy`],
+    /// but the attempt counts (no verdict, so no login event).
+    ///
+    /// [`Busy`]: Self::Busy
+    Interrupted,
     Internal(BoxError),
 }
 
@@ -41,7 +46,7 @@ impl Failure {
             Self::InvalidCode => Some(LoginResult::InvalidCode),
             Self::InvalidChallenge => Some(LoginResult::InvalidChallenge),
             Self::LockStarted(_) => Some(LoginResult::Locked),
-            Self::Throttled(_) | Self::Busy | Self::Internal(_) => None,
+            Self::Throttled(_) | Self::Busy | Self::Interrupted | Self::Internal(_) => None,
         }
     }
 
@@ -60,7 +65,7 @@ impl Failure {
                 "the verification expired, log in again",
             ),
             Self::LockStarted(failure) => failure.into_error(),
-            Self::Busy => AdminApiError::unavailable(BUSY_RETRY_AFTER),
+            Self::Busy | Self::Interrupted => AdminApiError::unavailable(BUSY_RETRY_AFTER),
             Self::Internal(err) => AdminApiError::internal(err),
         }
     }
@@ -85,6 +90,7 @@ impl From<AuthError> for Failure {
             AuthError::Password(PasswordError::Busy) | AuthError::DirectoryUnavailable => {
                 Self::Busy
             }
+            AuthError::DirectoryInterrupted => Self::Interrupted,
             other => Self::Internal(other.into()),
         }
     }

@@ -326,8 +326,11 @@ async fn provisioned_display_names_lose_control_bidi_and_zero_width_characters()
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let dn = env.fake.add_user("alice");
-        env.fake
-            .set_attr(&dn, "cn", &["Ali\u{202E}ce\u{200B} Lid\u{7}dell"]);
+        env.fake.set_attr(
+            &dn,
+            "cn",
+            &["A\u{061C}li\u{202E}ce\u{200B} Lid\u{7}de\u{180E}ll"],
+        );
 
         let alice = env.login("alice", USER_PASSWORD).await.unwrap().user;
 

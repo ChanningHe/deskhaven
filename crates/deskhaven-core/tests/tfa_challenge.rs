@@ -16,7 +16,8 @@ use deskhaven_core::tfa::{
 };
 use deskhaven_db::entity::{auth_challenge, recovery_code, user};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{EntityTrait, PaginatorTrait};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait};
 use sha2::{Digest, Sha256};
 
 const STEP: Duration = Duration::from_secs(30);
@@ -27,6 +28,35 @@ fn invalid(result: &Result<Passed, ChallengeError>) -> bool {
 
 fn wrong(result: &Result<Passed, ChallengeError>) -> bool {
     matches!(result, Err(ChallengeError::WrongCode))
+}
+
+#[tokio::test]
+async fn a_challenge_stored_before_auth_sources_were_recorded_is_a_local_login() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.enrolled("alice").await;
+        env.clock.advance(STEP);
+        let challenge = env.challenge(&alice).await;
+        let row = auth_challenge::Entity::find()
+            .one(&db.conn)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut context: serde_json::Value = serde_json::from_str(&row.context).unwrap();
+        assert_eq!(context["auth_source"], "local", "{}", db.backend);
+        context.as_object_mut().unwrap().remove("auth_source");
+        let mut old: auth_challenge::ActiveModel = row.into();
+        old.context = Set(context.to_string());
+        old.update(&db.conn).await.unwrap();
+
+        let passed = env
+            .verify(&challenge, "alice", &env.code(&alice))
+            .await
+            .unwrap();
+
+        assert_eq!(passed.stamp, alice.stamp);
+    })
+    .await;
 }
 
 #[tokio::test]

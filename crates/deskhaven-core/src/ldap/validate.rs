@@ -62,6 +62,9 @@ pub(crate) fn url(raw: &str, start_tls: bool) -> Result<(), DirectoryError> {
         return bad("must be scheme, host and port only");
     }
     let ip = host_ip(&parsed);
+    if ip.is_none() && parsed.host_str().is_some_and(is_numeric_host) {
+        return bad("write an IPv4 address as four decimal numbers (a.b.c.d)");
+    }
     if ip.is_some_and(is_forbidden) {
         return bad("link-local and cloud metadata addresses are not allowed");
     }
@@ -90,6 +93,19 @@ fn host_ip(url: &Url) -> Option<IpAddr> {
         Host::Ipv4(addr) => Some(IpAddr::V4(addr)),
         Host::Ipv6(addr) => Some(IpAddr::V6(addr)),
     }
+}
+
+/// Whether a host that is not a canonical IP literal is still a number to a resolver: the
+/// inet_aton spellings (`0xa9fea9fe`, `2852039166`, `169.254.43518`, octal `0251.…`, a
+/// trailing dot) that getaddrinfo turns into an address without DNS. Refused outright, so
+/// the forbidden-address check cannot be dodged by spelling.
+fn is_numeric_host(host: &str) -> bool {
+    let host = host.strip_suffix('.').unwrap_or(host);
+    let number = |part: &str| match part.strip_prefix("0x").or(part.strip_prefix("0X")) {
+        Some(hex) => hex.chars().all(|c| c.is_ascii_hexdigit()),
+        None => !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()),
+    };
+    !host.is_empty() && host.split('.').all(number)
 }
 
 fn is_loopback(url: &Url) -> bool {
@@ -250,5 +266,29 @@ mod tests {
         assert!(url("ldaps://100.100.100.200", false).is_err());
         assert!(url("ldap://[::1]:389", true).is_err());
         assert!(url("ldaps://10.0.0.1", false).is_ok());
+    }
+
+    #[test]
+    fn inet_aton_spellings_of_addresses_are_refused() {
+        // 169.254.169.254 and friends, as resolvers would read them.
+        for bad in [
+            "ldaps://0xa9fea9fe",
+            "ldaps://169.254.43518",
+            "ldaps://2852039166",
+            "ldaps://0251.0376.0251.0376",
+            "ldaps://0xA9.0xFE.0xA9.0xFE",
+            "ldaps://10.1",
+            "ldap://0x7f.1:389",
+            "ldaps://1.2.3.4.",
+        ] {
+            assert!(url(bad, false).is_err(), "{bad}");
+        }
+        for name in [
+            "ldaps://0x.example.org",
+            "ldaps://10.example",
+            "ldaps://cafe.ab",
+        ] {
+            assert!(url(name, false).is_ok(), "{name}");
+        }
     }
 }

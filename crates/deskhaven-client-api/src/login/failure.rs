@@ -41,6 +41,11 @@ pub(super) enum Failure {
     LockStarted(Box<Failure>),
     /// Nothing verified: the password hasher is saturated or the directory is unavailable.
     Busy,
+    /// The directory stopped answering after the password was sent: 503 like [`Busy`],
+    /// but the attempt counts (no verdict, so no login event).
+    ///
+    /// [`Busy`]: Self::Busy
+    Interrupted,
     Internal(BoxError),
 }
 
@@ -57,7 +62,7 @@ impl Failure {
             Self::InvalidCode => Some(LoginResult::InvalidCode),
             Self::InvalidChallenge => Some(LoginResult::InvalidChallenge),
             Self::LockStarted(_) => Some(LoginResult::Locked),
-            Self::Throttled(_) | Self::Busy | Self::Internal(_) => None,
+            Self::Throttled(_) | Self::Busy | Self::Interrupted | Self::Internal(_) => None,
         }
     }
 
@@ -73,7 +78,7 @@ impl Failure {
             Self::InvalidCode => unauthorized(WRONG_CODE_MESSAGE),
             Self::InvalidChallenge => unauthorized(INVALID_CHALLENGE_MESSAGE),
             Self::LockStarted(failure) => failure.into_error(),
-            Self::Busy => ClientApiError::Unavailable {
+            Self::Busy | Self::Interrupted => ClientApiError::Unavailable {
                 retry_after: BUSY_RETRY_AFTER,
             },
             Self::Internal(err) => ClientApiError::Internal(err),
@@ -100,6 +105,7 @@ impl From<AuthError> for Failure {
             AuthError::Password(PasswordError::Busy) | AuthError::DirectoryUnavailable => {
                 Self::Busy
             }
+            AuthError::DirectoryInterrupted => Self::Interrupted,
             other => Self::Internal(other.into()),
         }
     }

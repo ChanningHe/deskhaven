@@ -20,12 +20,20 @@
 //! after the bind.
 //!
 //! When the directory cannot answer (unreachable, timed out, saturated, refusing the
-//! service account, misconfigured): an existing `ldap` account gets
-//! [`AuthError::DirectoryUnavailable`] (APIs: 503, not counted); a name without an account
-//! gets [`AuthError::InvalidCredentials`], the counted 401 a wrong local password gets, so
-//! the status code never tells whether a name has an account. **Accepted residual risk:**
-//! timing still differs, since an unknown name costs directory round trips (or the
-//! timeout during an outage) on top of the hash that a local account's check costs.
+//! service account, misconfigured):
+//!
+//! - an existing `ldap` account gets [`AuthError::DirectoryUnavailable`] (APIs: 503, not
+//!   counted) as long as its password was not sent yet, and
+//!   [`AuthError::DirectoryInterrupted`] (503, counted) once it was (`verify`);
+//! - a name without an account gets [`AuthError::InvalidCredentials`], the counted 401 a
+//!   wrong local password gets.
+//!
+//! **Accepted residual risks.** The 503 does tell that a name is an existing directory
+//! account (a local account or an unknown name never answers 503), and anyone can cause
+//! one by saturating the directory gate with concurrent logins of unknown names, which
+//! makes existing directory accounts answer 503 while it lasts. Timing differs too: an
+//! unknown name costs directory round trips (or the timeout during an outage) on top of
+//! the hash a local account's check costs.
 //!
 //! Logs name the directory and the failing step, never a password or the typed username.
 
@@ -104,7 +112,9 @@ impl LdapService {
         let known = account.is_some();
         match self.directory_check(username, password, account).await {
             // No status oracle for names without an account (see the module docs).
-            Err(AuthError::DirectoryUnavailable) if !known => Err(AuthError::InvalidCredentials),
+            Err(AuthError::DirectoryUnavailable | AuthError::DirectoryInterrupted) if !known => {
+                Err(AuthError::InvalidCredentials)
+            }
             outcome => outcome,
         }
     }

@@ -1,7 +1,8 @@
 //! Directory trouble during logins (06 §3.5, §3.6): busy / unavailable result codes,
 //! stalled directories (one total timeout per login) and the bound on concurrent directory
-//! logins. Directory accounts get `DirectoryUnavailable` (503, not counted); unknown names
-//! the same `InvalidCredentials` a wrong local password gets. Both backends.
+//! logins. Directory accounts get `DirectoryUnavailable` (503, not counted) before their
+//! password is sent and `DirectoryInterrupted` (503, counted) after; unknown names the same
+//! `InvalidCredentials` a wrong local password gets. Both backends.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -30,8 +31,9 @@ async fn busy_and_unavailable_bind_results_are_outages_other_refusals_wrong_pass
         for code in UNAVAILABLE_CODES {
             env.fake.set_bind_refusal(Some(code));
             let outcome = env.login("alice", USER_PASSWORD).await;
+            // An outage (503), but the password was already sent: counted.
             assert!(
-                matches!(outcome, Err(AuthError::DirectoryUnavailable)),
+                matches!(outcome, Err(AuthError::DirectoryInterrupted)),
                 "{}: {code}: {outcome:?}",
                 db.backend
             );
@@ -85,6 +87,37 @@ async fn a_stalled_directory_times_out_and_concurrent_logins_are_bounded() {
         // The queued login never reached the directory.
         assert_eq!(env.fake.connects(), 2);
         assert!(started.elapsed() < Duration::from_secs(5));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_timeout_after_the_password_was_sent_is_an_attempt_not_an_outage() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        env.fake.add_user("alice");
+        env.ldap_user("alice").await;
+        let limits = DirectoryLimits {
+            login_timeout: Duration::from_millis(200),
+            ..DirectoryLimits::default()
+        };
+        let ldap = env.ldap.clone().with_limits(limits);
+        env.fake.set_bind_delay(Some(Duration::from_secs(5)));
+        let password = Password::new(USER_PASSWORD);
+
+        let existing = ldap.authenticate_password("alice", &password).await;
+        let unknown = ldap.authenticate_password("nobody", &password).await;
+
+        // The directory saw the password: the caller counts the attempt (no refund).
+        assert!(
+            matches!(existing, Err(AuthError::DirectoryInterrupted)),
+            "{}: {existing:?}",
+            db.backend
+        );
+        assert!(
+            matches!(unknown, Err(AuthError::InvalidCredentials)),
+            "{unknown:?}"
+        );
     })
     .await;
 }

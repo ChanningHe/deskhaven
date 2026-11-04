@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use deskhaven_core::ldap::{
     Connector, DirectoryFault, DirectoryFuture, Entry, Found, SearchRequest, Session, Target,
@@ -58,6 +59,8 @@ struct State {
     hang: bool,
     /// User binds fail with this LDAP result code (e.g. 51 busy).
     bind_refusal: Option<u32>,
+    /// User binds answer after this long.
+    bind_delay: Option<Duration>,
     users: Vec<FakeUser>,
     /// Group DN -> member DNs.
     groups: BTreeMap<String, Vec<String>>,
@@ -126,6 +129,11 @@ impl FakeDirectory {
 
     pub fn set_bind_refusal(&self, code: Option<u32>) {
         self.state.lock().unwrap().bind_refusal = code;
+    }
+
+    /// User (not service) binds answer only after `delay`.
+    pub fn set_bind_delay(&self, delay: Option<Duration>) {
+        self.state.lock().unwrap().bind_delay = delay;
     }
 
     pub fn log(&self) -> Vec<Op> {
@@ -201,15 +209,23 @@ struct FakeSession {
 impl Session for FakeSession {
     fn bind<'a>(&'a mut self, dn: &'a str, password: &'a str) -> DirectoryFuture<'a, ()> {
         Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            state.log.push(Op::Bind {
-                dn: dn.to_owned(),
-                password_len: password.len(),
-            });
+            let service = dn == SERVICE_DN && password == SERVICE_PASSWORD;
+            let delay = {
+                let mut state = self.state.lock().unwrap();
+                state.log.push(Op::Bind {
+                    dn: dn.to_owned(),
+                    password_len: password.len(),
+                });
+                state.bind_delay.filter(|_| !service)
+            };
+            // The password has been sent; the answer takes this long.
+            if let Some(delay) = delay {
+                tokio::time::sleep(delay).await;
+            }
+            let state = self.state.lock().unwrap();
             if state.down {
                 return Err(DirectoryFault::Unreachable("connection reset".to_owned()));
             }
-            let service = dn == SERVICE_DN && password == SERVICE_PASSWORD;
             if let (false, Some(code)) = (service, state.bind_refusal) {
                 let message = "refused".to_owned();
                 return Err(DirectoryFault::Refused { code, message });

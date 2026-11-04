@@ -22,7 +22,9 @@ pub(crate) fn is_dropped(c: char) -> bool {
     c.is_control()
         || matches!(
             c,
-            '\u{200B}'..='\u{200F}'   // zero-width space / (non-)joiner, LRM, RLM
+            '\u{061C}' // ALM (Arabic letter mark, a bidi mark)
+                | '\u{180E}' // Mongolian vowel separator (invisible)
+                | '\u{200B}'..='\u{200F}' // zero-width space / (non-)joiner, LRM, RLM
                 | '\u{202A}'..='\u{202E}' // LRE, RLE, PDF, LRO, RLO
                 | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
                 | '\u{2066}'..='\u{2069}' // LRI, RLI, FSI, PDI

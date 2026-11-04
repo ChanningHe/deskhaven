@@ -106,6 +106,8 @@ async fn plain_ldap_needs_start_tls_except_on_loopback() {
             "ldaps://",
             // Link-local and cloud metadata addresses (as with OIDC).
             "ldaps://169.254.169.254",
+            "ldaps://0xa9fea9fe",
+            "ldaps://169.254.43518",
             "ldap://[fe80::1]:389",
             "ldaps://[::ffff:169.254.1.1]",
             "ldaps://[fd00:ec2::254]",

@@ -17,7 +17,7 @@ use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::{Change, PinSet};
 use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
-use deskhaven_core::ldap::{Connector, Ldap3Connector, LdapService};
+use deskhaven_core::ldap::{Connector, DirectoryLimits, Ldap3Connector, LdapService};
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::{AppState, StateConfig};
@@ -69,6 +69,8 @@ pub struct TestOptions {
     pub clock: Option<SharedClock>,
     /// The LDAP service talks to this directory (a fake) instead of a real server.
     pub ldap: Option<Arc<dyn Connector>>,
+    /// With `ldap`: other bounds on directory work (e.g. a short timeout).
+    pub ldap_limits: Option<DirectoryLimits>,
 }
 
 impl TestApp {
@@ -106,6 +108,7 @@ impl TestApp {
             public_url,
             clock,
             ldap,
+            ldap_limits,
         } = options;
         let data_dir = tempfile::tempdir().context("cannot create a temporary data_dir")?;
         let mut config = Bootstrap {
@@ -129,7 +132,7 @@ impl TestApp {
         };
         // One instance: the routers and the seeds share it.
         let state = Arc::new(match ldap {
-            Some(connector) => with_ldap(state, connector),
+            Some(connector) => with_ldap(state, connector, ldap_limits.unwrap_or_default()),
             None => state,
         });
         let shutdown = CancellationToken::new();
@@ -271,8 +274,9 @@ fn with_hasher(base: AppState, hasher: PasswordHasher) -> AppState {
 }
 
 /// `base` whose LDAP service talks to `connector`.
-fn with_ldap(base: AppState, connector: Arc<dyn Connector>) -> AppState {
-    let ldap = ldap_service(&base, &base.users, Arc::clone(&base.clock), connector);
+fn with_ldap(base: AppState, connector: Arc<dyn Connector>, limits: DirectoryLimits) -> AppState {
+    let ldap =
+        ldap_service(&base, &base.users, Arc::clone(&base.clock), connector).with_limits(limits);
     AppState { ldap, ..base }
 }
 

@@ -106,6 +106,12 @@ pub enum AuthError {
     #[error("the directory is unavailable")]
     DirectoryUnavailable,
 
+    /// Like [`DirectoryUnavailable`](Self::DirectoryUnavailable), but the password had
+    /// already been sent to the directory (a bind timed out or failed, or a later step did):
+    /// the attempt counts (APIs: 503, counted, not refunded).
+    #[error("the directory stopped answering after the password was sent")]
+    DirectoryInterrupted,
+
     /// The directory accepted the password, but provisioning the account or synchronizing
     /// its role / groups failed (fail closed: no login).
     #[error("directory account provisioning failed")]

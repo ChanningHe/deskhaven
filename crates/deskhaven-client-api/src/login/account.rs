@@ -11,6 +11,7 @@
 //! 3. Wrong password, unknown, disabled or unverified account -> `on_failure` (the attempt
 //!    stays counted). Hasher busy or directory unavailable -> `refund` (never counted) and
 //!    503: nothing was verified, and an LDAP account never falls back to a local password.
+//!    A directory that stops answering after the password was sent is a counted 503.
 //! 4. Right password, by the user's second factor (`TfaService::requirement`):
 //!    - none: the client session (bound to the request's device, re-checking the
 //!      credential stamp; a credential changed meanwhile is a counted 401), then

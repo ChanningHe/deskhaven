@@ -6,7 +6,8 @@
 //!    accounts (never both); one Argon2id verification either way, real or dummy, so
 //!    unknown account and wrong password cost the same and answer the same 401
 //!    `invalid_credentials`, whether or not the account has 2FA. Disabled / unverified
-//!    (right password only): 403. Busy hasher or unavailable directory: refunded, 503.
+//!    (right password only): 403. Busy hasher or unavailable directory: refunded, 503; a
+//!    directory silent after the password was sent: counted, 503.
 //! 3. Right password, by the second factor (`TfaService::requirement`):
 //!    - TOTP enabled: `on_password_ok_pending_2fa` (the attempt stays counted), a console
 //!      challenge holding that subject, `totp_required`; **no session**;

@@ -3,8 +3,11 @@
 //! [`DirectoryLimits::queue_timeout`]), each within [`DirectoryLimits::login_timeout`] in
 //! total, connect to close. A stalled or flooded directory therefore costs logins a bounded
 //! wait and never piles up tasks and connections; both limits answer
-//! [`AuthError::DirectoryUnavailable`].
+//! [`AuthError::DirectoryUnavailable`]. Once a password bind has been sent (the user's or
+//! the decoy's), any failure or timeout is [`AuthError::DirectoryInterrupted`] instead:
+//! the directory has seen the password, so the login throttle counts the attempt.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::Semaphore;
@@ -74,13 +77,21 @@ impl LdapService {
             tracing::warn!(directory = %settings.name, "directory logins saturated; refused");
             return Err(AuthError::DirectoryUnavailable);
         };
-        let checked = self.connected_steps(settings, username, password);
-        match timeout(gate.limits.login_timeout, checked).await {
+        let sent = AtomicBool::new(false);
+        let checked = self.connected_steps(settings, username, password, &sent);
+        let outcome = match timeout(gate.limits.login_timeout, checked).await {
             Ok(outcome) => outcome,
             Err(_) => {
                 tracing::warn!(directory = %settings.name, "directory login timed out");
                 Err(AuthError::DirectoryUnavailable)
             }
+        };
+        match outcome {
+            // The directory has seen the password: an attempt, whatever happened next.
+            Err(AuthError::DirectoryUnavailable) if sent.load(Ordering::Acquire) => {
+                Err(AuthError::DirectoryInterrupted)
+            }
+            outcome => outcome,
         }
     }
 
@@ -89,6 +100,7 @@ impl LdapService {
         settings: &DirectorySettings,
         username: &str,
         password: &str,
+        sent: &AtomicBool,
     ) -> Result<Option<VerifiedUser>, AuthError> {
         let mut session = self
             .inner
@@ -96,7 +108,7 @@ impl LdapService {
             .connect(&settings.target)
             .await
             .map_err(|fault| unavailable(settings, "connect", &fault))?;
-        let verified = steps(session.as_mut(), settings, username, password).await;
+        let verified = steps(session.as_mut(), settings, username, password, sent).await;
         session.close().await;
         verified
     }
@@ -107,6 +119,7 @@ async fn steps(
     settings: &DirectorySettings,
     username: &str,
     password: &str,
+    sent: &AtomicBool,
 ) -> Result<Option<VerifiedUser>, AuthError> {
     let fail = |step| move |fault: DirectoryFault| unavailable(settings, step, &fault);
     protocol::bind_service(session, settings)
@@ -118,6 +131,7 @@ async fn steps(
     let user = match found {
         Lookup::Found(user) => user,
         Lookup::Missing => {
+            sent.store(true, Ordering::Release);
             protocol::decoy_bind(session, settings, password)
                 .await
                 .map_err(fail("user bind"))?;
@@ -128,6 +142,7 @@ async fn steps(
             return Ok(None);
         }
     };
+    sent.store(true, Ordering::Release);
     let accepted = protocol::bind_user(session, &user.dn, password)
         .await
         .map_err(fail("user bind"))?;

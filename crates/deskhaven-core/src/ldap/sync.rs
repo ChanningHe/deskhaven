@@ -3,9 +3,12 @@
 //! (or membership) is locked and re-read in the write transaction, the guard decides on
 //! that committed state, and an audit row (actor `system`) commits with the change.
 //! Owners are never changed, also when one became an owner after the login read the
-//! account; a change that turns out to be a no-op is dropped without a row.
+//! account; a change that turns out to be a no-op is dropped without a row. Either way the
+//! login continues with the account as that transaction read it (so the second factor is
+//! judged on the committed role, e.g. a promotion made while the bind was pending).
 
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::user;
@@ -68,10 +71,15 @@ impl LdapService {
         wanted: Role,
     ) -> Result<User, AuthError> {
         let id = user.id;
+        // The account as the edit's transaction read it (locked), for a refused edit: the
+        // caller must judge the committed role, not the one read before the bind.
+        let committed: Arc<Mutex<Option<User>>> = Arc::default();
+        let seen = Arc::clone(&committed);
         let guard = TxGuard::new(&self.inner.audit, move |before: Option<&User>, after| {
             let (Some(before), Some(after)) = (before, after) else {
                 return Err(Refused::new(UNCHANGED));
             };
+            *seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(before.clone());
             if before.role == Role::Owner {
                 return Err(Refused::new(OWNER));
             }
@@ -93,7 +101,13 @@ impl LdapService {
                 tracing::info!(directory = %settings.name, user_id = id, role = ?wanted, "role synchronized from the directory");
                 Ok(changed)
             }
-            Err(UserError::Refused(_)) => Ok(user),
+            Err(UserError::Refused(_)) => {
+                let current = committed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take();
+                Ok(current.unwrap_or(user))
+            }
             Err(err) => Err(sync_failed(err)),
         }
     }

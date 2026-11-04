@@ -105,7 +105,8 @@ pub(crate) async fn find_user(
 
 /// `Ok(false)` for a refused bind (wrong password, or the directory refusing the account,
 /// e.g. locked); `Err` when the directory could not decide: unreachable, or result code
-/// busy (51), unavailable (52) or other (80).
+/// busy (51), unavailable (52) or other (80). The password was sent either way, so the
+/// login counts the attempt (`verify`).
 pub(crate) async fn bind_user(
     session: &mut dyn Session,
     dn: &str,
