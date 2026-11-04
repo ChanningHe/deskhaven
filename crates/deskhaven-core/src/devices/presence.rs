@@ -59,7 +59,8 @@ pub struct DevicePresence {
     pub last_seen_ms: Option<i64>,
     /// Source address of that latest contact.
     pub ip: Option<IpAddr>,
-    /// Connection ids of the latest heartbeat.
+    /// Connection ids of the latest heartbeat while it is within [`HEARTBEAT_TTL`]; empty
+    /// once it expired, even if the signal registration keeps the device online.
     pub conns: Vec<i32>,
 }
 
@@ -68,7 +69,7 @@ pub struct DevicePresence {
 pub struct LiveCounts {
     /// Devices online now.
     pub devices: usize,
-    /// Connection ids those devices reported in their latest heartbeat.
+    /// Connection ids those devices reported in their latest heartbeat, while still fresh.
     pub connections: usize,
 }
 
@@ -141,8 +142,21 @@ impl Entry {
 
     /// `now` is monotonic ms.
     fn is_online(&self, now: i64) -> bool {
-        let within = |at: Option<i64>, ttl: Duration| at.is_some_and(|t| now - t < millis(ttl));
-        within(self.signal_at, SIGNAL_TTL) || within(self.heartbeat_at, HEARTBEAT_TTL)
+        within(self.signal_at, SIGNAL_TTL, now) || self.heartbeat_is_fresh(now)
+    }
+
+    fn heartbeat_is_fresh(&self, now: i64) -> bool {
+        within(self.heartbeat_at, HEARTBEAT_TTL, now)
+    }
+
+    /// The connections of the latest heartbeat while it is within [`HEARTBEAT_TTL`]: a device
+    /// kept online by its signal registration alone reports none (`now` is monotonic ms).
+    fn live_conns(&self, now: i64) -> &[i32] {
+        if self.heartbeat_is_fresh(now) {
+            &self.conns
+        } else {
+            &[]
+        }
     }
 
     /// Nothing would be lost by dropping it.
@@ -250,7 +264,7 @@ impl Presence {
             online: entry.is_online(now),
             last_seen_ms: entry.last_seen_ms(),
             ip: entry.ip,
-            conns: entry.conns.clone(),
+            conns: entry.live_conns(now).to_vec(),
         })
     }
 
@@ -265,15 +279,16 @@ impl Presence {
         state.entries.values().filter(|e| e.is_online(now)).count()
     }
 
-    /// Online devices and their live connections, in one pass over the table. Only online
-    /// devices count: the connections an offline device reported last are stale.
+    /// Online devices and their live connections, in one pass over the table. Connections
+    /// count only while the heartbeat that reported them is fresh: what an offline device,
+    /// or one whose heartbeats stopped while its signal channel lives on, reported is stale.
     pub fn live(&self) -> LiveCounts {
         let now = self.now();
         let state = self.lock();
         let online = state.entries.values().filter(|e| e.is_online(now));
         online.fold(LiveCounts::default(), |counts, entry| LiveCounts {
             devices: counts.devices + 1,
-            connections: counts.connections + entry.conns.len(),
+            connections: counts.connections + entry.live_conns(now).len(),
         })
     }
 
@@ -447,6 +462,11 @@ fn recently(last: &mut Option<i64>, now: i64) -> bool {
 
 fn millis(d: Duration) -> i64 {
     i64::try_from(d.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// `at` (monotonic ms) lies less than `ttl` before `now`.
+fn within(at: Option<i64>, ttl: Duration, now: i64) -> bool {
+    at.is_some_and(|t| now - t < millis(ttl))
 }
 
 #[cfg(test)]

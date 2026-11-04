@@ -6,7 +6,8 @@
 //! bidi controls and zero-width characters are
 //! dropped (PostgreSQL TEXT cannot even hold NUL) and each field is cut to
 //! [`MAX_FIELD_CHARS`] characters. A truncated value is still stored: refusing would leave the
-//! client retrying every 120 s forever without its "Pro" features.
+//! client retrying every 120 s forever without its "Pro" features. The client version is
+//! also trimmed, and a blank one stored as not reported.
 
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
@@ -40,7 +41,7 @@ impl Sysinfo {
             os: self.os.map(clean),
             cpu: self.cpu.map(clean),
             memory: self.memory.map(clean),
-            version: self.version.map(clean),
+            version: self.version.and_then(clean_version),
         }
     }
 
@@ -84,6 +85,20 @@ fn clean(raw: String) -> String {
         .filter(|c| !is_dropped(*c))
         .take(MAX_FIELD_CHARS)
         .collect()
+}
+
+/// A version is one token: [`clean`], then trimmed; nothing left counts as not reported
+/// (`None`), so blank reports neither form a version of their own nor count as known.
+fn clean_version(raw: String) -> Option<String> {
+    let cleaned = clean(raw);
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.len() == cleaned.len() {
+        Some(cleaned)
+    } else {
+        Some(trimmed.to_owned())
+    }
 }
 
 #[cfg(test)]
@@ -177,5 +192,23 @@ mod tests {
             Some("Linux – Ünïcode 日本"),
             "visible text kept"
         );
+    }
+
+    #[test]
+    fn sanitized_treats_a_blank_version_as_not_reported_and_trims_a_padded_one() {
+        let with_version = |version: &str| Sysinfo {
+            version: Some(version.to_owned()),
+            ..Default::default()
+        };
+
+        let blank = with_version(" \t ").sanitized();
+        let empty = with_version("").sanitized();
+        let invisible = with_version("\u{200B}\n").sanitized();
+        let padded = with_version(" 1.4.2 ").sanitized();
+
+        assert_eq!(blank.version, None);
+        assert_eq!(empty.version, None);
+        assert_eq!(invisible.version, None);
+        assert_eq!(padded.version.as_deref(), Some("1.4.2"));
     }
 }

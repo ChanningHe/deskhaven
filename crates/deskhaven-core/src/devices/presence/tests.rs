@@ -399,3 +399,39 @@ fn live_counts_the_online_devices_and_their_connections_only() {
     );
     assert_eq!(none, LiveCounts::default());
 }
+
+#[test]
+fn a_stale_heartbeats_conns_stop_counting_while_the_signal_keeps_the_device_online() {
+    // Arrange
+    let (p, clock) = presence(10);
+    p.heartbeat(ID, ip(1), &[4, 5]);
+    p.signal_online(ID, ip(1));
+    clock.advance(just_under(HEARTBEAT_TTL));
+    p.signal_online(ID, ip(1));
+    let fresh = (p.get(ID).unwrap().conns, p.live());
+
+    // Act
+    clock.advance(Duration::from_millis(1));
+    let stale = (p.get(ID).unwrap(), p.live());
+
+    // Assert
+    assert_eq!(
+        fresh,
+        (
+            vec![4, 5],
+            LiveCounts {
+                devices: 1,
+                connections: 2
+            }
+        )
+    );
+    assert!(stale.0.online, "the signal registration is still fresh");
+    assert!(stale.0.conns.is_empty(), "the last heartbeat expired");
+    assert_eq!(
+        stale.1,
+        LiveCounts {
+            devices: 1,
+            connections: 0
+        }
+    );
+}
