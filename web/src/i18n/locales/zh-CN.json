@@ -1311,6 +1311,7 @@
     "oidc": {
       "title": "OIDC 提供方",
       "description": "通过 OpenID Connect 单点登录，适用于 RustDesk 客户端与本控制台。",
+      "ownerOnly": "只有所有者可以修改 OIDC 提供方：提供方的管理员分组与自动开户会产生管理员账户。",
       "callbackUrl": "回调地址",
       "callbackHint": "在身份提供方处登记此重定向地址。",
       "callbackMissing": "尚未设置 public_url：设置之前 OIDC 登录会被拒绝。",
@@ -1328,6 +1329,7 @@
       "enabled": "已启用",
       "disabled": "已停用",
       "edit": "编辑 {{name}}",
+      "view": "查看 {{name}}",
       "delete": "删除 {{name}}",
       "createTitle": "新建 OIDC 提供方",
       "editTitle": "OIDC 提供方 {{name}}",

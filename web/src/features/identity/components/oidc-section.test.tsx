@@ -121,7 +121,6 @@ describe('identity page: OIDC providers', () => {
 
   it('shows the error of a refused save', async () => {
     const { user } = renderApp('/identity', {
-      me: ADMIN_ME,
       api: api({
         [`PATCH ${PROVIDERS_PATH}/1`]: {
           status: 409,
@@ -135,5 +134,20 @@ describe('identity page: OIDC providers', () => {
     await user.click(form.getByRole('button', { name: '保存修改' }))
 
     expect(await form.findByText(/由配置文件管理/)).toBeInTheDocument()
+  })
+
+  it('shows admins the providers read-only: no create, delete or save', async () => {
+    const { user } = renderApp('/identity', { me: ADMIN_ME, api: api() })
+
+    const table = await screen.findByRole('table', { name: 'OIDC 提供方' })
+    const section = within(screen.getByRole('region', { name: 'OIDC 提供方' }))
+    expect(section.getByText(/只有所有者可以修改 OIDC 提供方/)).toBeInTheDocument()
+    expect(section.queryByRole('button', { name: '新建提供方' })).not.toBeInTheDocument()
+    expect(within(table).queryByRole('button', { name: '删除 corp' })).not.toBeInTheDocument()
+
+    await user.click(within(table).getByRole('button', { name: '查看 corp' }))
+    const form = within(await screen.findByRole('dialog', { name: 'OIDC 提供方 corp' }))
+    expect(form.getByLabelText('显示名称')).toBeDisabled()
+    expect(form.queryByRole('button', { name: '保存修改' })).not.toBeInTheDocument()
   })
 })

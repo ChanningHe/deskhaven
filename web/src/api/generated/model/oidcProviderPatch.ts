@@ -20,7 +20,7 @@ export interface OidcProviderPatch {
   /** @nullable */
   client_id?: string | null
   /**
-   * A new secret; `null` makes the provider a public client.
+   * A new secret; `null` makes the provider a public client (an empty string is refused).
    * @nullable
    */
   client_secret?: string | null

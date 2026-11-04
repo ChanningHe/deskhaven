@@ -16,7 +16,7 @@ export function IdentityPage() {
   return (
     <div className="space-y-10">
       <PageHeader title={t('nav.identity')} description={t('pages.identity.description')} />
-      <OidcSection />
+      <OidcSection isOwner={isOwner} />
       <LdapSection isOwner={isOwner} />
       <TfaSection isOwner={isOwner} />
     </div>

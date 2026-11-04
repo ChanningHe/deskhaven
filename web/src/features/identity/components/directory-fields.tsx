@@ -74,7 +74,9 @@ export function DirectoryFields(props: DirectoryFieldsProps) {
           set({ tls_verify: checked })
         }}
       />
-      {draft.tls_verify ? null : <Warning>{t('identity.ldap.fields.tlsVerifyWarning')}</Warning>}
+      {draft.tls_verify ? null : (
+        <Warning tone="destructive">{t('identity.ldap.fields.tlsVerifyWarning')}</Warning>
+      )}
       {text('bind_dn', 'bindDn', 'bindDnHint')}
       <PasswordField {...props} id={`${id}-bind_password`} />
       {SEARCH_FIELDS.map(([key, label, hint]) => text(key, label, hint))}

@@ -29,8 +29,11 @@ import { Section } from './form-controls'
 import { ProviderDialog } from './provider-dialog'
 import type { ProviderTarget } from './provider-dialog'
 
-/** OIDC providers: the callback URL to register, the list, create / edit / delete. */
-export function OidcSection() {
+/**
+ * OIDC providers: the callback URL to register, the list, create / edit / delete. Writes are
+ * the owner's (a provider can mint administrators); admins see the providers read-only.
+ */
+export function OidcSection({ isOwner }: { isOwner: boolean }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const query = useListOidcProviderConfigs()
@@ -53,16 +56,21 @@ export function OidcSection() {
       title={t('identity.oidc.title')}
       description={t('identity.oidc.description')}
       actions={
-        <Button
-          onClick={() => {
-            setEditing({ kind: 'new' })
-          }}
-        >
-          <Plus aria-hidden />
-          {t('identity.oidc.add')}
-        </Button>
+        isOwner ? (
+          <Button
+            onClick={() => {
+              setEditing({ kind: 'new' })
+            }}
+          >
+            <Plus aria-hidden />
+            {t('identity.oidc.add')}
+          </Button>
+        ) : undefined
       }
     >
+      {isOwner ? null : (
+        <p className="text-sm text-muted-foreground">{t('identity.oidc.ownerOnly')}</p>
+      )}
       {query.error ? <ErrorAlert error={query.error} onRetry={() => void query.refetch()} /> : null}
       {query.data === undefined ? null : (
         <>
@@ -85,6 +93,7 @@ export function OidcSection() {
           ) : (
             <ProviderTable
               providers={query.data.items}
+              isOwner={isOwner}
               onEdit={(provider) => {
                 setEditing({ kind: 'stored', provider })
               }}
@@ -98,6 +107,7 @@ export function OidcSection() {
       )}
       <ProviderDialog
         target={shown}
+        readOnly={!isOwner}
         onClose={() => {
           setEditing(undefined)
         }}
@@ -121,11 +131,13 @@ export function OidcSection() {
 
 interface ProviderTableProps {
   providers: readonly OidcProviderView[]
+  /** Admins only view providers: no delete, "view" instead of "edit". */
+  isOwner: boolean
   onEdit: (provider: OidcProviderView) => void
   onDelete: (provider: OidcProviderView) => void
 }
 
-function ProviderTable({ providers, onEdit, onDelete }: ProviderTableProps) {
+function ProviderTable({ providers, isOwner, onEdit, onDelete }: ProviderTableProps) {
   const { t } = useTranslation()
   return (
     <Table aria-label={t('identity.oidc.tableLabel')}>
@@ -158,14 +170,16 @@ function ProviderTable({ providers, onEdit, onDelete }: ProviderTableProps) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label={t('identity.oidc.edit', { name: provider.name })}
+                aria-label={t(isOwner ? 'identity.oidc.edit' : 'identity.oidc.view', {
+                  name: provider.name,
+                })}
                 onClick={() => {
                   onEdit(provider)
                 }}
               >
                 <Pencil aria-hidden />
               </Button>
-              {provider.managed_by === 'config' ? null : (
+              {!isOwner || provider.managed_by === 'config' ? null : (
                 <Button
                   variant="ghost"
                   size="icon-sm"

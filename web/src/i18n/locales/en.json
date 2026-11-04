@@ -1311,6 +1311,7 @@
     "oidc": {
       "title": "OIDC providers",
       "description": "Single sign-on through OpenID Connect, for the RustDesk client and this console.",
+      "ownerOnly": "Only the owner can change OIDC providers: a provider's admin group and automatic accounts create administrators.",
       "callbackUrl": "Callback URL",
       "callbackHint": "Register this redirect URI at the identity provider.",
       "callbackMissing": "No public_url is set: OIDC sign-in is refused until it is.",
@@ -1328,6 +1329,7 @@
       "enabled": "Enabled",
       "disabled": "Disabled",
       "edit": "Edit {{name}}",
+      "view": "View {{name}}",
       "delete": "Delete {{name}}",
       "createTitle": "New OIDC provider",
       "editTitle": "OIDC provider {{name}}",

@@ -153,7 +153,7 @@ describe('identity page: LDAP directory', () => {
 
     await user.click(verify)
 
-    expect(screen.getByText(/证书校验已关闭/)).toBeInTheDocument()
+    expect(screen.getByText(/证书校验已关闭/).closest('p')).toHaveClass('text-destructive')
     expect(ldapSection().getByRole('button', { name: '保存目录' })).toBeEnabled()
   })
 })

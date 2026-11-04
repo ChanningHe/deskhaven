@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Checkbox } from '@/components/ui/checkbox'
 import { fieldProblemsOf } from '@/features/settings/conflicts'
+import { cn } from '@/lib/utils'
 
 interface CheckFieldProps {
   label: string
@@ -22,10 +23,21 @@ export function CheckField({ label, checked, disabled, onChange }: CheckFieldPro
   )
 }
 
-/** A prominent caution (security trade-offs the admin must read). */
-export function Warning({ children }: { children: ReactNode }) {
+const WARNING_TONE = {
+  warning: 'bg-warning/10 text-warning',
+  destructive: 'bg-destructive/10 text-destructive',
+} as const
+
+/** A prominent caution (security trade-offs the admin must read); `destructive` in red. */
+export function Warning({
+  children,
+  tone = 'warning',
+}: {
+  children: ReactNode
+  tone?: keyof typeof WARNING_TONE
+}) {
   return (
-    <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+    <p className={cn('flex items-start gap-2 rounded-lg px-3 py-2 text-sm', WARNING_TONE[tone])}>
       <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
     </p>

@@ -30,11 +30,13 @@ export type ProviderTarget = { kind: 'new' } | { kind: 'stored'; provider: OidcP
 
 interface ProviderDialogProps {
   target: ProviderTarget | undefined
+  /** Shown without editing (an admin; writes are the owner's). */
+  readOnly: boolean
   onClose: () => void
 }
 
-/** Creates or edits an OIDC provider. Config-managed providers are shown read-only. */
-export function ProviderDialog({ target, onClose }: ProviderDialogProps) {
+/** Creates or edits an OIDC provider; config-managed ones (and any, for admins) read-only. */
+export function ProviderDialog({ target, readOnly, onClose }: ProviderDialogProps) {
   const { t } = useTranslation()
   const title =
     target?.kind === 'stored'
@@ -55,6 +57,7 @@ export function ProviderDialog({ target, onClose }: ProviderDialogProps) {
           <ProviderForm
             key={target.kind === 'stored' ? target.provider.id : 'new'}
             target={target}
+            viewOnly={readOnly}
             onDone={onClose}
           />
         )}
@@ -63,7 +66,13 @@ export function ProviderDialog({ target, onClose }: ProviderDialogProps) {
   )
 }
 
-function ProviderForm({ target, onDone }: { target: ProviderTarget; onDone: () => void }) {
+interface ProviderFormProps {
+  target: ProviderTarget
+  viewOnly: boolean
+  onDone: () => void
+}
+
+function ProviderForm({ target, viewOnly, onDone }: ProviderFormProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const stored = target.kind === 'stored' ? target.provider : undefined
@@ -73,7 +82,8 @@ function ProviderForm({ target, onDone }: { target: ProviderTarget; onDone: () =
   const create = useCreateOidcProvider(SECRET_MUTATION)
   const update = useUpdateOidcProvider(SECRET_MUTATION)
   const mutation = stored === undefined ? create : update
-  const readOnly = stored?.managed_by === 'config'
+  const managed = stored?.managed_by === 'config'
+  const readOnly = viewOnly || managed
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -90,7 +100,7 @@ function ProviderForm({ target, onDone }: { target: ProviderTarget; onDone: () =
 
   return (
     <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
-      {readOnly ? (
+      {managed ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <SourceBadge source={{ kind: 'file' }} />
           {t('identity.oidc.readOnly')}
