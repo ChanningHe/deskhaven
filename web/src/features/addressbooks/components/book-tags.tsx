@@ -28,10 +28,17 @@ export function BookTags({ guid }: { guid: string }) {
   const [editing, setEditing] = useState<TagView | null>(null)
   const [removing, setRemoving] = useState<TagView | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // A rename that was kept although the recolour after it failed.
+  const [renamed, setRenamed] = useState<string | null>(null)
 
   return (
     <section className="grid gap-3">
       <AddTag guid={guid} />
+      {renamed === null ? null : (
+        <p role="alert" className="text-sm text-warning">
+          {t('addressBooks.tags.renameKept', { name: renamed })}
+        </p>
+      )}
       {tags.error ? <ErrorAlert error={tags.error} onRetry={() => void tags.refetch()} /> : null}
       {tags.data?.items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('addressBooks.tags.empty')}</p>
@@ -46,6 +53,7 @@ export function BookTags({ guid }: { guid: string }) {
                 onDone={() => {
                   setEditing(null)
                 }}
+                onRenamed={setRenamed}
               />
             </li>
           ) : (
@@ -56,7 +64,7 @@ export function BookTags({ guid }: { guid: string }) {
                   className="size-4 rounded-full border bg-(--tag-color)"
                   style={{ '--tag-color': argbToHex(tag.color) } as CSSProperties}
                 />
-                {tag.name}
+                <bdi>{tag.name}</bdi>
               </span>
               <span className="flex gap-1">
                 <Button

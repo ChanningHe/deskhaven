@@ -191,7 +191,7 @@ function PeerForm({
                   toggleTag(tag.name, checked)
                 }}
               />
-              {tag.name}
+              <bdi>{tag.name}</bdi>
             </Label>
           ))}
         </fieldset>

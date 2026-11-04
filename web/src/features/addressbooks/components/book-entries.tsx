@@ -40,21 +40,24 @@ function peerColumns(t: TFunction, onEdit: (peer: PeerView) => void) {
             onEdit(row.original)
           }}
         >
-          {row.original.id}
+          <bdi>{row.original.id}</bdi>
         </button>
       ),
     }),
     column.accessor('alias', {
       header: t('addressBooks.entries.columns.alias'),
       meta: { label: t('addressBooks.entries.columns.alias') },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('hostname', {
       header: t('addressBooks.entries.columns.hostname'),
       meta: { label: t('addressBooks.entries.columns.hostname') },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('username', {
       header: t('addressBooks.entries.columns.username'),
       meta: { label: t('addressBooks.entries.columns.username') },
+      cell: ({ getValue }) => <bdi>{getValue()}</bdi>,
     }),
     column.accessor('tags', {
       header: t('addressBooks.entries.columns.tags'),
@@ -63,7 +66,7 @@ function peerColumns(t: TFunction, onEdit: (peer: PeerView) => void) {
         <span className="flex flex-wrap gap-1">
           {getValue().map((tag) => (
             <Badge key={tag} variant="secondary">
-              {tag}
+              <bdi>{tag}</bdi>
             </Badge>
           ))}
         </span>

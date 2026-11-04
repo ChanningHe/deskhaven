@@ -287,7 +287,7 @@ export const useCreateApiToken = <TError = ErrorType<ErrorEnvelope>, TContext = 
   return useMutation(getCreateApiTokenMutationOptions(options), queryClient)
 }
 export const getRevokeApiTokenUrl = (id: number) => {
-  return `/admin/api/v1/api-tokens/${id}/revoke`
+  return `/admin/api/v1/api-tokens/${encodeURIComponent(id)}/revoke`
 }
 
 /**

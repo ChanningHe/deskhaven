@@ -873,6 +873,7 @@
       "pagination": "设备分页",
       "page": "第 {{page}} / {{pages}} 页",
       "result": "已添加 {{added}} 台，已在列表中 {{existing}} 台，未找到 {{missing}} 台。",
+      "limit": "一次最多导入 {{max}} 台设备。",
       "submit": "添加所选 {{count}} 台"
     },
     "tags": {
@@ -886,7 +887,8 @@
       "remove": "删除标签 {{name}}",
       "removeShort": "删除",
       "confirmTitle": "删除此标签？",
-      "confirmDescription": "标签 {{name}} 将从地址簿及所有带有它的条目中移除。"
+      "confirmDescription": "标签 {{name}} 将从地址簿及所有带有它的条目中移除。",
+      "renameKept": "标签已重命名为 {{name}}，但颜色未能修改。请再次编辑该标签以重试颜色。"
     },
     "shares": {
       "passwordWarning": "任何授权（包括只读）都会让对方的 RustDesk 客户端用本地址簿中保存的密码连接列表中的设备：客户端需要密码，因此会以明文收到密码。请只与你信任其使用全部设备的人共享。",

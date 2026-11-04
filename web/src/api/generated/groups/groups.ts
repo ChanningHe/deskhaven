@@ -288,7 +288,7 @@ export const useCreateGroup = <TError = ErrorType<ErrorEnvelope>, TContext = unk
   return useMutation(getCreateGroupMutationOptions(options), queryClient)
 }
 export const getGetGroupUrl = (id: number) => {
-  return `/admin/api/v1/groups/${id}`
+  return `/admin/api/v1/groups/${encodeURIComponent(id)}`
 }
 
 /**
@@ -305,7 +305,7 @@ export const getGroup = async (
 }
 
 export const getGetGroupQueryKey = (id: number) => {
-  return [`/admin/api/v1/groups/${id}`] as const
+  return [`/admin/api/v1/groups/${encodeURIComponent(id)}`] as const
 }
 
 export const getGetGroupQueryOptions = <
@@ -412,7 +412,7 @@ export function useGetGroup<
 }
 
 export const getDeleteGroupUrl = (id: number) => {
-  return `/admin/api/v1/groups/${id}`
+  return `/admin/api/v1/groups/${encodeURIComponent(id)}`
 }
 
 /**
@@ -496,7 +496,7 @@ export const useDeleteGroup = <TError = ErrorType<ErrorEnvelope>, TContext = unk
   return useMutation(getDeleteGroupMutationOptions(options), queryClient)
 }
 export const getUpdateGroupUrl = (id: number) => {
-  return `/admin/api/v1/groups/${id}`
+  return `/admin/api/v1/groups/${encodeURIComponent(id)}`
 }
 
 /**
@@ -613,8 +613,8 @@ export const getListGroupMembersUrl = (id: number, params?: ListGroupMembersPara
   const stringifiedParams = normalizedParams.toString()
 
   return stringifiedParams.length > 0
-    ? `/admin/api/v1/groups/${id}/members?${stringifiedParams}`
-    : `/admin/api/v1/groups/${id}/members`
+    ? `/admin/api/v1/groups/${encodeURIComponent(id)}/members?${stringifiedParams}`
+    : `/admin/api/v1/groups/${encodeURIComponent(id)}/members`
 }
 
 /**
@@ -632,7 +632,10 @@ export const listGroupMembers = async (
 }
 
 export const getListGroupMembersQueryKey = (id: number, params?: ListGroupMembersParams) => {
-  return [`/admin/api/v1/groups/${id}/members`, ...(params ? [params] : [])] as const
+  return [
+    `/admin/api/v1/groups/${encodeURIComponent(id)}/members`,
+    ...(params ? [params] : []),
+  ] as const
 }
 
 export const getListGroupMembersQueryOptions = <
@@ -744,7 +747,7 @@ export function useListGroupMembers<
 }
 
 export const getAddGroupMemberUrl = (id: number) => {
-  return `/admin/api/v1/groups/${id}/members`
+  return `/admin/api/v1/groups/${encodeURIComponent(id)}/members`
 }
 
 /**
@@ -848,7 +851,7 @@ export const useAddGroupMember = <TError = ErrorType<ErrorEnvelope>, TContext = 
   return useMutation(getAddGroupMemberMutationOptions(options), queryClient)
 }
 export const getRemoveGroupMemberUrl = (id: number, userId: number) => {
-  return `/admin/api/v1/groups/${id}/members/${userId}`
+  return `/admin/api/v1/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`
 }
 
 /**

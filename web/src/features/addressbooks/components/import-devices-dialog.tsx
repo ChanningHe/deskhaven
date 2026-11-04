@@ -24,6 +24,8 @@ import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { invalidateAddressBooks } from '../invalidate'
 
 const DEVICES_PER_PAGE = 20
+/** Most devices one import takes (the API refuses more). */
+const MAX_IMPORT_DEVICES = 500
 
 interface ImportDevicesDialogProps {
   guid: string
@@ -110,13 +112,14 @@ function ImportBody({ guid, onClose }: { guid: string; onClose: () => void }) {
             <Label className="font-normal">
               <Checkbox
                 checked={picked.has(device.id)}
+                disabled={!picked.has(device.id) && picked.size >= MAX_IMPORT_DEVICES}
                 onCheckedChange={(checked) => {
                   toggle(device.id, checked)
                 }}
               />
-              <span className="font-medium">{device.rustdesk_id}</span>
+              <bdi className="font-medium">{device.rustdesk_id}</bdi>
               <span className="text-muted-foreground">
-                {[device.hostname, device.username].filter(Boolean).join(' · ')}
+                <bdi>{[device.hostname, device.username].filter(Boolean).join(' · ')}</bdi>
               </span>
             </Label>
           </li>
@@ -148,6 +151,11 @@ function ImportBody({ guid, onClose }: { guid: string; onClose: () => void }) {
           {t('dataTable.nextPage')}
         </Button>
       </nav>
+      {picked.size >= MAX_IMPORT_DEVICES ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t('addressBooks.import.limit', { max: MAX_IMPORT_DEVICES })}
+        </p>
+      ) : null}
       {result === undefined ? null : (
         <p role="status" className="text-sm">
           {t('addressBooks.import.result', {

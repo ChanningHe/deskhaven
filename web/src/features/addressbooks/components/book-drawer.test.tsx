@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { DeviceView } from '@/api/generated/model'
@@ -217,6 +217,71 @@ describe('address book tags', () => {
     await waitFor(() => {
       expect(posted).toEqual({ name: 'db', color: 0xff9e9e9e })
     })
+  })
+})
+
+/** The inline form editing a tag (the add form is another one). */
+function editForm(drawer: HTMLElement) {
+  const form = within(drawer).getByRole('button', { name: '保存标签' }).closest('form')
+  if (form === null) throw new Error('no edit form')
+  return within(form)
+}
+
+describe('self-chosen names', () => {
+  it('addresses a tag by its encoded name, never as a path of its own', async () => {
+    const hostile = '../0190bbbb-0000-7000-8000-000000000002/peers?x#y'
+    const { user, fetchSpy } = renderApp(`/address-books?book=${GUID}&tab=tags`, {
+      api: drawerApi({
+        [`GET ${BOOK}/tags`]: items([tag(hostile)]),
+        [`PATCH ${BOOK}/tags/${encodeURIComponent(hostile)}`]: { body: tag(hostile, 5) },
+      }),
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'ops' })
+    await user.click(await within(drawer).findByRole('button', { name: `编辑标签 ${hostile}` }))
+    fireEvent.change(editForm(drawer).getByLabelText('颜色'), {
+      target: { value: '#112233' },
+    })
+    await user.click(within(drawer).getByRole('button', { name: '保存标签' }))
+
+    await waitFor(() => {
+      const patched = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'PATCH')
+      expect(patched).toHaveLength(1)
+    })
+    const [url] = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH') ?? []
+    expect(url).toBe(`${BOOK}/tags/${encodeURIComponent(hostile)}`)
+  })
+
+  it('says the rename took effect when the recolour after it failed', async () => {
+    const { user } = renderApp(`/address-books?book=${GUID}&tab=tags`, {
+      api: drawerApi({
+        [`GET ${BOOK}/tags`]: items([tag('lobby')]),
+        [`PATCH ${BOOK}/tags/lobby`]: {
+          status: 409,
+          body: { error: { code: 'conflict', message: 'x', details: { renamed_to: 'reception' } } },
+        },
+      }),
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'ops' })
+    await user.click(await within(drawer).findByRole('button', { name: '编辑标签 lobby' }))
+    const name = editForm(drawer).getByLabelText('标签名')
+    await user.clear(name)
+    await user.type(name, 'reception')
+    fireEvent.change(editForm(drawer).getByLabelText('颜色'), {
+      target: { value: '#112233' },
+    })
+    await user.click(within(drawer).getByRole('button', { name: '保存标签' }))
+
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('已重命名为 reception')
+  })
+
+  it('isolates entry text for bidirectional display', async () => {
+    renderApp(`/address-books?book=${GUID}`, {
+      api: drawerApi({ [`GET ${BOOK}/peers`]: page([peer('100', { alias: 'a‮b' })]) }),
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'ops' })
+
+    const alias = await within(drawer).findByText('a‮b')
+    expect(alias.tagName).toBe('BDI')
   })
 })
 

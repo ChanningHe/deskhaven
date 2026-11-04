@@ -873,6 +873,7 @@
       "pagination": "Device pages",
       "page": "Page {{page}} of {{pages}}",
       "result": "Added {{added}}, already listed {{existing}}, not found {{missing}}.",
+      "limit": "At most {{max}} devices can be imported at a time.",
       "submit": "Add {{count}} selected"
     },
     "tags": {
@@ -886,7 +887,8 @@
       "remove": "Delete tag {{name}}",
       "removeShort": "Delete",
       "confirmTitle": "Delete this tag?",
-      "confirmDescription": "The tag {{name}} is removed from the book and from every entry that carries it."
+      "confirmDescription": "The tag {{name}} is removed from the book and from every entry that carries it.",
+      "renameKept": "The tag was renamed to {{name}}, but its color could not be changed. Edit the tag again to retry the color."
     },
     "shares": {
       "passwordWarning": "Any grant, even read-only, lets that person's RustDesk client connect to the listed devices with the passwords stored in this book: the client needs them, so it receives them in clear text. Share a book only with people you trust with all of its devices.",

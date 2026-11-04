@@ -184,7 +184,7 @@ export function useListDevices<
 }
 
 export const getGetDeviceUrl = (id: number) => {
-  return `/admin/api/v1/devices/${id}`
+  return `/admin/api/v1/devices/${encodeURIComponent(id)}`
 }
 
 /**
@@ -201,7 +201,7 @@ export const getDevice = async (
 }
 
 export const getGetDeviceQueryKey = (id: number) => {
-  return [`/admin/api/v1/devices/${id}`] as const
+  return [`/admin/api/v1/devices/${encodeURIComponent(id)}`] as const
 }
 
 export const getGetDeviceQueryOptions = <
@@ -308,7 +308,7 @@ export function useGetDevice<
 }
 
 export const getDeleteDeviceUrl = (id: number) => {
-  return `/admin/api/v1/devices/${id}`
+  return `/admin/api/v1/devices/${encodeURIComponent(id)}`
 }
 
 /**
@@ -394,7 +394,7 @@ export const useDeleteDevice = <TError = ErrorType<ErrorEnvelope>, TContext = un
   return useMutation(getDeleteDeviceMutationOptions(options), queryClient)
 }
 export const getUpdateDeviceUrl = (id: number) => {
-  return `/admin/api/v1/devices/${id}`
+  return `/admin/api/v1/devices/${encodeURIComponent(id)}`
 }
 
 /**
@@ -502,7 +502,7 @@ export const useUpdateDevice = <TError = ErrorType<ErrorEnvelope>, TContext = un
   return useMutation(getUpdateDeviceMutationOptions(options), queryClient)
 }
 export const getDisconnectDeviceUrl = (id: number) => {
-  return `/admin/api/v1/devices/${id}/disconnect`
+  return `/admin/api/v1/devices/${encodeURIComponent(id)}/disconnect`
 }
 
 /**

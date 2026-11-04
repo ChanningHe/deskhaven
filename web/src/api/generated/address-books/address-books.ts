@@ -302,7 +302,7 @@ export const useCreateAddressBook = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getCreateAddressBookMutationOptions(options), queryClient)
 }
 export const getGetAddressBookUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}`
 }
 
 /**
@@ -319,7 +319,7 @@ export const getAddressBook = async (
 }
 
 export const getGetAddressBookQueryKey = (guid: string) => {
-  return [`/admin/api/v1/address-books/${guid}`] as const
+  return [`/admin/api/v1/address-books/${encodeURIComponent(guid)}`] as const
 }
 
 export const getGetAddressBookQueryOptions = <
@@ -426,7 +426,7 @@ export function useGetAddressBook<
 }
 
 export const getDeleteAddressBookUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}`
 }
 
 /**
@@ -512,7 +512,7 @@ export const useDeleteAddressBook = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getDeleteAddressBookMutationOptions(options), queryClient)
 }
 export const getUpdateAddressBookUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}`
 }
 
 /**
@@ -631,8 +631,8 @@ export const getListAddressBookPeersUrl = (guid: string, params?: ListAddressBoo
   const stringifiedParams = normalizedParams.toString()
 
   return stringifiedParams.length > 0
-    ? `/admin/api/v1/address-books/${guid}/peers?${stringifiedParams}`
-    : `/admin/api/v1/address-books/${guid}/peers`
+    ? `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers?${stringifiedParams}`
+    : `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers`
 }
 
 /**
@@ -653,7 +653,10 @@ export const getListAddressBookPeersQueryKey = (
   guid: string,
   params?: ListAddressBookPeersParams,
 ) => {
-  return [`/admin/api/v1/address-books/${guid}/peers`, ...(params ? [params] : [])] as const
+  return [
+    `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers`,
+    ...(params ? [params] : []),
+  ] as const
 }
 
 export const getListAddressBookPeersQueryOptions = <
@@ -777,7 +780,7 @@ export function useListAddressBookPeers<
 }
 
 export const getAddAddressBookPeerUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/peers`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers`
 }
 
 /**
@@ -883,7 +886,7 @@ export const useAddAddressBookPeer = <TError = ErrorType<ErrorEnvelope>, TContex
   return useMutation(getAddAddressBookPeerMutationOptions(options), queryClient)
 }
 export const getDeleteAddressBookPeersUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/peers/delete`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers/delete`
 }
 
 /**
@@ -989,7 +992,7 @@ export const useDeleteAddressBookPeers = <TError = ErrorType<ErrorEnvelope>, TCo
   return useMutation(getDeleteAddressBookPeersMutationOptions(options), queryClient)
 }
 export const getImportAddressBookPeersUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/peers/import`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers/import`
 }
 
 /**
@@ -1099,7 +1102,7 @@ export const useImportAddressBookPeers = <TError = ErrorType<ErrorEnvelope>, TCo
   return useMutation(getImportAddressBookPeersMutationOptions(options), queryClient)
 }
 export const getUpdateAddressBookPeerUrl = (guid: string, id: string) => {
-  return `/admin/api/v1/address-books/${guid}/peers/${id}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/peers/${encodeURIComponent(id)}`
 }
 
 /**
@@ -1208,7 +1211,7 @@ export const useUpdateAddressBookPeer = <TError = ErrorType<ErrorEnvelope>, TCon
   return useMutation(getUpdateAddressBookPeerMutationOptions(options), queryClient)
 }
 export const getListAddressBookSharesUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/shares`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/shares`
 }
 
 /**
@@ -1225,7 +1228,7 @@ export const listAddressBookShares = async (
 }
 
 export const getListAddressBookSharesQueryKey = (guid: string) => {
-  return [`/admin/api/v1/address-books/${guid}/shares`] as const
+  return [`/admin/api/v1/address-books/${encodeURIComponent(guid)}/shares`] as const
 }
 
 export const getListAddressBookSharesQueryOptions = <
@@ -1344,7 +1347,7 @@ export function useListAddressBookShares<
 }
 
 export const getSetAddressBookShareUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/shares`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/shares`
 }
 
 /**
@@ -1456,7 +1459,7 @@ export const getRemoveAddressBookShareUrl = (
   subjectType: SubjectKind,
   subjectId: number,
 ) => {
-  return `/admin/api/v1/address-books/${guid}/shares/${subjectType}/${subjectId}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/shares/${encodeURIComponent(subjectType)}/${encodeURIComponent(subjectId)}`
 }
 
 /**
@@ -1546,7 +1549,7 @@ export const useRemoveAddressBookShare = <TError = ErrorType<ErrorEnvelope>, TCo
   return useMutation(getRemoveAddressBookShareMutationOptions(options), queryClient)
 }
 export const getListAddressBookTagsUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/tags`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/tags`
 }
 
 /**
@@ -1563,7 +1566,7 @@ export const listAddressBookTags = async (
 }
 
 export const getListAddressBookTagsQueryKey = (guid: string) => {
-  return [`/admin/api/v1/address-books/${guid}/tags`] as const
+  return [`/admin/api/v1/address-books/${encodeURIComponent(guid)}/tags`] as const
 }
 
 export const getListAddressBookTagsQueryOptions = <
@@ -1676,7 +1679,7 @@ export function useListAddressBookTags<
 }
 
 export const getAddAddressBookTagUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/tags`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/tags`
 }
 
 /**
@@ -1782,7 +1785,7 @@ export const useAddAddressBookTag = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getAddAddressBookTagMutationOptions(options), queryClient)
 }
 export const getDeleteAddressBookTagsUrl = (guid: string) => {
-  return `/admin/api/v1/address-books/${guid}/tags/delete`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/tags/delete`
 }
 
 /**
@@ -1890,12 +1893,12 @@ export const useDeleteAddressBookTags = <TError = ErrorType<ErrorEnvelope>, TCon
   return useMutation(getDeleteAddressBookTagsMutationOptions(options), queryClient)
 }
 export const getUpdateAddressBookTagUrl = (guid: string, name: string) => {
-  return `/admin/api/v1/address-books/${guid}/tags/${name}`
+  return `/admin/api/v1/address-books/${encodeURIComponent(guid)}/tags/${encodeURIComponent(name)}`
 }
 
 /**
  * @summary Renames and / or recolours a tag (audited `address_book.tag_rename` / `tag_update`).
-Renaming also renames it on the entries. With both, the rename comes first.
+Renaming also renames it on the entries. With both, the rename comes first and is kept when the recolour then fails (`details.renamed_to`).
  */
 export const updateAddressBookTag = async (
   guid: string,
@@ -1977,7 +1980,7 @@ export type UpdateAddressBookTagMutationVariables = { guid: string; name: string
 
 /**
  * @summary Renames and / or recolours a tag (audited `address_book.tag_rename` / `tag_update`).
-Renaming also renames it on the entries. With both, the rename comes first.
+Renaming also renames it on the entries. With both, the rename comes first and is kept when the recolour then fails (`details.renamed_to`).
  */
 export const useUpdateAddressBookTag = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {

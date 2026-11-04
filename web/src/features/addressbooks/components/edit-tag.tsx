@@ -3,6 +3,7 @@ import { useId, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ApiError } from '@/api/api-error'
 import { useUpdateAddressBookTag } from '@/api/generated/address-books/address-books'
 import type { TagView } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
@@ -13,8 +14,22 @@ import { Label } from '@/components/ui/label'
 import { invalidateAddressBooks } from '../invalidate'
 import { argbToHex, hexToArgb } from '../tag-color'
 
+interface EditTagProps {
+  guid: string
+  tag: TagView
+  onDone: () => void
+  /** The rename was applied but the recolour that followed failed. */
+  onRenamed: (name: string) => void
+}
+
+/** The name the server says it already applied before a failure (`details.renamed_to`). */
+function keptName(error: unknown): string | undefined {
+  const kept = error instanceof ApiError ? error.details?.renamed_to : undefined
+  return typeof kept === 'string' ? kept : undefined
+}
+
 /** Rename and / or recolour one tag, inline. */
-export function EditTag({ guid, tag, onDone }: { guid: string; tag: TagView; onDone: () => void }) {
+export function EditTag({ guid, tag, onDone, onRenamed }: EditTagProps) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
@@ -33,8 +48,22 @@ export function EditTag({ guid, tag, onDone }: { guid: string; tag: TagView; onD
       onDone()
       return
     }
-    const saved = await mutation.mutateAsync({ guid, name: tag.name, data }).catch(() => undefined)
-    if (saved === undefined) return
+    let failure: unknown
+    const saved = await mutation
+      .mutateAsync({ guid, name: tag.name, data })
+      .catch((caught: unknown) => {
+        failure = caught
+        return undefined
+      })
+    if (saved === undefined) {
+      const kept = keptName(failure)
+      if (kept === undefined) return
+      // The rename is done and the old name is gone: leave the form, say what happened.
+      void invalidateAddressBooks(queryClient)
+      onRenamed(kept)
+      onDone()
+      return
+    }
     void invalidateAddressBooks(queryClient)
     onDone()
   }

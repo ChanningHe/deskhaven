@@ -399,7 +399,7 @@ export const useImportUsers = <
   return useMutation(getImportUsersMutationOptions(options), queryClient)
 }
 export const getGetUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}`
 }
 
 /**
@@ -416,7 +416,7 @@ export const getUser = async (
 }
 
 export const getGetUserQueryKey = (id: number) => {
-  return [`/admin/api/v1/users/${id}`] as const
+  return [`/admin/api/v1/users/${encodeURIComponent(id)}`] as const
 }
 
 export const getGetUserQueryOptions = <
@@ -523,7 +523,7 @@ export function useGetUser<
 }
 
 export const getDeleteUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}`
 }
 
 /**
@@ -607,7 +607,7 @@ export const useDeleteUser = <TError = ErrorType<ErrorEnvelope>, TContext = unkn
   return useMutation(getDeleteUserMutationOptions(options), queryClient)
 }
 export const getUpdateUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}`
 }
 
 /**
@@ -711,7 +711,7 @@ export const useUpdateUser = <TError = ErrorType<ErrorEnvelope>, TContext = unkn
   return useMutation(getUpdateUserMutationOptions(options), queryClient)
 }
 export const getDisableUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/disable`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/disable`
 }
 
 /**
@@ -793,7 +793,7 @@ export const useDisableUser = <TError = ErrorType<ErrorEnvelope>, TContext = unk
   return useMutation(getDisableUserMutationOptions(options), queryClient)
 }
 export const getEnableUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/enable`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/enable`
 }
 
 /**
@@ -875,7 +875,7 @@ export const useEnableUser = <TError = ErrorType<ErrorEnvelope>, TContext = unkn
   return useMutation(getEnableUserMutationOptions(options), queryClient)
 }
 export const getResetUser2faUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/reset-2fa`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/reset-2fa`
 }
 
 /**
@@ -961,7 +961,7 @@ export const useResetUser2fa = <TError = ErrorType<ErrorEnvelope>, TContext = un
   return useMutation(getResetUser2faMutationOptions(options), queryClient)
 }
 export const getResetUserPasswordUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/reset-password`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/reset-password`
 }
 
 /**
@@ -1049,7 +1049,7 @@ export const useResetUserPassword = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getResetUserPasswordMutationOptions(options), queryClient)
 }
 export const getRevokeUserSessionsUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/revoke-sessions`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/revoke-sessions`
 }
 
 /**
@@ -1135,7 +1135,7 @@ export const useRevokeUserSessions = <TError = ErrorType<ErrorEnvelope>, TContex
   return useMutation(getRevokeUserSessionsMutationOptions(options), queryClient)
 }
 export const getUnlockUserUrl = (id: number) => {
-  return `/admin/api/v1/users/${id}/unlock`
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/unlock`
 }
 
 /**

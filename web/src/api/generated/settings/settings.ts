@@ -291,8 +291,8 @@ export const getGetSettingHistoryUrl = (key: string, params?: GetSettingHistoryP
   const stringifiedParams = normalizedParams.toString()
 
   return stringifiedParams.length > 0
-    ? `/admin/api/v1/settings/${key}/history?${stringifiedParams}`
-    : `/admin/api/v1/settings/${key}/history`
+    ? `/admin/api/v1/settings/${encodeURIComponent(key)}/history?${stringifiedParams}`
+    : `/admin/api/v1/settings/${encodeURIComponent(key)}/history`
 }
 
 /**
@@ -310,7 +310,10 @@ export const getSettingHistory = async (
 }
 
 export const getGetSettingHistoryQueryKey = (key: string, params?: GetSettingHistoryParams) => {
-  return [`/admin/api/v1/settings/${key}/history`, ...(params ? [params] : [])] as const
+  return [
+    `/admin/api/v1/settings/${encodeURIComponent(key)}/history`,
+    ...(params ? [params] : []),
+  ] as const
 }
 
 export const getGetSettingHistoryQueryOptions = <

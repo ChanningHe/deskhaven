@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "i18n:check": "node scripts/i18n-check.ts",
-    "gen:api": "orval && eslint --fix src/api/generated && prettier --write --log-level warn src/api/generated"
+    "gen:api": "orval && node scripts/encode-path-params.ts && eslint --fix src/api/generated && prettier --write --log-level warn src/api/generated"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",

@@ -287,7 +287,7 @@ export const useCreateDeviceGroup = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getCreateDeviceGroupMutationOptions(options), queryClient)
 }
 export const getGetDeviceGroupUrl = (id: number) => {
-  return `/admin/api/v1/device-groups/${id}`
+  return `/admin/api/v1/device-groups/${encodeURIComponent(id)}`
 }
 
 /**
@@ -304,7 +304,7 @@ export const getDeviceGroup = async (
 }
 
 export const getGetDeviceGroupQueryKey = (id: number) => {
-  return [`/admin/api/v1/device-groups/${id}`] as const
+  return [`/admin/api/v1/device-groups/${encodeURIComponent(id)}`] as const
 }
 
 export const getGetDeviceGroupQueryOptions = <
@@ -411,7 +411,7 @@ export function useGetDeviceGroup<
 }
 
 export const getDeleteDeviceGroupUrl = (id: number) => {
-  return `/admin/api/v1/device-groups/${id}`
+  return `/admin/api/v1/device-groups/${encodeURIComponent(id)}`
 }
 
 /**
@@ -497,7 +497,7 @@ export const useDeleteDeviceGroup = <TError = ErrorType<ErrorEnvelope>, TContext
   return useMutation(getDeleteDeviceGroupMutationOptions(options), queryClient)
 }
 export const getUpdateDeviceGroupUrl = (id: number) => {
-  return `/admin/api/v1/device-groups/${id}`
+  return `/admin/api/v1/device-groups/${encodeURIComponent(id)}`
 }
 
 /**
