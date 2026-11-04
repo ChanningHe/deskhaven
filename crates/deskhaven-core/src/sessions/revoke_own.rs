@@ -59,7 +59,7 @@ impl SessionService {
             if !matches!(revoked, Ok(0)) {
                 core.cache.invalidate_user(user_id);
             }
-            Ok(revoked?)
+            revoked
         })
         .await
     }

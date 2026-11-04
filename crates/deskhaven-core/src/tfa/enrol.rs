@@ -227,10 +227,10 @@ impl TfaService {
         if user.totp_enabled_at.is_none() {
             return Err(TfaError::NotEnabled);
         }
-        if let Some(code) = code {
-            if !inner.spend_code(&txn, &user, code).await? {
-                return Err(TfaError::InvalidCode);
-            }
+        if let Some(code) = code
+            && !inner.spend_code(&txn, &user, code).await?
+        {
+            return Err(TfaError::InvalidCode);
         }
         let codes = replace_recovery_codes(&txn, inner, user_id).await?;
         record(&txn, inner, audit).await?;
