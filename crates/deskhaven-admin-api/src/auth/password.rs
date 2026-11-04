@@ -26,7 +26,7 @@ use deskhaven_core::login_events::{LoginMethod, LoginResult, MAX_USERNAME_ATTEMP
 use deskhaven_core::sessions::{Session, SessionError, SessionToken};
 use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::{ChallengeSecret, LoginBinding, PendingLogin, SecondFactor};
-use deskhaven_core::users::{Authenticated, CredentialStamp, Password, User};
+use deskhaven_core::users::{AuthError, Authenticated, CredentialStamp, Password, User};
 use garde::Validate;
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -98,7 +98,7 @@ pub async fn login(
     headers: HeaderMap,
     ValidJson(request): ValidJson<LoginRequest>,
 ) -> Result<Response, AdminApiError> {
-    let outcome = authenticate(&state, client, &request, user_agent(&headers)).await;
+    let (method, outcome) = authenticate(&state, client, &request, user_agent(&headers)).await;
     let recorded = match &outcome {
         Ok(Step::SignedIn(done)) => Some((Some(done.user.id), LoginResult::Success)),
         Ok(Step::Challenged { user, .. }) => {
@@ -107,7 +107,6 @@ pub async fn login(
         Err(failure) => failure.event_result().map(|result| (None, result)),
     };
     if let Some((user_id, result)) = recorded {
-        let method = LoginMethod::Password;
         event::record(&state, client, &request.username, method, user_id, result).await;
     }
     match outcome.map_err(Failure::into_error)? {
@@ -124,19 +123,38 @@ pub async fn login(
     }
 }
 
+/// The password step and how the password was checked (`password` or `ldap`, for the
+/// login event).
 async fn authenticate(
     state: &AppState,
     client: ClientAddr,
     request: &LoginRequest,
     user_agent: Option<&str>,
-) -> Result<Step, Failure> {
-    let throttle = &state.login_throttle;
-    let attempt = throttle.pre_check(client, &request.username).await?;
+) -> (LoginMethod, Result<Step, Failure>) {
+    let attempt = match state
+        .login_throttle
+        .pre_check(client, &request.username)
+        .await
+    {
+        Ok(attempt) => attempt,
+        Err(err) => return (LoginMethod::Password, Err(err.into())),
+    };
     let password = Password::new(request.password.as_str());
-    let verified = state
+    let checked = state
         .ldap
-        .authenticate_password(&request.username, &password)
+        .password_login(&request.username, &password)
         .await;
+    let step = password_step(state, client, attempt, checked.result, user_agent).await;
+    (checked.method, step)
+}
+
+async fn password_step(
+    state: &AppState,
+    client: ClientAddr,
+    attempt: Attempt,
+    verified: Result<Authenticated, AuthError>,
+    user_agent: Option<&str>,
+) -> Result<Step, Failure> {
     let Authenticated { user, stamp } = match verified {
         Ok(verified) => verified,
         Err(err) => return Err(failed(state, client, attempt, err.into()).await),

@@ -24,7 +24,7 @@ use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::sessions::{ClientDevice, SessionError, SessionToken};
 use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::{ChallengeSecret, LoginBinding, PendingLogin, SecondFactor};
-use deskhaven_core::users::{Authenticated, CredentialStamp, User};
+use deskhaven_core::users::{AuthError, Authenticated, CredentialStamp, User};
 
 use super::event::{self, Attempted};
 use super::failure::Failure;
@@ -63,7 +63,7 @@ pub async fn login(
     client: ClientAddr,
     request: &AccountLogin,
 ) -> Result<PasswordStep, ClientApiError> {
-    let outcome = authenticate(state, client, request).await;
+    let (method, outcome) = authenticate(state, client, request).await;
     let recorded = match &outcome {
         Ok(PasswordStep::LoggedIn(done)) => Some((Some(done.user.id), LoginResult::Success)),
         Ok(PasswordStep::Challenged(c)) => {
@@ -75,24 +75,43 @@ pub async fn login(
         let attempted = Attempted {
             username: &request.username,
             rustdesk_id: &request.device.rustdesk_id,
-            method: LoginMethod::Password,
+            method,
         };
         event::record(state, client, &attempted, user_id, result).await;
     }
     outcome.map_err(Failure::into_error)
 }
 
+/// The password step and how the password was checked (`password` or `ldap`, for the
+/// login event).
 async fn authenticate(
     state: &AppState,
     client: ClientAddr,
     request: &AccountLogin,
-) -> Result<PasswordStep, Failure> {
-    let throttle = &state.login_throttle;
-    let attempt = throttle.pre_check(client, &request.username).await?;
-    let verified = state
+) -> (LoginMethod, Result<PasswordStep, Failure>) {
+    let attempt = match state
+        .login_throttle
+        .pre_check(client, &request.username)
+        .await
+    {
+        Ok(attempt) => attempt,
+        Err(err) => return (LoginMethod::Password, Err(err.into())),
+    };
+    let checked = state
         .ldap
-        .authenticate_password(&request.username, &request.password)
+        .password_login(&request.username, &request.password)
         .await;
+    let step = password_step(state, client, request, attempt, checked.result).await;
+    (checked.method, step)
+}
+
+async fn password_step(
+    state: &AppState,
+    client: ClientAddr,
+    request: &AccountLogin,
+    attempt: Attempt,
+    verified: Result<Authenticated, AuthError>,
+) -> Result<PasswordStep, Failure> {
     let Authenticated { user, stamp } = match verified {
         Ok(verified) => verified,
         Err(err) => return Err(fail(state, client, attempt, err.into()).await),

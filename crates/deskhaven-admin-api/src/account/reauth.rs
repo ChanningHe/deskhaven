@@ -54,8 +54,8 @@ pub(super) async fn with_current_password<T>(
     }
 }
 
-/// 409 `not_local_account`: the account signs in elsewhere (OIDC), it has no local
-/// password and no local second factor.
+/// 409 `not_local_account`: the account signs in elsewhere (OIDC), it has no password and
+/// no local second factor.
 pub(super) fn not_local() -> AdminApiError {
     AdminApiError::new(
         ErrorCode::NotLocalAccount,
@@ -71,7 +71,9 @@ pub(super) fn user_error(err: UserError) -> AdminApiError {
             AdminApiError::validation_failed("the new password breaks the password policy")
                 .with_details(json!({ "fields": { "new_password": [reason.to_string()] } }))
         }
-        UserError::Password(PasswordError::Busy) => AdminApiError::unavailable(BUSY_RETRY_AFTER),
+        UserError::Password(PasswordError::Busy) | UserError::DirectoryUnavailable => {
+            AdminApiError::unavailable(BUSY_RETRY_AFTER)
+        }
         other => AdminApiError::internal(other),
     }
 }

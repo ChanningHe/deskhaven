@@ -12,8 +12,9 @@
 //!    passed the new factor keeps working with it (a session restricted to this enrolment
 //!    included). Wrong password: 422 `wrong_password`; wrong code: 422 `invalid_code`.
 //!
-//! Only local accounts enrol (409 `not_local_account` otherwise: an OIDC sign-in never asks
-//! for a local factor), and only once the password step of the account setup is done (403
+//! Password accounts enrol, local or LDAP (the current password is then checked against the
+//! directory); OIDC accounts get 409 `not_local_account` (an OIDC sign-in never asks for a
+//! local factor), and only once the password step of the account setup is done (403
 //! `setup_required` while a temporary password is pending: the steps go in order).
 //!
 //! Both are recorded in their own transaction (`user.totp_enrolment_begin`,
@@ -146,7 +147,7 @@ pub async fn confirm(
     let user_id = principal.user_id;
     let user = may_enrol(&state, user_id).await?;
     let password = Password::new(body.current_password.as_str());
-    let verify = state.users.verify_password(user_id, &password);
+    let verify = state.ldap.verify_password(user_id, &password);
     with_current_password(&state, client, &user.username, verify).await?;
     let audit = ctx.entry(Audit::new("user.totp_enable").target("user", user_id));
     let codes = state
@@ -182,11 +183,11 @@ pub async fn confirm(
     }
 }
 
-/// The user, when it may enrol TOTP now: a local account (an OIDC sign-in never asks for
-/// a local factor), past the password step of its account setup.
+/// The user, when it may enrol TOTP now: a password account, local or LDAP (an OIDC
+/// sign-in never asks for a local factor), past the password step of its account setup.
 async fn may_enrol(state: &AppState, user_id: i64) -> Result<User, AdminApiError> {
     let user = state.users.get(user_id).await.map_err(user_error)?;
-    if user.auth_source != AuthSource::Local {
+    if user.auth_source == AuthSource::Oidc {
         return Err(not_local());
     }
     let step = pending_step(&state.tfa, user.role, AccountFlags::from(&user));
