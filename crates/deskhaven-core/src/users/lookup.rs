@@ -1,5 +1,5 @@
 //! Lookups by normalized username / email on any connection, for services that resolve
-//! accounts inside their own transaction (OIDC linking and provisioning).
+//! accounts inside their own transaction (OIDC linking, OIDC and LDAP provisioning).
 
 use deskhaven_db::entity::user;
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter};
@@ -17,6 +17,20 @@ pub(crate) async fn find_by_email<C: ConnectionTrait>(
     };
     user::Entity::find()
         .filter(user::Column::EmailNorm.eq(email.norm))
+        .one(conn)
+        .await
+}
+
+/// The account named `raw` (case-insensitively). A malformed username matches nothing.
+pub(crate) async fn find_by_username<C: ConnectionTrait>(
+    conn: &C,
+    raw: &str,
+) -> Result<Option<user::Model>, DbErr> {
+    let Some(norm) = normalize::username_norm(raw) else {
+        return Ok(None);
+    };
+    user::Entity::find()
+        .filter(user::Column::UsernameNorm.eq(norm))
         .one(conn)
         .await
 }

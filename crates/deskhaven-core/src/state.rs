@@ -16,6 +16,7 @@ use crate::console_audit::ConsoleAuditLog;
 use crate::crypto::SecretBox;
 use crate::devices::DeviceService;
 use crate::groups::GroupService;
+use crate::ldap::{Ldap3Connector, LdapService};
 use crate::login_events::LoginEventLog;
 use crate::oidc::{OidcService, ReqwestFetch};
 use crate::sessions::SessionService;
@@ -52,6 +53,9 @@ pub struct AppState {
     pub console_audit: ConsoleAuditLog,
     /// OIDC providers and logins.
     pub oidc: OidcService,
+    /// LDAP directories, and every password login (local or directory: the login
+    /// endpoints call `ldap.authenticate_password`).
+    pub ldap: LdapService,
     /// User groups: the one instance everything shares (admin API included), so the
     /// strategy cache's commit hooks fire for every membership change.
     pub groups: GroupService,
@@ -131,6 +135,14 @@ impl AppState {
             Arc::new(ReqwestFetch::new()),
         );
         let groups = GroupService::new(db.clone());
+        let ldap = LdapService::new(
+            db.clone(),
+            Arc::clone(&crypto),
+            users.clone(),
+            groups.clone(),
+            Arc::clone(&clock),
+            Arc::new(Ldap3Connector::new()),
+        );
         let strategies = StrategyService::new(db.clone(), Arc::clone(&clock));
         strategies.watch_users(&users);
         strategies.watch_groups(&groups);
@@ -164,6 +176,7 @@ impl AppState {
             tfa,
             console_audit,
             oidc,
+            ldap,
             groups,
             strategies,
             devices,

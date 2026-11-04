@@ -191,13 +191,7 @@ impl Inner {
         &self,
         username: &str,
     ) -> Result<Option<user::Model>, sea_orm::DbErr> {
-        let Some(norm) = normalize::username_norm(username) else {
-            return Ok(None);
-        };
-        user::Entity::find()
-            .filter(user::Column::UsernameNorm.eq(norm))
-            .one(&self.db)
-            .await
+        lookup::find_by_username(&self.db, username).await
     }
 
     fn min_password_length(&self) -> u32 {

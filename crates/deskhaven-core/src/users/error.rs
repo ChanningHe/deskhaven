@@ -95,6 +95,17 @@ pub enum AuthError {
     #[error("password hashing failed")]
     Password(#[source] PasswordError),
 
+    /// A directory (LDAP) account's directory could not be asked: unreachable, timed out,
+    /// refused the service account, or misconfigured (logged). Nothing was verified, and
+    /// there is no fallback to a local password (APIs: 503, not counted).
+    #[error("the directory is unavailable")]
+    DirectoryUnavailable,
+
+    /// The directory accepted the password, but provisioning the account or synchronizing
+    /// its role / groups failed (fail closed: no login).
+    #[error("directory account provisioning failed")]
+    Provisioning(#[source] Box<dyn std::error::Error + Send + Sync>),
+
     #[error("user storage failed")]
     Database(#[source] DbErr),
 }

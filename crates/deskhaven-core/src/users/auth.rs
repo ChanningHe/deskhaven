@@ -115,6 +115,19 @@ impl UserService {
         })
     }
 
+    /// The Argon2id work of one local login, spent on nothing: an external (LDAP) password
+    /// check costs the same as a local one, and waits for a hasher slot like one
+    /// ([`PasswordError::Busy`] when saturated). Over-long input hashes an empty password.
+    pub(crate) async fn spend_dummy_hash(&self, password: &Password) -> Result<(), AuthError> {
+        let hasher = &self.inner.hasher;
+        if password.char_len() > MAX_PASSWORD_LEN {
+            hasher.verify_dummy(&Password::new("")).await?;
+        } else {
+            hasher.verify_dummy(password).await?;
+        }
+        Ok(())
+    }
+
     /// Whether `user_id` still exists, is active, and has the auth source and password
     /// `stamp` was taken from (a local login's stamp: still a local account with the same
     /// password).
