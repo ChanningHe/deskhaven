@@ -28,6 +28,7 @@ use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
 use serde_json::Value;
 use tower::ServiceExt;
 
+pub mod client;
 pub mod devices;
 pub mod login;
 pub mod probe;
@@ -101,6 +102,15 @@ pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Ha
 }
 
 impl Harness {
+    /// The address book service over the harness state, to seed and inspect books directly.
+    pub fn books(&self) -> deskhaven_core::addressbooks::AddressBookService {
+        deskhaven_core::addressbooks::AddressBookService::new(
+            self.state.db.clone(),
+            self.state.settings.clone(),
+            Arc::clone(&self.state.crypto),
+        )
+    }
+
     /// Creates an active local user of `role` and logs it in to the console.
     pub async fn console(&self, username: &str, role: Role) -> Console {
         let user_id = self.create_user(username, role).await;

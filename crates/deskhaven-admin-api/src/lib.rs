@@ -11,6 +11,7 @@
 
 mod account;
 pub mod account_setup;
+mod address_books;
 mod api_tokens;
 pub mod audit;
 mod auth;
@@ -77,6 +78,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = groups::routes(routes)?;
     let routes = devices::routes(routes)?;
     let routes = device_groups::routes(routes)?;
+    let routes = address_books::routes(routes)?;
     let routes = client_config::routes(routes)?;
     let routes = api_tokens::routes(routes)?;
     settings::routes(routes)

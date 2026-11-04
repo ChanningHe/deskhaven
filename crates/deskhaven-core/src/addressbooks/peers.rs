@@ -60,6 +60,16 @@ impl AddressBookService {
         self.peers_matching(actor, guid, None, page).await
     }
 
+    /// The peer `id` of the book; needs rule 1.
+    pub async fn peer(&self, actor: Actor, guid: &str, id: &str) -> Result<Peer, AddressBookError> {
+        let (book, _) = authorize(&self.db, actor, guid, Rule::ReadOnly, false).await?;
+        let found = address_book_peer::Entity::find_by_id((book.id, id.to_owned()))
+            .one(&self.db)
+            .await?;
+        let row = found.ok_or(AddressBookError::PeerNotFound)?;
+        Ok(self.to_peer(&book, row))
+    }
+
     /// [`peers`](Self::peers) narrowed to the peers whose id, alias, hostname, username or
     /// note contains `q` (case-insensitive, literal; ASCII only on SQLite).
     pub async fn peers_matching(
