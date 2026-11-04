@@ -6,6 +6,10 @@
 //!   the shares naming them directly or naming a group they belong to. An unowned shared
 //!   book (owner deleted) is admin-managed: users reach it only through shares.
 //! - [`Actor::Admin`] (the console) has full control of every shared book.
+//! - Rule 3 manages contents, tags, the book's name and note, and shares up to rule 2. Only
+//!   the owner or the console ([`is_steward`]) deletes the book, grants rule 3, or changes
+//!   or revokes an existing rule 3 grant: a manager cannot hand out its own power nor
+//!   lock out another manager (06 §4.2).
 //!
 //! A book without any rule for the actor is reported as [`AddressBookError::NotFound`],
 //! exactly like a book that does not exist.
@@ -33,6 +37,16 @@ pub enum Actor {
     Admin,
     /// A user (the client API): what ownership and shares grant.
     User(i64),
+}
+
+/// Whether `actor` is a steward of `book`: the console, or the owner of the book. Only a
+/// steward deletes a book, grants rule 3 or changes and revokes a rule 3 grant; a rule 3
+/// sharee manages the contents and the grants up to rule 2.
+pub(crate) fn is_steward(actor: Actor, book: &address_book::Model) -> bool {
+    match actor {
+        Actor::Admin => true,
+        Actor::User(id) => book.owner_user_id == Some(id),
+    }
 }
 
 /// `a` grants at least what `b` grants.

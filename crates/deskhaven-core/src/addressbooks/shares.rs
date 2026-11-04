@@ -25,10 +25,13 @@ use sea_orm::{
     QuerySelect,
 };
 
-use super::access::{Actor, authorize};
+use serde_json::Value;
+
+use super::access::{Actor, authorize, is_steward};
 use super::books::touch;
 use super::error::{AddressBookError, invalid};
-use super::{AddressBookService, Rule};
+use super::{AddressBookService, Rule, snapshot};
+use crate::console_audit::TxGuard;
 
 /// Whom a share grants a book to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -61,13 +64,28 @@ pub struct Share {
 }
 
 impl AddressBookService {
-    /// Grants (or changes) `rule` on a shared book to `subject`; needs full control.
+    /// Grants (or changes) `rule` on a shared book to `subject`; needs full control, and
+    /// rule 3 only by the owner or the console (see [`is_steward`]).
     pub async fn set_share(
         &self,
         actor: Actor,
         guid: &str,
         subject: Subject,
         rule: Rule,
+    ) -> Result<(), AddressBookError> {
+        self.set_share_guarded(actor, guid, subject, rule, TxGuard::none())
+            .await
+    }
+
+    /// [`set_share`](Self::set_share), with `guard` deciding on the share before (`None` for
+    /// a new grant) and after.
+    pub async fn set_share_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        subject: Subject,
+        rule: Rule,
+        guard: TxGuard<Value>,
     ) -> Result<(), AddressBookError> {
         let tx = begin_write(&self.db).await?;
         // Locked before the book (see the module docs); reported only after the access
@@ -77,6 +95,11 @@ impl AddressBookService {
         if book.kind == Kind::Personal {
             return Err(AddressBookError::Personal);
         }
+        let (subject_type, subject_id) = subject.parts();
+        let current = address_book_share::Entity::find_by_id((book.id, subject_type, subject_id))
+            .one(&tx)
+            .await?;
+        ensure_may_grant(actor, &book, current.as_ref().map(|c| c.rule), Some(rule))?;
         if !subject_exists {
             return Err(AddressBookError::SubjectNotFound);
         }
@@ -85,7 +108,6 @@ impl AddressBookService {
         {
             return Err(invalid("subject", "the owner already has full control"));
         }
-        let (subject_type, subject_id) = subject.parts();
         let row = address_book_share::ActiveModel {
             address_book_id: Set(book.id),
             subject_type: Set(subject_type),
@@ -104,16 +126,33 @@ impl AddressBookService {
             .exec_without_returning(&tx)
             .await?;
         touch(&tx, &book).await?;
+        let before = current.map(|c| snapshot::share(subject, c.rule));
+        let after = snapshot::share(subject, rule);
+        guard.check(&tx, before.as_ref(), Some(&after)).await?;
         tx.commit().await?;
         Ok(())
     }
 
-    /// Revokes the share of `subject`, if any; needs full control.
+    /// Revokes the share of `subject`, if any; needs full control, and the owner or the
+    /// console for a rule 3 share.
     pub async fn remove_share(
         &self,
         actor: Actor,
         guid: &str,
         subject: Subject,
+    ) -> Result<(), AddressBookError> {
+        self.remove_share_guarded(actor, guid, subject, TxGuard::none())
+            .await
+    }
+
+    /// [`remove_share`](Self::remove_share), with `guard` deciding on the revoked share
+    /// (`subject` had none: nothing changes and the guard is not consulted).
+    pub async fn remove_share_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        subject: Subject,
+        guard: TxGuard<Value>,
     ) -> Result<(), AddressBookError> {
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::FullControl, true).await?;
@@ -121,10 +160,18 @@ impl AddressBookService {
             return Err(AddressBookError::Personal);
         }
         let (subject_type, subject_id) = subject.parts();
-        address_book_share::Entity::delete_by_id((book.id, subject_type, subject_id))
+        let key = (book.id, subject_type, subject_id);
+        let current = address_book_share::Entity::find_by_id(key).one(&tx).await?;
+        let Some(current) = current else {
+            return Ok(());
+        };
+        ensure_may_grant(actor, &book, Some(current.rule), None)?;
+        address_book_share::Entity::delete_by_id(key)
             .exec(&tx)
             .await?;
         touch(&tx, &book).await?;
+        let before = snapshot::share(subject, current.rule);
+        guard.check(&tx, Some(&before), None).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -143,6 +190,21 @@ impl AddressBookService {
             rule: row.rule,
         });
         Ok(shares.collect())
+    }
+}
+
+/// A grant from `current` to `new` (`None`: no share) is a steward's business when it
+/// involves rule 3; anyone else with full control may only deal in rules 1 and 2.
+fn ensure_may_grant(
+    actor: Actor,
+    book: &address_book::Model,
+    current: Option<Rule>,
+    new: Option<Rule>,
+) -> Result<(), AddressBookError> {
+    let involves_full = [current, new].contains(&Some(Rule::FullControl));
+    match involves_full && !is_steward(actor, book) {
+        true => Err(AddressBookError::Forbidden),
+        false => Ok(()),
     }
 }
 

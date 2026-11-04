@@ -1,5 +1,6 @@
 use sea_orm::DbErr;
 
+use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 
 /// Why an address book operation failed. Variants are stable for API error mapping.
@@ -58,6 +59,10 @@ pub enum AddressBookError {
     #[error("personal address books cannot be shared or managed")]
     Personal,
 
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
+
     #[error("address book secret could not be sealed")]
     Crypto(#[source] CryptoError),
 
@@ -68,6 +73,15 @@ pub enum AddressBookError {
 impl From<DbErr> for AddressBookError {
     fn from(err: DbErr) -> Self {
         Self::Database(err)
+    }
+}
+
+impl From<GuardError> for AddressBookError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
     }
 }
 

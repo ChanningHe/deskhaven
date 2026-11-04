@@ -2,24 +2,25 @@
 
 use deskhaven_db::entity::address_book::{self, Kind};
 use deskhaven_db::entity::address_book_peer;
+use deskhaven_db::time;
 use deskhaven_db::time::TimestampMs;
-use deskhaven_db::{begin_write, time};
 use sea_orm::ActiveValue::Set;
+use sea_orm::sea_query::{Expr, ExprTrait, Func};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, SqlErr,
+    ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, SqlErr,
 };
 use serde_json::{Map, Value};
 use zeroize::Zeroizing;
 
 use super::access::{Actor, authorize};
-use super::books::touch;
 use super::error::{AddressBookError, invalid};
 use super::peer::{Peer, PeerPatch, PeerSecret, check_extra};
 use super::{AddressBookService, Rule};
 use crate::pagination::{Page, PageRequest};
+use crate::text::contains_pattern;
 
 /// Ids deleted per statement (keeps far below SQLite's bound-parameter limit).
-const DELETE_CHUNK: usize = 500;
+pub(super) const DELETE_CHUNK: usize = 500;
 
 /// The sealed secret columns of a peer: the personal-book hash (a login credential: the
 /// client sends it as the password) and the shared-book password.
@@ -56,10 +57,26 @@ impl AddressBookService {
         guid: &str,
         page: PageRequest,
     ) -> Result<Page<Peer>, AddressBookError> {
+        self.peers_matching(actor, guid, None, page).await
+    }
+
+    /// [`peers`](Self::peers) narrowed to the peers whose id, alias, hostname, username or
+    /// note contains `q` (case-insensitive, literal; ASCII only on SQLite).
+    pub async fn peers_matching(
+        &self,
+        actor: Actor,
+        guid: &str,
+        q: Option<&str>,
+        page: PageRequest,
+    ) -> Result<Page<Peer>, AddressBookError> {
         let index = page.index().map_err(|p| invalid(p.field, p.reason))?;
         let (book, _) = authorize(&self.db, actor, guid, Rule::ReadOnly, false).await?;
-        let paginator = address_book_peer::Entity::find()
-            .filter(address_book_peer::Column::AddressBookId.eq(book.id))
+        let mut select = address_book_peer::Entity::find()
+            .filter(address_book_peer::Column::AddressBookId.eq(book.id));
+        if let Some(needle) = q.filter(|q| !q.is_empty()) {
+            select = select.filter(matching(&needle.to_lowercase()));
+        }
+        let paginator = select
             .order_by_asc(address_book_peer::Column::RustdeskId)
             .paginate(&self.db, page.page_size);
         let total = paginator.num_items().await?;
@@ -73,85 +90,6 @@ impl AddressBookService {
             page: page.page,
             page_size: page.page_size,
         })
-    }
-
-    /// Adds a peer; needs rule 2. Refused when the id is already in the book
-    /// ([`AddressBookError::PeerExists`]) or the book holds `addressbook.max_peers` peers.
-    pub async fn add_peer(
-        &self,
-        actor: Actor,
-        guid: &str,
-        patch: PeerPatch,
-    ) -> Result<(), AddressBookError> {
-        let max = self.max_peers();
-        let tx = begin_write(&self.db).await?;
-        let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
-        let existing = address_book_peer::Entity::find_by_id((book.id, patch.id.clone()))
-            .one(&tx)
-            .await?;
-        if existing.is_some() {
-            return Err(AddressBookError::PeerExists);
-        }
-        let count = address_book_peer::Entity::find()
-            .filter(address_book_peer::Column::AddressBookId.eq(book.id))
-            .count(&tx)
-            .await?;
-        if count >= u64::from(max) {
-            return Err(AddressBookError::Full { max });
-        }
-        let row = self.new_row(&book, patch, time::now())?;
-        row.insert(&tx).await.map_err(peer_conflict)?;
-        touch(&tx, &book).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// Changes the fields `patch` carries (unknown fields are merged into `extra`); needs
-    /// rule 2.
-    pub async fn update_peer(
-        &self,
-        actor: Actor,
-        guid: &str,
-        patch: PeerPatch,
-    ) -> Result<(), AddressBookError> {
-        let tx = begin_write(&self.db).await?;
-        let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
-        let current = address_book_peer::Entity::find_by_id((book.id, patch.id.clone()))
-            .one(&tx)
-            .await?
-            .ok_or(AddressBookError::PeerNotFound)?;
-        let changes = self.changes(&book, current, patch)?;
-        changes.update(&tx).await?;
-        touch(&tx, &book).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// Removes the peers with these ids; ids not in the book are ignored. At most
-    /// `addressbook.max_peers` ids (a book holds no more), else nothing is touched. Needs
-    /// rule 2.
-    pub async fn delete_peers(
-        &self,
-        actor: Actor,
-        guid: &str,
-        ids: &[String],
-    ) -> Result<(), AddressBookError> {
-        let max = self.max_peers();
-        if ids.len() as u64 > u64::from(max) {
-            return Err(invalid("ids", format!("at most {max} per request")));
-        }
-        let tx = begin_write(&self.db).await?;
-        let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
-        for chunk in ids.chunks(DELETE_CHUNK) {
-            address_book_peer::Entity::delete_many()
-                .filter(address_book_peer::Column::AddressBookId.eq(book.id))
-                .filter(address_book_peer::Column::RustdeskId.is_in(chunk.iter().cloned()))
-                .exec(&tx)
-                .await?;
-        }
-        touch(&tx, &book).await?;
-        tx.commit().await?;
-        Ok(())
     }
 
     pub(super) fn new_row(
@@ -329,6 +267,21 @@ impl AddressBookService {
             Zeroizing::default()
         })
     }
+}
+
+/// Peers whose id, alias, hostname, username or note contains the lowercase `needle`.
+fn matching(needle: &str) -> Condition {
+    let columns = [
+        address_book_peer::Column::RustdeskId,
+        address_book_peer::Column::Alias,
+        address_book_peer::Column::Hostname,
+        address_book_peer::Column::Username,
+        address_book_peer::Column::Note,
+    ];
+    columns.into_iter().fold(Condition::any(), |any, column| {
+        let lowered = Expr::expr(Func::lower(Expr::col(column)));
+        any.add(lowered.like(contains_pattern(needle)))
+    })
 }
 
 fn tags_json(tags: Vec<String>) -> String {

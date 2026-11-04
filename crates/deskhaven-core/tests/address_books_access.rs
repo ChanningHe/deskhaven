@@ -118,7 +118,7 @@ async fn rule_2_writes_peers_and_tags_but_cannot_manage() {
 }
 
 #[tokio::test]
-async fn rule_3_writes_and_manages_shares_and_the_book() {
+async fn rule_3_sharee_writes_and_manages_shares_up_to_rule_2() {
     each_migrated_backend(async |db: &TestDb| {
         let env = env(db).await;
         let alice = env.user("alice").await;
@@ -137,8 +137,71 @@ async fn rule_3_writes_and_manages_shares_and_the_book() {
             .await
             .unwrap();
         assert_eq!(env.peer_ids(Actor::User(bob), &guid).await, ["p1"]);
-        env.books.delete_shared(me, &guid).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn rule_3_sharee_can_neither_grant_rule_3_nor_delete_the_book() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let alice = env.user("alice").await;
+        let bob = env.user("bob").await;
+        let guid = stocked(&env, "full", alice, Rule::FullControl).await;
+        let me = Actor::User(alice);
+
+        let grant = env
+            .books
+            .set_share(me, &guid, Subject::User(bob), Rule::FullControl)
+            .await;
+        assert!(is_forbidden(grant));
+        assert!(is_forbidden(env.books.delete_shared(me, &guid).await));
+        assert!(is_not_found(env.books.tags(Actor::User(bob), &guid).await));
+        assert_eq!(env.books.shares(me, &guid).await.unwrap().len(), 1);
+        env.books.delete_shared(Actor::Admin, &guid).await.unwrap();
         assert!(is_not_found(env.books.tags(me, &guid).await));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn rule_3_sharee_cannot_change_or_revoke_another_rule_3_grant() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let alice = env.user("alice").await;
+        let carol = env.user("carol").await;
+        let managers = env.group("managers", &[carol]).await;
+        let guid = stocked(&env, "full", alice, Rule::FullControl).await;
+        let admin = Actor::Admin;
+        env.books
+            .set_share(admin, &guid, Subject::User(carol), Rule::FullControl)
+            .await
+            .unwrap();
+        env.books
+            .set_share(admin, &guid, Subject::Group(managers), Rule::FullControl)
+            .await
+            .unwrap();
+        let me = Actor::User(alice);
+
+        for subject in [Subject::User(carol), Subject::Group(managers)] {
+            let demote = env
+                .books
+                .set_share(me, &guid, subject, Rule::ReadOnly)
+                .await;
+            assert!(is_forbidden(demote), "{subject:?}");
+            let revoke = env.books.remove_share(me, &guid, subject).await;
+            assert!(is_forbidden(revoke), "{subject:?}");
+        }
+        assert_eq!(env.books.shares(me, &guid).await.unwrap().len(), 3);
+        // The console may.
+        env.books
+            .set_share(admin, &guid, Subject::User(carol), Rule::ReadOnly)
+            .await
+            .unwrap();
+        env.books
+            .remove_share(admin, &guid, Subject::Group(managers))
+            .await
+            .unwrap();
     })
     .await;
 }

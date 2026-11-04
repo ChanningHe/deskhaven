@@ -17,7 +17,8 @@ use super::access::{Actor, authorize};
 use super::books::touch;
 use super::error::{AddressBookError, invalid};
 use super::peer::{check_tag_name, unique};
-use super::{AddressBookService, Rule, Tag};
+use super::{AddressBookService, Rule, Tag, snapshot};
+use crate::console_audit::TxGuard;
 
 /// A tag colour is a 32-bit ARGB value.
 const MAX_COLOR: i64 = 0xFFFF_FFFF;
@@ -48,13 +49,28 @@ impl AddressBookService {
         guid: &str,
         tag: Tag,
     ) -> Result<(), AddressBookError> {
+        self.add_tag_guarded(actor, guid, tag, TxGuard::none())
+            .await
+    }
+
+    /// [`add_tag`](Self::add_tag), with `guard` deciding on the new tag (not consulted when
+    /// the tag already exists: nothing changes).
+    pub async fn add_tag_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        tag: Tag,
+        guard: TxGuard<Value>,
+    ) -> Result<(), AddressBookError> {
         check_tag(&tag)?;
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
         if find_tag(&tx, book.id, &tag.name).await?.is_none() {
             ensure_room(&tx, book.id).await?;
+            let after = snapshot::tag(&tag);
             insert_tag(&tx, book.id, tag).await?;
             touch(&tx, &book).await?;
+            guard.check(&tx, None, Some(&after)).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -67,16 +83,35 @@ impl AddressBookService {
         guid: &str,
         tag: Tag,
     ) -> Result<(), AddressBookError> {
+        self.update_tag_guarded(actor, guid, tag, TxGuard::none())
+            .await
+    }
+
+    /// [`update_tag`](Self::update_tag), with `guard` deciding on the tag before and after.
+    pub async fn update_tag_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        tag: Tag,
+        guard: TxGuard<Value>,
+    ) -> Result<(), AddressBookError> {
         check_tag(&tag)?;
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
         let current = find_tag(&tx, book.id, &tag.name)
             .await?
             .ok_or(AddressBookError::TagNotFound)?;
+        let before = snapshot::tag(&Tag {
+            name: current.name.clone(),
+            color: current.color,
+        });
         let mut changes: address_book_tag::ActiveModel = current.into();
         changes.color = Set(tag.color);
         changes.update(&tx).await?;
         touch(&tx, &book).await?;
+        guard
+            .check(&tx, Some(&before), Some(&snapshot::tag(&tag)))
+            .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -89,6 +124,20 @@ impl AddressBookService {
         guid: &str,
         old: &str,
         new: &str,
+    ) -> Result<(), AddressBookError> {
+        self.rename_tag_guarded(actor, guid, old, new, TxGuard::none())
+            .await
+    }
+
+    /// [`rename_tag`](Self::rename_tag), with `guard` deciding on the tag before and after
+    /// (not consulted when `old == new`: nothing changes).
+    pub async fn rename_tag_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        old: &str,
+        new: &str,
+        guard: TxGuard<Value>,
     ) -> Result<(), AddressBookError> {
         check_tag_name("new", new)?;
         let tx = begin_write(&self.db).await?;
@@ -110,6 +159,7 @@ impl AddressBookService {
             name: new.to_owned(),
             color,
         };
+        let after = snapshot::tag(&renamed);
         insert_tag(&tx, book.id, renamed).await?;
         rewrite_peer_tags(&tx, &book, |tag| match tag == old {
             true => Some(new.to_owned()),
@@ -117,6 +167,11 @@ impl AddressBookService {
         })
         .await?;
         touch(&tx, &book).await?;
+        let before = snapshot::tag(&Tag {
+            name: old.to_owned(),
+            color,
+        });
+        guard.check(&tx, Some(&before), Some(&after)).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -130,6 +185,19 @@ impl AddressBookService {
         guid: &str,
         names: &[String],
     ) -> Result<(), AddressBookError> {
+        self.delete_tags_guarded(actor, guid, names, TxGuard::none())
+            .await
+    }
+
+    /// [`delete_tags`](Self::delete_tags), with `guard` deciding on the requested names (no
+    /// `after`; not consulted for an empty list).
+    pub async fn delete_tags_guarded(
+        &self,
+        actor: Actor,
+        guid: &str,
+        names: &[String],
+        guard: TxGuard<Value>,
+    ) -> Result<(), AddressBookError> {
         if names.len() as u64 > MAX_BOOK_TAGS {
             return Err(invalid(
                 "tags",
@@ -137,7 +205,8 @@ impl AddressBookService {
             ));
         }
         let doomed: HashSet<&str> = names.iter().map(String::as_str).collect();
-        let doomed_list: Vec<&str> = doomed.iter().copied().collect();
+        let mut doomed_list: Vec<&str> = doomed.iter().copied().collect();
+        doomed_list.sort_unstable();
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
         for chunk in doomed_list.chunks(DELETE_CHUNK) {
@@ -152,6 +221,10 @@ impl AddressBookService {
         })
         .await?;
         touch(&tx, &book).await?;
+        if !doomed.is_empty() {
+            let before = snapshot::tag_names(doomed_list.iter().copied());
+            guard.check(&tx, Some(&before), None).await?;
+        }
         tx.commit().await?;
         Ok(())
     }

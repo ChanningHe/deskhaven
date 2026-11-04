@@ -4,19 +4,16 @@ use std::collections::HashMap;
 
 use deskhaven_db::entity::address_book::{self, Kind};
 use deskhaven_db::entity::{address_book_share, user};
-use deskhaven_db::{begin_write, is_foreign_key_violation, time};
+use deskhaven_db::{is_foreign_key_violation, time};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, ModelTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqlErr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqlErr,
 };
 
-use super::access::{Actor, authorize, share_rules, shares_of};
+use super::access::{share_rules, shares_of};
 use super::error::{AddressBookError, invalid};
-use super::{
-    AddressBookService, Book, NewSharedBook, PERSONAL_NAME, Profile, RESERVED_NAMES, Rule,
-    SharedBookUpdate,
-};
+use super::{AddressBookService, Book, PERSONAL_NAME, Profile, RESERVED_NAMES, Rule};
 use crate::groups::member_group_ids;
 use crate::pagination::{Page, PageRequest};
 use crate::text::{self, NOTE_MAX_LEN};
@@ -114,74 +111,6 @@ impl AddressBookService {
         Ok(profiles.collect())
     }
 
-    /// Creates a shared book (an administrator's operation: no actor check).
-    pub async fn create_shared(&self, new: NewSharedBook) -> Result<Book, AddressBookError> {
-        let name = validate_name(&new.name)?;
-        let note = validate_note(&new.note)?;
-        let tx = begin_write(&self.db).await?;
-        ensure_name_free(&tx, &name, None).await?;
-        let now = time::now();
-        let row = address_book::ActiveModel {
-            guid: Set(new_guid()),
-            kind: Set(Kind::Shared),
-            owner_user_id: Set(new.owner_user_id),
-            name: Set(name),
-            note: Set(note),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let created =
-            row.insert(&tx)
-                .await
-                .map_err(|err| match is_foreign_key_violation(&err) {
-                    true => AddressBookError::UserNotFound,
-                    false => err.into(),
-                })?;
-        tx.commit().await?;
-        Ok(created.into())
-    }
-
-    /// Renames a shared book or changes its note; needs full control.
-    pub async fn update_shared(
-        &self,
-        actor: Actor,
-        guid: &str,
-        update: SharedBookUpdate,
-    ) -> Result<Book, AddressBookError> {
-        let name = update.name.as_deref().map(validate_name).transpose()?;
-        let note = update.note.as_deref().map(validate_note).transpose()?;
-        let tx = begin_write(&self.db).await?;
-        let (book, _) = authorize(&tx, actor, guid, Rule::FullControl, true).await?;
-        if book.kind == Kind::Personal {
-            return Err(AddressBookError::Personal);
-        }
-        let mut changes: address_book::ActiveModel = book.clone().into();
-        if let Some(name) = name {
-            ensure_name_free(&tx, &name, Some(book.id)).await?;
-            changes.name = Set(name);
-        }
-        if let Some(note) = note {
-            changes.note = Set(note);
-        }
-        changes.updated_at = Set(time::now());
-        let updated = changes.update(&tx).await?;
-        tx.commit().await?;
-        Ok(updated.into())
-    }
-
-    /// Deletes a shared book with its peers, tags and shares; needs full control.
-    pub async fn delete_shared(&self, actor: Actor, guid: &str) -> Result<(), AddressBookError> {
-        let tx = begin_write(&self.db).await?;
-        let (book, _) = authorize(&tx, actor, guid, Rule::FullControl, true).await?;
-        if book.kind == Kind::Personal {
-            return Err(AddressBookError::Personal);
-        }
-        book.delete(&tx).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
     /// The one shared book named `name` (case-insensitive, surrounding blanks ignored), for
     /// administrative tools that address books by name. Several matches are
     /// [`AddressBookError::AmbiguousName`], none is [`AddressBookError::NotFound`].
@@ -233,7 +162,7 @@ fn is_unique_violation(err: &DbErr) -> bool {
     matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
 }
 
-fn new_guid() -> String {
+pub(super) fn new_guid() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
@@ -249,7 +178,7 @@ async fn find_personal(
     Ok(found)
 }
 
-async fn usernames(
+pub(super) async fn usernames(
     db: &impl ConnectionTrait,
     ids: impl Iterator<Item = i64>,
 ) -> Result<HashMap<i64, String>, AddressBookError> {
@@ -283,7 +212,7 @@ async fn shared_names(db: &impl ConnectionTrait) -> Result<Vec<(i64, String)>, A
 }
 
 /// Refuses a reserved name or one another shared book (not `except`) already has.
-async fn ensure_name_free(
+pub(super) async fn ensure_name_free(
     db: &impl ConnectionTrait,
     name: &str,
     except: Option<i64>,
@@ -303,7 +232,7 @@ async fn ensure_name_free(
 }
 
 /// Trimmed name: 1-64 characters, no control characters.
-fn validate_name(raw: &str) -> Result<String, AddressBookError> {
+pub(super) fn validate_name(raw: &str) -> Result<String, AddressBookError> {
     let name = raw.trim();
     if name.is_empty() {
         return Err(invalid("name", "must not be blank"));
@@ -314,7 +243,7 @@ fn validate_name(raw: &str) -> Result<String, AddressBookError> {
     }
 }
 
-fn validate_note(raw: &str) -> Result<String, AddressBookError> {
+pub(super) fn validate_note(raw: &str) -> Result<String, AddressBookError> {
     match text::problem(raw, NOTE_MAX_LEN, true) {
         Some(reason) => Err(invalid("note", reason)),
         None => Ok(raw.to_owned()),

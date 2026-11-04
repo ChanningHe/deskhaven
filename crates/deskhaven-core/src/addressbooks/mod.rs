@@ -27,13 +27,18 @@
 //! after a PostgreSQL race between two creations) are [`AddressBookError::AmbiguousName`].
 
 mod access;
+mod admin_books;
 mod books;
 mod contents;
 mod error;
+mod import;
 mod peer;
+mod peer_writes;
 mod peers;
 mod placement;
+mod shared_books;
 mod shares;
+mod snapshot;
 mod tags;
 
 use std::sync::Arc;
@@ -44,10 +49,12 @@ use deskhaven_db::time::TimestampMs;
 use sea_orm::DatabaseConnection;
 
 pub use access::{Actor, covers};
+pub use admin_books::{BookQuery, BookSort, BookSortField, BookSummary, NamedShare};
 pub use contents::{BookContents, BookReplacement, DEFAULT_TAG_COLOR, ReplacementTag};
 pub use deskhaven_db::entity::address_book::Kind;
 pub use deskhaven_db::entity::address_book_share::Rule;
 pub use error::AddressBookError;
+pub use import::{ImportReport, MAX_IMPORT_DEVICES};
 pub use peer::{EXTRA_MAX_BYTES, Peer, PeerPatch, PeerSecret, TAG_NAME_MAX_LEN};
 pub use shares::{Share, Subject};
 pub use tags::MAX_BOOK_TAGS;
