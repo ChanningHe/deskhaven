@@ -23,7 +23,7 @@ test('a saved setting becomes modified', async ({ page }) => {
   await stage(page, '90d')
   await page.getByRole('button', { name: 'Save changes' }).click()
 
-  await expect(page.getByText('Saved 1 settings.')).toBeVisible()
+  await expect(page.getByText('Saved 1 setting.')).toBeVisible()
   await expect(row(page, KEY).getByText('Modified', { exact: true })).toBeVisible()
 })
 
@@ -44,12 +44,12 @@ test('saving over a concurrent change asks whose value wins', async ({ page, con
   await stage(other, '30d')
 
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Saved 1 settings.')).toBeVisible()
+  await expect(page.getByText('Saved 1 setting.')).toBeVisible()
   await other.getByRole('button', { name: 'Save changes' }).click()
 
   const conflict = other.getByRole('alertdialog', { name: 'Changed by someone else' })
   await expect(conflict).toContainText('60d')
   await conflict.getByRole('button', { name: 'Keep my values' }).click()
-  await expect(other.getByText('Saved 1 settings.')).toBeVisible()
+  await expect(other.getByText('Saved 1 setting.')).toBeVisible()
   await expect(other.getByLabel(KEY, { exact: true })).toHaveValue('30d')
 })

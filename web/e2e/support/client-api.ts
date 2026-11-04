@@ -2,6 +2,9 @@
 // Bearer tokens), for the client-side half of the flows.
 import type { Device } from './rendezvous.ts'
 
+/** Well under the test timeout, so a hung request fails with its own error. */
+const REQUEST_TIMEOUT_MS = 15_000
+
 export interface ClientReply {
   status: number
   body: Record<string, unknown>
@@ -14,6 +17,7 @@ async function post(
   token?: string,
 ): Promise<ClientReply> {
   const response = await fetch(new URL(path, baseUrl), {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

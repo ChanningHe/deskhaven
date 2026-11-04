@@ -9,7 +9,10 @@ export interface Account {
   password: string
 }
 
-/** Users page, "New user" with a chosen password (no forced change at first sign-in). */
+/**
+ * Users page, "New user" with a password the admin chooses. The console still makes the
+ * user replace it at the first console sign-in; the client login accepts it as is.
+ */
 export async function createUser(page: Page, user: Account) {
   await page.goto('/users')
   await page.getByRole('button', { name: 'New user' }).click()

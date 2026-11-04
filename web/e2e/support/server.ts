@@ -3,8 +3,10 @@
 // client API address are read from the same log.
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { once } from 'node:events'
 import { createWriteStream } from 'node:fs'
 import { createInterface } from 'node:readline'
+import { Readable } from 'node:stream'
 
 const STARTUP_TIMEOUT_MS = 60_000
 const SHUTDOWN_TIMEOUT_MS = 15_000
@@ -51,23 +53,43 @@ function serverEnv(options: ServerOptions): NodeJS.ProcessEnv {
   }
 }
 
-function stopper(child: ChildProcess): () => Promise<void> {
-  return () =>
-    new Promise((resolve, reject) => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        resolve()
-        return
-      }
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL')
-        reject(new Error(`deskhaven did not stop within ${SHUTDOWN_TIMEOUT_MS} ms`))
+/** The child's stderr copied to `logFile`; resolves once the copy is complete on disk. */
+function copyLog(child: ChildProcess, logFile: string, onLine: (line: string) => void) {
+  const log = createWriteStream(logFile)
+  const lines = createInterface({ input: child.stderr ?? Readable.from([]) })
+  lines.on('line', (line) => {
+    log.write(`${line}\n`)
+    onLine(line)
+  })
+  return (async () => {
+    await once(lines, 'close')
+    log.end()
+    await once(log, 'finish')
+  })()
+}
+
+/** A process that has closed its stdio (`close`, after `exit`) and whose log is flushed. */
+async function settle(closed: Promise<unknown>, flushed: Promise<void>) {
+  await closed
+  await flushed
+}
+
+/** SIGTERM, then SIGKILL after the grace period; resolves once the log is complete. */
+function stopper(child: ChildProcess, closed: Promise<unknown>, flushed: Promise<void>) {
+  return async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+    let timer: NodeJS.Timeout | undefined
+    const timedOut = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(true)
       }, SHUTDOWN_TIMEOUT_MS)
-      child.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-      child.kill('SIGTERM')
     })
+    const late = await Promise.race([closed.then(() => false), timedOut])
+    clearTimeout(timer)
+    if (late) child.kill('SIGKILL')
+    await settle(closed, flushed)
+    if (late) throw new Error(`deskhaven did not stop within ${SHUTDOWN_TIMEOUT_MS} ms`)
+  }
 }
 
 /** Starts `deskhaven serve` and resolves once it is ready, with what the tests need. */
@@ -77,46 +99,76 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     env: serverEnv(options),
     stdio: ['ignore', 'ignore', 'pipe'],
   })
-  const log = createWriteStream(options.logFile)
-  const stop = stopper(child)
+  const closed = new Promise<void>((resolve) => {
+    child.once('close', () => {
+      resolve()
+    })
+  })
   let addr: string | undefined
   let setupPath: string | undefined
+  let ready: (() => void) | undefined
+  const flushed = copyLog(child, options.logFile, (line) => {
+    const fields = logFields(line)
+    if (fields === undefined) return
+    if (fields.message === 'listening' && fields.listener === 'client_api') {
+      addr = String(fields.addr)
+    }
+    if (typeof fields.link === 'string') setupPath = fields.link
+    if (fields.message === 'ready') ready?.()
+  })
 
   return new Promise((resolve, reject) => {
-    const fail = (reason: string) => {
+    let failed = false
+    /** Kills the child and rejects once its log is complete (`flush`: it ever ran). */
+    const fail = (reason: string, flush = true) => {
+      if (failed) return
+      failed = true
+      clearTimeout(timer)
       child.kill('SIGKILL')
-      reject(new Error(`${reason}; server log: ${options.logFile}`))
+      const error = new Error(`${reason}; server log: ${options.logFile}`)
+      if (!flush) {
+        reject(error)
+        return
+      }
+      void settle(closed, flushed).finally(() => {
+        reject(error)
+      })
     }
+    child.once('error', (error) => {
+      fail(`cannot start ${options.binary}: ${error.message}`, false)
+    })
     const timer = setTimeout(() => {
       fail(`deskhaven was not ready within ${STARTUP_TIMEOUT_MS} ms`)
     }, STARTUP_TIMEOUT_MS)
-    child.once('error', (error) => {
-      clearTimeout(timer)
-      fail(`cannot start ${options.binary}: ${error.message}`)
-    })
-    child.once('exit', (code, signal) => {
-      clearTimeout(timer)
+    const onEarlyExit = (code: number | null, signal: string | null) => {
       fail(`deskhaven exited during startup (code ${String(code)}, signal ${String(signal)})`)
-    })
-    const lines = createInterface({ input: child.stderr })
-    lines.on('line', (line) => {
-      log.write(`${line}\n`)
-      const fields = logFields(line)
-      if (fields === undefined) return
-      if (fields.message === 'listening' && fields.listener === 'client_api') {
-        addr = String(fields.addr)
-      }
-      if (typeof fields.link === 'string') setupPath = fields.link
-      if (fields.message !== 'ready') return
+    }
+    child.once('exit', onEarlyExit)
+    ready = () => {
+      if (failed) return
       clearTimeout(timer)
-      child.removeAllListeners('exit')
+      child.off('exit', onEarlyExit)
       if (addr === undefined || setupPath === undefined) {
-        fail(
-          'ready without a client API address or a first-run setup link (is the database empty?)',
-        )
+        fail('ready without a client API address or a first-run setup link (empty database?)')
         return
       }
-      resolve({ baseUrl: `http://${addr}`, setupPath, stop })
-    })
+      let stopping = false
+      child.once('exit', (code, signal) => {
+        if (stopping) return
+        process.stderr.write(
+          `deskhaven exited unexpectedly (code ${String(code)}, signal ${String(signal)}); ` +
+            `server log: ${options.logFile}\n`,
+        )
+      })
+      const stop = stopper(child, closed, flushed)
+      resolve({
+        baseUrl: `http://${addr}`,
+        setupPath,
+        stop: () => {
+          stopping = true
+          return stop()
+        },
+      })
+    }
   })
 }

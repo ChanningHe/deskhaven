@@ -27,23 +27,32 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   await mkdir(results, { recursive: true })
   const dataDir = await mkdtemp(join(tmpdir(), 'deskhaven-e2e-'))
   const pgUrl = process.env[PG_URL_ENV]
-  const signalPort = await freeSignalPort()
-  const server = await startServer({
-    binary,
-    dataDir,
-    logFile: join(results, 'server.log'),
-    signalPort,
-    env: {
-      [PINNED.env]: PINNED.value,
-      ...(pgUrl ? { DESKHAVEN_DATABASE__URL: pgUrl } : {}),
-    },
-  })
-  process.env[BASE_URL_ENV] = server.baseUrl
-  process.env[SETUP_PATH_ENV] = server.setupPath
-  process.env[SIGNAL_PORT_ENV] = String(signalPort)
+  const removeDataDir = () => rm(dataDir, { recursive: true, force: true })
+  try {
+    const signalPort = await freeSignalPort()
+    const server = await startServer({
+      binary,
+      dataDir,
+      logFile: join(results, 'server.log'),
+      signalPort,
+      env: {
+        [PINNED.env]: PINNED.value,
+        ...(pgUrl ? { DESKHAVEN_DATABASE__URL: pgUrl } : {}),
+      },
+    })
+    process.env[BASE_URL_ENV] = server.baseUrl
+    process.env[SETUP_PATH_ENV] = server.setupPath
+    process.env[SIGNAL_PORT_ENV] = String(signalPort)
 
-  return async () => {
-    await server.stop()
-    await rm(dataDir, { recursive: true, force: true })
+    return async () => {
+      try {
+        await server.stop()
+      } finally {
+        await removeDataDir()
+      }
+    }
+  } catch (error) {
+    await removeDataDir()
+    throw error
   }
 }
