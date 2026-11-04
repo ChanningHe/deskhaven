@@ -10,7 +10,7 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, trimmed};
+use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, plain_text, trimmed};
 use super::view::AuditUserView;
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
@@ -19,7 +19,7 @@ use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 #[into_params(parameter_in = Query)]
 pub struct ConnectionFilter {
     /// The controlled device's RustDesk id.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub device: Option<String>,
     /// The controlling user account.
@@ -31,7 +31,7 @@ pub struct ConnectionFilter {
     #[param(minimum = 0, maximum = 1000)]
     pub conn_type: Option<i32>,
     /// Substring of the peer id, peer name or address (case-insensitive, literal).
-    #[garde(length(chars, max = MAX_Q_CHARS))]
+    #[garde(length(chars, max = MAX_Q_CHARS), custom(plain_text))]
     #[param(max_length = 200)]
     pub q: Option<String>,
 }

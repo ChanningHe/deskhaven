@@ -108,6 +108,24 @@ async fn result_labels_are_stable() {
 }
 
 #[tokio::test]
+async fn client_supplied_text_is_stored_single_line_without_invisible_characters() {
+    each_migrated_backend(async |db: &TestDb| {
+        let log = LoginEventLog::new(db.conn.clone(), clock());
+        // Bidi override, zero-width space, newline, NUL and a bell: none may reach the log.
+        let nasty = "ad\u{202E}min\u{200B}\nx\0y\u{7}";
+        let mut login = event(nasty, LoginResult::InvalidCredentials, None);
+        login.rustdesk_id = Some("12\u{202E}34\n5\0");
+
+        log.record(&login).await.unwrap();
+
+        let row = &rows(db).await[0];
+        assert_eq!(row.username_attempted, "adminxy", "{}", db.backend);
+        assert_eq!(row.rustdesk_id.as_deref(), Some("12345"), "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn attempted_usernames_are_truncated() {
     each_migrated_backend(async |db: &TestDb| {
         let log = LoginEventLog::new(db.conn.clone(), clock());

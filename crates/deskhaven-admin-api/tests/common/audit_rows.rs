@@ -13,7 +13,12 @@ use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DatabaseConnection};
 
-use super::Harness;
+use deskhaven_admin_api::AdminRoutes;
+use deskhaven_core::users::Role;
+use deskhaven_db::testing::TestDb;
+use serde_json::Value;
+
+use super::{Console, Harness, harness};
 
 /// A fixed epoch for the rows' times, so tests read in seconds after it.
 pub const T0: i64 = 1_700_000_000_000;
@@ -140,4 +145,27 @@ pub async fn change(h: &Harness, c: Change<'_>, secs: i64) -> i64 {
     .await
     .unwrap()
     .id
+}
+pub const AUDIT: &str = "/admin/api/v1/audit";
+pub const KINDS: [&str; 5] = ["connections", "files", "alarms", "logins", "console"];
+
+pub async fn setup(db: &TestDb) -> (Harness, Console) {
+    let h = harness(db, AdminRoutes::new()).await;
+    let admin = h.console("adm", Role::Admin).await;
+    (h, admin)
+}
+
+pub fn ids(reply: &Value) -> Vec<i64> {
+    let items = reply["items"].as_array().unwrap();
+    items.iter().map(|i| i["id"].as_i64().unwrap()).collect()
+}
+
+pub async fn list(h: &Harness, admin: &Console, kind: &str, query: &str) -> Value {
+    let reply = h.get(&format!("{AUDIT}/{kind}?{query}"), admin).await;
+    assert_eq!(reply.status, 200, "{kind}?{query}: {}", reply.body);
+    reply.body
+}
+
+pub fn secs(n: i64) -> i64 {
+    T0 + n * 1000
 }

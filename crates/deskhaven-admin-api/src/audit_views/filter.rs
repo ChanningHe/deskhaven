@@ -54,6 +54,17 @@ impl WindowQuery {
     }
 }
 
+/// garde rule of the text filters: no control characters. A NUL makes PostgreSQL reject the
+/// query (a 500), and no stored text has one (see `deskhaven_core::text`).
+pub(super) fn plain_text(value: &Option<String>, _context: &()) -> garde::Result {
+    match value {
+        Some(text) if text.chars().any(char::is_control) => {
+            Err(garde::Error::new("must not contain control characters"))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// `value` without surrounding blanks; `None` when nothing is left.
 pub(super) fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())

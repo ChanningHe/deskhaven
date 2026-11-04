@@ -12,7 +12,7 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, trimmed};
+use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, plain_text, trimmed};
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
 /// Filters of the file transfer list.
@@ -20,7 +20,7 @@ use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 #[into_params(parameter_in = Query)]
 pub struct FileFilter {
     /// The reporting (controlled) device's RustDesk id.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub device: Option<String>,
     /// As seen from the reporting device: `send` or `receive`.
@@ -28,7 +28,7 @@ pub struct FileFilter {
     #[param(pattern = "^(send|receive)$")]
     pub direction: Option<String>,
     /// Substring of the path, peer id or address (case-insensitive, literal).
-    #[garde(length(chars, max = MAX_Q_CHARS))]
+    #[garde(length(chars, max = MAX_Q_CHARS), custom(plain_text))]
     #[param(max_length = 200)]
     pub q: Option<String>,
 }

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 
-use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, trimmed};
+use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, plain_text, trimmed};
 use crate::settings::any_json;
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
@@ -29,15 +29,15 @@ pub struct ConsoleFilter {
     #[param(pattern = "^(user|api_token|cli|system)$")]
     pub actor_kind: Option<String>,
     /// The action name exactly, e.g. `user.disable`.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub action: Option<String>,
     /// The kind of the changed resource exactly, e.g. `user`.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub target_type: Option<String>,
     /// Substring of the action, target type or target id (case-insensitive, literal).
-    #[garde(length(chars, max = MAX_Q_CHARS))]
+    #[garde(length(chars, max = MAX_Q_CHARS), custom(plain_text))]
     #[param(max_length = 200)]
     pub q: Option<String>,
 }

@@ -10,7 +10,7 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, trimmed};
+use super::filter::{MAX_LABEL_CHARS, MAX_Q_CHARS, WindowQuery, known, plain_text, trimmed};
 use super::view::AuditUserView;
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
@@ -30,15 +30,15 @@ pub struct LoginFilter {
     #[param(pattern = "^(rustdesk|console|api)$")]
     pub client: Option<String>,
     /// The outcome label exactly, e.g. `success` or `invalid_credentials`.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub result: Option<String>,
     /// The RustDesk id of the client device.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub device: Option<String>,
     /// Substring of the attempted username or address (case-insensitive, literal).
-    #[garde(length(chars, max = MAX_Q_CHARS))]
+    #[garde(length(chars, max = MAX_Q_CHARS), custom(plain_text))]
     #[param(max_length = 200)]
     pub q: Option<String>,
 }

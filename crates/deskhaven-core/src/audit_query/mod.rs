@@ -9,8 +9,15 @@
 //! - **Time window**: `from` inclusive, `to` exclusive, unix milliseconds.
 //! - **Text** (`q`): a case-insensitive (ASCII on SQLite) literal substring of a few text
 //!   columns per list; a scan, so it is the slowest filter.
-//! - **Self-reported data** (peer names, paths, notes, alarm info) is returned as stored
-//!   (cleaned at ingest); showing it as untrusted text is the caller's job.
+//! - **Self-reported data** is returned as stored; showing it as untrusted text is the
+//!   caller's job. Device records (peer names and ids, paths, file names, notes, alarm info)
+//!   are cleaned at ingest (`audit`); so are the client-supplied attempted username and
+//!   device id of a login event (`login_events`). Connection and alarm `ip` columns hold
+//!   what the device claims, not what the server saw. Alarm `info` and the file list are
+//!   parsed here and read as empty when malformed.
+//! - **Console snapshots** (`before` / `after`) were masked when written and are masked
+//!   again on read ([`parse_snapshot`]); a column that does not parse reads as
+//!   [`UNREADABLE_SNAPSHOT`], never as its text.
 //! - Rows keep their raw stored shape; the interpretation of derived values (a retired
 //!   session id, a malformed file list) is on the entry types.
 
@@ -27,7 +34,7 @@ use sea_orm::{DatabaseConnection, DbErr};
 
 pub use alarms::{AlarmQuery, alarm_info};
 pub use connections::{ConnectionEntry, ConnectionQuery};
-pub use console::{ConsoleActor, ConsoleEntry, ConsoleQuery, parse_snapshot};
+pub use console::{ConsoleActor, ConsoleEntry, ConsoleQuery, UNREADABLE_SNAPSHOT, parse_snapshot};
 pub use deskhaven_db::entity::alarm::Model as AlarmRow;
 pub use deskhaven_db::entity::console_audit::ActorKind;
 pub use deskhaven_db::entity::file_transfer::Direction as TransferDirection;

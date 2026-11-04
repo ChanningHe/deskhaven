@@ -77,6 +77,24 @@ describe('audit page: connections', () => {
     })
   })
 
+  it('keeps the page when a drawer is opened and closed', async () => {
+    const { router, user } = renderApp('/audit?page=2', {
+      api: { [`GET ${CONNECTIONS_PATH}`]: pageOf([BOB_CONNECTION], 50) },
+    })
+    await screen.findByText('Reception PC')
+
+    await user.click(screen.getByRole('button', { name: /^\d{4}/ }))
+    await screen.findByRole('dialog')
+    expect(router.state.location.search).toMatchObject({ page: 2, item: 1 })
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(router.state.location.search).toMatchObject({ page: 2 })
+    expect(router.state.location.search).not.toHaveProperty('item')
+  })
+
   it('renders device-supplied text as text, never as markup', async () => {
     const { container } = renderApp('/audit?item=3', {
       api: { [`GET ${CONNECTIONS_PATH}`]: pageOf([HOSTILE]) },

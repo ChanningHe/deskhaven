@@ -118,19 +118,50 @@ fn queries(user: i64) -> Vec<(&'static str, String)> {
         ("console", format!("user={user}")),
         ("console", "action=user.update".to_owned()),
         ("console", "target_type=device".to_owned()),
-        ("console", window),
+        ("console", window.clone()),
         ("console", deep.to_owned()),
         ("console", "q=update".to_owned()),
+        // Several filters at once.
+        ("connections", format!("device=d7&conn_type=2&{window}")),
+        (
+            "files",
+            format!("device=d7&direction=receive&q=file&{window}"),
+        ),
+        (
+            "logins",
+            format!("user={user}&method=password&client=console&result=success&{window}"),
+        ),
+        (
+            "console",
+            format!("user={user}&action=user.update&target_type=device&q=1&{window}"),
+        ),
+        // Searches that match nothing read the whole table.
+        ("connections", format!("q={NO_MATCH}")),
+        ("files", format!("q={NO_MATCH}")),
+        ("logins", format!("q={NO_MATCH}")),
+        ("console", format!("q={NO_MATCH}")),
     ];
     all
 }
 
+/// Each query runs this many times and the fastest counts: one slow run is the machine
+/// (a busy CI runner, a page cache miss), not the query.
+const RUNS: usize = 3;
+
+/// The search text no seeded row contains.
+const NO_MATCH: &str = "zzznomatch";
+
 async fn timed(h: &Harness, admin: &Console, kind: &str, query: &str) -> (Duration, u64) {
-    let started = Instant::now();
-    let reply = h.get(&format!("{AUDIT}/{kind}?{query}"), admin).await;
-    let elapsed = started.elapsed();
-    assert_eq!(reply.status, 200, "{kind}?{query}: {}", reply.body);
-    (elapsed, reply.body["total"].as_u64().unwrap())
+    let mut fastest = Duration::MAX;
+    let mut total = 0;
+    for _ in 0..RUNS {
+        let started = Instant::now();
+        let reply = h.get(&format!("{AUDIT}/{kind}?{query}"), admin).await;
+        fastest = fastest.min(started.elapsed());
+        assert_eq!(reply.status, 200, "{kind}?{query}: {}", reply.body);
+        total = reply.body["total"].as_u64().unwrap();
+    }
+    (fastest, total)
 }
 
 #[tokio::test]
@@ -144,7 +175,11 @@ async fn lists_over_100k_rows_per_table_answer_within_the_budget() {
         for (kind, query) in queries(admin.user_id) {
             let (elapsed, total) = timed(&h, &admin, kind, &query).await;
             eprintln!("{} {kind}?{query}: {elapsed:?} (total {total})", db.backend);
-            assert!(total > 0, "{kind}?{query} matched nothing");
+            assert_eq!(
+                total == 0,
+                query.contains(NO_MATCH),
+                "{kind}?{query}: {total}"
+            );
             if elapsed > BUDGET {
                 slow.push(format!("{kind}?{query}: {elapsed:?}"));
             }

@@ -2,12 +2,11 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { applyTableSearch } from '@/components/common/data-table'
 import type { SearchChangeOptions } from '@/components/common/data-table'
 import { PageHeader } from '@/components/common/page-header'
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 
-import { AUDIT_TABS } from '../audit-search'
+import { applyAuditSearch, AUDIT_TABS } from '../audit-search'
 import type { AuditSearch, AuditTab } from '../audit-search'
 import { AlarmsPanel } from './alarms-panel'
 import { ConnectionsPanel } from './connections-panel'
@@ -28,7 +27,7 @@ export function AuditPage() {
   const onSearchChange = useCallback(
     (patch: Partial<AuditSearch>, options?: SearchChangeOptions) => {
       void navigate({
-        search: (previous: AuditSearch) => applyTableSearch(previous, patch),
+        search: (previous: AuditSearch) => applyAuditSearch(previous, patch),
         replace: options?.replace ?? false,
       })
     },

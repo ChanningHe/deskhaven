@@ -10,7 +10,7 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::filter::{MAX_LABEL_CHARS, WindowQuery, trimmed};
+use super::filter::{MAX_LABEL_CHARS, WindowQuery, plain_text, trimmed};
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
 /// Filters of the alarm list.
@@ -18,7 +18,7 @@ use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 #[into_params(parameter_in = Query)]
 pub struct AlarmFilter {
     /// The reporting device's RustDesk id.
-    #[garde(length(chars, max = MAX_LABEL_CHARS))]
+    #[garde(length(chars, max = MAX_LABEL_CHARS), custom(plain_text))]
     #[param(max_length = 256)]
     pub device: Option<String>,
     /// Alarm type code: 0 IP allow-list block, 1 over 30 attempts, 2 six attempts in a

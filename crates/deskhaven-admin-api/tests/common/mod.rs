@@ -28,8 +28,8 @@ use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
 use serde_json::Value;
 use tower::ServiceExt;
 
-pub mod client;
 pub mod audit_rows;
+pub mod client;
 pub mod devices;
 pub mod login;
 pub mod probe;

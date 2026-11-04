@@ -9,7 +9,7 @@ import type {
   ListFileAuditParams,
   ListLoginAuditParams,
 } from '@/api/generated/model'
-import { parseTableSearch, toListParams } from '@/components/common/data-table'
+import { applyTableSearch, parseTableSearch, toListParams } from '@/components/common/data-table'
 import type { TableSearch } from '@/components/common/data-table'
 
 /** Only the creation time orders the audit lists. */
@@ -185,4 +185,13 @@ export function auditListParams(search: AuditSearch): AuditListParams {
     ([, value]) => value !== undefined,
   )
   return { ...toListParams(search), ...Object.fromEntries(defined) }
+}
+
+/**
+ * The next search after a change. Opening or closing a record's drawer (`item`) is not a
+ * filter change, so it keeps the page; every other change goes through `applyTableSearch`.
+ */
+export function applyAuditSearch(previous: AuditSearch, patch: Partial<AuditSearch>): AuditSearch {
+  if (!Object.keys(patch).every((key) => key === 'item')) return applyTableSearch(previous, patch)
+  return { ...previous, item: patch.item }
 }

@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::listing::{Listing, text};
 use super::names::{token_names, usernames};
 use super::{AuditQuery, AuditQueryError};
+use crate::console_audit::redact;
 use crate::pagination::Page;
 
 /// Filters of [`AuditQuery::console`]. `q` matches the action, target type and target id.
@@ -37,11 +38,19 @@ pub struct ConsoleEntry {
     pub actor: ConsoleActor,
 }
 
-/// A stored `before` / `after` snapshot as JSON. The writer serializes it, so a column that
-/// does not parse (a hand-edited database) is shown as the text it holds.
+/// Shown instead of a snapshot column that does not parse.
+pub const UNREADABLE_SNAPSHOT: &str = "<unreadable>";
+
+/// A stored `before` / `after` snapshot as JSON, redacted again: the writer masked it, and
+/// masking is idempotent, so this only matters for a row an older writer or a hand edit left
+/// unmasked. A column that does not parse is never shown (it could hold anything, secrets
+/// included): it reads as [`UNREADABLE_SNAPSHOT`].
 pub fn parse_snapshot(stored: Option<&str>) -> Option<Value> {
     let stored = stored?;
-    Some(serde_json::from_str(stored).unwrap_or_else(|_| Value::String(stored.to_owned())))
+    Some(match serde_json::from_str::<Value>(stored) {
+        Ok(value) => redact(&value),
+        Err(_) => Value::String(UNREADABLE_SNAPSHOT.to_owned()),
+    })
 }
 
 impl AuditQuery {

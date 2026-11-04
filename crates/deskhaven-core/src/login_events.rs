@@ -5,6 +5,10 @@
 //! What a row may hold: who tried (the user id when known, the attempted username, bounded
 //! to [`MAX_USERNAME_ATTEMPTED_CHARS`]), how, with what result, from which device and
 //! address. Never a password, token or request body.
+//!
+//! The attempted username and the client device id are what the client typed or sent, so they
+//! are stored cleaned like other self-reported text (one line; control, bidi and zero-width
+//! characters dropped) and shown as such.
 
 use std::net::IpAddr;
 
@@ -16,10 +20,14 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr};
 pub use deskhaven_db::entity::login_event::{Client as LoginClient, Method as LoginMethod};
 
 use crate::clock::SharedClock;
+use crate::text;
 
 /// Longest stored `username_attempted` (characters; longer input is truncated). Real
 /// usernames are at most 64; the rest is room for what people paste into the field.
 pub const MAX_USERNAME_ATTEMPTED_CHARS: usize = 128;
+
+/// Longest stored `rustdesk_id` (characters; longer input is truncated).
+pub const MAX_RUSTDESK_ID_CHARS: usize = 64;
 
 /// `login_events.result`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,22 +131,21 @@ impl LoginEventLog {
             .ok_or_else(|| DbErr::Custom(format!("timestamp {now} out of range")))?;
         let row = login_event::ActiveModel {
             user_id: Set(event.user_id),
-            username_attempted: Set(truncate_chars(
+            username_attempted: Set(text::clean(
                 event.username_attempted,
                 MAX_USERNAME_ATTEMPTED_CHARS,
+                false,
             )),
             method: Set(event.method),
             result: Set(event.result.as_str().to_owned()),
             client: Set(event.client),
-            rustdesk_id: Set(event.rustdesk_id.map(str::to_owned)),
+            rustdesk_id: Set(event
+                .rustdesk_id
+                .map(|id| text::clean(id, MAX_RUSTDESK_ID_CHARS, false))),
             ip: Set(event.ip.map(|ip| ip.to_string())),
             created_at: Set(created_at),
             ..Default::default()
         };
         row.insert(&self.db).await.map(drop)
     }
-}
-
-fn truncate_chars(s: &str, max: usize) -> String {
-    s.chars().take(max).collect()
 }

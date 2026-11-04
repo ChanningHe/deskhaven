@@ -204,3 +204,8 @@ opt-level = 3
 
 [profile.dev.package.blake2]
 opt-level = 3
+
+# The bundled SQLite is C code: unoptimized it is several times slower, which skews the
+# timing of the audit list tests (M3-08) and slows every SQLite-backed test.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
