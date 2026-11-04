@@ -10,7 +10,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio::time::timeout;
 
 use super::LdapService;
@@ -19,15 +19,18 @@ use super::protocol::{self, DirectoryUser, Lookup};
 use super::settings::DirectorySettings;
 use crate::users::AuthError;
 
-/// Bounds on directory work during password checks.
+/// Bounds on directory work: password checks and the console's diagnostics share the
+/// slots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DirectoryLimits {
-    /// Directory checks running at once.
+    /// Directory checks (logins and diagnostics) running at once.
     pub concurrent: usize,
     /// Longest wait for a free slot.
     pub queue_timeout: Duration,
-    /// Longest whole check (connect, binds, searches, close).
+    /// Longest whole login check (connect, binds, searches, close).
     pub login_timeout: Duration,
+    /// Longest whole diagnostic (`test_connection`, `test_user`).
+    pub diagnostic_timeout: Duration,
 }
 
 impl Default for DirectoryLimits {
@@ -36,6 +39,7 @@ impl Default for DirectoryLimits {
             concurrent: 32,
             queue_timeout: Duration::from_secs(5),
             login_timeout: Duration::from_secs(15),
+            diagnostic_timeout: Duration::from_secs(20),
         }
     }
 }
@@ -51,6 +55,19 @@ impl Gate {
         Self {
             permits: Semaphore::new(limits.concurrent),
             limits,
+        }
+    }
+
+    pub(crate) fn limits(&self) -> DirectoryLimits {
+        self.limits
+    }
+
+    /// A free slot, waited for at most [`DirectoryLimits::queue_timeout`]; `None` when
+    /// the directory is saturated.
+    pub(crate) async fn slot(&self) -> Option<SemaphorePermit<'_>> {
+        match timeout(self.limits.queue_timeout, self.permits.acquire()).await {
+            Ok(Ok(permit)) => Some(permit),
+            _ => None,
         }
     }
 }
@@ -73,7 +90,7 @@ impl LdapService {
         password: &str,
     ) -> Result<Option<VerifiedUser>, AuthError> {
         let gate = &self.gate;
-        let Ok(Ok(_slot)) = timeout(gate.limits.queue_timeout, gate.permits.acquire()).await else {
+        let Some(_slot) = gate.slot().await else {
             tracing::warn!(directory = %settings.name, "directory logins saturated; refused");
             return Err(AuthError::DirectoryUnavailable);
         };

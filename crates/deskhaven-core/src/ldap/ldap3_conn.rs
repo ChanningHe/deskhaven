@@ -1,18 +1,21 @@
 //! [`Connector`] over ldap3 0.12 (tokio, rustls + ring): one connection per login or
-//! diagnostic, [`CONNECT_TIMEOUT`] for TCP + TLS (StartTLS included), [`OPERATION_TIMEOUT`]
-//! for every bind and search. Referrals are not followed (they are dropped from results).
+//! diagnostic, [`CONNECT_TIMEOUT`] for name resolution, TCP and TLS (StartTLS included),
+//! [`OPERATION_TIMEOUT`] for every bind and search. The TCP connection goes to an address
+//! `address` resolved and vetted (no link-local or metadata addresses); TLS still checks the
+//! URL's host name. Referrals are not followed (they are dropped from results).
 
 use std::io;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use ldap3::{LdapConnAsync, LdapConnSettings, LdapError, SearchEntry, SearchOptions};
+use ldap3::{LdapConnAsync, LdapConnSettings, LdapError, SearchEntry, SearchOptions, StdStream};
 use rustls::ClientConfig;
 
 use super::directory::{
     Connector, DirectoryFault, DirectoryFuture, Entry, Found, Scope, SearchRequest, Session, Target,
 };
-use super::tls;
+use super::{address, tls};
+use crate::oidc::{Lookup, system_lookup};
 
 /// TCP connect plus TLS handshake.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -29,6 +32,8 @@ pub struct Ldap3Connector {
     connect_timeout: Duration,
     operation_timeout: Duration,
     verified: OnceLock<Result<Arc<ClientConfig>, String>>,
+    /// Resolves directory host names (production: the system resolver).
+    lookup: Lookup,
 }
 
 impl Default for Ldap3Connector {
@@ -47,7 +52,13 @@ impl Ldap3Connector {
             connect_timeout,
             operation_timeout,
             verified: OnceLock::new(),
+            lookup: system_lookup(),
         }
+    }
+
+    /// The same connector resolving host names with `lookup` (tests).
+    pub fn with_lookup(self, lookup: Lookup) -> Self {
+        Self { lookup, ..self }
     }
 
     /// The verifying config is built once (it loads the OS roots); a host without roots
@@ -62,19 +73,36 @@ impl Ldap3Connector {
     }
 }
 
+impl Ldap3Connector {
+    /// TCP to a vetted address, then ldap3 (StartTLS / TLS with the URL's host name).
+    async fn open(
+        &self,
+        target: &Target,
+        config: Arc<ClientConfig>,
+    ) -> Result<(LdapConnAsync, ldap3::Ldap), DirectoryFault> {
+        let stream = address::connect(&self.lookup, &target.url).await?;
+        let stream = stream
+            .into_std()
+            .map_err(|err| DirectoryFault::Unreachable(err.to_string()))?;
+        let settings = LdapConnSettings::new()
+            .set_std_stream(StdStream::Tcp(stream))
+            .set_starttls(target.start_tls)
+            .set_config(config)
+            // Only lets ldap3 accept IP-literal hosts without verification; the
+            // verifier itself is the config's.
+            .set_no_tls_verify(!target.tls_verify);
+        LdapConnAsync::with_settings(settings, &target.url)
+            .await
+            .map_err(fault)
+    }
+}
+
 impl Connector for Ldap3Connector {
     fn connect<'a>(&'a self, target: &'a Target) -> DirectoryFuture<'a, Box<dyn Session>> {
         Box::pin(async move {
-            let settings = LdapConnSettings::new()
-                .set_conn_timeout(self.connect_timeout)
-                .set_starttls(target.start_tls)
-                .set_config(self.tls_config(target.tls_verify)?)
-                // Only lets ldap3 accept IP-literal hosts without verification; the
-                // verifier itself is the config's.
-                .set_no_tls_verify(!target.tls_verify);
-            let (conn, ldap) = LdapConnAsync::with_settings(settings, &target.url)
-                .await
-                .map_err(fault)?;
+            let config = self.tls_config(target.tls_verify)?;
+            let opened = tokio::time::timeout(self.connect_timeout, self.open(target, config));
+            let (conn, ldap) = opened.await.map_err(|_| DirectoryFault::Timeout)??;
             tokio::spawn(async move {
                 if let Err(err) = conn.drive().await {
                     tracing::debug!(error = %err, "LDAP connection ended with an error");

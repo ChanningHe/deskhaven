@@ -85,8 +85,8 @@ pub(crate) fn url(raw: &str, start_tls: bool) -> Result<(), DirectoryError> {
 }
 
 /// The host as an IP address, when it is a literal. `ldap:` is not a special scheme, so
-/// `url` leaves IPv4 literals as domain strings. Host names are resolved by ldap3 when
-/// connecting and are not filtered (admin-configured).
+/// `url` leaves IPv4 literals as domain strings. Host names are resolved and filtered by
+/// the same rule when connecting (`address`).
 fn host_ip(url: &Url) -> Option<IpAddr> {
     match url.host()? {
         Host::Domain(name) => name.parse().ok(),

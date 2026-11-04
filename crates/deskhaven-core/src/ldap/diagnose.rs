@@ -2,143 +2,47 @@
 //! by one, each with its own result, so an admin sees where a configuration breaks. A
 //! failed step skips the ones after it. Messages name URLs, DNs and the directory's own
 //! diagnostics, never a password; the typed test username is shown back only inside the
-//! result. Nothing is written: no account is provisioned or synchronized.
+//! result. Nothing is written: no account is provisioned or synchronized. A diagnostic
+//! holds one of the directory slots logins use and ends after a total timeout.
 
 use std::collections::BTreeSet;
 
 use deskhaven_db::entity::managed_by::ManagedBy;
+use tokio::time::timeout;
 
 use super::LdapService;
 use super::directory::{DirectoryFault, Session};
 use super::mapping;
 use super::protocol::{self, DirectoryUser, Lookup};
+use super::report::{
+    CONNECTION_STEPS, Diagnostic, ProbedUser, Recorder, Step, StepStatus, USER_STEPS,
+};
 use super::settings::DirectorySettings;
 use crate::users::Password;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Step {
-    Connect,
-    ServiceBind,
-    UserSearch,
-    UserBind,
-    GroupMapping,
-}
-
-impl Step {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Connect => "connect",
-            Self::ServiceBind => "service_bind",
-            Self::UserSearch => "user_search",
-            Self::UserBind => "user_bind",
-            Self::GroupMapping => "group_mapping",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StepStatus {
-    Passed,
-    Failed,
-    Skipped,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StepReport {
-    pub step: Step,
-    pub status: StepStatus,
-    /// What happened, for the admin (English).
-    pub message: String,
-}
-
-/// What the directory says about a tested user.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProbedUser {
-    pub dn: String,
-    /// The username attribute's first value.
-    pub username: Option<String>,
-    pub email: Option<String>,
-    pub display_name: Option<String>,
-    /// Group DNs as found (empty when no group step ran).
-    pub directory_groups: Vec<String>,
-    /// Console-managed deskhaven groups they map to.
-    pub mapped_groups: Vec<String>,
-    /// `None`: no admin group configured.
-    pub admin: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Diagnostic {
-    pub steps: Vec<StepReport>,
-    /// The tested user's entry, once found.
-    pub user: Option<ProbedUser>,
-}
-
-impl Diagnostic {
-    /// No step failed.
-    pub fn passed(&self) -> bool {
-        self.steps.iter().all(|s| s.status != StepStatus::Failed)
-    }
-}
-
-const CONNECTION_STEPS: &[Step] = &[Step::Connect, Step::ServiceBind];
-const USER_STEPS: &[Step] = &[
-    Step::Connect,
-    Step::ServiceBind,
-    Step::UserSearch,
-    Step::UserBind,
-    Step::GroupMapping,
-];
-
-/// Collects step results; unreported planned steps end up skipped.
-struct Recorder {
-    plan: &'static [Step],
-    diagnostic: Diagnostic,
-}
-
-impl Recorder {
-    fn new(plan: &'static [Step]) -> Self {
-        Self {
-            plan,
-            diagnostic: Diagnostic::default(),
-        }
-    }
-
-    fn record(&mut self, step: Step, status: StepStatus, message: impl Into<String>) {
-        self.diagnostic.steps.push(StepReport {
-            step,
-            status,
-            message: message.into(),
-        });
-    }
-
-    fn finish(mut self) -> Diagnostic {
-        for step in self.plan {
-            if !self.diagnostic.steps.iter().any(|s| s.step == *step) {
-                self.record(
-                    *step,
-                    StepStatus::Skipped,
-                    "skipped after an earlier failure",
-                );
-            }
-        }
-        self.diagnostic
-    }
-}
-
 impl LdapService {
-    /// Connect and service bind.
+    /// Connect and service bind, within the limits (see [`Self::test_user`]).
     pub async fn test_connection(&self, settings: &DirectorySettings) -> Diagnostic {
         let mut recorder = Recorder::new(CONNECTION_STEPS);
-        if let Some(mut session) = self.probe_connect(settings, &mut recorder).await {
-            probe_service_bind(session.as_mut(), settings, &mut recorder).await;
-            session.close().await;
+        let Some(_slot) = self.diagnostic_slot(settings, &mut recorder).await else {
+            return recorder.finish();
+        };
+        let steps = self.connection_steps(settings, &mut recorder);
+        if timeout(self.gate.limits().diagnostic_timeout, steps)
+            .await
+            .is_err()
+        {
+            recorder.time_out();
         }
         recorder.finish()
     }
 
     /// Every login step for `username`; the user bind only with a `password`. Writes
-    /// nothing.
+    /// nothing. Holds one of the directory slots logins use (a saturated directory fails the
+    /// connect step as busy) and ends after [`DirectoryLimits::diagnostic_timeout`] in
+    /// total, the steps not finished by then failed as timed out.
+    ///
+    /// [`DirectoryLimits::diagnostic_timeout`]: super::DirectoryLimits::diagnostic_timeout
     pub async fn test_user(
         &self,
         settings: &DirectorySettings,
@@ -146,20 +50,55 @@ impl LdapService {
         password: Option<&Password>,
     ) -> Diagnostic {
         let mut recorder = Recorder::new(USER_STEPS);
-        if let Some(mut session) = self.probe_connect(settings, &mut recorder).await {
-            if probe_service_bind(session.as_mut(), settings, &mut recorder).await {
-                self.probe_user(
-                    session.as_mut(),
-                    settings,
-                    username,
-                    password,
-                    &mut recorder,
-                )
-                .await;
+        let Some(_slot) = self.diagnostic_slot(settings, &mut recorder).await else {
+            return recorder.finish();
+        };
+        let steps = self.user_steps(settings, username, password, &mut recorder);
+        if timeout(self.gate.limits().diagnostic_timeout, steps)
+            .await
+            .is_err()
+        {
+            recorder.time_out();
+        }
+        recorder.finish()
+    }
+
+    /// A directory slot, or the connect step failed as busy.
+    async fn diagnostic_slot(
+        &self,
+        settings: &DirectorySettings,
+        recorder: &mut Recorder,
+    ) -> Option<tokio::sync::SemaphorePermit<'_>> {
+        let slot = self.gate.slot().await;
+        if slot.is_none() {
+            tracing::warn!(directory = %settings.name, "directory checks saturated; diagnostic refused");
+            let message = "the directory is busy (too many checks at once); try again";
+            recorder.record(Step::Connect, StepStatus::Failed, message);
+        }
+        slot
+    }
+
+    async fn connection_steps(&self, settings: &DirectorySettings, recorder: &mut Recorder) {
+        if let Some(mut session) = self.probe_connect(settings, recorder).await {
+            probe_service_bind(session.as_mut(), settings, recorder).await;
+            session.close().await;
+        }
+    }
+
+    async fn user_steps(
+        &self,
+        settings: &DirectorySettings,
+        username: &str,
+        password: Option<&Password>,
+        recorder: &mut Recorder,
+    ) {
+        if let Some(mut session) = self.probe_connect(settings, recorder).await {
+            if probe_service_bind(session.as_mut(), settings, recorder).await {
+                self.probe_user(session.as_mut(), settings, username, password, recorder)
+                    .await;
             }
             session.close().await;
         }
-        recorder.finish()
     }
 
     async fn probe_connect(
@@ -199,7 +138,12 @@ impl LdapService {
         password: Option<&Password>,
         recorder: &mut Recorder,
     ) {
-        let Some(user) = probe_search(session, settings, username, recorder).await else {
+        let password = password.filter(|p| !p.expose().is_empty());
+        let probe = Probe {
+            username,
+            counted: password.is_some(),
+        };
+        let Some(user) = probe_search(session, settings, &probe, recorder).await else {
             return;
         };
         recorder.diagnostic.user = Some(probed(&user));
@@ -298,13 +242,24 @@ async fn probe_service_bind(
     }
 }
 
+/// The tested name, and whether a password came with it (a login would count it).
+struct Probe<'a> {
+    username: &'a str,
+    counted: bool,
+}
+
 async fn probe_search(
     session: &mut dyn Session,
     settings: &DirectorySettings,
-    username: &str,
+    probe: &Probe<'_>,
     recorder: &mut Recorder,
 ) -> Option<DirectoryUser> {
-    let (status, message, user) = match protocol::find_user(session, settings, username).await {
+    let found = protocol::find_user(session, settings, probe.username).await;
+    // No single entry: a login refuses the name after a decoy bind, counted.
+    if matches!(found, Ok(Lookup::Missing | Lookup::Ambiguous)) {
+        recorder.diagnostic.attempted = probe.counted;
+    }
+    let (status, message, user) = match found {
         Ok(Lookup::Found(user)) => (StepStatus::Passed, format!("found {}", user.dn), Some(user)),
         Ok(Lookup::Missing) => (StepStatus::Failed, no_entry(settings), None),
         Ok(Lookup::Ambiguous) => (
@@ -336,6 +291,8 @@ async fn probe_user_bind(
         recorder.record(Step::UserBind, StepStatus::Skipped, "no password given");
         return true;
     };
+    // The directory sees the password from here on, whatever happens next.
+    recorder.diagnostic.attempted = true;
     let (status, message) = match protocol::bind_user(session, &user.dn, password.expose()).await {
         Ok(true) => (
             StepStatus::Passed,

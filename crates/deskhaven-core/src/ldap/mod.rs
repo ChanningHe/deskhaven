@@ -4,7 +4,8 @@
 //!   the bind password sealed with [`SecretBox`] (06 §5). TLS by default: `ldaps://` or
 //!   StartTLS, certificates verified unless `tls_verify` is turned off explicitly; plain
 //!   `ldap://` only to a loopback host; no link-local or cloud metadata address literals
-//!   (host names are resolved by ldap3 and not filtered). Changing where the bind password
+//!   (host names are resolved and filtered by the same rule when connecting: `address`).
+//!   Changing where the bind password
 //!   goes (URL, TLS settings, bind DN) needs it entered again.
 //! - **Logins** (`login`, `verify`): [`LdapService::password_login`] routes a password
 //!   login to the local password or the directory by the account's `auth_source`;
@@ -16,8 +17,9 @@
 //! - **Accounts** (`account`, `mapping`, `sync`): provisioned at the first login, role (admin group)
 //!   and group memberships synchronized at every login, audited as the system.
 //! - **Diagnostics** (`diagnose`): "test connection" / "test user" with a result per step.
-//!   `test_user` with a password is a password oracle: its API must be throttled and
-//!   limited to administrators (M3-09).
+//!   `test_user` with a password is a password oracle: its API is throttled, counted
+//!   against the username's lockout and limited to the owner (M3-09). Diagnostics share the
+//!   login slots and end after a total timeout.
 //!
 //! Sessions are not tied to the directory: an account disabled or a password changed in
 //! the directory keeps its existing deskhaven sessions until they expire or are revoked;
@@ -27,6 +29,7 @@
 //! [`Ldap3Connector`]. No password ever reaches an error, a log line or a diagnostic.
 
 mod account;
+mod address;
 mod diagnose;
 mod directories;
 mod directory;
@@ -38,6 +41,7 @@ mod mapping;
 mod model;
 mod protocol;
 mod reauth;
+mod report;
 mod settings;
 mod sync;
 mod tls;
@@ -48,7 +52,6 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 
-pub use diagnose::{Diagnostic, ProbedUser, Step, StepReport, StepStatus};
 pub use directory::{
     Connector, DirectoryFault, DirectoryFuture, Entry, Found, Scope, SearchRequest, Session, Target,
 };
@@ -61,6 +64,7 @@ pub use login::PasswordLogin;
 pub use model::{
     DEFAULT_USER_FILTER, DEFAULT_USERNAME_ATTR, Directory, DirectoryUpdate, NewDirectory,
 };
+pub use report::{Diagnostic, ProbedUser, Step, StepReport, StepStatus};
 pub use settings::DirectorySettings;
 pub use verify::DirectoryLimits;
 

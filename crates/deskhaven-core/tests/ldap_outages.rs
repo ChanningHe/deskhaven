@@ -58,6 +58,7 @@ async fn a_stalled_directory_times_out_and_concurrent_logins_are_bounded() {
             concurrent: 1,
             queue_timeout: Duration::from_millis(50),
             login_timeout: Duration::from_millis(300),
+            ..DirectoryLimits::default()
         };
         let ldap = env.ldap.clone().with_limits(limits);
         env.fake.set_hang(true);
