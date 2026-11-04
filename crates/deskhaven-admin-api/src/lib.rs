@@ -24,6 +24,7 @@ mod error;
 mod extract;
 mod gate;
 mod groups;
+mod identity;
 mod me;
 mod openapi;
 mod origin;
@@ -87,6 +88,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = audit_views::routes(routes)?;
     let routes = overview::routes(routes)?;
     let routes = strategies::routes(routes)?;
+    let routes = identity::routes(routes)?;
     settings::routes(routes)
 }
 

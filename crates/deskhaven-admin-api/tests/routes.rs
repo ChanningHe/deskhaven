@@ -140,6 +140,23 @@ fn production_document_declares_auth_on_every_operation() {
 }
 
 #[test]
+fn operation_ids_are_unique() {
+    // The console's generated client names its functions after them.
+    let doc: Value = serde_json::from_str(&openapi_json().unwrap()).unwrap();
+    let mut seen = std::collections::BTreeSet::new();
+
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            let id = op["operationId"].as_str().unwrap_or_default().to_owned();
+            assert!(
+                seen.insert(id.clone()),
+                "{method} {path}: operationId {id} twice"
+            );
+        }
+    }
+}
+
+#[test]
 fn document_is_deterministic() {
     assert_eq!(openapi_json().unwrap(), openapi_json().unwrap());
 }

@@ -3,8 +3,10 @@
 
 use deskhaven_core::devices::{ConnectionRecord, DeviceStatus, DeviceSummary, DeviceUpdate};
 use garde::Validate;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::extract::present;
 
 /// `devices.status`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -172,15 +174,6 @@ pub struct DevicePatch {
     /// `disabled` is a marker only: it does not block the device yet.
     #[garde(skip)]
     pub status: Option<DeviceStatusView>,
-}
-
-/// Distinguishes an absent field (`None`) from an explicit `null` (`Some(None)`).
-fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 impl From<DevicePatch> for DeviceUpdate {

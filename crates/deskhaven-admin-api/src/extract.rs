@@ -22,6 +22,7 @@ use axum::http::StatusCode;
 use axum::http::request::Parts;
 use garde::{Report, Validate};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 use serde_json::json;
 
 use crate::{AdminApiError, ErrorCode};
@@ -81,6 +82,16 @@ where
             .map_err(|_| AdminApiError::not_found("no such resource"))?;
         Ok(Self(value))
     }
+}
+
+/// `deserialize_with` of a nullable patch field: distinguishes an absent field (`None`,
+/// with `#[serde(default)]`) from an explicit `null` (`Some(None)`).
+pub(crate) fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 fn validated<T: Validate<Context = ()>>(value: T) -> Result<T, AdminApiError> {
