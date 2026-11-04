@@ -36,6 +36,198 @@
     "cancel": "Cancel",
     "close": "Close"
   },
+  "audit": {
+    "tabs": {
+      "label": "Kinds of audit record",
+      "connections": "Connections",
+      "files": "File transfers",
+      "alarms": "Alarms",
+      "logins": "Logins",
+      "console": "Console"
+    },
+    "selfReportedNote": "Peer names, paths, notes and alarm details are reported by the devices themselves and are not verified by the server.",
+    "search": {
+      "connections": "Search peer or address",
+      "files": "Search path, peer or address",
+      "logins": "Search username or address",
+      "console": "Search action or target"
+    },
+    "filters": {
+      "from": "From date",
+      "to": "To date",
+      "device": "Device ID",
+      "user": "User",
+      "userCandidates": "Matching users",
+      "userFound": "{{count}} matching users",
+      "userNoMatch": "No matching users",
+      "userIs": "User: {{name}}",
+      "userClear": "Clear user filter",
+      "connType": "Connection type",
+      "direction": "Direction",
+      "alarmType": "Alarm type",
+      "method": "Login method",
+      "client": "Client",
+      "result": "Result",
+      "actorKind": "Actor",
+      "action": "Action",
+      "targetType": "Target type"
+    },
+    "columns": {
+      "time": "Time",
+      "device": "Device",
+      "peer": "Peer",
+      "controller": "Controller",
+      "type": "Type",
+      "ip": "Address",
+      "state": "State",
+      "direction": "Direction",
+      "path": "Path",
+      "files": "Files",
+      "info": "Details",
+      "username": "Username",
+      "method": "Method",
+      "result": "Result",
+      "client": "Client",
+      "actor": "Actor",
+      "action": "Action",
+      "target": "Target"
+    },
+    "state": {
+      "open": "Open",
+      "closed": "Ended"
+    },
+    "empty": {
+      "connections": {
+        "title": "No connections recorded",
+        "description": "Connections appear here once a client connects to a registered device."
+      },
+      "files": {
+        "title": "No file transfers recorded",
+        "description": "File transfers appear here when a device reports one."
+      },
+      "alarms": {
+        "title": "No alarms recorded",
+        "description": "Devices report an alarm when they block an address or see repeated login attempts."
+      },
+      "logins": {
+        "title": "No logins recorded",
+        "description": "Every console and client login attempt is recorded here."
+      },
+      "console": {
+        "title": "No changes recorded",
+        "description": "Changes made through the console, the API or the command line are recorded here."
+      }
+    },
+    "detail": {
+      "hint": "Read-only record.",
+      "selfReported": "Self-reported by the device",
+      "selfReportedHint": "The server cannot verify these values.",
+      "connectionTitle": "Connection to {{device}}",
+      "fileTitle": "File transfer on {{device}}",
+      "alarmTitle": "Alarm from {{device}}",
+      "loginTitle": "Login attempt: {{name}}",
+      "received": "Received",
+      "when": "Time",
+      "sessionId": "Session ID",
+      "connId": "Connection number",
+      "peerId": "Peer ID",
+      "primaryAuth": "Authorized by",
+      "twoFactor": "Two-factor",
+      "none": "None",
+      "startedAt": "Started",
+      "authorizedAt": "Authorized",
+      "endedAt": "Ended",
+      "note": "Note (controlled side)",
+      "controllerNote": "Note (controller)",
+      "isFile": "Item",
+      "file": "File",
+      "folder": "Folder",
+      "fileList": "Transferred files",
+      "account": "Account",
+      "clientDevice": "Client device",
+      "targetType": "Target type",
+      "targetId": "Target ID"
+    },
+    "snapshot": {
+      "before": "Before",
+      "after": "After",
+      "changes": "Changed fields",
+      "noChange": "This change altered no recorded field.",
+      "unchanged": "{{count}} fields unchanged",
+      "purge": "Retention run deleted {{deleted}} {{kind}} records older than {{cutoff}} (batch size {{batch}})."
+    },
+    "notReported": "—",
+    "noSessionId": "No session ID",
+    "noController": "Unknown",
+    "noAccount": "No matching account",
+    "unknownCode": "Unknown ({{code}})",
+    "connType": {
+      "remoteControl": "Remote control",
+      "fileTransfer": "File transfer",
+      "portForward": "Port forward",
+      "camera": "Camera",
+      "terminal": "Terminal"
+    },
+    "primaryAuth": {
+      "click": "Click to accept",
+      "temporaryPassword": "Temporary password",
+      "permanentPassword": "Permanent password",
+      "switchSides": "Switch sides"
+    },
+    "twoFactor": {
+      "totp": "TOTP",
+      "trustedDevice": "Trusted device"
+    },
+    "alarmType": {
+      "ipAllowList": "IP allow-list block",
+      "manyAttempts": "Over 30 attempts",
+      "burstAttempts": "6 attempts in a minute",
+      "ipv6Prefix": "IPv6 prefix attempts",
+      "terminalLogin": "Terminal OS login",
+      "terminalLoginFailed": "Terminal OS login failed",
+      "scopeViolation": "Session scope violation",
+      "idAllowList": "ID allow-list block"
+    },
+    "direction": {
+      "send": "Sent from device",
+      "receive": "Received by device"
+    },
+    "method": {
+      "password": "Password",
+      "totp": "Authenticator code",
+      "email_code": "Email code",
+      "oidc": "OIDC",
+      "ldap": "LDAP",
+      "recovery": "Recovery code"
+    },
+    "client": {
+      "rustdesk": "RustDesk client",
+      "console": "Console",
+      "api": "API"
+    },
+    "actorKind": {
+      "user": "User",
+      "api_token": "API token",
+      "cli": "Command line",
+      "system": "System"
+    },
+    "result": {
+      "success": "Success",
+      "invalid_credentials": "Invalid credentials",
+      "disabled": "Account disabled",
+      "unverified": "Account unverified",
+      "locked": "Locked out",
+      "tfa_required": "Second factor required",
+      "tfa_setup_required": "Second factor setup required",
+      "invalid_code": "Invalid code",
+      "invalid_challenge": "Invalid challenge",
+      "oidc_denied": "OIDC denied",
+      "oidc_unavailable": "OIDC unavailable",
+      "oidc_invalid_token": "OIDC token rejected",
+      "no_linked_account": "No linked account",
+      "provisioning_failed": "Account creation failed"
+    }
+  },
   "errors": {
     "route": {
       "title": "Something went wrong",

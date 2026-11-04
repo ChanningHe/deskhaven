@@ -36,6 +36,198 @@
     "cancel": "取消",
     "close": "关闭"
   },
+  "audit": {
+    "tabs": {
+      "label": "审计记录类型",
+      "connections": "连接",
+      "files": "文件传输",
+      "alarms": "告警",
+      "logins": "登录",
+      "console": "控制台"
+    },
+    "selfReportedNote": "对端名称、路径、备注和告警详情由设备自行上报，服务器无法验证。",
+    "search": {
+      "connections": "搜索对端或地址",
+      "files": "搜索路径、对端或地址",
+      "logins": "搜索用户名或地址",
+      "console": "搜索操作或对象"
+    },
+    "filters": {
+      "from": "起始日期",
+      "to": "截止日期",
+      "device": "设备 ID",
+      "user": "用户",
+      "userCandidates": "匹配的用户",
+      "userFound": "{{count}} 个匹配用户",
+      "userNoMatch": "没有匹配的用户",
+      "userIs": "用户：{{name}}",
+      "userClear": "清除用户筛选",
+      "connType": "连接类型",
+      "direction": "方向",
+      "alarmType": "告警类型",
+      "method": "登录方式",
+      "client": "客户端",
+      "result": "结果",
+      "actorKind": "操作者",
+      "action": "操作",
+      "targetType": "对象类型"
+    },
+    "columns": {
+      "time": "时间",
+      "device": "设备",
+      "peer": "对端",
+      "controller": "主控用户",
+      "type": "类型",
+      "ip": "地址",
+      "state": "状态",
+      "direction": "方向",
+      "path": "路径",
+      "files": "文件数",
+      "info": "详情",
+      "username": "用户名",
+      "method": "方式",
+      "result": "结果",
+      "client": "客户端",
+      "actor": "操作者",
+      "action": "操作",
+      "target": "对象"
+    },
+    "state": {
+      "open": "进行中",
+      "closed": "已结束"
+    },
+    "empty": {
+      "connections": {
+        "title": "暂无连接记录",
+        "description": "客户端连接到已注册设备后，记录会出现在这里。"
+      },
+      "files": {
+        "title": "暂无文件传输记录",
+        "description": "设备上报文件传输后，记录会出现在这里。"
+      },
+      "alarms": {
+        "title": "暂无告警记录",
+        "description": "设备拦截地址或发现重复登录尝试时会上报告警。"
+      },
+      "logins": {
+        "title": "暂无登录记录",
+        "description": "每次控制台和客户端登录尝试都会记录在这里。"
+      },
+      "console": {
+        "title": "暂无变更记录",
+        "description": "通过控制台、API 或命令行所做的变更会记录在这里。"
+      }
+    },
+    "detail": {
+      "hint": "只读记录。",
+      "selfReported": "设备自报",
+      "selfReportedHint": "服务器无法验证这些值。",
+      "connectionTitle": "连接到 {{device}}",
+      "fileTitle": "{{device}} 上的文件传输",
+      "alarmTitle": "来自 {{device}} 的告警",
+      "loginTitle": "登录尝试：{{name}}",
+      "received": "收到时间",
+      "when": "时间",
+      "sessionId": "会话 ID",
+      "connId": "连接序号",
+      "peerId": "对端 ID",
+      "primaryAuth": "授权方式",
+      "twoFactor": "双因素",
+      "none": "无",
+      "startedAt": "开始",
+      "authorizedAt": "授权",
+      "endedAt": "结束",
+      "note": "备注（被控端）",
+      "controllerNote": "备注（主控端）",
+      "isFile": "类型",
+      "file": "文件",
+      "folder": "文件夹",
+      "fileList": "已传输的文件",
+      "account": "账号",
+      "clientDevice": "客户端设备",
+      "targetType": "对象类型",
+      "targetId": "对象 ID"
+    },
+    "snapshot": {
+      "before": "变更前",
+      "after": "变更后",
+      "changes": "变更字段",
+      "noChange": "此次变更没有改动任何已记录的字段。",
+      "unchanged": "{{count}} 个字段未变",
+      "purge": "保留期清理删除了 {{deleted}} 条 {{kind}} 记录（早于 {{cutoff}}，批大小 {{batch}}）。"
+    },
+    "notReported": "—",
+    "noSessionId": "无会话 ID",
+    "noController": "未知",
+    "noAccount": "无匹配账号",
+    "unknownCode": "未知（{{code}}）",
+    "connType": {
+      "remoteControl": "远程控制",
+      "fileTransfer": "文件传输",
+      "portForward": "端口转发",
+      "camera": "摄像头",
+      "terminal": "终端"
+    },
+    "primaryAuth": {
+      "click": "点击确认",
+      "temporaryPassword": "临时密码",
+      "permanentPassword": "固定密码",
+      "switchSides": "切换方向"
+    },
+    "twoFactor": {
+      "totp": "TOTP",
+      "trustedDevice": "可信设备"
+    },
+    "alarmType": {
+      "ipAllowList": "IP 白名单拦截",
+      "manyAttempts": "尝试超过 30 次",
+      "burstAttempts": "一分钟内 6 次尝试",
+      "ipv6Prefix": "IPv6 前缀尝试",
+      "terminalLogin": "终端 OS 登录",
+      "terminalLoginFailed": "终端 OS 登录失败",
+      "scopeViolation": "会话范围越权",
+      "idAllowList": "ID 白名单拦截"
+    },
+    "direction": {
+      "send": "设备发出",
+      "receive": "设备接收"
+    },
+    "method": {
+      "password": "密码",
+      "totp": "验证器代码",
+      "email_code": "邮件验证码",
+      "oidc": "OIDC",
+      "ldap": "LDAP",
+      "recovery": "恢复码"
+    },
+    "client": {
+      "rustdesk": "RustDesk 客户端",
+      "console": "控制台",
+      "api": "API"
+    },
+    "actorKind": {
+      "user": "用户",
+      "api_token": "API 令牌",
+      "cli": "命令行",
+      "system": "系统"
+    },
+    "result": {
+      "success": "成功",
+      "invalid_credentials": "凭据无效",
+      "disabled": "账号已禁用",
+      "unverified": "账号未验证",
+      "locked": "已锁定",
+      "tfa_required": "需要第二因素",
+      "tfa_setup_required": "需要绑定第二因素",
+      "invalid_code": "验证码无效",
+      "invalid_challenge": "挑战无效",
+      "oidc_denied": "OIDC 被拒绝",
+      "oidc_unavailable": "OIDC 不可用",
+      "oidc_invalid_token": "OIDC 令牌被拒",
+      "no_linked_account": "无关联账号",
+      "provisioning_failed": "账号创建失败"
+    }
+  },
   "errors": {
     "route": {
       "title": "出错了",

@@ -2021,6 +2021,790 @@
         ]
       }
     },
+    "/admin/api/v1/audit/alarms": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Alarms, newest first by default.",
+        "operationId": "list_alarm_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only records created at or after this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only records created before this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`created_at` (oldest first) or `-created_at` (newest first, the default).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?created_at$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "description": "The reporting device's RustDesk id.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "typ",
+            "in": "query",
+            "description": "Alarm type code: 0 IP allow-list block, 1 over 30 attempts, 2 six attempts in a\nminute, 6 IPv6 prefix attempts, 7 and 8 terminal OS login, 9 session scope\nviolation, 10 ID allow-list (newer clients may send others).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 1000,
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of alarms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_AlarmAuditView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/audit/connections": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Connections, newest first by default.",
+        "operationId": "list_connection_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only records created at or after this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only records created before this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`created_at` (oldest first) or `-created_at` (newest first, the default).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?created_at$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "description": "The controlled device's RustDesk id.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "description": "The controlling user account.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "conn_type",
+            "in": "query",
+            "description": "Connection type code: 0 remote control, 1 file transfer, 2 port forward, 3 camera,\n4 terminal (newer clients may send others).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 1000,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the peer id, peer name or address (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_ConnectionAuditView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/audit/console": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Console audit rows, newest first by default.",
+        "operationId": "list_console_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only records created at or after this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only records created before this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`created_at` (oldest first) or `-created_at` (newest first, the default).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?created_at$"
+            }
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "description": "Changes made by this user account (for API tokens use `actor_kind`).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "actor_kind",
+            "in": "query",
+            "description": "`user`, `api_token`, `cli` or `system`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(user|api_token|cli|system)$"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "The action name exactly, e.g. `user.disable`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "description": "The kind of the changed resource exactly, e.g. `user`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the action, target type or target id (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of console audit rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_ConsoleAuditView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/audit/files": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "File transfers, newest first by default.",
+        "operationId": "list_file_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only records created at or after this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only records created before this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`created_at` (oldest first) or `-created_at` (newest first, the default).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?created_at$"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "description": "The reporting (controlled) device's RustDesk id.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "description": "As seen from the reporting device: `send` or `receive`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(send|receive)$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the path, peer id or address (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of file transfers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_FileAuditView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/audit/logins": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Login attempts, newest first by default.",
+        "operationId": "list_login_audit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only records created at or after this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only records created before this time (unix milliseconds).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`created_at` (oldest first) or `-created_at` (newest first, the default).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?created_at$"
+            }
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "description": "The account the attempt matched.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "description": "`password`, `totp`, `email_code`, `oidc`, `ldap` or `recovery`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(password|totp|email_code|oidc|ldap|recovery)$"
+            }
+          },
+          {
+            "name": "client",
+            "in": "query",
+            "description": "`rustdesk`, `console` or `api`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(rustdesk|console|api)$"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "description": "The outcome label exactly, e.g. `success` or `invalid_credentials`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "description": "The RustDesk id of the client device.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the attempted username or address (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of login attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_LoginAuditView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -6261,6 +7045,63 @@
         },
         "additionalProperties": false
       },
+      "AlarmAuditView": {
+        "type": "object",
+        "description": "An alarm; all of it is device self-reported except `id` and `created_at`.",
+        "required": [
+          "id",
+          "device_id",
+          "typ",
+          "info",
+          "conn_id",
+          "created_at"
+        ],
+        "properties": {
+          "conn_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "info": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlarmInfoEntry"
+            },
+            "description": "The device's key-value details, in key order."
+          },
+          "typ": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AlarmInfoEntry": {
+        "type": "object",
+        "description": "One entry of an alarm's `info`.",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "Strings as sent; other values as JSON text."
+          }
+        }
+      },
       "ApiTokenCreated": {
         "type": "object",
         "description": "A created token with its secret, shown only here.",
@@ -6346,6 +7187,23 @@
           },
           "status": {
             "$ref": "#/components/schemas/TokenStatusView"
+          }
+        }
+      },
+      "AuditUserView": {
+        "type": "object",
+        "description": "A user account an audit record points at. Absent in the record when the account no\nlonger exists.",
+        "required": [
+          "id",
+          "username"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
           }
         }
       },
@@ -6507,6 +7365,134 @@
           }
         }
       },
+      "ConnectionAuditView": {
+        "type": "object",
+        "description": "One connection, as the controlled device reported it (everything but `id`, `guid`,\n`controller` and `created_at` is device self-reported).",
+        "required": [
+          "id",
+          "guid",
+          "device_id",
+          "conn_id",
+          "created_at"
+        ],
+        "properties": {
+          "authorized_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "conn_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "conn_type": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal."
+          },
+          "controller": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditUserView",
+                "description": "The controlling account; `null` when unknown or deleted."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "controller_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Written by the controller."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the first message of the connection arrived."
+          },
+          "device_id": {
+            "type": "string",
+            "description": "The controlled device's RustDesk id."
+          },
+          "ended_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "guid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Written on the controlled side."
+          },
+          "peer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_auth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1 click to accept, 2 temporary password, 3 permanent password, 4 switch sides."
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` for a retired row: its session id was given up to a newer connection."
+          },
+          "started_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "two_factor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1 TOTP, 2 trusted device."
+          }
+        }
+      },
       "ConnectionView": {
         "type": "object",
         "description": "One connection to a device, as the device reported it.",
@@ -6569,6 +7555,77 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "ConsoleActorView": {
+        "type": "object",
+        "description": "Who made a change.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The user or token id; `null` for `cli` and `system`."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`user`, `api_token`, `cli` or `system`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The username or token name; `null` when it is gone or there is none."
+          }
+        }
+      },
+      "ConsoleAuditView": {
+        "type": "object",
+        "description": "One audited change. `before` and `after` are the snapshots as stored (secrets were\nmasked when they were written); a retention run (`audit.retention.purge`, actor\n`system`) carries `{kind, deleted, cutoff, batch}` in `after`.",
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "target_type",
+          "target_id",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ConsoleActorView"
+          },
+          "after": {},
+          "before": {},
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Empty when the action has no single target."
+          },
+          "target_type": {
+            "type": "string"
           }
         }
       },
@@ -6987,6 +8044,70 @@
           }
         }
       },
+      "FileAuditView": {
+        "type": "object",
+        "description": "A file transfer; all of it is device self-reported except `id` and `created_at`.",
+        "required": [
+          "id",
+          "device_id",
+          "peer_id",
+          "conn_id",
+          "direction",
+          "path",
+          "is_file",
+          "file_count",
+          "files",
+          "created_at"
+        ],
+        "properties": {
+          "conn_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "device_id": {
+            "type": "string",
+            "description": "The reporting (controlled) device's RustDesk id."
+          },
+          "direction": {
+            "type": "string",
+            "description": "`send` or `receive`, as seen from the reporting device."
+          },
+          "file_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferredFileView"
+            },
+            "description": "At most the first ten files."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_file": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "string"
+          }
+        }
+      },
       "GroupPatch": {
         "type": "object",
         "description": "Changes to a group; absent fields stay as they are.",
@@ -7390,6 +8511,64 @@
           }
         }
       },
+      "LoginAuditView": {
+        "type": "object",
+        "description": "One login attempt. `username_attempted` and `rustdesk_id` are what the client sent.",
+        "required": [
+          "id",
+          "username_attempted",
+          "method",
+          "result",
+          "client",
+          "created_at"
+        ],
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "description": "Outcome label: `success`, `invalid_credentials`, `locked`, ..."
+          },
+          "rustdesk_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditUserView",
+                "description": "The matched account; `null` for an unknown username or a deleted account."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "username_attempted": {
+            "type": "string"
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "description": "Username and password. Never logged.",
@@ -7751,6 +8930,77 @@
           }
         }
       },
+      "Paginated_AlarmAuditView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "An alarm; all of it is device self-reported except `id` and `created_at`.",
+              "required": [
+                "id",
+                "device_id",
+                "typ",
+                "info",
+                "conn_id",
+                "created_at"
+              ],
+              "properties": {
+                "conn_id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "device_id": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "info": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlarmInfoEntry"
+                  },
+                  "description": "The device's key-value details, in key order."
+                },
+                "typ": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
       "Paginated_ApiTokenView": {
         "type": "object",
         "description": "One page of a list.",
@@ -7925,6 +9175,239 @@
                 "updated_at": {
                   "type": "integer",
                   "format": "int64"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
+      "Paginated_ConnectionAuditView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One connection, as the controlled device reported it (everything but `id`, `guid`,\n`controller` and `created_at` is device self-reported).",
+              "required": [
+                "id",
+                "guid",
+                "device_id",
+                "conn_id",
+                "created_at"
+              ],
+              "properties": {
+                "authorized_at": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "conn_id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "conn_type": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32",
+                  "description": "0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal."
+                },
+                "controller": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditUserView",
+                      "description": "The controlling account; `null` when unknown or deleted."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "controller_note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Written by the controller."
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "When the first message of the connection arrived."
+                },
+                "device_id": {
+                  "type": "string",
+                  "description": "The controlled device's RustDesk id."
+                },
+                "ended_at": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "guid": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "ip": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Written on the controlled side."
+                },
+                "peer_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "peer_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "primary_auth": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32",
+                  "description": "1 click to accept, 2 temporary password, 3 permanent password, 4 switch sides."
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "`null` for a retired row: its session id was given up to a newer connection."
+                },
+                "started_at": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "two_factor": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32",
+                  "description": "1 TOTP, 2 trusted device."
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
+      "Paginated_ConsoleAuditView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One audited change. `before` and `after` are the snapshots as stored (secrets were\nmasked when they were written); a retention run (`audit.retention.purge`, actor\n`system`) carries `{kind, deleted, cutoff, batch}` in `after`.",
+              "required": [
+                "id",
+                "actor",
+                "action",
+                "target_type",
+                "target_id",
+                "created_at"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "actor": {
+                  "$ref": "#/components/schemas/ConsoleActorView"
+                },
+                "after": {},
+                "before": {},
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "ip": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "target_id": {
+                  "type": "string",
+                  "description": "Empty when the action has no single target."
+                },
+                "target_type": {
+                  "type": "string"
                 }
               }
             }
@@ -8164,6 +9647,101 @@
           }
         }
       },
+      "Paginated_FileAuditView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A file transfer; all of it is device self-reported except `id` and `created_at`.",
+              "required": [
+                "id",
+                "device_id",
+                "peer_id",
+                "conn_id",
+                "direction",
+                "path",
+                "is_file",
+                "file_count",
+                "files",
+                "created_at"
+              ],
+              "properties": {
+                "conn_id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "device_id": {
+                  "type": "string",
+                  "description": "The reporting (controlled) device's RustDesk id."
+                },
+                "direction": {
+                  "type": "string",
+                  "description": "`send` or `receive`, as seen from the reporting device."
+                },
+                "file_count": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TransferredFileView"
+                  },
+                  "description": "At most the first ten files."
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "ip": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_file": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "peer_id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
       "Paginated_GroupView": {
         "type": "object",
         "description": "One page of a list.",
@@ -8291,6 +9869,95 @@
                   "type": "integer",
                   "format": "int64",
                   "description": "The version the stored row had after this change."
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
+      "Paginated_LoginAuditView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One login attempt. `username_attempted` and `rustdesk_id` are what the client sent.",
+              "required": [
+                "id",
+                "username_attempted",
+                "method",
+                "result",
+                "client",
+                "created_at"
+              ],
+              "properties": {
+                "client": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "ip": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "method": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string",
+                  "description": "Outcome label: `success`, `invalid_credentials`, `locked`, ..."
+                },
+                "rustdesk_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "user": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditUserView",
+                      "description": "The matched account; `null` for an unknown username or a deleted account."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "username_attempted": {
+                  "type": "string"
                 }
               }
             }
@@ -9453,6 +11120,24 @@
           }
         },
         "additionalProperties": false
+      },
+      "TransferredFileView": {
+        "type": "object",
+        "description": "One file of a transfer, as the device named it.",
+        "required": [
+          "name",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes."
+          }
+        }
       },
       "UserCreated": {
         "type": "object",

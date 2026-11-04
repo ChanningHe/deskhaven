@@ -1,5 +1,6 @@
 export * from './address-books/address-books'
 export * from './api-tokens/api-tokens'
+export * from './audit/audit'
 export * from './auth/auth'
 export * from './client-config/client-config'
 export * from './device-groups/device-groups'

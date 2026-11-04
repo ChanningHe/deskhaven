@@ -6,6 +6,8 @@ mod audit;
 mod handlers;
 mod view;
 
+pub(crate) use view::any_json;
+
 use utoipa_axum::routes;
 
 use crate::{AdminRoutes, RouteError};
