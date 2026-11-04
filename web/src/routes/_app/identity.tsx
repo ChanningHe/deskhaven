@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { IdentityPage } from '@/features/auth/components/identity-page'
+import { IdentityPage } from '@/features/identity/components/identity-page'
 import { requirePagePermission } from '@/features/auth/permissions'
 
 export const Route = createFileRoute('/_app/identity')({

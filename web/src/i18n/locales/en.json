@@ -356,9 +356,7 @@
       "emptyDescription": "Audit events are recorded as clients connect and administrators act."
     },
     "identity": {
-      "description": "OIDC, LDAP and two-factor authentication.",
-      "emptyTitle": "No identity providers configured",
-      "emptyDescription": "Local accounts work out of the box; add OIDC or LDAP to use existing identities."
+      "description": "OIDC, LDAP and two-factor authentication."
     },
     "clientSetup": {
       "description": "Server addresses, public key and configuration string for RustDesk clients.",
@@ -1307,6 +1305,157 @@
     },
     "preview": {
       "description": "The strategy a device ends up with: every strategy assigned to it merged, with the source of each option. Shows saved changes; the next heartbeat delivers them."
+    }
+  },
+  "identity": {
+    "oidc": {
+      "title": "OIDC providers",
+      "description": "Single sign-on through OpenID Connect, for the RustDesk client and this console.",
+      "callbackUrl": "Callback URL",
+      "callbackHint": "Register this redirect URI at the identity provider.",
+      "callbackMissing": "No public_url is set: OIDC sign-in is refused until it is.",
+      "add": "New provider",
+      "emptyTitle": "No OIDC providers",
+      "emptyDescription": "Local accounts work out of the box; add a provider to sign in with an existing identity.",
+      "tableLabel": "OIDC providers",
+      "columns": {
+        "name": "Name",
+        "issuer": "Issuer",
+        "status": "Status",
+        "source": "Source",
+        "actions": "Actions"
+      },
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "edit": "Edit {{name}}",
+      "delete": "Delete {{name}}",
+      "createTitle": "New OIDC provider",
+      "editTitle": "OIDC provider {{name}}",
+      "readOnly": "Defined in the configuration file; read-only here.",
+      "create": "Create provider",
+      "save": "Save changes",
+      "conflict": "Someone else just changed this provider; saving overwrites the fields you edited.",
+      "fields": {
+        "name": "Name",
+        "nameHint": "1-32 characters of A-Z a-z 0-9 . _ -; the client shows it on the login button.",
+        "displayName": "Display name",
+        "issuer": "Issuer URL",
+        "issuerHint": "https; cannot change after creation (accounts are linked by issuer and subject).",
+        "clientId": "Client ID",
+        "clientSecret": "Client secret",
+        "secretSet": "A secret is set. Leave blank to keep it.",
+        "secretNone": "No secret: a public client (PKCE only).",
+        "clearSecret": "Remove the secret (public client)",
+        "scopes": "Scopes",
+        "autoProvision": "Create an account for unknown users",
+        "groupClaim": "Group claim",
+        "groupClaimHint": "ID token claim listing the user's groups, e.g. groups.",
+        "adminGroup": "Admin group",
+        "adminGroupWarning": "Accounts in this group become administrators. Only set it when the group claim is controlled solely by the identity provider's administrators. Never use it with a multi-tenant identity provider, or one where users can change their own groups.",
+        "enabled": "Enabled"
+      },
+      "confirmDelete": {
+        "title": "Delete OIDC provider",
+        "description": "Delete {{name}}? Its users can no longer sign in with it. A provider with linked accounts cannot be deleted: disable it instead.",
+        "confirm": "Delete provider"
+      }
+    },
+    "ldap": {
+      "title": "LDAP directory",
+      "description": "Password sign-in against a directory: service bind, user search, user bind, group mapping.",
+      "ownerOnly": "Only the owner can change the directory or run tests: whoever can change its address can sign in as any directory account.",
+      "readOnly": "Defined in the configuration file; read-only here.",
+      "empty": "No directory is configured.",
+      "fields": {
+        "name": "Name",
+        "url": "URL",
+        "urlHint": "ldaps://host:636, or ldap://host:389 with StartTLS. Plain ldap:// only to localhost.",
+        "startTls": "StartTLS",
+        "tlsVerify": "Verify the server certificate",
+        "tlsVerifyWarning": "Certificate verification is off: anyone on the network path can read the passwords sent to the directory.",
+        "bindDn": "Bind DN (service account)",
+        "bindDnHint": "Blank: searches run anonymously.",
+        "bindPassword": "Bind password",
+        "bindPasswordSet": "A password is set. Leave blank to keep it; enter it again when the URL, TLS or bind DN changes.",
+        "reenterPassword": "The connection changed: enter the bind password again.",
+        "userBaseDn": "User base DN",
+        "userFilter": "User filter",
+        "userFilterHint": "Blank: (objectClass=person).",
+        "usernameAttr": "Username attribute",
+        "usernameAttrHint": "Blank: uid (Active Directory: sAMAccountName).",
+        "emailAttr": "Email attribute",
+        "displayNameAttr": "Display name attribute",
+        "groupBaseDn": "Group base DN",
+        "groupBaseDnHint": "Set: directory groups below it map to deskhaven groups of the same name.",
+        "groupFilter": "Group filter",
+        "groupFilterHint": "Blank: the user's memberOf. Placeholders {user_dn} and {username}.",
+        "adminGroupDn": "Admin group DN",
+        "adminGroupDnHint": "Members become administrators (owners stay owners).",
+        "enabled": "Enabled"
+      },
+      "create": "Save directory",
+      "save": "Save changes",
+      "delete": "Delete directory",
+      "conflict": "Someone else just changed the directory; saving overwrites the fields you edited.",
+      "confirmDelete": {
+        "title": "Delete LDAP directory",
+        "description": "Delete {{name}}? Its accounts cannot sign in until a directory is configured again.",
+        "confirm": "Delete directory"
+      }
+    },
+    "diagnostics": {
+      "title": "Test the directory",
+      "savedHint": "Tests use the saved directory.",
+      "unsavedHint": "Tests use the form as typed (not saved yet); enter the bind password to test a service account.",
+      "testConnection": "Test connection",
+      "testUser": "Test user",
+      "username": "Username",
+      "password": "Password (optional)",
+      "passwordHint": "With a password the user bind runs too. A wrong password counts against that account's sign-in lockout, like a failed sign-in.",
+      "resultLabel": "Test result",
+      "passed": "All steps passed.",
+      "failed": "A step failed.",
+      "steps": {
+        "connect": "Connect",
+        "service_bind": "Service account bind",
+        "user_search": "User search",
+        "user_bind": "User bind",
+        "group_mapping": "Group mapping"
+      },
+      "status": {
+        "passed": "Passed",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      },
+      "user": {
+        "title": "Directory entry",
+        "dn": "DN",
+        "username": "Username",
+        "email": "Email",
+        "displayName": "Display name",
+        "directoryGroups": "Directory groups",
+        "mappedGroups": "deskhaven groups",
+        "admin": "Administrator",
+        "yes": "Yes",
+        "no": "No",
+        "noAdminGroup": "No admin group configured",
+        "none": "None"
+      }
+    },
+    "tfa": {
+      "title": "Two-factor authentication",
+      "description": "Accounts the policy covers must enrol an authenticator app before they can use the console; the RustDesk client refuses them until they have.",
+      "label": "Require two-factor authentication for",
+      "choices": {
+        "off": "Nobody (optional for everyone)",
+        "admins": "Administrators and owners",
+        "all": "Everyone"
+      },
+      "oidcNote": "Accounts that sign in through OIDC are exempt: require MFA at the identity provider.",
+      "ownerOnly": "Only the owner can change this policy.",
+      "save": "Save policy",
+      "saved": "Policy saved.",
+      "conflict": "Someone else changed the policy; the current value is shown. Save again to apply yours."
     }
   }
 }

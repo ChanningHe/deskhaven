@@ -356,9 +356,7 @@
       "emptyDescription": "客户端连接和管理员操作时会记录审计事件。"
     },
     "identity": {
-      "description": "OIDC、LDAP 与双因素认证。",
-      "emptyTitle": "尚未配置身份提供方",
-      "emptyDescription": "本地账户开箱即用；添加 OIDC 或 LDAP 以使用现有身份。"
+      "description": "OIDC、LDAP 与双因素认证。"
     },
     "clientSetup": {
       "description": "RustDesk 客户端所需的服务器地址、公钥与配置字符串。",
@@ -1307,6 +1305,157 @@
     },
     "preview": {
       "description": "设备最终生效的策略：分配给它的所有策略合并后的结果，并标注每个选项的来源。显示已保存的修改，下一次心跳即下发。"
+    }
+  },
+  "identity": {
+    "oidc": {
+      "title": "OIDC 提供方",
+      "description": "通过 OpenID Connect 单点登录，适用于 RustDesk 客户端与本控制台。",
+      "callbackUrl": "回调地址",
+      "callbackHint": "在身份提供方处登记此重定向地址。",
+      "callbackMissing": "尚未设置 public_url：设置之前 OIDC 登录会被拒绝。",
+      "add": "新建提供方",
+      "emptyTitle": "尚无 OIDC 提供方",
+      "emptyDescription": "本地账户开箱即用；添加提供方后即可使用现有身份登录。",
+      "tableLabel": "OIDC 提供方",
+      "columns": {
+        "name": "名称",
+        "issuer": "Issuer",
+        "status": "状态",
+        "source": "来源",
+        "actions": "操作"
+      },
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "edit": "编辑 {{name}}",
+      "delete": "删除 {{name}}",
+      "createTitle": "新建 OIDC 提供方",
+      "editTitle": "OIDC 提供方 {{name}}",
+      "readOnly": "由配置文件定义，在此处只读。",
+      "create": "创建提供方",
+      "save": "保存修改",
+      "conflict": "他人刚修改了此提供方，保存会覆盖你编辑的字段。",
+      "fields": {
+        "name": "名称",
+        "nameHint": "1–32 个字符，限 A-Z a-z 0-9 . _ -；客户端在登录按钮上显示它。",
+        "displayName": "显示名称",
+        "issuer": "Issuer 地址",
+        "issuerHint": "须为 https；创建后不可修改（账户按 issuer 与 subject 关联）。",
+        "clientId": "Client ID",
+        "clientSecret": "Client secret",
+        "secretSet": "已设置 secret。留空则保持不变。",
+        "secretNone": "未设置 secret：公共客户端（仅 PKCE）。",
+        "clearSecret": "移除 secret（公共客户端）",
+        "scopes": "Scopes",
+        "autoProvision": "为未知用户自动开户",
+        "groupClaim": "分组 claim",
+        "groupClaimHint": "ID Token 中列出用户分组的 claim，例如 groups。",
+        "adminGroup": "管理员分组",
+        "adminGroupWarning": "此分组中的账户会成为管理员。只有当分组 claim 完全由身份提供方的管理员控制时才可设置；多租户身份提供方，或用户能自行修改分组的身份提供方，切勿配置此项。",
+        "enabled": "启用"
+      },
+      "confirmDelete": {
+        "title": "删除 OIDC 提供方",
+        "description": "删除 {{name}}？其用户将无法再通过它登录。已有关联账户的提供方不能删除，请改为停用。",
+        "confirm": "删除提供方"
+      }
+    },
+    "ldap": {
+      "title": "LDAP 目录",
+      "description": "对目录做密码登录：服务账号 bind、搜索用户、用户 bind、组映射。",
+      "ownerOnly": "只有所有者可以修改目录或运行测试：能修改目录地址的人就能冒充任何目录账户登录。",
+      "readOnly": "由配置文件定义，在此处只读。",
+      "empty": "尚未配置目录。",
+      "fields": {
+        "name": "名称",
+        "url": "URL",
+        "urlHint": "ldaps://host:636，或 ldap://host:389 加 StartTLS。明文 ldap:// 仅限 localhost。",
+        "startTls": "StartTLS",
+        "tlsVerify": "校验服务器证书",
+        "tlsVerifyWarning": "证书校验已关闭：网络路径上的任何人都能读取发往目录的密码。",
+        "bindDn": "Bind DN（服务账号）",
+        "bindDnHint": "留空：以匿名方式搜索。",
+        "bindPassword": "Bind 密码",
+        "bindPasswordSet": "已设置密码。留空则保持不变；修改 URL、TLS 或 Bind DN 时需重新输入。",
+        "reenterPassword": "连接已修改：请重新输入 Bind 密码。",
+        "userBaseDn": "用户 Base DN",
+        "userFilter": "用户过滤器",
+        "userFilterHint": "留空：(objectClass=person)。",
+        "usernameAttr": "用户名属性",
+        "usernameAttrHint": "留空：uid（Active Directory：sAMAccountName）。",
+        "emailAttr": "邮箱属性",
+        "displayNameAttr": "显示名属性",
+        "groupBaseDn": "分组 Base DN",
+        "groupBaseDnHint": "设置后：其下的目录分组映射到同名的 deskhaven 用户组。",
+        "groupFilter": "分组过滤器",
+        "groupFilterHint": "留空：使用用户的 memberOf。占位符 {user_dn} 与 {username}。",
+        "adminGroupDn": "管理员分组 DN",
+        "adminGroupDnHint": "成员会成为管理员（所有者保持不变）。",
+        "enabled": "启用"
+      },
+      "create": "保存目录",
+      "save": "保存修改",
+      "delete": "删除目录",
+      "conflict": "他人刚修改了目录，保存会覆盖你编辑的字段。",
+      "confirmDelete": {
+        "title": "删除 LDAP 目录",
+        "description": "删除 {{name}}？在重新配置目录之前，其账户都无法登录。",
+        "confirm": "删除目录"
+      }
+    },
+    "diagnostics": {
+      "title": "测试目录",
+      "savedHint": "测试使用已保存的目录。",
+      "unsavedHint": "测试使用表单当前内容（尚未保存）；测试服务账号时请输入 Bind 密码。",
+      "testConnection": "测试连接",
+      "testUser": "测试用户",
+      "username": "用户名",
+      "password": "密码（可选）",
+      "passwordHint": "填写密码时会同时执行用户 bind。密码错误会像登录失败一样计入该账户的登录锁定。",
+      "resultLabel": "测试结果",
+      "passed": "全部步骤通过。",
+      "failed": "有步骤失败。",
+      "steps": {
+        "connect": "连接",
+        "service_bind": "服务账号 bind",
+        "user_search": "搜索用户",
+        "user_bind": "用户 bind",
+        "group_mapping": "组映射"
+      },
+      "status": {
+        "passed": "通过",
+        "failed": "失败",
+        "skipped": "跳过"
+      },
+      "user": {
+        "title": "目录条目",
+        "dn": "DN",
+        "username": "用户名",
+        "email": "邮箱",
+        "displayName": "显示名",
+        "directoryGroups": "目录分组",
+        "mappedGroups": "deskhaven 用户组",
+        "admin": "管理员",
+        "yes": "是",
+        "no": "否",
+        "noAdminGroup": "未配置管理员分组",
+        "none": "无"
+      }
+    },
+    "tfa": {
+      "title": "双因素认证",
+      "description": "策略覆盖的账户须先绑定验证器应用才能使用控制台；在此之前 RustDesk 客户端会拒绝其登录。",
+      "label": "强制双因素认证的范围",
+      "choices": {
+        "off": "不强制（所有人可选）",
+        "admins": "管理员与所有者",
+        "all": "所有人"
+      },
+      "oidcNote": "通过 OIDC 登录的账户不受此约束：请在身份提供方处要求多因素认证。",
+      "ownerOnly": "只有所有者可以修改此策略。",
+      "save": "保存策略",
+      "saved": "策略已保存。",
+      "conflict": "他人修改了此策略，已显示当前值。再次保存以应用你的选择。"
     }
   }
 }
