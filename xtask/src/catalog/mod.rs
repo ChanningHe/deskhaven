@@ -1,18 +1,21 @@
-//! `xtask gen-strategy-catalog --from <dir> [--check]`: regenerate the client option catalog
-//! of the strategy editor (`deskhaven_core::strategies::catalog`) from the client source in
-//! `<dir>`, merged with the human-written [`OVERLAY`]; `--check` fails when the committed
+//! `xtask gen-strategy-catalog [--from <dir>] [--check]`: regenerate the client option
+//! catalog of the strategy editor (`deskhaven_core::strategies::catalog`) from the client
+//! source, merged with the human-written [`OVERLAY`]; `--check` fails when the committed
 //! [`GENERATED`] differs.
 //!
-//! `<dir>` holds the two files read (as text, never built), at their repository paths:
+//! The source is [`VENDOR`] unless `--from` names another directory. It holds the two files
+//! read (as text, never built), at their repository paths, each with a
+//! `// vendored-revision: <commit>` line that must match the overlay's `[source]`:
 //!
 //! ```text
 //! <dir>/hbb_common/src/config.rs                  rustdesk/hbb_common at the client's pin
 //! <dir>/rustdesk/libs/base/src/config/keys.rs     rustdesk/rustdesk
 //! ```
 //!
-//! e.g. `curl -sfL -o <dir>/hbb_common/src/config.rs
-//! https://raw.githubusercontent.com/rustdesk/hbb_common/<rev>/src/config.rs`. Record the two
-//! revisions in the overlay's `[source]` table when bumping them.
+//! To move to a newer client: fetch the two files (e.g. `curl -sfL
+//! https://raw.githubusercontent.com/rustdesk/hbb_common/<rev>/src/config.rs`), trim them
+//! like the vendored copies (keep `option2bool`, the `keys` module and the key lists), update
+//! their header and revision line and the overlay's `[source]`, then regenerate.
 
 mod overlay;
 mod render;
@@ -28,10 +31,13 @@ use crate::error::XtaskError;
 pub const OVERLAY: &str = "crates/deskhaven-core/src/strategies/catalog/overlay.toml";
 /// The generated module, relative to the repository root.
 pub const GENERATED: &str = "crates/deskhaven-core/src/strategies/catalog/generated.rs";
+/// The vendored client source, relative to the repository root.
+pub const VENDOR: &str = "xtask/vendor/strategy-catalog";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
-    pub from: PathBuf,
+    /// `None`: [`VENDOR`].
+    pub from: Option<PathBuf>,
     pub check: bool,
 }
 
@@ -52,26 +58,28 @@ impl Args {
                 other => return Err(XtaskError::UnknownArgument(other.to_owned())),
             }
         }
-        let from = from.ok_or(XtaskError::MissingArgument("--from <dir>"))?;
         Ok(Self { from, check })
     }
 }
 
 pub fn run(root: &Path, args: &Args) -> Result<(), XtaskError> {
-    let generated = generate(&args.from, &read(&root.join(OVERLAY))?)?;
+    let from = args.from.clone().unwrap_or_else(|| root.join(VENDOR));
+    let generated = generate(&from, &read(&root.join(OVERLAY))?)?;
     let path = root.join(GENERATED);
     let current = match fs::read_to_string(&path) {
         Ok(text) => Some(text),
         Err(err) if err.kind() == io::ErrorKind::NotFound => None,
         Err(source) => return Err(io_error(&path, source)),
     };
-    if current.as_deref() != Some(generated.as_str()) {
-        if args.check {
-            return Err(XtaskError::CatalogDrift(GENERATED.to_owned()));
-        }
-        fs::write(&path, &generated).map_err(|source| io_error(&path, source))?;
+    if current.as_deref() == Some(generated.as_str()) {
+        eprintln!("xtask: {GENERATED} is up to date");
+        return Ok(());
     }
-    eprintln!("xtask: {GENERATED} is up to date");
+    if args.check {
+        return Err(XtaskError::CatalogDrift(GENERATED.to_owned()));
+    }
+    fs::write(&path, &generated).map_err(|source| io_error(&path, source))?;
+    eprintln!("xtask: {GENERATED} updated");
     Ok(())
 }
 
@@ -79,10 +87,28 @@ pub fn run(root: &Path, args: &Args) -> Result<(), XtaskError> {
 fn generate(from: &Path, overlay: &str) -> Result<String, XtaskError> {
     let config_rs = read(&from.join(source::CONFIG_RS))?;
     let keys_rs = read(&from.join(source::KEYS_RS))?;
-    let keys = source::settings_keys(&config_rs, &keys_rs)
-        .map_err(|e| XtaskError::Catalog(e.to_string()))?;
-    let catalog = overlay::merge(&keys, overlay).map_err(|e| XtaskError::Catalog(e.to_string()))?;
+    let keys = source::settings_keys(&config_rs, &keys_rs).map_err(catalog_error)?;
+    let catalog = overlay::merge(&keys, overlay).map_err(catalog_error)?;
+    check_revision(source::CONFIG_RS, &config_rs, &catalog.source.hbb_common)?;
+    check_revision(source::KEYS_RS, &keys_rs, &catalog.source.rustdesk)?;
     Ok(render::render(&catalog))
+}
+
+/// The file's `// vendored-revision:` line names the commit the overlay records.
+fn check_revision(file: &str, src: &str, recorded: &str) -> Result<(), XtaskError> {
+    match source::revision(src) {
+        Some(rev) if rev == recorded => Ok(()),
+        Some(rev) => Err(XtaskError::Catalog(format!(
+            "{file} is from {rev} but overlay.toml [source] records {recorded}"
+        ))),
+        None => Err(XtaskError::Catalog(format!(
+            "{file} has no `// vendored-revision:` line"
+        ))),
+    }
+}
+
+fn catalog_error(err: impl ToString) -> XtaskError {
+    XtaskError::Catalog(err.to_string())
 }
 
 fn read(path: &Path) -> Result<String, XtaskError> {
@@ -100,6 +126,11 @@ fn io_error(path: &Path, source: io::Error) -> XtaskError {
 mod tests {
     use super::*;
 
+    /// The fixture's credential-like key must be described.
+    const OVERLAY_TEXT: &str = "[source]\nrustdesk = \"fixture-rustdesk\"\nhbb_common = \"fixture-hbb\"\n\
+        [options.proxy-password]\ngroup = \"network\"\nkind = \"text\"\nsecret = true\n\
+        label = { en = \"P\", zh = \"P\" }\ndescription = { en = \"\", zh = \"\" }\n";
+
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()
     }
@@ -114,15 +145,12 @@ mod tests {
         assert_eq!(
             parsed,
             Args {
-                from: PathBuf::from("src"),
+                from: Some(PathBuf::from("src")),
                 check: true
             }
         );
-        assert!(!Args::parse(&args(&["--from", "x"])).unwrap().check);
-        assert!(matches!(
-            Args::parse(&args(&["--check"])),
-            Err(XtaskError::MissingArgument(_))
-        ));
+        let vendored = Args::parse(&args(&["--check"])).unwrap();
+        assert_eq!(vendored.from, None);
         assert!(matches!(
             Args::parse(&args(&["--from"])),
             Err(XtaskError::MissingArgument(_))
@@ -135,9 +163,7 @@ mod tests {
 
     #[test]
     fn generates_from_the_fixture_sources_and_reports_bad_input() {
-        let overlay = "[source]\nrustdesk = \"r\"\nhbb_common = \"h\"\n[options]\n";
-
-        let out = generate(&fixture(), overlay).unwrap();
+        let out = generate(&fixture(), OVERLAY_TEXT).unwrap();
 
         assert!(out.contains("key: \"enable-keyboard\""), "{out}");
         assert!(out.contains("key: \"disable-udp\""));
@@ -146,7 +172,7 @@ mod tests {
             "local settings are not strategy options"
         );
         assert!(matches!(
-            generate(&fixture().join("nope"), overlay),
+            generate(&fixture().join("nope"), OVERLAY_TEXT),
             Err(XtaskError::Io { .. })
         ));
         assert!(matches!(
@@ -156,17 +182,27 @@ mod tests {
     }
 
     #[test]
+    fn the_vendored_revisions_must_match_the_overlay() {
+        let stale = OVERLAY_TEXT.replace("fixture-hbb", "abc1234");
+
+        let err = generate(&fixture(), &stale).unwrap_err().to_string();
+
+        assert!(
+            err.contains("fixture-hbb") && err.contains("abc1234"),
+            "{err}"
+        );
+        assert!(check_revision("f", "no marker", "r").is_err());
+        assert!(check_revision("f", "// vendored-revision: r\n", "r").is_ok());
+    }
+
+    #[test]
     fn check_detects_drift_and_write_fixes_it() {
         let root = tempfile::tempdir().unwrap();
         let overlay = root.path().join(OVERLAY);
         fs::create_dir_all(overlay.parent().unwrap()).unwrap();
-        fs::write(
-            &overlay,
-            "[source]\nrustdesk = \"r\"\nhbb_common = \"h\"\n[options]\n",
-        )
-        .unwrap();
+        fs::write(&overlay, OVERLAY_TEXT).unwrap();
         let check = Args {
-            from: fixture(),
+            from: Some(fixture()),
             check: true,
         };
         let write = Args {
@@ -188,9 +224,12 @@ mod tests {
     }
 
     #[test]
-    fn committed_catalog_matches_its_overlay_location() {
+    fn the_committed_catalog_is_what_the_vendored_source_generates() {
         let root = crate::repo_root();
-        assert!(root.join(OVERLAY).is_file());
-        assert!(root.join(GENERATED).is_file());
+        let overlay = read(&root.join(OVERLAY)).unwrap();
+
+        let generated = generate(&root.join(VENDOR), &overlay).unwrap();
+
+        assert_eq!(read(&root.join(GENERATED)).unwrap(), generated);
     }
 }

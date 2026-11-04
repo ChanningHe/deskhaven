@@ -64,6 +64,9 @@ pub struct CatalogOption {
     pub default: Option<&'static str>,
     /// The value is a credential: never shown back, masked in audit rows.
     pub secret: bool,
+    /// Left out of the typed form of the console (custom-client settings); still valid in a
+    /// strategy through the advanced editor.
+    pub advanced_only: bool,
     pub label: Text,
     pub description: Text,
 }
@@ -149,7 +152,20 @@ mod tests {
             .filter(|o| o.secret)
             .map(|o| o.key)
             .collect();
-        assert_eq!(secret, ["proxy-password", "preset-address-book-password"]);
+        assert_eq!(
+            secret,
+            [
+                "proxy-password",
+                "preset-address-book-password",
+                "ice-servers"
+            ]
+        );
+        let advanced: Vec<_> = options()
+            .iter()
+            .filter(|o| o.advanced_only)
+            .map(|o| o.key)
+            .collect();
+        assert_eq!(advanced, ["proxy-url", "proxy-username", "proxy-password"]);
         assert!(is_secret("proxy-password"));
         assert!(!is_secret("temporary-password-length"));
         assert!(!is_secret("not-in-the-catalog"));

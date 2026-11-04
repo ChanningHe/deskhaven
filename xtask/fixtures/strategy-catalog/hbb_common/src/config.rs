@@ -1,3 +1,4 @@
+// vendored-revision: fixture-hbb
 // Trimmed fixture of rustdesk/hbb_common `src/config.rs`: only the shapes the strategy
 // catalog generator reads (the `keys` module and `option2bool`).
 

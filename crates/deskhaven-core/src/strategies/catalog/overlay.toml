@@ -1,12 +1,13 @@
-# Human-written half of the strategy option catalog. `cargo xtask gen-strategy-catalog
-# --from <dir>` merges it onto the keys read from the client source (KEYS_SETTINGS of
-# rustdesk/rustdesk libs/base/src/config/keys.rs) and writes generated.rs; see
-# xtask/src/catalog/mod.rs.
+# Human-written half of the strategy option catalog. `cargo xtask gen-strategy-catalog`
+# merges it onto the keys read from the vendored client source (xtask/vendor/strategy-catalog:
+# KEYS_SETTINGS of rustdesk/rustdesk libs/base/src/config/keys.rs) and writes generated.rs;
+# see xtask/src/catalog/mod.rs. `[source]` must name the vendored files' revisions.
 #
 # Per option: group (security | permissions | display | network | recording | presets |
 # other), kind (bool | choice | number | text), optional choices / min / max, default (only
 # where the source's option2bool does not imply one), secret (text only: never shown in
-# clear, masked in audit rows), label and description in en and zh.
+# clear, masked in audit rows; required when the name suggests a credential), advanced_only
+# (left out of the typed form), label and description in en and zh.
 #
 # Facts not derivable from the key lists are taken from the client source at the revision
 # below, as noted per entry.
@@ -145,6 +146,7 @@ description = { en = "Which passwords are accepted when sessions are approved wi
 
 # desktop_setting_page.dart lengthRadios ['6', '8', '10'].
 [options.temporary-password-length]
+secret = false
 group = "security"
 kind = "choice"
 default = "6"
@@ -157,6 +159,7 @@ label = { en = "One-time password length", zh = "一次性密码长度" }
 description = { en = "Length of the generated one-time password.", zh = "生成的一次性密码长度。" }
 
 [options.allow-numeric-one-time-password]
+secret = false
 group = "security"
 kind = "bool"
 label = { en = "Numeric one-time password", zh = "纯数字一次性密码" }
@@ -318,7 +321,9 @@ kind = "text"
 label = { en = "API server", zh = "API 服务器" }
 description = { en = "API server address. A wrong value stops strategy delivery to the device.", zh = "API 服务器地址。填错会使设备再也收不到策略。" }
 
+# The server public key: public by design.
 [options.key]
+secret = false
 group = "network"
 kind = "text"
 label = { en = "Server public key", zh = "服务器公钥" }
@@ -346,7 +351,9 @@ default = "N"
 label = { en = "Disable UDP", zh = "禁用 UDP" }
 description = { en = "Use TCP only.", zh = "只使用 TCP。" }
 
+# STUN / TURN server list; TURN entries can carry credentials, so treated as secret.
 [options.ice-servers]
+secret = true
 group = "network"
 kind = "text"
 label = { en = "ICE servers", zh = "ICE 服务器" }
@@ -371,20 +378,24 @@ label = { en = "WebRTC congestion control", zh = "WebRTC 拥塞控制" }
 description = { en = "Enable congestion control on WebRTC connections.", zh = "在 WebRTC 连接上启用拥塞控制。" }
 
 # hbb_common config.rs: proxy-* are custom-client settings; the client reads its proxy from
-# its own proxy configuration, so these may have no effect when set by a strategy.
+# its own proxy configuration, so these may have no effect when set by a strategy. Kept out
+# of the typed form (advanced_only); still settable in the advanced editor.
 [options.proxy-url]
+advanced_only = true
 group = "network"
 kind = "text"
 label = { en = "Proxy URL", zh = "代理地址" }
 description = { en = "SOCKS5 / HTTP proxy (a custom client setting; may have no effect from a strategy).", zh = "SOCKS5 / HTTP 代理（定制客户端设置，经策略下发可能不生效）。" }
 
 [options.proxy-username]
+advanced_only = true
 group = "network"
 kind = "text"
 label = { en = "Proxy user name", zh = "代理用户名" }
 description = { en = "User name of the proxy.", zh = "代理的用户名。" }
 
 [options.proxy-password]
+advanced_only = true
 group = "network"
 kind = "text"
 secret = true

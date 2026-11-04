@@ -150,6 +150,9 @@ jobs:
       # The committed admin API OpenAPI document must match the code (the console's
       # types are generated from it). Reuses the test build; only xtask itself links.
       - run: cargo xtask gen-openapi --check
+      # The strategy option catalog must match the vendored client source and the overlay
+      # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
+      - run: cargo xtask gen-strategy-catalog --check
 
   test-postgres:
     needs: [clippy, deny]

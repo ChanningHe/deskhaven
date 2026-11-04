@@ -1,3 +1,4 @@
+// vendored-revision: fixture-rustdesk
 //! Trimmed fixture of rustdesk/rustdesk `libs/base/src/config/keys.rs`.
 
 pub use hbb_common::config::keys::*;

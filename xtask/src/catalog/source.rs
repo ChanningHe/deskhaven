@@ -24,6 +24,19 @@ pub enum SourceError {
     Unresolved(String),
     #[error("unexpected shape in option2bool: `{0}`")]
     Shape(String),
+    #[error("option `{0}` appears twice in the key list")]
+    Duplicate(String),
+}
+
+/// Marker line naming the upstream commit a vendored file was copied from.
+const REVISION_MARKER: &str = "// vendored-revision: ";
+
+/// The commit recorded in a vendored file's `// vendored-revision: <rev>` line.
+pub fn revision(src: &str) -> Option<&str> {
+    src.lines()
+        .find_map(|line| line.strip_prefix(REVISION_MARKER))
+        .map(str::trim)
+        .filter(|rev| !rev.is_empty())
 }
 
 /// One option of the key list with the default its name implies (`option2bool`).
@@ -59,14 +72,16 @@ pub fn settings_keys(config_rs: &str, keys_rs: &str) -> Result<Vec<SourceKey>, S
     consts.extend(shared);
     let rules = bool_rules(config_rs, &consts)?;
     let names = key_list(keys_rs, SETTINGS_LIST)?;
-    names
-        .iter()
-        .map(|name| {
-            let key = resolve(name, &consts)?;
-            let default = rules.iter().find(|r| r.matches(&key)).map(|r| r.default);
-            Ok(SourceKey { key, default })
-        })
-        .collect()
+    let mut keys: Vec<SourceKey> = Vec::with_capacity(names.len());
+    for name in &names {
+        let key = resolve(name, &consts)?;
+        if keys.iter().any(|k| k.key == key) {
+            return Err(SourceError::Duplicate(key));
+        }
+        let default = rules.iter().find(|r| r.matches(&key)).map(|r| r.default);
+        keys.push(SourceKey { key, default });
+    }
+    Ok(keys)
 }
 
 /// `pub const NAME: &str = "value";` items of `src` (one statement may span lines).
@@ -264,6 +279,22 @@ mod tests {
         assert_eq!(rules[1].prefixes, ["allow-"]);
         assert_eq!(rules[1].keys, ["stop-service", "direct-server"]);
         assert_eq!(rules[1].default, "N");
+    }
+
+    #[test]
+    fn vendored_files_record_their_revision_and_duplicates_are_refused() {
+        assert_eq!(revision(CONFIG), Some("fixture-hbb"));
+        assert_eq!(revision(KEYS), Some("fixture-rustdesk"));
+        assert_eq!(revision("// vendored-revision: \nfn x() {}"), None);
+        assert_eq!(revision("fn x() {}"), None);
+        let twice = KEYS.replace(
+            "    OPTION_DISABLE_UDP,\n",
+            "    OPTION_DISABLE_UDP,\n    OPTION_WHITELIST,\n",
+        );
+        assert_eq!(
+            settings_keys(CONFIG, &twice),
+            Err(SourceError::Duplicate("whitelist".to_owned()))
+        );
     }
 
     #[test]

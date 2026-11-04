@@ -20,9 +20,7 @@ pub enum XtaskError {
     OpenApiDrift(String),
     #[error("cannot generate the strategy catalog: {0}")]
     Catalog(String),
-    #[error(
-        "{0} is out of date; run `cargo xtask gen-strategy-catalog --from <dir>` and commit it"
-    )]
+    #[error("{0} is out of date; run `cargo xtask gen-strategy-catalog` and commit it")]
     CatalogDrift(String),
     #[error("missing argument {0}")]
     MissingArgument(&'static str),

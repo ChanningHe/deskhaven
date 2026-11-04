@@ -64,11 +64,12 @@ fn entry(out: &mut String, e: &Entry) {
         .map_or_else(|| "None".to_owned(), |d| format!("Some({})", lit(d)));
     let _ = write!(
         out,
-        "    CatalogOption {{\n        key: {key},\n        kind: {kind},\n        group: Group::{group},\n        default: {default},\n        secret: {secret},\n        label: {label},\n        description: {description},\n    }},\n",
+        "    CatalogOption {{\n        key: {key},\n        kind: {kind},\n        group: Group::{group},\n        default: {default},\n        secret: {secret},\n        advanced_only: {advanced_only},\n        label: {label},\n        description: {description},\n    }},\n",
         key = lit(&e.key),
         kind = kind(&e.kind),
         group = group_variant(&e.group),
         secret = e.secret,
+        advanced_only = e.advanced_only,
         label = text(&e.label),
         description = text(&e.description),
     );
@@ -130,6 +131,7 @@ mod tests {
                     group: "security".to_owned(),
                     default: None,
                     secret: false,
+                    advanced_only: false,
                     label: t("Say \"hi\"", "批准"),
                     description: t("a\\b", ""),
                 },
@@ -142,6 +144,7 @@ mod tests {
                     group: "network".to_owned(),
                     default: Some("21118".to_owned()),
                     secret: true,
+                    advanced_only: true,
                     label: t("Port", "端口"),
                     description: t("", ""),
                 },
@@ -164,6 +167,7 @@ mod tests {
         assert!(out.contains("kind: OptionKind::Number { min: Some(1), max: None },"));
         assert!(out.contains("default: Some(\"21118\"),"));
         assert!(out.contains("secret: true,"));
+        assert!(out.contains("advanced_only: true,"));
         assert!(out.ends_with("];\n"));
     }
 }

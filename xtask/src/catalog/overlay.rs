@@ -65,8 +65,12 @@ struct OverlayOption {
     kind: String,
     #[serde(default)]
     default: Option<String>,
+    /// Required (true or false) when the name suggests a credential.
     #[serde(default)]
-    secret: bool,
+    secret: Option<bool>,
+    /// Left out of the typed form; set only through the advanced editor.
+    #[serde(default)]
+    advanced_only: bool,
     #[serde(default)]
     choices: Vec<Choice>,
     #[serde(default)]
@@ -93,6 +97,7 @@ pub struct Entry {
     pub group: String,
     pub default: Option<String>,
     pub secret: bool,
+    pub advanced_only: bool,
     pub label: Text,
     pub description: Text,
 }
@@ -112,7 +117,7 @@ pub fn merge(keys: &[SourceKey], toml: &str) -> Result<Catalog, OverlayError> {
         .iter()
         .map(|k| match options.remove(&k.key) {
             Some(o) => entry(k, o),
-            None => Ok(undescribed(k)),
+            None => undescribed(k),
         })
         .collect::<Result<Vec<_>, _>>()?;
     if let Some(stale) = options.into_keys().next() {
@@ -124,9 +129,30 @@ pub fn merge(keys: &[SourceKey], toml: &str) -> Result<Catalog, OverlayError> {
     })
 }
 
-/// A key the overlay does not describe yet.
-fn undescribed(k: &SourceKey) -> Entry {
-    Entry {
+/// Name segments (split at `-` / `_`) that suggest a credential: one containing `pass`,
+/// `secret` or `token`, or the segment `key`.
+fn looks_secret(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    lower.split(['-', '_']).any(|segment| {
+        segment == "key"
+            || ["pass", "secret", "token"]
+                .iter()
+                .any(|f| segment.contains(f))
+    })
+}
+
+const SECRET_UNDECIDED: &str = "the name suggests a credential: set `secret` to true or false";
+
+/// A key the overlay does not describe yet: a text option in `other`, unless its name
+/// suggests a credential (then the overlay must decide).
+fn undescribed(k: &SourceKey) -> Result<Entry, OverlayError> {
+    if looks_secret(&k.key) {
+        return Err(OverlayError::Invalid {
+            key: k.key.clone(),
+            reason: SECRET_UNDECIDED.to_owned(),
+        });
+    }
+    Ok(Entry {
         key: k.key.clone(),
         kind: match k.default {
             Some(_) => Kind::Bool,
@@ -135,6 +161,7 @@ fn undescribed(k: &SourceKey) -> Entry {
         group: "other".to_owned(),
         default: k.default.map(str::to_owned),
         secret: false,
+        advanced_only: false,
         label: Text {
             en: k.key.clone(),
             zh: k.key.clone(),
@@ -143,7 +170,7 @@ fn undescribed(k: &SourceKey) -> Entry {
             en: String::new(),
             zh: String::new(),
         },
-    }
+    })
 }
 
 fn entry(k: &SourceKey, o: OverlayOption) -> Result<Entry, OverlayError> {
@@ -162,7 +189,11 @@ fn entry(k: &SourceKey, o: OverlayOption) -> Result<Entry, OverlayError> {
     if let Some(value) = &default {
         check_default(&kind, value).map_err(|r| invalid(&r))?;
     }
-    if o.secret && kind != Kind::Text {
+    let secret = match (o.secret, looks_secret(&k.key)) {
+        (None, true) => return Err(invalid(SECRET_UNDECIDED)),
+        (secret, _) => secret.unwrap_or(false),
+    };
+    if secret && kind != Kind::Text {
         return Err(invalid("only text options can be secret"));
     }
     Ok(Entry {
@@ -170,7 +201,8 @@ fn entry(k: &SourceKey, o: OverlayOption) -> Result<Entry, OverlayError> {
         kind,
         group: o.group,
         default,
-        secret: o.secret,
+        secret,
+        advanced_only: o.advanced_only,
         label: o.label,
         description: o.description,
     })
@@ -250,6 +282,36 @@ mod tests {
             Err(OverlayError::Invalid { reason, .. }) => reason,
             other => panic!("expected Invalid, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn credential_like_names_need_an_explicit_secret_decision() {
+        assert!(looks_secret("proxy-password") && looks_secret("key"));
+        assert!(looks_secret("api_token") && looks_secret("client-secret"));
+        assert!(!looks_secret("enable-keyboard") && !looks_secret("whitelist"));
+        let with = |list: &[&str]| -> Vec<SourceKey> {
+            list.iter()
+                .map(|k| SourceKey {
+                    key: (*k).to_owned(),
+                    default: None,
+                })
+                .collect()
+        };
+
+        let undescribed = merge(&with(&["proxy-password"]), &format!("{HEAD}[options]\n"));
+        assert_eq!(invalid(undescribed), SECRET_UNDECIDED);
+        let text = "group = \"network\"\nkind = \"text\"";
+        let silent = format!("{HEAD}{}", option("key", text));
+        assert_eq!(invalid(merge(&with(&["key"]), &silent)), SECRET_UNDECIDED);
+        let decided = format!(
+            "{HEAD}{}",
+            option(
+                "key",
+                &format!("{text}\nsecret = false\nadvanced_only = true")
+            )
+        );
+        let entry = &merge(&with(&["key"]), &decided).unwrap().entries[0];
+        assert!(!entry.secret && entry.advanced_only);
     }
 
     #[test]
