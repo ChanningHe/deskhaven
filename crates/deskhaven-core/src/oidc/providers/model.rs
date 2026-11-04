@@ -39,7 +39,9 @@ pub struct Provider {
     pub auto_provision: bool,
     /// Claim of the ID token listing the user's groups (string or array of strings).
     pub group_claim: Option<String>,
-    /// A value of `group_claim` that makes a provisioned account an admin.
+    /// A value of `group_claim` that makes a provisioned account an admin. The trust
+    /// boundary is whoever controls that claim: only safe when the IdP's administrators
+    /// alone do (never a multi-tenant IdP, or one where users edit their own groups).
     pub admin_group: Option<String>,
     pub enabled: bool,
     pub managed_by: ManagedBy,

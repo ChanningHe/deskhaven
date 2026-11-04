@@ -3,6 +3,7 @@
 
 use sea_orm::DbErr;
 
+use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 use crate::login_events::LoginResult;
 use crate::users::UserError;
@@ -25,6 +26,9 @@ pub enum ProviderError {
     InUse,
     #[error("sealing the client secret failed")]
     Crypto(#[source] CryptoError),
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
     #[error("OIDC provider storage failed")]
     Database(#[source] DbErr),
 }
@@ -32,6 +36,15 @@ pub enum ProviderError {
 impl From<DbErr> for ProviderError {
     fn from(err: DbErr) -> Self {
         Self::Database(err)
+    }
+}
+
+impl From<GuardError> for ProviderError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
     }
 }
 

@@ -5,7 +5,9 @@
 //! (unique partial index): a second is a [`DirectoryError::Conflict`] on `enabled`. An
 //! update that changes the URL, StartTLS, certificate verification or the bind DN must
 //! carry the bind password again (else `Invalid` on `bind_password`), so console access
-//! alone cannot redirect the stored password to another server.
+//! alone cannot redirect the stored password to another server. Each `*_guarded` variant
+//! runs a [`TxGuard`] inside its write transaction (the console's audit row and its
+//! owner-only rule, decided on the committed role).
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::ldap_directory::{self, Column};
@@ -22,9 +24,20 @@ use super::error::DirectoryError;
 use super::model::{Directory, DirectoryUpdate, Fields, NewDirectory};
 use super::settings::DirectorySettings;
 use super::{LdapService, validate};
+use crate::console_audit::TxGuard;
 
 impl LdapService {
     pub async fn create_directory(&self, new: NewDirectory) -> Result<Directory, DirectoryError> {
+        self.create_directory_guarded(new, TxGuard::none()).await
+    }
+
+    /// [`create_directory`](Self::create_directory), with `guard` deciding on the new
+    /// directory (no `before`).
+    pub async fn create_directory_guarded(
+        &self,
+        new: NewDirectory,
+        guard: TxGuard<Directory>,
+    ) -> Result<Directory, DirectoryError> {
         let fields = Fields::of_new(&new)?;
         let password = validate::bind_password(new.bind_password.as_deref())?;
         validate::bind_pair(fields.bind_dn.is_some(), password.is_some())?;
@@ -39,12 +52,13 @@ impl LdapService {
         apply(&mut row, fields, now);
         let tx = begin_write(&self.inner.db).await?;
         let created = row.insert(&tx).await.map_err(conflict)?;
-        let created = match password {
+        let created = Directory::from(match password {
             Some(password) => self.write_password(&tx, created, Some(&password)).await?,
             None => created,
-        };
+        });
+        guard.check(&tx, None, Some(&created)).await?;
         tx.commit().await?;
-        Ok(created.into())
+        Ok(created)
     }
 
     pub async fn get_directory(&self, id: i64) -> Result<Directory, DirectoryError> {
@@ -68,8 +82,21 @@ impl LdapService {
         id: i64,
         update: DirectoryUpdate,
     ) -> Result<Directory, DirectoryError> {
+        self.update_directory_guarded(id, update, TxGuard::none())
+            .await
+    }
+
+    /// [`update_directory`](Self::update_directory), with `guard` deciding on the
+    /// directory before and after.
+    pub async fn update_directory_guarded(
+        &self,
+        id: i64,
+        update: DirectoryUpdate,
+        guard: TxGuard<Directory>,
+    ) -> Result<Directory, DirectoryError> {
         let tx = begin_write(&self.inner.db).await?;
         let current = writable(&tx, id).await?;
+        let before = Directory::from(current.clone());
         let fields = Fields::updated(&current, &update)?;
         // The stored password must not follow a changed destination (or lose its TLS)
         // without whoever changes it knowing it: it could be sent to their server.
@@ -96,13 +123,27 @@ impl LdapService {
         if let Some(password) = password {
             updated = self.write_password(&tx, updated, password.as_ref()).await?;
         }
+        let updated = Directory::from(updated);
+        guard.check(&tx, Some(&before), Some(&updated)).await?;
         tx.commit().await?;
-        Ok(updated.into())
+        Ok(updated)
     }
 
     pub async fn delete_directory(&self, id: i64) -> Result<(), DirectoryError> {
+        self.delete_directory_guarded(id, TxGuard::none()).await
+    }
+
+    /// [`delete_directory`](Self::delete_directory), with `guard` deciding on the
+    /// directory (no `after`).
+    pub async fn delete_directory_guarded(
+        &self,
+        id: i64,
+        guard: TxGuard<Directory>,
+    ) -> Result<(), DirectoryError> {
         let tx = begin_write(&self.inner.db).await?;
         let current = writable(&tx, id).await?;
+        let before = Directory::from(current.clone());
+        guard.check(&tx, Some(&before), None).await?;
         current.delete(&tx).await?;
         tx.commit().await?;
         Ok(())

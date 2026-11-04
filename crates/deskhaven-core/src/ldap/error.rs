@@ -1,5 +1,6 @@
 use sea_orm::DbErr;
 
+use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 
 /// Why a directory management operation failed. Variants are stable for API error mapping;
@@ -25,6 +26,10 @@ pub enum DirectoryError {
     #[error("bind password: {0}")]
     Crypto(#[source] CryptoError),
 
+    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
+    #[error(transparent)]
+    Refused(#[from] Refused),
+
     #[error("directory storage failed")]
     Database(#[source] DbErr),
 }
@@ -32,5 +37,14 @@ pub enum DirectoryError {
 impl From<DbErr> for DirectoryError {
     fn from(err: DbErr) -> Self {
         Self::Database(err)
+    }
+}
+
+impl From<GuardError> for DirectoryError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
     }
 }

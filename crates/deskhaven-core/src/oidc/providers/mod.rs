@@ -1,11 +1,12 @@
-//! Provider management (no admin routes yet: M3-09). The client secret is sealed under
+//! Provider management (admin routes: M3-09). The client secret is sealed under
 //! `oidc_providers.client_secret_enc:<id>` (06 §5); the provider is inserted first and the
 //! secret written in the same transaction, once the id is known.
 //!
 //! Providers with `managed_by = config` (bootstrap file, 05 §4.1) are read-only here.
 //! Deleting a provider with linked accounts is refused ([`ProviderError::InUse`]); its
 //! in-flight flows go with it (cascade). Every write drops the login button cache and the
-//! provider's discovery cache before returning.
+//! provider's discovery cache before returning. Each `*_guarded` variant runs a
+//! [`TxGuard`] inside its write transaction (the console's audit row, the actor re-check).
 
 mod buttons;
 mod model;
@@ -26,10 +27,21 @@ pub use model::{LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, 
 
 use super::OidcService;
 use super::error::ProviderError;
+use crate::console_audit::TxGuard;
 use crate::crypto::CryptoError;
 
 impl OidcService {
     pub async fn create_provider(&self, new: NewProvider) -> Result<Provider, ProviderError> {
+        self.create_provider_guarded(new, TxGuard::none()).await
+    }
+
+    /// [`create_provider`](Self::create_provider), with `guard` deciding on the new
+    /// provider (no `before`).
+    pub async fn create_provider_guarded(
+        &self,
+        new: NewProvider,
+        guard: TxGuard<Provider>,
+    ) -> Result<Provider, ProviderError> {
         let name = model::name(&new.name)?;
         let now = self.inner.clock.now();
         let row = oidc_provider::ActiveModel {
@@ -52,13 +64,14 @@ impl OidcService {
         let secret = model::client_secret(new.client_secret.as_deref())?;
         let tx = begin_write(&self.inner.db).await?;
         let created = row.insert(&tx).await.map_err(name_conflict)?;
-        let created = match secret {
+        let created = Provider::from(match secret {
             Some(secret) => self.write_secret(&tx, created, Some(secret)).await?,
             None => created,
-        };
+        });
+        guard.check(&tx, None, Some(&created)).await?;
         tx.commit().await?;
         self.changed(created.id);
-        Ok(created.into())
+        Ok(created)
     }
 
     pub async fn get_provider(&self, id: i64) -> Result<Provider, ProviderError> {
@@ -87,22 +100,49 @@ impl OidcService {
         id: i64,
         update: ProviderUpdate,
     ) -> Result<Provider, ProviderError> {
+        self.update_provider_guarded(id, update, TxGuard::none())
+            .await
+    }
+
+    /// [`update_provider`](Self::update_provider), with `guard` deciding on the provider
+    /// before and after.
+    pub async fn update_provider_guarded(
+        &self,
+        id: i64,
+        update: ProviderUpdate,
+        guard: TxGuard<Provider>,
+    ) -> Result<Provider, ProviderError> {
         let tx = begin_write(&self.inner.db).await?;
         let current = writable(&tx, id).await?;
+        let before = Provider::from(current.clone());
         let changes = changes(&current, &update, self.inner.clock.now())?;
         let mut updated = changes.update(&tx).await.map_err(name_conflict)?;
         if let Some(secret) = &update.client_secret {
             let secret = model::client_secret(secret.as_deref())?;
             updated = self.write_secret(&tx, updated, secret).await?;
         }
+        let updated = Provider::from(updated);
+        guard.check(&tx, Some(&before), Some(&updated)).await?;
         tx.commit().await?;
         self.changed(id);
-        Ok(updated.into())
+        Ok(updated)
     }
 
     pub async fn delete_provider(&self, id: i64) -> Result<(), ProviderError> {
+        self.delete_provider_guarded(id, TxGuard::none()).await
+    }
+
+    /// [`delete_provider`](Self::delete_provider), with `guard` deciding on the provider
+    /// (no `after`).
+    pub async fn delete_provider_guarded(
+        &self,
+        id: i64,
+        guard: TxGuard<Provider>,
+    ) -> Result<(), ProviderError> {
         let tx = begin_write(&self.inner.db).await?;
         let current = writable(&tx, id).await?;
+        let before = Provider::from(current.clone());
+        guard.check(&tx, Some(&before), None).await?;
         current.delete(&tx).await.map_err(|err| {
             if is_foreign_key_violation(&err) {
                 ProviderError::InUse
