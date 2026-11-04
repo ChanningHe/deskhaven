@@ -21,8 +21,10 @@
 //! `forget_device` and `cache().invalidate()` itself, and `invalidate()` again whenever it
 //! changes a device's owner or device group (or stamps `changed_at` in [`DeviceInputs`]).
 
+mod admin;
 mod assign;
 mod cache;
+pub mod catalog;
 mod crud;
 mod effective;
 mod error;
@@ -35,13 +37,14 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 
+pub use admin::{AssignedTarget, StrategyQuery, StrategySort, StrategySortField, StrategySummary};
 pub(crate) use assign::{assign_in, assignment_in, id_by_name_in};
 pub use assign::{forget_device, forget_device_group, forget_group, forget_user};
 pub use cache::StrategyCache;
 pub use effective::{DeviceInputs, EffectiveStrategy};
 pub use error::StrategyError;
 pub use model::{Assignment, NewStrategy, Strategy, StrategyUpdate, Target};
-pub use options::{KEY_MAX_LEN, MAX_OPTIONS, Options, VALUE_MAX_LEN};
+pub use options::{KEY_MAX_LEN, MAX_OPTIONS, Options, OptionsPatch, VALUE_MAX_LEN};
 
 use crate::clock::SharedClock;
 use crate::groups::{GroupChange, GroupService};

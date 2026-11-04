@@ -3,7 +3,7 @@ use deskhaven_db::entity::strategy;
 use deskhaven_db::entity::strategy_assignment::TargetType;
 use deskhaven_db::time::TimestampMs;
 
-use super::options::{self, Options};
+use super::options::{self, Options, OptionsPatch};
 
 /// What a strategy is assigned to. Each target has at most one strategy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -113,10 +113,22 @@ impl NewStrategy {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is. `options` replaces the whole map.
+/// Fields to change; `None` leaves a field as it is. `options` replaces the whole map, then
+/// `options_patch` changes single options (applied on top, in the same transaction, so a
+/// patch never overwrites options another writer changed meanwhile).
 #[derive(Clone, Debug, Default)]
 pub struct StrategyUpdate {
     pub name: Option<String>,
     pub options: Option<Options>,
+    pub options_patch: OptionsPatch,
     pub note: Option<String>,
+}
+
+impl StrategyUpdate {
+    pub(super) fn is_empty(&self) -> bool {
+        self.name.is_none()
+            && self.options.is_none()
+            && self.options_patch.is_empty()
+            && self.note.is_none()
+    }
 }

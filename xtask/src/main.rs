@@ -2,7 +2,10 @@
 //!
 //! - `dist`: build the web console and the release binary that embeds it.
 //! - `gen-openapi [--check]`: write (or check) the admin API OpenAPI document.
+//! - `gen-strategy-catalog --from <dir> [--check]`: regenerate (or check) the strategy
+//!   editor's client option catalog from the client source in `<dir>`.
 
+mod catalog;
 mod dist;
 mod error;
 mod openapi;
@@ -13,7 +16,7 @@ use std::process::ExitCode;
 
 use error::XtaskError;
 
-const USAGE: &str = "usage: cargo xtask <task> [args]\n\ntasks:\n  dist                   build web/dist, then `cargo build --release -p deskhaven`\n  gen-openapi [--check]  write the admin API OpenAPI document (--check: fail on drift)";
+const USAGE: &str = "usage: cargo xtask <task> [args]\n\ntasks:\n  dist                   build web/dist, then `cargo build --release -p deskhaven`\n  gen-openapi [--check]  write the admin API OpenAPI document (--check: fail on drift)\n  gen-strategy-catalog --from <dir> [--check]\n                         regenerate the strategy option catalog from the client source";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -40,6 +43,7 @@ fn run(task: Option<&str>, args: &[String]) -> Result<(), XtaskError> {
     match task {
         Some("dist") => dist::run(repo_root(), &cargo()),
         Some("gen-openapi") => openapi::run(repo_root(), openapi::Mode::parse(args)?),
+        Some("gen-strategy-catalog") => catalog::run(repo_root(), &catalog::Args::parse(args)?),
         Some(other) => Err(XtaskError::UnknownTask(other.to_owned())),
         None => Err(XtaskError::NoTask),
     }

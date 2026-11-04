@@ -11,6 +11,21 @@ use crate::text;
 /// `config_options` as sent to the client.
 pub type Options = BTreeMap<String, String>;
 
+/// Changes to single options: `Some(value)` sets the option (an empty value included),
+/// `None` removes it from the strategy. Options not named stay as they are.
+pub type OptionsPatch = BTreeMap<String, Option<String>>;
+
+/// `options` with `patch` applied.
+pub(super) fn patched(mut options: Options, patch: &OptionsPatch) -> Options {
+    for (key, change) in patch {
+        match change {
+            Some(value) => drop(options.insert(key.clone(), value.clone())),
+            None => drop(options.remove(key)),
+        }
+    }
+    options
+}
+
 /// Most options one strategy may carry.
 pub const MAX_OPTIONS: usize = 256;
 /// Longest option name, in characters.

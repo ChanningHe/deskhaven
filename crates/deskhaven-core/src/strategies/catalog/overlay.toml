@@ -1,0 +1,459 @@
+# Human-written half of the strategy option catalog. `cargo xtask gen-strategy-catalog
+# --from <dir>` merges it onto the keys read from the client source (KEYS_SETTINGS of
+# rustdesk/rustdesk libs/base/src/config/keys.rs) and writes generated.rs; see
+# xtask/src/catalog/mod.rs.
+#
+# Per option: group (security | permissions | display | network | recording | presets |
+# other), kind (bool | choice | number | text), optional choices / min / max, default (only
+# where the source's option2bool does not imply one), secret (text only: never shown in
+# clear, masked in audit rows), label and description in en and zh.
+#
+# Facts not derivable from the key lists are taken from the client source at the revision
+# below, as noted per entry.
+
+[source]
+rustdesk = "23e5bb4"
+hbb_common = "fae47e0"
+
+# ---- permissions ------------------------------------------------------------------------
+
+# flutter/lib/desktop/pages/desktop_setting_page.dart permissions(): '' / 'custom', 'full', 'view'.
+[options.access-mode]
+group = "permissions"
+kind = "choice"
+default = "custom"
+choices = [
+  { value = "custom", en = "Custom", zh = "自定义" },
+  { value = "full", en = "Full access", zh = "完全访问" },
+  { value = "view", en = "Screen share only", zh = "仅共享屏幕" },
+]
+label = { en = "Permission preset", zh = "权限预设" }
+description = { en = "Permissions of incoming sessions. Full access and screen share override the individual permissions below; custom uses them.", zh = "被控会话的权限。完全访问与仅共享屏幕会覆盖下方各项权限；自定义则按各项权限生效。" }
+
+[options.enable-keyboard]
+group = "permissions"
+kind = "bool"
+label = { en = "Keyboard and mouse", zh = "键盘和鼠标" }
+description = { en = "Let the controlling side send keyboard and mouse input.", zh = "允许控制端发送键盘和鼠标输入。" }
+
+[options.enable-clipboard]
+group = "permissions"
+kind = "bool"
+label = { en = "Clipboard", zh = "剪贴板" }
+description = { en = "Synchronise the clipboard during sessions.", zh = "会话期间同步剪贴板。" }
+
+[options.enable-file-transfer]
+group = "permissions"
+kind = "bool"
+label = { en = "File transfer", zh = "文件传输" }
+description = { en = "Allow file transfer sessions and file copy and paste.", zh = "允许文件传输会话及文件复制粘贴。" }
+
+[options.enable-camera]
+group = "permissions"
+kind = "bool"
+label = { en = "Camera", zh = "摄像头" }
+description = { en = "Let the controlling side view this device's cameras.", zh = "允许控制端查看本设备的摄像头。" }
+
+[options.enable-terminal]
+group = "permissions"
+kind = "bool"
+label = { en = "Terminal", zh = "终端" }
+description = { en = "Allow remote terminal sessions.", zh = "允许远程终端会话。" }
+
+[options.enable-remote-printer]
+group = "permissions"
+kind = "bool"
+label = { en = "Remote printer", zh = "远程打印机" }
+description = { en = "Let the controlling side print to this device's printers.", zh = "允许控制端使用本设备的打印机打印。" }
+
+[options.enable-audio]
+group = "permissions"
+kind = "bool"
+label = { en = "Audio", zh = "音频" }
+description = { en = "Transmit this device's sound to the controlling side.", zh = "将本设备的声音传输给控制端。" }
+
+[options.enable-tunnel]
+group = "permissions"
+kind = "bool"
+label = { en = "TCP tunneling", zh = "TCP 隧道" }
+description = { en = "Allow port forwarding (TCP tunnels) through this device.", zh = "允许经由本设备进行端口转发（TCP 隧道）。" }
+
+[options.enable-remote-restart]
+group = "permissions"
+kind = "bool"
+label = { en = "Remote restart", zh = "远程重启" }
+description = { en = "Let the controlling side restart this device.", zh = "允许控制端重启本设备。" }
+
+[options.enable-record-session]
+group = "permissions"
+kind = "bool"
+label = { en = "Session recording by the controller", zh = "允许控制端录制会话" }
+description = { en = "Let the controlling side record the session.", zh = "允许控制端录制会话。" }
+
+[options.enable-block-input]
+group = "permissions"
+kind = "bool"
+label = { en = "Block user input", zh = "阻止本地输入" }
+description = { en = "Let the controlling side block local keyboard and mouse input (Windows).", zh = "允许控制端阻止本地键盘和鼠标输入（Windows）。" }
+
+[options.enable-privacy-mode]
+group = "permissions"
+kind = "bool"
+label = { en = "Privacy mode", zh = "隐私模式" }
+description = { en = "Let the controlling side black out this device's screen.", zh = "允许控制端遮蔽本设备的屏幕。" }
+
+# src/server/connection.rs handle_authorized_scope_violation (get_bool_option).
+[options.allow-scope-violation-close]
+group = "permissions"
+kind = "bool"
+label = { en = "Close sessions that exceed their permissions", zh = "越权时关闭会话" }
+description = { en = "Close a session when the controlling side attempts something its granted permissions do not cover.", zh = "控制端尝试超出其授权范围的操作时关闭会话。" }
+
+[options.allow-scope-violation-alarm]
+group = "permissions"
+kind = "bool"
+label = { en = "Alarm on permission violations", zh = "越权时告警" }
+description = { en = "Report an alarm to the server the first time a session exceeds its granted permissions.", zh = "会话首次超出授权范围时向服务端上报告警。" }
+
+# ---- security ---------------------------------------------------------------------------
+
+# desktop_setting_page.dart: 'password', 'click', defaultOptionApproveMode ('' or 'password-click').
+[options.approve-mode]
+group = "security"
+kind = "choice"
+default = "password-click"
+choices = [
+  { value = "password", en = "Accept sessions via password", zh = "通过密码接受会话" },
+  { value = "click", en = "Accept sessions via click", zh = "通过点击接受会话" },
+  { value = "password-click", en = "Accept sessions via both", zh = "密码和点击均可" },
+]
+label = { en = "Session approval", zh = "会话接受方式" }
+description = { en = "How incoming sessions are accepted: with a password, by a click on this device, or either.", zh = "被控会话的接受方式：输入密码、在本设备上点击确认，或两者皆可。" }
+
+# flutter/lib/models/server_model.dart kUse*Password.
+[options.verification-method]
+group = "security"
+kind = "choice"
+default = "use-both-passwords"
+choices = [
+  { value = "use-temporary-password", en = "One-time password", zh = "一次性密码" },
+  { value = "use-permanent-password", en = "Permanent password", zh = "固定密码" },
+  { value = "use-both-passwords", en = "Both passwords", zh = "两种密码均可" },
+]
+label = { en = "Password type", zh = "密码类型" }
+description = { en = "Which passwords are accepted when sessions are approved with a password.", zh = "通过密码接受会话时接受哪种密码。" }
+
+# desktop_setting_page.dart lengthRadios ['6', '8', '10'].
+[options.temporary-password-length]
+group = "security"
+kind = "choice"
+default = "6"
+choices = [
+  { value = "6", en = "6 characters", zh = "6 位" },
+  { value = "8", en = "8 characters", zh = "8 位" },
+  { value = "10", en = "10 characters", zh = "10 位" },
+]
+label = { en = "One-time password length", zh = "一次性密码长度" }
+description = { en = "Length of the generated one-time password.", zh = "生成的一次性密码长度。" }
+
+[options.allow-numeric-one-time-password]
+group = "security"
+kind = "bool"
+label = { en = "Numeric one-time password", zh = "纯数字一次性密码" }
+description = { en = "Generate one-time passwords from digits only.", zh = "一次性密码只使用数字。" }
+
+[options.allow-remote-config-modification]
+group = "security"
+kind = "bool"
+label = { en = "Remote configuration modification", zh = "允许远程修改配置" }
+description = { en = "Let a controlling side change this device's settings. Keep off unless every controller is trusted.", zh = "允许控制端修改本设备的设置。除非信任所有控制端，否则保持关闭。" }
+
+[options.enable-lan-discovery]
+group = "security"
+kind = "bool"
+label = { en = "LAN discovery", zh = "局域网发现" }
+description = { en = "Let other clients on the local network discover this device.", zh = "允许局域网内的其他客户端发现本设备。" }
+
+[options.direct-server]
+group = "security"
+kind = "bool"
+label = { en = "Direct IP access", zh = "直接 IP 访问" }
+description = { en = "Accept connections straight to this device's IP address, bypassing the ID server.", zh = "接受直接连接本设备 IP 地址的会话，不经过 ID 服务器。" }
+
+# desktop_setting_page.dart direct access port field: hint '21118', 0-65535.
+[options.direct-access-port]
+group = "security"
+kind = "number"
+min = 1
+max = 65535
+default = "21118"
+label = { en = "Direct access port", zh = "直接访问端口" }
+description = { en = "TCP port of direct IP access.", zh = "直接 IP 访问的 TCP 端口。" }
+
+[options.whitelist]
+group = "security"
+kind = "text"
+label = { en = "IP whitelist", zh = "IP 白名单" }
+description = { en = "Comma-separated IP addresses or CIDR ranges allowed to connect; empty allows all.", zh = "允许连接的 IP 地址或 CIDR 网段，逗号分隔；为空则不限制。" }
+
+# src/server/connection.rs check_id_whitelist: comma-separated, trimmed.
+[options.id-whitelist]
+group = "security"
+kind = "text"
+label = { en = "ID whitelist", zh = "ID 白名单" }
+description = { en = "Comma-separated RustDesk IDs allowed to connect; empty allows all.", zh = "允许连接的 RustDesk ID，逗号分隔；为空则不限制。" }
+
+[options.allow-auto-disconnect]
+group = "security"
+kind = "bool"
+label = { en = "Disconnect idle sessions", zh = "空闲时自动断开" }
+description = { en = "Close incoming sessions after a period without input.", zh = "被控会话在一段时间无操作后自动关闭。" }
+
+# src/server/connection.rs get_auto_disconenct_timer: minutes, unparsable or 0 -> 10.
+[options.auto-disconnect-timeout]
+group = "security"
+kind = "number"
+min = 1
+max = 65535
+default = "10"
+label = { en = "Idle timeout (minutes)", zh = "空闲超时（分钟）" }
+description = { en = "Minutes without input before an idle session is closed.", zh = "无操作多少分钟后关闭会话。" }
+
+[options.allow-only-conn-window-open]
+group = "security"
+kind = "bool"
+label = { en = "Only while the window is open", zh = "仅在窗口打开时允许连接" }
+description = { en = "Accept sessions only while the RustDesk window is open on this device.", zh = "仅在本设备的 RustDesk 窗口打开时接受会话。" }
+
+[options.enable-trusted-devices]
+group = "security"
+kind = "bool"
+label = { en = "Trusted devices", zh = "可信设备" }
+description = { en = "Let controllers that passed two-factor authentication skip it on later sessions.", zh = "已通过双重验证的控制端在之后的会话中可跳过验证。" }
+
+# src/trusted_devices/policy.rs days(): '' or '90' -> 90, '1', '7', '30', '0' = never.
+[options.trusted-device-expiration-days]
+group = "security"
+kind = "choice"
+default = "90"
+choices = [
+  { value = "1", en = "1 day", zh = "1 天" },
+  { value = "7", en = "7 days", zh = "7 天" },
+  { value = "30", en = "30 days", zh = "30 天" },
+  { value = "90", en = "90 days", zh = "90 天" },
+  { value = "0", en = "Never expires", zh = "永不过期" },
+]
+label = { en = "Trusted device validity", zh = "可信设备有效期" }
+description = { en = "How long a trusted controller may skip two-factor authentication.", zh = "可信控制端可免双重验证的时长。" }
+
+# ---- recording --------------------------------------------------------------------------
+
+[options.allow-auto-record-incoming]
+group = "recording"
+kind = "bool"
+label = { en = "Record incoming sessions", zh = "自动录制被控会话" }
+description = { en = "Record every incoming session on this device.", zh = "在本设备上自动录制每个被控会话。" }
+
+[options.windows-service-video-save-directory]
+group = "recording"
+kind = "text"
+label = { en = "Recording folder (Windows service)", zh = "录像目录（Windows 服务）" }
+description = { en = "Folder where the Windows service saves recordings of incoming sessions.", zh = "Windows 服务保存被控会话录像的目录。" }
+
+# ---- display ----------------------------------------------------------------------------
+
+[options.enable-abr]
+group = "display"
+kind = "bool"
+label = { en = "Adaptive bitrate", zh = "自适应码率" }
+description = { en = "Adjust video quality to the available bandwidth.", zh = "根据可用带宽调整画质。" }
+
+[options.enable-hwcodec]
+group = "display"
+kind = "bool"
+label = { en = "Hardware codec", zh = "硬件编解码" }
+description = { en = "Use hardware video encoding and decoding where available.", zh = "在可用时使用硬件视频编解码。" }
+
+[options.allow-remove-wallpaper]
+group = "display"
+kind = "bool"
+label = { en = "Remove wallpaper during sessions", zh = "会话期间移除壁纸" }
+description = { en = "Hide the desktop wallpaper while a session is active.", zh = "会话进行时隐藏桌面壁纸。" }
+
+[options.allow-always-software-render]
+group = "display"
+kind = "bool"
+label = { en = "Always software rendering", zh = "始终使用软件渲染" }
+description = { en = "Render the remote screen in software even when a GPU is available.", zh = "即使有 GPU 也使用软件渲染远程画面。" }
+
+[options.enable-directx-capture]
+group = "display"
+kind = "bool"
+label = { en = "DirectX capture", zh = "DirectX 捕获" }
+description = { en = "Capture the screen with DirectX (Windows).", zh = "使用 DirectX 捕获屏幕（Windows）。" }
+
+[options.enable-android-software-encoding-half-scale]
+group = "display"
+kind = "bool"
+label = { en = "Half-scale software encoding (Android)", zh = "软件编码半分辨率（Android）" }
+description = { en = "Halve the resolution when Android encodes in software.", zh = "Android 使用软件编码时分辨率减半。" }
+
+# ---- network ----------------------------------------------------------------------------
+
+[options.custom-rendezvous-server]
+group = "network"
+kind = "text"
+label = { en = "ID server", zh = "ID 服务器" }
+description = { en = "ID server the client registers with. A wrong value cuts the device off from this server.", zh = "客户端注册的 ID 服务器。填错会使设备与本服务器失联。" }
+
+[options.relay-server]
+group = "network"
+kind = "text"
+label = { en = "Relay server", zh = "中继服务器" }
+description = { en = "Relay server address.", zh = "中继服务器地址。" }
+
+[options.api-server]
+group = "network"
+kind = "text"
+label = { en = "API server", zh = "API 服务器" }
+description = { en = "API server address. A wrong value stops strategy delivery to the device.", zh = "API 服务器地址。填错会使设备再也收不到策略。" }
+
+[options.key]
+group = "network"
+kind = "text"
+label = { en = "Server public key", zh = "服务器公钥" }
+description = { en = "Public key of the ID server. A wrong value makes connections fail.", zh = "ID 服务器的公钥。填错会导致连接失败。" }
+
+[options.allow-websocket]
+group = "network"
+kind = "bool"
+label = { en = "Use WebSocket", zh = "使用 WebSocket" }
+description = { en = "Connect over WebSocket instead of TCP and UDP.", zh = "使用 WebSocket 而非 TCP 和 UDP 连接。" }
+
+[options.websocket-port]
+group = "network"
+kind = "number"
+min = 1
+max = 65535
+label = { en = "WebSocket port", zh = "WebSocket 端口" }
+description = { en = "Port of WebSocket connections.", zh = "WebSocket 连接的端口。" }
+
+# desktop_setting_page.dart: the switch is on only for 'Y'.
+[options.disable-udp]
+group = "network"
+kind = "bool"
+default = "N"
+label = { en = "Disable UDP", zh = "禁用 UDP" }
+description = { en = "Use TCP only.", zh = "只使用 TCP。" }
+
+[options.ice-servers]
+group = "network"
+kind = "text"
+label = { en = "ICE servers", zh = "ICE 服务器" }
+description = { en = "STUN / TURN servers of WebRTC connections.", zh = "WebRTC 连接使用的 STUN / TURN 服务器。" }
+
+[options.allow-insecure-tls-fallback]
+group = "network"
+kind = "bool"
+label = { en = "Insecure TLS fallback", zh = "允许不安全的 TLS 回退" }
+description = { en = "Retry HTTPS without certificate verification when it fails. Keep off.", zh = "HTTPS 失败时不校验证书重试。请保持关闭。" }
+
+[options.allow-kcp-congestion-control]
+group = "network"
+kind = "bool"
+label = { en = "KCP congestion control", zh = "KCP 拥塞控制" }
+description = { en = "Enable congestion control on KCP connections.", zh = "在 KCP 连接上启用拥塞控制。" }
+
+[options.allow-webrtc-congestion-control]
+group = "network"
+kind = "bool"
+label = { en = "WebRTC congestion control", zh = "WebRTC 拥塞控制" }
+description = { en = "Enable congestion control on WebRTC connections.", zh = "在 WebRTC 连接上启用拥塞控制。" }
+
+# hbb_common config.rs: proxy-* are custom-client settings; the client reads its proxy from
+# its own proxy configuration, so these may have no effect when set by a strategy.
+[options.proxy-url]
+group = "network"
+kind = "text"
+label = { en = "Proxy URL", zh = "代理地址" }
+description = { en = "SOCKS5 / HTTP proxy (a custom client setting; may have no effect from a strategy).", zh = "SOCKS5 / HTTP 代理（定制客户端设置，经策略下发可能不生效）。" }
+
+[options.proxy-username]
+group = "network"
+kind = "text"
+label = { en = "Proxy user name", zh = "代理用户名" }
+description = { en = "User name of the proxy.", zh = "代理的用户名。" }
+
+[options.proxy-password]
+group = "network"
+kind = "text"
+secret = true
+label = { en = "Proxy password", zh = "代理密码" }
+description = { en = "Password of the proxy. Sent to every device in clear; never shown again here.", zh = "代理的密码。会明文下发给设备；保存后此处不再显示。" }
+
+# ---- presets ----------------------------------------------------------------------------
+
+[options.preset-address-book-name]
+group = "presets"
+kind = "text"
+label = { en = "Address book", zh = "地址簿" }
+description = { en = "Shared address book the device adds itself to when it uploads its system information.", zh = "设备上传系统信息时将自己加入的共享地址簿。" }
+
+[options.preset-address-book-tag]
+group = "presets"
+kind = "text"
+label = { en = "Address book tag", zh = "地址簿标签" }
+description = { en = "Tag of the device's address book entry.", zh = "设备地址簿条目的标签。" }
+
+[options.preset-address-book-alias]
+group = "presets"
+kind = "text"
+label = { en = "Address book alias", zh = "地址簿别名" }
+description = { en = "Alias of the device's address book entry.", zh = "设备地址簿条目的别名。" }
+
+[options.preset-address-book-password]
+group = "presets"
+kind = "text"
+secret = true
+label = { en = "Address book entry password", zh = "地址簿条目密码" }
+description = { en = "Password stored with the device's address book entry. Sent to every device in clear; never shown again here.", zh = "随设备地址簿条目保存的密码。会明文下发给设备；保存后此处不再显示。" }
+
+[options.preset-address-book-note]
+group = "presets"
+kind = "text"
+label = { en = "Address book note", zh = "地址簿备注" }
+description = { en = "Note of the device's address book entry.", zh = "设备地址簿条目的备注。" }
+
+[options.preset-device-username]
+group = "presets"
+kind = "text"
+label = { en = "Reported user name", zh = "上报的用户名" }
+description = { en = "User name the device reports instead of the signed-in OS user.", zh = "设备上报的用户名，替代当前操作系统用户。" }
+
+[options.preset-device-name]
+group = "presets"
+kind = "text"
+label = { en = "Reported device name", zh = "上报的设备名" }
+description = { en = "Device name the device reports instead of its host name.", zh = "设备上报的名称，替代其主机名。" }
+
+[options.preset-note]
+group = "presets"
+kind = "text"
+label = { en = "Device note", zh = "设备备注" }
+description = { en = "Note the device reports with its system information.", zh = "设备随系统信息上报的备注。" }
+
+# ---- other ------------------------------------------------------------------------------
+
+# src/server/connection.rs reads it with get_bool_option, whose final branch is on unless 'N'.
+[options.keep-awake-during-incoming-sessions]
+group = "other"
+kind = "bool"
+default = "Y"
+label = { en = "Keep awake during sessions", zh = "会话期间保持唤醒" }
+description = { en = "Keep the device from sleeping while an incoming session is active.", zh = "有被控会话时阻止设备休眠。" }
+
+[options.allow-auto-update]
+group = "other"
+kind = "bool"
+label = { en = "Automatic updates", zh = "自动更新" }
+description = { en = "Install client updates automatically.", zh = "自动安装客户端更新。" }

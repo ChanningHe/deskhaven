@@ -2,6 +2,7 @@
 //! `modified_at`. Every test runs on SQLite and PostgreSQL.
 
 mod assignments;
+mod console;
 mod crud;
 mod deletion;
 mod effective;

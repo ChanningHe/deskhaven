@@ -18,6 +18,14 @@ pub enum XtaskError {
     OpenApi(#[from] deskhaven_admin_api::OpenApiError),
     #[error("{0} is out of date; run `cargo xtask gen-openapi` and commit the result")]
     OpenApiDrift(String),
+    #[error("cannot generate the strategy catalog: {0}")]
+    Catalog(String),
+    #[error(
+        "{0} is out of date; run `cargo xtask gen-strategy-catalog --from <dir>` and commit it"
+    )]
+    CatalogDrift(String),
+    #[error("missing argument {0}")]
+    MissingArgument(&'static str),
     #[error("cannot access {path}")]
     Io {
         path: String,

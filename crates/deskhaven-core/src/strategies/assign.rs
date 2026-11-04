@@ -19,19 +19,74 @@ use sea_orm::{
 use super::load;
 use super::model::{Assignment, Target};
 use super::{StrategyError, StrategyService};
+use crate::console_audit::TxGuard;
 
 impl StrategyService {
     /// Makes `strategy_id` the strategy of `target`, replacing the one it had. Assigning the
     /// strategy it already has is a no-op that still advances the version.
     pub async fn assign(&self, target: Target, strategy_id: i64) -> Result<(), StrategyError> {
+        self.assign_guarded(target, strategy_id, TxGuard::none())
+            .await
+    }
+
+    /// [`assign`](Self::assign) with `guard` deciding on the assignment it replaces (if
+    /// any) and the new one.
+    pub async fn assign_guarded(
+        &self,
+        target: Target,
+        strategy_id: i64,
+        guard: TxGuard<Assignment>,
+    ) -> Result<(), StrategyError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
             ensure_strategy(&tx, strategy_id).await?;
             ensure_target(&tx, target).await?;
+            let before = assignment_in(&tx, target)
+                .await?
+                .map(|strategy_id| Assignment {
+                    target,
+                    strategy_id,
+                });
             upsert(&tx, target, strategy_id).await?;
+            let after = Assignment {
+                target,
+                strategy_id,
+            };
+            guard.check(&tx, before.as_ref(), Some(&after)).await?;
             tx.commit().await?;
             inner.cache.invalidate();
             Ok(())
+        })
+        .await
+    }
+
+    /// Removes the assignment of `target` if it is `strategy_id`, with `guard` deciding on
+    /// it; `false` (nothing changed, nothing recorded) if the target has another strategy
+    /// or none.
+    pub async fn unassign_guarded(
+        &self,
+        target: Target,
+        strategy_id: i64,
+        guard: TxGuard<Assignment>,
+    ) -> Result<bool, StrategyError> {
+        self.detached(move |inner| async move {
+            let tx = begin_write(&inner.db).await?;
+            let removed = strategy_assignment::Entity::delete_many()
+                .filter(target_filter(target))
+                .filter(strategy_assignment::Column::StrategyId.eq(strategy_id))
+                .exec(&tx)
+                .await?;
+            if removed.rows_affected == 0 {
+                return Ok(false);
+            }
+            let before = Assignment {
+                target,
+                strategy_id,
+            };
+            guard.check(&tx, Some(&before), None).await?;
+            tx.commit().await?;
+            inner.cache.invalidate();
+            Ok(true)
         })
         .await
     }

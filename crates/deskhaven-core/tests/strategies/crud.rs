@@ -46,7 +46,7 @@ async fn strategies_can_be_created_read_updated_listed_and_deleted() {
         let update = StrategyUpdate {
             name: Some("kiosk-v2".to_owned()),
             options: Some(opts(&[("enable-audio", "Y")])),
-            note: None,
+            ..StrategyUpdate::default()
         };
         let updated = c.svc.update(kiosk.id, update).await.unwrap();
         assert_eq!(updated.name, "kiosk-v2");
