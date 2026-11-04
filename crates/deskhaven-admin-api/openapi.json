@@ -5907,6 +5907,919 @@
         ]
       }
     },
+    "/admin/api/v1/strategies": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Strategies with their assignment counts.",
+        "operationId": "list_strategies",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`name` or `updated_at`, `-` prefix for descending (default `name`).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?(name|updated_at)$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Substring of the name (case-insensitive, literal).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of strategies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated_StrategyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Creates a strategy (audited `strategy.create`). Option values reach every device it is\nassigned to in clear.",
+        "operationId": "create_strategy",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewStrategyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name taken (`conflict`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/strategies/{id}": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "One strategy.",
+        "operationId": "get_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Deletes a strategy and its assignments (audited `strategy.delete`); the next heartbeat\nof its devices deletes the options it set. Strategies from the configuration file are\nread-only.",
+        "operationId": "delete_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Managed by the configuration file (`managed_by_config`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Renames a strategy, changes its note or patches its options (audited `strategy.update`;\nan empty patch changes and records nothing). Strategies from the configuration file are\nread-only.",
+        "operationId": "update_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name taken (`conflict`) or managed by the configuration file (`managed_by_config`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/strategies/{id}/assignments": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "The targets of a strategy, with their names.",
+        "operationId": "list_strategy_assignments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The targets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Assigns the strategy to a target, replacing the strategy the target had (audited\n`strategy.assign`, with the replaced assignment as `before`).",
+        "operationId": "assign_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Assigned"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or unknown target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "Removes the strategy from a target (audited `strategy.unassign`).",
+        "operationId": "unassign_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Strategy id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TargetKind"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The target does not have this strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/strategy-catalog": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "The known client options with their type, default, group and texts.",
+        "operationId": "get_strategy_catalog",
+        "responses": {
+          "200": {
+            "description": "The catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/strategy-preview": {
+      "get": {
+        "tags": [
+          "strategies"
+        ],
+        "summary": "The merged strategy of one device with the source of every option.",
+        "operationId": "preview_strategy",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "description": "`devices.id`.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The effective strategy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveStrategyView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/users": {
       "get": {
         "tags": [
@@ -7248,6 +8161,47 @@
           }
         }
       },
+      "AssignmentList": {
+        "type": "object",
+        "description": "The targets of a strategy, global first, devices last.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssignmentView"
+            }
+          }
+        }
+      },
+      "AssignmentView": {
+        "type": "object",
+        "description": "A target the strategy is assigned to.",
+        "required": [
+          "target_type"
+        ],
+        "properties": {
+          "target_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "User name, group or device group name, or the device's RustDesk id; absent for\n`global`."
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/TargetKind"
+          }
+        }
+      },
       "AuditUserView": {
         "type": "object",
         "description": "A user account an audit record points at. Absent in the record when the account no\nlonger exists.",
@@ -7353,6 +8307,120 @@
           "updated_at": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "CatalogOptionView": {
+        "type": "object",
+        "description": "One known client option.",
+        "required": [
+          "key",
+          "kind",
+          "group",
+          "secret",
+          "choices",
+          "label",
+          "description"
+        ],
+        "properties": {
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChoiceView"
+            },
+            "description": "The allowed values of a `choice` option."
+          },
+          "default": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the client does when the option is unset; absent when the source does not say."
+          },
+          "description": {
+            "$ref": "#/components/schemas/TextView"
+          },
+          "group": {
+            "$ref": "#/components/schemas/OptionGroupView"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OptionKindView"
+          },
+          "label": {
+            "$ref": "#/components/schemas/TextView"
+          },
+          "max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "secret": {
+            "type": "boolean",
+            "description": "A credential: never shown back once saved, masked in audit rows."
+          }
+        }
+      },
+      "CatalogSourceView": {
+        "type": "object",
+        "description": "Client revisions the catalog was generated from.",
+        "required": [
+          "rustdesk",
+          "hbb_common"
+        ],
+        "properties": {
+          "hbb_common": {
+            "type": "string",
+            "description": "`rustdesk/hbb_common` commit."
+          },
+          "rustdesk": {
+            "type": "string",
+            "description": "`rustdesk/rustdesk` commit."
+          }
+        }
+      },
+      "CatalogView": {
+        "type": "object",
+        "required": [
+          "source",
+          "options"
+        ],
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionView"
+            },
+            "description": "In the client's key list order."
+          },
+          "source": {
+            "$ref": "#/components/schemas/CatalogSourceView"
+          }
+        }
+      },
+      "ChoiceView": {
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "$ref": "#/components/schemas/TextView"
+          },
+          "value": {
+            "type": "string"
           }
         }
       },
@@ -8897,6 +9965,32 @@
         },
         "additionalProperties": false
       },
+      "NewStrategyBody": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1-64 characters, unique."
+          },
+          "note": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object",
+            "description": "Option name to value (an empty value makes the client delete the option).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "NewTagBody": {
         "type": "object",
         "required": [
@@ -9021,6 +10115,27 @@
           }
         },
         "additionalProperties": false
+      },
+      "OptionGroupView": {
+        "type": "string",
+        "enum": [
+          "security",
+          "permissions",
+          "display",
+          "network",
+          "recording",
+          "presets",
+          "other"
+        ]
+      },
+      "OptionKindView": {
+        "type": "string",
+        "enum": [
+          "bool",
+          "choice",
+          "number",
+          "text"
+        ]
       },
       "OverviewView": {
         "type": "object",
@@ -10231,6 +11346,103 @@
           }
         }
       },
+      "Paginated_StrategyView": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A strategy. Values of secret options (see the catalog) are never returned: such an\noption holding a value is listed in `secret_options` instead of `options`. Timestamps\nare unix milliseconds.",
+              "required": [
+                "id",
+                "name",
+                "note",
+                "managed_by",
+                "options",
+                "secret_options",
+                "options_corrupt",
+                "assignment_count",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "assignment_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Number of targets the strategy is assigned to.",
+                  "minimum": 0
+                },
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "managed_by": {
+                  "$ref": "#/components/schemas/ManagedByView"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Option name to value; an empty value makes the client delete the option.",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  }
+                },
+                "options_corrupt": {
+                  "type": "boolean",
+                  "description": "The stored options are damaged; replace them to repair the strategy."
+                },
+                "secret_options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Secret options that hold a (withheld) value."
+                },
+                "updated_at": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matching items across all pages.",
+            "minimum": 0
+          }
+        }
+      },
       "Paginated_UserView": {
         "type": "object",
         "description": "One page of a list.",
@@ -11075,20 +12287,59 @@
         "required": [
           "key",
           "value",
+          "redacted",
           "source"
         ],
         "properties": {
           "key": {
             "type": "string"
           },
+          "redacted": {
+            "type": "boolean",
+            "description": "A secret option's value, withheld here (`value` is empty)."
+          },
           "source": {
             "$ref": "#/components/schemas/StrategyLayerView"
           },
           "value": {
             "type": "string",
-            "description": "Empty: the client deletes the option."
+            "description": "Empty: the client deletes the option (unless `redacted`)."
           }
         }
+      },
+      "StrategyPatch": {
+        "type": "object",
+        "description": "Changes to a strategy; absent fields stay as they are. `options` is a merge patch: a\nstring sets the option, `null` removes it from the strategy, options not named stay.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
       },
       "StrategyScopeView": {
         "type": "string",
@@ -11100,6 +12351,72 @@
           "device_group",
           "device"
         ]
+      },
+      "StrategyView": {
+        "type": "object",
+        "description": "A strategy. Values of secret options (see the catalog) are never returned: such an\noption holding a value is listed in `secret_options` instead of `options`. Timestamps\nare unix milliseconds.",
+        "required": [
+          "id",
+          "name",
+          "note",
+          "managed_by",
+          "options",
+          "secret_options",
+          "options_corrupt",
+          "assignment_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "assignment_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of targets the strategy is assigned to.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "managed_by": {
+            "$ref": "#/components/schemas/ManagedByView"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object",
+            "description": "Option name to value; an empty value makes the client delete the option.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "options_corrupt": {
+            "type": "boolean",
+            "description": "The stored options are damaged; replace them to repair the strategy."
+          },
+          "secret_options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Secret options that hold a (withheld) value."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "SubjectKind": {
         "type": "string",
@@ -11146,6 +12463,37 @@
           }
         }
       },
+      "TargetBody": {
+        "type": "object",
+        "description": "An assignment target: a kind and, except for `global`, the id of the user, group,\ndevice group or device.",
+        "required": [
+          "target_type"
+        ],
+        "properties": {
+          "target_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/TargetKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TargetKind": {
+        "type": "string",
+        "description": "What a strategy is assigned to.",
+        "enum": [
+          "global",
+          "group",
+          "user",
+          "device_group",
+          "device"
+        ]
+      },
       "TemporaryPassword": {
         "type": "object",
         "description": "A generated temporary password, shown once.",
@@ -11165,6 +12513,21 @@
           "host",
           "email"
         ]
+      },
+      "TextView": {
+        "type": "object",
+        "required": [
+          "en",
+          "zh"
+        ],
+        "properties": {
+          "en": {
+            "type": "string"
+          },
+          "zh": {
+            "type": "string"
+          }
+        }
       },
       "TokenCreatorView": {
         "type": "object",

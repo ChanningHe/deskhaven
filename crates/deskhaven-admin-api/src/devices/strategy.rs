@@ -1,7 +1,9 @@
 //! The effective strategy of a device with the layer each option comes from (05 §4.3).
+//! Values of secret catalog options are withheld (`redacted`).
 
 use deskhaven_core::devices::DeviceRecord;
 use deskhaven_core::state::AppState;
+use deskhaven_core::strategies::catalog;
 use deskhaven_core::strategies::{DeviceInputs, Options, StrategyError, Target};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -37,8 +39,10 @@ pub struct StrategyLayerView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct StrategyOptionView {
     pub key: String,
-    /// Empty: the client deletes the option.
+    /// Empty: the client deletes the option (unless `redacted`).
     pub value: String,
+    /// A secret option's value, withheld here (`value` is empty).
+    pub redacted: bool,
     pub source: StrategyLayerView,
 }
 
@@ -71,7 +75,7 @@ fn scope_of(target: Target) -> (StrategyScopeView, Option<i64>) {
 
 /// The effective strategy of `device`. A strategy deleted since the merge is left out of
 /// the layers (its options then have no source: they are dropped too).
-pub(super) async fn effective_strategy(
+pub(crate) async fn effective_strategy(
     state: &AppState,
     device: &DeviceRecord,
 ) -> Result<EffectiveStrategyView, AdminApiError> {
@@ -110,9 +114,11 @@ pub(super) async fn effective_strategy(
         .into_iter()
         .filter_map(|(key, value)| {
             let source = layers.iter().rev().find(|l| l.options.contains_key(&key))?;
+            let redacted = !value.is_empty() && catalog::is_secret(&key);
             Some(StrategyOptionView {
+                value: if redacted { String::new() } else { value },
+                redacted,
                 key,
-                value,
                 source: source.view.clone(),
             })
         })

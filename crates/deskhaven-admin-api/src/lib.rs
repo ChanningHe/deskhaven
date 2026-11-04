@@ -35,6 +35,7 @@ pub mod session;
 mod settings;
 mod setup;
 mod stack_error;
+mod strategies;
 pub mod transport;
 mod users;
 
@@ -85,6 +86,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = api_tokens::routes(routes)?;
     let routes = audit_views::routes(routes)?;
     let routes = overview::routes(routes)?;
+    let routes = strategies::routes(routes)?;
     settings::routes(routes)
 }
 

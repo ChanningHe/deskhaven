@@ -12,6 +12,8 @@ mod write;
 
 use utoipa_axum::routes;
 
+pub(crate) use strategy::{EffectiveStrategyView, effective_strategy};
+
 use crate::{AdminRoutes, RouteError};
 
 /// The `/devices` routes.
