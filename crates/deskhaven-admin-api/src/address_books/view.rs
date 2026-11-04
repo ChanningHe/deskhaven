@@ -277,14 +277,14 @@ pub struct IdsBody {
 /// Devices to import (`devices.id`).
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ImportBody {
+pub struct ImportDevicesBody {
     #[garde(length(min = 1, max = MAX_IMPORT_DEVICES))]
     pub device_ids: Vec<i64>,
 }
 
 /// What an import did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-pub struct ImportView {
+pub struct ImportDevicesView {
     /// RustDesk ids of the entries added.
     pub added: Vec<String>,
     /// RustDesk ids the book already listed (left as they are).
@@ -293,7 +293,7 @@ pub struct ImportView {
     pub missing: Vec<i64>,
 }
 
-impl From<ImportReport> for ImportView {
+impl From<ImportReport> for ImportDevicesView {
     fn from(r: ImportReport) -> Self {
         Self {
             added: r.added,

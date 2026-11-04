@@ -777,6 +777,147 @@
       }
     }
   },
+  "addressBooks": {
+    "tableLabel": "Shared address books",
+    "search": "Search address books",
+    "ownerNone": "Administrators",
+    "columns": {
+      "name": "Name",
+      "owner": "Owner",
+      "entries": "Entries",
+      "tags": "Tags",
+      "shares": "Grants",
+      "updated": "Updated"
+    },
+    "fields": {
+      "name": "Name",
+      "note": "Note",
+      "owner": "Owner"
+    },
+    "create": {
+      "action": "New address book",
+      "title": "New address book",
+      "submit": "Create address book",
+      "ownerHint": "The owner has full control. Without an owner only administrators manage the book."
+    },
+    "drawer": {
+      "title": "Address book",
+      "managedByAdmins": "Managed by administrators",
+      "ownedBy": "Owned by {{owner}}",
+      "gone": "This address book no longer exists; another administrator may have deleted it.",
+      "stale": "Could not refresh; showing the data loaded last",
+      "tabsLabel": "Address book sections",
+      "tabs": {
+        "entries": "Entries",
+        "tags": "Tags",
+        "shares": "Grants",
+        "details": "Details"
+      },
+      "conflict": "Someone else just changed what you are editing; saving overwrites it.",
+      "save": "Save changes",
+      "delete": "Delete address book"
+    },
+    "confirmDelete": {
+      "title": "Delete this address book?",
+      "description_one": "{{name}} is deleted with its {{count}} entry, its tags and its grants. Clients lose it on their next sync; the devices themselves stay.",
+      "description_other": "{{name}} is deleted with its {{count}} entries, its tags and its grants. Clients lose it on their next sync; the devices themselves stay.",
+      "confirm": "Delete address book"
+    },
+    "entries": {
+      "tableLabel": "Entries",
+      "search": "Search entries",
+      "emptyTitle": "No entries",
+      "emptyDescription": "Add entries by hand, or import devices from the inventory.",
+      "import": "Import devices",
+      "add": "Add entry",
+      "removeSelected": "Remove selected",
+      "hasPassword": "Has password",
+      "columns": {
+        "id": "ID",
+        "alias": "Alias",
+        "hostname": "Hostname",
+        "username": "User",
+        "tags": "Tags",
+        "password": "Password"
+      },
+      "confirmRemove": {
+        "title": "Remove these entries?",
+        "description_one": "{{count}} entry is removed from this address book. The device itself is not affected.",
+        "description_other": "{{count}} entries are removed from this address book. The devices themselves are not affected.",
+        "confirm": "Remove"
+      },
+      "form": {
+        "addTitle": "Add entry",
+        "editTitle": "Entry {{id}}",
+        "passwordNote": "Passwords are write-only here: they are stored encrypted and never shown again.",
+        "id": "RustDesk ID",
+        "alias": "Alias",
+        "hostname": "Hostname",
+        "username": "User",
+        "platform": "Platform",
+        "note": "Note",
+        "password": "Password",
+        "passwordKept": "Stored password stays unless you type a new one",
+        "removePassword": "Remove the stored password",
+        "forceRelay": "Always connect through the relay",
+        "tags": "Tags",
+        "add": "Add entry",
+        "save": "Save entry"
+      }
+    },
+    "import": {
+      "title": "Import devices",
+      "description": "Pick devices from the inventory. Each becomes an entry with its ID, hostname and user; devices already in the book are left as they are.",
+      "search": "Search devices",
+      "empty": "No devices match.",
+      "pagination": "Device pages",
+      "page": "Page {{page}} of {{pages}}",
+      "result": "Added {{added}}, already listed {{existing}}, not found {{missing}}.",
+      "submit": "Add {{count}} selected"
+    },
+    "tags": {
+      "empty": "No tags yet.",
+      "name": "Tag name",
+      "color": "Color",
+      "add": "Add tag",
+      "save": "Save tag",
+      "edit": "Edit tag {{name}}",
+      "editShort": "Edit",
+      "remove": "Delete tag {{name}}",
+      "removeShort": "Delete",
+      "confirmTitle": "Delete this tag?",
+      "confirmDescription": "The tag {{name}} is removed from the book and from every entry that carries it."
+    },
+    "shares": {
+      "passwordWarning": "Any grant, even read-only, lets that person's RustDesk client connect to the listed devices with the passwords stored in this book: the client needs them, so it receives them in clear text. Share a book only with people you trust with all of its devices.",
+      "empty": "Not granted to anyone yet.",
+      "unknownSubject": "(deleted)",
+      "kinds": {
+        "user": "User",
+        "group": "Group"
+      },
+      "rules": {
+        "1": "Read-only (can use stored passwords)",
+        "2": "Read and write",
+        "3": "Full control (manages grants up to read and write)"
+      },
+      "ruleOf": "Access of {{name}}",
+      "revoke": "Revoke the grant of {{name}}",
+      "revokeShort": "Revoke",
+      "confirmTitle": "Revoke this grant?",
+      "confirmDescription": "{{name}} loses the book on the next sync of their client.",
+      "grantTo": "Grant to",
+      "rule": "Access",
+      "userSearch": "Find a user to grant",
+      "userCandidates": "Matching users",
+      "userFound_one": "{{count}} matching user. Press Enter to grant.",
+      "userFound_other": "{{count}} matching users. Press Enter to grant the highlighted one.",
+      "userNoMatch": "No user matches.",
+      "group": "Group",
+      "groupPlaceholder": "Choose a group",
+      "grant": "Grant"
+    }
+  },
   "deviceGroups": {
     "tableLabel": "Device groups",
     "search": "Search device groups",

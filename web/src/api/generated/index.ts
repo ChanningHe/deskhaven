@@ -1,3 +1,4 @@
+export * from './address-books/address-books'
 export * from './api-tokens/api-tokens'
 export * from './auth/auth'
 export * from './client-config/client-config'

@@ -846,7 +846,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImportBody"
+                "$ref": "#/components/schemas/ImportDevicesBody"
               }
             }
           },
@@ -858,7 +858,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportView"
+                  "$ref": "#/components/schemas/ImportDevicesView"
                 }
               }
             }
@@ -7137,6 +7137,20 @@
       },
       "ImportBody": {
         "type": "object",
+        "required": [
+          "csv"
+        ],
+        "properties": {
+          "csv": {
+            "type": "string",
+            "description": "The CSV text, header row first.",
+            "maxLength": 65536
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportDevicesBody": {
+        "type": "object",
         "description": "Devices to import (`devices.id`).",
         "required": [
           "device_ids"
@@ -7151,6 +7165,39 @@
           }
         },
         "additionalProperties": false
+      },
+      "ImportDevicesView": {
+        "type": "object",
+        "description": "What an import did.",
+        "required": [
+          "added",
+          "existing",
+          "missing"
+        ],
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "RustDesk ids of the entries added."
+          },
+          "existing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "RustDesk ids the book already listed (left as they are)."
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "`devices.id` values that name no device."
+          }
+        }
       },
       "ImportRejected": {
         "type": "object",
@@ -7232,39 +7279,6 @@
           "line": {
             "type": "integer",
             "minimum": 0
-          }
-        }
-      },
-      "ImportView": {
-        "type": "object",
-        "description": "What an import did.",
-        "required": [
-          "added",
-          "existing",
-          "missing"
-        ],
-        "properties": {
-          "added": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "RustDesk ids of the entries added."
-          },
-          "existing": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "RustDesk ids the book already listed (left as they are)."
-          },
-          "missing": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int64"
-            },
-            "description": "`devices.id` values that name no device."
           }
         }
       },

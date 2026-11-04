@@ -13,7 +13,7 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use super::guard::book_guard;
-use super::view::{IdsBody, ImportBody, ImportView, PeerBody, PeerView};
+use super::view::{IdsBody, ImportDevicesBody, ImportDevicesView, PeerBody, PeerView};
 use super::{Problem, service};
 use crate::domain_error::invalid_field;
 use crate::{
@@ -167,9 +167,9 @@ pub async fn delete_peers(
     operation_id = "import_address_book_peers",
     security(("console_session" = ["admin"])),
     params(("guid" = String, Path, description = "Address book guid")),
-    request_body = ImportBody,
+    request_body = ImportDevicesBody,
     responses(
-        (status = 200, description = "What was added", body = ImportView),
+        (status = 200, description = "What was added", body = ImportDevicesView),
         (status = 404, description = "No such shared address book", body = Problem),
         (status = 409, description = "The new entries do not fit (`details.reason = book_full`); nothing is added", body = Problem),
         (status = 422, description = "Invalid field", body = Problem),
@@ -179,8 +179,8 @@ pub async fn import_peers(
     State(state): State<Arc<AppState>>,
     ctx: AuditCtx,
     ValidPath(guid): ValidPath<String>,
-    ValidJson(body): ValidJson<ImportBody>,
-) -> Result<(Audited, Json<ImportView>), AdminApiError> {
+    ValidJson(body): ValidJson<ImportDevicesBody>,
+) -> Result<(Audited, Json<ImportDevicesView>), AdminApiError> {
     let guard = book_guard(&state, &ctx, "address_book.peer_import", Some(&guid));
     let report = service(&state)
         .import_devices_guarded(Actor::Admin, &guid, &body.device_ids, guard)

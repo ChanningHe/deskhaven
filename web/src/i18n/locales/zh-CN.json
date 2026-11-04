@@ -777,6 +777,147 @@
       }
     }
   },
+  "addressBooks": {
+    "tableLabel": "共享地址簿",
+    "search": "搜索地址簿",
+    "ownerNone": "管理员",
+    "columns": {
+      "name": "名称",
+      "owner": "所有者",
+      "entries": "条目数",
+      "tags": "标签数",
+      "shares": "授权数",
+      "updated": "更新时间"
+    },
+    "fields": {
+      "name": "名称",
+      "note": "备注",
+      "owner": "所有者"
+    },
+    "create": {
+      "action": "新建地址簿",
+      "title": "新建地址簿",
+      "submit": "创建地址簿",
+      "ownerHint": "所有者拥有完全控制权。不设所有者时，只有管理员能管理该地址簿。"
+    },
+    "drawer": {
+      "title": "地址簿",
+      "managedByAdmins": "由管理员管理",
+      "ownedBy": "所有者：{{owner}}",
+      "gone": "该地址簿已不存在，可能已被其他管理员删除。",
+      "stale": "无法刷新，以下为上次加载的数据",
+      "tabsLabel": "地址簿分区",
+      "tabs": {
+        "entries": "条目",
+        "tags": "标签",
+        "shares": "授权",
+        "details": "详情"
+      },
+      "conflict": "他人刚修改了你正在编辑的内容，保存会覆盖它。",
+      "save": "保存修改",
+      "delete": "删除地址簿"
+    },
+    "confirmDelete": {
+      "title": "删除此地址簿？",
+      "description_one": "{{name}} 及其 {{count}} 个条目、标签和授权将被删除。客户端在下次同步时失去该地址簿，设备本身保留。",
+      "description_other": "{{name}} 及其 {{count}} 个条目、标签和授权将被删除。客户端在下次同步时失去该地址簿，设备本身保留。",
+      "confirm": "删除地址簿"
+    },
+    "entries": {
+      "tableLabel": "条目",
+      "search": "搜索条目",
+      "emptyTitle": "暂无条目",
+      "emptyDescription": "手动添加条目，或从设备清单导入设备。",
+      "import": "导入设备",
+      "add": "添加条目",
+      "removeSelected": "移除所选",
+      "hasPassword": "已设密码",
+      "columns": {
+        "id": "ID",
+        "alias": "别名",
+        "hostname": "主机名",
+        "username": "用户",
+        "tags": "标签",
+        "password": "密码"
+      },
+      "confirmRemove": {
+        "title": "移除这些条目？",
+        "description_one": "将从此地址簿移除 {{count}} 个条目，设备本身不受影响。",
+        "description_other": "将从此地址簿移除 {{count}} 个条目，设备本身不受影响。",
+        "confirm": "移除"
+      },
+      "form": {
+        "addTitle": "添加条目",
+        "editTitle": "条目 {{id}}",
+        "passwordNote": "此处的密码只写不读：加密存储，之后不会再显示。",
+        "id": "RustDesk ID",
+        "alias": "别名",
+        "hostname": "主机名",
+        "username": "用户",
+        "platform": "平台",
+        "note": "备注",
+        "password": "密码",
+        "passwordKept": "不输入则保留已存的密码",
+        "removePassword": "删除已存的密码",
+        "forceRelay": "始终通过中继连接",
+        "tags": "标签",
+        "add": "添加条目",
+        "save": "保存条目"
+      }
+    },
+    "import": {
+      "title": "导入设备",
+      "description": "从设备清单中选择设备。每台设备成为一个条目，带有其 ID、主机名和用户；地址簿中已有的设备保持不变。",
+      "search": "搜索设备",
+      "empty": "没有匹配的设备。",
+      "pagination": "设备分页",
+      "page": "第 {{page}} / {{pages}} 页",
+      "result": "已添加 {{added}} 台，已在列表中 {{existing}} 台，未找到 {{missing}} 台。",
+      "submit": "添加所选 {{count}} 台"
+    },
+    "tags": {
+      "empty": "暂无标签。",
+      "name": "标签名",
+      "color": "颜色",
+      "add": "添加标签",
+      "save": "保存标签",
+      "edit": "编辑标签 {{name}}",
+      "editShort": "编辑",
+      "remove": "删除标签 {{name}}",
+      "removeShort": "删除",
+      "confirmTitle": "删除此标签？",
+      "confirmDescription": "标签 {{name}} 将从地址簿及所有带有它的条目中移除。"
+    },
+    "shares": {
+      "passwordWarning": "任何授权（包括只读）都会让对方的 RustDesk 客户端用本地址簿中保存的密码连接列表中的设备：客户端需要密码，因此会以明文收到密码。请只与你信任其使用全部设备的人共享。",
+      "empty": "尚未授权给任何人。",
+      "unknownSubject": "（已删除）",
+      "kinds": {
+        "user": "用户",
+        "group": "用户组"
+      },
+      "rules": {
+        "1": "只读（可使用已存密码）",
+        "2": "读写",
+        "3": "完全控制（可管理至读写的授权）"
+      },
+      "ruleOf": "{{name}} 的权限",
+      "revoke": "撤销 {{name}} 的授权",
+      "revokeShort": "撤销",
+      "confirmTitle": "撤销此授权？",
+      "confirmDescription": "{{name}} 的客户端在下次同步时将失去该地址簿。",
+      "grantTo": "授权给",
+      "rule": "权限",
+      "userSearch": "查找要授权的用户",
+      "userCandidates": "匹配的用户",
+      "userFound_one": "{{count}} 个匹配用户。按 Enter 授权。",
+      "userFound_other": "{{count}} 个匹配用户。按 Enter 授权高亮的用户。",
+      "userNoMatch": "没有匹配的用户。",
+      "group": "用户组",
+      "groupPlaceholder": "选择用户组",
+      "grant": "授权"
+    }
+  },
   "deviceGroups": {
     "tableLabel": "设备组",
     "search": "搜索设备组",

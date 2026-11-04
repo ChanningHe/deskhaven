@@ -6,7 +6,12 @@
 //!   optionally owned by a user, and granted to users and groups with a [`Rule`]
 //!   (1 read-only, 2 read-write, 3 full control). See [`Actor`] for who holds which rule.
 //!   Reads need rule 1, peer and tag writes rule 2, share and book management rule 3; every
-//!   operation checks it here, whatever the caller already checked.
+//!   operation checks it here, whatever the caller already checked. Rule 3 does not reach
+//!   the book's end of life nor its own kind: only the owner or the console deletes a book,
+//!   grants rule 3, or changes or revokes a rule 3 grant (see `access`).
+//! - Console writes: every write has a `*_guarded` variant that runs a
+//!   [`TxGuard`](crate::console_audit::TxGuard) in the write's own transaction. Its snapshots
+//!   are JSON built here, so a peer's password and hash never leave this module.
 //! - Peers: personal books keep the client's password `hash` and never a `password`; shared
 //!   books keep the `password` and never a `hash`. Both are sealed with the master key (AAD
 //!   context `address_book_peers.<hash_enc|password_enc>:<book id>:<rustdesk id>`): the
