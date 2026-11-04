@@ -200,6 +200,8 @@ async fn writes_are_audited_with_the_connection_but_never_the_password() {
             "bind_dn": "cn=other,dc=example,dc=org",
             "bind_password": "other-Pass-9",
             "enabled": false,
+            "email_attr": "mail",
+            "display_name_attr": "cn",
         });
         let changed = h.write(Method::PATCH, &path(id), owner, change).await;
         assert_eq!(changed.status, 200, "{}: {:?}", db.backend, changed.body);
@@ -229,6 +231,9 @@ async fn writes_are_audited_with_the_connection_but_never_the_password() {
         );
         assert_eq!(before["bind_dn"], SERVICE_DN);
         assert_eq!(after["bind_dn"], "cn=other,dc=example,dc=org");
+        assert!(before["email_attr"].is_null());
+        assert_eq!(after["email_attr"], "mail");
+        assert_eq!(after["display_name_attr"], "cn");
         assert_eq!(
             (before["enabled"].clone(), after["enabled"].clone()),
             (json!(true), json!(false))

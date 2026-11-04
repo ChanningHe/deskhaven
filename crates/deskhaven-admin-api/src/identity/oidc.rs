@@ -1,4 +1,6 @@
-//! `GET|POST /oidc-providers`, `GET|PATCH|DELETE /oidc-providers/{id}`. Admin routes.
+//! `GET|POST /oidc-providers`, `GET|PATCH|DELETE /oidc-providers/{id}`. Admins read; writes
+//! are the owner's, declared on the route and re-checked on the committed role in the
+//! write transaction.
 
 use std::sync::Arc;
 
@@ -11,6 +13,7 @@ use super::guard::provider_guard;
 use super::oidc_view::{
     NewOidcProviderBody, OidcProviderList, OidcProviderPatch, OidcProviderView,
 };
+use crate::domain_error::invalid_field;
 use crate::{AdminApiError, AuditCtx, Audited, ValidJson, ValidPath};
 
 type Problem = crate::ErrorEnvelope<'static>;
@@ -60,7 +63,7 @@ pub async fn get_oidc_provider(
     path = "/oidc-providers",
     tag = "identity",
     operation_id = "create_oidc_provider",
-    security(("console_session" = ["admin"])),
+    security(("console_session" = ["owner"])),
     request_body = NewOidcProviderBody,
     responses(
         (status = 201, description = "Created", body = OidcProviderView),
@@ -88,14 +91,14 @@ pub async fn create_oidc_provider(
     path = "/oidc-providers/{id}",
     tag = "identity",
     operation_id = "update_oidc_provider",
-    security(("console_session" = ["admin"])),
+    security(("console_session" = ["owner"])),
     params(("id" = i64, Path, description = "Provider id")),
     request_body = OidcProviderPatch,
     responses(
         (status = 200, description = "The updated provider", body = OidcProviderView),
         (status = 404, description = "No such provider", body = Problem),
         (status = 409, description = "Name taken (`conflict`) or managed by the configuration file (`managed_by_config`)", body = Problem),
-        (status = 422, description = "Invalid or unknown field (the issuer is fixed)", body = Problem),
+        (status = 422, description = "Invalid or unknown field (the issuer is fixed), or an empty `client_secret`", body = Problem),
     )
 )]
 pub async fn update_oidc_provider(
@@ -104,6 +107,11 @@ pub async fn update_oidc_provider(
     ValidPath(id): ValidPath<i64>,
     ValidJson(body): ValidJson<OidcProviderPatch>,
 ) -> Result<(Audited, Json<OidcProviderView>), AdminApiError> {
+    // An empty string reads like a slip, not a decision: only `null` removes the secret.
+    if matches!(&body.client_secret, Some(Some(secret)) if secret.is_empty()) {
+        let reason = "must not be empty; give null to remove the secret";
+        return Err(invalid_field("client_secret", reason));
+    }
     let guard = provider_guard(&state, &ctx, "oidc_provider.update");
     let updated = state
         .oidc
@@ -119,7 +127,7 @@ pub async fn update_oidc_provider(
     path = "/oidc-providers/{id}",
     tag = "identity",
     operation_id = "delete_oidc_provider",
-    security(("console_session" = ["admin"])),
+    security(("console_session" = ["owner"])),
     params(("id" = i64, Path, description = "Provider id")),
     responses(
         (status = 204, description = "Deleted"),

@@ -5747,7 +5747,7 @@
             }
           },
           "422": {
-            "description": "Not exactly one target, or an invalid form",
+            "description": "Not exactly one target, an invalid form, or a malformed username",
             "content": {
               "application/json": {
                 "schema": {
@@ -6270,7 +6270,7 @@
         "security": [
           {
             "console_session": [
-              "admin"
+              "owner"
             ]
           }
         ]
@@ -6440,7 +6440,7 @@
         "security": [
           {
             "console_session": [
-              "admin"
+              "owner"
             ]
           }
         ]
@@ -6534,7 +6534,7 @@
             }
           },
           "422": {
-            "description": "Invalid or unknown field (the issuer is fixed)",
+            "description": "Invalid or unknown field (the issuer is fixed), or an empty `client_secret`",
             "content": {
               "application/json": {
                 "schema": {
@@ -6557,7 +6557,7 @@
         "security": [
           {
             "console_session": [
-              "admin"
+              "owner"
             ]
           }
         ]
@@ -11788,7 +11788,7 @@
               "null"
             ],
             "format": "password",
-            "description": "A new secret; `null` makes the provider a public client."
+            "description": "A new secret; `null` makes the provider a public client (an empty string is refused)."
           },
           "display_name": {
             "type": [

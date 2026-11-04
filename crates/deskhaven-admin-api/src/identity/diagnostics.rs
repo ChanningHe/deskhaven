@@ -4,19 +4,23 @@
 //!
 //! - **Address filter**: a form goes through `DirectorySettings::from_new`, the same URL
 //!   rules as a saved directory (TLS, no link-local or metadata literals, no numeric host
-//!   spellings); a saved directory was checked when written. Nothing is contacted for a
-//!   refused form.
+//!   spellings); a saved directory was checked when written, and every connection resolves
+//!   and filters host names the same way. Nothing is contacted for a refused form.
 //! - **Rate limit**: every test spends one token of the client's login-type IP bucket
-//!   (`auth.ip_rate_limit.per_minute`).
-//! - **Password oracle** (`test_user` with a password): reserved against the tested
-//!   username like a login (`LoginThrottle::pre_check`: 429 while it is locked) before the
-//!   directory sees it. A refused password, a username the directory does not have, or a
-//!   failure after the search stays counted; a passed bind, or a directory that failed
-//!   before the user was looked up (connect, service bind), is refunded. A passed test is
-//!   no login: it does not clear earlier failures.
+//!   (`auth.ip_rate_limit.per_minute`); the core holds a directory slot shared with logins
+//!   and ends a test after a total timeout.
+//! - **Password oracle** (`test_user` with a password): a username a login would refuse as
+//!   malformed is a 422 before anything is reserved or contacted (it would charge the
+//!   shared malformed lockout row while the directory matched a real entry). Otherwise the
+//!   test is reserved against the username like a login (`LoginThrottle::pre_check`: 429
+//!   while it is locked) before the directory sees it, then settled as a login would be
+//!   ([`Diagnostic::attempted`]): counted once the password reached the directory (refused,
+//!   interrupted, timed out) or the directory had no single entry for the name; refunded
+//!   when the bind passed or the directory failed before that. A passed test is no login:
+//!   it does not clear earlier failures.
 //!
-//! Tests are recorded in the console audit (the directory, the tested username, the
-//! result; never a password). Nothing else is written.
+//! Tests are recorded in the console audit (the directory or the form's connection, the
+//! tested username, the result; never a password). Nothing else is written.
 
 use std::sync::Arc;
 
@@ -25,8 +29,8 @@ use axum::extract::State;
 use deskhaven_core::auth::limiter::{Attempt, ClientAddr, ThrottleError};
 use deskhaven_core::ldap::{Diagnostic, DirectorySettings, NewDirectory, Step, StepStatus};
 use deskhaven_core::state::AppState;
-use deskhaven_core::users::Password;
-use serde_json::json;
+use deskhaven_core::users::{Password, username_norm};
+use serde_json::{Map, Value, json};
 
 use super::diagnostics_view::{LdapConnectionTest, LdapDiagnosticView, LdapUserTest};
 use super::ldap_view::NewLdapDirectoryBody;
@@ -61,9 +65,8 @@ pub async fn test_ldap_connection(
     spend_token(&state, client)?;
     let diagnostic = state.ldap.test_connection(&settings).await;
     tracing::info!(directory = %settings.name(), passed = diagnostic.passed(), "LDAP connection test");
-    let audit = Audit::new("ldap_directory.test_connection")
-        .target("ldap_directory", target.label())
-        .after(&json!({ "directory": settings.name(), "passed": diagnostic.passed() }));
+    let outcome = json!({ "passed": diagnostic.passed() });
+    let audit = target.audit("ldap_directory.test_connection", &settings, outcome);
     Ok((audit, Json(diagnostic.into())))
 }
 
@@ -80,7 +83,7 @@ pub async fn test_ldap_connection(
     responses(
         (status = 200, description = "The result of every step", body = LdapDiagnosticView),
         (status = 404, description = "No such directory", body = Problem),
-        (status = 422, description = "Not exactly one target, or an invalid form", body = Problem),
+        (status = 422, description = "Not exactly one target, an invalid form, or a malformed username", body = Problem),
         (status = 429, description = "Too many tests from this client, or the username is locked (`rate_limited`)", body = Problem),
     )
 )]
@@ -89,6 +92,11 @@ pub async fn test_ldap_user(
     Client(client): Client,
     ValidJson(body): ValidJson<LdapUserTest>,
 ) -> Result<(Audit, Json<LdapDiagnosticView>), AdminApiError> {
+    // A login reads such a name as malformed: never let it reach the directory as if valid.
+    if username_norm(&body.username).is_none() {
+        let reason = "must be 1-64 characters of A-Z a-z 0-9 . _ @ -";
+        return Err(invalid_field("username", reason));
+    }
     let target = Target::of(body.directory_id, body.directory)?;
     let settings = target.settings(&state).await?;
     let password = body
@@ -104,14 +112,12 @@ pub async fn test_ldap_user(
         settle(&state, attempt, &diagnostic).await;
     }
     tracing::info!(directory = %settings.name(), passed = diagnostic.passed(), "LDAP user test");
-    let audit = Audit::new("ldap_directory.test_user")
-        .target("ldap_directory", target.label())
-        .after(&json!({
-            "directory": settings.name(),
-            "username": body.username,
-            "user_bind": password.is_some(),
-            "passed": diagnostic.passed(),
-        }));
+    let outcome = json!({
+        "username": body.username,
+        "user_bind": password.is_some(),
+        "passed": diagnostic.passed(),
+    });
+    let audit = target.audit("ldap_directory.test_user", &settings, outcome);
     Ok((audit, Json(diagnostic.into())))
 }
 
@@ -142,12 +148,21 @@ impl Target {
         }
     }
 
-    /// The audit target id: the directory's, or `new` for a form.
-    fn label(&self) -> String {
-        match self {
-            Self::Saved(id) => id.to_string(),
-            Self::Unsaved(_) => "new".to_owned(),
-        }
+    /// The audit row of a test of this target (`details`: the outcome).
+    fn audit(&self, action: &'static str, settings: &DirectorySettings, details: Value) -> Audit {
+        let (id, connection) = match self {
+            Self::Saved(id) => (id.to_string(), Value::Null),
+            Self::Unsaved(form) => ("new".to_owned(), form_connection(form)),
+        };
+        let directory = [("directory".to_owned(), json!(settings.name()))];
+        let after: Map<String, Value> = directory
+            .into_iter()
+            .chain(members(connection))
+            .chain(members(details))
+            .collect();
+        Audit::new(action)
+            .target("ldap_directory", id)
+            .after(&after)
     }
 }
 
@@ -182,7 +197,7 @@ async fn reserve(
 
 /// Settles a reserved attempt by the outcome (see the module docs).
 async fn settle(state: &AppState, attempt: Attempt, diagnostic: &Diagnostic) {
-    if !is_refunded(diagnostic) {
+    if is_counted(diagnostic) {
         state.login_throttle.on_failure(attempt);
         return;
     }
@@ -191,11 +206,28 @@ async fn settle(state: &AppState, attempt: Attempt, diagnostic: &Diagnostic) {
     }
 }
 
-/// The password was accepted, or the directory never got as far as the user.
-fn is_refunded(diagnostic: &Diagnostic) -> bool {
-    diagnostic.steps.iter().any(|s| match s.step {
-        Step::UserBind => s.status == StepStatus::Passed,
-        Step::Connect | Step::ServiceBind => s.status == StepStatus::Failed,
-        Step::UserSearch | Step::GroupMapping => false,
+/// A login would have counted it: attempted, and the password not accepted.
+fn is_counted(diagnostic: &Diagnostic) -> bool {
+    let accepted = diagnostic
+        .steps
+        .iter()
+        .any(|s| s.step == Step::UserBind && s.status == StepStatus::Passed);
+    diagnostic.attempted && !accepted
+}
+
+/// The non-secret connection of an unsaved form, for its audit row.
+fn form_connection(form: &NewDirectory) -> Value {
+    json!({
+        "url": form.url,
+        "start_tls": form.start_tls,
+        "tls_verify": form.tls_verify,
+        "bind_dn": form.bind_dn,
     })
+}
+
+fn members(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(members) => members,
+        _ => Map::new(),
+    }
 }

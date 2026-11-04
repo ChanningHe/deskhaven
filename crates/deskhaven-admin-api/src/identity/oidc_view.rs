@@ -153,7 +153,7 @@ pub struct OidcProviderPatch {
     pub icon: Option<Option<String>>,
     #[garde(length(chars, min = 1, max = MAX_CLIENT_ID))]
     pub client_id: Option<String>,
-    /// A new secret; `null` makes the provider a public client.
+    /// A new secret; `null` makes the provider a public client (an empty string is refused).
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<String>, nullable, format = Password)]
     #[garde(length(max = MAX_CLIENT_SECRET))]

@@ -1,10 +1,11 @@
 //! Audit guards of identity writes, decided in the write transaction on the committed
-//! role: providers are an administrator's, directories the owner's alone (06 §3.6: whoever
-//! can point the directory elsewhere can impersonate every directory account).
+//! role: providers and directories are the owner's alone (06 §3.6: whoever can point the
+//! directory elsewhere can impersonate every directory account; a provider's admin group and
+//! auto-provisioning mint administrators).
 //!
-//! Snapshots name every non-secret field, so url, bind DN, TLS and enabled changes show in
-//! `before` / `after`. A secret appears only as its key with `null` (none) or a marker the
-//! audit log masks (set); its value never reaches a snapshot.
+//! Snapshots name every field a write can change, so url, bind DN, TLS and enabled changes
+//! show in `before` / `after`. A secret appears only as its key with `null` (none) or a
+//! marker the audit log masks (set); its value never reaches a snapshot.
 
 use deskhaven_core::console_audit::{Refused, TxGuard};
 use deskhaven_core::ldap::Directory;
@@ -27,7 +28,10 @@ pub(super) fn provider_guard(
     let entry_ctx = ctx.clone();
     ctx.admin_guard(
         &state.console_audit,
-        move |_, before: Option<&Provider>, after: Option<&Provider>| {
+        move |role, before: Option<&Provider>, after: Option<&Provider>| {
+            if role != Role::Owner {
+                return Err(Refused::new(FORBIDDEN));
+            }
             let id = after.or(before).map_or(0, |p| p.id);
             let mut audit = Audit::new(action).target("oidc_provider", id);
             if let Some(before) = before {
@@ -74,6 +78,7 @@ fn secret_marker(set: bool) -> Option<&'static str> {
 struct ProviderSnapshot<'a> {
     name: &'a str,
     display_name: &'a str,
+    icon: Option<&'a str>,
     issuer: &'a str,
     client_id: &'a str,
     client_secret: Option<&'static str>,
@@ -89,6 +94,7 @@ impl<'a> From<&'a Provider> for ProviderSnapshot<'a> {
         Self {
             name: &p.name,
             display_name: &p.display_name,
+            icon: p.icon.as_deref(),
             issuer: &p.issuer,
             client_id: &p.client_id,
             client_secret: secret_marker(p.has_client_secret),
@@ -112,6 +118,8 @@ struct DirectorySnapshot<'a> {
     user_base_dn: &'a str,
     user_filter: &'a str,
     username_attr: &'a str,
+    email_attr: Option<&'a str>,
+    display_name_attr: Option<&'a str>,
     group_base_dn: Option<&'a str>,
     group_filter: Option<&'a str>,
     admin_group_dn: Option<&'a str>,
@@ -130,6 +138,8 @@ impl<'a> From<&'a Directory> for DirectorySnapshot<'a> {
             user_base_dn: &d.user_base_dn,
             user_filter: &d.user_filter,
             username_attr: &d.username_attr,
+            email_attr: d.email_attr.as_deref(),
+            display_name_attr: d.display_name_attr.as_deref(),
             group_base_dn: d.group_base_dn.as_deref(),
             group_filter: d.group_filter.as_deref(),
             admin_group_dn: d.admin_group_dn.as_deref(),

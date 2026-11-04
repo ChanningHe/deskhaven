@@ -70,6 +70,16 @@ pub async fn harness_with_ldap(
     db: &deskhaven_db::testing::TestDb,
     connector: std::sync::Arc<dyn deskhaven_core::ldap::Connector>,
 ) -> Harness {
+    let limits = deskhaven_core::ldap::DirectoryLimits::default();
+    harness_with_ldap_limits(db, connector, limits).await
+}
+
+/// [`harness_with_ldap`] with other bounds on directory work.
+pub async fn harness_with_ldap_limits(
+    db: &deskhaven_db::testing::TestDb,
+    connector: std::sync::Arc<dyn deskhaven_core::ldap::Connector>,
+    limits: deskhaven_core::ldap::DirectoryLimits,
+) -> Harness {
     use std::sync::Arc;
 
     let base = super::harness(db, deskhaven_admin_api::AdminRoutes::new()).await;
@@ -89,7 +99,8 @@ pub async fn harness_with_ldap(
         state.groups.clone(),
         Arc::clone(&state.clock),
         connector,
-    );
+    )
+    .with_limits(limits);
     let state = Arc::new(deskhaven_core::state::AppState { ldap, ..state });
     let routes = deskhaven_admin_api::api_routes().unwrap();
     let router = deskhaven_http::apply_middleware(
