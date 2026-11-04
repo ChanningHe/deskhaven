@@ -11,16 +11,12 @@ import { SecretRevealDialog } from '@/components/common/secret-reveal-dialog'
 import { Button } from '@/components/ui/button'
 
 import { acceptSession, useLogout } from '../api'
+import { groupedSecret } from '../secret-format'
 import { landingPath } from '../session'
 import { AuthError } from './auth-error'
 import { AuthLayout } from './auth-layout'
 import { QrCode } from './qr-code'
 import { TextField } from './text-field'
-
-/** `ABCDEFGH…` as `ABCD EFGH …`, easier to type into an authenticator. */
-function grouped(secret: string): string {
-  return secret.replace(/(.{4})(?=.)/g, '$1 ')
-}
 
 /**
  * `/account/two-factor`: `auth.tfa.enforce` requires TOTP and the account has
@@ -96,7 +92,7 @@ export function TotpEnrolmentPage() {
             <QrCode qr={enrolment.qr} label={t('accountSetup.qrLabel')} />
             <p className="text-sm text-muted-foreground">{t('accountSetup.manual')}</p>
             <code className="rounded bg-muted px-2 py-1 font-mono text-sm break-all">
-              {grouped(enrolment.secret)}
+              {groupedSecret(enrolment.secret)}
             </code>
           </div>
           <form method="post" className="space-y-4" onSubmit={submit}>

@@ -43,6 +43,7 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   self_service: 'errors.codes.self_service',
   managed_by_config: 'errors.codes.managed_by_config',
   not_local_account: 'errors.codes.not_local_account',
+  tfa_enforced: 'errors.codes.tfa_enforced',
   setting_pinned: 'errors.codes.setting_pinned',
   version_conflict: 'errors.codes.version_conflict',
 }

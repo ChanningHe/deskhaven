@@ -302,6 +302,7 @@
       "self_service": "Manage this for your own account on your account page.",
       "managed_by_config": "This item is managed by the configuration file and is read-only here.",
       "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there.",
+      "tfa_enforced": "Two-factor authentication is required for this account, so it cannot be turned off.",
       "setting_pinned": "This setting is fixed by the server configuration and cannot be changed here.",
       "version_conflict": "The setting was changed by someone else. Reload and try again."
     }
@@ -409,9 +410,7 @@
       "emptyDescription": "Create a token to call the management API from scripts."
     },
     "me": {
-      "description": "Your account, password and two-factor authentication.",
-      "emptyTitle": "Your account page is coming soon",
-      "emptyDescription": "Profile, password, two-factor authentication and sessions will be managed here."
+      "description": "Your account, password and two-factor authentication."
     }
   },
   "login": {
@@ -490,6 +489,121 @@
     "enable": "Enable",
     "recoveryTitle": "Recovery codes",
     "recoveryDescription": "Each code signs you in once if you lose your authenticator. Keep them somewhere safe."
+  },
+  "me": {
+    "loadFailed": "Could not load your account",
+    "tabs": {
+      "account": "Account",
+      "sessions": "Sessions",
+      "devices": "Devices",
+      "books": "Address books"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Your display name and email. The username cannot be changed here.",
+      "displayName": "Display name",
+      "email": "Email",
+      "verified": "Verified",
+      "unverified": "Unverified",
+      "emailChangeHint": "A new email address is marked unverified until an administrator verifies it again.",
+      "save": "Save profile"
+    },
+    "password": {
+      "title": "Password",
+      "description": "After a change, every other signed-in session of yours stops working.",
+      "submit": "Change password",
+      "changed": "Password updated. Your sessions on other devices were signed out.",
+      "external": {
+        "local": "This account uses a local password.",
+        "ldap": "This account signs in through the LDAP directory. Its password is managed there and cannot be changed here.",
+        "oidc": "This account signs in through single sign-on (OIDC) and has no local password."
+      }
+    },
+    "tfa": {
+      "title": "Two-factor authentication",
+      "description": "An authenticator app generates the code requested at sign-in.",
+      "on": "Enabled",
+      "off": "Not enabled",
+      "recoveryLeft": "Recovery codes left: {{count}}",
+      "enable": "Enable two-factor authentication",
+      "disable": "Turn off two-factor authentication",
+      "regenerate": "Regenerate recovery codes",
+      "requiredHint": "An administrator requires two-factor authentication for your account, so it cannot be turned off.",
+      "external": "Accounts that sign in through single sign-on use no local second factor; the identity provider handles it.",
+      "enrolTitle": "Enable two-factor authentication",
+      "enrolDescription": "Scan the QR code with an authenticator app, then enter your current password and the code the app shows.",
+      "disableTitle": "Turn off two-factor authentication",
+      "disableDescription": "Signing in will need only your password, and the recovery codes stop working. Enter your current password to confirm.",
+      "disableSubmit": "Turn off",
+      "regenerateTitle": "Regenerate recovery codes",
+      "regenerateDescription": "All old recovery codes stop working. Enter your current password to confirm.",
+      "regenerateSubmit": "Regenerate"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "description": "Your client and console sign-ins. A revoked device has to sign in again.",
+      "loadFailed": "Could not load your sessions",
+      "kind": {
+        "client": "Client",
+        "console": "Console"
+      },
+      "current": "Current session",
+      "columns": {
+        "kind": "Type",
+        "device": "Device / browser",
+        "ip": "Address",
+        "lastUsed": "Last used"
+      },
+      "unknownDevice": "Unknown",
+      "revoke": "Revoke",
+      "revokeNamed": "Revoke session: {{name}}",
+      "revokeOthers": "Revoke other sessions",
+      "revokeTitle": "Revoke this session?",
+      "revokeDescription": "The device or browser using it has to sign in again.",
+      "revokeCurrentDescription": "This is the session you are using. Revoking it signs you out.",
+      "revokeOthersTitle": "Revoke all other sessions?",
+      "revokeOthersDescription": "Every client and console session of yours except this one stops working and has to sign in again.",
+      "selfReported": "Device names, systems and browser details are reported by the other end; the server cannot verify them."
+    },
+    "devices": {
+      "title": "My devices",
+      "description": "Devices that belong to you. An administrator assigns them.",
+      "loadFailed": "Could not load your devices",
+      "emptyTitle": "No device is assigned to you yet",
+      "emptyDescription": "An administrator assigns devices, or they are assigned at deployment with a token.",
+      "columns": {
+        "id": "Device ID",
+        "hostname": "Hostname",
+        "os": "System",
+        "version": "Version",
+        "status": "Status",
+        "lastSeen": "Last seen"
+      },
+      "truncated": "Showing {{shown}} of {{total}} devices.",
+      "selfReported": "Hostname, system and version are reported by the device itself; the server cannot verify them."
+    },
+    "books": {
+      "title": "My address books",
+      "description": "Your personal address book, and the shared ones with the rule you hold on each.",
+      "loadFailed": "Could not load your address books",
+      "columns": {
+        "name": "Name",
+        "kind": "Type",
+        "owner": "Owner",
+        "rule": "My access"
+      },
+      "kind": {
+        "personal": "Personal",
+        "shared": "Shared"
+      },
+      "rule": {
+        "readOnly": "Read only",
+        "readWrite": "Read and write",
+        "fullControl": "Full control"
+      },
+      "adminManaged": "Managed by administrators",
+      "editInClient": "Edit address book entries in the client."
+    }
   },
   "notFound": {
     "title": "Page not found",

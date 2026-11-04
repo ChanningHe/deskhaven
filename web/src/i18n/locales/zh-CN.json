@@ -302,6 +302,7 @@
       "self_service": "请在“我的”页面管理自己账户的此项设置。",
       "managed_by_config": "此项由配置文件管理，在此处只读。",
       "not_local_account": "该账号通过单点登录或 LDAP 登录，其密码与第二因素由身份提供方管理。",
+      "tfa_enforced": "此账号必须使用两步验证，无法关闭。",
       "setting_pinned": "该设置由服务器配置固定，无法在此修改。",
       "version_conflict": "该设置已被他人修改，请重新载入后再试。"
     }
@@ -409,9 +410,7 @@
       "emptyDescription": "创建 Token 以便在脚本中调用管理 API。"
     },
     "me": {
-      "description": "你的账户、密码与双因素认证。",
-      "emptyTitle": "个人中心即将开放",
-      "emptyDescription": "资料、改密、双因素认证和会话管理将在这里提供。"
+      "description": "你的账户、密码与双因素认证。"
     }
   },
   "login": {
@@ -490,6 +489,121 @@
     "enable": "启用",
     "recoveryTitle": "恢复码",
     "recoveryDescription": "丢失验证器时，每个恢复码可登录一次。请妥善保存。"
+  },
+  "me": {
+    "loadFailed": "无法加载账户信息",
+    "tabs": {
+      "account": "账号",
+      "sessions": "会话",
+      "devices": "设备",
+      "books": "地址簿"
+    },
+    "profile": {
+      "title": "个人资料",
+      "description": "显示名称和邮箱。用户名不能自行修改。",
+      "displayName": "显示名称",
+      "email": "邮箱",
+      "verified": "已验证",
+      "unverified": "未验证",
+      "emailChangeHint": "新的邮箱地址将标记为未验证，需由管理员重新验证。",
+      "save": "保存资料"
+    },
+    "password": {
+      "title": "密码",
+      "description": "修改后，其他设备上的登录会话都会失效。",
+      "submit": "修改密码",
+      "changed": "密码已更新，其他设备上的会话已失效。",
+      "external": {
+        "local": "此账号使用本地密码。",
+        "ldap": "此账号通过 LDAP 目录登录，密码由目录管理，无法在此修改。",
+        "oidc": "此账号通过单点登录（OIDC）登录，没有本地密码。"
+      }
+    },
+    "tfa": {
+      "title": "两步验证",
+      "description": "用验证器应用生成登录时需要的验证码。",
+      "on": "已启用",
+      "off": "未启用",
+      "recoveryLeft": "剩余 {{count}} 个恢复码",
+      "enable": "启用两步验证",
+      "disable": "关闭两步验证",
+      "regenerate": "重新生成恢复码",
+      "requiredHint": "管理员要求你的账号使用两步验证，无法关闭。",
+      "external": "通过单点登录的账号不使用本地两步验证，由身份提供方负责。",
+      "enrolTitle": "启用两步验证",
+      "enrolDescription": "用验证器应用扫描二维码，再输入当前密码和应用显示的验证码。",
+      "disableTitle": "关闭两步验证",
+      "disableDescription": "关闭后登录只需密码，恢复码也会失效。请输入当前密码确认。",
+      "disableSubmit": "确认关闭",
+      "regenerateTitle": "重新生成恢复码",
+      "regenerateDescription": "旧的恢复码将全部失效。请输入当前密码确认。",
+      "regenerateSubmit": "重新生成"
+    },
+    "sessions": {
+      "title": "登录会话",
+      "description": "你的客户端和控制台登录。吊销后，对应设备需要重新登录。",
+      "loadFailed": "无法加载会话",
+      "kind": {
+        "client": "客户端",
+        "console": "控制台"
+      },
+      "current": "当前会话",
+      "columns": {
+        "kind": "类型",
+        "device": "设备 / 浏览器",
+        "ip": "地址",
+        "lastUsed": "最近使用"
+      },
+      "unknownDevice": "未知",
+      "revoke": "吊销",
+      "revokeNamed": "吊销会话：{{name}}",
+      "revokeOthers": "吊销其他会话",
+      "revokeTitle": "吊销此会话？",
+      "revokeDescription": "使用该会话的设备或浏览器需要重新登录。",
+      "revokeCurrentDescription": "这是你当前使用的会话，吊销后会退出登录。",
+      "revokeOthersTitle": "吊销其他所有会话？",
+      "revokeOthersDescription": "除当前会话外，你的所有客户端和控制台会话都会失效，需要重新登录。",
+      "selfReported": "设备名称、系统和浏览器信息由对方自行上报，服务器无法验证。"
+    },
+    "devices": {
+      "title": "我的设备",
+      "description": "归属于你的设备。归属由管理员分配。",
+      "loadFailed": "无法加载设备",
+      "emptyTitle": "还没有分配给你的设备",
+      "emptyDescription": "设备归属由管理员分配，或在部署时通过令牌指定。",
+      "columns": {
+        "id": "设备 ID",
+        "hostname": "主机名",
+        "os": "系统",
+        "version": "版本",
+        "status": "状态",
+        "lastSeen": "最后在线"
+      },
+      "truncated": "仅显示 {{shown}} / {{total}} 台。",
+      "selfReported": "主机名、系统和版本由设备自行上报，服务器无法验证。"
+    },
+    "books": {
+      "title": "我的地址簿",
+      "description": "你的个人地址簿，以及共享给你的地址簿和你拥有的权限。",
+      "loadFailed": "无法加载地址簿",
+      "columns": {
+        "name": "名称",
+        "kind": "类型",
+        "owner": "所有者",
+        "rule": "我的权限"
+      },
+      "kind": {
+        "personal": "个人",
+        "shared": "共享"
+      },
+      "rule": {
+        "readOnly": "只读",
+        "readWrite": "读写",
+        "fullControl": "完全控制"
+      },
+      "adminManaged": "由管理员管理",
+      "editInClient": "地址簿内容请在客户端中编辑。"
+    }
   },
   "notFound": {
     "title": "页面不存在",
