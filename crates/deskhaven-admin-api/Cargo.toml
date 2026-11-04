@@ -11,6 +11,7 @@ axum = { workspace = true, features = ["query"] }
 base64_022 = { workspace = true }
 deskhaven-config = { workspace = true }
 deskhaven-core = { workspace = true }
+deskhaven-db = { workspace = true }
 deskhaven-http = { workspace = true }
 garde = { workspace = true }
 qrcodegen = { workspace = true }

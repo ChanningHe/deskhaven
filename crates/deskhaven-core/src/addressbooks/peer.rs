@@ -191,7 +191,13 @@ impl PeerPatch {
     }
 }
 
-/// A peer id: 1-128 characters, no whitespace or control characters.
+/// `.` and `..`: URL clients normalise them away even when percent-encoded, so a console
+/// request addressing an entry or tag by such a name would land on another resource.
+fn is_dot_segment(name: &str) -> bool {
+    name == "." || name == ".."
+}
+
+/// A peer id: 1-128 characters, no whitespace or control characters, not `.` or `..`.
 pub fn check_id(id: &str) -> Result<(), AddressBookError> {
     let bad = |c: char| c.is_whitespace() || c.is_control();
     if id.is_empty() || id.chars().count() > ID_MAX_LEN || id.chars().any(bad) {
@@ -200,13 +206,19 @@ pub fn check_id(id: &str) -> Result<(), AddressBookError> {
             format!("must be 1-{ID_MAX_LEN} characters without spaces"),
         ));
     }
+    if is_dot_segment(id) {
+        return Err(invalid(ID, "must not be . or .."));
+    }
     Ok(())
 }
 
-/// A tag name: 1-64 characters, no control characters.
+/// A tag name: 1-64 characters, no control characters, not `.` or `..`.
 pub fn check_tag_name(field: &'static str, name: &str) -> Result<(), AddressBookError> {
     if name.is_empty() {
         return Err(invalid(field, "must not be empty"));
+    }
+    if is_dot_segment(name) {
+        return Err(invalid(field, "must not be . or .."));
     }
     match text::problem(name, TAG_NAME_MAX_LEN, false) {
         Some(reason) => Err(invalid(field, reason)),

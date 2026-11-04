@@ -411,6 +411,13 @@ async fn share_and_tag_writes_are_guarded_too_and_unchanged_writes_record_nothin
             .delete_tags_guarded(admin, guid, &[], recording(db, "tag.delete"))
             .await
             .unwrap();
+        let before = env.books.admin_book(guid).await.unwrap().book.updated_at;
+        env.books
+            .delete_tags_guarded(admin, guid, &["ghost".into()], recording(db, "tag.delete"))
+            .await
+            .unwrap();
+        let after = env.books.admin_book(guid).await.unwrap().book.updated_at;
+        assert_eq!(before, after, "deleting an unknown tag changes nothing");
         env.books
             .set_share_guarded(
                 admin,
@@ -482,6 +489,121 @@ async fn share_and_tag_writes_are_guarded_too_and_unchanged_writes_record_nothin
             (Some(2), Some(alice))
         );
         assert_eq!(json_of(&rows[3].before)["tags"], json!(["t2"]));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_refused_rule_3_attempt_writes_no_audit_row() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let alice = env.user("alice").await;
+        let carol = env.user("carol").await;
+        let book = env.shared_with("Ops", alice, Rule::FullControl).await;
+        let guid = &book.guid;
+        env.books
+            .set_share(Actor::Admin, guid, Subject::User(carol), Rule::FullControl)
+            .await
+            .unwrap();
+        let me = Actor::User(alice);
+
+        let grant = env
+            .books
+            .set_share_guarded(
+                me,
+                guid,
+                Subject::User(alice),
+                Rule::FullControl,
+                recording(db, "share.set"),
+            )
+            .await;
+        let demote = env
+            .books
+            .set_share_guarded(
+                me,
+                guid,
+                Subject::User(carol),
+                Rule::ReadOnly,
+                recording(db, "share.set"),
+            )
+            .await;
+        let revoke = env
+            .books
+            .remove_share_guarded(
+                me,
+                guid,
+                Subject::User(carol),
+                recording(db, "share.remove"),
+            )
+            .await;
+        let delete = env
+            .books
+            .delete_shared_guarded(me, guid, recording(db, "book.delete"))
+            .await;
+
+        for result in [grant, demote, revoke] {
+            assert!(
+                matches!(result, Err(AddressBookError::Forbidden)),
+                "{result:?}"
+            );
+        }
+        assert!(
+            matches!(delete, Err(AddressBookError::Forbidden)),
+            "{delete:?}"
+        );
+        assert!(audit_rows(db).await.is_empty());
+        assert_eq!(env.books.shares(me, guid).await.unwrap().len(), 2);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn dot_segments_are_not_entry_ids_or_tag_names() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let book = env.shared("Ops", None).await;
+        let admin = Actor::Admin;
+        let guid = &book.guid;
+        env.books
+            .add_tag(
+                admin,
+                guid,
+                Tag {
+                    name: "ok".into(),
+                    color: 1,
+                },
+            )
+            .await
+            .unwrap();
+
+        for name in [".", ".."] {
+            let tag = Tag {
+                name: name.into(),
+                color: 1,
+            };
+            let added = env.books.add_tag(admin, guid, tag).await;
+            let renamed = env.books.rename_tag(admin, guid, "ok", name).await;
+            let peer = deskhaven_core::addressbooks::PeerPatch::from_json(json!({"id": name}));
+            for result in [added, renamed, peer.map(drop)] {
+                assert!(
+                    matches!(result, Err(AddressBookError::Invalid { .. })),
+                    "{name}: {result:?}"
+                );
+            }
+        }
+        assert!(
+            env.books
+                .add_tag(
+                    admin,
+                    guid,
+                    Tag {
+                        name: "...".into(),
+                        color: 1
+                    }
+                )
+                .await
+                .is_ok()
+        );
     })
     .await;
 }
@@ -624,6 +746,62 @@ async fn importing_devices_adds_entries_and_leaves_existing_ones_alone() {
             audit_rows(db).await.len(),
             1,
             "nothing added, nothing recorded"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_import_that_adds_nothing_reports_even_over_a_lowered_limit() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let admin = Actor::Admin;
+        let book = env.shared("Ops", None).await;
+        let ids = [
+            register(db, "100", "a", "linux").await,
+            register(db, "200", "b", "linux").await,
+        ];
+        env.books
+            .import_devices(admin, &book.guid, &ids)
+            .await
+            .unwrap();
+        common::set(&env.settings, "addressbook.max_peers", json!(1)).await;
+
+        let report = env
+            .books
+            .import_devices(admin, &book.guid, &ids)
+            .await
+            .unwrap();
+
+        assert!(report.added.is_empty());
+        assert_eq!(report.existing, ["100", "200"]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_device_whose_registry_values_make_no_entry_is_named_in_the_error() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let book = env.shared("Ops", None).await;
+        let good = register(db, "100", "fine", "linux").await;
+        let bad = register(db, "200", "bell\u{7}host", "linux").await;
+
+        let refused = env
+            .books
+            .import_devices(Actor::Admin, &book.guid, &[good, bad])
+            .await;
+
+        match refused {
+            Err(AddressBookError::Invalid { field, reason }) => {
+                assert_eq!(field, "device_ids");
+                assert!(reason.contains(&format!("device {bad}")), "{reason}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            stored_peers(&env, &book.guid).await.is_empty(),
+            "all or nothing"
         );
     })
     .await;

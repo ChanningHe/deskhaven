@@ -207,6 +207,44 @@ async fn rule_3_sharee_cannot_change_or_revoke_another_rule_3_grant() {
 }
 
 #[tokio::test]
+async fn the_owner_grants_rule_3_changes_or_revokes_it_and_deletes_the_book() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let owner = env.user("owner").await;
+        let bob = env.user("bob").await;
+        let carol = env.user("carol").await;
+        let book = env.shared("owned", Some(owner)).await;
+        let me = Actor::User(owner);
+
+        for subject in [Subject::User(bob), Subject::User(carol)] {
+            env.books
+                .set_share(me, &book.guid, subject, Rule::FullControl)
+                .await
+                .unwrap();
+        }
+        env.books
+            .set_share(me, &book.guid, Subject::User(bob), Rule::ReadOnly)
+            .await
+            .unwrap();
+        env.books
+            .remove_share(me, &book.guid, Subject::User(carol))
+            .await
+            .unwrap();
+        let shares = env.books.shares(me, &book.guid).await.unwrap();
+        assert_eq!(
+            shares
+                .iter()
+                .map(|s| (s.subject, s.rule))
+                .collect::<Vec<_>>(),
+            [(Subject::User(bob), Rule::ReadOnly)]
+        );
+        env.books.delete_shared(me, &book.guid).await.unwrap();
+        assert!(is_not_found(env.books.tags(me, &book.guid).await));
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn books_out_of_reach_are_indistinguishable_from_missing_ones() {
     each_migrated_backend(async |db: &TestDb| {
         let env = env(db).await;

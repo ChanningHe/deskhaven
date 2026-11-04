@@ -407,3 +407,59 @@ async fn devices_are_imported_as_entries() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn dot_segments_and_slashes_are_names_the_console_can_still_address() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, admin, guid) = setup(db).await;
+        let peers = format!("{BOOKS}/{guid}/peers");
+        let tags = format!("{BOOKS}/{guid}/tags");
+        h.write(Method::POST, &tags, &admin, json!({ "name": "keep" }))
+            .await;
+
+        for dots in [".", ".."] {
+            let peer = h
+                .write(Method::POST, &peers, &admin, json!({ "id": dots }))
+                .await;
+            let tag = h
+                .write(Method::POST, &tags, &admin, json!({ "name": dots }))
+                .await;
+            let rename = h
+                .write(
+                    Method::PATCH,
+                    &format!("{tags}/keep"),
+                    &admin,
+                    json!({ "name": dots }),
+                )
+                .await;
+            for reply in [peer, tag, rename] {
+                assert_eq!(reply.status, 422, "{dots}: {}", reply.body);
+            }
+        }
+        // A name with slashes and a query is fine once the client encodes it.
+        let odd = "../x?y#z";
+        let created = h
+            .write(Method::POST, &tags, &admin, json!({ "name": odd }))
+            .await;
+        assert_eq!(created.status, 201, "{}", created.body);
+        let path = format!("{tags}/{}", encode(odd));
+        let patched = h
+            .write(Method::PATCH, &path, &admin, json!({ "color": 5 }))
+            .await;
+        assert_eq!(patched.body, json!({ "name": odd, "color": 5 }));
+    })
+    .await;
+}
+
+/// Percent-encoding of a path segment, as `encodeURIComponent` does.
+fn encode(segment: &str) -> String {
+    segment
+        .bytes()
+        .map(
+            |b| match b.is_ascii_alphanumeric() || b"-_.!~*()'".contains(&b) {
+                true => (b as char).to_string(),
+                false => format!("%{b:02X}"),
+            },
+        )
+        .collect()
+}

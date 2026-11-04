@@ -9,6 +9,14 @@
 //!   it; the `ON DELETE SET NULL` that follows finds those books already locked.
 //! - Deleting a group: the group, then the share rows naming it (groups own no books).
 //!
+//! - A console write (`*_guarded`) re-reads the acting account (`FOR SHARE`, `TxGuard`) *after*
+//!   it locked the book: book -> actor row, the reverse of the order above. It cannot be
+//!   fixed by locking the actor first (the guard runs after the write, inside the service),
+//!   so deleting an administrator while that administrator writes a book it owns can form a
+//!   cycle. PostgreSQL aborts one side with a deadlock error (SQLSTATE `40P01`) and nothing
+//!   is written; the admin API reports it as a retryable 503
+//!   (`deskhaven_db::is_transient_conflict`).
+//!
 //! A share naming the owner of its own book would let the owner's deletion wait for a share
 //! row held by a writer of that book while the writer waits for the book; `set_share`
 //! refuses it (the owner already has full control), and `forget_user` locking the books
@@ -108,23 +116,7 @@ impl AddressBookService {
         {
             return Err(invalid("subject", "the owner already has full control"));
         }
-        let row = address_book_share::ActiveModel {
-            address_book_id: Set(book.id),
-            subject_type: Set(subject_type),
-            subject_id: Set(subject_id),
-            rule: Set(rule),
-        };
-        let on_conflict = OnConflict::columns([
-            address_book_share::Column::AddressBookId,
-            address_book_share::Column::SubjectType,
-            address_book_share::Column::SubjectId,
-        ])
-        .update_column(address_book_share::Column::Rule)
-        .to_owned();
-        address_book_share::Entity::insert(row)
-            .on_conflict(on_conflict)
-            .exec_without_returning(&tx)
-            .await?;
+        upsert_share(&tx, book.id, subject, rule).await?;
         touch(&tx, &book).await?;
         let before = current.map(|c| snapshot::share(subject, c.rule));
         let after = snapshot::share(subject, rule);
@@ -191,6 +183,34 @@ impl AddressBookService {
         });
         Ok(shares.collect())
     }
+}
+
+/// Grants `rule` to `subject`, replacing the rule it had.
+async fn upsert_share(
+    tx: &DatabaseTransaction,
+    book_id: i64,
+    subject: Subject,
+    rule: Rule,
+) -> Result<(), DbErr> {
+    let (subject_type, subject_id) = subject.parts();
+    let row = address_book_share::ActiveModel {
+        address_book_id: Set(book_id),
+        subject_type: Set(subject_type),
+        subject_id: Set(subject_id),
+        rule: Set(rule),
+    };
+    let on_conflict = OnConflict::columns([
+        address_book_share::Column::AddressBookId,
+        address_book_share::Column::SubjectType,
+        address_book_share::Column::SubjectId,
+    ])
+    .update_column(address_book_share::Column::Rule)
+    .to_owned();
+    address_book_share::Entity::insert(row)
+        .on_conflict(on_conflict)
+        .exec_without_returning(tx)
+        .await?;
+    Ok(())
 }
 
 /// A grant from `current` to `new` (`None`: no share) is a steward's business when it

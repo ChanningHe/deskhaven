@@ -1619,7 +1619,7 @@
         "tags": [
           "address-books"
         ],
-        "summary": "Renames and / or recolours a tag (audited `address_book.tag_rename` / `tag_update`).\nRenaming also renames it on the entries. With both, the rename comes first.",
+        "summary": "Renames and / or recolours a tag (audited `address_book.tag_rename` / `tag_update`).\nRenaming also renames it on the entries. With both, the rename comes first and is kept when the recolour then fails (`details.renamed_to`).",
         "operationId": "update_address_book_tag",
         "parameters": [
           {

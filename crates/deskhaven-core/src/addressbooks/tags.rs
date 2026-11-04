@@ -209,25 +209,45 @@ impl AddressBookService {
         doomed_list.sort_unstable();
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
-        for chunk in doomed_list.chunks(DELETE_CHUNK) {
-            address_book_tag::Entity::delete_many()
-                .filter(address_book_tag::Column::AddressBookId.eq(book.id))
-                .filter(address_book_tag::Column::Name.is_in(chunk.iter().copied()))
-                .exec(&tx)
-                .await?;
-        }
+        let removed = remove_tags(&tx, book.id, &doomed_list).await?;
+        // A name the tag list does not have may still be on entries: cleaned up quietly.
         rewrite_peer_tags(&tx, &book, |tag| {
             (!doomed.contains(tag)).then(|| tag.to_owned())
         })
         .await?;
-        touch(&tx, &book).await?;
-        if !doomed.is_empty() {
-            let before = snapshot::tag_names(doomed_list.iter().copied());
+        if !removed.is_empty() {
+            touch(&tx, &book).await?;
+            let before = snapshot::tag_names(removed.iter().map(String::as_str));
             guard.check(&tx, Some(&before), None).await?;
         }
         tx.commit().await?;
         Ok(())
     }
+}
+
+/// Deletes the tags of the book named in `names`; the names that were tags, sorted.
+async fn remove_tags(
+    tx: &DatabaseTransaction,
+    book_id: i64,
+    names: &[&str],
+) -> Result<Vec<String>, AddressBookError> {
+    let mut removed = Vec::new();
+    for chunk in names.chunks(DELETE_CHUNK) {
+        let in_chunk = address_book_tag::Column::Name.is_in(chunk.iter().copied());
+        let rows = address_book_tag::Entity::find()
+            .filter(address_book_tag::Column::AddressBookId.eq(book_id))
+            .filter(in_chunk.clone())
+            .all(tx)
+            .await?;
+        address_book_tag::Entity::delete_many()
+            .filter(address_book_tag::Column::AddressBookId.eq(book_id))
+            .filter(in_chunk)
+            .exec(tx)
+            .await?;
+        removed.extend(rows.into_iter().map(|row| row.name));
+    }
+    removed.sort_unstable();
+    Ok(removed)
 }
 
 pub(super) fn check_tag(tag: &Tag) -> Result<(), AddressBookError> {

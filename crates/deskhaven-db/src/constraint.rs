@@ -27,7 +27,7 @@ pub fn is_foreign_key_violation(err: &DbErr) -> bool {
 }
 
 /// The driver-level error code, if the error came from the database itself.
-fn database_code(err: &DbErr) -> Option<String> {
+pub(crate) fn database_code(err: &DbErr) -> Option<String> {
     let runtime = match err {
         DbErr::Exec(runtime) | DbErr::Query(runtime) | DbErr::Conn(runtime) => runtime,
         _ => return None,

@@ -7,9 +7,11 @@
 
 use std::collections::HashSet;
 
-use deskhaven_db::entity::{address_book_peer, device};
+use deskhaven_db::entity::{address_book, address_book_peer, device};
 use deskhaven_db::{begin_write, time};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+};
 use serde_json::Value;
 
 use super::access::{Actor, authorize};
@@ -68,45 +70,84 @@ impl AddressBookService {
         let tx = begin_write(&self.db).await?;
         let (book, _) = authorize(&tx, actor, guid, Rule::ReadWrite, true).await?;
         let wanted: HashSet<i64> = device_ids.iter().copied().collect();
-        let mut devices = device::Entity::find()
-            .filter(device::Column::Id.is_in(wanted.iter().copied()))
-            .all(&tx)
-            .await?;
-        devices.sort_by(|a, b| a.rustdesk_id.cmp(&b.rustdesk_id));
-        let found: HashSet<i64> = devices.iter().map(|d| d.id).collect();
-        let mut report = ImportReport {
-            missing: sorted(wanted.difference(&found).copied()),
-            ..ImportReport::default()
-        };
-        let listed: HashSet<String> = address_book_peer::Entity::find()
-            .filter(address_book_peer::Column::AddressBookId.eq(book.id))
-            .all(&tx)
-            .await?
-            .into_iter()
-            .map(|row| row.rustdesk_id)
-            .collect();
+        let (devices, missing) = load_devices(&tx, &wanted).await?;
+        let listed = listed_ids(&tx, book.id).await?;
         let (known, fresh): (Vec<_>, Vec<_>) = devices
             .into_iter()
             .partition(|d| listed.contains(&d.rustdesk_id));
-        report.existing = known.into_iter().map(|d| d.rustdesk_id).collect();
+        let mut report = ImportReport {
+            existing: known.into_iter().map(|d| d.rustdesk_id).collect(),
+            missing,
+            ..ImportReport::default()
+        };
+        // Nothing to add: the report stands, whatever the book's size against a lowered limit.
+        if fresh.is_empty() {
+            return Ok(report);
+        }
         if (listed.len() + fresh.len()) as u64 > u64::from(max) {
             return Err(AddressBookError::Full { max });
         }
-        let now = time::now();
-        for device in &fresh {
-            let patch = PeerPatch::from_json(entry_json(device))?;
-            let row = self.new_row(&book, patch, now)?;
-            row.insert(&tx).await.map_err(peer_conflict)?;
-            report.added.push(device.rustdesk_id.clone());
-        }
-        if !fresh.is_empty() {
-            touch(&tx, &book).await?;
-            let after = snapshot::peer_ids(report.added.iter().map(String::as_str));
-            guard.check(&tx, None, Some(&after)).await?;
-        }
+        report.added = self.insert_entries(&tx, &book, &fresh).await?;
+        touch(&tx, &book).await?;
+        let after = snapshot::peer_ids(report.added.iter().map(String::as_str));
+        guard.check(&tx, None, Some(&after)).await?;
         tx.commit().await?;
         Ok(report)
     }
+
+    /// Inserts an entry per device; the RustDesk ids added. A device whose registry values
+    /// make an invalid entry fails the import, naming the device.
+    async fn insert_entries(
+        &self,
+        tx: &DatabaseTransaction,
+        book: &address_book::Model,
+        devices: &[device::Model],
+    ) -> Result<Vec<String>, AddressBookError> {
+        let now = time::now();
+        let mut added = Vec::with_capacity(devices.len());
+        for device in devices {
+            let patch = PeerPatch::from_json(entry_json(device)).map_err(|err| match err {
+                AddressBookError::Invalid { field, reason } => invalid(
+                    "device_ids",
+                    format!("device {} ({field}): {reason}", device.id),
+                ),
+                other => other,
+            })?;
+            let row = self.new_row(book, patch, now)?;
+            row.insert(tx).await.map_err(peer_conflict)?;
+            added.push(device.rustdesk_id.clone());
+        }
+        Ok(added)
+    }
+}
+
+/// The devices among `wanted` (`devices.id`), by RustDesk id, and the ids that name none.
+async fn load_devices(
+    tx: &DatabaseTransaction,
+    wanted: &HashSet<i64>,
+) -> Result<(Vec<device::Model>, Vec<i64>), AddressBookError> {
+    let mut devices = device::Entity::find()
+        .filter(device::Column::Id.is_in(wanted.iter().copied()))
+        .all(tx)
+        .await?;
+    devices.sort_by(|a, b| a.rustdesk_id.cmp(&b.rustdesk_id));
+    let found: HashSet<i64> = devices.iter().map(|d| d.id).collect();
+    Ok((devices, sorted(wanted.difference(&found).copied())))
+}
+
+/// The RustDesk ids the book lists (ids only: a book can hold thousands of entries).
+async fn listed_ids(
+    tx: &DatabaseTransaction,
+    book_id: i64,
+) -> Result<HashSet<String>, AddressBookError> {
+    let ids = address_book_peer::Entity::find()
+        .select_only()
+        .column(address_book_peer::Column::RustdeskId)
+        .filter(address_book_peer::Column::AddressBookId.eq(book_id))
+        .into_tuple::<String>()
+        .all(tx)
+        .await?;
+    Ok(ids.into_iter().collect())
 }
 
 fn sorted(ids: impl Iterator<Item = i64>) -> Vec<i64> {

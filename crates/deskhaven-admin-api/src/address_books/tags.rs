@@ -8,6 +8,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use deskhaven_core::addressbooks::{Actor, DEFAULT_TAG_COLOR, Tag};
 use deskhaven_core::state::AppState;
+use serde_json::json;
 
 use super::guard::book_guard;
 use super::view::{ItemList, NamesBody, NewTagBody, TagPatch, TagView};
@@ -80,7 +81,7 @@ pub async fn add_tag(
 }
 
 /// Renames and / or recolours a tag (audited `address_book.tag_rename` / `tag_update`).
-/// Renaming also renames it on the entries. With both, the rename comes first.
+/// Renaming also renames it on the entries. With both, the rename comes first and is kept when the recolour then fails (`details.renamed_to`).
 #[utoipa::path(
     patch,
     path = "/address-books/{guid}/tags/{name}",
@@ -125,7 +126,15 @@ pub async fn update_tag(
         };
         books
             .update_tag_guarded(Actor::Admin, &guid, tag, guard)
-            .await?;
+            .await
+            .map_err(|err| {
+                // The rename above is committed: say so, or the caller retries the old name.
+                let error = AdminApiError::from(err);
+                match current == name {
+                    true => error,
+                    false => error.with_details(json!({ "renamed_to": current })),
+                }
+            })?;
     }
     let tags = books.tags(Actor::Admin, &guid).await?;
     let found = tags.into_iter().find(|t| t.name == current);

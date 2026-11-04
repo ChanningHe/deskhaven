@@ -17,6 +17,10 @@ use utoipa::ToSchema;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
+/// `Retry-After` of a request the database aborted as a deadlock victim: the other
+/// transaction is long done by then.
+const TRANSIENT_RETRY_AFTER: Duration = Duration::from_secs(1);
+
 /// Stable wire codes. Renaming one is a breaking API change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -233,10 +237,19 @@ impl AdminApiError {
         }
     }
 
-    /// Generic 500; `err` is logged, never returned.
+    /// Generic 500; `err` is logged, never returned. A database deadlock or serialization
+    /// failure anywhere in its chain (nothing was written; the same request can succeed on a
+    /// retry) is a 503 with `Retry-After` instead.
     pub fn internal(err: impl Into<BoxError>) -> Self {
+        let source: BoxError = err.into();
+        if deskhaven_db::chain_has_transient_conflict(source.as_ref()) {
+            return Self {
+                source: Some(source),
+                ..Self::unavailable(TRANSIENT_RETRY_AFTER)
+            };
+        }
         Self {
-            source: Some(err.into()),
+            source: Some(source),
             ..Self::new(ErrorCode::Internal, INTERNAL_ERROR_BODY)
         }
     }
@@ -297,4 +310,43 @@ impl IntoResponse for AdminApiError {
 fn retry_after_secs(wait: Duration) -> u64 {
     let rounded_up = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
     rounded_up.max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::response::IntoResponse;
+    use deskhaven_core::addressbooks::AddressBookError;
+    use deskhaven_db::coded_error::coded_error;
+
+    use super::*;
+
+    fn status_and_retry(err: AdminApiError) -> (StatusCode, Option<String>) {
+        let response = err.into_response();
+        let retry = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        (response.status(), retry)
+    }
+
+    #[test]
+    fn a_deadlock_victim_is_a_retryable_503_whatever_service_wrapped_it() {
+        for code in ["40P01", "40001"] {
+            let wrapped = AddressBookError::Database(coded_error(code));
+            let got = status_and_retry(AdminApiError::from(wrapped));
+            assert_eq!(
+                got,
+                (StatusCode::SERVICE_UNAVAILABLE, Some("1".to_owned())),
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_database_failures_stay_500_without_retry_after() {
+        let wrapped = AddressBookError::Database(coded_error("23505"));
+        let got = status_and_retry(AdminApiError::from(wrapped));
+        assert_eq!(got, (StatusCode::INTERNAL_SERVER_ERROR, None));
+    }
 }
