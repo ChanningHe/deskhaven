@@ -1,0 +1,16 @@
+THIRD-PARTY NOTICES: Rust crates
+
+deskhaven's own license is the GNU AGPL v3 (LICENSE). The Rust crates below are linked
+into the binary; each license text is reproduced once, followed by the crates under it.
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+  - {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

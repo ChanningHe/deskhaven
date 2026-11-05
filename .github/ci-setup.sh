@@ -29,7 +29,16 @@ fi
 rustup toolchain install --profile minimal
 rustc --version
 
-# Extra tools via `cargo install --locked` (no caching until the prebuilt CI image, M4-06).
+# Extra tools via `cargo install --locked` (no caching until a prebuilt CI image exists).
+# A spec is name@version, optionally name@version/feature,feature (cargo-about needs `cli`).
 for spec in "$@"; do
-  cargo install --locked "${spec%@*}" --version "${spec#*@}"
+  name="${spec%%@*}"
+  version="${spec#*@}"
+  features="${version#*/}"
+  version="${version%%/*}"
+  if [ "$features" = "$version" ] || [ -z "$features" ]; then
+    cargo install --locked "$name" --version "$version"
+  else
+    cargo install --locked "$name" --version "$version" --features "$features"
+  fi
 done

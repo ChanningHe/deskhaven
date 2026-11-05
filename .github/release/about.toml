@@ -1,0 +1,32 @@
+# cargo-about configuration: third-party license notice for the deskhaven binary.
+# Run through .github/release/notices.sh (adds the non-crate notices and the template).
+#
+# Scope: what is linked into the released binaries, i.e. normal dependencies on the two
+# musl release targets. Dev and build dependencies do not ship.
+#
+# `accepted` mirrors the allow list of deny.toml (a license outside it fails `cargo deny`
+# before it can reach this file); keep the two in step.
+
+accepted = [
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+]
+
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
