@@ -40,7 +40,10 @@ conventional_commits = true
 filter_unconventional = true
 protect_breaking_commits = true
 sort_commits = "oldest"
-tag_pattern = "^v[0-9]"
+# Only FINAL tags split the history into sections: a final release's notes are ONE
+# section covering previous..this, not cut at the release candidates inside the range. The
+# release being rendered is named with --tag, whatever it is.
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 topo_order = false
 
 # Release notes are for users: tests, CI plumbing and chores stay in the git history.
