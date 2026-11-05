@@ -168,6 +168,9 @@ jobs:
       # The strategy option catalog must match the vendored client source and the overlay
       # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
       - run: cargo xtask gen-strategy-catalog --check
+      # The configuration reference (docs/reference/configuration.md) must match the
+      # settings registry and the bootstrap schema.
+      - run: cargo xtask docs --check
 
   test-postgres:
     needs: [clippy, deny]
