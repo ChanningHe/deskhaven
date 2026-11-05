@@ -119,6 +119,12 @@ fn the_built_index_is_csp_clean() {
         return;
     };
     assert_eq!(csp_violations(&html), none());
+    // An empty or tag-less file would pass the scan vacuously.
+    assert!(
+        !start_tags(&html).is_empty(),
+        "{} has no tags",
+        path.display()
+    );
 }
 
 #[test]
