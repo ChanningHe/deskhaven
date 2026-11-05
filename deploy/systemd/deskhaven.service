@@ -4,6 +4,17 @@
 #   install -m 0644 deskhaven.service /etc/systemd/system/ && systemctl daemon-reload
 #   systemctl enable --now deskhaven && journalctl -u deskhaven   # first-run link
 # Configuration: /etc/deskhaven/deskhaven.toml (optional; defaults otherwise).
+#
+# Firewall (nftables, e.g. included from /etc/nftables.conf). The WebSocket
+# ports 21118 (deskhaven) and 21119 (hbbr) listen on all interfaces but are
+# for the local TLS proxy only; 21117 also carries hbbr's command console for
+# loopback peers, kept from local users here (root keeps it). Safe for
+# relaying: hbbr answers loopback peers only as that console, never relays
+# for them, and never connects to itself.
+#   table inet deskhaven {
+#     chain in  { type filter hook input priority 0; iifname != "lo" tcp dport { 21118, 21119 } drop; }
+#     chain out { type filter hook output priority 0; oifname "lo" ip daddr 127.0.0.0/8 tcp dport 21117 meta skuid != 0 drop; oifname "lo" ip6 daddr ::1 tcp dport 21117 meta skuid != 0 drop; }
+#   }
 
 [Unit]
 Description=deskhaven (RustDesk server: rendezvous, client API, web console)
@@ -19,7 +30,7 @@ ExecStart=/usr/local/bin/deskhaven serve
 # HTTP (console, client API, logins) only on loopback, behind the TLS proxy
 # (../nginx/deskhaven.conf), which is the one trusted for X-Forwarded-For.
 # The rendezvous WebSocket (21118) has no bind setting and listens on all
-# interfaces: firewall 21118 to loopback, clients use wss via the proxy.
+# interfaces: firewall it (header above), clients use wss via the proxy.
 Environment=DESKHAVEN_LISTEN__CLIENT_API=127.0.0.1:21114
 Environment=DESKHAVEN_SECURITY__TRUSTED_PROXIES=127.0.0.1/32
 Restart=on-failure
