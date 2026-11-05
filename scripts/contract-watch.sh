@@ -9,7 +9,8 @@
 # Usage: scripts/contract-watch.sh [--dry-run] [--base <sha>]
 #   --dry-run     print the issue body to stdout instead of touching GitHub
 #   --base <sha>  compare against this (full) client commit instead of UPSTREAM_COMMIT
-# Environment (testing only): UPSTREAM_URL, HBB_COMMON_URL, UPSTREAM_BRANCH.
+# Environment (testing only): UPSTREAM_URL, HBB_COMMON_URL, UPSTREAM_BRANCH,
+# CONTRACT_WATCH_BODY_LIMIT_BYTES, CONTRACT_WATCH_DIFF_BUDGET_BYTES.
 # Creating the issue needs the gh CLI with a token that may write issues, and GH_REPO
 # (owner/name) unless run inside a clone of the target repository.
 set -euo pipefail
@@ -20,8 +21,9 @@ UPSTREAM_BRANCH=${UPSTREAM_BRANCH:-master}
 
 ISSUE_LABEL=contract-drift
 # GitHub rejects issue bodies above 65536 characters; stay well below.
-BODY_LIMIT_BYTES=60000
-DIFF_BUDGET_BYTES=40000
+BODY_LIMIT_BYTES=${CONTRACT_WATCH_BODY_LIMIT_BYTES:-60000}
+DIFF_BUDGET_BYTES=${CONTRACT_WATCH_DIFF_BUDGET_BYTES:-40000}
+MIN_FENCE_LEN=4
 SUBMODULE_PATH=libs/hbb_common
 # Watched paths carrying this prefix live in the hbb_common submodule (repo-relative path
 # after the prefix), diffed at the submodule commits the two client commits pin.
@@ -46,7 +48,7 @@ WATCHED=(
   "flutter/lib/models/model.dart|6"
   "flutter/lib/common/widgets/login.dart|3.2"
   "hbb_common/protos/rendezvous.proto|1.4 07"
-  "hbb_common/protos/message.proto|07"
+  "libs/base/protos/message.proto|07" # moved out of hbb_common into the client repo
 )
 
 die() {
@@ -72,6 +74,13 @@ while [ $# -gt 0 ]; do
     *) die "unknown argument: $1" ;;
   esac
   shift
+done
+
+for tool in git iconv head tail tr awk wc; do
+  command -v "$tool" >/dev/null || die "required tool not found: $tool"
+done
+for limit in "$BODY_LIMIT_BYTES" "$DIFF_BUDGET_BYTES"; do
+  [[ $limit =~ ^[0-9]+$ ]] || die "byte limits must be non-negative integers: '$limit'"
 done
 
 SHA_RE='^[0-9a-f]{40}$'
@@ -102,11 +111,6 @@ HEAD_SHA=$(git -C "$CLIENT_REPO" rev-parse refs/contract/head)
 SHORT_HEAD=${HEAD_SHA:0:12}
 SHORT_BASE=${BASE_SHA:0:12}
 
-if [ "$HEAD_SHA" = "$BASE_SHA" ]; then
-  echo "contract-watch: upstream $UPSTREAM_BRANCH is still at the verified commit $SHORT_BASE" >&2
-  exit 0
-fi
-
 submodule_pin() { # commit
   local pin
   pin=$(git -C "$CLIENT_REPO" ls-tree "$1" -- "$SUBMODULE_PATH" | awk '$1 == "160000" { print $3 }')
@@ -115,9 +119,44 @@ submodule_pin() { # commit
 }
 HBB_BASE=$(submodule_pin "$BASE_SHA")
 HBB_HEAD=$(submodule_pin "$HEAD_SHA")
-if [ "$HBB_BASE" != "$HBB_HEAD" ]; then
-  fetch_commits "$HBB_REPO" "$HBB_COMMON_URL" \
-    "$HBB_BASE:refs/contract/hbb-base" "$HBB_HEAD:refs/contract/hbb-head"
+# Always fetched (a single commit when the pins are equal): the watch-list check below
+# needs both trees.
+fetch_commits "$HBB_REPO" "$HBB_COMMON_URL" \
+  "$HBB_BASE:refs/contract/hbb-base" "$HBB_HEAD:refs/contract/hbb-head"
+
+# True when some path read from stdin matches the glob $1 (`*` crosses directories, like
+# a git pathspec).
+matches_any_path() {
+  local name
+  while IFS= read -r name; do
+    # shellcheck disable=SC2254 # the unquoted pattern is the point
+    case $name in $1) return 0 ;; esac
+  done
+  return 1
+}
+
+# Every WATCHED entry must match a path in the base or the head tree, otherwise the list
+# itself has drifted (typo, upstream rename) and the entry would silently report "unchanged".
+check_watch_list() {
+  local entry path repo from to tree_base tree_head
+  for entry in "${WATCHED[@]}"; do
+    path=${entry%%|*}
+    repo=$CLIENT_REPO from=$BASE_SHA to=$HEAD_SHA
+    if [[ $path == "$SUBMODULE_PREFIX"* ]]; then
+      repo=$HBB_REPO from=$HBB_BASE to=$HBB_HEAD path=${path#"$SUBMODULE_PREFIX"}
+    fi
+    tree_base=$(git -C "$repo" ls-tree -r --name-only "$from")
+    tree_head=$(git -C "$repo" ls-tree -r --name-only "$to")
+    if ! matches_any_path "$path" <<<"$tree_base" && ! matches_any_path "$path" <<<"$tree_head"; then
+      die "watched entry '${entry%%|*}' matches no path at the base or the head commit: fix the WATCHED list"
+    fi
+  done
+}
+check_watch_list
+
+if [ "$HEAD_SHA" = "$BASE_SHA" ]; then
+  echo "contract-watch: upstream $UPSTREAM_BRANCH is still at the verified commit $SHORT_BASE" >&2
+  exit 0
 fi
 
 # entry_diff <path> [git diff options...]: diff of one watched path between base and head.
@@ -125,16 +164,42 @@ entry_diff() {
   local path=$1 repo=$CLIENT_REPO from=$BASE_SHA to=$HEAD_SHA prefix=""
   shift
   if [[ $path == "$SUBMODULE_PREFIX"* ]]; then
-    # Same pin on both sides: nothing changed, and the submodule was not fetched.
-    [ "$HBB_BASE" != "$HBB_HEAD" ] || return 0
     repo=$HBB_REPO from=$HBB_BASE to=$HBB_HEAD prefix=$SUBMODULE_PREFIX path=${path#"$SUBMODULE_PREFIX"}
   fi
   git -C "$repo" diff --no-color --no-ext-diff --no-textconv \
     --src-prefix="a/$prefix" --dst-prefix="b/$prefix" "$@" "$from" "$to" -- "$path"
 }
 
-# Truncate stdin to at most $1 bytes without leaving a broken UTF-8 sequence behind.
-clip() { head -c "$1" | iconv -c -f UTF-8 -t UTF-8; }
+# clip <max-bytes> <in-file> <out-file>: the first max-bytes bytes of in-file, without a
+# broken UTF-8 sequence at the end. Files only, no pipes: a pipe into `head -c` would die
+# of SIGPIPE under pipefail. `iconv -c` exits 1 when it dropped bytes, which is expected
+# here (a cut mid-character, or invalid UTF-8 in the input); any other status is a failure.
+clip() {
+  local status=0
+  head -c "$1" "$2" >"$3.raw"
+  iconv -c -f UTF-8 -t UTF-8 <"$3.raw" >"$3" || status=$?
+  [ "$status" -le 1 ] || die "iconv failed with status $status"
+}
+
+# fence <file>: a markdown code fence longer than any backtick run in the file (at least
+# MIN_FENCE_LEN), so no line of the content can close the block early.
+fence() {
+  local longest
+  longest=$(tr -c '`' '\n' <"$1" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')
+  local len=$((longest + 1))
+  [ "$len" -ge "$MIN_FENCE_LEN" ] || len=$MIN_FENCE_LEN
+  printf '%*s' "$len" '' | tr ' ' '`'
+}
+
+# code_block <info-string> <file>: the file as a fenced code block.
+code_block() {
+  local fence_str
+  fence_str=$(fence "$2")
+  printf '%s%s\n' "$fence_str" "$1"
+  cat "$2"
+  [ -z "$(tail -c 1 "$2")" ] || echo # a clipped file may end without a newline
+  printf '%s\n' "$fence_str"
+}
 
 CHANGED=()
 for entry in "${WATCHED[@]}"; do
@@ -150,8 +215,6 @@ if [ ${#CHANGED[@]} -eq 0 ]; then
   echo "contract-watch: $UPSTREAM_BRANCH moved ($SHORT_BASE -> $SHORT_HEAD) but no watched file changed" >&2
   exit 0
 fi
-
-FENCE='```' # diff lines always start with a prefix char, so a fence inside a diff cannot close it
 
 # Full diff of every changed entry on disk, then a fair share of the byte budget for each:
 # small diffs are shown whole and what they leave over goes to the bigger ones.
@@ -228,20 +291,20 @@ HEAD
   printf '\n## Diff summary\n'
   for entry in "${CHANGED[@]}"; do
     path=${entry%%|*}
-    printf '\n%s\n\n%s\n' "\`$path\`" "$FENCE"
-    entry_diff "$path" --stat=100
-    echo "$FENCE"
+    entry_diff "$path" --stat=100 >"$WORK/stat.txt"
+    printf '\n%s\n\n' "\`$path\`"
+    code_block "" "$WORK/stat.txt"
   done
 
   printf '\n## Diff (large files are truncated to fit the issue size limit)\n'
   for i in "${!CHANGED[@]}"; do
     path=${CHANGED[$i]%%|*}
-    printf '\n%s\n\n%sdiff\n' "\`$path\`" "$FENCE"
-    clip "${CAPS[$i]}" <"$DIFF_DIR/$i.diff"
+    clip "${CAPS[$i]}" "$DIFF_DIR/$i.diff" "$WORK/clipped.diff"
+    printf '\n%s\n\n' "\`$path\`"
+    code_block "diff" "$WORK/clipped.diff"
     if [ "${SIZES[$i]}" -gt "${CAPS[$i]}" ]; then
-      printf '\n... truncated (%s of %s bytes shown), see the full comparison above\n' "${CAPS[$i]}" "${SIZES[$i]}"
+      printf '\n_Truncated: at most %s of %s bytes shown, see the full comparison above._\n' "${CAPS[$i]}" "${SIZES[$i]}"
     fi
-    echo "$FENCE"
   done
 
   cat <<TAIL
@@ -257,7 +320,8 @@ TAIL
 }
 
 BODY_FILE=$WORK/body.md
-build_body | clip "$BODY_LIMIT_BYTES" >"$BODY_FILE"
+build_body >"$WORK/body.full.md"
+clip "$BODY_LIMIT_BYTES" "$WORK/body.full.md" "$BODY_FILE"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   cat "$BODY_FILE"
