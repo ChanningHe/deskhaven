@@ -16,6 +16,12 @@ Type=exec
 User=deskhaven
 Group=deskhaven
 ExecStart=/usr/local/bin/deskhaven serve
+# HTTP (console, client API, logins) only on loopback, behind the TLS proxy
+# (../nginx/deskhaven.conf), which is the one trusted for X-Forwarded-For.
+# The rendezvous WebSocket (21118) has no bind setting and listens on all
+# interfaces: firewall 21118 to loopback, clients use wss via the proxy.
+Environment=DESKHAVEN_LISTEN__CLIENT_API=127.0.0.1:21114
+Environment=DESKHAVEN_SECURITY__TRUSTED_PROXIES=127.0.0.1/32
 Restart=on-failure
 RestartSec=5s
 # deskhaven drains for at most 10s after SIGTERM.
