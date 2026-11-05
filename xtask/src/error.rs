@@ -22,6 +22,10 @@ pub enum XtaskError {
     Catalog(String),
     #[error("{0} is out of date; run `cargo xtask gen-strategy-catalog` and commit it")]
     CatalogDrift(String),
+    #[error("cannot generate the configuration reference: {0}")]
+    Docs(String),
+    #[error("{0} is out of date; run `cargo xtask docs` and commit the result")]
+    DocsDrift(String),
     #[error("missing argument {0}")]
     MissingArgument(&'static str),
     #[error("cannot access {path}")]

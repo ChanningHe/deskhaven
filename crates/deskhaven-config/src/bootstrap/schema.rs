@@ -19,7 +19,7 @@ pub const DEFAULT_LOG_LEVEL: &str = "info";
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Bootstrap {
-    /// Key pair, SQLite database, master key, GeoIP database.
+    /// Key pair, master key, SQLite database.
     pub data_dir: PathBuf,
     /// External base URL, e.g. "https://rd.example.com"; required for OIDC and email links.
     pub public_url: String,
@@ -87,6 +87,7 @@ pub struct Signal {
     pub port: u16,
     /// Empty = {data_dir}/id_ed25519 (generated on first start).
     pub key_file: PathBuf,
+    /// Run the embedded signal server (rendezvous, NAT test, WebSocket).
     pub enabled: bool,
 }
 
@@ -105,6 +106,7 @@ impl Default for Signal {
 pub struct Database {
     /// Empty = "sqlite://{data_dir}/deskhaven.db"; or "postgres://...". May embed credentials.
     pub url: Secret,
+    /// Size of the database connection pool.
     pub max_connections: u32,
 }
 
@@ -131,6 +133,7 @@ pub struct Security {
 pub struct Log {
     /// tracing EnvFilter syntax.
     pub level: String,
+    /// Log line format.
     pub format: LogFormat,
 }
 

@@ -8,7 +8,10 @@ publish.workspace = true
 
 [dependencies]
 deskhaven-admin-api = { workspace = true }
+# `xtask docs`: the settings registry and the bootstrap schema.
+deskhaven-config = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 

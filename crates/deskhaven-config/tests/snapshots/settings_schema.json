@@ -219,7 +219,7 @@
     {
       "category": "devices",
       "default": false,
-      "description": "Devices that were not deployed get `NOT_DEPLOYED` (P1).",
+      "description": "Accept `rustdesk --deploy` registrations. Refusing devices that were not deployed (`NOT_DEPLOYED`) is not in effect yet.",
       "key": "devices.require_deploy",
       "sensitive": false,
       "type": "bool"
@@ -344,7 +344,7 @@
     {
       "category": "signal",
       "default": "allow",
-      "description": "Connection ACL decision when no rule matches (P1).",
+      "description": "Connection ACL decision when no rule matches (not in effect yet).",
       "key": "signal.acl.default",
       "on_bad_row": "deny",
       "sensitive": false,
@@ -357,7 +357,7 @@
     {
       "category": "signal",
       "default": "deny",
-      "description": "Connection ACL decision when the control plane fails (P1; fail closed).",
+      "description": "Connection ACL decision when the control plane fails (fail closed; not in effect yet).",
       "key": "signal.acl.on_error",
       "on_bad_row": "deny",
       "sensitive": false,

@@ -2,8 +2,6 @@
 //! path (`deskhaven_admin_api::SPEC_PATH`), or with `--check` fail when the committed file
 //! differs from what the code generates (CI drift check).
 
-use std::fs;
-use std::io;
 use std::path::Path;
 
 use crate::error::XtaskError;
@@ -34,29 +32,13 @@ pub fn run(root: &Path, mode: Mode) -> Result<(), XtaskError> {
 
 /// Makes `path` hold `spec` (write mode) or checks that it does (check mode).
 fn sync(path: &Path, spec: &str, mode: Mode) -> Result<(), XtaskError> {
-    let current = match fs::read_to_string(path) {
-        Ok(text) => Some(text),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
-        Err(source) => return Err(io_error(path, source)),
-    };
-    if current.as_deref() == Some(spec) {
-        return Ok(());
-    }
-    match mode {
-        Mode::Check => Err(XtaskError::OpenApiDrift(path.display().to_string())),
-        Mode::Write => fs::write(path, spec).map_err(|source| io_error(path, source)),
-    }
-}
-
-fn io_error(path: &Path, source: io::Error) -> XtaskError {
-    XtaskError::Io {
-        path: path.display().to_string(),
-        source,
-    }
+    crate::sync::file(path, spec, mode, XtaskError::OpenApiDrift)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     fn args(list: &[&str]) -> Vec<String> {

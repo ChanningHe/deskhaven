@@ -125,7 +125,8 @@ settings! {
         default: true,
         on_bad_row: strict(true),
     }
-    /// Devices that were not deployed get `NOT_DEPLOYED` (P1).
+    /// Accept `rustdesk --deploy` registrations. Refusing devices that were not deployed
+    /// (`NOT_DEPLOYED`) is not in effect yet.
     DEVICES_REQUIRE_DEPLOY: bool = "devices.require_deploy" {
         default: false,
     }
@@ -186,12 +187,12 @@ settings! {
     SIGNAL_REQUIRE_KX_V1: bool = "signal.require_kx_v1" {
         default: false,
     }
-    /// Connection ACL decision when no rule matches (P1).
+    /// Connection ACL decision when no rule matches (not in effect yet).
     SIGNAL_ACL_DEFAULT: AclAction = "signal.acl.default" {
         default: AclAction::Allow,
         on_bad_row: strict(AclAction::Deny),
     }
-    /// Connection ACL decision when the control plane fails (P1; fail closed).
+    /// Connection ACL decision when the control plane fails (fail closed; not in effect yet).
     SIGNAL_ACL_ON_ERROR: AclAction = "signal.acl.on_error" {
         default: AclAction::Deny,
         on_bad_row: strict(AclAction::Deny),
