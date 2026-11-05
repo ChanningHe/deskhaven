@@ -23,6 +23,12 @@ body = """
 """
 footer = ""
 trim = true
+# Commit subjects are text from contributors that ends up in a rendered release page:
+# neutralise what could notify people (@mentions), link, embed an image or inject HTML.
+postprocessors = [
+    { pattern = '([\[\]<!])', replace = '\$1' },
+    { pattern = '(^|[^\w`@])@([A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9._-]+)?)', replace = '$1`@$2`' },
+]
 
 [git]
 conventional_commits = true
