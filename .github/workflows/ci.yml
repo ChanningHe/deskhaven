@@ -43,6 +43,8 @@ env:
   # also covers test code). No global RUSTFLAGS, so `cargo install` of tools is unaffected.
   #
   # Checkout inputs: PRs fetch refs/pull/N/head, pushes fetch the commit (ref as fallback).
+  # The workspace belongs to the runner user while jobs run as root in their container, so
+  # git refuses it ("dubious ownership") unless it is marked safe first.
   CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
   CI_FETCH_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
   CI_FALLBACK_REF: ${{ github.ref }}
@@ -54,6 +56,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -78,6 +81,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -120,6 +124,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -133,6 +138,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -146,6 +152,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -187,6 +194,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -216,6 +224,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
@@ -251,6 +260,7 @@ jobs:
     steps:
       - name: checkout
         run: |
+          git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
