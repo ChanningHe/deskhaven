@@ -11,7 +11,8 @@
 # so the runner only needs Docker access.
 #
 # Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
-# + e2e; the web console job runs in parallel with all of it.
+# + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
+# Releases (tags) are built by release.yml.
 # The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
 # Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
 # github.com (cargo-deny fetches the RustSec advisory DB from GitHub),
@@ -66,6 +67,31 @@ jobs:
       # Toolchain only (rustfmt); no apt packages needed.
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: cargo fmt --all -- --check
+
+  # The relay key guard (deploy/docker/relay-key-guard.rs) is std-only and outside the
+  # workspace, so no cargo job above compiles it, and its tests otherwise run only inside
+  # the relay image build. Format, lint and test it here, with the same plain rustc the
+  # image uses.
+  relay-key-guard:
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    container: rust:1.99.1-bookworm
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh
+      - run: rustfmt --check --edition 2021 deploy/docker/relay-key-guard.rs
+      - name: clippy (program and tests)
+        run: |
+          clippy-driver --edition 2021 --crate-type bin -D warnings --emit=metadata -o /tmp/guard.rmeta deploy/docker/relay-key-guard.rs
+          clippy-driver --edition 2021 --test -D warnings --emit=metadata -o /tmp/guard-test.rmeta deploy/docker/relay-key-guard.rs
+      - name: tests
+        run: |
+          rustc --edition 2021 --test -o /tmp/guard-tests deploy/docker/relay-key-guard.rs
+          /tmp/guard-tests
 
   # Web console (web/): lint + format, types, translations, tests, generated-code
   # drift and the production build. Needs nothing from the Rust jobs: the API client
