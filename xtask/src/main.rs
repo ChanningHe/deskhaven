@@ -45,8 +45,8 @@ fn main() -> ExitCode {
 fn run(task: Option<&str>, args: &[String]) -> Result<(), XtaskError> {
     match task {
         Some("dist") => dist::run(repo_root(), &cargo()),
-        Some("docs") => docs::run(repo_root(), openapi::Mode::parse(args)?),
-        Some("gen-openapi") => openapi::run(repo_root(), openapi::Mode::parse(args)?),
+        Some("docs") => docs::run(repo_root(), sync::Mode::parse(args)?),
+        Some("gen-openapi") => openapi::run(repo_root(), sync::Mode::parse(args)?),
         Some("gen-strategy-catalog") => catalog::run(repo_root(), &catalog::Args::parse(args)?),
         Some(other) => Err(XtaskError::UnknownTask(other.to_owned())),
         None => Err(XtaskError::NoTask),

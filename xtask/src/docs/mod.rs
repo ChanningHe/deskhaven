@@ -12,8 +12,8 @@ mod render;
 use std::path::Path;
 
 use crate::error::XtaskError;
-use crate::openapi::Mode;
 use crate::sync;
+use crate::sync::Mode;
 
 /// The generated configuration reference, relative to the repository root.
 pub const CONFIG_REFERENCE: &str = "docs/reference/configuration.md";
