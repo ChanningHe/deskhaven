@@ -33,8 +33,14 @@
 #   assets              release files, checked per artifact (read-only job)
 #   release             draft created via gh api, assets attached, published by id
 #   promote             converges X.Y and latest on the highest PUBLISHED releases
-# A failure anywhere stops the later steps. After a failure past `release`, only promote
-# needs re-running (that job alone: it converges, it does not replay).
+# A failure anywhere stops the later steps. Re-running the failed jobs is safe at each step:
+#   manifest   an X.Y.Z that already lists exactly this run's images is accepted, anything else
+#              refused
+#   release    if its release was published but the job failed afterwards (e.g. the check after
+#              the PATCH), the re-run finds that release, sees the tag still on the built
+#              commit and every asset's GitHub digest equal to SHA256SUMS, and succeeds
+#              without touching it, so promote can run; a draft or any other content fails
+#   promote    converges on the current published releases; idempotent
 #
 # Job graph
 #   meta ─┬─ web ─┬─ csp (built-dist CSP checks, hard-fail)
@@ -332,14 +338,20 @@ jobs:
           git checkout -q "$GITHUB_SHA"
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
       - run: CI_SKIP_APT=1 .github/ci-setup.sh git-cliff@${{ env.GIT_CLIFF_VERSION }}
-      - name: release notes
+      # The only step with the token: it reads the release list and nothing else.
+      - name: previous published release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v${VERSION}"
           published="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name')"
-          prev="$(.github/release/tags.sh prev "$tag" <<<"$published")"
+          prev="$(.github/release/tags.sh prev "v${VERSION}" <<<"$published")"
+          echo "PREV_TAG=${prev}" >>"$GITHUB_ENV"
+      - name: release notes
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          prev="$PREV_TAG"
           echo "notes for $tag: ${prev:-the beginning}..$GITHUB_SHA"
           git-cliff --config .github/release/cliff.toml "${prev:+$prev..}$GITHUB_SHA" --tag "$tag" --strip all --output release-notes.md
           # Only tests, ci and chores in the range: a heading alone would look broken.
@@ -613,6 +625,23 @@ jobs:
           tar -xf oci/image.tar -C image-oci --no-same-owner
           jq -e '.manifests | length == 1' image-oci/index.json >/dev/null
           printf 'FROM image\n' >push.Dockerfile
+      # The push is a buildkit build (`FROM image`), so the image config written by the
+      # untrusted build job is read by buildkit while the registry token exists: an ONBUILD
+      # trigger in it would RUN during that build. Refuse any before the login. (A tool that
+      # copies the layout without building, e.g. skopeo or crane, would remove buildkit from
+      # this job altogether; it would be one more downloaded binary to pin and trust, and its
+      # push-by-digest semantics are less settled than buildx's, so the check was chosen.)
+      - name: the archive's image config has no ONBUILD triggers
+        run: |
+          set -euo pipefail
+          blob() { printf 'image-oci/blobs/sha256/%s' "${1#sha256:}"; }
+          manifest="$(jq -r '.manifests[0].digest' image-oci/index.json)"
+          [[ "$manifest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid manifest digest in the archive: '$manifest'"; exit 1; }
+          config="$(jq -r '.config.digest' "$(blob "$manifest")")"
+          [[ "$config" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the archive's manifest has no config digest"; exit 1; }
+          triggers="$(jq -r '(.config.OnBuild // []) | length' "$(blob "$config")")"
+          [ "$triggers" = 0 ] || { echo "::error::the image config has ${triggers} ONBUILD trigger(s); refusing to build from it with credentials around"; exit 1; }
+          echo "no ONBUILD triggers in the image config"
       - name: registry login
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -729,7 +758,7 @@ jobs:
   # (assemble-assets.sh). In publish runs it waits for the exact image tags (manifest).
   assets:
     needs: [meta, notices-sbom, changelog, image-build, manifest]
-    if: ${{ !cancelled() && needs.meta.result == 'success' && needs.notices-sbom.result == 'success' && needs.changelog.result == 'success' && needs.image-build.result == 'success' && (needs.manifest.result == 'success' || needs.manifest.result == 'skipped') }}
+    if: ${{ !cancelled() && needs.meta.result == 'success' && needs.notices-sbom.result == 'success' && needs.changelog.result == 'success' && needs.image-build.result == 'success' && (needs.manifest.result == 'success' || (needs.meta.outputs.publish != 'true' && needs.manifest.result == 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
