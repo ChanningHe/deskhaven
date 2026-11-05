@@ -530,7 +530,9 @@ jobs:
             for tag in "${tags[@]}"; do tag_args+=(--tag "${name}:${tag}"); done
             docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
             docker buildx imagetools inspect "${name}:${VERSION}"
-            index="$(docker buildx imagetools inspect "${name}:${VERSION}" --format '{{.Manifest.Digest}}')"
+            # (`--format` of imagetools inspect did not give the bare digest when tried locally.)
+            index="$(docker buildx imagetools inspect "${name}:${VERSION}" | sed -n 's/^Digest: *//p' | head -n 1)"
+            [[ "$index" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no manifest digest for ${name}:${VERSION}"; exit 1; }
             echo "${name}@${index}  (tags: ${tags[*]})" >>out/images.txt
           done
           cat out/images.txt
