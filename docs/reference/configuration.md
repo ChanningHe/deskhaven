@@ -93,7 +93,7 @@ docker compose up -d --wait
 | `auth.lockout.duration` | `1m`–`1d` | `15m` | Base lockout duration (exponential backoff is capped at 24h). |
 | `auth.ip_rate_limit.per_minute` | `1`–`10000` | `20` | Requests per minute per IP on login-type endpoints. |
 | `auth.registration` | `disabled`, `invite`, `open` | `disabled` | Self-service registration mode. |
-| `auth.tfa.enforce` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor. Covered users without one cannot log in from the RustDesk client until they enroll in the web console: enabling this before the console offers enrolment locks them out of the client. |
+| `auth.tfa.enforce` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor. A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in. |
 | `auth.email_code.enabled` | `true`, `false` | `false` | Allow email one-time codes as a second factor (requires SMTP). |
 | `auth.oidc.link_verified_email` | `true`, `false` | `true` | Link OIDC logins to existing users by email only when `email_verified` is true. |
 

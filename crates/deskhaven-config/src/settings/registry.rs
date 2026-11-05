@@ -76,9 +76,9 @@ settings! {
         default: Registration::Disabled,
         on_bad_row: strict(Registration::Disabled),
     }
-    /// Which users must enroll a second factor. Covered users without one cannot log in
-    /// from the RustDesk client until they enroll in the web console: enabling this before
-    /// the console offers enrolment locks them out of the client.
+    /// Which users must enroll a second factor. A covered user without one is refused by the
+    /// RustDesk client until they enroll in the web console, which asks them to at their
+    /// next console sign-in.
     AUTH_TFA_ENFORCE: TfaEnforce = "auth.tfa.enforce" {
         default: TfaEnforce::Off,
         // Stricter than `off` without forcing every user to enroll at once.

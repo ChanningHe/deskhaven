@@ -118,7 +118,7 @@
     {
       "category": "auth",
       "default": "off",
-      "description": "Which users must enroll a second factor. Covered users without one cannot log in from the RustDesk client until they enroll in the web console: enabling this before the console offers enrolment locks them out of the client.",
+      "description": "Which users must enroll a second factor. A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in.",
       "key": "auth.tfa.enforce",
       "on_bad_row": "admins",
       "sensitive": false,
