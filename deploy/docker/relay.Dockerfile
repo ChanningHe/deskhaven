@@ -57,10 +57,16 @@ RUN rustc --edition 2021 --test -o /tmp/guard-tests /src/guard/relay-key-guard.r
         -o /out/usr/local/bin/relay-key-guard /src/guard/relay-key-guard.rs \
  && file /out/usr/local/bin/relay-key-guard | grep -Eq 'static(-pie)? linked'
 
-# hbbr alone (`--target binary --output type=local,dest=DIR`): the release pipeline
-# audits exactly the file the image below contains.
+# hbbr and the key guard (`--target binary --output type=local,dest=DIR`): the release
+# pipeline audits these files and checks that the pushed image contains exactly them.
 FROM scratch AS binary
 COPY --from=build /out/usr/local/bin/hbbr /hbbr
+COPY --from=build /out/usr/local/bin/relay-key-guard /relay-key-guard
+
+# Third-party notice of hbbr's crates: empty here. The release pipeline replaces this stage
+# with `--build-context notices=DIR` (DIR holds THIRD-PARTY-NOTICES.txt, generated from the
+# pinned upstream lockfile by .github/release/notices-relay.sh).
+FROM scratch AS notices
 
 # gcr.io/distroless/static-debian13:nonroot
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
@@ -72,6 +78,7 @@ LABEL org.opencontainers.image.title="deskhaven-relay" \
       org.opencontainers.image.version="${UPSTREAM_TAG}" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 COPY --from=build /out/ /
+COPY --from=notices / /usr/share/licenses/rustdesk-server/
 USER 65532:65532
 # hbbr reads `.env`, blacklist.txt and blocklist.txt from its working directory;
 # an empty, root-owned directory keeps all three absent.
