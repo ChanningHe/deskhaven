@@ -6,8 +6,10 @@
 //! write a key pair (read-only root), lets every client relay; a private key
 //! is silently reduced to its public half, so the private key sat in the
 //! relay's environment. Hence: `KEY` must be the base64 of a 32-byte public
-//! key (what `deskhaven key show` prints), and `-k` / `--key` arguments are
-//! refused, so the checked variable is the only way in.
+//! key (what `deskhaven key show` prints), `-k` / `--key` arguments are
+//! refused, and so is a `.env` in the working directory (hbbr loads it after
+//! its arguments, and `KEY=` there would reopen the relay): the checked
+//! variable is the only way in.
 //!
 //! Single file, std only: built and tested with plain `rustc` in
 //! relay.Dockerfile.
@@ -25,6 +27,7 @@ enum Refusal {
     Missing,
     NotPublicKey,
     KeyArgument,
+    EnvFile,
 }
 
 impl Refusal {
@@ -39,7 +42,24 @@ impl Refusal {
                  never the private key, never \"-\" or \"_\""
             }
             Self::KeyArgument => "pass the key in KEY, not as -k / --key",
+            Self::EnvFile => {
+                "the working directory has a .env entry; hbbr would load it and could \
+                 override KEY, remove it"
+            }
         }
+    }
+}
+
+/// hbbr reads this from its working directory after parsing its arguments.
+const ENV_FILE: &str = ".env";
+
+/// No `.env` entry of any kind in `dir`. `symlink_metadata` does not follow
+/// links, so a dangling link counts; anything but "not found" (unreadable
+/// directory included) is refused too.
+fn check_workdir(dir: &std::path::Path) -> Result<(), Refusal> {
+    match std::fs::symlink_metadata(dir.join(ENV_FILE)) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        _ => Err(Refusal::EnvFile),
     }
 }
 
@@ -89,7 +109,9 @@ fn check_args(args: &[OsString]) -> Result<(), Refusal> {
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let key = std::env::var_os(KEY_VAR);
-    let checked = check_args(&args).and_then(|()| check_key(key.as_ref().and_then(|k| k.to_str())));
+    let checked = check_workdir(std::path::Path::new("."))
+        .and_then(|()| check_args(&args))
+        .and_then(|()| check_key(key.as_ref().and_then(|k| k.to_str())));
     if let Err(refusal) = checked {
         let _ = writeln!(std::io::stderr(), "relay-key-guard: {}", refusal.message());
         return ExitCode::FAILURE;
@@ -175,12 +197,54 @@ mod tests {
         }
     }
 
+    /// A fresh, empty directory under the system temp dir.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("relay-key-guard-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_workdir_without_dotenv_passes() {
+        let dir = scratch("clean");
+        std::fs::write(dir.join("blacklist.txt"), "").unwrap();
+
+        assert_eq!(check_workdir(&dir), Ok(()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// hbbr loads `.env` after its arguments and could reset KEY to empty.
+    #[test]
+    fn any_dotenv_entry_in_the_workdir_is_refused() {
+        let file = scratch("file");
+        std::fs::write(file.join(ENV_FILE), "KEY=\n").unwrap();
+        let empty = scratch("empty");
+        std::fs::write(empty.join(ENV_FILE), "").unwrap();
+        let dangling = scratch("dangling");
+        std::os::unix::fs::symlink("/nonexistent/target", dangling.join(ENV_FILE)).unwrap();
+        let directory = scratch("directory");
+        std::fs::create_dir(directory.join(ENV_FILE)).unwrap();
+
+        for dir in [file, empty, dangling, directory] {
+            assert_eq!(
+                check_workdir(&dir),
+                Err(Refusal::EnvFile),
+                "{}",
+                dir.display()
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     #[test]
     fn messages_never_echo_the_value() {
         for refusal in [
             Refusal::Missing,
             Refusal::NotPublicKey,
             Refusal::KeyArgument,
+            Refusal::EnvFile,
         ] {
             assert!(!refusal.message().contains(PUBLIC));
         }
