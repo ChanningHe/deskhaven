@@ -60,16 +60,25 @@ for entry in entries:
   audit_args+=(--deny warnings)
 fi
 
+# cargo-audit reads audit.toml from ./.cargo/ and $CARGO_HOME: a file there could silently
+# ignore advisories or switch checks off. It therefore runs from an EMPTY directory with a
+# fresh CARGO_HOME (so it also fetches its own advisory database and index), the binary and
+# the report given by absolute path, and is started directly, not through `cargo`.
+binary="$(realpath "$binary")"
+report="$(realpath -m "$report")"
+sandbox="$(mktemp -d)"
+trap 'rm -rf "$sandbox"' EXIT
+mkdir "$sandbox/cwd" "$sandbox/cargo-home"
 status=0
-cargo audit "${audit_args[@]}" bin "$binary" >"$report" 2>&1 || status=$?
+(cd "$sandbox/cwd" && CARGO_HOME="$sandbox/cargo-home" cargo-audit audit "${audit_args[@]}" bin "$binary") >"$report" 2>&1 || status=$?
 cat "$report"
 
-grep -q "Found 'cargo auditable' data" "$report" || {
-  echo "audit-bin.sh: $binary carries no cargo-auditable data (built without cargo auditable?)" >&2
-  exit 1
-}
 grep -q "security advisories" "$report" || {
   echo "audit-bin.sh: the advisory database was not loaded" >&2
+  exit 1
+}
+grep -q "Found 'cargo auditable' data" "$report" || {
+  echo "audit-bin.sh: $binary carries no cargo-auditable data (built without cargo auditable?)" >&2
   exit 1
 }
 
