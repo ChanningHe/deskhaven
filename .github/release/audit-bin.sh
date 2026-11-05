@@ -2,20 +2,25 @@
 # Audits a release binary built with `cargo auditable` against the RustSec advisory
 # database (`cargo audit bin`).
 #
-#   enforce  exit 1 on any vulnerability that deny.toml does not ignore (deskhaven)
-#   report   never fails on vulnerabilities, only prints and records them (hbbr, whose
-#            upstream lockfile has advisories we cannot fix without modifying upstream)
+#   enforce  exit 1 on any vulnerability, unmaintained, unsound or yanked finding that
+#            deny.toml does not ignore (deskhaven)
+#   report   never fails on findings, only prints and records them (hbbr, whose upstream
+#            lockfile has advisories we cannot fix without modifying upstream); nothing
+#            is ignored, the report shows everything
 #
 # Both modes fail if the binary carries no dependency data or the advisory database could
 # not be loaded: a pass must mean "audited", not "could not look".
 #
-# Ignored advisories come from the [advisories] ignore list of deny.toml, the one place
-# where accepted advisories (with their reasons) are recorded. In report mode nothing is
-# ignored: the report shows everything.
+# Ignored advisories are the `advisories.ignore` ids of deny.toml, read with a real TOML
+# parser (comments and look-alike text do not count), the one place where accepted
+# advisories are recorded with their reasons. AUDIT_DENY_TOML overrides the file (tests).
+#
+# Colour is forced off: cargo-audit honours CARGO_TERM_COLOR=always, and escape codes
+# would break the greps below.
 #
 # Usage: .github/release/audit-bin.sh MODE BINARY REPORT_FILE [TITLE]
-# Needs: cargo-audit (`.github/ci-setup.sh cargo-audit@VERSION`). When GITHUB_STEP_SUMMARY
-# is set, the result is appended to the job summary.
+# Needs: cargo-audit (`.github/ci-setup.sh cargo-audit@VERSION`) and python3 (tomllib).
+# When GITHUB_STEP_SUMMARY is set, the result is appended to the job summary.
 set -euo pipefail
 
 mode="${1:?usage: audit-bin.sh enforce|report BINARY REPORT_FILE [TITLE]}"
@@ -32,21 +37,34 @@ case "$mode" in
 esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+deny_toml="${AUDIT_DENY_TOML:-$root/deny.toml}"
 
-ignore_args=()
+# Global options go before the `bin` subcommand.
+audit_args=(--color never)
+ignored=0
 if [ "$mode" = enforce ]; then
+  ids="$(python3 -I -c '
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    entries = tomllib.load(f).get("advisories", {}).get("ignore", [])
+for entry in entries:
+    print(entry if isinstance(entry, str) else entry["id"])
+' "$deny_toml")"
   while IFS= read -r id; do
-    ignore_args+=(--ignore "$id")
-  done < <(sed -nE 's/.*[{ ]id = "(RUSTSEC-[0-9]{4}-[0-9]{4})".*/\1/p' "$root/deny.toml")
-  if [ "${#ignore_args[@]}" -eq 0 ]; then
-    echo "audit-bin.sh: no ignored advisories found in deny.toml (parse error?)" >&2
+    [ -n "$id" ] || continue
+    audit_args+=(--ignore "$id")
+    ignored=$((ignored + 1))
+  done <<<"$ids"
+  if [ "$ignored" -eq 0 ]; then
+    echo "audit-bin.sh: no advisories.ignore entries found in $deny_toml (parse error?)" >&2
     exit 2
   fi
+  # Unmaintained, unsound and yanked findings fail too, unless ignored above.
+  audit_args+=(--deny warnings)
 fi
 
 status=0
-# Global options (--ignore) go before the `bin` subcommand.
-cargo audit "${ignore_args[@]}" bin "$binary" >"$report" 2>&1 || status=$?
+cargo audit "${audit_args[@]}" bin "$binary" >"$report" 2>&1 || status=$?
 cat "$report"
 
 grep -q "Found 'cargo auditable' data" "$report" || {
@@ -59,14 +77,15 @@ grep -q "security advisories" "$report" || {
 }
 
 vulnerabilities="$(sed -nE 's/^error: ([0-9]+) vulnerabilit.*/\1/p' "$report")"
-vulnerabilities="${vulnerabilities:-0}"
+warnings="$(sed -nE 's/^(warning|error): ([0-9]+) (denied|allowed) warning.*/\2/p' "$report" | head -n 1)"
+findings="$(awk '/^Crate:/ {c = $2} /^Version:/ {v = $2} /^ID:/ {print c " " v " " $2}' "$report" | paste -sd, -)"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### cargo audit: $title ($mode)"
     echo
-    echo "- vulnerabilities: **$vulnerabilities**"
-    echo "- advisories ignored through deny.toml: $((${#ignore_args[@]} / 2))"
+    echo "- vulnerabilities: **${vulnerabilities:-0}**, warnings: **${warnings:-0}**"
+    echo "- advisories ignored through deny.toml: $ignored"
     echo
     echo '```'
     cat "$report"
@@ -74,12 +93,12 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   } >>"$GITHUB_STEP_SUMMARY"
 fi
 
-if [ "$status" -ne 0 ] && [ "$vulnerabilities" -eq 0 ]; then
-  echo "audit-bin.sh: cargo audit failed without reporting vulnerabilities (exit $status)" >&2
+if [ "$status" -ne 0 ] && [ "$mode" = enforce ]; then
+  echo "audit-bin.sh: $title failed cargo audit (exit $status): ${vulnerabilities:-0} vulnerabilities, ${warnings:-0} denied warnings; not ignored in deny.toml: ${findings:-see report}" >&2
   exit 1
 fi
-if [ "$mode" = enforce ] && [ "$vulnerabilities" -gt 0 ]; then
-  echo "audit-bin.sh: $vulnerabilities vulnerabilities in $title are not ignored in deny.toml" >&2
+if [ "$status" -ne 0 ] && [ -z "$vulnerabilities" ] && [ -z "$warnings" ]; then
+  echo "audit-bin.sh: cargo audit failed without reporting findings (exit $status)" >&2
   exit 1
 fi
 exit 0
