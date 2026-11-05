@@ -1,7 +1,8 @@
 # Upstream RustDesk relay (hbbr) next to deskhaven (binary deployment).
 #   install -m 0755 hbbr /usr/local/bin/hbbr     # from a rustdesk-server release
 #   # the relay gets deskhaven's PUBLIC key only (never the private key, never "-"/"_"):
-#   echo "KEY=$(sudo -u deskhaven deskhaven key show | head -n1)" > /etc/deskhaven/relay.env
+#   key=$(sudo -u deskhaven deskhaven key show | head -n1) && [ -n "$key" ] \
+#     && install -d -m 0755 /etc/deskhaven && printf 'KEY=%s\n' "$key" > /etc/deskhaven/relay.env
 #   install -m 0644 hbbr.service /etc/systemd/system/ && systemctl daemon-reload
 #   systemctl enable --now hbbr
 # Add the relay to signal.relay_servers (e.g. pin it in deskhaven.toml:
@@ -16,8 +17,12 @@ After=network-online.target
 [Service]
 Type=exec
 DynamicUser=yes
-# Required: without KEY the relay would accept clients of any server.
+# Required. hbbr fails open: with no key, or "-" / "_" when it cannot write a
+# key pair, it relays for every client; a private key would be accepted too.
+# So KEY must be a 32-byte public key in base64 (44 characters), checked here.
 EnvironmentFile=/etc/deskhaven/relay.env
+ExecStartPre=/bin/sh -c 'printf "%%s" "$${KEY:-}" | grep -Eqx "[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=" || { echo "hbbr: KEY in /etc/deskhaven/relay.env is not a deskhaven public key" >&2; exit 1; }'
+# The key comes from KEY only; never add -k to this line.
 ExecStart=/usr/local/bin/hbbr
 Restart=on-failure
 RestartSec=5s
