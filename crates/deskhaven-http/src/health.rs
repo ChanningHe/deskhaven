@@ -6,6 +6,8 @@ use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
 
+use crate::paths;
+
 /// Why the service is not ready. Logged, never sent to the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotReady(String);
@@ -43,8 +45,8 @@ where
 {
     let readiness = Arc::new(readiness);
     Router::new()
-        .route("/healthz", get(|| async { "ok" }))
-        .route("/readyz", get(move || readyz(Arc::clone(&readiness))))
+        .route(paths::HEALTHZ, get(|| async { "ok" }))
+        .route(paths::READYZ, get(move || readyz(Arc::clone(&readiness))))
 }
 
 async fn readyz<R: ReadinessCheck>(readiness: Arc<R>) -> (StatusCode, &'static str) {

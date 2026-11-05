@@ -1,7 +1,7 @@
 //! The middleware stack every listener gets (02-architecture §6, 06-security §6).
 //!
 //! Order, outermost first:
-//! request id -> trace span -> security headers -> API `Cache-Control` ->
+//! request id -> trace span -> probe marker -> security headers -> API `Cache-Control` ->
 //! stack-error rendering + request deadline -> catch-panic -> trusted proxies
 //! extension -> body limit -> router.
 //! Everything inside the security-header layer (panics, timeouts, 413s, 404s)
@@ -51,6 +51,7 @@ where
                     .make_span_with(make_span)
                     .on_response(on_response),
             )
+            .layer(from_fn(mark_probes))
             .layer(from_fn(move |req: Request, next: Next| {
                 set_security_headers(headers.clone(), req, next)
             }))
@@ -137,10 +138,28 @@ fn make_span<B>(req: &Request<B>) -> Span {
     )
 }
 
+/// Marks responses to health probes, for [`on_response`] (which only sees
+/// the response).
+#[derive(Clone, Copy)]
+struct Probe;
+
+async fn mark_probes(req: Request, next: Next) -> Response<Body> {
+    let is_probe = paths::is_probe(req.uri().path());
+    let mut res = next.run(req).await;
+    if is_probe {
+        res.extensions_mut().insert(Probe);
+    }
+    res
+}
+
 fn on_response<B>(res: &Response<B>, latency: Duration, span: &Span) {
     span.record("status", res.status().as_u16());
     span.record("latency_ms", latency.as_millis());
-    tracing::info!("request finished");
+    if res.extensions().get::<Probe>().is_some() {
+        tracing::debug!("request finished");
+    } else {
+        tracing::info!("request finished");
+    }
 }
 
 /// The panic message is logged (it may contain values; logs are server-side),

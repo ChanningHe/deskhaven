@@ -5,6 +5,15 @@ pub const CLIENT_API_PREFIX: &str = "/api";
 /// Admin API (08 §6).
 pub const ADMIN_API_PREFIX: &str = "/admin/api";
 
+/// Liveness and readiness probes ([`crate::health_routes`]).
+pub(crate) const HEALTHZ: &str = "/healthz";
+pub(crate) const READYZ: &str = "/readyz";
+
+/// A health probe: polled every few seconds, so logged at debug only.
+pub(crate) fn is_probe(path: &str) -> bool {
+    path == HEALTHZ || path == READYZ
+}
+
 /// `path` is `prefix` itself or below it (`/api`, `/api/x`, not `/apix`).
 fn is_under(path: &str, prefix: &str) -> bool {
     path.strip_prefix(prefix)
