@@ -159,12 +159,16 @@ describe('groups page', () => {
     await user.type(search, 'da')
     const listbox = await within(drawer).findByRole('listbox', { name: '组外用户' })
     expect(within(drawer).getByRole('status')).toHaveTextContent('组外有 2 个匹配用户')
-    // Debounced: one request for the whole term, with the members left out by the server.
+    await waitFor(() => {
+      expect(search).toHaveAttribute('aria-busy', 'false')
+    })
+    // Focus lists the first accounts; then debounced: one request for the whole term. The
+    // server leaves the members out.
     const requests = fetchSpy.mock.calls
       .map((_, index) => requestedUrl(fetchSpy, index))
       .filter((url) => url.pathname === '/admin/api/v1/users')
-    expect(requests.map((url) => url.searchParams.get('q'))).toEqual(['da'])
-    expect(requests[0]?.searchParams.get('not_group')).toBe('7')
+    expect(requests.map((url) => url.searchParams.get('q'))).toEqual(['', 'da'])
+    expect(requests.every((url) => url.searchParams.get('not_group') === '7')).toBe(true)
 
     // Keyboard: the first suggestion is highlighted; ArrowDown moves on, Enter adds it.
     expect(within(listbox).getByRole('option', { name: /carol/ })).toHaveAttribute(

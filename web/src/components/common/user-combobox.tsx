@@ -1,3 +1,4 @@
+import { keepPreviousData } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import type { KeyboardEvent, Ref } from 'react'
 
@@ -31,24 +32,29 @@ export interface UserComboboxProps {
 }
 
 /**
- * A search-as-you-type combobox over the accounts. Arrow keys move through the suggestions,
- * Enter or a click picks one. Enter with text in the field never submits a surrounding form,
- * and Escape clears the text without closing the drawer or dialog around it.
+ * A search-as-you-type combobox over the accounts. Focusing the field lists the first
+ * accounts by username; typing narrows them. Arrow keys move through the suggestions, Enter
+ * or a click picks one. Enter picks only once the list answers the text as typed, so a fast
+ * typist never gets a stale suggestion. Enter with text in the field never submits a
+ * surrounding form, and Escape closes the list and clears the text without closing the
+ * drawer or dialog around it.
  */
 export function UserCombobox(props: UserComboboxProps) {
   const { label, listLabel, placeholder, filter, busy = false, disabled = false } = props
   const { foundText, noMatchText, onPick, inputRef } = props
   const listboxId = useId()
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const term = useDebouncedValue(q.trim(), SEARCH_DEBOUNCE_MS)
   const candidates = useListUsers(
     { ...filter, q: term, page_size: CANDIDATES, sort: 'username' },
-    { query: { enabled: term.length > 0 } },
+    { query: { enabled: open, placeholderData: keepPreviousData } },
   )
-  const shown = term.length > 0 ? (candidates.data?.items ?? []) : []
+  const shown = open ? (candidates.data?.items ?? []) : []
   const expanded = shown.length > 0
   const current = shown[Math.min(active, shown.length - 1)]
+  const settled = term === q.trim() && !candidates.isPlaceholderData
 
   const pick = async (user: UserView) => {
     if (busy || disabled) return
@@ -62,12 +68,13 @@ export function UserCombobox(props: UserComboboxProps) {
     if (event.key === 'Enter') {
       // Typing a name and pressing Enter is a search, never a form submission.
       if (q.trim() !== '') event.preventDefault()
-      if (expanded && current !== undefined) void pick(current)
-    } else if (event.key === 'Escape' && q !== '') {
+      if (expanded && settled && current !== undefined) void pick(current)
+    } else if (event.key === 'Escape' && (q !== '' || expanded)) {
       // Dismiss handlers of the sheet / dialog around listen on the document.
       event.preventDefault()
       event.stopPropagation()
       setQ('')
+      setOpen(false)
     } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && expanded) {
       event.preventDefault()
       const step = event.key === 'ArrowDown' ? 1 : -1
@@ -85,12 +92,19 @@ export function UserCombobox(props: UserComboboxProps) {
         aria-controls={listboxId}
         aria-autocomplete="list"
         aria-activedescendant={current ? `${listboxId}-${current.id}` : undefined}
-        aria-busy={busy}
+        aria-busy={busy || (open && !settled)}
         disabled={disabled}
         placeholder={placeholder ?? label}
         value={q}
+        onFocus={() => {
+          setOpen(true)
+        }}
+        onBlur={() => {
+          setOpen(false)
+        }}
         onChange={(e) => {
           setQ(e.target.value)
+          setOpen(true)
           setActive(0)
         }}
         onKeyDown={onKeyDown}
@@ -125,7 +139,7 @@ export function UserCombobox(props: UserComboboxProps) {
         ))}
       </ul>
       <p role="status" className="text-xs text-muted-foreground">
-        {term.length === 0 || candidates.data === undefined
+        {!open || candidates.data === undefined
           ? null
           : shown.length === 0
             ? noMatchText

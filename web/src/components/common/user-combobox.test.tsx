@@ -35,12 +35,41 @@ function setup(onPick: (user: UserView) => boolean | undefined = () => undefined
   }
 }
 
+/** The suggestions answer the text as typed (the debounced search has landed). */
+async function settled(input: HTMLElement) {
+  await waitFor(() => {
+    expect(input).toHaveAttribute('aria-busy', 'false')
+  })
+}
+
 describe('user combobox', () => {
+  it('lists the first accounts as soon as the field gets focus, and hides them on blur', async () => {
+    const { user, input } = setup()
+    await user.click(input)
+    const list = await screen.findByRole('listbox', { name: 'Matches' })
+    expect(list).toBeVisible()
+    expect(screen.getByRole('option', { name: /carol/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /dave/ })).toBeInTheDocument()
+
+    await user.tab()
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the suggestions still answer older text', async () => {
+    const { user, picked, input } = setup()
+    await user.click(input)
+    await screen.findByRole('option', { name: /carol/ })
+    await user.type(input, 'd{Enter}')
+    expect(input).toHaveAttribute('aria-busy', 'true')
+    expect(picked).not.toHaveBeenCalled()
+  })
+
   it('moves through the suggestions with the arrow keys, wrapping, and picks with Enter', async () => {
     const { user, picked, submitted, input } = setup()
     await user.type(input, 'a')
     const list = await screen.findByRole('listbox', { name: 'Matches' })
     expect(list).toBeVisible()
+    await settled(input)
     expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('aria-selected', 'true')
 
     await user.keyboard('{ArrowDown}')
@@ -70,6 +99,7 @@ describe('user combobox', () => {
     const { user, picked, input } = setup(() => false)
     await user.type(input, 'ca')
     await screen.findByRole('option', { name: /carol/ })
+    await settled(input)
     await user.keyboard('{Enter}')
     await waitFor(() => {
       expect(picked).toHaveBeenCalled()
