@@ -55,10 +55,7 @@ for entry in entries:
     audit_args+=(--ignore "$id")
     ignored=$((ignored + 1))
   done <<<"$ids"
-  if [ "$ignored" -eq 0 ]; then
-    echo "audit-bin.sh: no advisories.ignore entries found in $deny_toml (parse error?)" >&2
-    exit 2
-  fi
+  # (A deny.toml that does not parse fails in python above; an empty ignore list is legal.)
   # Unmaintained, unsound and yanked findings fail too, unless ignored above.
   audit_args+=(--deny warnings)
 fi
@@ -75,6 +72,17 @@ grep -q "security advisories" "$report" || {
   echo "audit-bin.sh: the advisory database was not loaded" >&2
   exit 1
 }
+
+# cargo-audit only WARNS ("couldn't update/open crates.io index", "couldn't check if the
+# package is yanked") when the index is unreachable and then skips the yanked check: that
+# must not read as "no yanked crates" when enforcing.
+if [ "$mode" = enforce ]; then
+  if ! grep -q "Updating.*crates.io index" "$report" ||
+    grep -qE "couldn't (update|open) crates.io index|couldn't check if the package is yanked" "$report"; then
+    echo "audit-bin.sh: the yanked check did not run (crates.io index unavailable); not accepting an unchecked binary" >&2
+    exit 1
+  fi
+fi
 
 vulnerabilities="$(sed -nE 's/^error: ([0-9]+) vulnerabilit.*/\1/p' "$report")"
 warnings="$(sed -nE 's/^(warning|error): ([0-9]+) (denied|allowed) warning.*/\2/p' "$report" | head -n 1)"
