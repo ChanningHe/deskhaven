@@ -7,6 +7,9 @@
 #   systemctl enable --now hbbr
 # Add the relay to signal.relay_servers (e.g. pin it in deskhaven.toml:
 # [settings] "signal.relay_servers" = ["rd.example.com:21117"]).
+# Firewall: hbbr's WebSocket 21119 listens on all interfaces and 21117 serves a
+# command console to loopback peers; the nftables table in deskhaven.service
+# keeps 21119 to the local proxy and the console from local users.
 
 [Unit]
 Description=RustDesk relay (hbbr) for deskhaven
@@ -19,9 +22,11 @@ Type=exec
 DynamicUser=yes
 # Required. hbbr fails open: with no key, or "-" / "_" when it cannot write a
 # key pair, it relays for every client; a private key would be accepted too.
-# So KEY must be a 32-byte public key in base64 (44 characters), checked here.
+# So KEY must be a 32-byte public key in base64, checked as a whole value
+# (no newlines): exactly 44 characters, 43 base64 ones (the last canonical)
+# and "=". ($$ and %% are systemd's escapes for $ and %.)
 EnvironmentFile=/etc/deskhaven/relay.env
-ExecStartPre=/bin/sh -c 'printf "%%s" "$${KEY:-}" | grep -Eqx "[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=" || { echo "hbbr: KEY in /etc/deskhaven/relay.env is not a deskhaven public key" >&2; exit 1; }'
+ExecStartPre=/bin/sh -c 'k=$${KEY:-}; b=$${k%%?}; [ $${#k} -eq 44 ] && [ "$${k#"$$b"}" = "=" ] && case $$b in *[!A-Za-z0-9+/]*) false ;; *[AEIMQUYcgkosw048]) true ;; *) false ;; esac || { echo "hbbr: KEY in /etc/deskhaven/relay.env is not a deskhaven public key" >&2; exit 1; }'
 # The key comes from KEY only; never add -k to this line.
 ExecStart=/usr/local/bin/hbbr
 Restart=on-failure
