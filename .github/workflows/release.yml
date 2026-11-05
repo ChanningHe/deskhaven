@@ -1,17 +1,23 @@
 # Release pipeline for deskhaven (M4-06).
 #
+# A VERSION IS NEVER REUSED. If a publishing run fails after anything was pushed (an image, a
+# tag, a release), do not delete and retry: fix forward and release the NEXT patch version.
+# Re-running failed jobs of the same run is allowed only because every publishing step
+# re-checks the world first (see below) and refuses anything that is not exactly this run.
+#
 # OPERATING RULE: push ONE release tag at a time and wait for its run to finish. Runs that
 # publish share one concurrency group and GitHub keeps only one pending run per group, so
 # a second tag pushed while one run is going and a third tag pushed after it would drop the
 # second run. GitHub also does not start workflows at all when more than 3 tags are
-# pushed at once. A tag whose run was dropped is re-released by deleting and re-pushing it.
+# pushed at once.
 #
 # Triggers
 #   push of a `v*` tag     builds, verifies and PUBLISHES: images to ghcr.io, a GitHub Release
 #   workflow_dispatch      NEVER publishes, whatever ref it runs on: builds and verifies
-#                          everything, pushes no image, tags nothing and creates no release;
-#                          the release files and notes are kept as the `release-preview`
-#                          artifact
+#                          everything. The jobs that hold packages: write or contents: write
+#                          (image-push, manifest, release, promote, preflight) are SKIPPED, so
+#                          a dry run holds no write permission at all; the release files and
+#                          notes are kept as the `release-preview` artifact
 #
 # Publishing is refused (.github/release/meta.sh, preflight) unless the tag is
 # `vX.Y.Z[-prerelease]`, equals the workspace version in Cargo.toml, deploy/compose/.env.example
@@ -22,21 +28,23 @@
 # Publish order (each step only starts when the previous one succeeded)
 #   preflight           no release or draft for the tag exists (before anything is pushed)
 #   image-push          per-arch images by digest, nothing tagged
-#   manifest            the exact tag X.Y.Z for BOTH images
-#   release             draft with all assets, then published
-#   promote             moves X.Y and latest, from the releases that are PUBLISHED at that moment
-# A failure anywhere stops the later steps. A failure after `release` leaves a published
-# release and exact image tags; only promote needs re-running (re-run that job alone: it is
-# idempotent and decides again from the current releases).
+#   manifest            the exact tag X.Y.Z for BOTH images (exact-tags.sh: the git tag still
+#                       points to the built commit; an existing X.Y.Z must be exactly this run)
+#   assets              release files, checked per artifact (read-only job)
+#   release             draft created via gh api, assets attached, published by id
+#   promote             converges X.Y and latest on the highest PUBLISHED releases
+# A failure anywhere stops the later steps. After a failure past `release`, only promote
+# needs re-running (that job alone: it converges, it does not replay).
 #
 # Job graph
 #   meta ─┬─ web ─┬─ csp (built-dist CSP checks, hard-fail)
 #   preflight     └─ notices-sbom (notices of deskhaven and hbbr, Rust SBOM)
 #         ├─ changelog (git-cliff)
 #         └─ image-build x4 {deskhaven, relay} x {amd64, arm64}   needs web, csp, notices-sbom
-#              │   build natively, cargo audit bin, tarball, image as an OCI archive
-#              └─ image-push x4   (needs preflight) smoke tests, then push THAT archive by digest
-#                   └─ manifest -> release -> promote
+#              │   build natively, cargo audit bin, tarball, image as an OCI archive,
+#              │   then load that archive, compare binaries, run the smoke tests
+#              └─ image-push x4   (needs preflight) push THAT archive by digest, never runs it
+#                   └─ manifest -> assets -> release -> promote
 #
 # What is audited
 #   deskhaven   `cargo audit bin` BLOCKS on any vulnerability, unmaintained, unsound or
@@ -44,20 +52,21 @@
 #   relay (hbbr) `cargo audit bin` is REPORTED only (job summary + release asset): upstream
 #               hbbr's lockfile has advisories we cannot fix without modifying upstream
 #
-# Trust boundaries: third-party code (cargo-installed tools, base images, the build itself)
-# runs only in jobs WITHOUT `packages: write` or `contents: write`. image-build builds and
-# audits and uploads artifacts. image-push, which holds the registry token only after its
-# smoke tests, does not install or build anything: it pushes the archive image-build
-# produced (a `FROM` an OCI layout, so the pushed manifest is byte-identical to the built
-# one, which is asserted) and checks that the pushed binaries equal the audited ones, never
-# running a container while logged in. preflight has `contents: write` and runs no
-# repository code at all. The token is passed to docker login and gh steps only.
+# Trust boundaries: third-party code (cargo-installed tools, base images, the build itself,
+# the images when run) executes only in jobs WITHOUT `packages: write` or `contents: write`:
+# image-build builds, audits, loads the image and runs the smoke tests. image-push, which
+# holds the registry token, never runs a container and installs nothing: it pushes the
+# archive image-build produced (a `FROM` an OCI layout pinned by digest, so the pushed
+# manifest is byte-identical to the built one, which is asserted) and compares the pushed
+# binaries with the audited ones. preflight has `contents: write` and runs no repository
+# code at all. The token is passed to docker login and gh steps only.
 #
 # Conventions as in ci.yml: sources come from plain git, no third-party JavaScript actions.
 # The exceptions are GitHub's own artifact actions, pinned by commit (upload-artifact is the
 # one ci.yml uses on failure). Tools are installed with `cargo install --locked` at pinned
 # versions through .github/ci-setup.sh; tool versions marked `renovate:` are bumped by
-# Renovate (renovate.json). No caching until a prebuilt CI image exists.
+# Renovate (renovate.json). No caching until a prebuilt CI image exists. The scripts under
+# .github/release/ are tested by .github/release/tests/ (job release-scripts in ci.yml).
 #
 # Runners: GitHub-hosted only. amd64 images build on ubuntu-latest and arm64 images on the
 # native ubuntu-24.04-arm (free for public repositories), so nothing runs under QEMU.
@@ -139,26 +148,27 @@ jobs:
             --jq '[.[] | select(.event == "push" and .headBranch == "main" and .conclusion == "success")] | length')"
           [ "$count" -ge 1 ] || { echo "::error::no successful push ci run on main for $GITHUB_SHA"; exit 1; }
 
-  # No release, draft included, may exist for the tag: checked BEFORE anything is pushed.
-  # `contents: write` is what makes gh list drafts, so this job runs no repository code at
-  # all (no checkout, only gh against an explicit repository). An API failure of any kind
-  # (404 for the repository included) fails the job; only a readable list without the tag
-  # counts as "free".
+  # No release, draft included, may exist for the tag: checked BEFORE anything is pushed
+  # (and again by the release job: a re-run replays this result). `contents: write` is what
+  # makes gh list drafts, so this job runs no repository code at all (no checkout, only gh
+  # against an explicit repository), and it does not exist in dry runs. An API failure of
+  # any kind (404 for the repository included) fails the job; only a readable list without
+  # the tag counts as "free".
   preflight:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
       - name: no release or draft for this tag
-        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           releases="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | .tag_name')"
           if grep -qxF "$GITHUB_REF_NAME" <<<"$releases"; then
-            echo "::error::a release or draft for $GITHUB_REF_NAME already exists; a release is never replaced (delete it, or tag a new version)"
+            echo "::error::a release or draft for $GITHUB_REF_NAME already exists; a release is never replaced (a version is never reused: release the next patch version)"
             exit 1
           fi
           echo "no release or draft for $GITHUB_REF_NAME"
@@ -301,10 +311,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Release notes from the conventional commits between the previous release and this one
-  # (tags.sh prev: semver order, so an old-line patch gets its own line's previous tag, and
-  # a final release skips its release candidates). Commit subjects are rendered inside code
-  # spans by cliff.toml.
+  # Release notes from the conventional commits between the previous PUBLISHED release and
+  # this one (tags.sh prev over the GitHub releases: semver order, so an old-line patch gets
+  # its own line's previous release, and a final release skips its release candidates).
+  # cliff.toml renders subjects inside code spans and splits sections at final tags only,
+  # so a final release's notes are one section.
   changelog:
     needs: meta
     runs-on: ubuntu-latest
@@ -312,7 +323,7 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      # Full history and all tags: the range is "previous tag .. this commit".
+      # Full history and all tags: the range is "previous release tag .. this commit".
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
@@ -322,10 +333,13 @@ jobs:
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
       - run: CI_SKIP_APT=1 .github/ci-setup.sh git-cliff@${{ env.GIT_CLIFF_VERSION }}
       - name: release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="v${VERSION}"
-          prev="$(.github/release/tags.sh prev "$tag")"
+          published="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name')"
+          prev="$(.github/release/tags.sh prev "$tag" <<<"$published")"
           echo "notes for $tag: ${prev:-the beginning}..$GITHUB_SHA"
           git-cliff --config .github/release/cliff.toml "${prev:+$prev..}$GITHUB_SHA" --tag "$tag" --strip all --output release-notes.md
           # Only tests, ci and chores in the range: a heading alone would look broken.
@@ -343,16 +357,19 @@ jobs:
           retention-days: 7
 
   # One job per image and architecture, each on a native runner. No registry or release
-  # token here (only `contents: read`), because this is where third-party code runs.
+  # token here (only `contents: read`), because this is where third-party code runs, the
+  # built images included.
   #   1. the binary alone (Dockerfile target `binary`) is audited with `cargo audit bin`
   #      and, for deskhaven, packed as the release tarball;
   #   2. the image is exported as an OCI archive, built by the same cached stages, so its
   #      binaries are the very files audited in step 1. It carries the label
-  #      org.opencontainers.image.revision (this commit).
-  # Both are uploaded for image-push. No provenance or SBOM attestations on the per-arch
-  # images: they would turn each per-arch digest into an index and the multi-arch manifest
-  # into an index of indexes. The dependency data of the binaries is embedded by cargo
-  # auditable instead.
+  #      org.opencontainers.image.revision (this commit);
+  #   3. that archive is loaded (as a `FROM` an OCI layout pinned by its manifest digest),
+  #      its binaries are compared with the audited ones, and the smoke tests run.
+  # The archive and the audited binaries are uploaded for image-push. No provenance or SBOM
+  # attestations on the per-arch images: they would turn each per-arch digest into an index
+  # and the multi-arch manifest into an index of indexes. The dependency data of the
+  # binaries is embedded by cargo auditable instead.
   image-build:
     needs: [meta, web, csp, notices-sbom]
     runs-on: ${{ matrix.runner }}
@@ -458,6 +475,58 @@ jobs:
                 --build-context notices=notices --label "org.opencontainers.image.revision=${GITHUB_SHA}")
           if [ "$IMAGE" = deskhaven ]; then args+=(--build-arg "VERSION=${VERSION}"); fi
           docker buildx build "${args[@]}" --output type=oci,dest=image.tar .
+          mkdir image-oci empty
+          tar -xf image.tar -C image-oci --no-same-owner
+          jq -e '.manifests | length == 1' image-oci/index.json >/dev/null
+          printf 'FROM image\n' >push.Dockerfile
+
+      # Load the archive just built (the context is pinned to its manifest digest), compare
+      # the files in it with the audited ones, and run it. No credentials exist in this job.
+      - name: load the archive into the local docker
+        run: |
+          set -euo pipefail
+          built="$(jq -r '.manifests[0].digest' image-oci/index.json)"
+          docker buildx build --builder release --platform "$PLATFORM" --file push.Dockerfile --provenance=false --sbom=false \
+            --build-context "image=oci-layout://${PWD}/image-oci@${built}" --load --tag "release-smoke/${IMAGE}:${ARCH}" empty
+      - name: the image contains the audited binaries
+        run: |
+          set -euo pipefail
+          same() { [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$2" ] && [ ! -L "$2" ] && cmp "$1" "$2"; }
+          id="$(docker create "release-smoke/${IMAGE}:${ARCH}")"
+          if [ "$IMAGE" = deskhaven ]; then
+            docker cp "${id}:/usr/local/bin/deskhaven" shipped-deskhaven
+            same shipped-deskhaven binary/deskhaven
+            docker cp "${id}:/usr/share/licenses/deskhaven/THIRD-PARTY-NOTICES.txt" shipped-notice.txt
+          else
+            docker cp "${id}:/usr/local/bin/hbbr" shipped-hbbr
+            docker cp "${id}:/usr/local/bin/relay-key-guard" shipped-guard
+            same shipped-hbbr binary/hbbr
+            same shipped-guard binary/relay-key-guard
+            docker cp "${id}:/usr/share/licenses/rustdesk-server/THIRD-PARTY-NOTICES.txt" shipped-notice.txt
+          fi
+          same shipped-notice.txt notices/THIRD-PARTY-NOTICES.txt
+          docker rm "$id" >/dev/null
+          echo "shipped files are byte-identical to the audited ones"
+      - name: smoke test
+        run: |
+          set -euo pipefail
+          ref="release-smoke/${IMAGE}:${ARCH}"
+          user="$(docker image inspect "$ref" --format '{{.Config.User}}')"
+          [ "$user" = "65532:65532" ] || { echo "::error::image runs as '$user', not 65532:65532"; exit 1; }
+          revision="$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          [ "$revision" = "$GITHUB_SHA" ] || { echo "::error::image revision label is '$revision', not $GITHUB_SHA"; exit 1; }
+          if [ "$IMAGE" = deskhaven ]; then
+            reported="$(timeout 30 docker run --rm --read-only "$ref" --version)"
+            echo "$reported"
+            [ "$reported" = "deskhaven ${VERSION}" ] || { echo "::error::the image reports '$reported'"; exit 1; }
+          else
+            timeout 30 docker run --rm --read-only --entrypoint /usr/local/bin/hbbr "$ref" --version
+            # The key guard must refuse to start without KEY (fail closed), not start hbbr.
+            if timeout 30 docker run --rm --read-only "$ref" 2>guard.err; then
+              echo "::error::the relay started without KEY"; exit 1
+            fi
+            grep -q "KEY is not set" guard.err
+          fi
 
       - name: upload the image archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -481,16 +550,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Smoke-tests the archive image-build produced, THEN pushes it by digest only (no tag yet;
-  # the manifest job tags it). Holds the registry token only after the smoke tests, and runs
-  # no repository code (no checkout, no tool installs, only docker):
-  #   1. extract the archive (entries other than files and directories are refused), load
-  #      it into the local docker, run the smoke tests and compare its binaries with the
-  #      audited ones. NO registry credentials exist yet.
-  #   2. only when publishing: log in, push, check the digest and the files again from the
-  #      pulled image WITHOUT running it, log out.
-  # A dry run stops after step 1. preflight (no release or draft for the tag) must have passed.
+  # Pushes the archive image-build produced and smoke-tested, by digest only (no tag yet;
+  # the manifest job tags it). Holds the registry token and runs no repository code (no
+  # checkout, no tool installs, only docker), and NEVER RUNS A CONTAINER: it extracts the
+  # archive (entries other than files and directories are refused), pushes it, checks the
+  # digest equals the built manifest, and compares the pulled binaries (docker create + cp)
+  # with the audited ones. Does not exist in dry runs.
   image-push:
+    if: needs.meta.outputs.publish == 'true'
     needs: [meta, preflight, image-build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -506,8 +573,6 @@ jobs:
           - { image: relay, arch: amd64, runner: ubuntu-latest, platform: linux/amd64 }
           - { image: relay, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64 }
     env:
-      VERSION: ${{ needs.meta.outputs.version }}
-      PUBLISH: ${{ needs.meta.outputs.publish }}
       IMAGE: ${{ matrix.image }}
       ARCH: ${{ matrix.arch }}
       PLATFORM: ${{ matrix.platform }}
@@ -522,11 +587,6 @@ jobs:
         with:
           name: bin-${{ matrix.image }}-${{ matrix.arch }}
           path: audited
-      - name: download notices
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: rel-supply-chain
-          path: supply-chain
       - name: builder and archive
         run: |
           set -euo pipefail
@@ -539,83 +599,32 @@ jobs:
           docker buildx create --name release --driver docker-container --driver-opt "image=moby/buildkit:${BUILDKIT_VERSION}@${BUILDKIT_DIGEST}" --use
           docker buildx inspect --bootstrap
           # The archive comes from another job: only regular files and directories, no
-          # absolute or parent-relative paths, before it is extracted.
-          tar -tvf oci/image.tar >listing.txt
-          if awk '{ t = substr($1, 1, 1); if (t != "-" && t != "d") bad = 1 } END { exit bad }' listing.txt; then :; else
+          # absolute or parent-relative paths, before it is extracted. (Variables, not a
+          # pipe into `grep -q`: under pipefail an early-exiting grep fails the pipeline.)
+          listing="$(tar -tvf oci/image.tar)"
+          names="$(tar -tf oci/image.tar)"
+          if awk '{ t = substr($1, 1, 1); if (t != "-" && t != "d") bad = 1 } END { exit bad }' <<<"$listing"; then :; else
             echo "::error::the image archive contains entries that are not regular files or directories"; exit 1
           fi
-          if tar -tf oci/image.tar | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+          if grep -Eq '(^/|(^|/)\.\.(/|$))' <<<"$names"; then
             echo "::error::the image archive contains absolute or parent-relative paths"; exit 1
           fi
           mkdir image-oci empty
           tar -xf oci/image.tar -C image-oci --no-same-owner
           jq -e '.manifests | length == 1' image-oci/index.json >/dev/null
           printf 'FROM image\n' >push.Dockerfile
-      - name: load the archive into the local docker
-        run: |
-          docker buildx build --builder release --platform "$PLATFORM" --file push.Dockerfile --provenance=false --sbom=false \
-            --build-context "image=oci-layout://${PWD}/image-oci" --load --tag "release-smoke/${IMAGE}:${ARCH}" empty
-          echo "LOCAL_REF=release-smoke/${IMAGE}:${ARCH}" >>"$GITHUB_ENV"
-
-      # The audited files are the shipped files. (deskhaven embeds the console, so this
-      # covers the dist as well.) Copying out of a created container runs nothing.
-      - name: the image contains the audited binaries
-        env:
-          REF: ${{ env.LOCAL_REF }}
-        run: |
-          set -euo pipefail
-          id="$(docker create "$REF")"
-          if [ "$IMAGE" = deskhaven ]; then
-            docker cp "${id}:/usr/local/bin/deskhaven" shipped-deskhaven
-            cmp shipped-deskhaven audited/deskhaven
-            docker cp "${id}:/usr/share/licenses/deskhaven/THIRD-PARTY-NOTICES.txt" shipped-notice.txt
-            cmp shipped-notice.txt supply-chain/THIRD-PARTY-NOTICES.txt
-          else
-            docker cp "${id}:/usr/local/bin/hbbr" shipped-hbbr
-            docker cp "${id}:/usr/local/bin/relay-key-guard" shipped-guard
-            cmp shipped-hbbr audited/hbbr
-            cmp shipped-guard audited/relay-key-guard
-            docker cp "${id}:/usr/share/licenses/rustdesk-server/THIRD-PARTY-NOTICES.txt" shipped-notice.txt
-            cmp shipped-notice.txt supply-chain/THIRD-PARTY-NOTICES-relay.txt
-          fi
-          docker rm "$id" >/dev/null
-          echo "shipped files are byte-identical to the audited ones"
-
-      - name: smoke test (no registry credentials present)
-        env:
-          REF: ${{ env.LOCAL_REF }}
-        run: |
-          set -euo pipefail
-          user="$(docker image inspect "$REF" --format '{{.Config.User}}')"
-          [ "$user" = "65532:65532" ] || { echo "::error::image runs as '$user', not 65532:65532"; exit 1; }
-          revision="$(docker image inspect "$REF" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
-          [ "$revision" = "$GITHUB_SHA" ] || { echo "::error::image revision label is '$revision', not $GITHUB_SHA"; exit 1; }
-          if [ "$IMAGE" = deskhaven ]; then
-            reported="$(timeout 30 docker run --rm --read-only "$REF" --version)"
-            echo "$reported"
-            [ "$reported" = "deskhaven ${VERSION}" ] || { echo "::error::the image reports '$reported'"; exit 1; }
-          else
-            timeout 30 docker run --rm --read-only --entrypoint /usr/local/bin/hbbr "$REF" --version
-            # The key guard must refuse to start without KEY (fail closed), not start hbbr.
-            if timeout 30 docker run --rm --read-only "$REF" 2>guard.err; then
-              echo "::error::the relay started without KEY"; exit 1
-            fi
-            grep -q "KEY is not set" guard.err
-          fi
-
-      # From here on credentials exist: only push, pull, create/cp, comparisons. No docker run.
       - name: registry login
-        if: env.PUBLISH == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
       - name: push by digest and verify
-        if: env.PUBLISH == 'true'
         run: |
           set -euo pipefail
+          same() { [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$2" ] && [ ! -L "$2" ] && cmp "$1" "$2"; }
           built="$(jq -r '.manifests[0].digest' image-oci/index.json)"
+          [[ "$built" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid manifest digest in the archive: '$built'"; exit 1; }
           docker buildx build --builder release --platform "$PLATFORM" --file push.Dockerfile --provenance=false --sbom=false \
-            --build-context "image=oci-layout://${PWD}/image-oci" \
+            --build-context "image=oci-layout://${PWD}/image-oci@${built}" \
             --output "type=image,name=${IMAGE_NAME},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file metadata.json empty
           digest="$(jq -r '."containerimage.digest"' metadata.json)"
@@ -626,22 +635,21 @@ jobs:
           id="$(docker create "${IMAGE_NAME}@${digest}")"
           if [ "$IMAGE" = deskhaven ]; then
             docker cp "${id}:/usr/local/bin/deskhaven" pulled-deskhaven
-            cmp pulled-deskhaven audited/deskhaven
+            same pulled-deskhaven audited/deskhaven
           else
             docker cp "${id}:/usr/local/bin/hbbr" pulled-hbbr
             docker cp "${id}:/usr/local/bin/relay-key-guard" pulled-guard
-            cmp pulled-hbbr audited/hbbr
-            cmp pulled-guard audited/relay-key-guard
+            same pulled-hbbr audited/hbbr
+            same pulled-guard audited/relay-key-guard
           fi
           docker rm "$id" >/dev/null
           mkdir -p digests
           echo "$digest" >"digests/${IMAGE}-${ARCH}.txt"
           echo "pushed ${IMAGE_NAME}@${digest}; the pulled files equal the audited ones"
       - name: registry logout
-        if: always() && env.PUBLISH == 'true'
+        if: always()
         run: docker logout ghcr.io
       - name: upload digest
-        if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
@@ -650,12 +658,15 @@ jobs:
           retention-days: 7
 
   # Joins the per-arch images into one multi-arch manifest per image and creates the EXACT
-  # tag X.Y.Z (no leading v: the Docker convention; git tags keep it) for BOTH images. The
-  # moving tags (X.Y, latest) are not touched here: promote does that after the release is
-  # published. Both images share the version tag (one DESKHAVEN_TAG in compose pins both).
-  # Every per-arch image must carry this commit as its revision label before an index is
-  # created. A dry run only prints the plan.
+  # tag X.Y.Z (no leading v: the Docker convention; git tags keep it) for BOTH images, via
+  # exact-tags.sh: the git tag must still point to the built commit, every per-arch image must
+  # carry that commit as its revision label, and an X.Y.Z that already exists is accepted only
+  # if it lists exactly this run's per-arch digests (a re-run of this very run). Both images
+  # are checked before the first index is created. The moving tags (X.Y, latest) are not
+  # touched here: promote does that after the release is published. Both images share the
+  # version tag (one DESKHAVEN_TAG in compose pins both). Does not exist in dry runs.
   manifest:
+    if: needs.meta.outputs.publish == 'true'
     needs: [meta, image-push]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -664,7 +675,6 @@ jobs:
       packages: write
     env:
       VERSION: ${{ needs.meta.outputs.version }}
-      PUBLISH: ${{ needs.meta.outputs.publish }}
     steps:
       - name: checkout
         run: |
@@ -674,74 +684,37 @@ jobs:
           git checkout -q FETCH_HEAD
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
       - name: download digest, deskhaven amd64
-        if: env.PUBLISH == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: digest-deskhaven-amd64
           path: digests
       - name: download digest, deskhaven arm64
-        if: env.PUBLISH == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: digest-deskhaven-arm64
           path: digests
       - name: download digest, relay amd64
-        if: env.PUBLISH == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: digest-relay-amd64
           path: digests
       - name: download digest, relay arm64
-        if: env.PUBLISH == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: digest-relay-arm64
           path: digests
       - name: registry login
-        if: env.PUBLISH == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
       - name: exact tags
         run: |
-          set -euo pipefail
-          if [ "$PUBLISH" != true ]; then
-            echo "dry run: would create the exact tag ${VERSION} for both images, nothing is pushed"
-            exit 0
-          fi
-          # shellcheck source=/dev/null
-          . .github/release/registry-lib.sh
-          owner="${GITHUB_REPOSITORY_OWNER,,}"
           mkdir -p out
-          : >out/images.txt
-          # matrix name (as in the digest files) -> repository name
-          pairs=(deskhaven:deskhaven relay:deskhaven-relay)
-          declare -A sources
-          # Everything is validated before any index is created.
-          for pair in "${pairs[@]}"; do
-            name="ghcr.io/${owner}/${pair#*:}"
-            list=()
-            for arch in amd64 arm64; do
-              digest="$(cat "digests/${pair%%:*}-${arch}.txt")"
-              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid digest for ${pair%%:*} ${arch}: '$digest'"; exit 1; }
-              [ "$(revision_of "${name}@${digest}")" = "$GITHUB_SHA" ] ||
-                { echo "::error::${name}@${digest} does not carry revision $GITHUB_SHA"; exit 1; }
-              list+=("${name}@${digest}")
-            done
-            sources[$pair]="${list[*]}"
-          done
-          for pair in "${pairs[@]}"; do
-            name="ghcr.io/${owner}/${pair#*:}"
-            read -r -a list <<<"${sources[$pair]}"
-            docker buildx imagetools create --tag "${name}:${VERSION}" "${list[@]}"
-            echo "${name}@$(digest_of "${name}:${VERSION}")  (tag ${VERSION})" >>out/images.txt
-          done
-          cat out/images.txt
+          .github/release/exact-tags.sh digests out/images.txt
       - name: registry logout
-        if: always() && env.PUBLISH == 'true'
+        if: always()
         run: docker logout ghcr.io
       - name: upload image list
-        if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rel-images
@@ -749,19 +722,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # SHA256SUMS over every release file (the set must equal the expected list), then the
-  # GitHub Release: a draft with all files, then published. Runs after the images carry
-  # their exact tag and BEFORE the moving tags move.
-  release:
-    needs: [meta, preflight, web, csp, notices-sbom, changelog, image-build, image-push, manifest]
+  # The release files, assembled and checked in a job with NO write permission (it runs in
+  # dry runs too and produces the preview there): every artifact is downloaded by exact name
+  # into its own directory, its file set is checked separately, names must not collide, and
+  # each deskhaven tarball is unpacked and its binary compared with the audited one
+  # (assemble-assets.sh). In publish runs it waits for the exact image tags (manifest).
+  assets:
+    needs: [meta, notices-sbom, changelog, image-build, manifest]
+    if: ${{ !cancelled() && needs.meta.result == 'success' && needs.notices-sbom.result == 'success' && needs.changelog.result == 'success' && needs.image-build.result == 'success' && (needs.manifest.result == 'success' || needs.manifest.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     env:
       VERSION: ${{ needs.meta.outputs.version }}
       PUBLISH: ${{ needs.meta.outputs.publish }}
-      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
     steps:
       - name: checkout
         run: |
@@ -774,66 +747,59 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-sbom-web
-          path: assets
+          path: dl/rel-sbom-web
       - name: download notices and Rust SBOM
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-supply-chain
-          path: assets
+          path: dl/rel-supply-chain
       - name: download tarball and audit, deskhaven amd64
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-deskhaven-amd64
-          path: assets
+          path: dl/rel-deskhaven-amd64
       - name: download tarball and audit, deskhaven arm64
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-deskhaven-arm64
-          path: assets
+          path: dl/rel-deskhaven-arm64
       - name: download audit, relay amd64
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-relay-amd64
-          path: assets
+          path: dl/rel-relay-amd64
       - name: download audit, relay arm64
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-relay-arm64
-          path: assets
+          path: dl/rel-relay-arm64
+      - name: download audited binary, deskhaven amd64
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bin-deskhaven-amd64
+          path: dl/bin-deskhaven-amd64
+      - name: download audited binary, deskhaven arm64
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bin-deskhaven-arm64
+          path: dl/bin-deskhaven-arm64
       - name: download image list
         if: env.PUBLISH == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rel-images
-          path: assets
+          path: dl/rel-images
       - name: download release notes
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes
           path: notes
-      - name: the assets are exactly the expected ones
-        run: |
-          set -euo pipefail
-          expected=(
-            "THIRD-PARTY-NOTICES.txt" "THIRD-PARTY-NOTICES-relay.txt"
-            "deskhaven-v${VERSION}.cdx.json" "deskhaven-web-v${VERSION}.cdx.json"
-          )
-          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
-            expected+=("deskhaven-v${VERSION}-${target}.tar.gz"
-                       "audit-deskhaven-v${VERSION}-${target}.txt"
-                       "audit-hbbr-v${VERSION}-${target}.txt")
-          done
-          if [ "$PUBLISH" = true ]; then expected+=("images.txt"); fi
-          diff <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort) <(cd assets && find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort)
-          echo "asset set matches (${#expected[@]} files)"
-      - name: SHA256SUMS and notes
+      - name: assemble and check the assets
+        run: .github/release/assemble-assets.sh dl publish/assets
+      - name: release notes body
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          # Written outside assets/ first: the listing must not include the file being written.
-          (cd assets && find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs sha256sum) >SHA256SUMS
-          mv SHA256SUMS assets/SHA256SUMS
-          cat assets/SHA256SUMS
           {
             cat notes/release-notes.md
             echo
@@ -842,51 +808,66 @@ jobs:
             echo "- Binaries: \`deskhaven-v${VERSION}-<target>.tar.gz\` (static musl, x86_64 and aarch64). Verify with \`sha256sum -c SHA256SUMS --ignore-missing\`."
             echo "- Images: \`ghcr.io/${owner}/deskhaven:${VERSION}\` and \`ghcr.io/${owner}/deskhaven-relay:${VERSION}\` (amd64, arm64); digests in \`images.txt\`."
             echo "- \`THIRD-PARTY-NOTICES.txt\` (deskhaven), \`THIRD-PARTY-NOTICES-relay.txt\` (hbbr), the CycloneDX SBOMs and the \`cargo audit\` reports are attached."
-          } >release-body.md
+          } >publish/release-body.md
       - name: preview (dry run)
         if: env.PUBLISH != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls -l assets
-          cat release-body.md
-          # What the real run would decide for the GitHub "Latest" badge.
+          ls -l publish/assets
+          cat publish/release-body.md
+          # What the real run would decide for the GitHub "Latest" badge and the moving tags.
           .github/release/promote.sh decide
-          mkdir -p preview
-          cp -r assets preview/assets
-          cp release-body.md preview/
-      - name: upload preview (dry run)
-        if: env.PUBLISH != 'true'
+      - name: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-preview
-          path: preview/
+          name: ${{ needs.meta.outputs.publish == 'true' && 'release-assets' || 'release-preview' }}
+          path: publish/
           if-no-files-found: error
           retention-days: 7
+
+  # Creates the GitHub Release as a draft through the API, keeps its id, attaches the
+  # assets, and publishes BY ID (release-publish.sh), after repeating the preflight check,
+  # drafts included, and checking that the tag still points to the built commit. Runs
+  # after the images carry their exact tag and BEFORE the moving tags move. Does not exist
+  # in dry runs.
+  release:
+    if: needs.meta.outputs.publish == 'true'
+    needs: [meta, assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA"
+          git checkout -q FETCH_HEAD
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+      - name: download the checked assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: publish
+      - name: the assets still match their checksums
+        run: cd publish/assets && sha256sum -c SHA256SUMS --quiet
       - name: create and publish the release
-        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # The tag still points at the commit that was built (annotated tags: the peeled
-          # commit, which is the last line ls-remote prints for the two refs).
-          remote="$(git ls-remote "$CI_REPO_URL" "refs/tags/${GITHUB_REF_NAME}" "refs/tags/${GITHUB_REF_NAME}^{}" | awk 'END { print $1 }')"
-          [ "$remote" = "$GITHUB_SHA" ] || { echo "::error::tag $GITHUB_REF_NAME points to '$remote', not the built $GITHUB_SHA"; exit 1; }
-          # What the "Latest" badge should be, from the releases published right now.
-          latest="$(.github/release/promote.sh decide | sed -n 's/^latest=//p')"
-          create_flags=()
-          if [ "$PRERELEASE" = true ]; then create_flags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
-            --title "$GITHUB_REF_NAME" --notes-file release-body.md "${create_flags[@]}" assets/*
-          # Publishing is the call that carries --latest.
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false "--latest=${latest}"
+        run: .github/release/release-publish.sh publish/assets publish/release-body.md
 
-  # Moves X.Y and latest for BOTH images as one step, last, after the release is published,
-  # deciding from the releases published at that moment (never from git tags or earlier
-  # jobs): a newer release published meanwhile, a patch for an old line, a prerelease or
-  # a re-run all come out right. Idempotent: if this job fails, re-run it alone.
+  # Converges X.Y and latest for BOTH images on the highest PUBLISHED releases, last, after
+  # the release is published, deciding from the releases published at that moment (never from
+  # git tags or earlier jobs), after checking that the images of every version involved carry
+  # the commit of their release tag. Moves are interleaved per tag, rolled back on failure,
+  # and idempotent: if this job fails, re-run it alone. Does not exist in dry runs.
   promote:
+    if: needs.meta.outputs.publish == 'true'
     needs: [meta, release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -895,7 +876,6 @@ jobs:
       packages: write
     env:
       VERSION: ${{ needs.meta.outputs.version }}
-      PUBLISH: ${{ needs.meta.outputs.publish }}
     steps:
       - name: checkout
         run: |
@@ -905,20 +885,13 @@ jobs:
           git checkout -q FETCH_HEAD
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
       - name: registry login
-        if: env.PUBLISH == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
-      - name: move the tags
+      - name: converge the moving tags
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$PUBLISH" = true ]; then
-            .github/release/promote.sh apply
-          else
-            echo "dry run: nothing is moved; the decision would be:"
-            .github/release/promote.sh decide
-          fi
+        run: .github/release/promote.sh apply
       - name: registry logout
-        if: always() && env.PUBLISH == 'true'
+        if: always()
         run: docker logout ghcr.io
