@@ -8,6 +8,7 @@ pub mod cli;
 pub mod config_cmd;
 pub mod data_dir;
 pub mod database;
+pub mod healthcheck;
 pub mod http;
 pub mod instance_lock;
 pub mod jobs;

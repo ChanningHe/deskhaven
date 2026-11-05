@@ -45,6 +45,8 @@ pub enum Command {
     /// Account maintenance
     #[command(subcommand)]
     User(UserCommand),
+    /// Exit 0 if the local server answers /readyz with 200 (container health checks)
+    Healthcheck,
 }
 
 #[derive(Debug, Subcommand)]
