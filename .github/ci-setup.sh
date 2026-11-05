@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared CI bootstrap: system packages + the toolchain pinned in rust-toolchain.toml.
-# Usage: [CI_SKIP_APT=1] .forgejo/ci-setup.sh [cargo tools as name@version ...]
+# Usage: [CI_SKIP_APT=1] .github/ci-setup.sh [cargo tools as name@version ...]
 set -euo pipefail
 
 APT_ATTEMPTS=3

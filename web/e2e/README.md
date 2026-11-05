@@ -54,5 +54,5 @@ DESKHAVEN_E2E_PG_URL=postgres://deskhaven@127.0.0.1:5432/deskhaven_e2e nix devel
 
 Reports, traces of failed tests and the server log land in
 `e2e-results/{sqlite,postgres}/`; `pnpm exec playwright show-trace <trace.zip>` opens a
-trace. CI (`.forgejo/workflows/ci.yml`, job `e2e`) runs the suite once per backend and
+trace. CI (`.github/workflows/ci.yml`, job `e2e`) runs the suite once per backend and
 uploads that directory when a run fails.

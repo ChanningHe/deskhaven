@@ -27,7 +27,7 @@ async fn reports_the_workspace_version_and_the_source_url() {
         body,
         json!({
             "version": WORKSPACE_VERSION,
-            "source_url": "https://git.homielab.cc/ChanningHe/deskhaven"
+            "source_url": "https://github.com/ChanningHe/deskhaven"
         })
     );
 }

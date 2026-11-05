@@ -1,16 +1,14 @@
-# Forgejo Actions CI for deskhaven (Forgejo 15, git.homielab.cc).
+# GitHub Actions CI for deskhaven.
 #
 # No JavaScript actions are used, except the e2e job's failure upload (that job installs
-# node; the action is referenced by full URL): the job image (rust:*-bookworm) has no
-# node, and bare `actions/*` resolution depends on the instance's DEFAULT_ACTIONS_URL.
+# node; the action is pinned by commit): the job image (rust:*-bookworm) has no node.
 # Sources are fetched with plain git (the repository is public; a private repo would need
 # a token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
 #
 # Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
-# To change it, set the repository/org variable CI_RUNNER_LABEL (Settings ->
-# Actions -> Variables) or replace the 'ubuntu-latest' default in every `runs-on`
-# line below. Jobs run inside the `container:` image, so the runner only needs
-# Docker access (label must map to a docker-capable runner).
+# To use a self-hosted runner, set the repository variable CI_RUNNER_LABEL (Settings ->
+# Secrets and variables -> Actions -> Variables). Jobs run inside the `container:` image,
+# so the runner only needs Docker access.
 #
 # Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
 # + e2e; the web console job runs in parallel with all of it.
@@ -18,7 +16,7 @@
 # Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
 # github.com (cargo-deny fetches the RustSec advisory DB from GitHub),
 # registry.npmjs.org (web, e2e), and for e2e nodejs.org, the Playwright browser CDN
-# (cdn.playwright.dev and its mirrors) and data.forgejo.org (upload action).
+# (cdn.playwright.dev and its mirrors).
 
 name: ci
 
@@ -30,6 +28,10 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# The jobs only read: no job pushes, comments or publishes.
+permissions:
+  contents: read
 
 env:
   # Tool versions, defined once.
@@ -56,7 +58,7 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
       # Toolchain only (rustfmt); no apt packages needed.
-      - run: CI_SKIP_APT=1 .forgejo/ci-setup.sh
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: cargo fmt --all -- --check
 
   # Web console (web/): lint + format, types, translations, tests, generated-code
@@ -121,7 +123,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: .forgejo/ci-setup.sh
+      - run: .github/ci-setup.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
@@ -134,7 +136,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: CI_SKIP_APT=1 .forgejo/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
   test-sqlite:
@@ -147,7 +149,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: .forgejo/ci-setup.sh
+      - run: .github/ci-setup.sh
       # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
       - run: cargo test --workspace --all-targets --no-fail-fast
       # The committed admin API OpenAPI document must match the code (the console's
@@ -188,7 +190,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: .forgejo/ci-setup.sh
+      - run: .github/ci-setup.sh
       - run: cargo test --workspace --all-targets --no-fail-fast
 
   # Runs in parallel with the tests; report only.
@@ -217,7 +219,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: .forgejo/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
+      - run: .github/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
       # Report only until the end of M2. To enforce the gate, append
       # `--fail-under-lines 80` to the command below.
       - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only # --fail-under-lines 80
@@ -252,7 +254,7 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
-      - run: .forgejo/ci-setup.sh
+      - run: .github/ci-setup.sh
       # The tarball must match the sha256 pinned here (from the release's SHASUMS256.txt);
       # bump both with NODE_VERSION.
       - name: node
@@ -297,7 +299,7 @@ jobs:
       # Reports, traces and server logs of both runs (web/e2e-results/{sqlite,postgres}).
       - name: upload Playwright results
         if: failure()
-        uses: https://data.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-results
           path: web/e2e-results
