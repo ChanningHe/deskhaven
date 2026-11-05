@@ -1,0 +1,71 @@
+# Weekly upstream client contract watch (09-testing §2.3).
+#
+# Compares the watched rustdesk client files (list and logic: scripts/contract-watch.sh)
+# between tests/contract/UPSTREAM_COMMIT and the current upstream master, and opens an
+# issue with a diff summary when anything changed (once per upstream master sha).
+#
+# Manual run: Actions -> contract-watch -> Run workflow. Inputs:
+#   base_commit  full client sha to compare against instead of UPSTREAM_COMMIT
+#                (e.g. an older commit, to see the issue the watch produces)
+#   dry_run      print the issue body in the job log instead of opening the issue
+#
+# Like ci.yml: no third-party actions, sources fetched with plain git. The job runs on the
+# runner itself (no container) because it needs the gh CLI, preinstalled on GitHub-hosted
+# ubuntu runners; a self-hosted runner set via CI_RUNNER_LABEL must provide git, gh and
+# iconv. Network egress needed: the git host and github.com.
+
+name: contract-watch
+
+on:
+  schedule:
+    # Mondays 03:17 UTC (off the hour: scheduled runs on the hour are delayed under load).
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      base_commit:
+        description: "Full client commit sha to compare against (default: tests/contract/UPSTREAM_COMMIT)"
+        required: false
+        type: string
+      dry_run:
+        description: "Print the issue body instead of opening an issue"
+        required: false
+        default: false
+        type: boolean
+
+# Nothing is pushed; the one job below adds `issues: write` for itself.
+permissions:
+  contents: read
+
+# Two overlapping runs could both pass the duplicate check.
+concurrency:
+  group: contract-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: watch upstream contract
+        env:
+          # Inputs go through env, never into the script text (no expression injection).
+          BASE_COMMIT: ${{ inputs.base_commit }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ -n "$BASE_COMMIT" ]; then args+=(--base "$BASE_COMMIT"); fi
+          scripts/contract-watch.sh "${args[@]}"
