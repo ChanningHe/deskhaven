@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Assembles THIRD-PARTY-NOTICES.txt, the notice shipped with every release and copied
 # into the deskhaven image:
 #   1. every Rust crate linked into the binary (cargo-about; config and template next to

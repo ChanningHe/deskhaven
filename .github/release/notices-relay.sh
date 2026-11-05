@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Assembles the third-party notice of the relay image (hbbr): the Rust crates of the pinned
 # upstream rustdesk-server release, from ITS lockfile. The upstream source is cloned at the
 # tag and commit pinned in deploy/docker/relay.Dockerfile and is not modified.
