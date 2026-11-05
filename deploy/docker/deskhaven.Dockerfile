@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 #
 # deskhaven: one static musl binary (web console embedded) on distroless/static,
 # non-root (65532), meant to run with a read-only root and a volume at
@@ -9,14 +9,11 @@
 # Multi-arch (amd64, arm64): each platform compiles natively, so a builder
 # needs a native node or QEMU for the other architecture.
 
-# Keep in step with rust-toolchain.toml (excluded from the build context, so
-# rustup uses the image's toolchain instead of installing the dev components).
-ARG RUST_VERSION=1.99.1
-# Keep in step with the Node of the web CI job (.github/workflows/ci.yml).
-ARG NODE_VERSION=24.21.0
+# Base images are pinned by digest (tag in the comment); bump both together.
 
 # --- web console: platform-independent output, so built once on the build host.
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS web
+# node:24.21.0-alpine; keep in step with the Node of the web CI job (.github/workflows/ci.yml).
+FROM --platform=$BUILDPLATFORM node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS web
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
@@ -28,7 +25,10 @@ COPY web/ ./
 RUN pnpm build
 
 # --- server binary: static musl, native per target platform.
-FROM rust:${RUST_VERSION}-alpine3.22 AS build
+# rust:1.99.1-alpine3.22; keep in step with rust-toolchain.toml (excluded from
+# the build context, so rustup uses the image's toolchain instead of
+# installing the dev components).
+FROM rust:1.99.1-alpine3.22@sha256:7a54a528456cc1cae43aab7a23e346198a68fdde39134e207110d91273ea3cea AS build
 # make + file: the bundled libsodium build (its configure script needs both).
 # OpenSSL: hbb_common's native-tls (tungstenite) links it on Linux; statically here.
 RUN apk add --no-cache musl-dev make file pkgconf openssl-dev openssl-libs-static
@@ -49,8 +49,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && install -D -m 0644 LICENSE /out/usr/share/licenses/deskhaven/LICENSE \
  && install -d -m 0700 -o 65532 -g 65532 /out/var/lib/deskhaven
 
-# --- runtime
-FROM gcr.io/distroless/static-debian13:nonroot
+# --- runtime: gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="deskhaven" \
       org.opencontainers.image.description="Self-hosted server for the RustDesk client" \
