@@ -479,8 +479,9 @@ jobs:
           retention-days: 7
 
   # Joins the per-arch images into one multi-arch manifest per image and tags it:
-  # vX.Y.Z always; X.Y and latest only for non-prerelease tags. Both images share the
-  # version tag (one DESKHAVEN_TAG in compose pins both). A dry run only prints the plan.
+  # X.Y.Z always (no leading v: the Docker convention; git tags keep it); X.Y and latest
+  # only for non-prerelease tags. Both images share the version tag (one DESKHAVEN_TAG in
+  # compose pins both). A dry run only prints the plan.
   manifest:
     needs: [meta, image]
     runs-on: ubuntu-latest
@@ -504,7 +505,7 @@ jobs:
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          tags=("v${VERSION}")
+          tags=("${VERSION}")
           if [ "$PRERELEASE" != true ]; then
             major_minor="${VERSION%.*}"
             tags+=("$major_minor" latest)
@@ -528,8 +529,8 @@ jobs:
             tag_args=()
             for tag in "${tags[@]}"; do tag_args+=(--tag "${name}:${tag}"); done
             docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
-            docker buildx imagetools inspect "${name}:v${VERSION}"
-            index="$(docker buildx imagetools inspect "${name}:v${VERSION}" --format '{{.Manifest.Digest}}')"
+            docker buildx imagetools inspect "${name}:${VERSION}"
+            index="$(docker buildx imagetools inspect "${name}:${VERSION}" --format '{{.Manifest.Digest}}')"
             echo "${name}@${index}  (tags: ${tags[*]})" >>out/images.txt
           done
           cat out/images.txt
@@ -581,7 +582,7 @@ jobs:
             echo "## Install"
             echo
             echo "- Binaries: \`deskhaven-v${VERSION}-<target>.tar.gz\` (static musl, x86_64 and aarch64). Verify with \`sha256sum -c SHA256SUMS --ignore-missing\`."
-            echo "- Images: \`ghcr.io/${owner}/deskhaven:v${VERSION}\` and \`ghcr.io/${owner}/deskhaven-relay:v${VERSION}\` (amd64, arm64); digests in \`images.txt\`."
+            echo "- Images: \`ghcr.io/${owner}/deskhaven:${VERSION}\` and \`ghcr.io/${owner}/deskhaven-relay:${VERSION}\` (amd64, arm64); digests in \`images.txt\`."
             echo "- \`THIRD-PARTY-NOTICES.txt\`, the two CycloneDX SBOMs and the \`cargo audit\` reports are attached."
           } >release-body.md
       - name: preview (dry run)
