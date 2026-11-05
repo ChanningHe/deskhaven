@@ -4,7 +4,18 @@
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "enabledManagers": ["dockerfile", "docker-compose", "github-actions", "custom.regex"],
   "schedule": ["before 6am on monday"],
+  "automerge": false,
   "packageRules": [
+    {
+      "description": "cargo-audit's output is parsed by .github/release/audit-bin.sh; a new version can change the strings it matches.",
+      "matchDatasources": ["crate"],
+      "matchPackageNames": ["cargo-audit"],
+      "automerge": false,
+      "labels": ["release-tooling", "recheck-audit-strings"],
+      "prBodyNotes": [
+        "**Re-check `.github/release/audit-bin.sh` against this cargo-audit version.** It greps the output for: `Updating crates.io index`, `couldn't update/open crates.io index`, `couldn't check if the package is yanked`, `Found 'cargo auditable' data`, `security advisories`, `error: N vulnerabilities found` and `N denied warnings`. A changed string would make the enforced audit fail open or closed. Run the real tool on a built binary and `.github/release/tests/run-all.sh`."
+      ]
+    },
     {
       "description": "The Rust toolchain, Node and the PostgreSQL test matrix move with rust-toolchain.toml, flake.lock and the support policy, never on their own; digest refreshes of the pinned tags still flow through.",
       "matchDatasources": ["docker"],
