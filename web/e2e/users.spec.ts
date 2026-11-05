@@ -25,8 +25,19 @@ test('a new user in a group loses the client session an admin revokes', async ({
     await dialog.getByLabel('Name').fill(GROUP)
     await dialog.getByRole('button', { name: 'Create group' }).click()
     const drawer = page.getByRole('dialog', { name: GROUP })
-    await drawer.getByRole('combobox', { name: 'Find a user to add' }).fill(USER.username)
-    await drawer.getByRole('option', { name: USER.username }).click()
+    const search = drawer.getByRole('combobox', { name: 'Find a user to add' })
+    // Focus lists accounts in a floating list: portalled out of the drawer (so it overlays the
+    // content below the field instead of pushing it down).
+    await search.focus()
+    const first = page.getByRole('option').first()
+    await expect(first).toBeVisible()
+    await expect(drawer.getByRole('option')).toHaveCount(0)
+    await search.fill('zz')
+    await search.press('Escape')
+    await expect(search).toHaveValue('')
+    await expect(drawer).toBeVisible()
+    await search.fill(USER.username)
+    await page.getByRole('option', { name: USER.username }).click()
     await expect(drawer.getByRole('listitem').filter({ hasText: USER.username })).toBeVisible()
   })
 

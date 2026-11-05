@@ -135,14 +135,16 @@ describe('device drawer: editing', () => {
 
     await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
     await user.type(within(drawer).getByRole('combobox', { name: '搜索用户作为所有者' }), 'car')
-    await user.click(await within(drawer).findByRole('option', { name: /carol/ }))
+    await user.click(await screen.findByRole('option', { name: /carol/ }))
     await user.click(within(drawer).getByRole('button', { name: '保存修改' }))
     await waitFor(() => {
       expect(bodies).toEqual([{ owner_user_id: 6 }])
     })
 
     await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
-    await user.click(within(drawer).getByRole('button', { name: '保存修改' }))
+    // Removing the owner focuses the search, whose open list hides the rest of the drawer from
+    // the accessibility tree until the click on Save dismisses it.
+    await user.click(within(drawer).getByRole('button', { name: '保存修改', hidden: true }))
     await waitFor(() => {
       expect(bodies).toEqual([{ owner_user_id: 6 }, { owner_user_id: null }])
     })

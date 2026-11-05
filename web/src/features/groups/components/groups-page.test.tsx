@@ -157,8 +157,9 @@ describe('groups page', () => {
     const drawer = await screen.findByRole('dialog', { name: 'ops' })
     const search = within(drawer).getByRole('combobox', { name: '查找要添加的用户' })
     await user.type(search, 'da')
-    const listbox = await within(drawer).findByRole('listbox', { name: '组外用户' })
-    expect(within(drawer).getByRole('status')).toHaveTextContent('组外有 2 个匹配用户')
+    const listbox = await screen.findByRole('listbox', { name: '组外用户' })
+    // The floating list is portalled out of the drawer and carries the status line.
+    expect(screen.getByText(/组外有 2 个匹配用户/)).toHaveAttribute('role', 'status')
     await waitFor(() => {
       expect(search).toHaveAttribute('aria-busy', 'false')
     })
@@ -172,8 +173,7 @@ describe('groups page', () => {
 
     // Keyboard: the first suggestion is highlighted; ArrowDown moves on, Enter adds it.
     expect(within(listbox).getByRole('option', { name: /carol/ })).toHaveAttribute(
-      'aria-selected',
-      'true',
+      'data-highlighted',
     )
     await user.keyboard('{ArrowDown}{Enter}')
     await waitFor(() => {

@@ -21,7 +21,7 @@ describe('owner picker in the device drawer', () => {
     await user.type(within(drawer).getByLabelText('备注'), ' more')
     await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
     await user.type(within(drawer).getByRole('combobox', { name: '搜索用户作为所有者' }), 'ca')
-    await within(drawer).findByRole('option', { name: /carol/ })
+    await screen.findByRole('option', { name: /carol/ })
 
     await user.keyboard('{Escape}')
 
@@ -69,7 +69,7 @@ describe('owner picker in the device drawer', () => {
     })
 
     await user.type(search, 'ca')
-    await user.click(await within(drawer).findByRole('option', { name: /carol/ }))
+    await user.click(await screen.findByRole('option', { name: /carol/ }))
     const remove = await within(drawer).findByRole('button', { name: '移除所有者' })
     await waitFor(() => {
       expect(remove).toHaveFocus()

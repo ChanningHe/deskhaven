@@ -25,6 +25,7 @@ function setup(onPick: (user: UserView) => boolean | undefined = () => undefined
         noMatchText="none"
         onPick={picked}
       />
+      <button type="button">Next</button>
     </form>,
   )
   return {
@@ -51,8 +52,11 @@ describe('user combobox', () => {
     expect(screen.getByRole('option', { name: /carol/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /dave/ })).toBeInTheDocument()
 
+    // Base UI closes the popup once focus has settled outside the field.
     await user.tab()
-    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    })
   })
 
   it('ignores Enter while the suggestions still answer older text', async () => {
@@ -70,14 +74,14 @@ describe('user combobox', () => {
     const list = await screen.findByRole('listbox', { name: 'Matches' })
     expect(list).toBeVisible()
     await settled(input)
-    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('data-highlighted')
 
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('data-highlighted')
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('data-highlighted')
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('data-highlighted')
 
     await user.keyboard('{Enter}')
     await waitFor(() => {
