@@ -1,27 +1,26 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 #
 # deskhaven-relay: the upstream RustDesk relay (hbbr), built unmodified from a
 # pinned rustdesk-server release, static musl, on distroless/static, non-root
-# (65532), read-only root. Only hbbr is shipped. Uses no files from this
-# repository, so any context works (the repository root's .dockerignore keeps
-# it small):
+# (65532), read-only root. Build from the repository root:
 #
 #   docker buildx build -f deploy/docker/relay.Dockerfile -t deskhaven-relay .
 #
-# Give it only the PUBLIC key (env KEY or `-k <public key>`). Never `-k -` or
-# `-k _`: hbbr then reads or creates a private key pair in its working
-# directory, and when it cannot write one (read-only root) it runs with no key
-# at all, accepting every client.
+# The entrypoint is relay-key-guard (relay-key-guard.rs): it refuses to start
+# unless KEY holds deskhaven's PUBLIC key (`deskhaven key show`), then replaces
+# itself with hbbr. hbbr alone would fail open: no key, or `-k -` / `-k _` on a
+# read-only root, relays for every client.
+#
+# Base images are pinned by digest (tag in the comment); bump both together.
 
 ARG UPSTREAM_REPO=https://github.com/rustdesk/rustdesk-server
 ARG UPSTREAM_TAG=1.1.16
 # The commit UPSTREAM_TAG pointed to when pinned; a moved tag fails the build.
 ARG UPSTREAM_COMMIT=73523b31cfd25d77dee862e6fc9f5e1fb5e485ef
-# The toolchain upstream's release workflow builds this tag with
-# (.github/workflows/build.yaml); its Cargo.lock predates newer compilers.
-ARG RUST_VERSION=1.90.0
 
-FROM rust:${RUST_VERSION}-alpine3.22 AS build
+# rust:1.90.0-alpine3.22: the toolchain upstream's release workflow builds this
+# tag with (.github/workflows/build.yaml); its Cargo.lock predates newer compilers.
+FROM rust:1.90.0-alpine3.22@sha256:b4b54b176a74db7e5c68fdfe6029be39a02ccbcfe72b6e5a3e18e2c61b57ae26 AS build
 ARG UPSTREAM_REPO
 ARG UPSTREAM_TAG
 ARG UPSTREAM_COMMIT
@@ -43,8 +42,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         "${UPSTREAM_REPO}" "${UPSTREAM_TAG}" "${UPSTREAM_COMMIT}" \
         > /out/usr/share/licenses/rustdesk-server/SOURCE \
  && install -d -m 0755 /out/var/lib/hbbr
+# The key guard: std only, so plain rustc; its tests run first.
+COPY deploy/docker/relay-key-guard.rs /src/guard/
+RUN rustc --edition 2021 --test -o /tmp/guard-tests /src/guard/relay-key-guard.rs \
+ && /tmp/guard-tests \
+ && rustc --edition 2021 -C opt-level=2 -C strip=symbols \
+        -o /out/usr/local/bin/relay-key-guard /src/guard/relay-key-guard.rs \
+ && file /out/usr/local/bin/relay-key-guard | grep -Eq 'static(-pie)? linked'
 
-FROM gcr.io/distroless/static-debian13:nonroot
+# gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 ARG UPSTREAM_REPO
 ARG UPSTREAM_TAG
 LABEL org.opencontainers.image.title="deskhaven-relay" \
@@ -59,4 +66,4 @@ USER 65532:65532
 WORKDIR /var/lib/hbbr
 # 21117 relay, 21119 relay WebSocket.
 EXPOSE 21117/tcp 21119/tcp
-ENTRYPOINT ["/usr/local/bin/hbbr"]
+ENTRYPOINT ["/usr/local/bin/relay-key-guard"]
