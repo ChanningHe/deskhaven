@@ -8,8 +8,12 @@
 #                         latest        TAG is final and the highest published final release
 #                         minor_latest  TAG is final and the highest in its X.Y line
 #                       TAG counts as published whether or not it is in the list yet.
-#   tags.sh prev TAG    prints, from the git tags of the current repository, the tag whose
-#                       release notes end where TAG's begin, or nothing:
+#   tags.sh highest [X.Y]
+#                       reads published final release tags on stdin and prints the highest
+#                       one (of the X.Y line if given), or nothing
+#   tags.sh prev TAG    reads the tags of ALL published releases (drafts excluded) on stdin
+#                       and prints the tag whose release notes end where TAG's begin, or
+#                       nothing:
 #                         final TAG       the highest FINAL tag below it (prereleases are
 #                                         skipped, so the notes of v1.0.0 also cover the rcs)
 #                         prerelease TAG  the highest tag of any kind below it
@@ -94,11 +98,22 @@ case "${1:-}" in
       [[ "$k" < "$own_key" ]] || continue
       if [[ "$tag" =~ $FINAL ]] && ! [[ "$t" =~ $FINAL ]]; then continue; fi
       prev="$t"
-    done < <(git tag -l 'v*' | sorted "")
+    done < <(sorted "")
     echo "$prev"
     ;;
+  highest)
+    line="${2:-}"
+    best=""
+    while IFS=$'\t' read -r _ t; do
+      [ -n "$t" ] || continue
+      [[ "$t" =~ $FINAL ]] || continue
+      if [ -n "$line" ] && [ "$(minor_line "$t")" != "$line" ]; then continue; fi
+      best="$t"
+    done < <(sorted "")
+    echo "$best"
+    ;;
   *)
-    echo "usage: tags.sh plan TAG <published-final-tags | tags.sh prev TAG" >&2
+    echo "usage: tags.sh plan TAG | highest [X.Y] | prev TAG  (tags on stdin)" >&2
     exit 2
     ;;
 esac
