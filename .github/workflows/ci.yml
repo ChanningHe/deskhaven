@@ -39,6 +39,9 @@ env:
   CARGO_LLVM_COV_VERSION: "0.9.1"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Full debuginfo for every test binary fills a hosted runner's disk; line tables keep
+  # file:line in backtraces at a fraction of the size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
   # also covers test code). No global RUSTFLAGS, so `cargo install` of tools is unaffected.
   #
