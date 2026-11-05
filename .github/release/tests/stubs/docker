@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# docker stub: `docker buildx imagetools inspect|create` against a registry kept as files in
+# $STUB_REG (all calls are logged to $STUB_REG/docker.log):
+#   tags/<image>/<tag>   digest the tag points to
+#   idx/<digest>         child digests of an index, one per line
+#   rev/<digest>         revision label of a platform image
+# STUB_REGISTRY_ERROR=1     every call fails like an unreachable registry
+# STUB_FAIL_CREATE_N=<n>    the n-th `imagetools create` fails (counting from 1)
+set -euo pipefail
+: "${STUB_REG:?STUB_REG is required}"
+echo "docker $*" >>"$STUB_REG/docker.log"
+
+if [ "${1:-} ${2:-}" != "buildx imagetools" ]; then
+  echo "unexpected docker call: $*" >&2
+  exit 99
+fi
+action="${3:-}"
+shift 3
+
+if [ "${STUB_REGISTRY_ERROR:-0}" = 1 ]; then
+  echo "ERROR: failed to do request: dial tcp: lookup ghcr.io: no such host" >&2
+  exit 1
+fi
+
+# resolve REF -> digest ("" if it does not exist)
+resolve() {
+  local ref="${1#*/*/}" image tag digest
+  case "$ref" in
+    *@sha256:*)
+      digest="sha256:${ref#*@sha256:}"
+      if [ -f "$STUB_REG/idx/$digest" ] || [ -f "$STUB_REG/rev/$digest" ]; then echo "$digest"; fi
+      ;;
+    *:*)
+      image="${ref%%:*}"
+      tag="${ref#*:}"
+      if [ -f "$STUB_REG/tags/$image/$tag" ]; then cat "$STUB_REG/tags/$image/$tag"; fi
+      ;;
+  esac
+}
+
+case "$action" in
+  inspect)
+    ref="$1"
+    shift
+    digest="$(resolve "$ref")"
+    if [ -z "$digest" ]; then
+      echo "ERROR: $ref: not found" >&2
+      exit 1
+    fi
+    case "${1:-}" in
+      --raw)
+        if [ -f "$STUB_REG/idx/$digest" ]; then
+          printf '{"manifests":['
+          sed 's/.*/{"digest":"&"}/' "$STUB_REG/idx/$digest" | paste -sd, -
+          printf ']}\n'
+        else
+          echo '{}'
+        fi
+        ;;
+      --format)
+        leaf="$digest"
+        if [ -f "$STUB_REG/idx/$digest" ]; then leaf="$(head -n 1 "$STUB_REG/idx/$digest")"; fi
+        printf '{"config":{"Labels":{"org.opencontainers.image.revision":"%s"}}}\n' "$(cat "$STUB_REG/rev/$leaf" 2>/dev/null || true)"
+        ;;
+      *)
+        printf 'Name:      %s\nMediaType: application/vnd.oci.image.index.v1+json\nDigest:    %s\n' "$ref" "$digest"
+        ;;
+    esac
+    ;;
+  create)
+    tags=()
+    sources=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --tag) tags+=("$2"); shift 2 ;;
+        *) sources+=("$1"); shift ;;
+      esac
+    done
+    n=$(($(cat "$STUB_REG/create.count" 2>/dev/null || echo 0) + 1))
+    echo "$n" >"$STUB_REG/create.count"
+    if [ "${STUB_FAIL_CREATE_N:-0}" = "$n" ]; then
+      echo "ERROR: boom (stubbed failure of create #$n)" >&2
+      exit 1
+    fi
+    if [ "${#sources[@]}" = 1 ]; then
+      digest="$(resolve "${sources[0]}")"
+      [ -n "$digest" ] || { echo "ERROR: ${sources[0]}: not found" >&2; exit 1; }
+    else
+      children=""
+      for s in "${sources[@]}"; do
+        d="$(resolve "$s")"
+        [ -n "$d" ] || { echo "ERROR: $s: not found" >&2; exit 1; }
+        children+="$d"$'\n'
+      done
+      digest="sha256:$(printf '%s' "$children" | sha256sum | cut -d' ' -f1)"
+      mkdir -p "$STUB_REG/idx"
+      printf '%s' "$children" >"$STUB_REG/idx/$digest"
+    fi
+    for t in "${tags[@]}"; do
+      ref="${t#*/*/}"
+      mkdir -p "$STUB_REG/tags/${ref%%:*}"
+      echo "$digest" >"$STUB_REG/tags/${ref%%:*}/${ref#*:}"
+    done
+    ;;
+  *)
+    echo "unexpected imagetools action: $action" >&2
+    exit 99
+    ;;
+esac

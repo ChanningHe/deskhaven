@@ -1,0 +1,6 @@
+# Style findings that do not apply to test code:
+#   SC2015  `cond && ok || bad` is the test idiom (ok never fails)
+#   SC2005  `echo "$(cmd)"` is kept where the value is being written to a file
+#   SC2016  test subjects are deliberately single-quoted text full of backticks and $
+#   SC2154  run_capture sets <prefix>_rc and <prefix>_out through printf -v
+disable=SC2015,SC2005,SC2016,SC2154

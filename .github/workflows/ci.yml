@@ -93,6 +93,27 @@ jobs:
           rustc --edition 2021 --test -o /tmp/guard-tests deploy/docker/relay-key-guard.rs
           /tmp/guard-tests
 
+  # The release scripts (.github/release/: what decides whether, what and where release.yml
+  # publishes) are shellchecked and tested here, without network: gh, docker, git ls-remote
+  # and cargo-audit are stubs (.github/release/tests/stubs). Runs on the runner itself, which
+  # needs bash, git, jq, python3 >= 3.11 and shellcheck (all preinstalled on GitHub-hosted
+  # ubuntu runners). git-cliff is not installed here: its test (tests/test-cliff.sh) skips
+  # itself, a `cargo install` would take minutes for a test the release run repeats.
+  release-scripts:
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
+          git checkout -q FETCH_HEAD
+      - name: shellcheck
+        run: shellcheck --shell=bash -x --source-path=SCRIPTDIR .github/ci-setup.sh .github/release/*.sh .github/release/tests/*.sh .github/release/tests/stubs/*
+      - name: tests
+        run: .github/release/tests/run-all.sh
+
   # Web console (web/): lint + format, types, translations, tests, generated-code
   # drift and the production build. Needs nothing from the Rust jobs: the API client
   # is generated from the committed openapi.json, whose own drift test-sqlite checks.

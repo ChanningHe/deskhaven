@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# gh stub. State lives in $STUB_DIR (all calls are appended to gh.log):
+#   all_tags.txt         tags of all releases, drafts included     (preflight / release checks)
+#   published_all.txt    tags of non-draft releases                (changelog prev)
+#   published_final.txt  tags of non-draft, non-prerelease ones    (promote)
+#   STUB_IMAGE           packages API: absent | exists | other | denied | neterr
+#   STUB_API_ERROR=1     every releases listing fails with HTTP 500
+#   STUB_UPLOAD_FAIL=1   `gh release upload` fails
+#   STUB_RELEASE_ID      id returned by creating a release (default 4242)
+# The jq filter (--jq) is NOT applied: the stub prints what the filter would select, chosen
+# by the shape of the filter.
+set -euo pipefail
+: "${STUB_DIR:?STUB_DIR is required}"
+echo "gh $*" >>"$STUB_DIR/gh.log"
+args=" $* "
+
+if [ "${1:-}" = api ] && [ "${2:-}" = "repos/ChanningHe/deskhaven" ]; then
+  echo users
+  exit 0
+fi
+
+# GitHub Packages API (meta.sh)
+if [[ "$args" == *"/packages/container/"* ]]; then
+  case "${STUB_IMAGE:-absent}" in
+    exists) printf '0.1.0\n0.0.9\nlatest\n' ;;
+    other) printf '0.0.9\nlatest\n' ;;
+    absent) echo "gh: Package not found. (HTTP 404)" >&2; exit 1 ;;
+    denied) echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1 ;;
+    neterr) echo "gh: Post: dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+  esac
+  exit 0
+fi
+
+# release listings
+if [[ "$args" == *"/releases?per_page"* ]]; then
+  if [ "${STUB_API_ERROR:-0}" = 1 ]; then echo "gh: HTTP 500" >&2; exit 1; fi
+  if [[ "$args" == *"prerelease == false"* ]]; then
+    cat "$STUB_DIR/published_final.txt" 2>/dev/null || true
+  elif [[ "$args" == *"select(.draft == false)"* ]]; then
+    cat "$STUB_DIR/published_all.txt" 2>/dev/null || true
+  else
+    cat "$STUB_DIR/all_tags.txt" 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+# create a release
+if [[ "$args" == *"--method POST"* ]] && [[ "$args" == *"/releases "* ]]; then
+  echo "${STUB_RELEASE_ID:-4242}" >"$STUB_DIR/release.id"
+  echo true >"$STUB_DIR/release.draft"
+  for a in "$@"; do
+    case "$a" in tag_name=*) echo "${a#tag_name=}" >"$STUB_DIR/release.tag" ;; esac
+  done
+  : >"$STUB_DIR/release.assets"
+  cat "$STUB_DIR/release.id"
+  exit 0
+fi
+
+# upload an asset to the draft
+if [ "${1:-}" = release ] && [ "${2:-}" = upload ]; then
+  if [ "${STUB_UPLOAD_FAIL:-0}" = 1 ]; then echo "gh: upload failed" >&2; exit 1; fi
+  # STUB_UPLOAD_SKIP=<name>: the upload "succeeds" but the asset is not attached
+  [ "$(basename "$4")" = "${STUB_UPLOAD_SKIP:-}" ] || basename "$4" >>"$STUB_DIR/release.assets"
+  exit 0
+fi
+
+# publish by id
+if [[ "$args" == *"--method PATCH"* ]] && [[ "$args" == *"/releases/"* ]]; then
+  echo false >"$STUB_DIR/release.draft"
+  echo "$args" >"$STUB_DIR/release.patch"
+  exit 0
+fi
+
+# read a release by id
+if [ "${1:-}" = api ] && [[ "${2:-}" == repos/*/releases/* ]]; then
+  if [[ "$args" == *'join("|")'* ]]; then
+    printf '%s|%s|%s\n' "$(cat "$STUB_DIR/release.tag")" "$(cat "$STUB_DIR/release.draft")" \
+      "$(LC_ALL=C sort "$STUB_DIR/release.assets" | paste -sd' ' -)"
+  else
+    cat "$STUB_DIR/release.draft"
+  fi
+  exit 0
+fi
+
+echo "unexpected gh call: $*" >&2
+exit 99

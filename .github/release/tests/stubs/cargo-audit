@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# cargo-audit stub for audit-bin.sh: `cargo-audit audit [--color never] [--ignore ID]...
+# [--deny warnings] bin FILE`. It prints cargo-audit's output format from
+#   STUB_FINDINGS   space-separated  kind:crate:version:ID  with kind vuln|warn
+#   STUB_AUDIT      normal | noindex | indexwarn | nodata | nodb
+# honours --ignore and --deny warnings like the real tool, and records where it ran and
+# whether an audit.toml was visible to it in $STUB_AUDIT_LOG.
+set -euo pipefail
+all_args="$*"
+shift # "audit"
+ignores=()
+deny=no
+file=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --color) shift 2 ;;
+    --ignore) ignores+=("$2"); shift 2 ;;
+    --deny) deny="$2"; shift 2 ;;
+    bin) file="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+{
+  echo "cwd=$(pwd)"
+  echo "cargo_home=${CARGO_HOME:-}"
+  [ -e ./.cargo/audit.toml ] && echo "audit_toml_in_cwd=yes" || echo "audit_toml_in_cwd=no"
+  [ -e "${CARGO_HOME:-/nonexistent}/audit.toml" ] && echo "audit_toml_in_cargo_home=yes" || echo "audit_toml_in_cargo_home=no"
+  echo "file=$file"
+  echo "args=$all_args"
+} >"${STUB_AUDIT_LOG:?STUB_AUDIT_LOG is required}"
+
+scenario="${STUB_AUDIT:-normal}"
+if [ "$scenario" = nodb ]; then
+  echo "error: couldn't fetch advisory database"
+  exit 1
+fi
+echo "    Fetching advisory database from \`https://github.com/RustSec/advisory-db.git\`"
+echo "      Loaded 1409 security advisories (from /home/x/.cargo/advisory-db)"
+if [ "$scenario" != noindex ]; then echo "    Updating crates.io index"; fi
+if [ "$scenario" = indexwarn ]; then echo "warning: couldn't check if the package is yanked: boom"; fi
+if [ "$scenario" = nodata ]; then
+  echo "error: No dependency information found in $file! Is it a Rust program built with cargo?"
+  exit 1
+fi
+echo "       Found 'cargo auditable' data in $file (3 dependencies)"
+
+vulns=0
+warns=0
+for finding in ${STUB_FINDINGS:-}; do
+  IFS=: read -r kind crate version id <<<"$finding"
+  skip=no
+  for i in "${ignores[@]}"; do [ "$i" = "$id" ] && skip=yes; done
+  [ "$skip" = no ] || continue
+  printf 'Crate:     %s\nVersion:   %s\n' "$crate" "$version"
+  if [ "$kind" = vuln ]; then
+    printf 'Title:     a vulnerability\nDate:      2024-01-01\nID:        %s\nURL:       https://rustsec.org/advisories/%s\nSeverity:  7.5 (high)\n\n' "$id" "$id"
+    vulns=$((vulns + 1))
+  else
+    printf 'Warning:   unmaintained\nTitle:     is unmaintained\nDate:      2024-01-01\nID:        %s\nURL:       https://rustsec.org/advisories/%s\n\n' "$id" "$id"
+    warns=$((warns + 1))
+  fi
+done
+status=0
+if [ "$vulns" -gt 0 ]; then
+  echo "error: $vulns vulnerabilities found in $file"
+  status=1
+fi
+if [ "$warns" -gt 0 ]; then
+  if [ "$deny" = warnings ]; then
+    echo "error: $warns denied warnings found in $file"
+    status=1
+  else
+    echo "warning: $warns allowed warnings found in $file"
+  fi
+fi
+exit "$status"
