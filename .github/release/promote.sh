@@ -67,6 +67,61 @@ decide() {
   done <<<"$moves"
 }
 
+# rollback: uses apply's variables (dynamic scope): owner, previous, target_digest, performed.
+# Restores every tag a create was attempted for (finished or not) to its recorded digest,
+# each restore retried (PROMOTE_RETRY_ATTEMPTS, PROMOTE_RETRY_SLEEP seconds apart), then
+# RE-READS every touched tag and prints an INCONSISTENT: list for anything that is not
+# back where it was. A tag that did not exist before cannot be deleted through the
+# registry API: it is acceptable only if it now exists on BOTH images or on neither.
+rollback() {
+  local attempts="${PROMOTE_RETRY_ATTEMPTS:-3}" pause="${PROMOTE_RETRY_SLEEP:-2}"
+  local i entry image moving version name old try ok current
+  local -A touched=()
+  echo "::error::moving a tag failed; restoring every tag that was attempted"
+  for ((i = ${#performed[@]} - 1; i >= 0; i--)); do
+    read -r image moving version <<<"${performed[$i]}"
+    name="ghcr.io/${owner}/${image}"
+    touched["${moving}"]=1
+    old="${previous[${image}:${moving}]}"
+    [ -n "$old" ] || continue
+    ok=0
+    for ((try = 1; try <= attempts; try++)); do
+      if docker buildx imagetools create --tag "${name}:${moving}" "${name}@${old}"; then
+        ok=1
+        break
+      fi
+      echo "::warning::restoring ${name}:${moving} failed (attempt ${try}/${attempts})"
+      sleep "$pause"
+    done
+    [ "$ok" = 1 ] || echo "::error::could not restore ${name}:${moving} to ${old}"
+  done
+  local -a inconsistent=()
+  local -A seen_images=()
+  for moving in "${!touched[@]}"; do
+    seen_images=()
+    for image in "${images[@]}"; do
+      name="ghcr.io/${owner}/${image}"
+      old="${previous[${image}:${moving}]}"
+      current="$(digest_of "${name}:${moving}" 2>/dev/null || true)"
+      if [ -n "$old" ]; then
+        [ "$current" = "$old" ] || inconsistent+=("${name}:${moving} (expected ${old}, found '${current:-unreadable or absent}')")
+      else
+        seen_images["$image"]="${current:+present}"
+      fi
+    done
+    # tags that did not exist before: both images or neither
+    if [ -z "${previous[${images[0]}:${moving}]}" ] && [ "${seen_images[${images[0]}]:-}" != "${seen_images[${images[1]}]:-}" ]; then
+      inconsistent+=("ghcr.io/${owner}/{${images[0]},${images[1]}}:${moving} exists on only one image and cannot be removed")
+    fi
+  done
+  if [ "${#inconsistent[@]}" -gt 0 ]; then
+    printf 'INCONSISTENT: %s\n' "${inconsistent[@]}"
+    echo "::error::the images are NOT consistent after the failed promote; fix by hand or re-run promote"
+  else
+    echo "rolled back: every touched tag is where it was (or on both images)"
+  fi
+}
+
 apply() {
   # shellcheck source=registry-lib.sh
   . "$here/registry-lib.sh"
@@ -98,11 +153,17 @@ apply() {
     [ -n "$expected" ] || { echo "::error::git tag v${version} does not exist on the remote"; return 1; }
     for image in "${images[@]}"; do
       name="ghcr.io/${owner}/${image}"
-      [ "$(revision_of "${name}:${version}")" = "$expected" ] || {
-        echo "::error::${name}:${version} does not carry revision ${expected} (the commit of v${version}); refusing to promote"
+      # Every platform of the index must carry the revision; the digest that was verified
+      # is the one the tags are moved from (not the tag, which could change in between).
+      [ "$(revisions_of "${name}:${version}")" = "$expected" ] || {
+        echo "::error::${name}:${version} does not carry revision ${expected} on every platform (the commit of v${version}); refusing to promote"
         return 1
       }
       target_digest["${image}:${version}"]="$(digest_of "${name}:${version}")"
+      [ "$(revisions_of "${name}@${target_digest["${image}:${version}"]}")" = "$expected" ] || {
+        echo "::error::${name}@${target_digest["${image}:${version}"]} changed while it was being verified; refusing to promote"
+        return 1
+      }
     done
   done
 
@@ -123,34 +184,23 @@ apply() {
   done <<<"$moves"
 
   # 3. interleaved moves (one tag at a time, both images), 4. rollback on failure
+  # An entry is recorded BEFORE its create runs: a create the registry applied but reported
+  # as failed (timeout, reset after the write) is in the rollback set like a finished one.
   local entry failed=0
   for entry in "${todo[@]}"; do
     read -r moving version <<<"$entry"
     for image in "${images[@]}"; do
       name="ghcr.io/${owner}/${image}"
       [ "${previous[${image}:${moving}]}" = "${target_digest[${image}:${version}]}" ] && continue
-      if docker buildx imagetools create --tag "${name}:${moving}" "${name}:${version}"; then
-        performed+=("${image} ${moving}")
-      else
+      performed+=("${image} ${moving} ${version}")
+      if ! docker buildx imagetools create --tag "${name}:${moving}" "${name}@${target_digest[${image}:${version}]}"; then
         failed=1
         break 2
       fi
     done
   done
   if [ "$failed" = 1 ]; then
-    echo "::error::moving a tag failed; restoring the tags moved so far"
-    local i old
-    for ((i = ${#performed[@]} - 1; i >= 0; i--)); do
-      read -r image moving <<<"${performed[$i]}"
-      name="ghcr.io/${owner}/${image}"
-      old="${previous[${image}:${moving}]}"
-      if [ -n "$old" ]; then
-        docker buildx imagetools create --tag "${name}:${moving}" "${name}@${old}" ||
-          echo "::error::could not restore ${name}:${moving} to ${old}"
-      else
-        echo "::warning::${name}:${moving} did not exist before and cannot be removed; the next promote run completes it"
-      fi
-    done
+    rollback
     return 1
   fi
 
@@ -166,8 +216,8 @@ apply() {
     done
   done <<<"$moves"
   local rev_a rev_b
-  rev_a="$(revision_of "ghcr.io/${owner}/${images[0]}:latest" 2>/dev/null || true)"
-  rev_b="$(revision_of "ghcr.io/${owner}/${images[1]}:latest" 2>/dev/null || true)"
+  rev_a="$(revisions_of "ghcr.io/${owner}/${images[0]}:latest" 2>/dev/null || true)"
+  rev_b="$(revisions_of "ghcr.io/${owner}/${images[1]}:latest" 2>/dev/null || true)"
   [ "$rev_a" = "$rev_b" ] || {
     echo "::error::the latest tags of ${images[*]} point to different releases or only one exists: '${rev_a}' vs '${rev_b}'"
     return 1
