@@ -82,6 +82,9 @@ networks:
       config:
         - subnet: 172.30.114.0/24
           gateway: 172.30.114.1
+          # Dynamic addresses only from the upper half, so none can ever take
+          # Caddy's fixed 172.30.114.10.
+          ip_range: 172.30.114.128/25
   relay: {}
 
 volumes:
