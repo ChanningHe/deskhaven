@@ -35,7 +35,7 @@ fail() {
 
 # matrix name (as in the digest files) -> repository name
 pairs=(deskhaven:deskhaven relay:deskhaven-relay)
-declare -A sources=() create=()
+declare -A sources=() create=() expected=()
 
 for pair in "${pairs[@]}"; do
   key="${pair%%:*}"
@@ -46,16 +46,16 @@ for pair in "${pairs[@]}"; do
     [ -f "$file" ] && [ ! -L "$file" ] || fail "missing digest file ${file}"
     digest="$(cat "$file")"
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid digest for ${key} ${arch}: '$digest'"
-    [ "$(revision_of "${name}@${digest}")" = "$GITHUB_SHA" ] ||
+    [ "$(revisions_of "${name}@${digest}")" = "$GITHUB_SHA" ] ||
       fail "${name}@${digest} does not carry revision $GITHUB_SHA"
     list+=("${name}@${digest}")
   done
   sources[$pair]="${list[*]}"
+  expected[$pair]="$(printf '%s\n' "${list[@]}" | sed 's/.*@//' | sort)"
 
   create[$pair]=yes
   if ref_exists "${name}:${VERSION}"; then
-    mine="$(printf '%s\n' "${list[@]}" | sed 's/.*@//' | sort)"
-    [ "$(child_digests "${name}:${VERSION}")" = "$mine" ] ||
+    [ "$(child_digests "${name}:${VERSION}")" = "${expected[$pair]}" ] ||
       fail "${name}:${VERSION} already exists with different content: a version is never reused, release the next patch version"
     create[$pair]=no
     echo "${name}:${VERSION} already exists with exactly this run's images (a re-run)"
@@ -71,6 +71,10 @@ for pair in "${pairs[@]}"; do
     read -r -a list <<<"${sources[$pair]}"
     docker buildx imagetools create --tag "${name}:${VERSION}" "${list[@]}"
   fi
+  # Whatever the create said, the tag must now list exactly this run's images: a create
+  # that "succeeded" onto something else, or raced with another writer, must not be recorded.
+  [ "$(child_digests "${name}:${VERSION}")" = "${expected[$pair]}" ] ||
+    fail "${name}:${VERSION} does not list this run's images after the create"
   echo "${name}@$(digest_of "${name}:${VERSION}")  (tag ${VERSION})" >>"$output"
 done
 cat "$output"

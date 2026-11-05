@@ -16,11 +16,14 @@ digest_of() {
   echo "$digest"
 }
 
-# revision_of REF: the org.opencontainers.image.revision label of the image (of the first
-# platform if REF is an index), or empty.
-revision_of() {
+# revisions_of REF: the org.opencontainers.image.revision labels of EVERY platform image of
+# REF, sorted and de-duplicated, joined by spaces; a platform without the label contributes
+# an empty entry. `[ "$(revisions_of REF)" = "$sha" ]` therefore means: all platforms carry
+# exactly that revision. (Image configs are the objects with a `rootfs`, one per platform.)
+revisions_of() {
   docker buildx imagetools inspect "$1" --format '{{json .Image}}' |
-    jq -r --arg key "$REVISION_LABEL" '[.. | objects | .Labels? // empty | .[$key]?] | map(select(. != null)) | first // empty'
+    jq -r --arg key "$REVISION_LABEL" \
+      '[.. | objects | select(has("rootfs")) | ((.config.Labels // {})[$key] // "")] | unique | join(" ")'
 }
 
 # child_digests REF: the digests of the manifests an index lists, sorted, one per line.
@@ -28,12 +31,14 @@ child_digests() {
   docker buildx imagetools inspect "$1" --raw | jq -r '.manifests[].digest' | sort
 }
 
-# ref_exists REF: 0 if the tag or digest exists, 1 if the registry says it does not exist
-# (not found / 404); any other failure returns 2 and must be treated as an error.
+# ref_exists REF: 0 if the tag or digest exists, 1 if the registry says it does not exist,
+# in buildx's exact words `ERROR: <ref>: not found` (verified against registry:2; a message
+# that merely CONTAINS "404" or "not found", such as a connection reset to port 40404, is
+# not that); any other failure returns 2 and must be treated as an error.
 ref_exists() {
   local out
   if out="$(docker buildx imagetools inspect "$1" 2>&1)"; then return 0; fi
-  if grep -qiE 'not found|manifest unknown|name unknown|404' <<<"$out"; then return 1; fi
+  if grep -qxF "ERROR: $1: not found" <<<"$out"; then return 1; fi
   echo "registry-lib: cannot tell whether $1 exists: $out" >&2
   return 2
 }
