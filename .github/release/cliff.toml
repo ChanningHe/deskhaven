@@ -1,8 +1,15 @@
-# git-cliff configuration: release notes from conventional commits since the previous tag.
+# git-cliff configuration: release notes from conventional commits between two tags.
 # Used by the release workflow:
-#   git-cliff --config .github/release/cliff.toml --latest --tag-pattern '^v' [--tag vX.Y.Z]
+#   git-cliff --config .github/release/cliff.toml [PREV..]SHA --tag vX.Y.Z --strip all
 # Commit subjects look like `type(scope): subject (M4-06)`; the trailing task ID stays in the
 # subject, it is what links a line to the task list.
+#
+# Commit subjects are text from contributors that ends up in a rendered release page, so
+# every subject is rendered INSIDE A CODE SPAN (scope included): @mentions do not notify,
+# links, images, HTML and autolinks do not render, backslashes stay literal. The fence is
+# one backtick longer than the number of backticks in the subject (an upper bound of the
+# longest run), padded with a space on both sides, so nothing in the subject can end the
+# span early.
 
 [changelog]
 header = ""
@@ -14,21 +21,18 @@ body = """
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | striptags | trim | upper_first }}
-{% for commit in commits %}
-- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
-  {% if commit.breaking %}**BREAKING** {% endif %}\
-  {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})\
+{% for commit in commits %}\
+{% set text = commit.message %}\
+{% if commit.scope %}{% set text = commit.scope ~ ": " ~ commit.message %}{% endif %}\
+{% set fence = text | split(pat="`") | length %}
+- {% if commit.breaking %}**BREAKING** {% endif %}\
+{% for i in range(end=fence) %}`{% endfor %} {{ text }} {% for i in range(end=fence) %}`{% endfor %} \
+({{ commit.id | truncate(length=7, end="") }})\
 {% endfor %}
 {% endfor %}
 """
 footer = ""
 trim = true
-# Commit subjects are text from contributors that ends up in a rendered release page:
-# neutralise what could notify people (@mentions), link, embed an image or inject HTML.
-postprocessors = [
-    { pattern = '([\[\]<!])', replace = '\$1' },
-    { pattern = '(^|[^\w`@])@([A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9._-]+)?)', replace = '$1`@$2`' },
-]
 
 [git]
 conventional_commits = true
