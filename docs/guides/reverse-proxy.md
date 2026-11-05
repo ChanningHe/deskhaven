@@ -5,11 +5,11 @@ bundled Caddy.
 
 ## 1. Run compose without Caddy
 
-Follow the [quick start](../getting-started/quick-start.md), and before step 3 change
-`.env`:
+Follow the [quick start](../getting-started/quick-start.md), and before step 3 remove Caddy
+from `COMPOSE_FILE` ([how](../reference/configuration.md#in-the-compose-deployment)) and
+trust the proxy:
 
 ```sh
-sed -i 's/^COMPOSE_FILE=.*/COMPOSE_FILE=compose.yaml/' .env
 echo 'TRUSTED_PROXIES=172.30.114.1/32' >> .env
 ```
 
@@ -36,9 +36,10 @@ curl -fsSL -o /etc/nginx/conf.d/deskhaven.conf \
   https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.0/deploy/nginx/deskhaven.conf
 ```
 
-Replace `rd.example.com` and the certificate paths in it, then `nginx -s reload`. Its
-first two `server` blocks drop requests for other host names (`default_server`); remove them
-if this nginx serves other sites.
+Replace `rd.example.com` and the certificate paths in it, then `nginx -s reload`. It needs
+nginx 1.25.1 or later (`http2 on;`). Its first two `server` blocks claim `default_server` on
+80 and 443; if another site already does (Debian's and Ubuntu's
+`/etc/nginx/sites-enabled/default`), delete those two blocks from `deskhaven.conf`.
 
 ### Traefik
 

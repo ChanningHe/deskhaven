@@ -10,11 +10,14 @@ then set `ip` to the address clients use:
 
 ```sh
 ip=192.168.1.10
-sed -i "s|^DESKHAVEN_PUBLIC_URL=.*|DESKHAVEN_PUBLIC_URL=http://$ip:21114|; s|^DESKHAVEN_RELAY=.*|DESKHAVEN_RELAY=$ip:21117|; s|^COMPOSE_FILE=.*|COMPOSE_FILE=compose.yaml:compose.override.yaml|" .env
+sed -i "s|^DESKHAVEN_PUBLIC_URL=.*|DESKHAVEN_PUBLIC_URL=http://$ip:21114|; s|^DESKHAVEN_RELAY=.*|DESKHAVEN_RELAY=$ip:21117|" .env
 ```
 
-Clients sign in through the client API on 21114. Publish it to the network in
-`compose.override.yaml`:
+Remove Caddy from `COMPOSE_FILE` and add `compose.override.yaml` to it
+([how](../reference/configuration.md#in-the-compose-deployment)).
+
+Clients sign in through the client API on 21114. Publish it to the network by merging this
+into `compose.override.yaml`:
 
 ```yaml
 services:
@@ -24,7 +27,6 @@ services:
       - "21115:21115/tcp"
       - "21116:21116/tcp"
       - "21116:21116/udp"
-      - "127.0.0.1:21118:21118/tcp"
 ```
 
 Client passwords then cross the network unencrypted.

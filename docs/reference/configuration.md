@@ -43,7 +43,8 @@ As an environment variable, the setting key follows the rule above after
 
 ### In the compose deployment
 
-Create `compose.override.yaml` next to `compose.yaml`:
+All your changes go into one file, `compose.override.yaml`, next to `compose.yaml`. Merge
+each snippet from these docs into it, and create the file if it is missing. For example:
 
 ```yaml
 services:
@@ -52,12 +53,19 @@ services:
       DESKHAVEN_SETTINGS__AUTH__SESSION_TTL: 7d
 ```
 
-Add it to `COMPOSE_FILE` in `.env`, then apply it:
+The first time, add the file to `COMPOSE_FILE` in `.env`:
 
 ```sh
-sed -i 's/^COMPOSE_FILE=.*/&:compose.override.yaml/' .env
-docker compose up -d --wait
+grep -q compose.override.yaml .env || sed -i 's/^COMPOSE_FILE=.*/&:compose.override.yaml/' .env
 ```
+
+To run without the bundled Caddy, remove it from `COMPOSE_FILE`:
+
+```sh
+sed -i 's/:compose\.caddy\.yaml//' .env
+```
+
+Apply changes with `docker compose up -d --wait`.
 
 ## Bootstrap keys
 

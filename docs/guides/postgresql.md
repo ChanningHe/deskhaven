@@ -7,14 +7,14 @@ Set this up before the first start: nothing moves data from SQLite to PostgreSQL
 ## Compose
 
 Follow the [quick start](../getting-started/quick-start.md) through step 2. Then create a
-password and add the override file to `COMPOSE_FILE`:
+password:
 
 ```sh
 echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
-sed -i 's/^COMPOSE_FILE=.*/&:compose.override.yaml/' .env
 ```
 
-Create `compose.override.yaml`:
+Merge this into `compose.override.yaml`
+([how](../reference/configuration.md#in-the-compose-deployment)):
 
 ```yaml
 services:

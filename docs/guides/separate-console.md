@@ -3,7 +3,8 @@
 When you finish, the console and the management API listen on a port of their own that
 only you reach, through an SSH tunnel. Clients keep using the public address.
 
-Create `compose.override.yaml`:
+Merge this into `compose.override.yaml` and apply it
+([how](../reference/configuration.md#in-the-compose-deployment)):
 
 ```yaml
 services:
@@ -13,13 +14,6 @@ services:
       DESKHAVEN_LISTEN__ADMIN_PUBLIC_URL: http://localhost:21113
     ports:
       - "127.0.0.1:21113:21113/tcp"
-```
-
-Add it to `COMPOSE_FILE` and restart:
-
-```sh
-sed -i 's/^COMPOSE_FILE=.*/&:compose.override.yaml/' .env
-docker compose up -d --wait
 ```
 
 The public address no longer serves the console: `https://rd.example.com/` redirects to
