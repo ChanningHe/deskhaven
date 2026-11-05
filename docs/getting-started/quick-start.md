@@ -1,7 +1,7 @@
 # Quick start
 
-When you finish, deskhaven and its relay run on your server behind HTTPS, and you are
-signed in to the console as the owner.
+When you finish, deskhaven and its relay run on your server, the console has an HTTPS
+certificate, and you are signed in to it as the owner.
 
 ## What you need
 

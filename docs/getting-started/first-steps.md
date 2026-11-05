@@ -7,8 +7,9 @@ strategy that sets client options on every device.
 
 1. Open **Users** and choose **New user**.
 2. Enter a username and choose **Create user**.
-3. Give the user the temporary password shown. They choose their own at their first
-   sign-in to the console.
+3. Give the user the temporary password shown. The console makes them choose their own at
+   their first sign-in there; the RustDesk client keeps working with the temporary one
+   ([known limitations](../reference/known-limitations.md#accounts-and-sign-in)).
 
 ## Turn on two-factor authentication
 
@@ -17,8 +18,7 @@ strategy that sets client options on every device.
 3. Store the recovery codes somewhere safe
    ([where they work](../reference/known-limitations.md#accounts-and-sign-in)).
 
-To require it for others, open **Identity** and set **Require two-factor authentication
-for**. A user it covers enrols in the console before the RustDesk client lets them sign in.
+To require it for others, see [Harden your server](../guides/hardening.md).
 
 ## Create a strategy
 

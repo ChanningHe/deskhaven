@@ -4,9 +4,10 @@ When you finish, deskhaven and the relay run as hardened systemd services, behin
 nginx.
 
 You need the `deskhaven` binary for your architecture from the
-[v0.1.0 release](https://github.com/ChanningHe/deskhaven/releases/tag/v0.1.0), `hbbr` from a
-[rustdesk-server release](https://github.com/rustdesk/rustdesk-server/releases), and nginx
-with a certificate for your domain. Run the commands as root.
+[v0.1.0 release](https://github.com/ChanningHe/deskhaven/releases/tag/v0.1.0), `hbbr` from
+the [rustdesk-server 1.1.16 release](https://github.com/rustdesk/rustdesk-server/releases/tag/1.1.16),
+nginx with a certificate for your domain, and the [ports](../reference/ports.md) 80, 443
+and 21115–21117 open. Run the commands as root.
 
 ## 1. Install deskhaven
 
@@ -33,7 +34,7 @@ The relay gets deskhaven's public key:
 
 ```sh
 install -m 0755 hbbr /usr/local/bin/hbbr
-key=$(sudo -u deskhaven deskhaven key show | head -n1) && [ -n "$key" ] \
+key=$(runuser -u deskhaven -- deskhaven key show | head -n1) && [ -n "$key" ] \
   && printf 'KEY=%s\n' "$key" > /etc/deskhaven/relay.env
 curl -fsSL -o /etc/systemd/system/hbbr.service "$base/systemd/hbbr.service"
 systemctl daemon-reload && systemctl enable --now hbbr

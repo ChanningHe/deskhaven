@@ -4,7 +4,7 @@ Self-hosted, open-source server for the official RustDesk client: rendezvous (si
 client API (accounts, 2FA, SSO, address books, groups, audit, strategies) and a modern web console,
 shipped as a single binary.
 
-> **Status:** early development, not usable yet.
+> **Status:** pre-release; the first version, v0.1.0, is not out yet.
 
 User documentation: [docs/](docs/README.md), starting with the [quick start](docs/getting-started/quick-start.md).
 

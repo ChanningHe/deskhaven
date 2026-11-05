@@ -3,8 +3,9 @@
 When you finish, deskhaven answers your clients with the key pair of your old `hbbs`, so
 clients keep their **Key** setting.
 
-You need `id_ed25519` and `id_ed25519.pub` from the old server's data directory (the
-working directory of `hbbs`, `/root` in the official images).
+You need `id_ed25519` and `id_ed25519.pub` from the old server's data directory, the
+working directory of `hbbs`: `/root` in the `rustdesk/rustdesk-server` image (`./data` on
+the host with upstream's compose file), `/data` in `rustdesk/rustdesk-server-s6`.
 
 1. Follow the [quick start](../getting-started/quick-start.md) through step 2, and stop the
    old server.
