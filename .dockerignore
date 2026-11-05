@@ -1,6 +1,6 @@
-# Allowlist: the image builds (deploy/docker/) need only the Rust workspace and
-# the web console sources. Everything else stays out of the build context,
-# above all target/ (hundreds of GB) and web/node_modules.
+# Allowlist: the image builds (deploy/docker/) need only the Rust workspace,
+# the web console sources and the relay key guard. Everything else stays out
+# of the build context, above all target/ (hundreds of GB) and web/node_modules.
 *
 !Cargo.toml
 !Cargo.lock
@@ -9,9 +9,16 @@
 !crates/
 !xtask/
 !web/
+!deploy/docker/relay-key-guard.rs
 web/node_modules/
 web/dist/
 web/coverage/
 web/e2e-results/
+web/e2e/.auth/
 web/.tanstack/
-**/*.sqlite3
+# Local secrets and state that may sit inside the allowed trees.
+**/.env*
+**/*.db*
+**/*.sqlite3*
+**/master.key
+**/id_ed25519*
