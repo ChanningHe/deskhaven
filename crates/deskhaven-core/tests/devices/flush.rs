@@ -5,6 +5,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
+use std::task::{Context, Waker};
 use std::time::Duration;
 
 use deskhaven_core::clock::ManualClock;
@@ -193,12 +194,16 @@ async fn a_flush_dropped_midway_loses_nothing() {
         let mut flusher = c.flusher(2);
 
         // Act: polled once (it takes the contacts and starts a statement), then dropped.
-        let dropped = tokio::time::timeout(Duration::ZERO, flusher.flush()).await;
+        let mut dropped = Box::pin(flusher.flush());
+        let first = dropped
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()));
+        drop(dropped);
         let report = flusher.flush().await;
 
         // Assert
         let b = db.backend;
-        assert!(dropped.is_err(), "{b}: the first flush did not finish");
+        assert!(first.is_pending(), "{b}: the first flush did not finish");
         assert_eq!(report.failed, 0, "{b}");
         assert!(
             report.written > 0,

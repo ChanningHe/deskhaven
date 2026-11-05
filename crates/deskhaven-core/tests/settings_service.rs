@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
+use std::task::{Context, Waker};
 
 use deskhaven_config::Source;
 use deskhaven_config::bootstrap::Pins;
@@ -433,9 +434,12 @@ async fn dropped_update_still_commits_and_publishes_together() {
         let mut rx = svc.subscribe();
 
         // Polled once (the batch is handed to its own task), then dropped.
-        let update = svc.update(request(vec![change("smtp.port", json!(2525), 0)]));
-        let dropped = tokio::time::timeout(std::time::Duration::ZERO, update).await;
-        assert!(dropped.is_err(), "expected the caller to give up first");
+        let mut update = Box::pin(svc.update(request(vec![change("smtp.port", json!(2525), 0)])));
+        let first = update
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()));
+        assert!(first.is_pending(), "expected the caller to give up first");
+        drop(update);
 
         rx.changed().await.unwrap();
         assert_eq!(svc.snapshot().get(&settings::SMTP_PORT), 2525);

@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
+use std::task::{Context, Waker};
 use std::time::Duration;
 
 use deskhaven_core::groups::{GroupChange, GroupError};
@@ -26,7 +27,8 @@ fn record(c: &Ctx) -> UnboundedReceiver<GroupChange> {
 
 /// Polls the future once, then drops it: what a cancelled request does.
 async fn drop_after_first_poll<T>(fut: impl Future<Output = T>) {
-    let _ = timeout(Duration::ZERO, fut).await;
+    let mut fut = std::pin::pin!(fut);
+    let _ = fut.as_mut().poll(&mut Context::from_waker(Waker::noop()));
 }
 
 async fn next(rx: &mut UnboundedReceiver<GroupChange>) -> GroupChange {
