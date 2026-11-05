@@ -13,6 +13,12 @@ if [ "${1:-}" = ls-remote ]; then
   else
     sha="${STUB_TAG_SHA:-}"
   fi
+  # STUB_TAG_FLIP_AFTER=<n>: from the (n+1)-th ls-remote on, the tag points to STUB_TAG_SHA_LATER
+  if [ -n "${STUB_TAG_FLIP_AFTER:-}" ] && [ -n "${STUB_DIR:-}" ]; then
+    calls=$(($(cat "$STUB_DIR/lsremote.count" 2>/dev/null || echo 0) + 1))
+    echo "$calls" >"$STUB_DIR/lsremote.count"
+    if [ "$calls" -gt "$STUB_TAG_FLIP_AFTER" ]; then sha="${STUB_TAG_SHA_LATER:-}"; fi
+  fi
   [ -n "$sha" ] || exit 0
   if [ "${STUB_TAG_ANNOTATED:-0}" = 1 ]; then
     printf '%s\trefs/tags/%s\n' "1111111111111111111111111111111111111111" "$tag"

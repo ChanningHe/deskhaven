@@ -64,4 +64,16 @@ assert_eq "one section for v0.1.0..v0.2.0 with two rcs inside" "1" "$sections"
 assert_contains "...holding the rc work too" "in rc1" "$(cliff v0.1.0..v0.2.0 --tag v0.2.0)"
 rc_sections="$(cliff v0.2.0-rc.1..v0.2.0-rc.2 --tag v0.2.0-rc.2 | grep -c '^## ' || true)"
 assert_eq "an rc's own notes are one section as well" "1" "$rc_sections"
+
+echo "== a tag that was never published inside the range does not split the notes"
+add "feat: before the unpublished tag"
+git tag v0.2.1 # tagged, its release never published (a failed run)
+add "fix: after the unpublished tag"
+git tag v0.3.0
+sections="$(cliff v0.2.0..v0.3.0 --tag v0.3.0 | grep -c '^## ' || true)"
+assert_eq "one section for v0.2.0..v0.3.0 although v0.2.1 is tagged inside" "1" "$sections"
+notes="$(cliff v0.2.0..v0.3.0 --tag v0.3.0)"
+assert_contains "...holding the commits before the unpublished tag" "before the unpublished tag" "$notes"
+assert_contains "...and after it" "after the unpublished tag" "$notes"
+assert_contains "...under the release being rendered" "## v0.3.0" "$notes"
 finish

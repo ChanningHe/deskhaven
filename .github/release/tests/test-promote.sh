@@ -11,7 +11,14 @@ mkdir -p "$STUB_DIR"
 export GITHUB_REPOSITORY=ChanningHe/deskhaven GITHUB_REPOSITORY_OWNER=ChanningHe CI_REPO_URL=unused
 
 promote() { env VERSION="$1" bash "$RELEASE_DIR/promote.sh" "$2"; }
-published() { : >"$STUB_DIR/published_final.txt"; local t; for t in "$@"; do echo "$t" >>"$STUB_DIR/published_final.txt"; done; }
+# published TAG...: those are the published final releases. The fixture ALSO holds a draft
+# v99.0.0 and a prerelease v98.0.0-rc.1, which must never count (pages of 2 releases each,
+# so the filter is applied per page).
+published() {
+  local specs=() t
+  for t in "$@"; do specs+=("$t:published"); done
+  set_releases "${specs[@]}" v99.0.0:draft v98.0.0-rc.1:prerelease
+}
 decide() { promote "$1" decide | tr '\n' ' '; }
 
 echo "== decide"
@@ -141,7 +148,7 @@ for fail_n in 3 4; do
   before="$(state latest 0.2)"
   run_capture a env STUB_FAIL_CREATE_N="$fail_n" VERSION=0.2.0 bash "$RELEASE_DIR/promote.sh" apply
   assert_eq "create #$fail_n fails: the run fails" "1" "$a_rc"
-  assert_contains "create #$fail_n fails: restoring announced" "restoring the tags moved so far" "$a_out"
+  assert_contains "create #$fail_n fails: restoring announced" "restoring every tag that was attempted" "$a_out"
   assert_eq "create #$fail_n fails: both images are back where they were" "$before" "$(state latest 0.2)"
 done
 reg_init; add_version 0.1.0; add_version 0.2.0
@@ -157,4 +164,36 @@ before_log="$(grep -c 'imagetools create' "$STUB_REG/docker.log")"
 apply_ok 0.2.0
 assert_eq "an idempotent re-run succeeds" "0" "$a_rc"
 assert_eq "...and creates nothing" "$before_log" "$(grep -c 'imagetools create' "$STUB_REG/docker.log")"
+
+echo "== a create the registry applied but reported as failed is rolled back too"
+export PROMOTE_RETRY_SLEEP=0
+reg_init; add_version 0.1.0; add_version 0.2.0
+for image in deskhaven deskhaven-relay; do set_tag "$image" latest 0.1.0; set_tag "$image" 0.2 0.1.0; done
+published v0.1.0 v0.2.0
+before="$(state latest 0.2)"
+run_capture a env STUB_APPLY_THEN_FAIL_N=4 VERSION=0.2.0 bash "$RELEASE_DIR/promote.sh" apply
+assert_eq "the run fails" "1" "$a_rc"
+assert_eq "the in-flight 4th move (relay latest, applied) is undone: both images are where they were" "$before" "$(state latest 0.2)"
+assert_contains "the rollback reports a clean state" "rolled back: every touched tag is where it was" "$a_out"
+assert_not_contains "no INCONSISTENT list" "INCONSISTENT" "$a_out"
+
+echo "== a rollback that cannot restore says so, after retrying"
+reg_init; add_version 0.1.0; add_version 0.2.0
+for image in deskhaven deskhaven-relay; do set_tag "$image" latest 0.1.0; set_tag "$image" 0.2 0.1.0; done
+published v0.1.0 v0.2.0
+run_capture a env STUB_FAIL_CREATE_FROM=3 PROMOTE_RETRY_ATTEMPTS=3 VERSION=0.2.0 bash "$RELEASE_DIR/promote.sh" apply
+assert_eq "the run fails" "1" "$a_rc"
+assert_contains "each restore was retried" "(attempt 3/3)" "$a_out"
+assert_contains "an explicit INCONSISTENT list names the tag" "INCONSISTENT: ghcr.io/channinghe/deskhaven:0.2" "$a_out"
+assert_eq "and the exit status is non-zero" "1" "$a_rc"
+
+echo "== tags are moved from the verified digest, every platform is checked"
+reg_init; add_version 0.1.0; published v0.1.0
+apply_ok 0.1.0
+assert_contains "create uses name@digest" "--tag ghcr.io/channinghe/deskhaven:latest ghcr.io/channinghe/deskhaven@sha256:" "$(cat "$STUB_REG/docker.log")"
+assert_not_contains "...not the mutable name:version" "ghcr.io/channinghe/deskhaven:latest ghcr.io/channinghe/deskhaven:0.1.0" "$(cat "$STUB_REG/docker.log")"
+reg_init; add_version 0.1.0; published v0.1.0
+echo "$(fixture_digest other)" >"$STUB_REG/rev/$(sed -n 2p "$STUB_REG/idx/$(idx_of deskhaven 0.1.0)")" # only the SECOND platform carries another revision
+apply_ok 0.1.0
+if [ "$a_rc" != 0 ] && grep -q "on every platform" <<<"$a_out"; then ok "one platform of another commit is refused"; else bad "second platform not checked: rc=$a_rc $a_out"; fi
 finish

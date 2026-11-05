@@ -17,6 +17,16 @@
       ]
     },
     {
+      "description": "ci.yml downloads the prebuilt git-cliff of this version and checks its sha256 from a file.",
+      "matchDatasources": ["crate"],
+      "matchPackageNames": ["git-cliff"],
+      "automerge": false,
+      "labels": ["release-tooling"],
+      "prBodyNotes": [
+        "**Update `.github/release/tests/git-cliff.sha256`** with the sha256 of `git-cliff-<version>-x86_64-unknown-linux-musl.tar.gz` from the release page: the release-scripts CI job downloads that binary and fails on a mismatch or a missing entry."
+      ]
+    },
+    {
       "description": "The Rust toolchain, Node and the PostgreSQL test matrix move with rust-toolchain.toml, flake.lock and the support policy, never on their own; digest refreshes of the pinned tags still flow through.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["rust", "node", "postgres"],

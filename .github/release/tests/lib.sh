@@ -67,6 +67,29 @@ expect_fail() {
 
 use_stubs() { export PATH="$STUBS_DIR:$PATH"; }
 
+# set_releases SPEC...: the releases the gh stub lists (GET repos/R/releases), as JSON pages
+# of STUB_PAGE_SIZE (default 2) release objects. SPEC is `tag:kind` with kind published |
+# draft | prerelease. Needs STUB_DIR. The scripts' real --jq filters run over this JSON.
+set_releases() {
+  local dir="$STUB_DIR/releases" spec id=100 page=1 count=0 size="${STUB_PAGE_SIZE:-2}"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  : >"$dir/current.ndjson"
+  for spec in "$@"; do
+    id=$((id + 1))
+    jq -n -c --arg t "${spec%%:*}" --arg k "${spec#*:}" --argjson id "$id" \
+      '{id: $id, tag_name: $t, draft: ($k == "draft"), prerelease: ($k == "prerelease"), assets: []}' >>"$dir/current.ndjson"
+    count=$((count + 1))
+    if [ $((count % size)) = 0 ]; then
+      jq -s -c . "$dir/current.ndjson" >"$dir/page-$page.json"
+      page=$((page + 1))
+      : >"$dir/current.ndjson"
+    fi
+  done
+  if [ -s "$dir/current.ndjson" ]; then jq -s -c . "$dir/current.ndjson" >"$dir/page-$page.json"; fi
+  rm -f "$dir/current.ndjson"
+}
+
 # extract_step STEPNAME: the `run: |` script of the workflow step with that name.
 extract_step() {
   awk -v name="$1" '

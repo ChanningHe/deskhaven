@@ -13,12 +13,13 @@ extract_step "no release or draft for this tag" >"$step"
 
 preflight() { GITHUB_REPOSITORY=ChanningHe/deskhaven GITHUB_REF_NAME="$1" bash "$step"; }
 
-printf 'v0.2.0\nv0.1.0\n' >"$STUB_DIR/all_tags.txt" # v0.2.0 is a draft: listed for write tokens
+set_releases v0.2.0:draft v0.1.0:published v0.3.0-rc.1:prerelease # the draft is listed for write tokens
 expect_fail "a published release exists" "already exists" preflight v0.1.0
 expect_fail "a draft exists" "already exists" preflight v0.2.0
+expect_fail "a prerelease exists" "already exists" preflight v0.3.0-rc.1
 expect_pass "an unrelated tag is free" preflight v0.3.0
 expect_pass "v0.2 is not v0.2.0 (exact match)" preflight v0.2
-: >"$STUB_DIR/all_tags.txt"
+set_releases
 expect_pass "no releases at all is free" preflight v0.1.0
 expect_fail "an API error fails, it is not 'free'" "HTTP 500" env STUB_API_ERROR=1 bash -c "GITHUB_REPOSITORY=ChanningHe/deskhaven GITHUB_REF_NAME=v0.1.0 bash '$step'"
 finish

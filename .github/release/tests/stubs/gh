@@ -1,86 +1,134 @@
 #!/usr/bin/env bash
-# gh stub. State lives in $STUB_DIR (all calls are appended to gh.log):
-#   all_tags.txt         tags of all releases, drafts included     (preflight / release checks)
-#   published_all.txt    tags of non-draft releases                (changelog prev)
-#   published_final.txt  tags of non-draft, non-prerelease ones    (promote)
-#   STUB_IMAGE           packages API: absent | exists | other | denied | neterr
-#   STUB_API_ERROR=1     every releases listing fails with HTTP 500
-#   STUB_UPLOAD_FAIL=1   `gh release upload` fails
-#   STUB_RELEASE_ID      id returned by creating a release (default 4242)
-# The jq filter (--jq) is NOT applied: the stub prints what the filter would select, chosen
-# by the shape of the filter.
+# gh stub for `gh api`. The GitHub API is simulated with JSON files in $STUB_DIR and the
+# script's REAL `--jq` filter is applied with the real jq (per page with --paginate), so a
+# broken filter in a script breaks its test. All calls are appended to gh.log.
+#
+#   releases/page-N.json   pages of GET repos/R/releases (arrays of release objects with
+#                          id, tag_name, draft, prerelease, assets[]); build them with
+#                          set_releases in tests/lib.sh
+#   release.json           the release created by POST repos/R/releases, updated by uploads
+#                          and PATCH
+#   STUB_IMAGE             Packages API answer: absent | exists | other | denied | neterr
+#   STUB_API_ERROR=1       every releases listing fails with HTTP 500
+#   STUB_UPLOAD_FAIL=1     uploads fail
+#   STUB_UPLOAD_SKIP=name  the upload "succeeds" but the asset is not attached
+#   STUB_UPLOAD_CORRUPT=name  the asset is attached with a wrong digest
+#   STUB_NO_DIGEST=1       assets are attached without a digest field
+#   STUB_PATCH_IGNORED=1   PATCH answers ok but does not publish
+#   STUB_RELEASE_ID        id of a created release (default 4242)
 set -euo pipefail
 : "${STUB_DIR:?STUB_DIR is required}"
 echo "gh $*" >>"$STUB_DIR/gh.log"
-args=" $* "
+orig="$*"
 
-if [ "${1:-}" = api ] && [ "${2:-}" = "repos/ChanningHe/deskhaven" ]; then
-  echo users
+if [ "${1:-}" != api ]; then
+  echo "unexpected gh call: $*" >&2
+  exit 99
+fi
+shift
+
+method=GET
+paginate=0
+filter=.
+input=""
+path=""
+declare -A fields=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --paginate) paginate=1; shift ;;
+    --method) method="$2"; shift 2 ;;
+    --jq) filter="$2"; shift 2 ;;
+    --input) input="$2"; shift 2 ;;
+    -H) shift 2 ;;
+    -f | -F) fields["${2%%=*}"]="${2#*=}"; shift 2 ;;
+    *) path="$1"; shift ;;
+  esac
+done
+
+emit() { jq -r "$filter"; } # real jq, the script's real filter
+
+# ---- repository
+if [ "$path" = "repos/ChanningHe/deskhaven" ]; then
+  echo '{"owner":{"type":"User"}}' | emit
   exit 0
 fi
 
-# GitHub Packages API (meta.sh)
-if [[ "$args" == *"/packages/container/"* ]]; then
+# ---- GitHub Packages API (meta.sh)
+if [[ "$path" == */packages/container/* ]]; then
   case "${STUB_IMAGE:-absent}" in
-    exists) printf '0.1.0\n0.0.9\nlatest\n' ;;
-    other) printf '0.0.9\nlatest\n' ;;
-    absent) echo "gh: Package not found. (HTTP 404)" >&2; exit 1 ;;
+    exists) echo '[{"metadata":{"container":{"tags":["0.1.0","0.0.9","latest"]}}},{"metadata":{"container":{"tags":[]}}}]' | emit ;;
+    other) echo '[{"metadata":{"container":{"tags":["0.0.9","latest"]}}}]' | emit ;;
+    absent) echo '{"message":"Package not found."}' >&2; echo "gh: Package not found. (HTTP 404)" >&2; exit 1 ;;
     denied) echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1 ;;
     neterr) echo "gh: Post: dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
   esac
   exit 0
 fi
 
-# release listings
-if [[ "$args" == *"/releases?per_page"* ]]; then
+# ---- upload an asset (uploads API, by release id)
+if [ "$method" = POST ] && [[ "$path" == https://uploads.github.com/repos/*/releases/*/assets\?name=* ]]; then
+  name="${path##*name=}"
+  id="${path#*/releases/}"
+  id="${id%%/*}"
+  [ "$id" = "$(jq -r .id "$STUB_DIR/release.json")" ] || { echo "gh: no release $id (HTTP 404)" >&2; exit 1; }
+  if [ "${STUB_UPLOAD_FAIL:-0}" = 1 ]; then echo "gh: upload failed (HTTP 502)" >&2; exit 1; fi
+  digest="sha256:$(sha256sum "$input" | cut -d' ' -f1)"
+  if [ "$name" = "${STUB_UPLOAD_CORRUPT:-}" ]; then digest="sha256:$(printf 'x%.0s' $(seq 1 64))"; fi
+  if [ "$name" != "${STUB_UPLOAD_SKIP:-}" ]; then
+    if [ "${STUB_NO_DIGEST:-0}" = 1 ]; then
+      jq --arg n "$name" '.assets += [{name: $n, digest: null}]' "$STUB_DIR/release.json" >"$STUB_DIR/release.tmp"
+    else
+      jq --arg n "$name" --arg d "$digest" '.assets += [{name: $n, digest: $d}]' "$STUB_DIR/release.json" >"$STUB_DIR/release.tmp"
+    fi
+    mv "$STUB_DIR/release.tmp" "$STUB_DIR/release.json"
+  fi
+  jq -n --arg n "$name" --arg d "$digest" '{name: $n, digest: $d}' | emit
+  exit 0
+fi
+
+# ---- releases
+if [[ "$path" == repos/*/releases\?per_page=* ]] && [ "$method" = GET ]; then
   if [ "${STUB_API_ERROR:-0}" = 1 ]; then echo "gh: HTTP 500" >&2; exit 1; fi
-  if [[ "$args" == *"prerelease == false"* ]]; then
-    cat "$STUB_DIR/published_final.txt" 2>/dev/null || true
-  elif [[ "$args" == *"select(.draft == false)"* ]]; then
-    cat "$STUB_DIR/published_all.txt" 2>/dev/null || true
-  else
-    cat "$STUB_DIR/all_tags.txt" 2>/dev/null || true
+  shopt -s nullglob
+  pages=("$STUB_DIR"/releases/page-*.json)
+  if [ "${#pages[@]}" = 0 ]; then echo '[]' >"$STUB_DIR/empty.json"; pages=("$STUB_DIR/empty.json"); fi
+  [ "$paginate" = 1 ] || pages=("${pages[0]}")
+  for page in "${pages[@]}"; do emit <"$page"; done
+  exit 0
+fi
+
+if [ "$method" = POST ] && [[ "$path" == repos/*/releases ]]; then
+  jq -n --argjson id "${STUB_RELEASE_ID:-4242}" --arg tag "${fields[tag_name]}" \
+    --argjson draft "${fields[draft]:-false}" --argjson pre "${fields[prerelease]:-false}" \
+    '{id: $id, tag_name: $tag, draft: $draft, prerelease: $pre, assets: []}' >"$STUB_DIR/release.json"
+  emit <"$STUB_DIR/release.json"
+  exit 0
+fi
+
+if [[ "$path" == repos/*/releases/* ]]; then
+  id="${path##*/}"
+  if [ "$method" = GET ] && [ -f "$STUB_DIR/release.json" ] && [ "$id" = "$(jq -r .id "$STUB_DIR/release.json")" ]; then
+    emit <"$STUB_DIR/release.json"
+    exit 0
   fi
-  exit 0
-fi
-
-# create a release
-if [[ "$args" == *"--method POST"* ]] && [[ "$args" == *"/releases "* ]]; then
-  echo "${STUB_RELEASE_ID:-4242}" >"$STUB_DIR/release.id"
-  echo true >"$STUB_DIR/release.draft"
-  for a in "$@"; do
-    case "$a" in tag_name=*) echo "${a#tag_name=}" >"$STUB_DIR/release.tag" ;; esac
-  done
-  : >"$STUB_DIR/release.assets"
-  cat "$STUB_DIR/release.id"
-  exit 0
-fi
-
-# upload an asset to the draft
-if [ "${1:-}" = release ] && [ "${2:-}" = upload ]; then
-  if [ "${STUB_UPLOAD_FAIL:-0}" = 1 ]; then echo "gh: upload failed" >&2; exit 1; fi
-  # STUB_UPLOAD_SKIP=<name>: the upload "succeeds" but the asset is not attached
-  [ "$(basename "$4")" = "${STUB_UPLOAD_SKIP:-}" ] || basename "$4" >>"$STUB_DIR/release.assets"
-  exit 0
-fi
-
-# publish by id
-if [[ "$args" == *"--method PATCH"* ]] && [[ "$args" == *"/releases/"* ]]; then
-  echo false >"$STUB_DIR/release.draft"
-  echo "$args" >"$STUB_DIR/release.patch"
-  exit 0
-fi
-
-# read a release by id
-if [ "${1:-}" = api ] && [[ "${2:-}" == repos/*/releases/* ]]; then
-  if [[ "$args" == *'join("|")'* ]]; then
-    printf '%s|%s|%s\n' "$(cat "$STUB_DIR/release.tag")" "$(cat "$STUB_DIR/release.draft")" \
-      "$(LC_ALL=C sort "$STUB_DIR/release.assets" | paste -sd' ' -)"
-  else
-    cat "$STUB_DIR/release.draft"
+  if [ "$method" = GET ]; then
+    # a release from the fixture pages, by id
+    found="$(cat "$STUB_DIR"/releases/page-*.json 2>/dev/null | jq -c --argjson id "$id" '.[] | select(.id == $id)' | head -n 1)"
+    [ -n "$found" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    emit <<<"$found"
+    exit 0
   fi
-  exit 0
+  if [ "$method" = PATCH ]; then
+    echo "$orig" >"$STUB_DIR/release.patch"
+    echo "draft=${fields[draft]:-} make_latest=${fields[make_latest]:-}" >>"$STUB_DIR/release.patch"
+    if [ "${STUB_PATCH_IGNORED:-0}" != 1 ] && [ "${fields[draft]:-}" = false ]; then
+      jq '.draft = false' "$STUB_DIR/release.json" >"$STUB_DIR/release.tmp"
+      mv "$STUB_DIR/release.tmp" "$STUB_DIR/release.json"
+    fi
+    echo '{}' | emit
+    exit 0
+  fi
 fi
 
-echo "unexpected gh call: $*" >&2
+echo "unexpected gh api call: $path ($method)" >&2
 exit 99

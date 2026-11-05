@@ -4,8 +4,15 @@
 #   tags/<image>/<tag>   digest the tag points to
 #   idx/<digest>         child digests of an index, one per line
 #   rev/<digest>         revision label of a platform image
-# STUB_REGISTRY_ERROR=1     every call fails like an unreachable registry
-# STUB_FAIL_CREATE_N=<n>    the n-th `imagetools create` fails (counting from 1)
+# A missing ref answers exactly like buildx against registry:2: `ERROR: <ref>: not found`.
+#   STUB_REGISTRY_ERROR=1       every call fails like an unreachable registry
+#   STUB_FLAKY_ERROR=1          every inspect of a TAG (not of a digest) fails with a transient
+#                               error that CONTAINS "404" and "not found" (a reset to port 40404)
+#   STUB_FAIL_CREATE_N=<n>      the n-th `imagetools create` fails (counting from 1)
+#   STUB_FAIL_CREATE_FROM=<n>   the n-th and every later create fails
+#   STUB_APPLY_THEN_FAIL_N=<n>  the n-th create is APPLIED but reported as failed
+#   STUB_CREATE_WRONG=1         an index create records only the first source (a create that
+#                               "succeeds" onto something else)
 set -euo pipefail
 : "${STUB_REG:?STUB_REG is required}"
 echo "docker $*" >>"$STUB_REG/docker.log"
@@ -19,6 +26,10 @@ shift 3
 
 if [ "${STUB_REGISTRY_ERROR:-0}" = 1 ]; then
   echo "ERROR: failed to do request: dial tcp: lookup ghcr.io: no such host" >&2
+  exit 1
+fi
+if [ "${STUB_FLAKY_ERROR:-0}" = 1 ] && [ "$action" = inspect ] && [[ "${1:-}" != *@* ]]; then
+  echo "ERROR: failed to do request: Get \"https://ghcr.io:40404/v2/x\": read tcp 10.0.0.1:1->10.0.0.2:40404: connection reset by peer: not found 404" >&2
   exit 1
 fi
 
@@ -37,6 +48,9 @@ resolve() {
       ;;
   esac
 }
+
+# the config JSON of one platform image
+config_of() { printf '{"rootfs":{},"config":{"Labels":{"org.opencontainers.image.revision":"%s"}}}' "$(cat "$STUB_REG/rev/$1" 2>/dev/null || true)"; }
 
 case "$action" in
   inspect)
@@ -58,9 +72,20 @@ case "$action" in
         fi
         ;;
       --format)
-        leaf="$digest"
-        if [ -f "$STUB_REG/idx/$digest" ]; then leaf="$(head -n 1 "$STUB_REG/idx/$digest")"; fi
-        printf '{"config":{"Labels":{"org.opencontainers.image.revision":"%s"}}}\n' "$(cat "$STUB_REG/rev/$leaf" 2>/dev/null || true)"
+        if [ -f "$STUB_REG/idx/$digest" ]; then
+          # an index: one image config per platform, keyed by platform
+          n=0
+          printf '{'
+          while IFS= read -r child; do
+            [ "$n" = 0 ] || printf ','
+            n=$((n + 1))
+            printf '"linux/p%s":%s' "$n" "$(config_of "$child")"
+          done <"$STUB_REG/idx/$digest"
+          printf '}\n'
+        else
+          config_of "$digest"
+          echo
+        fi
         ;;
       *)
         printf 'Name:      %s\nMediaType: application/vnd.oci.image.index.v1+json\nDigest:    %s\n' "$ref" "$digest"
@@ -82,6 +107,10 @@ case "$action" in
       echo "ERROR: boom (stubbed failure of create #$n)" >&2
       exit 1
     fi
+    if [ "${STUB_FAIL_CREATE_FROM:-0}" != 0 ] && [ "$n" -ge "${STUB_FAIL_CREATE_FROM}" ]; then
+      echo "ERROR: boom (stubbed failure of create #$n and later)" >&2
+      exit 1
+    fi
     if [ "${#sources[@]}" = 1 ]; then
       digest="$(resolve "${sources[0]}")"
       [ -n "$digest" ] || { echo "ERROR: ${sources[0]}: not found" >&2; exit 1; }
@@ -91,6 +120,7 @@ case "$action" in
         d="$(resolve "$s")"
         [ -n "$d" ] || { echo "ERROR: $s: not found" >&2; exit 1; }
         children+="$d"$'\n'
+        [ "${STUB_CREATE_WRONG:-0}" != 1 ] || break
       done
       digest="sha256:$(printf '%s' "$children" | sha256sum | cut -d' ' -f1)"
       mkdir -p "$STUB_REG/idx"
@@ -101,6 +131,10 @@ case "$action" in
       mkdir -p "$STUB_REG/tags/${ref%%:*}"
       echo "$digest" >"$STUB_REG/tags/${ref%%:*}/${ref#*:}"
     done
+    if [ "${STUB_APPLY_THEN_FAIL_N:-0}" = "$n" ]; then
+      echo "ERROR: context deadline exceeded (stubbed: the create of #$n WAS applied)" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "unexpected imagetools action: $action" >&2

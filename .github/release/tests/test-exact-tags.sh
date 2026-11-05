@@ -66,6 +66,19 @@ reg_init; existing_tag deskhaven swap
 expect_fail "the first image differing refuses too" "already exists with different content" run
 assert_eq "...and creates nothing" "0" "$(creates)"
 
+echo "== only buildx's exact not-found text means 'absent'"
+reg_init
+existing_tag deskhaven
+expect_fail "a transient error containing 404 and 'not found' fails closed" "cannot tell whether" env STUB_FLAKY_ERROR=1 bash "$RELEASE_DIR/exact-tags.sh" "$digests" "$TMP/images.txt"
+assert_eq "...and creates nothing, so the existing tag is not overwritten" "0" "$(creates)"
+assert_eq "...the published tag is untouched" "$(fixture_digest "existing-deskhaven")" "$(cat "$STUB_REG/tags/deskhaven/0.1.0")"
+reg_init
+expect_fail "an unreachable registry fails closed too" "no such host" env STUB_REGISTRY_ERROR=1 bash "$RELEASE_DIR/exact-tags.sh" "$digests" "$TMP/images.txt"
+
+echo "== the create is verified"
+reg_init
+expect_fail "a create that lands on other children is not recorded" "does not list this run's images after the create" env STUB_CREATE_WRONG=1 bash "$RELEASE_DIR/exact-tags.sh" "$digests" "$TMP/images.txt"
+
 echo "== the git tag"
 reg_init
 expect_fail "tag moved to another commit" "no longer points to the built commit" env STUB_TAG_SHA=ffffffffffffffffffffffffffffffffffffffff bash "$RELEASE_DIR/exact-tags.sh" "$digests" "$TMP/images.txt"

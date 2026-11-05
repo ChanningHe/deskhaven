@@ -97,8 +97,10 @@ jobs:
   # publishes) are shellchecked and tested here, without network: gh, docker, git ls-remote
   # and cargo-audit are stubs (.github/release/tests/stubs). Runs on the runner itself, which
   # needs bash, git, jq, python3 >= 3.11 and shellcheck (all preinstalled on GitHub-hosted
-  # ubuntu runners). git-cliff is not installed here: its test (tests/test-cliff.sh) skips
-  # itself, a `cargo install` would take minutes for a test the release run repeats.
+  # ubuntu runners). git-cliff (for tests/test-cliff.sh) is the prebuilt release binary of the
+  # version release.yml pins, its sha256 checked against tests/git-cliff.sha256 (bump that
+  # file with GIT_CLIFF_VERSION); without it that test would skip itself. On a runner that is
+  # not x86_64 the download is skipped and the test skips with a message.
   release-scripts:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 15
@@ -109,6 +111,20 @@ jobs:
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q FETCH_HEAD
+      - name: git-cliff (pinned prebuilt binary, sha256 verified)
+        if: runner.arch == 'X64'
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^  GIT_CLIFF_VERSION: "\(.*\)"$/\1/p' .github/workflows/release.yml)"
+          [ -n "$version" ] || { echo "::error::GIT_CLIFF_VERSION not found in release.yml"; exit 1; }
+          file="git-cliff-${version}-x86_64-unknown-linux-musl.tar.gz"
+          grep -qF "$file" .github/release/tests/git-cliff.sha256 || { echo "::error::tests/git-cliff.sha256 has no entry for $file: update it with GIT_CLIFF_VERSION"; exit 1; }
+          curl -fsSL -o "$RUNNER_TEMP/$file" "https://github.com/orhun/git-cliff/releases/download/v${version}/${file}"
+          (cd "$RUNNER_TEMP" && sha256sum -c "$GITHUB_WORKSPACE/.github/release/tests/git-cliff.sha256")
+          mkdir -p "$RUNNER_TEMP/git-cliff-bin"
+          tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP/git-cliff-bin" --strip-components=1 "git-cliff-${version}/git-cliff"
+          echo "$RUNNER_TEMP/git-cliff-bin" >>"$GITHUB_PATH"
+          "$RUNNER_TEMP/git-cliff-bin/git-cliff" --version
       - name: shellcheck
         run: shellcheck --shell=bash -x --source-path=SCRIPTDIR .github/ci-setup.sh .github/release/*.sh .github/release/tests/*.sh .github/release/tests/stubs/*
       - name: tests

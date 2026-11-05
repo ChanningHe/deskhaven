@@ -3,4 +3,4 @@
 #   SC2005  `echo "$(cmd)"` is kept where the value is being written to a file
 #   SC2016  test subjects are deliberately single-quoted text full of backticks and $
 #   SC2154  run_capture sets <prefix>_rc and <prefix>_out through printf -v
-disable=SC2015,SC2005,SC2016,SC2154
+disable=SC2015,SC2005,SC2016,SC2154,SC2153
