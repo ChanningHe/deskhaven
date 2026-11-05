@@ -1,0 +1,69 @@
+# deskhaven + the upstream RustDesk relay (hbbr), one process per container.
+#
+# Quick start (automatic HTTPS; .env selects compose.caddy.yaml via COMPOSE_FILE):
+#   cp .env.example .env            # then fill in the two addresses
+#   docker compose up -d --wait     # returns once deskhaven reports healthy
+#   # hand deskhaven's PUBLIC key to the relay (one time):
+#   echo "RELAY_KEY=$(docker compose exec -T deskhaven deskhaven key show | head -n1)" >> .env \
+#     && docker compose up -d
+#   docker compose logs deskhaven   # open the one-time first-run link
+#
+# Without compose.caddy.yaml the HTTP ports (21114 console + client API, 21118 and
+# 21119 WebSocket) are published on 127.0.0.1 only, for a reverse proxy on this
+# host (see ../nginx/).
+#
+# The rendezvous and relay ports are published directly: Docker's default
+# (iptables) port publishing keeps the client source address, which hole
+# punching depends on.
+
+name: deskhaven
+
+x-hardening: &hardening
+  read_only: true
+  user: "65532:65532"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  deskhaven:
+    <<: *hardening
+    image: ghcr.io/channinghe/deskhaven:${DESKHAVEN_TAG:-latest}
+    environment:
+      DESKHAVEN_PUBLIC_URL: ${DESKHAVEN_PUBLIC_URL:?set DESKHAVEN_PUBLIC_URL in .env}
+      # Pinned: the relay list is managed here, read-only in the console.
+      DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS: ${DESKHAVEN_RELAY:?set DESKHAVEN_RELAY in .env}
+    volumes:
+      # Key pair, master key, SQLite database. Back it up.
+      - deskhaven-data:/var/lib/deskhaven
+    tmpfs:
+      - /tmp
+    ports:
+      - "21115:21115/tcp"   # NAT type test
+      - "21116:21116/tcp"   # rendezvous
+      - "21116:21116/udp"   # rendezvous
+      - "127.0.0.1:21114:21114/tcp"   # console + client API (HTTP)
+      - "127.0.0.1:21118:21118/tcp"   # rendezvous WebSocket
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/deskhaven", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+    stop_grace_period: 15s
+
+  relay:
+    <<: *hardening
+    image: ghcr.io/channinghe/deskhaven-relay:${DESKHAVEN_TAG:-latest}
+    environment:
+      # deskhaven's public key (`deskhaven key show`); the relay only lets
+      # clients with this key through. The placeholder admits nobody until it
+      # is set. Never the private key, never "-" or "_".
+      KEY: ${RELAY_KEY:-not-configured}
+    ports:
+      - "21117:21117/tcp"   # relay
+      - "127.0.0.1:21119:21119/tcp"   # relay WebSocket
+
+volumes:
+  deskhaven-data:

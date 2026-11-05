@@ -1,0 +1,49 @@
+# Overlay: Caddy in front with automatic HTTPS for the host in DESKHAVEN_PUBLIC_URL
+# (DNS must point here, ports 80 and 443 reachable for the certificate).
+#   443 -> deskhaven:21114 (console + client API)
+#   wss /ws/id    -> deskhaven:21118 (rendezvous WebSocket)
+#   wss /ws/relay -> relay:21119     (relay WebSocket)
+# The HTTP ports of deskhaven and the relay are not published at all here: only
+# Caddy reaches them, over the compose network.
+
+services:
+  deskhaven:
+    environment:
+      # Requests reach deskhaven only through Caddy (its HTTP ports are not
+      # published), so the private ranges Docker assigns networks from are
+      # Caddy; honor the client address it forwards.
+      DESKHAVEN_SECURITY__TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    ports: !override
+      - "21115:21115/tcp"
+      - "21116:21116/tcp"
+      - "21116:21116/udp"
+
+  relay:
+    ports: !override
+      - "21117:21117/tcp"
+
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on: [deskhaven, relay]
+    environment:
+      DESKHAVEN_PUBLIC_URL: ${DESKHAVEN_PUBLIC_URL:?set DESKHAVEN_PUBLIC_URL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    # Caddy's image runs as root; it keeps only the capability to bind 80/443.
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+
+volumes:
+  caddy-data:
+  caddy-config:

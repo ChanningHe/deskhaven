@@ -1,0 +1,14 @@
+# Used by compose.caddy.yaml. The site address is the full public URL, e.g.
+# https://rd.example.com; Caddy obtains and renews its certificate.
+{$DESKHAVEN_PUBLIC_URL} {
+	# RustDesk clients use these paths for wss when the server has no port.
+	handle /ws/id* {
+		reverse_proxy deskhaven:21118
+	}
+	handle /ws/relay* {
+		reverse_proxy relay:21119
+	}
+	handle {
+		reverse_proxy deskhaven:21114
+	}
+}
