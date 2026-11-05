@@ -22,7 +22,8 @@ docker run --rm -v deskhaven_deskhaven-data:/data:ro -v "$PWD":/backup busybox \
 docker compose start deskhaven
 ```
 
-Keep `.env` with it: it holds `RELAY_KEY` and your addresses.
+Keep `.env` and `compose.override.yaml` with it: `.env` holds `RELAY_KEY`, your addresses
+and the version.
 
 ## Restore
 
@@ -42,11 +43,17 @@ stop the service and archive that directory.
 
 ## Upgrade
 
-Back up first, then:
+`DESKHAVEN_TAG` in `.env` pins the version of both images, and the compose files belong to
+the same release. Back up first, then set `version` to the new release and run in the
+`deskhaven` directory:
 
 ```sh
+version=0.2.0
+base=https://raw.githubusercontent.com/ChanningHe/deskhaven/v$version/deploy/compose
+curl -fsSL -O "$base/compose.yaml" -O "$base/compose.caddy.yaml" -O "$base/Caddyfile"
+sed -i "s/^DESKHAVEN_TAG=.*/DESKHAVEN_TAG=$version/" .env
 docker compose pull && docker compose up -d --wait
 ```
 
-deskhaven upgrades its database at startup. `DESKHAVEN_TAG` in `.env` selects the image
-version for both images; without it you get `latest`.
+Your `.env` and `compose.override.yaml` stay as they are; if the release notes name a new
+key in `.env.example`, add it to `.env`. deskhaven upgrades its database at startup.
