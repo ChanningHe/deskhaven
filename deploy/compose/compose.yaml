@@ -2,11 +2,12 @@
 #
 # Quick start (automatic HTTPS; .env selects compose.caddy.yaml via COMPOSE_FILE):
 #   cp .env.example .env            # then fill in the two addresses
-#   docker compose up -d --wait     # returns once deskhaven reports healthy
-#   # hand deskhaven's PUBLIC key to the relay (one time):
-#   echo "RELAY_KEY=$(docker compose exec -T deskhaven deskhaven key show | head -n1)" >> .env \
-#     && docker compose up -d
+#   docker compose up -d --wait deskhaven
+#   # hand deskhaven's PUBLIC key to the relay, then start everything:
+#   key=$(docker compose exec -T deskhaven deskhaven key show | head -n1) && [ -n "$key" ] \
+#     && echo "RELAY_KEY=$key" >> .env && docker compose up -d --wait
 #   docker compose logs deskhaven   # open the one-time first-run link
+# The relay refuses to start without a valid public key in RELAY_KEY.
 #
 # Without compose.caddy.yaml the HTTP ports (21114 console + client API, 21118 and
 # 21119 WebSocket) are published on 127.0.0.1 only, for a reverse proxy on this
@@ -33,11 +34,17 @@ services:
       DESKHAVEN_PUBLIC_URL: ${DESKHAVEN_PUBLIC_URL:?set DESKHAVEN_PUBLIC_URL in .env}
       # Pinned: the relay list is managed here, read-only in the console.
       DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS: ${DESKHAVEN_RELAY:?set DESKHAVEN_RELAY in .env}
+      # Proxies whose X-Forwarded-For is honored; empty = none. A reverse proxy
+      # on this host reaches the 127.0.0.1-published ports from the network
+      # gateway; with rootful Docker that is TRUSTED_PROXIES=172.30.114.1/32.
+      DESKHAVEN_SECURITY__TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     volumes:
       # Key pair, master key, SQLite database. Back it up.
       - deskhaven-data:/var/lib/deskhaven
     tmpfs:
-      - /tmp
+      - /tmp:size=16m,mode=1777
+    # Async runtime workers + blocking pool scale with the CPU count.
+    pids_limit: 1024
     ports:
       - "21115:21115/tcp"   # NAT type test
       - "21116:21116/tcp"   # rendezvous
@@ -58,12 +65,24 @@ services:
     image: ghcr.io/channinghe/deskhaven-relay:${DESKHAVEN_TAG:-latest}
     environment:
       # deskhaven's public key (`deskhaven key show`); the relay only lets
-      # clients with this key through. The placeholder admits nobody until it
-      # is set. Never the private key, never "-" or "_".
-      KEY: ${RELAY_KEY:-not-configured}
+      # clients with this key through, and refuses to start without a valid one.
+      KEY: ${RELAY_KEY:-}
+    # Its own network: deskhaven never talks to the relay.
+    networks: [relay]
+    pids_limit: 512
     ports:
       - "21117:21117/tcp"   # relay
       - "127.0.0.1:21119:21119/tcp"   # relay WebSocket
+
+networks:
+  # Fixed, so trusted proxy addresses are known in advance (compose.caddy.yaml,
+  # TRUSTED_PROXIES above). Change both together if it collides with a local network.
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.114.0/24
+          gateway: 172.30.114.1
+  relay: {}
 
 volumes:
   deskhaven-data:

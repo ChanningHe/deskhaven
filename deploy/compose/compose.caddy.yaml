@@ -4,15 +4,13 @@
 #   wss /ws/id    -> deskhaven:21118 (rendezvous WebSocket)
 #   wss /ws/relay -> relay:21119     (relay WebSocket)
 # The HTTP ports of deskhaven and the relay are not published at all here: only
-# Caddy reaches them, over the compose network.
+# Caddy reaches them, over the compose networks.
 
 services:
   deskhaven:
     environment:
-      # Requests reach deskhaven only through Caddy (its HTTP ports are not
-      # published), so the private ranges Docker assigns networks from are
-      # Caddy; honor the client address it forwards.
-      DESKHAVEN_SECURITY__TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+      # Only Caddy, at its fixed address below, may set X-Forwarded-For.
+      DESKHAVEN_SECURITY__TRUSTED_PROXIES: 172.30.114.10/32
     ports: !override
       - "21115:21115/tcp"
       - "21116:21116/tcp"
@@ -23,11 +21,18 @@ services:
       - "21117:21117/tcp"
 
   caddy:
-    image: caddy:2.11
+    # caddy:2.11, pinned by digest; bump both together.
+    image: caddy:2.11@sha256:4fcafa98afd1c2e642e353e3c5cf9ddbe892fcee14bc990e7ba2c5b78e51f9cf
     restart: unless-stopped
-    depends_on: [deskhaven, relay]
+    # Not on the relay: upstreams resolve per request, and the relay may still
+    # be waiting for its key.
+    depends_on: [deskhaven]
     environment:
       DESKHAVEN_PUBLIC_URL: ${DESKHAVEN_PUBLIC_URL:?set DESKHAVEN_PUBLIC_URL in .env}
+    networks:
+      default:
+        ipv4_address: 172.30.114.10
+      relay: {}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -41,8 +46,9 @@ services:
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
     tmpfs:
-      - /tmp
+      - /tmp:size=16m,mode=1777
 
 volumes:
   caddy-data:
