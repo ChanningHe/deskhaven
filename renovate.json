@@ -1,0 +1,42 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Keeps the digest-pinned base images, the pinned GitHub Actions and the pinned CI tool versions current. Cargo and npm dependencies are deliberately not managed here (lockfiles are reviewed by hand).",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["dockerfile", "docker-compose", "github-actions", "custom.regex"],
+  "schedule": ["before 6am on monday"],
+  "packageRules": [
+    {
+      "description": "The Rust toolchain, Node and the PostgreSQL test matrix move with rust-toolchain.toml, flake.lock and the support policy, never on their own; digest refreshes of the pinned tags still flow through.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["rust", "node", "postgres"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Tool versions annotated with `# renovate: datasource=... depName=...`: release.yml (KEY: \"version\") and the Dockerfiles (ARG KEY=version).",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/", "/^deploy/docker/[^/]+\\.Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+[A-Z_]+: \"(?<currentValue>[^\"]+)\"",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG [A-Z_]+=(?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "description": "ci.yml tool versions, matched by name because ci.yml carries no annotations.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "datasourceTemplate": "crate",
+      "depNameTemplate": "cargo-deny",
+      "matchStrings": ["CARGO_DENY_VERSION: \"(?<currentValue>[^\"]+)\""]
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "datasourceTemplate": "crate",
+      "depNameTemplate": "cargo-llvm-cov",
+      "matchStrings": ["CARGO_LLVM_COV_VERSION: \"(?<currentValue>[^\"]+)\""]
+    }
+  ]
+}
