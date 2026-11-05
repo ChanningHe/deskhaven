@@ -59,12 +59,12 @@ function AutocompleteList({ className, ...props }: AutocompletePrimitive.List.Pr
   )
 }
 
-/** Announced politely to screen readers; add `sr-only` to keep it from showing. */
+/** Announced politely to screen readers; pass `sr-only` to hide it visually, padding to show it. */
 function AutocompleteStatus({ className, ...props }: AutocompletePrimitive.Status.Props) {
   return (
     <AutocompletePrimitive.Status
       data-slot="autocomplete-status"
-      className={cn('px-2 py-1 text-xs text-muted-foreground', className)}
+      className={cn('text-xs text-muted-foreground', className)}
       {...props}
     />
   )

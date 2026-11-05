@@ -15,7 +15,6 @@ import {
   AutocompleteStatus,
 } from '@/components/ui/autocomplete'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
-import { cn } from '@/lib/utils'
 
 /** Candidates offered at once; typing more narrows them. */
 const CANDIDATES = 8
@@ -40,9 +39,11 @@ export interface UserComboboxProps {
 }
 
 /**
- * A search-as-you-type combobox over the accounts. Focusing the field lists the first
+ * A search-as-you-type combobox over the accounts. Clicking the field lists the first
  * accounts by username in a floating list that overlays the content around it; typing narrows
- * them. Arrow keys move through the suggestions, Enter or a click picks one. Enter picks only
+ * them. Focus alone never opens the list: while it is open Base UI hides the rest of the page
+ * from assistive technology, which must not happen on programmatic focus. Arrow keys move
+ * through the suggestions, Enter or a click picks one. Enter picks only
  * once the list answers the text as typed, so a fast typist never gets a stale suggestion.
  * Enter with text in the field never submits a surrounding form, and Escape closes the list
  * and clears the text without closing the drawer or dialog around it.
@@ -67,12 +68,8 @@ export function UserCombobox(props: UserComboboxProps) {
   const pick = async (user: UserView) => {
     if (busy || disabled) return
     const kept = (await onPick(user)) === false
-    if (kept) {
-      // The pick closed the list; the text is still there to retry with.
-      setOpen(true)
-    } else {
-      setQ('')
-    }
+    // A kept text stays as it is; the next click, key press or arrow reopens the list.
+    if (!kept) setQ('')
   }
 
   const onKeyDown = (event: BaseUIEvent<KeyboardEvent<HTMLInputElement>>) => {
@@ -100,7 +97,7 @@ export function UserCombobox(props: UserComboboxProps) {
         autoHighlight="always"
         openOnInputClick
         disabled={disabled}
-        open={popupOpen}
+        open={popupOpen && !disabled}
         onOpenChange={setOpen}
         value={q}
         onValueChange={(next, details) => {
@@ -114,13 +111,10 @@ export function UserCombobox(props: UserComboboxProps) {
           aria-label={label}
           aria-busy={busy || (open && !settled)}
           placeholder={placeholder ?? label}
-          onFocus={() => {
-            setOpen(true)
-          }}
           onKeyDown={onKeyDown}
         />
         <AutocompleteContent>
-          <AutocompleteStatus className={cn(expanded && 'sr-only')}>
+          <AutocompleteStatus className={expanded ? 'sr-only' : 'px-2 py-1'}>
             {expanded ? foundText(shown.length) : noMatchText}
           </AutocompleteStatus>
           <AutocompleteList aria-label={listLabel}>

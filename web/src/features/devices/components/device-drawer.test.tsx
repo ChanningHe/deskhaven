@@ -142,9 +142,8 @@ describe('device drawer: editing', () => {
     })
 
     await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
-    // Removing the owner focuses the search, whose open list hides the rest of the drawer from
-    // the accessibility tree until the click on Save dismisses it.
-    await user.click(within(drawer).getByRole('button', { name: '保存修改', hidden: true }))
+    // Removing the owner focuses the search, which must not open its list over the drawer.
+    await user.click(within(drawer).getByRole('button', { name: '保存修改' }))
     await waitFor(() => {
       expect(bodies).toEqual([{ owner_user_id: 6 }, { owner_user_id: null }])
     })

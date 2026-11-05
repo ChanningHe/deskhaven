@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { UserView } from '@/api/generated/model'
@@ -7,10 +7,14 @@ import { mockApi } from '@/test/mock-api'
 import { renderWithProviders } from '@/test/render-with-providers'
 
 import { UserCombobox } from './user-combobox'
+import type { UserComboboxProps } from './user-combobox'
 
 const USERS = '/admin/api/v1/users'
 
-function setup(onPick: (user: UserView) => boolean | undefined = () => undefined) {
+function setup(
+  onPick: (user: UserView) => boolean | undefined = () => undefined,
+  extra: Partial<UserComboboxProps> = {},
+) {
   mockApi({ [`GET ${USERS}`]: pageOf([userView(6, 'carol'), userView(8, 'dave')]) })
   const picked = vi.fn(onPick)
   const submitted = vi.fn((event: { preventDefault: () => void }) => {
@@ -24,6 +28,7 @@ function setup(onPick: (user: UserView) => boolean | undefined = () => undefined
         foundText={(count) => `${String(count)} found`}
         noMatchText="none"
         onPick={picked}
+        {...extra}
       />
       <button type="button">Next</button>
     </form>,
@@ -43,8 +48,15 @@ async function settled(input: HTMLElement) {
   })
 }
 
+/** The input names this option as the active one (the highlighted suggestion). */
+function expectActive(input: HTMLElement, name: RegExp) {
+  const option = screen.getByRole('option', { name })
+  expect(option.id).not.toBe('')
+  expect(input).toHaveAttribute('aria-activedescendant', option.id)
+}
+
 describe('user combobox', () => {
-  it('lists the first accounts as soon as the field gets focus, and hides them on blur', async () => {
+  it('lists the first accounts when the field is clicked, and hides them on blur', async () => {
     const { user, input } = setup()
     await user.click(input)
     const list = await screen.findByRole('listbox', { name: 'Matches' })
@@ -57,6 +69,23 @@ describe('user combobox', () => {
     await waitFor(() => {
       expect(screen.queryByRole('option')).not.toBeInTheDocument()
     })
+  })
+
+  it('stays closed on programmatic focus and leaves the page reachable', async () => {
+    const { user, input } = setup()
+    act(() => {
+      input.focus()
+    })
+    expect(input).toHaveFocus()
+    await settled(input)
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    // An open list would aria-hide everything around the field.
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument()
+
+    // ArrowDown is intent: it opens the list.
+    await user.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('option', { name: /carol/ })).toBeInTheDocument()
   })
 
   it('ignores Enter while the suggestions still answer older text', async () => {
@@ -74,14 +103,14 @@ describe('user combobox', () => {
     const list = await screen.findByRole('listbox', { name: 'Matches' })
     expect(list).toBeVisible()
     await settled(input)
-    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('data-highlighted')
+    expectActive(input, /carol/)
 
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('data-highlighted')
+    expectActive(input, /dave/)
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { name: /carol/ })).toHaveAttribute('data-highlighted')
+    expectActive(input, /carol/)
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('option', { name: /dave/ })).toHaveAttribute('data-highlighted')
+    expectActive(input, /dave/)
 
     await user.keyboard('{Enter}')
     await waitFor(() => {
@@ -99,7 +128,7 @@ describe('user combobox', () => {
     expect(input).toHaveValue('zz')
   })
 
-  it('keeps the text when the pick fails', async () => {
+  it('keeps the text and leaves the list closed when the pick fails', async () => {
     const { user, picked, input } = setup(() => false)
     await user.type(input, 'ca')
     await screen.findByRole('option', { name: /carol/ })
@@ -109,6 +138,21 @@ describe('user combobox', () => {
       expect(picked).toHaveBeenCalled()
     })
     expect(input).toHaveValue('ca')
+    await waitFor(() => {
+      expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    })
+    expect(input).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('ignores picks while an earlier one is being handled', async () => {
+    const { user, picked, input } = setup(() => undefined, { busy: true })
+    await user.click(input)
+    const carol = await screen.findByRole('option', { name: /carol/ })
+    expect(input).toHaveAttribute('aria-busy', 'true')
+
+    await user.click(carol)
+    await user.keyboard('{Enter}')
+    expect(picked).not.toHaveBeenCalled()
   })
 
   it('clears the text on Escape without letting the key reach dismiss handlers around it', async () => {
@@ -124,6 +168,26 @@ describe('user combobox', () => {
     expect(seen).not.toHaveBeenCalled()
 
     // Nothing to clear: Escape belongs to whatever contains the field.
+    await user.keyboard('{Escape}')
+    expect(seen).toHaveBeenCalledTimes(1)
+    document.removeEventListener('keydown', seen)
+  })
+
+  it('closes an open list on Escape even with an empty field, keeping the key from the document', async () => {
+    const { user, input } = setup()
+    const seen = vi.fn()
+    document.addEventListener('keydown', seen)
+    await user.click(input)
+    await screen.findByRole('option', { name: /carol/ })
+    seen.mockClear()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    })
+    expect(seen).not.toHaveBeenCalled()
+
+    // The list is closed and the field empty: the next Escape is the container's.
     await user.keyboard('{Escape}')
     expect(seen).toHaveBeenCalledTimes(1)
     document.removeEventListener('keydown', seen)
