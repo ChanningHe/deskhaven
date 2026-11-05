@@ -1,0 +1,611 @@
+# Release pipeline for deskhaven (M4-06).
+#
+# Triggers
+#   push of a `v*` tag     builds, verifies and PUBLISHES: images to ghcr.io, a GitHub Release
+#   workflow_dispatch      with dry_run (default true): builds and verifies everything, pushes
+#                          no image and creates no release; the release files and notes are
+#                          kept as the `release-preview` artifact
+#
+# The tag must be `vX.Y.Z` or `vX.Y.Z-<prerelease>` and equal the workspace version in
+# Cargo.toml (the binary reports that version), and the commit must have a successful ci run.
+#
+# Job graph
+#   meta ─┬─ web ─┬─ csp (built-dist CSP checks, hard-fail)
+#         │       └─ notices-sbom (third-party notices, Rust SBOM)
+#         ├─ changelog (git-cliff)
+#         └─ image x4 {deskhaven, relay} x {amd64, arm64}   needs web, csp, notices-sbom
+#              build natively, cargo audit bin, push by digest, smoke test
+#            └─ manifest (multi-arch tags)
+#   release (needs everything): SHA256SUMS, GitHub Release
+#
+# What is audited
+#   deskhaven   `cargo audit bin` BLOCKS on any vulnerability not ignored in deny.toml
+#   relay (hbbr) `cargo audit bin` is REPORTED only (job summary + release asset): upstream
+#               hbbr's lockfile has advisories we cannot fix without modifying upstream
+#
+# Conventions as in ci.yml: sources come from plain git, no third-party JavaScript actions.
+# The exceptions are GitHub's own artifact actions, pinned by commit (upload-artifact is the
+# one ci.yml uses on failure). Tools are installed with `cargo install --locked` at pinned
+# versions through .github/ci-setup.sh; tool versions marked `renovate:` are bumped by
+# Renovate (renovate.json). No caching until a prebuilt CI image exists.
+#
+# Runners: GitHub-hosted only. amd64 images build on ubuntu-latest and arm64 images on the
+# native ubuntu-24.04-arm (free for public repositories), so nothing runs under QEMU.
+# CI_RUNNER_LABEL does not apply here. Network egress needed: everything ci.yml needs, plus
+# ghcr.io, Docker Hub (base images, moby/buildkit) and gcr.io (distroless).
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify everything, publish nothing (no image push, no release)"
+        required: false
+        default: true
+        type: boolean
+
+# Two runs for the same ref must not publish concurrently.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Jobs add only what they need: packages: write (image, manifest), contents: write (release).
+permissions:
+  contents: read
+
+env:
+  # Tool versions, defined once. (cargo-auditable is pinned in the Dockerfiles.)
+  # renovate: datasource=crate depName=cargo-audit
+  CARGO_AUDIT_VERSION: "0.22.2"
+  # renovate: datasource=crate depName=cargo-cyclonedx
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
+  # renovate: datasource=crate depName=cargo-about
+  CARGO_ABOUT_VERSION: "0.9.3"
+  # renovate: datasource=crate depName=git-cliff
+  GIT_CLIFF_VERSION: "2.14.2"
+  # The BuildKit that buildx runs in a container (docker-container driver: needed for
+  # push-by-digest). Same line as the buildx on the runner images.
+  # renovate: datasource=docker depName=moby/buildkit
+  BUILDKIT_VERSION: "v0.34.0"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+
+jobs:
+  # Decides what this run is: version, whether it publishes, whether it is a prerelease.
+  meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # to look up the ci run of the tagged commit
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: version and mode
+        id: v
+        run: |
+          set -euo pipefail
+          cargo_version="$(sed -nE '/^\[workspace\.package\]/,/^\[/{s/^version = "([^"]+)".*/\1/p}' Cargo.toml)"
+          [ -n "$cargo_version" ] || { echo "::error::workspace version not found in Cargo.toml"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            semver='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+            [[ "$GITHUB_REF_NAME" =~ $semver ]] || { echo "::error::tag '$GITHUB_REF_NAME' is not vX.Y.Z[-prerelease]"; exit 1; }
+            version="${GITHUB_REF_NAME#v}"
+            [ "$version" = "$cargo_version" ] || { echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $cargo_version in Cargo.toml"; exit 1; }
+            publish=true
+          else
+            [ "$DRY_RUN" = true ] || { echo "::error::publishing needs a tag; run on a tag or keep dry_run on"; exit 1; }
+            version="$cargo_version"
+            publish=false
+          fi
+          prerelease=false
+          if [[ "$version" == *-* ]]; then prerelease=true; fi
+          {
+            echo "version=$version"
+            echo "publish=$publish"
+            echo "prerelease=$prerelease"
+          } >>"$GITHUB_OUTPUT"
+          echo "version $version, publish $publish, prerelease $prerelease"
+      # A release must not ship a commit whose tests never passed.
+      - name: ci passed for this commit
+        if: github.ref_type == 'tag'
+        run: |
+          count="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq length)"
+          [ "$count" -ge 1 ] || { echo "::error::no successful ci run for $GITHUB_SHA"; exit 1; }
+
+  # The console, built once. Its dist is shared with csp (checks) and image (consistency).
+  web:
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: node:24.21.0-bookworm # as the web job in ci.yml
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: pnpm
+        working-directory: web
+        run: |
+          corepack enable pnpm
+          node --version
+          pnpm --version
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: web
+      - run: pnpm build
+        working-directory: web
+      # `pnpm sbom` ships with pnpm (pinned by packageManager in web/package.json): no extra
+      # tool to install or pin, it reads the lockfile, and it knows pnpm's layout, which the
+      # npm-based CycloneDX tool does not. Production dependencies only: what ships in dist.
+      - name: SBOM and license notice of the production dependencies
+        working-directory: web
+        run: |
+          mkdir -p ../out
+          pnpm sbom --lockfile-only --prod --sbom-format cyclonedx --sbom-type application --out "../out/deskhaven-web-v${VERSION}.cdx.json"
+          pnpm licenses list --prod --json --long >/tmp/licenses.json
+          node ../.github/release/web-licenses.mjs </tmp/licenses.json >../out/web-licenses.txt
+      - name: upload dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 7
+      - name: upload web notice
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-licenses
+          path: out/web-licenses.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: upload web SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rel-sbom-web
+          path: out/deskhaven-web-v*.cdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # The two deskhaven-web checks that normal CI skips (it builds no web/dist for its Rust
+  # jobs), run against the built dist. DESKHAVEN_TEST_REQUIRE_WEB_DIST=1 turns "dist not
+  # built" from a skip into a failure, so they cannot pass vacuously.
+  csp:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: web/dist
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh
+      - name: built dist is CSP clean
+        env:
+          DESKHAVEN_TEST_REQUIRE_WEB_DIST: "1"
+        run: |
+          set -euo pipefail
+          cargo test -p deskhaven-web --test csp -- the_built | tee csp.log
+          # Exactly the two built-dist tests ran (a renamed test would run none and "pass").
+          grep -q "test result: ok. 2 passed" csp.log
+
+  # Third-party license notice (cargo-about + SecLists + native libraries + the console's
+  # npm packages) and the Rust SBOM.
+  #
+  # The SBOM comes from `cargo cyclonedx` for the shipping binary (crates/deskhaven): it
+  # resolves the whole workspace graph for the musl release target, normal dependencies only,
+  # which is exactly what is linked. The other workspace members are libraries inside that
+  # graph or dev tooling (xtask) that ships nowhere.
+  notices-sbom:
+    needs: [meta, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: download web notice
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-licenses
+          path: web-licenses
+      - run: >-
+          CI_SKIP_APT=1 .github/ci-setup.sh
+          cargo-about@${{ env.CARGO_ABOUT_VERSION }}/cli
+          cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
+      - name: third-party notices
+        run: |
+          mkdir -p out
+          .github/release/notices.sh out/THIRD-PARTY-NOTICES.txt web-licenses/web-licenses.txt
+      - name: Rust SBOM
+        run: |
+          cargo cyclonedx --manifest-path crates/deskhaven/Cargo.toml --format json --spec-version 1.5 \
+            --describe binaries --target x86_64-unknown-linux-musl --no-build-deps
+          mv crates/deskhaven/deskhaven_bin.cdx.json "out/deskhaven-v${VERSION}.cdx.json"
+      - name: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rel-supply-chain
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Release notes from the conventional commits since the previous tag.
+  changelog:
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
+    steps:
+      # Full history and all tags: the range is "previous tag .. this tag".
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q "$CI_REPO_URL" "$GITHUB_REF"
+          git fetch -q "$CI_REPO_URL" '+refs/tags/*:refs/tags/*'
+          git checkout -q FETCH_HEAD
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh git-cliff@${{ env.GIT_CLIFF_VERSION }}
+      - name: release notes
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            git-cliff --config .github/release/cliff.toml --latest --strip all --output release-notes.md
+          else
+            # A dry run has no tag: the commits since the latest tag, labelled as the release.
+            git-cliff --config .github/release/cliff.toml --unreleased --tag "v${VERSION}" --strip all --output release-notes.md
+          fi
+          # Only tests, ci and chores since the previous tag: a heading alone would look broken.
+          if ! grep -q '^- ' release-notes.md; then
+            printf '\nNo user-facing changes.\n' >>release-notes.md
+          fi
+          test -s release-notes.md
+          cat release-notes.md
+      - name: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  # One job per image and architecture, each on a native runner:
+  #   1. the binary alone (Dockerfile target `binary`) is audited with `cargo audit bin`
+  #      and, for deskhaven, packed as the release tarball. It is the very file the image
+  #      contains, built by the same cached stage. This runs before anything is pushed.
+  #   2. the image is pushed by digest only (no tag yet; the manifest job tags it) and
+  #      smoke-tested from the registry.
+  # No provenance or SBOM attestations on the per-arch images: they would turn each
+  # per-arch digest into an index and the multi-arch manifest into an index of indexes.
+  # The dependency data of the binaries is embedded by cargo auditable instead.
+  image:
+    needs: [meta, web, csp, notices-sbom]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: deskhaven, arch: amd64, runner: ubuntu-latest, platform: linux/amd64, target: x86_64-unknown-linux-musl, audit_mode: enforce }
+          - { image: deskhaven, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64, target: aarch64-unknown-linux-musl, audit_mode: enforce }
+          - { image: relay, arch: amd64, runner: ubuntu-latest, platform: linux/amd64, target: x86_64-unknown-linux-musl, audit_mode: report }
+          - { image: relay, arch: arm64, runner: ubuntu-24.04-arm, platform: linux/arm64, target: aarch64-unknown-linux-musl, audit_mode: report }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
+      IMAGE: ${{ matrix.image }}
+      ARCH: ${{ matrix.arch }}
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+      AUDIT_MODE: ${{ matrix.audit_mode }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA" || git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+      - name: download dist
+        if: matrix.image == 'deskhaven'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: checked-dist
+      - name: download notices
+        if: matrix.image == 'deskhaven'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rel-supply-chain
+          path: supply-chain
+      - name: names and builder
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          if [ "$IMAGE" = deskhaven ]; then
+            echo "DOCKERFILE=deploy/docker/deskhaven.Dockerfile" >>"$GITHUB_ENV"
+            echo "IMAGE_NAME=ghcr.io/${owner}/deskhaven" >>"$GITHUB_ENV"
+          else
+            echo "DOCKERFILE=deploy/docker/relay.Dockerfile" >>"$GITHUB_ENV"
+            echo "IMAGE_NAME=ghcr.io/${owner}/deskhaven-relay" >>"$GITHUB_ENV"
+          fi
+          # The docker-container driver is what supports push-by-digest.
+          docker buildx create --name release --driver docker-container --driver-opt "image=moby/buildkit:${BUILDKIT_VERSION}" --use
+          docker buildx inspect --bootstrap
+      - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
+
+      # VERSION is a build arg of the deskhaven Dockerfile only (the relay one has none).
+      - name: build the binary alone
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$IMAGE" = deskhaven ]; then args+=(--build-arg "VERSION=${VERSION}"); fi
+          docker buildx build --builder release --platform "$PLATFORM" --file "$DOCKERFILE" \
+            "${args[@]}" --target binary --output type=local,dest=binary .
+          ls -l binary
+
+      - name: the shipped console is the checked console
+        if: matrix.image == 'deskhaven'
+        run: |
+          docker buildx build --builder release --platform "$PLATFORM" --file "$DOCKERFILE" \
+            --target web-dist --output type=local,dest=image-dist .
+          diff -r image-dist checked-dist
+          echo "web/dist of the image is identical to the dist the CSP checks ran on"
+
+      - name: cargo audit bin
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [ "$IMAGE" = deskhaven ]; then
+            .github/release/audit-bin.sh "$AUDIT_MODE" binary/deskhaven "out/audit-deskhaven-v${VERSION}-${TARGET}.txt" "deskhaven ${ARCH}"
+          else
+            .github/release/audit-bin.sh "$AUDIT_MODE" binary/hbbr "out/audit-hbbr-v${VERSION}-${TARGET}.txt" "hbbr (relay) ${ARCH}"
+          fi
+
+      - name: release tarball
+        if: matrix.image == 'deskhaven'
+        run: |
+          set -euo pipefail
+          name="deskhaven-v${VERSION}-${TARGET}"
+          mkdir -p "pack/${name}"
+          install -m 0755 binary/deskhaven "pack/${name}/deskhaven"
+          install -m 0644 LICENSE "pack/${name}/LICENSE"
+          install -m 0644 supply-chain/THIRD-PARTY-NOTICES.txt "pack/${name}/THIRD-PARTY-NOTICES.txt"
+          # Reproducible archive: sorted, no owners, commit time as mtime, no gzip name/time.
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$(git log -1 --format=%ct)" \
+            -C pack -cf - "$name" | gzip -n >"out/${name}.tar.gz"
+          ls -l out
+
+      - name: build the image
+        id: build
+        run: |
+          set -euo pipefail
+          args=(--builder release --platform "$PLATFORM" --file "$DOCKERFILE" --provenance=false --sbom=false)
+          if [ "$IMAGE" = deskhaven ]; then
+            # The `notices` stage of the Dockerfile is replaced by a directory holding just the notice.
+            mkdir -p notices
+            cp supply-chain/THIRD-PARTY-NOTICES.txt notices/
+            args+=(--build-arg "VERSION=${VERSION}" --build-context notices=notices)
+          fi
+          if [ "$PUBLISH" = true ]; then
+            docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
+            docker buildx build "${args[@]}" \
+              --output "type=image,name=${IMAGE_NAME},push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file metadata.json .
+            digest="$(jq -r '."containerimage.digest"' metadata.json)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no image digest in the build metadata"; exit 1; }
+            docker pull "${IMAGE_NAME}@${digest}"
+            echo "SMOKE_REF=${IMAGE_NAME}@${digest}" >>"$GITHUB_ENV"
+            mkdir -p digests
+            echo "$digest" >"digests/${IMAGE}-${ARCH}.txt"
+          else
+            docker buildx build "${args[@]}" --load --tag "release-smoke/${IMAGE}:${ARCH}" .
+            echo "SMOKE_REF=release-smoke/${IMAGE}:${ARCH}" >>"$GITHUB_ENV"
+          fi
+
+      - name: smoke test
+        run: |
+          set -euo pipefail
+          user="$(docker image inspect "$SMOKE_REF" --format '{{.Config.User}}')"
+          [ "$user" = "65532:65532" ] || { echo "::error::image runs as '$user', not 65532:65532"; exit 1; }
+          if [ "$IMAGE" = deskhaven ]; then
+            reported="$(docker run --rm --read-only "$SMOKE_REF" --version)"
+            echo "$reported"
+            [ "$reported" = "deskhaven ${VERSION}" ] || { echo "::error::the image reports '$reported'"; exit 1; }
+            # The notice ships inside the image (`docker create` needs no shell in the image).
+            id="$(docker create "$SMOKE_REF")"
+            docker cp "${id}:/usr/share/licenses/deskhaven/THIRD-PARTY-NOTICES.txt" notice-from-image.txt
+            docker rm "$id" >/dev/null
+            cmp notice-from-image.txt supply-chain/THIRD-PARTY-NOTICES.txt
+          else
+            docker run --rm --read-only --entrypoint /usr/local/bin/hbbr "$SMOKE_REF" --version
+            # The key guard must refuse to start without KEY (fail closed), not start hbbr.
+            if docker run --rm --read-only "$SMOKE_REF" 2>guard.err; then
+              echo "::error::the relay started without KEY"; exit 1
+            fi
+            grep -q "KEY is not set" guard.err
+          fi
+
+      - name: upload tarball and audit reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rel-${{ matrix.image }}-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+      - name: upload digest
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: digests/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Joins the per-arch images into one multi-arch manifest per image and tags it:
+  # vX.Y.Z always; X.Y and latest only for non-prerelease tags. Both images share the
+  # version tag (one DESKHAVEN_TAG in compose pins both). A dry run only prints the plan.
+  manifest:
+    needs: [meta, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+    steps:
+      - name: download digests
+        if: env.PUBLISH == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: multi-arch manifests
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          tags=("v${VERSION}")
+          if [ "$PRERELEASE" != true ]; then
+            major_minor="${VERSION%.*}"
+            tags+=("$major_minor" latest)
+          fi
+          echo "tags: ${tags[*]}"
+          if [ "$PUBLISH" != true ]; then
+            echo "dry run: nothing is pushed"
+            exit 0
+          fi
+          docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
+          mkdir -p out
+          : >out/images.txt
+          # matrix name (as in the digest files) -> repository name
+          for pair in deskhaven:deskhaven relay:deskhaven-relay; do
+            key="${pair%%:*}"
+            name="ghcr.io/${owner}/${pair#*:}"
+            sources=()
+            for arch in amd64 arm64; do
+              sources+=("${name}@$(cat "digests/${key}-${arch}.txt")")
+            done
+            tag_args=()
+            for tag in "${tags[@]}"; do tag_args+=(--tag "${name}:${tag}"); done
+            docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+            docker buildx imagetools inspect "${name}:v${VERSION}"
+            index="$(docker buildx imagetools inspect "${name}:v${VERSION}" --format '{{.Manifest.Digest}}')"
+            echo "${name}@${index}  (tags: ${tags[*]})" >>out/images.txt
+          done
+          cat out/images.txt
+      - name: upload image list
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rel-images
+          path: out/images.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # SHA256SUMS over every release file, then the GitHub Release (created as a draft with
+  # all files attached, then published, so a failed upload never leaves a half release).
+  release:
+    needs: [meta, web, csp, notices-sbom, changelog, image, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+    steps:
+      - name: download release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rel-*
+          path: assets
+          merge-multiple: true
+      - name: download release notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      - name: SHA256SUMS and notes
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          # Written outside assets/ first: the listing must not include the file being written.
+          (cd assets && find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs sha256sum) >SHA256SUMS
+          mv SHA256SUMS assets/SHA256SUMS
+          cat assets/SHA256SUMS
+          {
+            cat notes/release-notes.md
+            echo
+            echo "## Install"
+            echo
+            echo "- Binaries: \`deskhaven-v${VERSION}-<target>.tar.gz\` (static musl, x86_64 and aarch64). Verify with \`sha256sum -c SHA256SUMS --ignore-missing\`."
+            echo "- Images: \`ghcr.io/${owner}/deskhaven:v${VERSION}\` and \`ghcr.io/${owner}/deskhaven-relay:v${VERSION}\` (amd64, arm64); digests in \`images.txt\`."
+            echo "- \`THIRD-PARTY-NOTICES.txt\`, the two CycloneDX SBOMs and the \`cargo audit\` reports are attached."
+          } >release-body.md
+      - name: preview (dry run)
+        if: env.PUBLISH != 'true'
+        run: |
+          ls -l assets
+          cat release-body.md
+          mkdir -p preview
+          cp -r assets preview/assets
+          cp release-body.md preview/
+      - name: upload preview (dry run)
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-preview
+          path: preview/
+          if-no-files-found: error
+          retention-days: 7
+      - name: create the release
+        if: env.PUBLISH == 'true'
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "$GITHUB_REF_NAME" --notes-file release-body.md "${flags[@]}" assets/*
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
