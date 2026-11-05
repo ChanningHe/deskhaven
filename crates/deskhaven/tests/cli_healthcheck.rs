@@ -6,6 +6,7 @@
 
 mod support;
 
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -26,10 +27,16 @@ fn healthcheck(dir: &Path) -> Output {
         .unwrap()
 }
 
+/// A port below the ephemeral range (no `:0` listener or outgoing connection
+/// of a parallel test can take it meanwhile), handed out once per process.
+fn fixed_port() -> u16 {
+    free_signal_port()
+}
+
 #[test]
 fn succeeds_against_a_ready_server() {
     let dir = workdir("healthcheck_ready");
-    let mut server = start(&dir, &config_on(&dir, free_port()), &[]);
+    let mut server = start(&dir, &config_on(&dir, fixed_port()), &[]);
     wait_ready(server.listening("client_api"));
 
     let output = healthcheck(&dir);
@@ -42,13 +49,18 @@ fn succeeds_against_a_ready_server() {
 #[test]
 fn fails_when_nothing_listens() {
     let dir = workdir("healthcheck_down");
-    std::fs::write(dir.join("deskhaven.toml"), config_on(&dir, free_port())).unwrap();
+    let port = fixed_port();
+    let held = TcpListener::bind(("127.0.0.1", port)).unwrap();
+    std::fs::write(dir.join("deskhaven.toml"), config_on(&dir, port)).unwrap();
 
+    drop(held);
     let output = healthcheck(&dir);
 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("cannot connect"), "{stderr}");
+    // The cause comes once, from the error chain.
+    assert_eq!(stderr.matches("refused").count(), 1, "{stderr}");
 }
 
 #[test]
