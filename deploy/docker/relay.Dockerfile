@@ -26,6 +26,13 @@ ARG UPSTREAM_TAG
 ARG UPSTREAM_COMMIT
 # git: fetch the source; make + file: the bundled libsodium build (configure).
 RUN apk add --no-cache git musl-dev make file
+# cargo-auditable embeds the exact dependency list in hbbr (`.dep-v0` section), so
+# `cargo audit bin` and Trivy can see its Rust crates; the build output is otherwise the
+# unmodified upstream binary.
+# renovate: datasource=crate depName=cargo-auditable
+ARG CARGO_AUDITABLE_VERSION=0.7.7
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo install --locked cargo-auditable --version "${CARGO_AUDITABLE_VERSION}"
 WORKDIR /src
 RUN git -c advice.detachedHead=false clone --depth 1 --branch "${UPSTREAM_TAG}" \
         --recurse-submodules --shallow-submodules "${UPSTREAM_REPO}" rustdesk-server \
@@ -34,7 +41,7 @@ WORKDIR /src/rustdesk-server
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/rustdesk-server/target \
-    cargo build --release --locked --bin hbbr \
+    cargo auditable build --release --locked --bin hbbr \
  && file target/release/hbbr | grep -Eq 'static(-pie)? linked' \
  && install -D -m 0755 target/release/hbbr /out/usr/local/bin/hbbr \
  && install -D -m 0644 LICENSE /out/usr/share/licenses/rustdesk-server/LICENSE \
@@ -49,6 +56,11 @@ RUN rustc --edition 2021 --test -o /tmp/guard-tests /src/guard/relay-key-guard.r
  && rustc --edition 2021 -C opt-level=2 -C strip=symbols \
         -o /out/usr/local/bin/relay-key-guard /src/guard/relay-key-guard.rs \
  && file /out/usr/local/bin/relay-key-guard | grep -Eq 'static(-pie)? linked'
+
+# hbbr alone (`--target binary --output type=local,dest=DIR`): the release pipeline
+# audits exactly the file the image below contains.
+FROM scratch AS binary
+COPY --from=build /out/usr/local/bin/hbbr /hbbr
 
 # gcr.io/distroless/static-debian13:nonroot
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
