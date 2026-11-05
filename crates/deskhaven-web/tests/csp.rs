@@ -22,6 +22,36 @@ fn none() -> Vec<String> {
     Vec::new()
 }
 
+/// Set to `1` by the release pipeline: a missing `web/dist` then fails the built-dist
+/// checks instead of skipping them (normal CI does not build the console for the Rust
+/// jobs). Same convention as `DESKHAVEN_TEST_REQUIRE_PG`.
+const REQUIRE_DIST_ENV: &str = "DESKHAVEN_TEST_REQUIRE_WEB_DIST";
+
+fn dist_required() -> bool {
+    std::env::var(REQUIRE_DIST_ENV).is_ok_and(|v| v == "1")
+}
+
+/// The frontend is not built: skip with a note, or panic when a build is required.
+fn dist_missing(required: bool, path: &Path) {
+    assert!(
+        !required,
+        "{REQUIRE_DIST_ENV}=1 but {} is not built",
+        path.display()
+    );
+    eprintln!("skipping: {} not built", path.display());
+}
+
+#[test]
+fn a_missing_dist_is_skipped_unless_required() {
+    dist_missing(false, Path::new("web/dist"));
+}
+
+#[test]
+#[should_panic(expected = "is not built")]
+fn a_missing_dist_fails_when_required() {
+    dist_missing(true, Path::new("web/dist"));
+}
+
 #[test]
 fn the_scanner_flags_what_the_csp_blocks() {
     let bad = r#"<script>alert(1)</script><p style="x:y"><style>a{}</style><a onclick="f()">"#;
@@ -79,13 +109,13 @@ fn the_spa_source_entry_point_is_csp_clean() {
     assert!(!start_tags(&html).is_empty());
 }
 
-/// Skipped (with a note) when the frontend has not been built; `xtask dist`
-/// and CI build it first.
+/// Skipped (with a note) when the frontend has not been built, unless
+/// `DESKHAVEN_TEST_REQUIRE_WEB_DIST=1` (the release pipeline) turns that into a failure.
 #[test]
 fn the_built_index_is_csp_clean() {
     let path = repo_file("web/dist/index.html");
     let Ok(html) = std::fs::read_to_string(&path) else {
-        eprintln!("skipping: {} not built", path.display());
+        dist_missing(dist_required(), &path);
         return;
     };
     assert_eq!(csp_violations(&html), none());
@@ -95,17 +125,25 @@ fn the_built_index_is_csp_clean() {
 fn the_built_css_needs_no_data_urls_or_imports() {
     let assets = repo_file("web/dist/assets");
     let Ok(entries) = std::fs::read_dir(&assets) else {
-        eprintln!("skipping: {} not built", assets.display());
+        dist_missing(dist_required(), &assets);
         return;
     };
+    let mut stylesheets = 0;
     for entry in entries.map(Result::unwrap) {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "css") {
+            stylesheets += 1;
             let css = std::fs::read_to_string(&path).unwrap();
             assert!(!css.contains("data:"), "{}", path.display());
             assert!(!css.contains("@import"), "{}", path.display());
         }
     }
+    // A required build without any stylesheet would pass vacuously.
+    assert!(
+        stylesheets > 0 || !dist_required(),
+        "no stylesheet in {}",
+        assets.display()
+    );
 }
 
 #[test]
