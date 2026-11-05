@@ -1,0 +1,17 @@
+# Allowlist: the image builds (deploy/docker/) need only the Rust workspace and
+# the web console sources. Everything else stays out of the build context,
+# above all target/ (hundreds of GB) and web/node_modules.
+*
+!Cargo.toml
+!Cargo.lock
+!LICENSE
+!.cargo/
+!crates/
+!xtask/
+!web/
+web/node_modules/
+web/dist/
+web/coverage/
+web/e2e-results/
+web/.tanstack/
+**/*.sqlite3
