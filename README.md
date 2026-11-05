@@ -6,6 +6,8 @@ shipped as a single binary.
 
 > **Status:** early development, not usable yet.
 
+User documentation: [docs/](docs/README.md), starting with the [quick start](docs/getting-started/quick-start.md).
+
 ## Development
 
 ```sh
