@@ -15,11 +15,11 @@
   ],
   "customManagers": [
     {
-      "description": "Tool versions annotated with `# renovate: datasource=... depName=...`: release.yml (KEY: \"version\") and the Dockerfiles (ARG KEY=version).",
+      "description": "Tool versions annotated with `# renovate: datasource=... depName=...`: release.yml (KEY: \"version\", optionally followed by KEY: \"sha256:digest\") and the Dockerfiles (ARG KEY=version).",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/", "/^deploy/docker/[^/]+\\.Dockerfile$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+[A-Z_]+: \"(?<currentValue>[^\"]+)\"",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+[A-Z_]+: \"(?<currentValue>[^\"]+)\"(?:\\n\\s+[A-Z_]+: \"(?<currentDigest>sha256:[a-f0-9]{64})\")?",
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG [A-Z_]+=(?<currentValue>\\S+)"
       ]
     },
