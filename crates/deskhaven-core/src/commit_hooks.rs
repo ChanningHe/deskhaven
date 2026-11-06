@@ -2,19 +2,25 @@
 //!
 //! The write has committed by the time hooks run, so nothing a hook does may turn it into an
 //! error: a panicking hook is caught and logged, and the remaining hooks (and the caller's
-//! event broadcast) still run. Hooks run on a snapshot of the list taken without holding the
-//! lock while they execute, so a hook may register another hook; the new one sees the next
-//! change, not the current one.
+//! event broadcast) still run. A hook may come with a fallback that runs (also caught) when
+//! it panicked, so a cache whose targeted invalidation failed can fail closed by dropping
+//! everything. Hooks run on a snapshot of the list taken without holding the lock while they
+//! execute, so a hook may register another hook; the new one sees the next change, not the
+//! current one.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, PoisonError, RwLock};
 
 /// One after-commit callback.
 pub(crate) type Hook<C> = Arc<dyn Fn(&C) + Send + Sync>;
+/// What runs instead when a hook panicked.
+pub type Fallback = Arc<dyn Fn() + Send + Sync>;
+
+type Entry<C> = (Hook<C>, Option<Fallback>);
 
 /// A registry of `Fn(&C)` hooks. Clones share the registry.
 pub(crate) struct CommitHooks<C> {
-    hooks: Arc<RwLock<Vec<Hook<C>>>>,
+    hooks: Arc<RwLock<Vec<Entry<C>>>>,
 }
 
 impl<C> Clone for CommitHooks<C> {
@@ -35,10 +41,19 @@ impl<C> Default for CommitHooks<C> {
 
 impl<C: std::fmt::Debug> CommitHooks<C> {
     pub(crate) fn register(&self, hook: Hook<C>) {
+        self.push((hook, None));
+    }
+
+    /// Like [`CommitHooks::register`]; `fallback` runs whenever `hook` panics.
+    pub(crate) fn register_with_fallback(&self, hook: Hook<C>, fallback: Fallback) {
+        self.push((hook, Some(fallback)));
+    }
+
+    fn push(&self, entry: Entry<C>) {
         self.hooks
             .write()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(hook);
+            .push(entry);
     }
 
     /// Calls every hook registered so far with `change`, in registration order.
@@ -48,9 +63,15 @@ impl<C: std::fmt::Debug> CommitHooks<C> {
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        for hook in snapshot {
-            if catch_unwind(AssertUnwindSafe(|| hook(change))).is_err() {
-                tracing::error!(?change, "commit hook panicked; the change stays committed");
+        for (hook, fallback) in snapshot {
+            if catch_unwind(AssertUnwindSafe(|| hook(change))).is_ok() {
+                continue;
+            }
+            tracing::error!(?change, "commit hook panicked; the change stays committed");
+            if let Some(fallback) = fallback
+                && catch_unwind(AssertUnwindSafe(|| fallback())).is_err()
+            {
+                tracing::error!(?change, "commit hook fallback panicked too");
             }
         }
     }
@@ -95,5 +116,29 @@ mod tests {
         hooks.run(&2);
 
         assert_eq!(*seen.lock().unwrap(), [2]);
+    }
+
+    #[test]
+    fn a_fallback_runs_only_when_its_hook_panics_and_may_panic_itself() {
+        let hooks = CommitHooks::<u8>::default();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (a, b, c) = (Arc::clone(&seen), Arc::clone(&seen), Arc::clone(&seen));
+        hooks.register_with_fallback(
+            Arc::new(|_: &u8| panic!("hook bug")),
+            Arc::new(move || a.lock().unwrap().push("fallback")),
+        );
+        hooks.register_with_fallback(
+            Arc::new(move |_: &u8| b.lock().unwrap().push("calm")),
+            Arc::new(|| panic!("never runs")),
+        );
+        hooks.register_with_fallback(
+            Arc::new(|_: &u8| panic!("hook bug")),
+            Arc::new(|| panic!("fallback bug")),
+        );
+        hooks.register(Arc::new(move |_: &u8| c.lock().unwrap().push("last")));
+
+        hooks.run(&1);
+
+        assert_eq!(*seen.lock().unwrap(), ["fallback", "calm", "last"]);
     }
 }

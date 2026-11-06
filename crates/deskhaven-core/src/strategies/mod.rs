@@ -92,12 +92,15 @@ impl StrategyService {
     /// Invalidates the cache when a user is deleted (its device ownership is cleared and
     /// its assignment removed by `UserService::delete`).
     pub fn watch_users(&self, users: &UserService) {
-        let cache = self.inner.cache.clone();
-        users.register_commit_hook(Arc::new(move |change: &UserChange| {
-            if matches!(change, UserChange::Event(UserEvent::Deleted { .. })) {
-                cache.invalidate();
-            }
-        }));
+        let (cache, flush_cache) = (self.inner.cache.clone(), self.inner.cache.clone());
+        users.register_commit_hook_with_fallback(
+            Arc::new(move |change: &UserChange| {
+                if matches!(change, UserChange::Event(UserEvent::Deleted { .. })) {
+                    cache.invalidate();
+                }
+            }),
+            Arc::new(move || flush_cache.invalidate()),
+        );
     }
 
     /// Invalidates the cache when a group is deleted or its membership changes.

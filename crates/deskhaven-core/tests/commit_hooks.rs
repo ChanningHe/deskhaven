@@ -69,6 +69,41 @@ async fn a_panicking_user_hook_does_not_abort_the_write_the_later_hooks_or_the_e
     .await;
 }
 
+/// Re-review LOW-5: a cache whose targeted invalidation panicked must fail closed: the hook's
+/// fallback (e.g. flush the whole cache) runs instead, so a disabled user's cached session
+/// cannot outlive the change.
+#[tokio::test]
+async fn a_panicking_user_hook_runs_its_fallback() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = users(db).await;
+        let alice = svc.create(local("alice")).await.unwrap().id;
+        let flushed = Arc::new(AtomicUsize::new(0));
+        let calm = Arc::new(AtomicUsize::new(0));
+        let (on_panic, calm_fallback) = (Arc::clone(&flushed), Arc::clone(&calm));
+        svc.register_commit_hook_with_fallback(
+            Arc::new(|_: &UserChange| panic!("hook bug")),
+            Arc::new(move || {
+                on_panic.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+        svc.register_commit_hook_with_fallback(
+            Arc::new(|_: &UserChange| {}),
+            Arc::new(move || {
+                calm_fallback.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+
+        timeout(WAIT, svc.set_status(alice, Status::Disabled))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(flushed.load(Ordering::SeqCst), 1);
+        assert_eq!(calm.load(Ordering::SeqCst), 0, "only for a panic");
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_user_hook_may_register_another_hook_which_runs_from_the_next_change_on() {
     each_migrated_backend(async |db: &TestDb| {

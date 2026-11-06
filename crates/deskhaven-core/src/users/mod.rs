@@ -50,6 +50,7 @@ pub(crate) use write::lock_active_owners;
 
 use crate::clock::{SharedClock, SystemClock};
 use crate::commit_hooks::CommitHooks;
+pub use crate::commit_hooks::Fallback;
 use crate::pagination::Page;
 use crate::settings::SettingsService;
 use crate::text::contains_pattern;
@@ -108,6 +109,12 @@ impl UserService {
     /// logged and skipped; a hook may register another one, which runs from the next change.
     pub fn register_commit_hook(&self, hook: CommitHook) {
         self.inner.hooks.register(hook);
+    }
+
+    /// [`UserService::register_commit_hook`] for a cache that must fail closed: `on_panic`
+    /// (e.g. flush the whole cache) runs whenever `hook` panics.
+    pub fn register_commit_hook_with_fallback(&self, hook: CommitHook, on_panic: Fallback) {
+        self.inner.hooks.register_with_fallback(hook, on_panic);
     }
 
     pub async fn get(&self, id: i64) -> Result<User, UserError> {

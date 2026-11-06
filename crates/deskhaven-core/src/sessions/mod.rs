@@ -86,10 +86,14 @@ impl SessionService {
         clock: SharedClock,
     ) -> Self {
         let cache = SessionCache::default();
-        let hook_cache = cache.clone();
-        users.register_commit_hook(Arc::new(move |change: &UserChange| {
-            hook_cache.invalidate_user(change.user_id());
-        }));
+        let (hook_cache, flush_cache) = (cache.clone(), cache.clone());
+        // Fails closed (M4-05): if the targeted invalidation panics, every entry goes.
+        users.register_commit_hook_with_fallback(
+            Arc::new(move |change: &UserChange| {
+                hook_cache.invalidate_user(change.user_id());
+            }),
+            Arc::new(move || flush_cache.flush()),
+        );
         let core = Core {
             db,
             settings,
