@@ -16,6 +16,13 @@
 #   STUB_NO_DIGEST=1       assets are attached without a digest field
 #   STUB_PATCH_IGNORED=1   PATCH answers ok but does not publish
 #   STUB_RELEASE_ID        id of a created release (default 4242)
+# version-tag.sh:
+#   STUB_MAIN_SHA          the commit main points to on GitHub
+#   runs.json              {"workflow_runs": [...]} of ci.yml, filtered by the head_sha query
+#                          like the API does (absent: no runs)
+#   refs.json              every git ref of the repository ([{ref}]), filtered by prefix like
+#                          GET git/matching-refs does (absent: none)
+#   STUB_FAIL=main|runs|refs  that call fails with HTTP 500
 set -euo pipefail
 : "${STUB_DIR:?STUB_DIR is required}"
 echo "gh $*" >>"$STUB_DIR/gh.log"
@@ -128,6 +135,28 @@ if [[ "$path" == repos/*/releases/* ]]; then
     echo '{}' | emit
     exit 0
   fi
+fi
+
+# ---- version-tag.sh
+if [ "$method" = GET ] && [[ "$path" == repos/*/commits/main ]]; then
+  if [ "${STUB_FAIL:-}" = main ]; then echo "gh: HTTP 500" >&2; exit 1; fi
+  jq -n --arg s "${STUB_MAIN_SHA:?}" '{sha: $s}' | emit
+  exit 0
+fi
+if [ "$method" = GET ] && [[ "$path" == repos/*/actions/workflows/ci.yml/runs\?*head_sha=* ]]; then
+  if [ "${STUB_FAIL:-}" = runs ]; then echo "gh: HTTP 500" >&2; exit 1; fi
+  sha="${path#*head_sha=}"
+  sha="${sha%%&*}"
+  if [ -f "$STUB_DIR/runs.json" ]; then cat "$STUB_DIR/runs.json"; else echo '{"workflow_runs": []}'; fi |
+    jq --arg s "$sha" '.workflow_runs |= map(select(.head_sha == $s))' | emit
+  exit 0
+fi
+if [ "$method" = GET ] && [[ "$path" == repos/*/git/matching-refs/* ]]; then
+  if [ "${STUB_FAIL:-}" = refs ]; then echo "gh: HTTP 500" >&2; exit 1; fi
+  prefix="refs/${path#*/git/matching-refs/}"
+  if [ -f "$STUB_DIR/refs.json" ]; then cat "$STUB_DIR/refs.json"; else echo '[]'; fi |
+    jq --arg p "$prefix" 'map(select(.ref | startswith($p)))' | emit
+  exit 0
 fi
 
 echo "unexpected gh api call: $path ($method)" >&2

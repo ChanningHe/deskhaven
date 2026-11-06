@@ -11,6 +11,10 @@
 # second run. GitHub also does not start workflows at all when more than 3 tags are
 # pushed at once.
 #
+# Releasing (justfile): `just bump X.Y.Z[-pre]` commits the version everywhere it is pinned
+# (version-bump.sh); push main, and once its ci run passed, `just tag` checks the gates below
+# locally and pushes the tag (version-tag.sh).
+#
 # Triggers
 #   push of a `v*` tag     builds, verifies and PUBLISHES: images to ghcr.io, a GitHub Release
 #   workflow_dispatch      NEVER publishes, whatever ref it runs on: builds and verifies
