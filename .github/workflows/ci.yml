@@ -9,9 +9,18 @@
 # this repository's own (a push, or a pull request from a branch of this repository), else
 # on `ubuntu-latest`. To use a self-hosted runner, set the repository variable
 # CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables). Jobs run
-# inside the `container:` image, so the runner only needs Docker access. Pull requests from
-# forks always run on GitHub-hosted runners: not every job is containerised
-# (release-scripts runs on the host), and a fork's code must never run on that machine.
+# inside the `container:` image, so the runner only needs Docker access, except
+# release-scripts, which runs on the host.
+#
+# The expression only keeps unmodified fork pull requests off that runner. It protects
+# nothing: a pull request runs the workflow file from its own branch, so a fork can set
+# `runs-on` to the self-hosted label and run any code there. No change to this file can
+# close that. A self-hosted runner on this public repository therefore needs one of:
+# "Require approval for all external contributors" (Settings -> Actions -> General ->
+# Approval for running fork pull request workflows), and a maintainer who reads every fork
+# workflow before approving it; a runner group limited to selected workflows and refs that
+# fork pull requests cannot use; or no persistent runner at all (ephemeral, rebuilt per
+# job).
 #
 # Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
 # + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
