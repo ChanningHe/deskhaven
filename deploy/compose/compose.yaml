@@ -16,6 +16,12 @@
 # The rendezvous and relay ports are published directly: Docker's default
 # (iptables) port publishing keeps the client source address, which hole
 # punching depends on.
+#
+# The rendezvous ports (21115, 21116) are published on IPv4 only. This network
+# has no IPv6, so Docker would hand IPv6 connections to its userland proxy and
+# every IPv6 client would arrive from the gateway address: one client could then
+# take over another's registration. IPv6 clients fall back to IPv4; see
+# docs/reference/known-limitations.md (client addresses) for the opt-in.
 
 name: deskhaven
 
@@ -46,9 +52,9 @@ services:
     # Async runtime workers + blocking pool scale with the CPU count.
     pids_limit: 1024
     ports:
-      - "21115:21115/tcp"   # NAT type test
-      - "21116:21116/tcp"   # rendezvous
-      - "21116:21116/udp"   # rendezvous
+      - "0.0.0.0:21115:21115/tcp"   # NAT type test
+      - "0.0.0.0:21116:21116/tcp"   # rendezvous
+      - "0.0.0.0:21116:21116/udp"   # rendezvous
       - "127.0.0.1:21114:21114/tcp"   # console + client API (HTTP)
       - "127.0.0.1:21118:21118/tcp"   # rendezvous WebSocket
     healthcheck:

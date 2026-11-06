@@ -24,9 +24,9 @@ services:
   deskhaven:
     ports: !override
       - "21114:21114/tcp"
-      - "21115:21115/tcp"
-      - "21116:21116/tcp"
-      - "21116:21116/udp"
+      - "0.0.0.0:21115:21115/tcp"
+      - "0.0.0.0:21116:21116/tcp"
+      - "0.0.0.0:21116:21116/udp"
 ```
 
 Client passwords then cross the network unencrypted.

@@ -7,8 +7,8 @@ Every port deskhaven and the relay use, and how the compose deployment exposes i
 | 80/tcp | Caddy | HTTP: certificate challenge, redirect to HTTPS | public |
 | 443/tcp, 443/udp | Caddy | HTTPS (console, client API, wss) | public |
 | 21114/tcp | deskhaven | Console and client API (HTTP) | behind Caddy (`/`) |
-| 21115/tcp | deskhaven | NAT type test | public |
-| 21116/tcp, 21116/udp | deskhaven | Rendezvous: registration, hole punching | public |
+| 21115/tcp | deskhaven | NAT type test | public, IPv4 only |
+| 21116/tcp, 21116/udp | deskhaven | Rendezvous: registration, hole punching | public, IPv4 only |
 | 21117/tcp | relay (hbbr) | Relay | public |
 | 21118/tcp | deskhaven | Rendezvous over WebSocket | behind Caddy (`/ws/id`) |
 | 21119/tcp | relay (hbbr) | Relay over WebSocket | behind Caddy (`/ws/relay`) |

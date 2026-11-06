@@ -12,9 +12,9 @@ services:
       # Only Caddy, at its fixed address below, may set X-Forwarded-For.
       DESKHAVEN_SECURITY__TRUSTED_PROXIES: 172.30.114.10/32
     ports: !override
-      - "21115:21115/tcp"
-      - "21116:21116/tcp"
-      - "21116:21116/udp"
+      - "0.0.0.0:21115:21115/tcp"
+      - "0.0.0.0:21116:21116/tcp"
+      - "0.0.0.0:21116:21116/udp"
 
   relay:
     ports: !override

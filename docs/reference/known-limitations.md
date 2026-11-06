@@ -28,9 +28,52 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 
 ## Client addresses
 
-- **Rootless Docker, and IPv6 clients on an IPv4 Docker network,** reach deskhaven from
-  the gateway address instead of their own. Rate limits, lockouts, audit addresses and hole
-  punching then see one address for everyone.
+- **The compose deployment serves the rendezvous ports (21115, 21116) on IPv4 only.** Its
+  network has no IPv6, so Docker would pass IPv6 connections through its userland proxy and
+  every IPv6 client would arrive from the gateway address. With one address for all of them,
+  any client could re-register another IPv6 device's ID to itself and receive the
+  connections meant for it, every IPv6 pair would look like one LAN and learn each other's
+  local addresses, and whoever learns a device's UUID could replace its key. Dual-stack
+  clients use IPv4 instead; IPv6-only clients without NAT64 cannot reach the server.
+- **To serve IPv6 clients with their own addresses**, give the network IPv6 (Docker 27 or
+  newer, with its default `ip6tables`). Merge into `compose.override.yaml`; without the Caddy
+  overlay leave out `caddy` and `environment`. Pick your own ULA prefix if you like:
+
+  ```yaml
+  services:
+    deskhaven:
+      environment:
+        DESKHAVEN_SECURITY__TRUSTED_PROXIES: 172.30.114.10/32,fd6d:6b68:7276::10/128
+      ports:
+        - "[::]:21115:21115/tcp"
+        - "[::]:21116:21116/tcp"
+        - "[::]:21116:21116/udp"
+    caddy:
+      networks:
+        default:
+          ipv4_address: 172.30.114.10
+          ipv6_address: fd6d:6b68:7276::10
+  networks:
+    default:
+      enable_ipv6: true
+      ipam:
+        config:
+          - subnet: 172.30.114.0/24
+            gateway: 172.30.114.1
+            ip_range: 172.30.114.128/25
+          - subnet: fd6d:6b68:7276::/64
+            ip_range: fd6d:6b68:7276:0:8000::/65
+  ```
+
+  Then check under **Devices** that an IPv6 device shows its own last IP: an older Docker, or
+  `ip6tables` turned off, still hands every IPv6 client the gateway address, with the
+  consequences above.
+- **Rootless Docker** gives every client the gateway address, IPv4 included, with the same
+  consequences. So do the ports that stay dual-stack on an IPv4-only network for their IPv6
+  visitors: Caddy (80, 443) and the relay (21117). There it costs per-address rate limits,
+  lockouts and audit addresses, not registrations.
+- **Clients behind one public address** (carrier-grade NAT, NAT64) share it, and with it
+  the consequences above among themselves. This is how RustDesk's rendezvous protocol works.
 - **A reverse proxy on the same host is trusted by address.** Any local process that
   connects from that address can set `X-Forwarded-For` and evade the per-address sign-in
   limits. This applies to a binary deployment (`127.0.0.1/32`) and to `compose.yaml` without
