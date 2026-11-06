@@ -5,10 +5,13 @@
 # Sources are fetched with plain git (the repository is public; a private repo would need
 # a token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
 #
-# Runner label: every job uses `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
-# To use a self-hosted runner, set the repository variable CI_RUNNER_LABEL (Settings ->
-# Secrets and variables -> Actions -> Variables). Jobs run inside the `container:` image,
-# so the runner only needs Docker access.
+# Runner label: every job runs on `vars.CI_RUNNER_LABEL` when it is set and the code is
+# this repository's own (a push, or a pull request from a branch of this repository), else
+# on `ubuntu-latest`. To use a self-hosted runner, set the repository variable
+# CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables). Jobs run
+# inside the `container:` image, so the runner only needs Docker access. Pull requests from
+# forks always run on GitHub-hosted runners: not every job is containerised
+# (release-scripts runs on the host), and a fork's code must never run on that machine.
 #
 # Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
 # + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
@@ -55,7 +58,7 @@ env:
 
 jobs:
   fmt:
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -73,7 +76,7 @@ jobs:
   # the relay image build. Format, lint and test it here, with the same plain rustc the
   # image uses.
   relay-key-guard:
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -102,7 +105,7 @@ jobs:
   # file with GIT_CLIFF_VERSION); without it that test would skip itself. On a runner that is
   # not x86_64 the download is skipped and the test skips with a message.
   release-scripts:
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - name: checkout
@@ -134,7 +137,7 @@ jobs:
   # drift and the production build. Needs nothing from the Rust jobs: the API client
   # is generated from the committed openapi.json, whose own drift test-sqlite checks.
   web:
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
     # like the rust image above, a digest would also freeze out Debian security
     # rebuilds of this tag, and the tag already fixes Node itself.
@@ -185,7 +188,7 @@ jobs:
 
   clippy:
     needs: fmt
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -199,7 +202,7 @@ jobs:
 
   deny:
     needs: fmt
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -213,7 +216,7 @@ jobs:
 
   test-sqlite:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -237,7 +240,7 @@ jobs:
 
   test-postgres:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     strategy:
       fail-fast: false
@@ -273,7 +276,7 @@ jobs:
   # Runs in parallel with the tests; report only.
   coverage:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     services:
       postgres:
@@ -308,7 +311,7 @@ jobs:
   # Playwright's Chromium with its system libraries.
   e2e:
     needs: [clippy, deny]
-    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     container: rust:1.99.1-bookworm
     services:
       postgres:
