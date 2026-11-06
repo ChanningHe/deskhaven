@@ -173,3 +173,24 @@ async fn plaintext_secrets_of_older_rows_are_served_then_sealed_in_place() {
     })
     .await;
 }
+
+/// A damaged sealed value (`v1:` but unopenable) is flagged, never served as the password
+/// nor sealed again as if it were one.
+#[tokio::test]
+async fn a_malformed_sealed_value_is_flagged_and_never_resealed() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let damaged = opts(&[("proxy-password", "v1:damaged"), ("k", "v")]);
+        let id = insert_plaintext(db, "broken", &damaged).await;
+
+        let got = c.svc.get(id).await.unwrap();
+        let resealed = c.svc.seal_plaintext_secrets().await.unwrap();
+
+        let b = db.backend;
+        assert!(got.options_corrupt && got.options.is_empty(), "{b}");
+        assert_eq!(resealed, 0, "{b}");
+        assert_eq!(stored(db, id).await, damaged, "{b}: left as it was");
+        assert!(effective_global(&c, id).await.is_empty(), "{b}");
+    })
+    .await;
+}

@@ -6,11 +6,13 @@
 //! it is. Values are opened whenever a row is read: the heartbeat delivers them in clear,
 //! and the admin API withholds them (`secret_options`).
 //!
-//! Rows written before sealing hold their secrets in clear. Such a value is not a sealed
-//! string, so it is served as stored, and [`StrategyService::seal_plaintext_secrets`] (run
-//! at startup) seals it in place; every write seals anyway. A sealed value that does not
-//! open (another row or key, a master key not held, damage) makes the strategy unreadable
-//! (`options_corrupt`), like damaged JSON.
+//! Rows written before sealing hold their secrets in clear. A value without the sealed
+//! prefix (`v1:`) is taken for such a one: served as stored, and sealed in place by
+//! [`StrategyService::seal_plaintext_secrets`] (run at startup); every write seals anyway. A
+//! value with the prefix that does not open (another row or key, a master key not held,
+//! damage, malformed) makes the strategy unreadable (`options_corrupt`), like damaged JSON,
+//! and is never re-sealed. Accepted: a clear secret from before sealing that happens to
+//! start with `v1:` is flagged too; the administrator enters it again.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::strategy;
@@ -80,14 +82,15 @@ pub(super) fn decode(crypto: &SecretBox, id: i64, stored: &str) -> Option<Opened
     })
 }
 
-/// `Some(None)`: `value` is not a sealed string (stored in clear). `None`: it is sealed but
-/// does not open.
+/// `Some(None)`: `value` lacks the sealed prefix (stored in clear). `None`: it claims the
+/// sealed form but does not open, malformed included (damage is never taken for a clear
+/// value, which would serve and later re-seal the damaged text as the secret).
 fn open(crypto: &SecretBox, id: i64, key: &str, value: &str) -> Option<Option<String>> {
-    match crypto.open(&context(id, key), value) {
-        Ok(plain) => String::from_utf8(plain.to_vec()).ok().map(Some),
-        Err(CryptoError::Malformed) => Some(None),
-        Err(_) => None,
+    if !SecretBox::is_sealed_form(value) {
+        return Some(None);
     }
+    let plain = crypto.open(&context(id, key), value).ok()?;
+    String::from_utf8(plain.to_vec()).ok().map(Some)
 }
 
 impl StrategyService {
@@ -154,12 +157,27 @@ mod tests {
     #[test]
     fn a_clear_secret_is_served_and_flagged_and_other_json_is_refused() {
         let crypto = crypto();
-        let stored = options::encode(&one("proxy-password", "v1:not-sealed")).unwrap();
+        let stored = options::encode(&one("proxy-password", "hunter2")).unwrap();
 
         let opened = decode(&crypto, 1, &stored).unwrap();
 
-        assert_eq!(opened.options, one("proxy-password", "v1:not-sealed"));
+        assert_eq!(opened.options, one("proxy-password", "hunter2"));
         assert!(opened.has_plaintext);
         assert!(decode(&crypto, 1, "[1]").is_none());
+    }
+
+    /// Only a value without the sealed prefix is taken for a clear one: a damaged
+    /// ciphertext must never be served (or re-sealed) as the password.
+    #[test]
+    fn a_malformed_sealed_value_is_unreadable_not_plaintext() {
+        let crypto = crypto();
+        let sealed = encode(&crypto, 1, &one("proxy-password", "pw")).unwrap();
+        let value = options::decode(&sealed).unwrap()["proxy-password"].clone();
+        let truncated = &value[..value.len() - 4];
+
+        for damaged in ["v1:not-sealed", "v1:", truncated] {
+            let stored = options::encode(&one("proxy-password", damaged)).unwrap();
+            assert!(decode(&crypto, 1, &stored).is_none(), "{damaged}");
+        }
     }
 }

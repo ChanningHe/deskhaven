@@ -135,6 +135,13 @@ impl SecretBox {
         ))
     }
 
+    /// Whether `text` claims the sealed form (starts with `v1:`), whether or not it opens.
+    /// For telling a sealed value from one stored in clear before sealing existed.
+    pub fn is_sealed_form(text: &str) -> bool {
+        text.strip_prefix(VERSION)
+            .is_some_and(|rest| rest.starts_with(SEPARATOR))
+    }
+
     pub fn open(&self, context: &str, sealed: &str) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
         let parsed = Sealed::parse(sealed)?;
         let slot = self.slot(parsed.key_id).ok_or(CryptoError::UnknownKeyId)?;
