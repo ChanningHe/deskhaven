@@ -1,12 +1,19 @@
 //! Which account a verified identity logs into (06 §3.4), inside the callback's write
 //! transaction:
 //!
-//! 1. A linked identity `(provider, sub)`: its account (the stored email is refreshed).
+//! 1. A linked identity `(provider, sub)`: its account (the stored email is refreshed). A
+//!    local or LDAP account signs in only while an OIDC login bypasses nothing on it (the
+//!    conditions of step 2: no TOTP, role `user`, not LDAP), checked on every login, not
+//!    only at link time: TOTP enabled or a promotion after the link would otherwise be
+//!    skipped. Else refused ([`Failure::NoLinkedAccount`]): neither the client poll nor the
+//!    console completion has a second-factor step to route to. Accounts the IdP provisioned
+//!    (`oidc`) are exempt: their role is the console's and they enrol no local TOTP.
 //! 2. Otherwise, an account with the asserted email (case-insensitively): linked only when
 //!    the token says `email_verified: true` (missing = false), `auth.oidc.link_verified_email`
 //!    is on, **and** the account is a safe target: its own address is verified, it has no
-//!    TOTP (an OIDC login does not ask for it, so linking would bypass it) and its role is
-//!    `user` (no admin or owner reached by email alone). Else refused
+//!    TOTP (an OIDC login does not ask for it, so linking would bypass it), its role is
+//!    `user` (no admin or owner reached by email alone) and it is not an LDAP account (the
+//!    directory decides on it: an OIDC login would outlive its removal there). Else refused
 //!    ([`Failure::NoLinkedAccount`]: link it from the console). Never provisioned alongside
 //!    it, never matched by username.
 //! 3. Otherwise, with `auto_provision`: a new active `oidc` account (`username` rules),
@@ -39,7 +46,7 @@ use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
 use super::username;
 use crate::users::lookup::{find_by_email, is_valid_email, username_taken};
-use crate::users::{Credential, NewUser, Role, Status, UserError};
+use crate::users::{AuthSource, Credential, NewUser, Role, Status, UserError};
 
 /// Longest display name taken from the `name` claim (the user service's limit).
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
@@ -53,6 +60,9 @@ pub(crate) async fn resolve(
     asserted: &Asserted,
 ) -> Result<Resolution, CallbackError> {
     if let Some(linked) = linked_account(tx, provider.id, asserted).await? {
+        if linked.auth_source != AuthSource::Oidc && !bypasses_nothing(&linked) {
+            return Ok(Err(Failure::NoLinkedAccount));
+        }
         return Ok(active(linked));
     }
     let by_email = match asserted.email.as_deref() {
@@ -117,10 +127,17 @@ fn stored_email(asserted: &Asserted) -> Option<String> {
 }
 
 /// Whether an existing account may be linked by email alone: its own address is verified
-/// (so nobody squatted it), and logging in by OIDC neither skips its second factor nor
-/// reaches an administrator. Others are linked explicitly from the console.
+/// (so nobody squatted it) and an OIDC login bypasses nothing on it.
 fn is_link_target(account: &user::Model) -> bool {
-    account.email_verified && account.totp_enabled_at.is_none() && account.role == Role::User
+    account.email_verified && bypasses_nothing(account)
+}
+
+/// Whether an OIDC login alone skips nothing the account otherwise requires: no second
+/// factor, no administrator reached, no directory that decides on the account.
+fn bypasses_nothing(account: &user::Model) -> bool {
+    account.auth_source != AuthSource::Ldap
+        && account.totp_enabled_at.is_none()
+        && account.role == Role::User
 }
 
 fn active(account: user::Model) -> Resolution {

@@ -45,8 +45,10 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   in with it as is.
 - **OIDC accounts have no local second factor.** Require MFA at the identity provider.
 - **An OIDC identity cannot be linked to an existing account by hand.** It is linked
-  automatically only when both sides have a verified email, and never for accounts with
-  two-factor authentication, admins or owners.
+  automatically only when both sides have a verified email, and never for LDAP accounts,
+  accounts with two-factor authentication, admins or owners. A local account linked this
+  way can no longer sign in through the provider once it enables two-factor
+  authentication or becomes an admin or owner; it signs in with its password instead.
 - **LDAP has no setting for a private CA.** Directory certificates are checked against the
   operating system's CA store; in the container image that holds public CAs only.
 - **Sessions outlive directory changes.** An account disabled or a password changed in
