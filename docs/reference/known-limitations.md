@@ -23,8 +23,10 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 - **WebSocket needs wss.** The rendezvous WebSocket (21118) carries no key exchange, so
   only TLS protects it. Clients use `wss://<host>/ws/id` and `/ws/relay` when the ID server
   is entered without a port, as **Client setup** shows it.
-- **21118 has no bind setting** and listens on all interfaces. On a binary deployment,
-  firewall it (header of `deploy/systemd/deskhaven.service`).
+- **21119 has no bind setting.** The relay's WebSocket listens on all interfaces. On a
+  binary deployment, firewall it (header of `deploy/systemd/deskhaven.service`).
+  deskhaven's own 21118 follows `signal.ws_listen`, which that unit sets to
+  `127.0.0.1:21118`.
 
 ## Client addresses
 

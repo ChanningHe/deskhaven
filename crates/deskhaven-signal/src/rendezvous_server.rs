@@ -356,6 +356,8 @@ impl RendezvousServer {
         let key = cfg.licence_key();
         log::info!("Key: {}", key);
         let bind_addr = cfg.bind;
+        // deskhaven (M4-05): the websocket listener may have its own address.
+        let ws_bind = cfg.ws_bind();
         let rmem = cfg.rmem;
         let mut rs = Self::new(&cfg, store, control, tx, switches, tasks)
             .await
@@ -369,7 +371,7 @@ impl RendezvousServer {
         let mut socket = bind_udp(bind_addr, ports.main, rmem).await?;
         let mut listener = bind_tcp(bind_addr, ports.main).await?;
         let mut listener2 = bind_tcp(bind_addr, ports.nat).await?;
-        let mut listener3 = bind_tcp(bind_addr, ports.ws).await?;
+        let mut listener3 = bind_tcp(ws_bind, ports.ws).await?;
         let test_addr = local_addr(&listener)?;
         log::info!("Listening on tcp/udp {}", test_addr);
         log::info!(
@@ -414,7 +416,7 @@ impl RendezvousServer {
                     }
                     LoopFailure::Listener3 => {
                         drop(listener3);
-                        listener3 = bind_tcp(bind_addr, ports.ws).await?;
+                        listener3 = bind_tcp(ws_bind, ports.ws).await?;
                     }
                     #[cfg(any(test, feature = "testing"))]
                     LoopFailure::Injected => {

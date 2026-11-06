@@ -21,7 +21,7 @@ use ipnetwork::Ipv4Network;
 use sodiumoxide::crypto::sign;
 use std::{
     any::Any,
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     panic::AssertUnwindSafe,
     sync::{
         Arc,
@@ -90,6 +90,9 @@ pub struct SignalConfig {
     /// Admission limits of the main TCP port, checked at accept before the KeyExchange offer
     /// is computed (M4-05).
     pub accept_limits: AcceptLimits,
+    /// Address of the websocket listener (M4-05), e.g. loopback for a reverse proxy on the
+    /// same host. `None`: `bind` and `port + 2`, like upstream.
+    pub ws_listen: Option<SocketAddr>,
 }
 
 /// The handshake headers of a websocket connection.
@@ -130,6 +133,7 @@ impl SignalConfig {
             secret_key,
             ws_client_ip: Arc::new(SocketPeerIp),
             accept_limits: AcceptLimits::default(),
+            ws_listen: None,
         }
     }
 
@@ -146,8 +150,13 @@ impl SignalConfig {
         Ok(Ports {
             main,
             nat: main - 1,
-            ws: main + 2,
+            ws: self.ws_listen.map_or(main + 2, |a| a.port()),
         })
+    }
+
+    /// The IP the websocket listener binds: `ws_listen`'s, else `bind`.
+    pub(crate) fn ws_bind(&self) -> Option<IpAddr> {
+        self.ws_listen.map(|a| a.ip()).or(self.bind)
     }
 }
 

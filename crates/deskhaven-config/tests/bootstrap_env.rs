@@ -182,3 +182,19 @@ fn clean_environment_has_no_warnings() {
         Ok(())
     });
 }
+
+#[test]
+fn signal_ws_listen_defaults_to_none_and_takes_an_address_from_env() {
+    Jail::expect_with(|jail| {
+        jail.clear_env();
+        let default = common::load(jail).map_err(jail_err)?;
+        assert_eq!(default.config.signal.ws_listen, None);
+
+        jail.set_env("DESKHAVEN_SIGNAL__WS_LISTEN", "127.0.0.1:21118");
+        let loaded = common::load(jail).map_err(jail_err)?;
+
+        let expected: SocketAddr = "127.0.0.1:21118".parse().map_err(|_| "addr")?;
+        assert_eq!(loaded.config.signal.ws_listen, Some(expected));
+        Ok(())
+    });
+}

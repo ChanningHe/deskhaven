@@ -28,25 +28,31 @@ pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
     for (key, addr) in std::iter::once(("listen.client_api", listen.client_api)).chain(admin) {
         TcpListener::bind(addr).with_context(|| format!("{key}: cannot bind {addr}"))?;
     }
-    if loaded.config.signal.enabled {
-        signal_ports(loaded.config.signal.port)?;
+    let signal = &loaded.config.signal;
+    if signal.enabled {
+        signal_ports(signal.port, signal.ws_listen.is_none())?;
+    }
+    if let Some(addr) = signal.ws_listen.filter(|_| signal.enabled) {
+        TcpListener::bind(addr)
+            .with_context(|| format!("signal.ws_listen: cannot bind TCP {addr}"))?;
     }
     Ok(())
 }
 
 /// What the signal server binds on all interfaces: TCP port-1 (NAT test),
-/// port (TCP and UDP) and port+2 (WebSocket). Each is probed on IPv4
-/// `0.0.0.0` (collides with any IPv4 or dual-stack holder) and on IPv6 `[::]`
-/// (collides with any IPv6 holder, e.g. one bound to `[::1]` only). A host
-/// without usable IPv6 skips the IPv6 probes. The bootstrap validation
-/// already rejected ports without room for port-1 and port+2.
-fn signal_ports(port: u16) -> anyhow::Result<()> {
+/// port (TCP and UDP) and, unless `signal.ws_listen` moves it, port+2
+/// (WebSocket). Each is probed on IPv4 `0.0.0.0` (collides with any IPv4 or
+/// dual-stack holder) and on IPv6 `[::]` (collides with any IPv6 holder, e.g.
+/// one bound to `[::1]` only). A host without usable IPv6 skips the IPv6
+/// probes. The bootstrap validation already rejected ports without room for
+/// port-1 and port+2.
+fn signal_ports(port: u16, with_ws: bool) -> anyhow::Result<()> {
+    let ws = with_ws.then(|| ("signal WebSocket (port+2)", port.saturating_add(2)));
     let tcp = [
         ("signal NAT test (port-1)", port.saturating_sub(1)),
         ("signal.port", port),
-        ("signal WebSocket (port+2)", port.saturating_add(2)),
     ];
-    for (name, port) in tcp {
+    for (name, port) in tcp.into_iter().chain(ws) {
         probe(name, "TCP", port, TcpListener::bind)?;
     }
     probe("signal.port", "UDP", port, UdpSocket::bind)

@@ -86,6 +86,7 @@ Apply changes with `docker compose up -d --wait`.
 | `signal.enabled` | `DESKHAVEN_SIGNAL__ENABLED` | bool | `true` | Run the embedded signal server (rendezvous, NAT test, WebSocket). |
 | `signal.key_file` | `DESKHAVEN_SIGNAL__KEY_FILE` | string | empty | Empty = {data_dir}/id_ed25519 (generated on first start). |
 | `signal.port` | `DESKHAVEN_SIGNAL__PORT` | integer | `21116` | TCP+UDP; NAT test uses port-1, WebSocket port+2. |
+| `signal.ws_listen` | `DESKHAVEN_SIGNAL__WS_LISTEN` | string | empty | WebSocket listener; empty = all interfaces on port+2. E.g. "127.0.0.1:21118" for a reverse proxy on the same host. |
 
 ## Settings
 

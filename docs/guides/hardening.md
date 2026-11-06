@@ -15,8 +15,9 @@ When you finish, your server is tightened beyond the defaults for life on the in
    speak version 0 are then refused.
 5. **Trust only your proxy**: `security.trusted_proxies` should name exactly the address
    your reverse proxy connects from. The compose deployment sets it for you.
-6. **Firewall the local ports** on a binary deployment: 21118, 21119 and the relay's
-   command console ([step 3](binary-systemd.md#3-firewall-the-local-ports)).
+6. **Firewall the local ports** on a binary deployment: 21119 and the relay's command
+   console ([step 3](binary-systemd.md#3-firewall-the-local-ports)). Keep 21118 on
+   loopback with `signal.ws_listen = "127.0.0.1:21118"`; the systemd unit sets it.
 7. **Give OIDC an admin group only** when the identity provider's administrators alone
    control that group ([OIDC](oidc.md#groups-and-admins)).
 

@@ -89,6 +89,11 @@ pub struct Signal {
     pub key_file: PathBuf,
     /// Run the embedded signal server (rendezvous, NAT test, WebSocket).
     pub enabled: bool,
+    /// WebSocket listener; empty = all interfaces on port+2. E.g. "127.0.0.1:21118" for a
+    /// reverse proxy on the same host.
+    #[serde(with = "empty_as_none")]
+    #[schemars(with = "String")]
+    pub ws_listen: Option<SocketAddr>,
 }
 
 impl Default for Signal {
@@ -97,6 +102,7 @@ impl Default for Signal {
             port: DEFAULT_SIGNAL_PORT,
             key_file: PathBuf::new(),
             enabled: true,
+            ws_listen: None,
         }
     }
 }

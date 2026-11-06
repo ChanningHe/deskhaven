@@ -261,6 +261,39 @@ fn config_check_reports_busy_signal_ports() {
     );
 }
 
+/// With `signal.ws_listen` set, `config check` probes that address instead of port+2.
+#[test]
+fn config_check_probes_signal_ws_listen_instead_of_port_plus_two() {
+    // Arrange
+    let dir = workdir("signal-check-ws-listen");
+    let port = free_signal_port();
+    let ws_port = free_signal_port();
+    let base = config_with_signal(
+        &dir,
+        "",
+        &format!("port = {port}\nws_listen = \"127.0.0.1:{ws_port}\""),
+    );
+    std::fs::write(dir.join("deskhaven.toml"), base).unwrap();
+
+    // Act
+    let plus_two_taken = {
+        let _taken = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port + 2))).unwrap();
+        config_check(&dir)
+    };
+    let ws_taken = {
+        let _taken = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], ws_port))).unwrap();
+        config_check(&dir)
+    };
+
+    // Assert
+    let stderr = String::from_utf8_lossy(&plus_two_taken.stderr);
+    assert!(plus_two_taken.status.success(), "{stderr}");
+    let stderr = String::from_utf8_lossy(&ws_taken.stderr);
+    assert!(!ws_taken.status.success(), "{stderr}");
+    let expected = format!("signal.ws_listen: cannot bind TCP 127.0.0.1:{ws_port}");
+    assert!(stderr.contains(&expected), "{stderr}");
+}
+
 /// A holder of a signal port on IPv6 only (here `[::1]`) does not collide with the `0.0.0.0`
 /// probe; the `[::]` probe reports it. Skipped where the host has no IPv6 loopback.
 #[test]

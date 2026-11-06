@@ -121,6 +121,25 @@ fn signal_key_converts_to_the_same_sodiumoxide_key() {
     );
     assert_eq!(cfg.port, 21116);
     assert_eq!(cfg.bind, None, "all interfaces");
+    assert_eq!(cfg.ws_listen, None, "port+2 on all interfaces");
+}
+
+#[test]
+fn signal_ws_listen_reaches_the_signal_config() {
+    // Arrange
+    let pair = SignalKeyPair::generate().unwrap();
+    let ws: std::net::SocketAddr = "127.0.0.1:21118".parse().unwrap();
+    let signal = deskhaven_config::bootstrap::Signal {
+        ws_listen: Some(ws),
+        ..Default::default()
+    };
+
+    // Act
+    let cfg = base_config(&signal, &Default::default(), &pair).unwrap();
+
+    // Assert
+    assert_eq!(cfg.ws_listen, Some(ws));
+    assert_eq!(cfg.bind, None, "the other listeners stay on all interfaces");
 }
 
 #[test]

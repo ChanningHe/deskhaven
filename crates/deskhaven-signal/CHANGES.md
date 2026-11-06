@@ -676,3 +676,8 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   once a minute with a count). The slot is released by the first frame or the end of the
   connection; idle sources are pruned on the relay-check timer. Websocket and NAT test ports
   are unchanged. Tests: `tests/accept_limits.rs`, `accept_gate::tests`.
+- 2026-11-06, M4-05, websocket listener address (`server.rs` `SignalConfig::ws_listen`,
+  `SignalConfig::ws_bind`, `ports`; `rendezvous_server.rs` `serve`): upstream bound the
+  websocket listener with the other listeners (`bind`, `port + 2`). `ws_listen: Some(addr)` binds
+  it at `addr` instead (deskhaven: `signal.ws_listen`, so a binary deployment can keep it on
+  loopback behind its TLS proxy); `None` keeps the upstream behavior. Test: `tests/ws_listen.rs`.

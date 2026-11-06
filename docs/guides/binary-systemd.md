@@ -42,8 +42,9 @@ systemctl daemon-reload && systemctl enable --now hbbr
 
 ## 3. Firewall the local ports
 
-21118 and 21119 listen on all interfaces but are for nginx only, and 21117 has a command
-console for local connections. Add the nftables table from the header of
+The unit binds deskhaven's WebSocket (21118) to loopback (`signal.ws_listen`), but the
+relay's WebSocket (21119) listens on all interfaces although it is for nginx only, and 21117
+has a command console for local connections. Add the nftables table from the header of
 [`deskhaven.service`](../../deploy/systemd/deskhaven.service) to your nftables
 configuration and reload it.
 

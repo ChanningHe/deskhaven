@@ -26,6 +26,7 @@ pub fn base_config(
     Ok(SignalConfig {
         bind: None,
         port: signal.port,
+        ws_listen: signal.ws_listen,
         ws_client_ip: Arc::new(ProxyHeaders(trusted)),
         ..SignalConfig::new(secret_key(key)?)
     })

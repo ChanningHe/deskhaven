@@ -38,23 +38,33 @@ pub fn config(port: u16) -> SignalConfig {
     }
 }
 
-async fn all_tcp_ports_accept(port: u16) -> bool {
-    for p in [port - 1, port, port + 2] {
-        if TcpStream::connect(addr(p)).await.is_err() {
+async fn all_tcp_ports_accept(port: u16, ws: SocketAddr) -> bool {
+    for a in [addr(port - 1), addr(port), ws] {
+        if TcpStream::connect(a).await.is_err() {
             return false;
         }
     }
     true
 }
 
+/// The websocket listener of `cfg`: `ws_listen`, or port+2 on the loopback address.
+fn ws_listen_of(cfg: &SignalConfig) -> SocketAddr {
+    cfg.ws_listen.unwrap_or_else(|| addr(cfg.port + 2))
+}
+
 /// `true` once every TCP port accepts, `false` if `run` ended first (a lost port race).
 pub async fn wait_until_ready(port: u16, task: &RunTask) -> bool {
+    wait_until_ready_at(port, addr(port + 2), task).await
+}
+
+/// [`wait_until_ready`] with the websocket listener at `ws`.
+async fn wait_until_ready_at(port: u16, ws: SocketAddr, task: &RunTask) -> bool {
     let deadline = Instant::now() + STEP;
     while Instant::now() < deadline {
         if task.is_finished() {
             return false;
         }
-        if all_tcp_ports_accept(port).await {
+        if all_tcp_ports_accept(port, ws).await {
             return true;
         }
         sleep(READY_POLL).await;
@@ -223,7 +233,7 @@ impl TestServer {
 
         let handle = server.handle();
         let task = tokio::spawn(server.run(shutdown.clone()));
-        if !wait_until_ready(port, &task).await {
+        if !wait_until_ready_at(port, ws_listen_of(&setup.cfg), &task).await {
             let res = task.await.unwrap();
             assert!(matches!(res, Err(SignalError::Bind { .. })), "{res:?}");
             return None;
@@ -261,7 +271,7 @@ impl TestServer {
     }
 
     pub fn ws_addr(&self) -> SocketAddr {
-        addr(self.port + 2)
+        ws_listen_of(&self.setup.cfg)
     }
 
     pub async fn udp(&self) -> UdpClient {

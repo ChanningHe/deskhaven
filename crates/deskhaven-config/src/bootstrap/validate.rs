@@ -122,12 +122,15 @@ fn bindings(cfg: &Bootstrap) -> Vec<Binding> {
                 Proto::Tcp,
                 any(port.checked_sub(1)),
             ),
-            bind(
+        ]);
+        out.push(match cfg.signal.ws_listen {
+            Some(addr) => bind("signal.ws_listen", Proto::Tcp, addr),
+            None => bind(
                 "signal WebSocket (port+2)",
                 Proto::Tcp,
                 any(port.checked_add(2)),
             ),
-        ]);
+        });
     }
     out
 }
@@ -166,6 +169,30 @@ fn port_conflicts(bindings: &[Binding]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn with_ws_listen(addr: &str) -> Bootstrap {
+        let mut cfg = Bootstrap::default();
+        cfg.signal.ws_listen = Some(addr.parse().unwrap());
+        cfg
+    }
+
+    #[test]
+    fn signal_ws_listen_replaces_the_derived_websocket_binding() {
+        let (problems, _) = validate(&with_ws_listen("127.0.0.1:21118"));
+        assert!(problems.is_empty(), "{problems:?}");
+
+        let (problems, _) = validate(&with_ws_listen("127.0.0.1:21114"));
+        assert_eq!(
+            problems,
+            ["listen.client_api conflicts with signal.ws_listen on port 21114/Tcp"]
+        );
+
+        let (problems, _) = validate(&with_ws_listen("0.0.0.0:21115"));
+        assert_eq!(
+            problems,
+            ["signal NAT test (port-1) conflicts with signal.ws_listen on port 21115/Tcp"]
+        );
+    }
 
     fn overlap(a: &str, b: &str) -> bool {
         let (a, b): (IpAddr, IpAddr) = (a.parse().unwrap(), b.parse().unwrap());
