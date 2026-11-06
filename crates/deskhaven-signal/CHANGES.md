@@ -725,3 +725,7 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   (`per_ip_connections`, `connections`; `AcceptLimits::for_open_files` scales the global caps
   to `RLIMIT_NOFILE`, which deskhaven applies). Tests: `tests/accept_limits.rs`,
   `accept_gate::tests`, `tests/limits.rs` (main-port first-frame limit).
+- 2026-11-06, M4-05 re-review LOW-1 (`accept_retry.rs`): reset, aborted and interrupted accepts,
+  and the network errors Linux accept(2) passes on (EPROTO, ENETUNREACH, EHOSTUNREACH, ENONET,
+  EHOSTDOWN, ENOPROTOOPT, EOPNOTSUPP, ETIMEDOUT), consumed one backlog entry: the next one is
+  accepted at once instead of after a 250 ms pause or a rebind. Only resource exhaustion pauses.
