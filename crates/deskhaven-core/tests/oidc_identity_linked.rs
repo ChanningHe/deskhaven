@@ -9,12 +9,14 @@ mod common;
 
 use common::oidc::{Env, PROVIDER};
 use common::oidc_idp::{AUTH_CODE, AuthRequest};
+use common::set;
 use deskhaven_core::oidc::{CallbackParams, CallbackReport, Failure};
 use deskhaven_core::users::{Credential, NewUser, Role, User};
 use deskhaven_db::entity::{user, user_identity};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, EntityTrait};
+use serde_json::json;
 
 const EMAIL: &str = "alice@example.com";
 
@@ -168,6 +170,49 @@ async fn a_provisioned_oidc_account_promoted_later_still_signs_in() {
         let again = env.login("sub-o", |s| s).await.1;
 
         assert_eq!(again.outcome.unwrap().user.id, id, "{}", db.backend);
+    })
+    .await;
+}
+
+/// `auth.tfa.enforce` covering a local account without TOTP: its password login is refused
+/// until it enrols (`SetupRequired`), so an OIDC login must not get around that either.
+#[tokio::test]
+async fn a_linked_local_account_without_totp_is_refused_while_enforcement_covers_it() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = linked_local(&env, "sub-a").await;
+        set(&env.settings, "auth.tfa.enforce", json!("all")).await;
+
+        let client = login(&env, "sub-a").await;
+        let console = console_login(&env, "sub-a").await;
+        set(&env.settings, "auth.tfa.enforce", json!("admins")).await;
+        let user_role = login(&env, "sub-a").await;
+
+        let b = db.backend;
+        assert_eq!(failure(&client), Some(Failure::NoLinkedAccount), "{b}");
+        assert_eq!(failure(&console), Some(Failure::NoLinkedAccount), "{b}");
+        assert_eq!(
+            user_role.outcome.unwrap().user.id,
+            alice.id,
+            "{b}: not covered"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn enforcement_covering_the_account_also_blocks_linking_by_email() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        env.local_user("alice", Some(EMAIL)).await;
+        set(&env.settings, "auth.tfa.enforce", json!("all")).await;
+
+        let report = login(&env, "sub-a").await;
+
+        let b = db.backend;
+        assert_eq!(failure(&report), Some(Failure::NoLinkedAccount), "{b}");
+        let rows = user_identity::Entity::find().all(&db.conn).await.unwrap();
+        assert!(rows.is_empty(), "{b}");
     })
     .await;
 }

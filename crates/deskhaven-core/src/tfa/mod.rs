@@ -129,11 +129,16 @@ impl TfaService {
 
     /// Whether `auth.tfa.enforce` (read at each call) requires a second factor of `role`.
     pub fn enforced_for(&self, role: Role) -> bool {
-        match self.inner.settings.snapshot().get(&AUTH_TFA_ENFORCE) {
-            TfaEnforce::Off => false,
-            TfaEnforce::Admins => matches!(role, Role::Owner | Role::Admin),
-            TfaEnforce::All => true,
-        }
+        enforced(self.inner.settings.snapshot().get(&AUTH_TFA_ENFORCE), role)
+    }
+}
+
+/// Whether `enforce` (the value of `auth.tfa.enforce`) requires a second factor of `role`.
+pub(crate) fn enforced(enforce: TfaEnforce, role: Role) -> bool {
+    match enforce {
+        TfaEnforce::Off => false,
+        TfaEnforce::Admins => matches!(role, Role::Owner | Role::Admin),
+        TfaEnforce::All => true,
     }
 }
 

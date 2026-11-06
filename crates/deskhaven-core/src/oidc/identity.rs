@@ -3,9 +3,10 @@
 //!
 //! 1. A linked identity `(provider, sub)`: its account (the stored email is refreshed). A
 //!    local or LDAP account signs in only while an OIDC login bypasses nothing on it (the
-//!    conditions of step 2: no TOTP, role `user`, not LDAP), checked on every login, not
-//!    only at link time: TOTP enabled or a promotion after the link would otherwise be
-//!    skipped. Else refused ([`Failure::NoLinkedAccount`]): neither the client poll nor the
+//!    conditions of step 2: no TOTP, role `user`, not LDAP, and for a local account no
+//!    `auth.tfa.enforce` that refuses its password login until it enrols), checked on every
+//!    login, not only at link time: TOTP enabled, a promotion or enforcement after the link
+//!    would otherwise be skipped. Else refused ([`Failure::NoLinkedAccount`]): neither the client poll nor the
 //!    console completion has a second-factor step to route to. Accounts the IdP provisioned
 //!    (`oidc`) are exempt: their role is the console's and they enrol no local TOTP.
 //! 2. Otherwise, an account with the asserted email (case-insensitively): linked only when
@@ -35,7 +36,7 @@
 //! Linked accounts must be active (disabled / unverified are refused, not linked). Group
 //! mapping and the admin flag apply at provisioning only; later changes are the console's.
 
-use deskhaven_config::settings::AUTH_OIDC_LINK_VERIFIED_EMAIL;
+use deskhaven_config::settings::{AUTH_OIDC_LINK_VERIFIED_EMAIL, AUTH_TFA_ENFORCE, TfaEnforce};
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::{group, group_member, oidc_provider, user, user_identity};
 use sea_orm::ActiveValue::Set;
@@ -45,6 +46,7 @@ use super::OidcService;
 use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
 use super::username;
+use crate::tfa;
 use crate::users::lookup::{find_by_email, is_valid_email, username_taken};
 use crate::users::{AuthSource, Credential, NewUser, Role, Status, UserError};
 
@@ -59,8 +61,13 @@ pub(crate) async fn resolve(
     provider: &oidc_provider::Model,
     asserted: &Asserted,
 ) -> Result<Resolution, CallbackError> {
+    let (enforce, link_enabled) = {
+        let settings = svc.inner.settings.snapshot();
+        let enforce = settings.get(&AUTH_TFA_ENFORCE);
+        (enforce, settings.get(&AUTH_OIDC_LINK_VERIFIED_EMAIL))
+    };
     if let Some(linked) = linked_account(tx, provider.id, asserted).await? {
-        if linked.auth_source != AuthSource::Oidc && !bypasses_nothing(&linked) {
+        if linked.auth_source != AuthSource::Oidc && !bypasses_nothing(&linked, enforce) {
             return Ok(Err(Failure::NoLinkedAccount));
         }
         return Ok(active(linked));
@@ -70,12 +77,8 @@ pub(crate) async fn resolve(
         None => None,
     };
     if let Some(account) = by_email {
-        let enabled = svc
-            .inner
-            .settings
-            .snapshot()
-            .get(&AUTH_OIDC_LINK_VERIFIED_EMAIL);
-        if !(enabled && asserted.verified_email().is_some() && is_link_target(&account)) {
+        let verified = asserted.verified_email().is_some();
+        if !(link_enabled && verified && is_link_target(&account, enforce)) {
             return Ok(Err(Failure::NoLinkedAccount));
         }
         let account = match active(account) {
@@ -128,16 +131,21 @@ fn stored_email(asserted: &Asserted) -> Option<String> {
 
 /// Whether an existing account may be linked by email alone: its own address is verified
 /// (so nobody squatted it) and an OIDC login bypasses nothing on it.
-fn is_link_target(account: &user::Model) -> bool {
-    account.email_verified && bypasses_nothing(account)
+fn is_link_target(account: &user::Model, enforce: TfaEnforce) -> bool {
+    account.email_verified && bypasses_nothing(account, enforce)
 }
 
 /// Whether an OIDC login alone skips nothing the account otherwise requires: no second
-/// factor, no administrator reached, no directory that decides on the account.
-fn bypasses_nothing(account: &user::Model) -> bool {
+/// factor (enrolled, or demanded by `auth.tfa.enforce` before its password login goes
+/// through), no administrator reached, no directory that decides on the account.
+fn bypasses_nothing(account: &user::Model, enforce: TfaEnforce) -> bool {
+    let factor_demanded = account.auth_source == AuthSource::Local
+        && account.totp_enabled_at.is_none()
+        && tfa::enforced(enforce, account.role);
     account.auth_source != AuthSource::Ldap
         && account.totp_enabled_at.is_none()
         && account.role == Role::User
+        && !factor_demanded
 }
 
 fn active(account: user::Model) -> Resolution {
