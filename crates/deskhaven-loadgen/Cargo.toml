@@ -1,0 +1,45 @@
+[package]
+name = "deskhaven-loadgen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Development tool (M4-04, `cargo xtask loadgen`): simulates RustDesk devices against a
+# spawned `deskhaven serve` and reports latency, process CPU / RSS and database writes.
+# Never a dependency of the server.
+[dependencies]
+# The connection factory the server uses (database write counters, 09-testing §1 load row).
+deskhaven-db = { workspace = true }
+base64_022 = { workspace = true }
+clap = { workspace = true }
+ed25519-dalek = { workspace = true }
+fastrand = { workspace = true }
+# The rendezvous protobufs (RegisterPeer / RegisterPk) the real client speaks.
+hbb_common = { workspace = true }
+http-body-util = { workspace = true }
+humantime = { workspace = true }
+hyper = { workspace = true, features = ["client"] }
+hyper-util = { workspace = true }
+sea-orm = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "sync"] }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+uuid = { workspace = true }
+
+# `param`: clock ticks per second for /proc/<pid>/stat; `process`: SIGTERM to the server.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["param", "process"] }
+
+[dev-dependencies]
+# The contract fixtures: the simulated requests must have the official client's shape.
+deskhaven-contract = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -19,6 +19,7 @@ deskhaven-admin-api = { path = "crates/deskhaven-admin-api" }
 deskhaven-web = { path = "crates/deskhaven-web" }
 deskhaven-signal = { path = "crates/deskhaven-signal" }
 deskhaven-contract = { path = "crates/deskhaven-contract" }
+deskhaven-loadgen = { path = "crates/deskhaven-loadgen" }
 
 # --- db (M0-04) ---
 # sqlx 0.9 `tls-rustls` == `tls-rustls-ring-webpki`: ring provider only, no aws-lc-rs.
@@ -176,6 +177,14 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no
 rustls-platform-verifier = "0.6.2"
 # Mock IdP (discovery, JWKS, token endpoint) for the OIDC tests. Dev only.
 wiremock = "0.6.5"
+
+# --- loadgen (M4-04) ---
+# (hyper, hyper-util, tokio, hbb_common, sea-orm, ed25519-dalek, humantime, clap: reused from
+# earlier blocks.) Request bodies of the simulated clients' HTTP calls; already in the graph
+# via axum.
+http-body-util = "0.1.3"
+# Seeded per-device randomness (audit / sysinfo arrivals); already in the graph via tempfile.
+fastrand = "2.3"
 
 # --- console login (M3-02) ---
 # QR encoding of the TOTP provisioning URI (Project Nayuki; MIT, no dependencies). The

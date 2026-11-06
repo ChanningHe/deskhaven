@@ -1415,6 +1415,7 @@ dependencies = [
  "deskhaven-core",
  "deskhaven-db",
  "deskhaven-http",
+ "deskhaven-loadgen",
  "deskhaven-signal",
  "deskhaven-web",
  "hbb_common",
@@ -1599,6 +1600,34 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "deskhaven-loadgen"
+version = "0.1.0-rc.2"
+dependencies = [
+ "base64 0.22.1",
+ "clap 4.6.7",
+ "deskhaven-contract",
+ "deskhaven-db",
+ "ed25519-dalek 2.2.0",
+ "fastrand",
+ "hbb_common",
+ "http-body-util",
+ "humantime",
+ "hyper",
+ "hyper-util",
+ "rustix 1.1.6",
+ "sea-orm",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

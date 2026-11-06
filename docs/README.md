@@ -27,3 +27,4 @@ Start with the three getting-started pages; the guides and the reference are for
 - [CLI](reference/cli.md)
 - [Ports](reference/ports.md)
 - [Known limitations](reference/known-limitations.md)
+- [Performance](reference/performance.md) (10 000 devices on SQLite and PostgreSQL)

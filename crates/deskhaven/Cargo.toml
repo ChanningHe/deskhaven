@@ -38,6 +38,8 @@ deskhaven-db = { workspace = true, features = ["testing"] }
 hbb_common = { workspace = true }
 # Fault injection for the supervisor tests (`SignalHandle::inject_fault`).
 deskhaven-signal = { workspace = true, features = ["testing"] }
+# tests/loadgen.rs: the load generator (M4-04) against this binary.
+deskhaven-loadgen = { workspace = true }
 
 # umask, flock on the instance lock; tests also send signals with it.
 [target.'cfg(unix)'.dependencies]

@@ -5,11 +5,13 @@
 //! - `gen-openapi [--check]`: write (or check) the admin API OpenAPI document.
 //! - `gen-strategy-catalog [--from <dir>] [--check]`: regenerate (or check) the strategy
 //!   editor's client option catalog from the vendored client source (or `<dir>`).
+//! - `loadgen [args]`: build release binaries and run the load generator (M4-04).
 
 mod catalog;
 mod dist;
 mod docs;
 mod error;
+mod loadgen;
 mod openapi;
 mod sync;
 
@@ -19,7 +21,7 @@ use std::process::ExitCode;
 
 use error::XtaskError;
 
-const USAGE: &str = "usage: cargo xtask <task> [args]\n\ntasks:\n  dist                   build web/dist, then `cargo build --release -p deskhaven`\n  docs [--check]         write docs/reference/configuration.md (--check: fail on drift)\n  gen-openapi [--check]  write the admin API OpenAPI document (--check: fail on drift)\n  gen-strategy-catalog [--from <dir>] [--check]\n                         regenerate the strategy option catalog from the client source";
+const USAGE: &str = "usage: cargo xtask <task> [args]\n\ntasks:\n  dist                   build web/dist, then `cargo build --release -p deskhaven`\n  docs [--check]         write docs/reference/configuration.md (--check: fail on drift)\n  gen-openapi [--check]  write the admin API OpenAPI document (--check: fail on drift)\n  gen-strategy-catalog [--from <dir>] [--check]\n                         regenerate the strategy option catalog from the client source\n  loadgen [args]         release-build, then simulate devices against the server\n                         (`target/release/deskhaven-loadgen --help` lists the args)";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -48,6 +50,7 @@ fn run(task: Option<&str>, args: &[String]) -> Result<(), XtaskError> {
         Some("docs") => docs::run(repo_root(), sync::Mode::parse(args)?),
         Some("gen-openapi") => openapi::run(repo_root(), sync::Mode::parse(args)?),
         Some("gen-strategy-catalog") => catalog::run(repo_root(), &catalog::Args::parse(args)?),
+        Some("loadgen") => loadgen::run(repo_root(), &cargo(), args),
         Some(other) => Err(XtaskError::UnknownTask(other.to_owned())),
         None => Err(XtaskError::NoTask),
     }
