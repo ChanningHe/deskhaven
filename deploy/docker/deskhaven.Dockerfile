@@ -56,7 +56,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
     cargo auditable build --release --locked -p deskhaven \
- && file target/release/deskhaven | grep -Eq 'static(-pie)? linked' \
+ && file target/release/deskhaven | grep -Eq '(statically|static-pie) linked' \
  && install -D -m 0755 target/release/deskhaven /out/usr/local/bin/deskhaven \
  && install -D -m 0644 LICENSE /out/usr/share/licenses/deskhaven/LICENSE \
  && install -d -m 0700 -o 65532 -g 65532 /out/var/lib/deskhaven

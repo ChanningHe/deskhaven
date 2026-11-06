@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/rustdesk-server/target \
     cargo auditable build --release --locked --bin hbbr \
- && file target/release/hbbr | grep -Eq 'static(-pie)? linked' \
+ && file target/release/hbbr | grep -Eq '(statically|static-pie) linked' \
  && install -D -m 0755 target/release/hbbr /out/usr/local/bin/hbbr \
  && install -D -m 0644 LICENSE /out/usr/share/licenses/rustdesk-server/LICENSE \
  && printf 'hbbr is built unmodified from\n  %s\n  tag %s, commit %s\nLicensed under the GNU AGPL v3 (LICENSE in this directory).\n' \
@@ -55,7 +55,7 @@ RUN rustc --edition 2021 --test -o /tmp/guard-tests /src/guard/relay-key-guard.r
  && /tmp/guard-tests \
  && rustc --edition 2021 -C opt-level=2 -C strip=symbols \
         -o /out/usr/local/bin/relay-key-guard /src/guard/relay-key-guard.rs \
- && file /out/usr/local/bin/relay-key-guard | grep -Eq 'static(-pie)? linked'
+ && file /out/usr/local/bin/relay-key-guard | grep -Eq '(statically|static-pie) linked'
 
 # hbbr and the key guard (`--target binary --output type=local,dest=DIR`): the release
 # pipeline audits these files and checks that the pushed image contains exactly them.
