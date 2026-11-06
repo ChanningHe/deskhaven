@@ -27,8 +27,9 @@ use crate::peer::{DAY_SECONDS, IP_BLOCK_DUR};
 const MAX_REGISTERS: u32 = 30;
 /// Distinct ids per source and day (new ids are refused once the set exceeds this).
 const MAX_IDS: usize = 300;
-/// Sources tracked at once (one per source seen in the last day).
-pub(crate) const MAX_ENTRIES: usize = 100_000;
+/// Sources tracked at once (one per source seen in the last day). Worst case about 125 MB:
+/// 301 id hashes of 8 bytes per source plus the map overhead.
+pub(crate) const MAX_ENTRIES: usize = 50_000;
 /// Share of the table evicted when it is full.
 const EVICT_DIVISOR: usize = 10;
 
@@ -262,5 +263,17 @@ mod tests {
         assert_eq!(blocker.len(), 1, "v4(1): both windows passed");
         blocker.prune(t0 + day * 2 + Duration::from_secs(2));
         assert_eq!(blocker.len(), 0);
+    }
+
+    /// Re-review LOW-3: 50 000 sources of at most 301 id hashes each, about 125 MB at worst.
+    #[test]
+    fn the_default_table_tracks_at_most_50_000_sources() {
+        let mut blocker = IpBlocker::default();
+        let t0 = Instant::now();
+        for n in 0..50_001u32 {
+            blocker.check(IpAddr::V4(Ipv4Addr::from(0x0A00_0000 + n)), "id", t0);
+        }
+
+        assert!(blocker.len() <= 50_000, "{}", blocker.len());
     }
 }

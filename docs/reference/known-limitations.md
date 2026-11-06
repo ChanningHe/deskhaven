@@ -18,6 +18,12 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   skips the check that the relay got a valid public key. hbbr without a valid key relays for
   every client.
 
+## Signalling
+
+- **Registration limits cost memory under a flood.** The per-address limits on key
+  registrations remember up to 50 000 source addresses for a day, about 125 MB at worst
+  (sources that each registered hundreds of IDs). The compose files set no `mem_limit`.
+
 ## WebSocket
 
 - **WebSocket needs wss.** The rendezvous WebSocket (21118) carries no key exchange, so

@@ -729,3 +729,6 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   and the network errors Linux accept(2) passes on (EPROTO, ENETUNREACH, EHOSTUNREACH, ENONET,
   EHOSTDOWN, ENOPROTOOPT, EOPNOTSUPP, ETIMEDOUT), consumed one backlog entry: the next one is
   accepted at once instead of after a 250 ms pause or a rebind. Only resource exhaustion pauses.
+- 2026-11-06, M4-05 re-review LOW-3 (`ip_blocker.rs` `MAX_ENTRIES`): 50 000 sources (was 100 000),
+  about 125 MB at worst; stated in known-limitations. Test:
+  `the_default_table_tracks_at_most_50_000_sources`.
