@@ -16,3 +16,20 @@ minimumReleaseAgeExclude:
 # optional dependency, so it stays disabled.
 allowBuilds:
   esbuild: false
+
+# M4-05 (pnpm audit): orval's @scalar/json-magic pins undici 7.29 (GHSA-4qv8-2p9j-2685,
+# GHSA-f72v-6w45-q472, GHSA-xjj6-f33q-929c, GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx,
+# GHSA-qrxm-fqhp-jwvm, GHSA-9fm3-97px-rjf6, GHSA-55wc-3pg8-jfw6); 7.30.1 is the same major.
+overrides:
+  'undici@>=7.0.0 <7.30.1': ^7.30.1
+
+# M4-05 (pnpm audit): accepted findings in dev-only tools, never in the built console.
+auditConfig:
+  ignoreGhsas:
+    # minimatch 10 (eslint 10, ts-morph via the shadcn CLI): denial of service by crafted globs.
+    # Patched only in 11.0.1 (a new major, days old) which eslint 10 does not accept; the
+    # patterns come from our own lint and TS configuration.
+    - GHSA-g3hv-75wg-m249
+    # deepmerge (shadcn CLI only, run by hand to add components): prototype poisoning of the
+    # merged object; no patched version exists. Nothing at build or run time uses it.
+    - GHSA-gcqx-w48m-w2h4
