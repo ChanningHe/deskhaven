@@ -1,5 +1,6 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::accept_gate::{AcceptGate, Pending};
+use crate::accept_retry;
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
@@ -531,6 +532,9 @@ impl RendezvousServer {
         key: &str,
     ) -> LoopFailure {
         let mut timer_check_relay = interval(Duration::from_millis(CHECK_RELAY_TIMEOUT));
+        // deskhaven (M4-05 review, LOW-1): per-listener pause after a transient accept error
+        // (`accept_retry`); other accept errors still rebind.
+        let (mut pause, mut pause2, mut pause3) = (None, None, None);
         loop {
             tokio::select! {
                 _ = timer_check_relay.tick() => {
@@ -569,7 +573,7 @@ impl RendezvousServer {
                         }
                     }
                 }
-                res = listener2.accept() => {
+                res = accept_retry::accept(listener2, &mut pause2) => {
                     match res {
                         Ok((stream, addr))  => {
                             stream.set_nodelay(true).ok();
@@ -581,7 +585,7 @@ impl RendezvousServer {
                         }
                     }
                 }
-                res = listener3.accept() => {
+                res = accept_retry::accept(listener3, &mut pause3) => {
                     match res {
                         Ok((stream, addr))  => {
                             stream.set_nodelay(true).ok();
@@ -593,7 +597,7 @@ impl RendezvousServer {
                         }
                     }
                 }
-                res = listener.accept() => {
+                res = accept_retry::accept(listener, &mut pause) => {
                     match res {
                         // deskhaven (M4-05): a refused connection is closed before any work.
                         Ok((stream, addr)) => {

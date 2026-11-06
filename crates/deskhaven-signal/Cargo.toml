@@ -32,6 +32,8 @@ tungstenite.workspace = true
 [dev-dependencies]
 # Random device uuids in the protocol test harness.
 uuid.workspace = true
+# Lowers the open-file limit in the descriptor exhaustion test (M4-05).
+rustix.workspace = true
 # Paused clock for the writer retry / deadline unit tests.
 tokio = { workspace = true, features = ["test-util"] }
 

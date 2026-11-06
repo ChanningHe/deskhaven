@@ -11,6 +11,7 @@
 //! modules get the full workspace lints.
 
 mod accept_gate;
+mod accept_retry;
 mod claimed_addr;
 
 // Vendored upstream code; clean up incrementally.

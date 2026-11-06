@@ -699,3 +699,9 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   failed reply is logged (warning, at most once a minute, with a count) without touching the
   socket; only a receive error rebinds it. Test:
   `udp_from_an_unanswerable_source_is_dropped_without_an_error`.
+- 2026-11-06, M4-05 review LOW-1, accept errors (new `accept_retry.rs`; `rendezvous_server.rs`
+  `io_loop`): upstream rebound a listener on every accept error, which reset the connections in
+  its backlog and, out of file descriptors, could fail to create the new socket and end the
+  server. EMFILE / ENFILE and errors about one dead backlog entry (aborted, reset, interrupted,
+  out of memory) now pause that listener for 250 ms (warning once a minute) and accept again;
+  other errors still rebind. Test: `tests/fd_exhaustion.rs`.

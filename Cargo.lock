@@ -1643,6 +1643,7 @@ dependencies = [
  "lazy_static",
  "local-ip-address",
  "once_cell",
+ "rustix 1.1.6",
  "socket2 0.6.5",
  "sodiumoxide",
  "thiserror 2.0.21",
