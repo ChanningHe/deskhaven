@@ -172,6 +172,8 @@ const REGISTER_PK_LEN: usize = sign::PUBLICKEYBYTES;
 const MAX_REGISTER_UUID_LEN: usize = 128;
 // deskhaven (M1-05): dropped malformed RegisterPk are logged at most once a minute, with count.
 static MALFORMED_PK_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs(60));
+// deskhaven (M4-05 review, HIGH-1): failed UDP replies are logged at most once a minute.
+static UDP_REPLY_LOG: LogLimit = LogLimit::new(std::time::Duration::from_secs(60));
 // deskhaven: the ALWAYS_USE_RELAY static became the per-instance `switches.always_use_relay` (M1-07: `Switches`).
 
 // deskhaven (M1-08): limits of the stream connections (TCP main / NAT test port, websocket;
@@ -547,10 +549,15 @@ impl RendezvousServer {
                 }
                 res = socket.next() => {
                     match res {
+                        // deskhaven (M4-05 review, HIGH-1): a failed reply concerns that one
+                        // datagram, not the socket (upstream rebound the socket on it); only a
+                        // receive error does.
                         Some(Ok((bytes, addr))) => {
-                            if let Err(err) = self.handle_udp(&bytes, addr.into(), socket, key).await {
-                                log::error!("udp failure: {}", err);
-                                return LoopFailure::UdpSocket;
+                            let addr: SocketAddr = addr.into();
+                            if let Err(err) = self.handle_udp(&bytes, addr, socket, key).await
+                                && let Some(n) = UDP_REPLY_LOG.hit(Instant::now())
+                            {
+                                log::warn!("{n} UDP repl(ies) failed; last to {addr}: {err}");
                             }
                         }
                         Some(Err(err)) => {
@@ -678,6 +685,10 @@ impl RendezvousServer {
         socket: &mut FramedSocket,
         _key: &str,
     ) -> ResultType<()> {
+        // deskhaven (M4-05 review, HIGH-1): nothing from a source that cannot be answered.
+        if !is_answerable(&addr) {
+            return Ok(());
+        }
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
@@ -1828,6 +1839,14 @@ fn relay_refused(uuid: String, reason: &str) -> RendezvousMessage {
 }
 
 #[inline]
+// deskhaven (M4-05 review, HIGH-1): whether a datagram's source can be answered at all. A reply
+// to port 0, an unspecified, multicast or broadcast address fails or goes nowhere useful.
+fn is_answerable(addr: &SocketAddr) -> bool {
+    let ip = addr.ip().to_canonical();
+    let broadcast = matches!(ip, IpAddr::V4(v4) if v4.is_broadcast());
+    addr.port() != 0 && !ip.is_unspecified() && !ip.is_multicast() && !broadcast
+}
+
 async fn send_rk_res(
     socket: &mut FramedSocket,
     addr: SocketAddr,
@@ -2336,5 +2355,38 @@ mod tests {
             let msg = sign::verify(&signed, &server_pk).unwrap();
             assert_ne!(msg.len(), sign::PUBLICKEYBYTES, "id {id_len}");
         }
+    }
+
+    // deskhaven (M4-05 review, HIGH-1): a reply to source port 0 fails (EINVAL), and that
+    // failure used to tear down and rebind the UDP socket. Datagrams from sources that cannot
+    // be answered (port 0, unspecified, multicast, broadcast) are dropped before handling.
+    #[hbb_common::tokio::test]
+    async fn udp_from_an_unanswerable_source_is_dropped_without_an_error() {
+        let mut f = fixture().await;
+        let mut msg = RendezvousMessage::new();
+        msg.set_register_peer(RegisterPeer {
+            id: PEER_ID.to_owned(),
+            ..Default::default()
+        });
+        let bytes = BytesMut::from(&msg.write_to_bytes().unwrap()[..]);
+        let key = f.key.clone();
+        let sources = [
+            "127.0.0.9:0",
+            "[::ffff:127.0.0.9]:0",
+            "0.0.0.0:5000",
+            "224.0.0.1:5000",
+            "255.255.255.255:5000",
+            "[::]:5000",
+            "[ff02::1]:5000",
+        ];
+
+        for from in sources {
+            let from: SocketAddr = from.parse().unwrap();
+            let res = f.rs.handle_udp(&bytes, from, &mut f.socket, &key).await;
+            assert!(res.is_ok(), "{from}: {res:?}");
+        }
+        assert!(!is_answerable(&"127.0.0.9:0".parse().unwrap()));
+        assert!(is_answerable(&"127.0.0.9:5000".parse().unwrap()));
+        assert!(is_answerable(&"[2001:db8::1]:5000".parse().unwrap()));
     }
 }

@@ -691,3 +691,11 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   canonicalised) or the IPv6 /64, ids are 64-bit keyed hashes (8 bytes each), and a full table
   evicts its least recently seen tenth instead of refusing. The per-source limits are
   upstream's (31 RegisterPk per 60 s window, 301 distinct ids per day).
+- 2026-11-06, M4-05 review HIGH-1, UDP datagrams that cannot be answered (`rendezvous_server.rs`
+  `handle_udp`, `io_loop`; new `is_answerable`, `UDP_REPLY_LOG`): upstream turned every error of
+  `handle_udp` into `LoopFailure::UdpSocket`, so one RegisterPeer from source port 0 (its reply
+  fails with EINVAL) dropped the socket with its receive queue and rebound it. Datagrams from
+  port 0, unspecified, multicast or broadcast sources are now dropped before handling, and a
+  failed reply is logged (warning, at most once a minute, with a count) without touching the
+  socket; only a receive error rebinds it. Test:
+  `udp_from_an_unanswerable_source_is_dropped_without_an_error`.
