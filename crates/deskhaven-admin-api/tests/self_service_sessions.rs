@@ -52,7 +52,8 @@ async fn session_id_of(h: &Harness, console: &Console) -> i64 {
 
 fn ids(list: &Value) -> Vec<i64> {
     let mut ids: Vec<i64> = list
-        .as_array()
+        .get("items")
+        .and_then(Value::as_array)
         .unwrap()
         .iter()
         .map(|s| s["id"].as_i64().unwrap())
@@ -103,8 +104,7 @@ async fn the_list_has_the_users_client_and_console_sessions_only() {
         let mut want = mine.to_vec();
         want.sort_unstable();
         assert_eq!(ids(&list.body), want, "{b}");
-        let current: Vec<_> = list
-            .body
+        let current: Vec<_> = list.body["items"]
             .as_array()
             .unwrap()
             .iter()
@@ -112,8 +112,7 @@ async fn the_list_has_the_users_client_and_console_sessions_only() {
             .map(|s| s["id"].as_i64().unwrap())
             .collect();
         assert_eq!(current, vec![mine[0]], "{b}: exactly this session");
-        let client = list
-            .body
+        let client = list.body["items"]
             .as_array()
             .unwrap()
             .iter()
@@ -127,6 +126,17 @@ async fn the_list_has_the_users_client_and_console_sessions_only() {
         assert!(!dump.contains(&token), "{b}: no token");
         assert!(!dump.contains("token_hash"), "{b}");
         assert_eq!(ids(&h.get(SESSIONS, &bob).await.body).len(), 2, "{b}");
+        let paged = h
+            .get(&format!("{SESSIONS}?page=2&page_size=2"), &alice)
+            .await;
+        assert_eq!(ids(&paged.body).len(), 1, "{b}: {:?}", paged.body);
+        assert_eq!(
+            (paged.body["total"].as_u64(), paged.body["page"].as_u64()),
+            (Some(3), Some(2)),
+            "{b}"
+        );
+        let invalid = h.get(&format!("{SESSIONS}?page_size=201"), &alice).await;
+        assert_eq!(invalid.status, 422, "{b}");
     })
     .await;
 }

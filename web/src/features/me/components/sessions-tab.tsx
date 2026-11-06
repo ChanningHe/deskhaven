@@ -27,6 +27,9 @@ import { formatDateTime, nonBlank } from '@/lib/format'
 
 import { Section } from './section'
 
+/** The most recently used sessions in one page: the server caps sessions per user. */
+const PAGE = { page_size: 200 }
+
 /** What the other end reported about itself, isolated from the surrounding text. */
 function DeviceText({ session }: { session: MySession }) {
   const { t } = useTranslation()
@@ -94,7 +97,7 @@ export function SessionsTab() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const query = useListMySessions()
+  const query = useListMySessions(PAGE)
   // `target` outlives `confirming`: the dialog keeps its texts while it animates closed.
   const [target, setTarget] = useState<Target | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
@@ -121,7 +124,8 @@ export function SessionsTab() {
     queryClient.clear()
   }
 
-  const sessions = query.data ?? []
+  const sessions = query.data?.items ?? []
+  const total = query.data?.total ?? 0
   const revokingCurrent = target !== 'others' && target?.current === true
   return (
     <Section title={t('me.sessions.title')} description={t('me.sessions.description')}>
@@ -160,6 +164,11 @@ export function SessionsTab() {
           ))}
         </TableBody>
       </Table>
+      {total > sessions.length ? (
+        <p className="text-xs text-muted-foreground">
+          {t('me.sessions.truncated', { shown: sessions.length, total })}
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground">{t('me.sessions.selfReported')}</p>
       <ConfirmDialog
         open={confirming}

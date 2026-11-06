@@ -138,6 +138,7 @@ impl From<SessionError> for AdminApiError {
     fn from(err: SessionError) -> Self {
         match err {
             SessionError::UserNotFound => Self::not_found("user not found"),
+            SessionError::Invalid { field, reason } => invalid_field(field, reason),
             SessionError::Refused(r) => refused(r),
             other => Self::internal(other),
         }

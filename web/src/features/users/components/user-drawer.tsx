@@ -124,6 +124,14 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
               ))}
             </ul>
           )}
+          {detail.sessions_total > detail.sessions.length ? (
+            <p className="text-xs text-muted-foreground">
+              {t('users.drawer.sessionsTruncated', {
+                shown: detail.sessions.length,
+                total: detail.sessions_total,
+              })}
+            </p>
+          ) : null}
         </section>
       </div>
     </>

@@ -25,6 +25,7 @@ fn d(s: &str) -> Duration {
 const P0_DEFAULTS: &[(&str, &str)] = &[
     ("auth.session_ttl", r#""30d""#),
     ("auth.session_idle_ttl", r#""7d""#),
+    ("auth.max_sessions_per_user", "100"),
     ("auth.password.min_length", "10"),
     ("auth.lockout.max_failures", "5"),
     ("auth.lockout.window", r#""15m""#),

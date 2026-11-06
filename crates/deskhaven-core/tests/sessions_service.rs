@@ -13,6 +13,7 @@ use std::time::Duration;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
+use deskhaven_core::pagination::PageRequest;
 use deskhaven_core::sessions::{
     CachedAuth, ClientDevice, SessionError, SessionKind, SessionService, SessionToken,
 };
@@ -1013,17 +1014,22 @@ async fn list_shows_only_usable_sessions_most_recent_first() {
 
         let listed: Vec<i64> = env
             .sessions
-            .list_for_user(alice)
+            .list_for_user(alice, PageRequest::default())
             .await
             .unwrap()
+            .items
             .iter()
             .map(|s| s.id)
             .collect();
         env.clock.advance(IDLE_TTL);
-        let after_idle = env.sessions.list_for_user(alice).await.unwrap();
+        let after_idle = env
+            .sessions
+            .list_for_user(alice, PageRequest::default())
+            .await
+            .unwrap();
 
         assert_eq!(listed, [newer.id, older.id]);
-        assert!(after_idle.is_empty());
+        assert!(after_idle.items.is_empty() && after_idle.total == 0);
     })
     .await;
 }

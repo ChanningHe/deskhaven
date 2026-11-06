@@ -11,6 +11,12 @@ import type { UserView } from './userView'
  */
 export interface UserDetail {
   groups: GroupRef[]
+  /** The most recently used usable sessions, at most 200 (`sessions_total` counts all). */
   sessions: SessionView[]
+  /**
+   * Usable sessions of the account.
+   * @minimum 0
+   */
+  sessions_total: number
   user: UserView
 }

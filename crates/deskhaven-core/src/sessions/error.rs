@@ -42,6 +42,10 @@ pub enum SessionError {
     #[error("cannot generate a session token")]
     Random(#[source] CryptoError),
 
+    /// Malformed input (a page out of range); `field` names it.
+    #[error("invalid {field}: {reason}")]
+    Invalid { field: &'static str, reason: String },
+
     /// Administrative revocation of an unknown user.
     #[error("user not found")]
     UserNotFound,

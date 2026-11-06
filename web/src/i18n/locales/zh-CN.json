@@ -565,6 +565,7 @@
       "revokeCurrentDescription": "这是你当前使用的会话，吊销后会退出登录。",
       "revokeOthersTitle": "吊销其他所有会话？",
       "revokeOthersDescription": "除当前会话外，你的所有客户端和控制台会话都会失效，需要重新登录。",
+      "truncated": "仅显示最近使用的 {{shown}} / {{total}} 个会话。",
       "selfReported": "设备名称、系统和浏览器信息由对方自行上报，服务器无法验证。"
     },
     "devices": {
@@ -782,6 +783,7 @@
       "noGroups": "未加入任何用户组。",
       "sessions": "会话",
       "noSessions": "没有有效会话。",
+      "sessionsTruncated": "仅显示最近使用的 {{shown}} / {{total}} 个会话。",
       "sessionKinds": {
         "client": "客户端",
         "console": "控制台"

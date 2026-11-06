@@ -164,7 +164,10 @@ impl From<Session> for SessionView {
 pub struct UserDetail {
     pub user: UserView,
     pub groups: Vec<GroupRef>,
+    /// The most recently used usable sessions, at most 200 (`sessions_total` counts all).
     pub sessions: Vec<SessionView>,
+    /// Usable sessions of the account.
+    pub sessions_total: u64,
 }
 
 /// A secret a response shows once (a temporary password): serialized as the plain string,

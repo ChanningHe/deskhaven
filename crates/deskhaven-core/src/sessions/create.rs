@@ -1,5 +1,6 @@
 //! Session creation: one write transaction that re-checks the login's credential stamp and
-//! inserts the hashed token; and the rotation of a console session on a privilege change.
+//! inserts the hashed token (revoking the user's sessions beyond the cap, `list`); and the
+//! rotation of a console session on a privilege change.
 
 use std::net::IpAddr;
 
@@ -15,7 +16,7 @@ use super::{
     ClientDevice, Core, DeviceBinding, Session, SessionError, SessionKind, SessionService,
     SessionToken, detached, timestamp,
 };
-use crate::users::CredentialStamp;
+use crate::users::{CredentialStamp, UserService};
 
 /// A session row before insertion.
 struct NewSession {
@@ -100,25 +101,54 @@ impl SessionService {
         stamp: &CredentialStamp,
     ) -> Result<(Session, SessionToken), SessionError> {
         let token = SessionToken::generate().map_err(SessionError::Random)?;
-        let core = &self.core;
-        let tx = begin_write(&core.db).await?;
+        let token_hash = token.hash().as_str().to_owned();
+        let (core, users, stamp) = (self.core.clone(), self.users.clone(), *stamp);
+        let created = detached(async move {
+            let (created, evicted) = core.insert(&users, new, &stamp, token_hash).await?;
+            // Commit-then-invalidate: sessions over the cap may be cached.
+            for id in evicted {
+                core.cache.invalidate_session(id);
+            }
+            Ok(created)
+        })
+        .await?;
+        Ok((created, token))
+    }
+}
+
+impl Core {
+    /// Inserts the session and revokes the user's sessions beyond the cap, in one write
+    /// transaction; the new session and the ids of the revoked ones.
+    async fn insert(
+        &self,
+        users: &UserService,
+        new: NewSession,
+        stamp: &CredentialStamp,
+        token_hash: String,
+    ) -> Result<(Session, Vec<i64>), SessionError> {
+        let tx = begin_write(&self.db).await?;
         // Share-locks the user row (PostgreSQL) until commit: a concurrent password change
         // or disable waits, then revokes this session in its own transaction.
-        if !self
-            .users
+        if !users
             .credential_stamp_matches(&tx, new.user_id, stamp)
             .await?
         {
             return Err(SessionError::StaleCredential);
         }
-        let row = core.new_row(new, token.hash().as_str().to_owned(), core.now_ms())?;
-        let created = row.insert(&tx).await?;
+        let (user_id, now) = (new.user_id, self.now_ms());
+        let created = self.new_row(new, token_hash, now)?.insert(&tx).await?;
+        let evicted = self.evict_beyond_cap(&tx, user_id, now).await?;
         tx.commit().await?;
-        Ok((created.into(), token))
+        if !evicted.is_empty() {
+            tracing::info!(
+                user_id,
+                revoked = evicted.len(),
+                "sessions over auth.max_sessions_per_user revoked"
+            );
+        }
+        Ok((created.into(), evicted))
     }
-}
 
-impl Core {
     async fn rotate(
         &self,
         session_id: i64,

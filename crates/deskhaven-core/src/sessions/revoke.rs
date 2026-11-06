@@ -1,4 +1,4 @@
-//! Revocation, listing and cleanup.
+//! Revocation and cleanup.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::{session, user};
@@ -9,7 +9,7 @@ use sea_orm::{
     QuerySelect,
 };
 
-use super::{Core, Session, SessionError, SessionService, TokenHash, detached, timestamp};
+use super::{Core, SessionError, SessionService, TokenHash, detached, timestamp};
 use crate::console_audit::TxGuard;
 use crate::users::User;
 
@@ -93,23 +93,6 @@ impl SessionService {
             revoked
         })
         .await
-    }
-
-    /// The user's usable sessions (unrevoked, within both expiries), most recently used
-    /// first.
-    pub async fn list_for_user(&self, user_id: i64) -> Result<Vec<Session>, SessionError> {
-        let core = &self.core;
-        let now = core.now_ms();
-        let rows = session::Entity::find()
-            .filter(session::Column::UserId.eq(user_id))
-            .filter(session::Column::RevokedAt.is_null())
-            .filter(session::Column::ExpiresAt.gt(timestamp(now)?))
-            .filter(session::Column::LastUsedAt.gt(timestamp(core.idle_cutoff(now))?))
-            .order_by_desc(session::Column::LastUsedAt)
-            .order_by_desc(session::Column::Id)
-            .all(&core.db)
-            .await?;
-        Ok(rows.into_iter().map(Session::from).collect())
     }
 
     /// Deletes revoked and expired (absolute or idle) sessions in batches; returns the

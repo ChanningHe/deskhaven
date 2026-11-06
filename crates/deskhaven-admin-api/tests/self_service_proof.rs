@@ -85,7 +85,7 @@ async fn turning_totp_off_ends_the_other_sessions_and_records_how_many() {
         );
         let sessions = h.get(SESSIONS, &enrolled.console).await;
         assert_eq!(
-            sessions.body.as_array().unwrap().len(),
+            sessions.body["items"].as_array().unwrap().len(),
             1,
             "{b}: only this one"
         );

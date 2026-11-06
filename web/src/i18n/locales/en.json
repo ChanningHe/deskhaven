@@ -565,6 +565,7 @@
       "revokeCurrentDescription": "This is the session you are using. Revoking it signs you out.",
       "revokeOthersTitle": "Revoke all other sessions?",
       "revokeOthersDescription": "Every client and console session of yours except this one stops working and has to sign in again.",
+      "truncated": "Showing the {{shown}} most recently used of {{total}} sessions.",
       "selfReported": "Device names, systems and browser details are reported by the other end; the server cannot verify them."
     },
     "devices": {
@@ -782,6 +783,7 @@
       "noGroups": "Not in any group.",
       "sessions": "Sessions",
       "noSessions": "No active sessions.",
+      "sessionsTruncated": "Showing the {{shown}} most recently used of {{total}} sessions.",
       "sessionKinds": {
         "client": "Client",
         "console": "Console"

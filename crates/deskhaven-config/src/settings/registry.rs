@@ -46,6 +46,12 @@ settings! {
         default: days(7),
         rule: range(minutes(5), days(365)),
     }
+    /// Most usable client and console sessions one user holds; signing in once more ends
+    /// the user's least recently used session.
+    AUTH_MAX_SESSIONS_PER_USER: u32 = "auth.max_sessions_per_user" {
+        default: 100,
+        rule: range(1, 10_000),
+    }
     /// Minimum password length (the maximum is fixed at 256).
     AUTH_PASSWORD_MIN_LENGTH: u32 = "auth.password.min_length" {
         default: 10,

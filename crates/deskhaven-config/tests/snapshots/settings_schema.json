@@ -48,6 +48,17 @@
     },
     {
       "category": "auth",
+      "default": 100,
+      "description": "Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session.",
+      "key": "auth.max_sessions_per_user",
+      "max": 10000,
+      "min": 1,
+      "sensitive": false,
+      "type": "u32",
+      "zero_allowed": false
+    },
+    {
+      "category": "auth",
       "default": 10,
       "description": "Minimum password length (the maximum is fixed at 256).",
       "key": "auth.password.min_length",

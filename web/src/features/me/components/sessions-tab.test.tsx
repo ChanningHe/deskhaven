@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 import { USER_ME } from '@/test/fixtures'
 import type { RenderAppOptions } from '@/test/render-app'
-import { callsTo } from '@/test/mock-api'
+import { callsTo, requestedUrl } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
-import { account, ACCOUNT_PATH, SESSIONS_PATH, session } from '../test-data'
+import { account, ACCOUNT_PATH, SESSIONS_PATH, session, sessionsPage } from '../test-data'
 
 const CURRENT = session(11, { current: true, user_agent: 'Firefox 140' })
 const OTHER = session(12, { user_agent: 'Safari 19', ip: '198.51.100.4' })
@@ -23,7 +23,7 @@ function open(extra: NonNullable<RenderAppOptions['api']> = {}) {
     me: USER_ME,
     api: {
       [`GET ${ACCOUNT_PATH}`]: { body: account() },
-      [`GET ${SESSIONS_PATH}`]: { body: [CURRENT, OTHER, CLIENT] },
+      [`GET ${SESSIONS_PATH}`]: { body: sessionsPage([CURRENT, OTHER, CLIENT]) },
       ...extra,
     },
   })
@@ -53,11 +53,24 @@ describe('My account: sessions', () => {
     expect(within(rowOf('Safari 19')).queryByText('当前会话')).not.toBeInTheDocument()
   })
 
+  it('asks for the largest page and says when older sessions are not shown', async () => {
+    const { user: actor, fetchSpy } = open({
+      [`GET ${SESSIONS_PATH}`]: { body: sessionsPage([CURRENT, OTHER, CLIENT], 250) },
+    })
+
+    await openSessionsTab(actor, 'Firefox 140')
+
+    expect(screen.getByText('仅显示最近使用的 3 / 250 个会话。')).toBeInTheDocument()
+    const urls = fetchSpy.mock.calls.map((_, index) => requestedUrl(fetchSpy, index))
+    const listed = urls.find((url) => url.pathname === SESSIONS_PATH)
+    expect(listed?.searchParams.get('page_size')).toBe('200')
+  })
+
   it('revokes another session after confirmation and refreshes the list', async () => {
     let revoked = false
     const { user: actor, fetchSpy } = open({
       [`GET ${SESSIONS_PATH}`]: () => ({
-        body: revoked ? [CURRENT, CLIENT] : [CURRENT, OTHER, CLIENT],
+        body: sessionsPage(revoked ? [CURRENT, CLIENT] : [CURRENT, OTHER, CLIENT]),
       }),
       [`DELETE ${SESSIONS_PATH}/12`]: () => {
         revoked = true

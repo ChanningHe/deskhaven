@@ -95,6 +95,7 @@ Apply changes with `docker compose up -d --wait`.
 | --- | --- | --- | --- |
 | `auth.session_ttl` | `5m`–`365d` | `30d` | Absolute lifetime of client and console sessions. |
 | `auth.session_idle_ttl` | `5m`–`365d` | `7d` | Sliding idle timeout of client and console sessions. |
+| `auth.max_sessions_per_user` | `1`–`10000` | `100` | Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session. |
 | `auth.password.min_length` | `8`–`256` | `10` | Minimum password length (the maximum is fixed at 256). |
 | `auth.lockout.max_failures` | `1`–`100` | `5` | Failed logins per account within the window before it is locked. |
 | `auth.lockout.window` | `1m`–`1d` | `15m` | Window in which failed logins are counted. |

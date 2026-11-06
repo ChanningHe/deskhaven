@@ -22,12 +22,13 @@ import type {
 import type {
   ErrorEnvelope,
   ListMyDevicesParams,
+  ListMySessionsParams,
   Me,
   MyAccount,
   MyAddressBooks,
-  MySession,
   MySessionsRevoked,
   PaginatedMyDevice,
+  PaginatedMySession,
   PasswordChange,
   ProfilePatch,
   RecoveryCodesIssued,
@@ -737,39 +738,55 @@ export const useChangePassword = <TError = ErrorType<ErrorEnvelope>, TContext = 
 > => {
   return useMutation(getChangePasswordMutationOptions(options), queryClient)
 }
-export const getListMySessionsUrl = () => {
-  return `/admin/api/v1/me/sessions`
+export const getListMySessionsUrl = (params?: ListMySessionsParams) => {
+  const normalizedParams = new URLSearchParams()
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  })
+
+  const stringifiedParams = normalizedParams.toString()
+
+  return stringifiedParams.length > 0
+    ? `/admin/api/v1/me/sessions?${stringifiedParams}`
+    : `/admin/api/v1/me/sessions`
 }
 
 /**
- * @summary The user's usable client and console sessions, most recently used first.
+ * @summary One page of the user's usable client and console sessions, most recently used first.
  */
 export const listMySessions = async (
+  params?: ListMySessionsParams,
   options?: Parameters<typeof apiFetch>[1],
-): Promise<MySession[]> => {
-  return apiFetch<MySession[]>(getListMySessionsUrl(), {
+): Promise<PaginatedMySession> => {
+  return apiFetch<PaginatedMySession>(getListMySessionsUrl(params), {
     ...options,
     method: 'GET',
   })
 }
 
-export const getListMySessionsQueryKey = () => {
-  return [`/admin/api/v1/me/sessions`] as const
+export const getListMySessionsQueryKey = (params?: ListMySessionsParams) => {
+  return [`/admin/api/v1/me/sessions`, ...(params ? [params] : [])] as const
 }
 
 export const getListMySessionsQueryOptions = <
   TData = Awaited<ReturnType<typeof listMySessions>>,
   TError = ErrorType<ErrorEnvelope>,
->(options?: {
-  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>
-  request?: SecondParameter<typeof apiFetch>
-}) => {
+>(
+  params?: ListMySessionsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>
+    request?: SecondParameter<typeof apiFetch>
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {}
 
-  const queryKey = queryOptions?.queryKey ?? getListMySessionsQueryKey()
+  const queryKey = queryOptions?.queryKey ?? getListMySessionsQueryKey(params)
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listMySessions>>> = ({ signal }) =>
-    listMySessions({ signal, ...requestOptions })
+    listMySessions(params, { signal, ...requestOptions })
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listMySessions>>,
@@ -785,6 +802,7 @@ export function useListMySessions<
   TData = Awaited<ReturnType<typeof listMySessions>>,
   TError = ErrorType<ErrorEnvelope>,
 >(
+  params: undefined | ListMySessionsParams,
   options: {
     query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>> &
       Pick<
@@ -803,6 +821,7 @@ export function useListMySessions<
   TData = Awaited<ReturnType<typeof listMySessions>>,
   TError = ErrorType<ErrorEnvelope>,
 >(
+  params?: ListMySessionsParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>> &
       Pick<
@@ -821,6 +840,7 @@ export function useListMySessions<
   TData = Awaited<ReturnType<typeof listMySessions>>,
   TError = ErrorType<ErrorEnvelope>,
 >(
+  params?: ListMySessionsParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>
     request?: SecondParameter<typeof apiFetch>
@@ -828,20 +848,21 @@ export function useListMySessions<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary The user's usable client and console sessions, most recently used first.
+ * @summary One page of the user's usable client and console sessions, most recently used first.
  */
 
 export function useListMySessions<
   TData = Awaited<ReturnType<typeof listMySessions>>,
   TError = ErrorType<ErrorEnvelope>,
 >(
+  params?: ListMySessionsParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>
     request?: SecondParameter<typeof apiFetch>
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListMySessionsQueryOptions(options)
+  const queryOptions = getListMySessionsQueryOptions(params, options)
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>

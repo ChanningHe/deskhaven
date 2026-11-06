@@ -20,7 +20,7 @@ use utoipa::ToSchema;
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::session::{ConsoleUser, clear_session_cookies};
 use crate::users::view::SessionKindView;
-use crate::{AdminApiError, ValidPath};
+use crate::{AdminApiError, PageQuery, Paginated, ValidPath, ValidQuery};
 
 /// One of the user's usable sessions. Carries no token. The device and browser texts are
 /// what the other end reported about itself: the console labels them so.
@@ -76,23 +76,29 @@ pub struct MySessionsRevoked {
     pub revoked: u64,
 }
 
-/// The user's usable client and console sessions, most recently used first.
+/// One page of the user's usable client and console sessions, most recently used first.
 #[utoipa::path(
     get,
     path = "/me/sessions",
     operation_id = "list_my_sessions",
     tag = "me",
     security(("console_session" = ["self"])),
-    responses((status = 200, description = "The sessions", body = Vec<MySession>))
+    params(PageQuery),
+    responses((status = 200, description = "One page of the sessions", body = Paginated<MySession>))
 )]
 pub async fn list(
     State(state): State<Arc<AppState>>,
     ConsoleUser(principal): ConsoleUser,
-) -> Result<Json<Vec<MySession>>, AdminApiError> {
-    let sessions = state.sessions.list_for_user(principal.user_id).await?;
+    ValidQuery(page): ValidQuery<PageQuery>,
+) -> Result<Json<Paginated<MySession>>, AdminApiError> {
+    let found = state
+        .sessions
+        .list_for_user(principal.user_id, page.into())
+        .await?;
     let current = principal.session_id;
-    let items = sessions.into_iter().map(|s| MySession::of(s, current));
-    Ok(Json(items.collect()))
+    Ok(Json(Paginated::from_page(found, |s| {
+        MySession::of(s, current)
+    })))
 }
 
 /// Revokes one of the user's sessions.

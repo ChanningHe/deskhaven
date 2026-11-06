@@ -16,6 +16,7 @@ use deskhaven_contract::requests::{bearer, device_info, from, login};
 use deskhaven_contract::seeds::{
     SEED_PASSWORD, SEED_RUSTDESK_ID, SEED_USERNAME, SEED_UUID, Seeds, UNKNOWN_USERNAME,
 };
+use deskhaven_core::pagination::PageRequest;
 use deskhaven_core::users::{HashLimits, HashParams, Password, PasswordHasher, Status};
 use deskhaven_db::entity::login_event;
 use sea_orm::{ConnectionTrait, EntityTrait, PaginatorTrait};
@@ -85,7 +86,13 @@ async fn login_token_authenticates_current_user_and_binds_the_device() {
         .await
         .unwrap()
         .id;
-    let sessions = app.state.sessions.list_for_user(user_id).await.unwrap();
+    let sessions = app
+        .state
+        .sessions
+        .list_for_user(user_id, PageRequest::default())
+        .await
+        .unwrap()
+        .items;
     assert_eq!(sessions.len(), 1);
     let device = sessions[0].device.clone().unwrap();
     assert_eq!(
@@ -343,9 +350,10 @@ async fn credential_change_during_login_is_401_and_counted() {
     assert!(
         app.state
             .sessions
-            .list_for_user(alice)
+            .list_for_user(alice, PageRequest::default())
             .await
             .unwrap()
+            .items
             .is_empty()
     );
     // Not counted, the next reply would be the disabled 403; counted, the account is locked.

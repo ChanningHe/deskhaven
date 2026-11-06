@@ -156,6 +156,7 @@ async fn detail_shows_groups_and_usable_sessions() {
             (Some("client"), Some("123456789"))
         );
         assert!(session.get("token_hash").is_none());
+        assert_eq!(reply.body["sessions_total"], 1);
 
         for missing in ["/admin/api/v1/users/999999", "/admin/api/v1/users/abc"] {
             let reply = h.get(missing, &root).await;

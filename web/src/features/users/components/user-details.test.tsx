@@ -38,6 +38,26 @@ describe('user details', () => {
     expect(within(drawer).getByText('已解除登录锁定。')).toBeInTheDocument()
   })
 
+  it('says when the drawer shows only the most recently used sessions', async () => {
+    const session = {
+      id: 1,
+      kind: 'console' as const,
+      created_at: 1_790_000_000_000,
+      last_used_at: 1_800_000_000_000,
+      expires_at: 1_900_000_000_000,
+    }
+    renderApp('/users?user=5', {
+      api: {
+        [`GET ${USERS_PATH}`]: pageOf([BOB]),
+        [`GET ${USERS_PATH}/5`]: {
+          body: { ...userDetail(BOB), sessions: [session], sessions_total: 300 },
+        },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'bob' })
+    expect(within(drawer).getByText('仅显示最近使用的 1 / 300 个会话。')).toBeInTheDocument()
+  })
+
   it('keeps the confirm texts while the dialog closes', async () => {
     const { user } = renderApp('/users?user=5', {
       api: {

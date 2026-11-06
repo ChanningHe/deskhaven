@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use deskhaven_core::pagination::{MAX_PAGE_SIZE, PageRequest};
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{AccountEdit, Credential, NewUser, Password, ProfileUpdate};
 use garde::Validate;
@@ -107,11 +108,16 @@ pub async fn get_user(
 ) -> Result<Json<UserDetail>, AdminApiError> {
     let user = state.users.get(id).await?;
     let groups = state.groups.groups_of_user(id).await?;
-    let sessions = state.sessions.list_for_user(id).await?;
+    let recent = PageRequest {
+        page: 1,
+        page_size: MAX_PAGE_SIZE,
+    };
+    let sessions = state.sessions.list_for_user(id, recent).await?;
     Ok(Json(UserDetail {
         user: user.into(),
         groups: groups.into_iter().map(Into::into).collect(),
-        sessions: sessions.into_iter().map(Into::into).collect(),
+        sessions: sessions.items.into_iter().map(Into::into).collect(),
+        sessions_total: sessions.total,
     }))
 }
 

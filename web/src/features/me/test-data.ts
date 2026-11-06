@@ -1,4 +1,10 @@
-import type { MyAccount, MyAddressBook, MyDevice, MySession } from '@/api/generated/model'
+import type {
+  MyAccount,
+  MyAddressBook,
+  MyDevice,
+  MySession,
+  PaginatedMySession,
+} from '@/api/generated/model'
 
 export const API = '/admin/api/v1'
 export const ACCOUNT_PATH = `${API}/me/account`
@@ -41,6 +47,11 @@ export function session(id: number, overrides: Partial<MySession> = {}): MySessi
     expires_at: 1_900_000_000_000,
     ...overrides,
   }
+}
+
+/** The first (and only fetched) page of the session list. */
+export function sessionsPage(items: MySession[], total = items.length): PaginatedMySession {
+  return { items, total, page: 1, page_size: 200 }
 }
 
 export function device(rustdeskId: string, overrides: Partial<MyDevice> = {}): MyDevice {
