@@ -80,7 +80,7 @@ Apply changes with `docker compose up -d --wait`.
 | `log.format` | `DESKHAVEN_LOG__FORMAT` | one of `pretty`, `json` | `pretty` | Log line format. |
 | `log.level` | `DESKHAVEN_LOG__LEVEL` | string | `info` | tracing EnvFilter syntax. |
 | `public_url` | `DESKHAVEN_PUBLIC_URL` | string | empty | External base URL, e.g. "https://rd.example.com"; required for OIDC and email links. |
-| `security.master_key` | `DESKHAVEN_SECURITY__MASTER_KEY` | secret | empty | 32-byte base64; empty = {data_dir}/master.key (generated, 0600). |
+| `security.master_key` | `DESKHAVEN_SECURITY__MASTER_KEY` | secret | empty | 32-byte base64; empty = {data_dir}/master.key (generated, 0600, only while the database holds no account). |
 | `security.trusted_proxies` | `DESKHAVEN_SECURITY__TRUSTED_PROXIES` | list of cidr | empty | CIDRs whose X-Forwarded-For is honored; empty = trust none. |
 | `settings` | `DESKHAVEN_SETTINGS__<KEY>` | table | empty | Pinned runtime settings (dotted keys); interpreted by the settings registry. |
 | `signal.enabled` | `DESKHAVEN_SIGNAL__ENABLED` | bool | `true` | Run the embedded signal server (rendezvous, NAT test, WebSocket). |

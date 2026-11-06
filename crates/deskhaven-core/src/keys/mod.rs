@@ -17,6 +17,7 @@
 
 mod fs;
 mod master;
+mod master_guard;
 mod read;
 mod signal;
 mod signal_pair;
@@ -27,6 +28,7 @@ use std::path::PathBuf;
 use crate::crypto::CryptoError;
 
 pub use master::{MASTER_KEY_FILE, load_or_generate_master_key, master_key_path, read_master_key};
+pub use master_guard::{MasterKeyError, load_or_generate_master_key_for};
 pub use read::MAX_KEY_FILE_LEN;
 pub use signal::{SIGNAL_KEY_FILE, SignalKeyPaths, load_or_generate_signal_key, read_signal_key};
 pub use signal_pair::SignalKeyPair;

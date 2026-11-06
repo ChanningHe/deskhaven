@@ -122,7 +122,8 @@ impl Default for Database {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Security {
-    /// 32-byte base64; empty = {data_dir}/master.key (generated, 0600).
+    /// 32-byte base64; empty = {data_dir}/master.key (generated, 0600, only while the
+    /// database holds no account).
     pub master_key: Secret,
     /// CIDRs whose X-Forwarded-For is honored; empty = trust none.
     pub trusted_proxies: Vec<Cidr>,

@@ -8,16 +8,17 @@ use deskhaven_admin_api::AdminRoutes;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::SystemClock;
-use deskhaven_core::crypto::SecretBox;
+use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::DeviceRepository;
 use deskhaven_core::keys::{
-    KeyWarning, SignalKeyPair, SignalKeyPaths, load_or_generate_master_key,
-    load_or_generate_signal_key,
+    KeyWarning, SignalKeyPair, SignalKeyPaths, load_or_generate_master_key_for,
+    load_or_generate_signal_key, read_master_key,
 };
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::{AppState, StateConfig};
 use deskhaven_core::users::PasswordHasher;
 use deskhaven_http::{HttpConfig, Listeners, NofileInfo, raise_nofile_limit};
+use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::instance_lock::{self, InstanceLock};
@@ -34,7 +35,8 @@ const UMASK: u32 = 0o077;
 pub struct Prepared {
     lock: InstanceLock,
     pins: PinSet,
-    crypto: Arc<SecretBox>,
+    /// Read in `prepare`; `None`: none exists yet (`master_crypto`).
+    master: Option<MasterKey>,
     signal_key: SignalKeyPair,
 }
 
@@ -63,9 +65,13 @@ pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     }
     let lock = instance_lock::acquire(&config.data_dir)?;
 
-    let master = load_or_generate_master_key(&config.security.master_key, &config.data_dir)?;
-    log_key_warnings(&master.warnings);
-    let crypto = Arc::new(SecretBox::new(&master.value));
+    // Read only: a missing key is generated once the database shows nothing depends on it
+    // (`master_crypto`).
+    let master = read_master_key(&config.security.master_key, &config.data_dir)?;
+    let master = master.map(|loaded| {
+        log_key_warnings(&loaded.warnings);
+        loaded.value
+    });
 
     // Loaded even with the signal server disabled: the client API serves the
     // public key, and `key show` must agree with a later start.
@@ -76,7 +82,7 @@ pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     Ok(Prepared {
         lock,
         pins,
-        crypto,
+        master,
         signal_key: signal.value,
     })
 }
@@ -108,11 +114,13 @@ pub async fn start(
     let Prepared {
         lock,
         pins,
-        crypto,
+        master,
         signal_key,
     } = prepared;
     let public_key = signal_key.public_key_base64();
-    let state = Arc::new(open_state(config, pins, crypto, public_key).await?);
+    let db = open_database(config).await?;
+    let crypto = master_crypto(config, master, &db).await?;
+    let state = Arc::new(state_on(db, config, pins, crypto, public_key).await?);
     setup_link::announce(config, &state.setup).await?;
     let signal = start_signal(config, &signal_key, &state, token).await?;
     if let Some(running) = &signal {
@@ -181,13 +189,48 @@ pub async fn open_state(
     crypto: Arc<SecretBox>,
     signal_public_key: String,
 ) -> anyhow::Result<AppState> {
+    let db = open_database(config).await?;
+    state_on(db, config, pins, crypto, signal_public_key).await
+}
+
+/// Connects and applies the migrations.
+async fn open_database(config: &Bootstrap) -> anyhow::Result<DatabaseConnection> {
     let url = database::url(config)?;
     let backend = database::backend(&url);
     let db = database::connect(&database::options(config, url)).await?;
     tracing::info!(backend, "database connected");
     deskhaven_db::migrate(&db).await?;
     tracing::info!("database migrations applied");
+    Ok(db)
+}
 
+/// The master key `prepare` read, else one generated now, which the migrated `db` allows
+/// only while it holds no account (`load_or_generate_master_key_for`).
+async fn master_crypto(
+    config: &Bootstrap,
+    read: Option<MasterKey>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<Arc<SecretBox>> {
+    let key = match read {
+        Some(key) => key,
+        None => {
+            let (configured, data_dir) = (&config.security.master_key, &config.data_dir);
+            let loaded = load_or_generate_master_key_for(configured, data_dir, db).await?;
+            log_key_warnings(&loaded.warnings);
+            loaded.value
+        }
+    };
+    Ok(Arc::new(SecretBox::new(&key)))
+}
+
+/// Settings and services over the migrated `db`; legacy plaintext strategy secrets sealed.
+async fn state_on(
+    db: DatabaseConnection,
+    config: &Bootstrap,
+    pins: PinSet,
+    crypto: Arc<SecretBox>,
+    signal_public_key: String,
+) -> anyhow::Result<AppState> {
     let (settings, warnings) = SettingsService::load(db.clone(), Arc::clone(&crypto), pins).await?;
     for warning in &warnings {
         tracing::warn!("{warning}");

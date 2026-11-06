@@ -100,8 +100,14 @@ Environment=DESKHAVEN_SECURITY__MASTER_KEY_FILE=%d/master_key
 ```
 
 Once `journalctl -u deskhaven` shows it running without a master key warning, delete
-`/var/lib/deskhaven/master.key`. Never delete it first: without a configured key,
-deskhaven generates a new one, and the secrets sealed under the old one are lost.
+`/var/lib/deskhaven/master.key`.
+
+If the override, credential or secret file is ever dropped, deskhaven finds no key and,
+once its database holds accounts, refuses to start ("no master key") instead of making a
+new one: restore the key and start again. Only if the key is lost for good, create a new
+one yourself and pass it the same way (`openssl rand -base64 32 > master.key`); every
+secret sealed under the old key (two-factor seeds, OIDC, LDAP and SMTP passwords, address
+book and strategy passwords) is then unreadable and must be entered again.
 
 ## Upgrade
 
