@@ -61,6 +61,8 @@
 #               yanked finding that deny.toml does not ignore
 #   relay (hbbr) `cargo audit bin` is REPORTED only (job summary + release asset): upstream
 #               hbbr's lockfile has advisories we cannot fix without modifying upstream
+#   console     `pnpm audit --prod` BLOCKS on any advisory in the production dependencies
+#               (what ships in dist) that web/package.json does not ignore
 #
 # Trust boundaries: third-party code (cargo-installed tools, base images, the build itself,
 # the images when run) executes only in jobs WITHOUT `packages: write` or `contents: write`:
@@ -208,6 +210,10 @@ jobs:
           pnpm --version
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
+      # What ships in dist only; the build tooling is watched by Dependabot alerts, not gated.
+      - name: audit the production dependencies
+        working-directory: web
+        run: pnpm audit --prod
       - run: pnpm build
         working-directory: web
       # `pnpm sbom` ships with pnpm (pinned by packageManager in web/package.json): no extra
