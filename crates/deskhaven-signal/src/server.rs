@@ -104,6 +104,12 @@ pub type WsHeaders = tungstenite::http::HeaderMap;
 pub trait ClientIpResolver: std::fmt::Debug + Send + Sync + 'static {
     /// The client's IP: `peer` itself unless `peer` is a trusted proxy.
     fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr;
+
+    /// Whether `peer` is a trusted proxy, whose websocket connections carry many clients: the
+    /// accept gate exempts them from the per-source pending limits (M4-05).
+    fn is_trusted_proxy(&self, _peer: IpAddr) -> bool {
+        false
+    }
 }
 
 /// Trusts no header: the client is the socket peer.

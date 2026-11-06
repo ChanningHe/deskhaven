@@ -1,5 +1,5 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
-use crate::accept_gate::{AcceptGate, Connection, Pending};
+use crate::accept_gate::{AcceptGate, Slot};
 use crate::accept_retry;
 use crate::addr_mangle;
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
@@ -129,14 +129,6 @@ const STREAM_HEARTBEAT: Duration = Duration::from_secs(10);
 /// registered peer goes offline sooner than a silent one, and it bounds how long an answer to a
 /// stalled controller can hold up the answering peer's connection task (`send_to_tcp_sync`).
 const STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// deskhaven (M4-05): resolves once `token` is cancelled; never without one.
-async fn wait_cancelled(token: Option<&tokio_util::sync::CancellationToken>) {
-    match token {
-        Some(token) => token.cancelled().await,
-        None => std::future::pending().await,
-    }
-}
 
 /// The next message queued for this connection's peer; pending while none is registered.
 async fn next_outbound(outbox: &mut Option<StreamOutbox>) -> Option<RendezvousMessage> {
@@ -605,11 +597,11 @@ impl RendezvousServer {
                 res = accept_retry::accept(listener3, &mut pause3) => {
                     match res {
                         Ok((stream, addr))  => {
-                            // deskhaven (M4-05 review M-A): connections in all are capped.
-                            if let Some(connection) = self.accept_gate.open_logged() {
+                            // deskhaven (M4-05): admitted by the accept gate (`accept_gate.rs`).
+                            let proxy = self.ws_client_ip.is_trusted_proxy(addr.ip());
+                            if let Some(slot) = self.accept_gate.admit_ws_logged(addr.ip(), proxy) {
                                 stream.set_nodelay(true).ok();
-                                self.handle_listener(stream, addr, key, true, connection, None)
-                                    .await;
+                                self.handle_listener(stream, addr, key, true, slot).await;
                             }
                         }
                         Err(err) => {
@@ -622,11 +614,9 @@ impl RendezvousServer {
                     match res {
                         // deskhaven (M4-05): a refused connection is closed before any work.
                         Ok((stream, addr)) => {
-                            if let Some(admitted) = self.accept_gate.admit_logged(addr.ip()) {
+                            if let Some(slot) = self.accept_gate.admit_logged(addr.ip()) {
                                 stream.set_nodelay(true).ok();
-                                let pending = Some(admitted.pending);
-                                self.handle_listener(stream, addr, key, false, admitted.connection, pending)
-                                    .await;
+                                self.handle_listener(stream, addr, key, false, slot).await;
                             }
                         }
                        Err(err) => {
@@ -1541,25 +1531,21 @@ impl RendezvousServer {
         });
     }
 
-    // deskhaven (M4-05): `connection` is the connection's slot in the accept gate, `pending` the
-    // main port's handshake slot, held until the first frame.
+    // deskhaven (M4-05): `slot` is the connection's place in the accept gate, which may close
+    // the connection (its eviction token) to make room for a new one.
     async fn handle_listener(
         &self,
         stream: TcpStream,
         addr: SocketAddr,
         key: &str,
         ws: bool,
-        connection: Connection,
-        pending: Option<Pending>,
+        slot: Slot,
     ) {
         log::debug!("Tcp connection from {:?}, ws: {}", addr, ws);
         let mut rs = self.clone();
         let key = key.to_owned();
         self.tasks.spawn(async move {
-            allow_err!(
-                rs.handle_listener_inner(stream, addr, &key, ws, connection, pending)
-                    .await
-            );
+            allow_err!(rs.handle_listener_inner(stream, addr, &key, ws, slot).await);
         });
     }
 
@@ -1570,8 +1556,7 @@ impl RendezvousServer {
         mut addr: SocketAddr,
         key: &str,
         ws: bool,
-        mut connection: Connection,
-        mut pending: Option<Pending>,
+        slot: Slot,
     ) -> ResultType<()> {
         // deskhaven (M1-08): the first complete frame (websocket: handshake included) must
         // arrive within FIRST_FRAME_TIMEOUT of the accept, later ones within IDLE_TIMEOUT of the
@@ -1584,8 +1569,8 @@ impl RendezvousServer {
             } else {
                 MAIN_FIRST_FRAME_TIMEOUT
             };
-        // deskhaven (M4-05 review H-A): the gate closes the oldest pending connection at its cap.
-        let evicted = pending.as_ref().map(Pending::evicted);
+        // deskhaven (M4-05): fires when the gate closes this connection to make room.
+        let evicted = slot.evicted();
         let mut sink;
         let mut reader;
         let mut kx;
@@ -1614,7 +1599,12 @@ impl RendezvousServer {
                 callback,
                 Some(ws_config()),
             );
-            let (a, b) = timeout_at(first_frame, handshake).await??.split();
+            let handshake = tokio::select! {
+                res = timeout_at(first_frame, handshake) => res??,
+                _ = evicted.cancelled() => bail!("evicted before its handshake"),
+            };
+            let (a, b) = handshake.split();
+            slot.established();
             // deskhaven (M1-08): port 0 means the IP came from a proxy header; every client
             // behind that proxy IP had the same `ip:0` and they overwrote each other in
             // `tcp_punch` / as registered peers. Each connection holds its own port instead.
@@ -1626,7 +1616,7 @@ impl RendezvousServer {
                 _claim = Some(claim);
             }
             // deskhaven (M4-05 review M-A): counted per source once the client IP is known.
-            if !connection.bind_source(&self.accept_gate, addr.ip()) {
+            if !slot.bind_source(addr.ip()) {
                 bail!("too many connections from {}", addr.ip());
             }
             sink = Some(Sink::Ws(a));
@@ -1643,6 +1633,10 @@ impl RendezvousServer {
             // deskhaven (M1-07): offer the KeyExchange before reading anything. Logged-in
             // controllers and TCP-mode controlled clients wait for it (`secure_tcp`, up to
             // their 18 s READ_TIMEOUT) before sending; other clients skip it.
+            // deskhaven (M4-05): no offer for a connection evicted since its accept.
+            if evicted.is_cancelled() {
+                return Ok(());
+            }
             kx = match KxState::offer(&self.inner.sk) {
                 Ok((kx, offer)) => {
                     Self::send_to_sink(&mut sink, offer).await;
@@ -1667,10 +1661,10 @@ impl RendezvousServer {
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {
-                _ = wait_cancelled(evicted.as_ref()), if pending.is_some() => break,
+                _ = evicted.cancelled() => break,
                 res = timeout_at(deadline, reader.next()) => {
                     let Ok(Some(frame)) = res else { break };
-                    drop(pending.take());
+                    slot.established();
                     deadline = TokioInstant::now() + IDLE_TIMEOUT;
                     let Some(bytes) = frame else { continue };
                     // deskhaven (M1-07): the KeyExchange reply secures the connection; later
@@ -1695,11 +1689,15 @@ impl RendezvousServer {
                         && let Some(id) = &conn.id
                     {
                         self.touch_stream_peer(id, addr).await;
+                        slot.active(true);
                     } else if !self
                         .handle_tcp(&bytes, &mut sink, addr, key, ws, &mut conn)
                         .await
                     {
                         break;
+                    } else if !bytes.is_empty() {
+                        // deskhaven (M4-05): what the gate keeps longest at its cap.
+                        slot.active(conn.id.is_some());
                     }
                 }
                 Some(msg) = next_outbound(&mut conn.outbox) => {

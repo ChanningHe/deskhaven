@@ -96,6 +96,10 @@ fn websocket_proxy_headers_follow_security_trusted_proxies() {
         ip("10.1.2.3"),
         "default trusts none"
     );
+    // The accept gate exempts trusted proxies from the per-source pending limits (M4-05).
+    assert!(trusting.ws_client_ip.is_trusted_proxy(ip("10.1.2.3")));
+    assert!(!trusting.ws_client_ip.is_trusted_proxy(ip("11.0.0.1")));
+    assert!(!default.ws_client_ip.is_trusted_proxy(ip("10.1.2.3")));
 }
 
 #[test]

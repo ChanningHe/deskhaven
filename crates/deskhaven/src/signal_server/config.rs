@@ -55,6 +55,10 @@ impl ClientIpResolver for ProxyHeaders {
     fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr {
         self.0.resolve(peer, headers).addr
     }
+
+    fn is_trusted_proxy(&self, peer: IpAddr) -> bool {
+        self.0.is_trusted(peer)
+    }
 }
 
 /// The pair in sodiumoxide's `sign::SecretKey` layout (seed || public key, as upstream's

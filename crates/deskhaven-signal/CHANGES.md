@@ -732,3 +732,16 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
 - 2026-11-06, M4-05 re-review LOW-3 (`ip_blocker.rs` `MAX_ENTRIES`): 50 000 sources (was 100 000),
   about 125 MB at worst; stated in known-limitations. Test:
   `the_default_table_tracks_at_most_50_000_sources`.
+- 2026-11-06, M4-05 re-review 2 (`accept_gate.rs` with `accept_gate/{state,pending_set,loc}.rs`;
+  `rendezvous_server.rs` `io_loop`, `handle_listener`, `handle_listener_inner`; `server.rs`
+  `ClientIpResolver::is_trusted_proxy`): one principle for the gate: per-source limits refuse,
+  global caps never do and evict the least valuable connection instead. Websocket connections
+  take a pending slot at accept (per source and /48 unless the peer is a trusted proxy, own
+  global budget `ws_pending`); the main and websocket pending budgets evict the oldest pending
+  connection of the source holding the most; the connection cap evicts a pending connection,
+  then the established one without a registered peer idle the longest, registered peers last
+  (ordered index, O(log n)); a per-/48 connection cap was added; the open-file scaling keeps
+  pending at a quarter of the connection cap, within 64..=32 768 connections; a full source
+  table forgets the least recently seen idle sources instead of skipping the per-source checks;
+  an evicted connection gets no KeyExchange offer. Tests: `tests/accept_limits.rs`,
+  `accept_gate::tests`.
