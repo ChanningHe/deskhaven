@@ -1,0 +1,32 @@
+[package]
+name = "deskhaven-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+
+# Not a member of the deskhaven workspace (nightly-only, libFuzzer): its own workspace root.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tokio = { version = "1.54", features = ["rt"] }
+deskhaven-contract = { path = "../crates/deskhaven-contract" }
+deskhaven-signal = { path = "../crates/deskhaven-signal", features = ["fuzzing"] }
+
+[[bin]]
+name = "client_api"
+path = "fuzz_targets/client_api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rendezvous"
+path = "fuzz_targets/rendezvous.rs"
+test = false
+doc = false
+bench = false

@@ -705,3 +705,11 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   server. EMFILE / ENFILE and errors about one dead backlog entry (aborted, reset, interrupted,
   out of memory) now pause that listener for 250 ms (warning once a minute) and accept again;
   other errors still rebind. Test: `tests/fd_exhaustion.rs`.
+- 2026-11-06, M4-05 fuzzing (new `rendezvous_server/fuzzing.rs` behind the new `fuzzing` feature;
+  new `addr_mangle.rs`; `rendezvous_server.rs` `handle_tcp` RelayResponse arm, `handle_hole_sent`,
+  `handle_local_addr`): `fuzzing::Harness` drives untrusted datagrams and main-port frames through
+  `handle_udp`, the KeyExchange state machine and `handle_tcp` for the `fuzz/` targets. Its first
+  run found that hbb_common's `AddrMangle::decode` overflows on a client-chosen `socket_addr`
+  (panic with overflow checks, a garbage address without); RelayResponse, PunchHoleSent and
+  LocalAddr whose address does not decode are now dropped (`addr_mangle::decode`, otherwise the
+  same result). Test: `a_mangled_address_that_does_not_decode_is_dropped_without_a_panic`.

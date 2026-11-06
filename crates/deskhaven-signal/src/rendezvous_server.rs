@@ -1,6 +1,7 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::accept_gate::{AcceptGate, Pending};
 use crate::accept_retry;
+use crate::addr_mangle;
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
@@ -51,6 +52,10 @@ use std::{
     time::Instant,
 };
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+
+// deskhaven (M4-05): fuzzing entry points into the private handlers.
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Data {
@@ -910,7 +915,10 @@ impl RendezvousServer {
                     if !within_bounds("RelayResponse", &rr.uuid, &rr.relay_server, &rr.version) {
                         return false;
                     }
-                    let addr_b = AddrMangle::decode(&rr.socket_addr);
+                    // deskhaven (M4-05): an address that does not decode is dropped.
+                    let Some(addr_b) = addr_mangle::decode(&rr.socket_addr) else {
+                        return false;
+                    };
                     rr.socket_addr = Default::default();
                     let id = rr.id();
                     if !id.is_empty() {
@@ -1146,7 +1154,10 @@ impl RendezvousServer {
         socket: Option<&'a mut FramedSocket>,
     ) -> ResultType<()> {
         // punch hole sent from B, tell A that B is ready to be connected
-        let addr_a = AddrMangle::decode(&phs.socket_addr);
+        // deskhaven (M4-05): an address that does not decode is dropped.
+        let Some(addr_a) = addr_mangle::decode(&phs.socket_addr) else {
+            return Ok(());
+        };
         log::debug!(
             "{} punch hole response to {:?} from {:?}",
             if socket.is_none() { "TCP" } else { "UDP" },
@@ -1180,7 +1191,10 @@ impl RendezvousServer {
         socket: Option<&'a mut FramedSocket>,
     ) -> ResultType<()> {
         // relay local addrs of B to A
-        let addr_a = AddrMangle::decode(&la.socket_addr);
+        // deskhaven (M4-05): an address that does not decode is dropped.
+        let Some(addr_a) = addr_mangle::decode(&la.socket_addr) else {
+            return Ok(());
+        };
         log::debug!(
             "{} local addrs response to {:?} from {:?}",
             if socket.is_none() { "TCP" } else { "UDP" },
@@ -2392,5 +2406,43 @@ mod tests {
         assert!(!is_answerable(&"127.0.0.9:0".parse().unwrap()));
         assert!(is_answerable(&"127.0.0.9:5000".parse().unwrap()));
         assert!(is_answerable(&"[2001:db8::1]:5000".parse().unwrap()));
+    }
+
+    // deskhaven (M4-05 fuzzing): hbb_common's `AddrMangle::decode` subtracts without a check, so
+    // a client-chosen `socket_addr` panicked on overflow (debug builds; release wrapped to a
+    // garbage address). Such messages are now dropped.
+    #[hbb_common::tokio::test]
+    async fn a_mangled_address_that_does_not_decode_is_dropped_without_a_panic() {
+        let mut f = fixture().await;
+        let bad = Bytes::from_static(&[1, 2, 3, 4, 5, 6]);
+        let from: SocketAddr = "127.0.0.9:5000".parse().unwrap();
+        let key = f.key.clone();
+        let mut msgs = [
+            RendezvousMessage::new(),
+            RendezvousMessage::new(),
+            RendezvousMessage::new(),
+        ];
+        msgs[0].set_local_addr(LocalAddr {
+            socket_addr: bad.clone(),
+            ..Default::default()
+        });
+        msgs[1].set_punch_hole_sent(PunchHoleSent {
+            socket_addr: bad.clone(),
+            ..Default::default()
+        });
+        msgs[2].set_relay_response(RelayResponse {
+            socket_addr: bad,
+            ..Default::default()
+        });
+
+        // Each is the last message of its connection either way (`false`); none may panic.
+        for msg in msgs {
+            let bytes = msg.write_to_bytes().unwrap();
+            let mut conn = StreamPeer::default();
+            let kept =
+                f.rs.handle_tcp(&bytes, &mut None, from, &key, false, &mut conn)
+                    .await;
+            assert!(!kept);
+        }
     }
 }

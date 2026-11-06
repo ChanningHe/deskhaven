@@ -12,6 +12,7 @@
 
 mod accept_gate;
 mod accept_retry;
+mod addr_mangle;
 mod claimed_addr;
 
 // Vendored upstream code; clean up incrementally.
@@ -50,6 +51,9 @@ pub use control::{
 pub use hbb_common::rendezvous_proto::{
     ConnType, ControlPermissions, HeaderEntry, HttpProxyRequest, HttpProxyResponse,
 };
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub use rendezvous_server::fuzzing;
 #[cfg(feature = "testing")]
 #[doc(hidden)]
 pub use server::Fault;

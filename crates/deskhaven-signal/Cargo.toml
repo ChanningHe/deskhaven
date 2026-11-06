@@ -10,6 +10,8 @@ publish.workspace = true
 [features]
 # Test-only fault injection (`SignalHandle::inject_fault`) for embedders' supervision tests.
 testing = []
+# Fuzzing entry points into the message handlers (`fuzzing::Harness`, fuzz/ targets).
+fuzzing = []
 
 [dependencies]
 # Relay list shared lock-free by the server loop and every connection task (M1-06).
