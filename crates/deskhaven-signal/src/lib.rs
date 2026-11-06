@@ -10,6 +10,7 @@
 //! upstream for now; remove an entry as soon as the code no longer needs it. Non-vendored
 //! modules get the full workspace lints.
 
+mod accept_gate;
 mod claimed_addr;
 
 // Vendored upstream code; clean up incrementally.
@@ -39,6 +40,7 @@ mod server;
 mod store;
 mod tasks;
 
+pub use accept_gate::AcceptLimits;
 pub use control::{
     AllowAll, Authz, ConnKind, ConnectReq, ControlPlane, Grant, RegisterInfo, RegisterVerdict,
 };

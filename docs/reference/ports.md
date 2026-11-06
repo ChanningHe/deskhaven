@@ -22,3 +22,19 @@ WebSocket two above. Clients expect the client API two below it.
 Clients must reach 21115–21117 directly, not through a proxy: hole punching needs their
 real source address. See [Known limitations](known-limitations.md#client-addresses) for the
 setups that lose it.
+
+## Connection limits on 21116/tcp
+
+Every connection to the rendezvous TCP port costs the server a key exchange offer before the
+client has sent anything, so connections are admitted only within these limits; a refused
+connection is closed at once and the client retries:
+
+| Limit | Value |
+| --- | --- |
+| New connections per source address | 256 at once, then 64 per second |
+| Connections of one source that have not sent their first message yet | 64 |
+| Such connections in all | 2048 |
+
+IPv6 sources count per /64. Clients normally send their first message within a round trip,
+so many devices behind one NAT address stay well inside these limits. Refusals are logged as
+a warning at most once a minute, with their count.

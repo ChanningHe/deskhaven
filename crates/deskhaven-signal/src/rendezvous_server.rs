@@ -1,4 +1,5 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
+use crate::accept_gate::{AcceptGate, Pending};
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
 use crate::common::*;
 use crate::control::ControlPlane;
@@ -297,6 +298,8 @@ pub(crate) struct RendezvousServer {
     ws_addrs: ClaimedAddrs,
     // deskhaven (M1-08 review): decides whether a websocket client's proxy headers are trusted.
     ws_client_ip: Arc<dyn ClientIpResolver>,
+    // deskhaven (M4-05): admission of main-port connections before the KeyExchange offer.
+    accept_gate: AcceptGate,
     pm: PeerMap,
     tx: Sender,
     // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
@@ -460,6 +463,7 @@ impl RendezvousServer {
             stream_peers: Default::default(),
             ws_addrs: Default::default(),
             ws_client_ip: cfg.ws_client_ip.clone(),
+            accept_gate: AcceptGate::new(cfg.accept_limits),
             pm,
             tx,
             relay_servers: Default::default(),
@@ -491,6 +495,7 @@ impl RendezvousServer {
     // (upstream), and (re)resolves the configured relay list while entries are unresolved.
     async fn on_tick(&mut self) {
         prune_ip_blocks(&mut *IP_BLOCKER.lock().await, Instant::now());
+        self.accept_gate.prune(Instant::now());
         if self.relay_servers0.len() > 1 {
             let rs = self.relay_servers0.clone();
             let tx = self.tx.clone();
@@ -574,7 +579,7 @@ impl RendezvousServer {
                     match res {
                         Ok((stream, addr))  => {
                             stream.set_nodelay(true).ok();
-                            self.handle_listener(stream, addr, key, true).await;
+                            self.handle_listener(stream, addr, key, true, None).await;
                         }
                         Err(err) => {
                            log::error!("listener3.accept failed: {}", err);
@@ -584,9 +589,12 @@ impl RendezvousServer {
                 }
                 res = listener.accept() => {
                     match res {
+                        // deskhaven (M4-05): a refused connection is closed before any work.
                         Ok((stream, addr)) => {
-                            stream.set_nodelay(true).ok();
-                            self.handle_listener(stream, addr, key, false).await;
+                            if let Some(pending) = self.accept_gate.admit_logged(addr.ip()) {
+                                stream.set_nodelay(true).ok();
+                                self.handle_listener(stream, addr, key, false, Some(pending)).await;
+                            }
                         }
                        Err(err) => {
                            log::error!("listener.accept failed: {}", err);
@@ -1521,12 +1529,23 @@ impl RendezvousServer {
         });
     }
 
-    async fn handle_listener(&self, stream: TcpStream, addr: SocketAddr, key: &str, ws: bool) {
+    // deskhaven (M4-05): `pending` is the main port's handshake slot, held until the first frame.
+    async fn handle_listener(
+        &self,
+        stream: TcpStream,
+        addr: SocketAddr,
+        key: &str,
+        ws: bool,
+        pending: Option<Pending>,
+    ) {
         log::debug!("Tcp connection from {:?}, ws: {}", addr, ws);
         let mut rs = self.clone();
         let key = key.to_owned();
         self.tasks.spawn(async move {
-            allow_err!(rs.handle_listener_inner(stream, addr, &key, ws).await);
+            allow_err!(
+                rs.handle_listener_inner(stream, addr, &key, ws, pending)
+                    .await
+            );
         });
     }
 
@@ -1537,6 +1556,7 @@ impl RendezvousServer {
         mut addr: SocketAddr,
         key: &str,
         ws: bool,
+        mut pending: Option<Pending>,
     ) -> ResultType<()> {
         // deskhaven (M1-08): the first complete frame (websocket: handshake included) must
         // arrive within FIRST_FRAME_TIMEOUT of the accept, later ones within IDLE_TIMEOUT of the
@@ -1623,6 +1643,7 @@ impl RendezvousServer {
             tokio::select! {
                 res = timeout_at(deadline, reader.next()) => {
                     let Ok(Some(frame)) = res else { break };
+                    drop(pending.take());
                     deadline = TokioInstant::now() + IDLE_TIMEOUT;
                     let Some(bytes) = frame else { continue };
                     // deskhaven (M1-07): the KeyExchange reply secures the connection; later

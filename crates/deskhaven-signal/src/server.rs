@@ -2,6 +2,7 @@
 //! of the signal server. Replaces upstream's command line, environment variables, process
 //! signal handling and loopback console.
 
+use crate::accept_gate::AcceptLimits;
 use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
 use crate::control::ControlPlane;
 use crate::rendezvous_server::{Data, Receiver, RendezvousServer, Sender};
@@ -86,6 +87,9 @@ pub struct SignalConfig {
     /// (`X-Forwarded-For` and the like): the server never trusts those headers itself. The
     /// default, [`SocketPeerIp`], ignores them.
     pub ws_client_ip: Arc<dyn ClientIpResolver>,
+    /// Admission limits of the main TCP port, checked at accept before the KeyExchange offer
+    /// is computed (M4-05).
+    pub accept_limits: AcceptLimits,
 }
 
 /// The handshake headers of a websocket connection.
@@ -125,6 +129,7 @@ impl SignalConfig {
             peer_preload_timeout: DEFAULT_PEER_PRELOAD_TIMEOUT,
             secret_key,
             ws_client_ip: Arc::new(SocketPeerIp),
+            accept_limits: AcceptLimits::default(),
         }
     }
 

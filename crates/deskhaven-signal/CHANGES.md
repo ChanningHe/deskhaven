@@ -665,3 +665,14 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   kept answering it as registered until a restart while deskhaven's API answered the device
   ID_NOT_FOUND. deskhaven calls it after deleting a device. Tests: `tests/reload_peer.rs`
   (deleted peer forgotten and re-registrable, stored peer kept).
+- 2026-11-06, M4-05, admission limits of the main TCP port (new `accept_gate.rs`;
+  `rendezvous_server.rs` `io_loop`, `handle_listener`, `handle_listener_inner`, `on_tick`;
+  `server.rs` `SignalConfig::accept_limits`): upstream accepted every main-port connection and
+  deskhaven (M1-07) computes a KeyExchange offer for each one at once (an X25519 key and two
+  Ed25519 signatures). A connection is now admitted only if its source (IPv4 address, IPv6
+  /64) has accept budget left (token bucket, default 256 then 64/s), has fewer than
+  `per_ip_pending` (64) connections that have not sent their first frame, and the server has
+  fewer than `pending` (2048) of them; otherwise it is closed before any work (warning logged
+  once a minute with a count). The slot is released by the first frame or the end of the
+  connection; idle sources are pruned on the relay-check timer. Websocket and NAT test ports
+  are unchanged. Tests: `tests/accept_limits.rs`, `accept_gate::tests`.
