@@ -17,6 +17,8 @@ pub struct Targets {
     pub heartbeat_p99: Duration,
     pub cores: f64,
     pub idle_rss_bytes: u64,
+    /// RSS under load (the steady window); 01-prd §4 sets it for 10k devices.
+    pub steady_rss_bytes: u64,
     /// Share of the nominal heartbeat rate (devices / interval) the run must reach.
     pub min_rate_ratio: f64,
 }
@@ -25,6 +27,7 @@ pub const NFR: Targets = Targets {
     heartbeat_p99: Duration::from_millis(50),
     cores: 1.0,
     idle_rss_bytes: 64 * 1024 * 1024,
+    steady_rss_bytes: 256 * 1024 * 1024,
     min_rate_ratio: 0.95,
 };
 
@@ -46,6 +49,8 @@ pub struct Measured {
     pub cpu_cores: Option<f64>,
     /// Largest RSS of the server restarted on the populated database, without load.
     pub idle_rss_bytes: Option<u64>,
+    /// Largest RSS in the steady window, under load.
+    pub steady_rss_bytes: Option<u64>,
     /// Rows of `devices` updated in the window.
     pub device_row_updates: i64,
     /// Rows written to any table in the window.
@@ -83,7 +88,6 @@ pub struct Report {
     pub cpu_peak_cores: Option<f64>,
     /// Largest RSS in the idle phase before the load, on the empty database (information).
     pub idle_rss_empty_bytes: Option<u64>,
-    pub steady_rss_max_bytes: Option<u64>,
     pub steady_write_bytes: Option<u64>,
     pub db_steady: Snapshot,
     pub db_run: Snapshot,

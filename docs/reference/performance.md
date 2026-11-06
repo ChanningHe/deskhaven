@@ -37,12 +37,13 @@ cargo xtask loadgen --work-dir target/m404-sqlite-10k-v2 --out target/m404-sqlit
 | Sysinfo and audit failures | 0 | 0 of 1 994 | PASS |
 | Server CPU, average | < 1 core | 0.15 cores | PASS |
 | Idle RSS, restarted on the populated database | < 64 MiB | 42.3 MiB | PASS |
+| Steady RSS, largest under load | < 256 MiB | 93.2 MiB | PASS |
 | Heartbeats not written row by row | `devices` row updates ≤ devices × (⌈window / flush⌉ + 1) = 50 000 | 30 000 updates for 120 602 heartbeats | PASS |
 | Database writes, all tables | ≤ 50 000 + 2 per audit call + 1 per sysinfo call = 53 514 rows | 33 040 rows | PASS |
 | Server shutdown | status 0 after SIGTERM, both runs | clean | PASS |
 
 Also measured: idle RSS on the empty database before the load 33.5 MiB; heartbeat p50
-0.33 ms, max 3.02 ms; busiest 10 s of CPU 0.16 cores; largest RSS under load 93.2 MiB.
+0.33 ms, max 3.02 ms; busiest 10 s of CPU 0.16 cores.
 Rows written in the steady window: `devices` 30 000 updated, `connection_sessions` 504
 inserted and 1 016 updated, `audit_nonces` 1 520 inserted.
 
@@ -65,12 +66,13 @@ cargo xtask loadgen --work-dir target/m404-pg-10k-v2 \
 | Sysinfo and audit failures | 0 | 0 of 1 995 | PASS |
 | Server CPU, average | < 1 core | 0.14 cores | PASS |
 | Idle RSS, restarted on the populated database | < 64 MiB | 35.3 MiB | PASS |
+| Steady RSS, largest under load | < 256 MiB | 57.9 MiB | PASS |
 | Heartbeats not written row by row | `devices` row updates ≤ devices × (⌈window / flush⌉ + 1) = 50 000 | 30 000 updates for 120 601 heartbeats | PASS |
 | Database writes, all tables | ≤ 53 516 rows; ≤ 6 185 commits (flush statements + 3 per audit / sysinfo call + 100) | 33 046 rows; 2 093 commits | PASS |
 | Server shutdown | status 0 after SIGTERM, both runs | clean | PASS |
 
 Also measured: idle RSS on the empty database before the load 30.7 MiB; heartbeat p50
-0.33 ms, max 5.22 ms; busiest 10 s of CPU 0.15 cores; largest RSS under load 57.9 MiB.
+0.33 ms, max 5.22 ms; busiest 10 s of CPU 0.15 cores.
 Rows written in the steady window: `devices` 30 000 updated, `connection_sessions` 505
 inserted and 1 018 updated, `audit_nonces` 1 523 inserted.
 
@@ -88,7 +90,9 @@ inserted and 1 018 updated, `audit_nonces` 1 523 inserted.
   empty database.
 - **Memory grows with the online fleet**, since every online device is kept in memory:
   under load the largest RSS was 93.2 MiB on SQLite (its page cache lives in the process)
-  and 57.9 MiB on PostgreSQL. The 64 MiB target is for an idle server.
+  and 57.9 MiB on PostgreSQL. The 64 MiB target is for an idle server; under load the
+  target is 256 MiB at 10 000 devices (the "Steady RSS" verdict, added after these runs
+  from their figures).
 - **First registration is the busiest moment.** While the 10 000 devices registered and
   uploaded their first sysinfo, the slowest sysinfo upload took 59 ms on SQLite (writes
   queue on its single writer) and 18 ms on PostgreSQL; heartbeats stayed below 9 ms.

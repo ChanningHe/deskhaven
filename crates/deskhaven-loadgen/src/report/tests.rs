@@ -35,6 +35,7 @@ fn passing() -> Measured {
         audit: ok(1_520),
         cpu_cores: Some(0.4),
         idle_rss_bytes: Some(20 * 1024 * 1024),
+        steady_rss_bytes: Some(94 * 1024 * 1024),
         device_row_updates: 30_000,
         db_row_writes: 33_040,
         db_commits: Some(2_093),
@@ -58,6 +59,7 @@ const SIGNAL_FAILURES: &str = "Registration failures";
 const CALL_FAILURES: &str = "Sysinfo and audit failures";
 const CPU: &str = "Server CPU";
 const RSS: &str = "Idle RSS";
+const STEADY_RSS: &str = "Steady RSS";
 const BATCHED: &str = "Heartbeat not written per row";
 const WHOLE_DB: &str = "Database writes, all tables";
 const SHUTDOWN: &str = "Server shutdown";
@@ -67,13 +69,29 @@ const START: &str = "Devices failed to start";
 fn a_good_run_passes_every_nfr() {
     let all = verdicts(&passing(), &NFR);
 
-    assert_eq!(all.len(), 12);
+    assert_eq!(all.len(), 13);
     assert!(all.iter().all(|v| v.pass), "{all:#?}");
     assert_eq!(verdict(&passing(), RATE).measured, "666.7 req/s");
     assert_eq!(verdict(&passing(), REGISTER_RATE).measured, "833.3 req/s");
     assert_eq!(verdict(&passing(), P99).measured, "4.00 ms");
     assert_eq!(verdict(&passing(), CPU).measured, "0.40 cores");
     assert_eq!(verdict(&passing(), RSS).measured, "20.0 MiB");
+    assert_eq!(verdict(&passing(), STEADY_RSS).measured, "94.0 MiB");
+}
+
+#[test]
+fn steady_rss_fails_at_256_mib_or_when_unmeasured() {
+    let fat = Measured {
+        steady_rss_bytes: Some(256 * 1024 * 1024),
+        ..passing()
+    };
+    assert!(!verdict(&fat, STEADY_RSS).pass);
+
+    let unmeasured = Measured {
+        steady_rss_bytes: None,
+        ..passing()
+    };
+    assert!(!verdict(&unmeasured, STEADY_RSS).pass);
 }
 
 #[test]

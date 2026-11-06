@@ -105,8 +105,8 @@ impl Report {
         )?;
         writeln!(
             f,
-            "| RSS, steady (max) | {} |",
-            bytes(self.steady_rss_max_bytes)
+            "| RSS, steady (max; the verdict) | {} |",
+            bytes(self.measured.steady_rss_bytes)
         )?;
         writeln!(
             f,

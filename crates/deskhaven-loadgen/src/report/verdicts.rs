@@ -31,6 +31,7 @@ pub fn verdicts(m: &Measured, t: &Targets) -> Vec<Verdict> {
         none_failed("Sysinfo and audit failures", &[&m.sysinfo, &m.audit]),
         cpu(m, t),
         idle_rss(m, t),
+        steady_rss(m, t),
         batched(m),
         whole_database(m),
         shutdown(m),
@@ -135,6 +136,15 @@ fn idle_rss(m: &Measured, t: &Targets) -> Verdict {
         ),
         measured: m.idle_rss_bytes.map_or_else(|| NA.to_owned(), mib),
         pass: m.idle_rss_bytes.is_some_and(|b| b < t.idle_rss_bytes),
+    }
+}
+
+fn steady_rss(m: &Measured, t: &Targets) -> Verdict {
+    Verdict {
+        nfr: "Steady RSS",
+        target: format!("< {} (largest under load)", mib(t.steady_rss_bytes)),
+        measured: m.steady_rss_bytes.map_or_else(|| NA.to_owned(), mib),
+        pass: m.steady_rss_bytes.is_some_and(|b| b < t.steady_rss_bytes),
     }
 }
 
