@@ -17,7 +17,7 @@ use deskhaven_http::{
 use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
-use crate::log_safe;
+use crate::db_ping::{CachedPing, PING_TTL};
 use crate::signal_server::SignalStatus;
 
 /// HSTS for https deployments: one year, without `includeSubDomains`
@@ -110,17 +110,19 @@ fn admin_router(admin_api: Router, readiness: impl ReadinessCheck) -> Router {
 /// (requests are only served after `migrate` succeeded). Settings load
 /// warnings do not count: the service runs on safe fallbacks, and a restart
 /// would not fix a bad row. The ping uses the shared pool, so a saturated pool
-/// (no connection within [`READY_PROBE_TIMEOUT`]) also reports not ready.
+/// (no connection within [`READY_PROBE_TIMEOUT`]) also reports not ready. One
+/// ping answers every probe for [`PING_TTL`] (the route is public).
 pub fn readiness(
     db: DatabaseConnection,
     shutdown: CancellationToken,
     signal: Option<SignalStatus>,
 ) -> impl ReadinessCheck + Clone {
-    move || probe(db.clone(), shutdown.clone(), signal.clone())
+    let ping = CachedPing::new(db, PING_TTL, READY_PROBE_TIMEOUT);
+    move || probe(ping.clone(), shutdown.clone(), signal.clone())
 }
 
 async fn probe(
-    db: DatabaseConnection,
+    ping: CachedPing,
     shutdown: CancellationToken,
     signal: Option<SignalStatus>,
 ) -> Result<(), NotReady> {
@@ -128,14 +130,7 @@ async fn probe(
         return Err(NotReady::new("shutting down"));
     }
     signal_ready(signal.as_ref())?;
-    match tokio::time::timeout(READY_PROBE_TIMEOUT, db.ping()).await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(err)) => Err(NotReady::new(format!(
-            "database ping failed: {}",
-            log_safe::render_error(&err)
-        ))),
-        Err(_) => Err(NotReady::new("database ping timed out")),
-    }
+    ping.ping().await.map_err(NotReady::new)
 }
 
 pub(crate) fn signal_ready(signal: Option<&SignalStatus>) -> Result<(), NotReady> {

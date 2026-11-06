@@ -80,7 +80,8 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   connects from that address can set `X-Forwarded-For` and evade the per-address sign-in
   limits. This applies to a binary deployment (`127.0.0.1/32`) and to `compose.yaml` without
   Caddy behind a host proxy (the network gateway).
-- **`/readyz` is public** and queries the database on every request.
+- **`/readyz` is public.** It pings the database at most once a second and answers every
+  probe in between from that result.
 
 ## Accounts and sign-in
 
