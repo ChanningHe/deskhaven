@@ -10,9 +10,10 @@ When you finish, your server is tightened beyond the defaults for life on the in
    before the RustDesk client lets them sign in. Accounts that sign in with OIDC are exempt;
    require MFA at the identity provider.
 3. **Keep the console off the internet**: [give it its own port](separate-console.md).
-4. **Refuse the old key exchange** once all your clients support version 1 of it: set
-   `signal.require_kx_v1` to `true` under **Settings → Signalling**. Clients that only
-   speak version 0 are then refused.
+4. **Refuse the old key exchange** once all your clients support version 1 of it, that is
+   RustDesk 1.5.0 or later: set `signal.require_kx_v1` to `true` under **Settings →
+   Signalling**. Version 0 uses one key for both directions. Signed-in 1.4.x clients only
+   speak version 0 and are then refused, so it stays off by default.
 5. **Trust only your proxy**: `security.trusted_proxies` should name exactly the address
    your reverse proxy connects from. The compose deployment sets it for you.
 6. **Firewall the local ports** on a binary deployment: 21119 and the relay's command
