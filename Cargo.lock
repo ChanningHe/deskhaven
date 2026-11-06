@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-admin-api"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-client-api"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "axum",
  "deskhaven-core",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-config"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "bytesize",
  "figment",
@@ -1501,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-contract"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1530,7 +1530,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-core"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "arc-swap",
  "argon2",
@@ -1570,7 +1570,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-db"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "chrono",
  "deskhaven-db",
@@ -1583,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-http"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "axum",
  "hyper",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-signal"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1626,7 +1626,7 @@ dependencies = [
 
 [[package]]
 name = "deskhaven-web"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "axum",
  "deskhaven-http",
@@ -6768,7 +6768,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "deskhaven-admin-api",
  "deskhaven-config",
