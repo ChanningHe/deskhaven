@@ -18,6 +18,8 @@ const POLL: Duration = Duration::from_millis(100);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// The server's own shutdown deadline is 10 s (02 §7).
 const STOP_LIMIT: Duration = Duration::from_secs(15);
+const CONFIG_FILE: &str = "deskhaven.toml";
+const RESTART_LOG: &str = "server-restart.log";
 #[cfg(unix)]
 const DATA_DIR_MODE: u32 = 0o700;
 
@@ -106,6 +108,8 @@ fn table<const N: usize>(entries: [(&str, toml::Value); N]) -> toml::Value {
 pub struct Server {
     child: Child,
     config: ServerConfig,
+    /// Its stdout and stderr.
+    log: PathBuf,
 }
 
 impl Server {
@@ -113,27 +117,38 @@ impl Server {
     pub fn spawn(config: &ServerConfig) -> Result<Self, LoadgenError> {
         let config = config.absolute()?;
         prepare_work_dir(&config.work_dir)?;
-        let config_path = config.work_dir.join("deskhaven.toml");
-        write(&config_path, &config.render())?;
-        let log_path = config.log_path();
-        let log = File::create(&log_path).map_err(io_error("create", &log_path))?;
-        let log_err = log.try_clone().map_err(io_error("open", &log_path))?;
+        write(&config.work_dir.join(CONFIG_FILE), &config.render())?;
+        let log = config.log_path();
+        Self::launch(config, log)
+    }
+
+    /// Starts the server again in the work dir of an earlier [`Server::spawn`], on the same
+    /// configuration and database; it logs to `server-restart.log`.
+    pub fn restart(config: &ServerConfig) -> Result<Self, LoadgenError> {
+        let config = config.absolute()?;
+        let log = config.work_dir.join(RESTART_LOG);
+        Self::launch(config, log)
+    }
+
+    fn launch(config: ServerConfig, log: PathBuf) -> Result<Self, LoadgenError> {
+        let out = File::create(&log).map_err(io_error("create", &log))?;
+        let err = out.try_clone().map_err(io_error("open", &log))?;
         let child = Command::new(&config.bin)
             .arg("--config")
-            .arg(&config_path)
+            .arg(config.work_dir.join(CONFIG_FILE))
             .arg("serve")
             .env_clear()
             .current_dir(&config.work_dir)
             .stdin(Stdio::null())
-            .stdout(log)
-            .stderr(log_err)
+            .stdout(out)
+            .stderr(err)
             .spawn()
             .map_err(|source| LoadgenError::Spawn {
                 path: config.bin.clone(),
                 source,
             })?;
-        tracing::info!(pid = child.id(), "server started");
-        Ok(Self { child, config })
+        tracing::info!(pid = child.id(), log = %log.display(), "server started");
+        Ok(Self { child, config, log })
     }
 
     pub fn pid(&self) -> u32 {
@@ -156,7 +171,7 @@ impl Server {
             }
             self.check_alive()?;
             if Instant::now() >= deadline {
-                let log = self.config.log_path();
+                let log = self.log.clone();
                 return Err(LoadgenError::NotReady { limit, log });
             }
             sleep(POLL).await;
@@ -169,7 +184,7 @@ impl Server {
             Ok(None) => Ok(()),
             Ok(Some(status)) => Err(LoadgenError::ServerExited {
                 status,
-                log: self.config.log_path(),
+                log: self.log.clone(),
             }),
             Err(source) => Err(LoadgenError::Stop { pid, source }),
         }

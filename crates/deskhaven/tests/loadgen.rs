@@ -99,13 +99,21 @@ fn assert_client_side(report: &Report) {
 }
 
 fn assert_server_side(report: &Report, backend: Backend) {
-    assert!(report.server_exit_clean, "server shutdown:\n{report}");
+    assert!(
+        report.measured.server_exit_clean,
+        "both server shutdowns:\n{report}"
+    );
     assert!(
         report.measured.cpu_cores.is_some_and(|c| c > 0.0),
         "cpu:\n{report}"
     );
+    // Idle RSS of the restart on the populated database, and of the empty one before.
     assert!(
         report.measured.idle_rss_bytes.is_some_and(|b| b > 0),
+        "rss after restart:\n{report}"
+    );
+    assert!(
+        report.idle_rss_empty_bytes.is_some_and(|b| b > 0),
         "rss:\n{report}"
     );
     let devices = report.db_run.table("devices");
@@ -118,11 +126,16 @@ fn assert_server_side(report: &Report, backend: Backend) {
         report.db_run.table("connection_sessions").inserted > 0,
         "{report}"
     );
-    // At most one row update per device per flush (window 11 s, flush 5 s: 3 + 1).
+    // At most one row update per device per flush (window 11 s, flush 5 s: 3 + 1). SQLite
+    // counts exactly; PostgreSQL statistics may shift a flush across the window's edges.
     let updates = report.measured.device_row_updates;
-    assert!(updates <= i64::try_from(DEVICES * 4).unwrap(), "{report}");
+    let flushes_allowed = match backend {
+        Backend::Sqlite => 4,
+        Backend::Postgres => 5,
+    };
+    let bound = i64::try_from(DEVICES * flushes_allowed).unwrap();
+    assert!(updates <= bound, "{report}");
     if backend == Backend::Sqlite {
-        // Exact counters (PostgreSQL statistics may lag the window by a few seconds).
         assert!(
             updates >= i64::try_from(DEVICES).unwrap(),
             "two flushes ran:\n{report}"

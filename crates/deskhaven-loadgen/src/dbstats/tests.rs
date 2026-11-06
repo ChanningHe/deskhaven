@@ -35,6 +35,20 @@ fn since_subtracts_per_table_and_drops_idle_tables() {
 }
 
 #[test]
+fn rows_written_sums_every_table_and_operation() {
+    let snapshot = Snapshot {
+        tables: BTreeMap::from([
+            ("devices".to_owned(), writes(0, 30_000, 0)),
+            ("audit_nonces".to_owned(), writes(1_520, 0, 2)),
+        ]),
+        commits: None,
+    };
+
+    assert_eq!(snapshot.rows_written(), 31_522);
+    assert_eq!(Snapshot::default().rows_written(), 0);
+}
+
+#[test]
 fn only_plain_identifiers_are_spliced_into_sql() {
     assert!(is_plain_identifier("devices"));
     assert!(is_plain_identifier("_seaql_migrations"));

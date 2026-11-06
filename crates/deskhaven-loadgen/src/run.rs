@@ -1,6 +1,10 @@
 //! A whole run: start the server, sample it idle, start the devices over the ramp, let them
-//! settle, measure the steady window, stop everything, report.
+//! settle, measure the steady window, stop everything; then restart the server on the now
+//! populated database and sample its idle RSS. SIGINT / SIGTERM stop the server too.
 
+mod summary;
+
+use std::future::Future;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,12 +16,12 @@ use tokio_util::sync::CancellationToken;
 use crate::LoadgenError;
 use crate::dbstats::{DbProbe, Snapshot};
 use crate::device::{self, Identity, Shared};
-use crate::machine::Machine;
+use crate::fdlimit;
 use crate::plan::{Rates, Timing};
 use crate::report::{Measured, Report};
-use crate::sampler::{Sampler, Usage};
+use crate::sampler::{self, Sampler};
 use crate::server::{Server, ServerConfig};
-use crate::stats::{Kind, Phase, Recorder};
+use crate::stats::{Phase, Recorder};
 
 /// Startup includes migrations and loading the peer table.
 const READY_LIMIT: Duration = Duration::from_secs(60);
@@ -29,14 +33,8 @@ const DRAIN_LIMIT: Duration = Duration::from_secs(30);
 /// `devices.last_seen_flush` bounds (configuration reference).
 const MIN_FLUSH: Duration = Duration::from_secs(5);
 const MAX_FLUSH: Duration = Duration::from_secs(3600);
-const PHASES: [Phase; 3] = [Phase::Ramp, Phase::Settle, Phase::Steady];
-const KINDS: [Kind; 5] = [
-    Kind::Heartbeat,
-    Kind::Sysinfo,
-    Kind::Audit,
-    Kind::RegisterPeer,
-    Kind::RegisterPk,
-];
+/// Spreads per-device seeds.
+const SEED_MIX: u64 = 0x9E37_79B9_7F4A_7C15;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -46,6 +44,7 @@ pub struct Config {
     pub first_ip: Ipv4Addr,
     pub timing: Timing,
     pub rates: Rates,
+    /// Length of both idle samplings: before the load, and after the restart.
     pub idle: Duration,
     pub ramp: Duration,
     pub settle: Duration,
@@ -75,20 +74,82 @@ impl Config {
     }
 }
 
-/// Runs the load test described by `config`; the server is stopped on every path.
+/// Runs the load test described by `config`; every server it starts is stopped on every path.
 pub async fn run(config: &Config) -> Result<Report, LoadgenError> {
     config.validate()?;
+    fdlimit::ensure(config.devices)?;
     let identities = (0..config.devices)
         .map(|index| Identity::new(index, config.first_ip))
         .collect::<Result<Vec<_>, _>>()?;
     let mut server = Server::spawn(&config.server)?;
-    let measured = measure(config, &mut server, identities).await;
-    let stopped = server.stop().await;
+    let server_config = server.config().clone();
+    let measured = interruptible(measure(config, &mut server, identities)).await;
+    let first_clean = server.stop().await;
     let report = measured?;
-    Ok(Report {
-        server_exit_clean: stopped?,
-        ..report
+    let first_clean = first_clean?;
+    let (idle_rss, second_clean) = idle_after_load(&server_config, config.idle).await?;
+    let measured = Measured {
+        idle_rss_bytes: Some(idle_rss),
+        server_exit_clean: first_clean && second_clean,
+        ..report.measured
+    };
+    Ok(Report { measured, ..report })
+}
+
+/// Restarts the server on the database the load left behind (every device registered) and
+/// takes the largest RSS over `window` without load. Returns it and whether it stopped cleanly.
+async fn idle_after_load(
+    config: &ServerConfig,
+    window: Duration,
+) -> Result<(u64, bool), LoadgenError> {
+    let mut server = Server::restart(config)?;
+    let pid = server.pid();
+    let sampled = interruptible(async {
+        server.wait_ready(READY_LIMIT).await?;
+        tracing::info!(
+            ?window,
+            "sampling the idle server on the populated database"
+        );
+        sampler::max_rss(pid, window).await
     })
+    .await;
+    let clean = server.stop().await;
+    Ok((sampled?, clean?))
+}
+
+/// `work`, unless SIGINT or SIGTERM comes first (then `work` is dropped, which aborts the
+/// device and sampler tasks, and the caller stops the server).
+async fn interruptible<T>(
+    work: impl Future<Output = Result<T, LoadgenError>>,
+) -> Result<T, LoadgenError> {
+    tokio::select! {
+        result = work => result,
+        signal = interrupted() => Err(LoadgenError::Interrupted(signal)),
+    }
+}
+
+#[cfg(unix)]
+async fn interrupted() -> &'static str {
+    use tokio::signal::unix::{SignalKind, signal};
+    let (Ok(mut term), Ok(mut int)) = (
+        signal(SignalKind::terminate()),
+        signal(SignalKind::interrupt()),
+    ) else {
+        tracing::warn!("cannot watch SIGINT / SIGTERM; interrupting will orphan the server");
+        return std::future::pending().await;
+    };
+    tokio::select! {
+        _ = term.recv() => "SIGTERM",
+        _ = int.recv() => "SIGINT",
+    }
+}
+
+#[cfg(not(unix))]
+async fn interrupted() -> &'static str {
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => "Ctrl-C",
+        Err(_) => std::future::pending().await,
+    }
 }
 
 /// Database snapshots at the edges of the run and of the steady window.
@@ -134,7 +195,7 @@ async fn measure(
         steady_start,
         steady_end,
     };
-    Ok(report(config, &recorder, window, usage, &counters))
+    Ok(summary::report(config, &recorder, window, usage, &counters))
 }
 
 fn shared(config: &Config) -> Shared {
@@ -150,20 +211,24 @@ fn shared(config: &Config) -> Shared {
     }
 }
 
-/// Device i starts at `ramp × i / n`, so heartbeats are spread evenly once all run.
+/// Device i starts at `ramp × i / n`, so its calls are spread evenly once all run. Its
+/// registration channel and its client API timer are separate tasks, as in the client
+/// (`RendezvousMediator` and `start_hbbs_sync`), so a slow API never delays a RegisterPeer.
 fn spawn_devices(identities: Vec<Identity>, shared: &Arc<Shared>, config: &Config) -> JoinSet<()> {
     let start = Instant::now();
     let count = identities.len().max(1);
     let mut set = JoinSet::new();
     for identity in identities {
         let offset = config.ramp.mul_f64(identity.index as f64 / count as f64);
-        let seed = config.seed ^ (identity.index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        set.spawn(device::run(
-            identity,
+        let seed = config.seed ^ (identity.index as u64).wrapping_mul(SEED_MIX);
+        let at = start + offset;
+        set.spawn(device::run_api(
+            identity.clone(),
             Arc::clone(shared),
-            start + offset,
+            at,
             seed,
         ));
+        set.spawn(device::run_signal(identity, Arc::clone(shared), at));
     }
     set
 }
@@ -184,102 +249,4 @@ async fn drain(devices: &mut JoinSet<()>) {
         );
         devices.shutdown().await;
     }
-}
-
-fn report(
-    config: &Config,
-    recorder: &Recorder,
-    window: Duration,
-    usage: Usage,
-    db: &Counters,
-) -> Report {
-    let db_steady = db.steady_end.since(&db.steady_start);
-    let summaries = PHASES
-        .iter()
-        .flat_map(|&phase| KINDS.iter().map(move |&kind| (phase, kind)))
-        .map(|(phase, kind)| (phase, kind, recorder.summary(phase, kind)))
-        .filter(|(_, _, s)| s.ok + s.failed() > 0)
-        .collect();
-    let measured = Measured {
-        devices: config.devices,
-        heartbeat_interval: config.timing.heartbeat,
-        last_seen_flush: config.server.last_seen_flush,
-        window,
-        heartbeat: recorder.summary(Phase::Steady, Kind::Heartbeat),
-        cpu_cores: usage.steady_cores,
-        idle_rss_bytes: usage.idle_rss_max,
-        device_row_updates: db_steady.table("devices").updated,
-    };
-    Report {
-        title: format!(
-            "deskhaven load test: {} devices, {}",
-            config.devices,
-            backend(config)
-        ),
-        machine: Machine::detect(),
-        command: config.command.clone(),
-        parameters: parameters(config),
-        measured,
-        summaries,
-        cpu_peak_cores: usage.steady_peak_cores,
-        steady_rss_max_bytes: usage.steady_rss_max,
-        steady_write_bytes: usage.steady_write_bytes,
-        db_steady,
-        db_run: db.steady_end.since(&db.start),
-        // Set by `run` once the server stopped.
-        server_exit_clean: false,
-    }
-}
-
-fn backend(config: &Config) -> &'static str {
-    match &config.server.database_url {
-        Some(url) if url.starts_with("postgres") => "PostgreSQL",
-        Some(_) => "SQLite (given URL)",
-        None => "SQLite",
-    }
-}
-
-fn parameters(config: &Config) -> Vec<(String, String)> {
-    let d = |d: Duration| humantime::format_duration(d).to_string();
-    let t = &config.timing;
-    [
-        ("Server binary", config.server.bin.display().to_string()),
-        ("Database", backend(config).to_owned()),
-        ("Devices", config.devices.to_string()),
-        (
-            "Idle / ramp / settle / steady",
-            format!(
-                "{} / {} / {} / {}",
-                d(config.idle),
-                d(config.ramp),
-                d(config.settle),
-                d(config.steady)
-            ),
-        ),
-        (
-            "Client timers: tick / heartbeat / RegisterPeer",
-            format!("{} / {} / {}", d(t.tick), d(t.heartbeat), d(t.register)),
-        ),
-        (
-            "`devices.last_seen_flush`",
-            d(config.server.last_seen_flush),
-        ),
-        (
-            "Connections (3 audit calls each) per device-hour",
-            config.rates.connections_per_hour.to_string(),
-        ),
-        (
-            "Sysinfo re-uploads per device-hour",
-            config.rates.sysinfo_per_hour.to_string(),
-        ),
-        (
-            "Device source addresses",
-            format!("{} + index", config.first_ip),
-        ),
-        ("Server log level", config.server.log_level.clone()),
-        ("Seed", config.seed.to_string()),
-    ]
-    .into_iter()
-    .map(|(name, value)| (name.to_owned(), value))
-    .collect()
 }

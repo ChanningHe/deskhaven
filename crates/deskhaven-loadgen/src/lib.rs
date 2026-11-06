@@ -23,6 +23,7 @@
 pub mod dbstats;
 pub mod device;
 pub mod error;
+pub mod fdlimit;
 pub mod http;
 pub mod machine;
 pub mod plan;

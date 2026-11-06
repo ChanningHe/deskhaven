@@ -27,8 +27,8 @@ impl Report {
             true => "debug",
             false => "release",
         };
-        let exit = match self.server_exit_clean {
-            true => "clean (status 0 after SIGTERM)",
+        let exit = match self.measured.server_exit_clean {
+            true => "clean (status 0 after SIGTERM, load run and idle restart)",
             false => "NOT clean",
         };
         writeln!(f, "| | |\n|---|---|")?;
@@ -95,8 +95,13 @@ impl Report {
         writeln!(f, "| Metric | Value |\n|---|---|")?;
         writeln!(
             f,
-            "| RSS, idle (max) | {} |",
+            "| RSS, idle after restart on the populated database (max; the verdict) | {} |",
             bytes(self.measured.idle_rss_bytes)
+        )?;
+        writeln!(
+            f,
+            "| RSS, idle before the load on the empty database (max; information) | {} |",
+            bytes(self.idle_rss_empty_bytes)
         )?;
         writeln!(
             f,

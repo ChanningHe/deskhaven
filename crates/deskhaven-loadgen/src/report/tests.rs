@@ -3,21 +3,42 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::stats::Failure;
 
-/// 10k devices, 180 s window, 60 s flush: a passing run.
+fn ok(count: u64) -> Summary {
+    Summary {
+        ok: count,
+        ..Summary::default()
+    }
+}
+
+fn failing(kind: Failure) -> Summary {
+    Summary {
+        failures: BTreeMap::from([(kind, 1)]),
+        ..ok(10)
+    }
+}
+
+/// 10k devices, 180 s window, 60 s flush: a passing run (the measured 10k figures).
 fn passing() -> Measured {
     Measured {
         devices: 10_000,
         heartbeat_interval: Duration::from_secs(15),
+        register_interval: Duration::from_secs(12),
         last_seen_flush: Duration::from_secs(60),
         window: Duration::from_secs(180),
         heartbeat: Summary {
-            ok: 120_000,
             p99: Some(Duration::from_millis(4)),
-            ..Summary::default()
+            ..ok(120_000)
         },
+        register_peer: ok(150_000),
+        register_pk: Summary::default(),
+        sysinfo: ok(474),
+        audit: ok(1_520),
         cpu_cores: Some(0.4),
         idle_rss_bytes: Some(20 * 1024 * 1024),
         device_row_updates: 30_000,
+        db_row_writes: 33_040,
+        db_commits: Some(2_093),
+        server_exit_clean: true,
     }
 }
 
@@ -29,19 +50,25 @@ fn verdict(m: &Measured, nfr: &str) -> Verdict {
 }
 
 const RATE: &str = "Heartbeat load";
+const REGISTER_RATE: &str = "RegisterPeer load";
 const P99: &str = "Heartbeat p99";
 const FAILURES: &str = "Heartbeat failures";
+const SIGNAL_FAILURES: &str = "Registration failures";
+const CALL_FAILURES: &str = "Sysinfo and audit failures";
 const CPU: &str = "Server CPU";
 const RSS: &str = "Idle RSS";
 const BATCHED: &str = "Heartbeat not written per row";
+const WHOLE_DB: &str = "Database writes, all tables";
+const SHUTDOWN: &str = "Server shutdown";
 
 #[test]
 fn a_good_run_passes_every_nfr() {
     let all = verdicts(&passing(), &NFR);
 
-    assert_eq!(all.len(), 6);
+    assert_eq!(all.len(), 11);
     assert!(all.iter().all(|v| v.pass), "{all:#?}");
     assert_eq!(verdict(&passing(), RATE).measured, "666.7 req/s");
+    assert_eq!(verdict(&passing(), REGISTER_RATE).measured, "833.3 req/s");
     assert_eq!(verdict(&passing(), P99).measured, "4.00 ms");
     assert_eq!(verdict(&passing(), CPU).measured, "0.40 cores");
     assert_eq!(verdict(&passing(), RSS).measured, "20.0 MiB");
@@ -70,15 +97,58 @@ fn each_threshold_fails_on_its_own() {
     };
     assert!(!verdict(&fat, RSS).pass);
 
-    let failing = Measured {
+    let failing_beats = Measured {
         heartbeat: Summary {
             failures: BTreeMap::from([(Failure::Status(429), 1)]),
             ..passing().heartbeat
         },
         ..passing()
     };
-    assert!(!verdict(&failing, FAILURES).pass);
+    assert!(!verdict(&failing_beats, FAILURES).pass);
     assert!(verdict(&passing(), FAILURES).pass);
+}
+
+#[test]
+fn signal_registration_failures_fail_the_run() {
+    let peer_timeouts = Measured {
+        register_peer: failing(Failure::Timeout),
+        ..passing()
+    };
+    let pk_rejected = Measured {
+        register_pk: failing(Failure::Body("UUID_MISMATCH".to_owned())),
+        ..passing()
+    };
+
+    assert!(!verdict(&peer_timeouts, SIGNAL_FAILURES).pass);
+    assert!(!verdict(&pk_rejected, SIGNAL_FAILURES).pass);
+    assert!(verdict(&passing(), SIGNAL_FAILURES).pass);
+}
+
+#[test]
+fn sysinfo_or_audit_failures_fail_the_run() {
+    let sysinfo = Measured {
+        sysinfo: failing(Failure::Status(429)),
+        ..passing()
+    };
+    let audit = Measured {
+        audit: failing(Failure::Status(500)),
+        ..passing()
+    };
+
+    assert!(!verdict(&sysinfo, CALL_FAILURES).pass);
+    assert!(!verdict(&audit, CALL_FAILURES).pass);
+    assert!(verdict(&passing(), CALL_FAILURES).pass);
+}
+
+#[test]
+fn an_unclean_server_shutdown_fails_the_run() {
+    let unclean = Measured {
+        server_exit_clean: false,
+        ..passing()
+    };
+
+    assert!(!verdict(&unclean, SHUTDOWN).pass);
+    assert!(verdicts(&unclean, &NFR).iter().any(|v| !v.pass));
 }
 
 #[test]
@@ -90,8 +160,14 @@ fn too_little_load_invalidates_the_run() {
         },
         ..passing()
     };
-
     assert!(!verdict(&light, RATE).pass, "555 req/s < 95% of 667");
+
+    // A slow API must not hide a lower UDP rate: 600 req/s < 95% of 833.
+    let quiet_signal = Measured {
+        register_peer: ok(108_000),
+        ..passing()
+    };
+    assert!(!verdict(&quiet_signal, REGISTER_RATE).pass);
 }
 
 #[test]
@@ -127,6 +203,46 @@ fn batching_check_is_inconclusive_when_the_bound_reaches_the_heartbeat_count() {
     };
 
     let v = verdict(&fast_flush, BATCHED);
+
+    assert!(!v.pass);
+    assert!(v.measured.contains("inconclusive"), "{}", v.measured);
+}
+
+#[test]
+fn a_heartbeat_writing_any_other_table_fails_the_whole_database_bound() {
+    // Bound: 40k (devices) + 2 × 1520 (audit) + 1 × 474 (sysinfo) rows.
+    let other_table = Measured {
+        db_row_writes: 33_040 + 120_000,
+        ..passing()
+    };
+    assert!(!verdict(&other_table, WHOLE_DB).pass);
+
+    // A transaction per heartbeat (PostgreSQL) fails even without row writes.
+    let commit_per_beat = Measured {
+        db_commits: Some(122_093),
+        ..passing()
+    };
+    assert!(!verdict(&commit_per_beat, WHOLE_DB).pass);
+
+    // SQLite has no transaction counter: rows alone decide.
+    let sqlite = Measured {
+        db_commits: None,
+        ..passing()
+    };
+    assert!(verdict(&sqlite, WHOLE_DB).pass);
+}
+
+#[test]
+fn whole_database_bound_is_inconclusive_when_it_reaches_the_heartbeat_count() {
+    let few_beats = Measured {
+        heartbeat: Summary {
+            ok: 40_000,
+            ..passing().heartbeat
+        },
+        ..passing()
+    };
+
+    let v = verdict(&few_beats, WHOLE_DB);
 
     assert!(!v.pass);
     assert!(v.measured.contains("inconclusive"), "{}", v.measured);

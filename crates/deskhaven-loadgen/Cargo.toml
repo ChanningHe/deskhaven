@@ -25,7 +25,8 @@ hyper-util = { workspace = true }
 sea-orm = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["net", "sync"] }
+# `signal`: SIGINT / SIGTERM stop the server before the generator exits.
+tokio = { workspace = true, features = ["net", "signal", "sync"] }
 tokio-util = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }

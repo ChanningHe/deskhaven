@@ -82,63 +82,90 @@ pub struct Shared {
     pub udp_timeout: Duration,
 }
 
-struct Device {
+/// The registration channel (`RendezvousMediator`): its own task and UDP socket.
+struct Signal {
     identity: Identity,
     shared: Arc<Shared>,
     rendezvous: Rendezvous,
     key_confirmed: bool,
 }
 
-/// Runs device `identity` from `start_at` until `shared.stop`.
-pub async fn run(identity: Identity, shared: Arc<Shared>, start_at: Instant, seed: u64) {
+/// The client API timer (`start_hbbs_sync`): its own task, independent of registration.
+struct Api {
+    identity: Identity,
+    shared: Arc<Shared>,
+}
+
+/// Waits for `start_at`; `false` when the run stopped first.
+async fn started(shared: &Shared, start_at: Instant) -> bool {
     tokio::select! {
-        () = shared.stop.cancelled() => return,
-        () = sleep_until(start_at) => {}
+        () = shared.stop.cancelled() => false,
+        () = sleep_until(start_at) => true,
+    }
+}
+
+/// Registers device `identity` from `start_at` until `shared.stop`: `RegisterPk` first (a
+/// fresh install), then `RegisterPeer` every `register` interval.
+pub async fn run_signal(identity: Identity, shared: Arc<Shared>, start_at: Instant) {
+    if !started(&shared, start_at).await {
+        return;
     }
     let rendezvous = match Rendezvous::bind(IpAddr::V4(identity.ip), shared.signal).await {
         Ok(rendezvous) => rendezvous,
         Err(err) => {
             tracing::warn!(ip = %identity.ip, error = %err, "cannot bind the device socket");
-            let failure = Err(Failure::Transport(format!("bind: {err}")));
-            shared
-                .recorder
-                .record(Kind::RegisterPk, Duration::ZERO, failure);
+            let failure: Result<(), _> = Err(Failure::Transport(format!("bind: {err}")));
+            record(
+                &shared,
+                Kind::RegisterPk,
+                std::time::Instant::now(),
+                failure,
+            );
             return;
         }
     };
-    let timing = shared.timing;
-    let rates = shared.rates;
-    let device = Device {
+    let period = shared.timing.register;
+    let stop = shared.stop.clone();
+    let mut signal = Signal {
         identity,
         shared,
         rendezvous,
         key_confirmed: false,
-    };
-    // A fresh install registers its key first (`register_peer` with the key unconfirmed).
-    let device = device.register().await;
-    let state = DeviceState::new(start_at, timing, rates, seed);
-    serve(device, state, start_at).await;
-}
-
-async fn serve(device: Device, state: DeviceState, start_at: Instant) {
-    let timing = device.shared.timing;
-    let mut tick = interval_at(start_at + timing.tick, timing.tick);
-    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let mut register = interval_at(start_at + timing.register, timing.register);
+    }
+    .register()
+    .await;
+    let mut register = interval_at(start_at + period, period);
     register.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let stop = device.shared.stop.clone();
-    let (mut device, mut state) = (device, state);
     loop {
         tokio::select! {
             biased;
             () = stop.cancelled() => break,
-            at = tick.tick() => state = device.on_tick(state, at).await,
-            _ = register.tick() => device = device.register().await,
+            _ = register.tick() => signal = signal.register().await,
         }
     }
 }
 
-impl Device {
+/// Runs the client API timer of device `identity` from `start_at` until `shared.stop`.
+pub async fn run_api(identity: Identity, shared: Arc<Shared>, start_at: Instant, seed: u64) {
+    if !started(&shared, start_at).await {
+        return;
+    }
+    let timing = shared.timing;
+    let stop = shared.stop.clone();
+    let mut state = DeviceState::new(start_at, timing, shared.rates, seed);
+    let api = Api { identity, shared };
+    let mut tick = interval_at(start_at + timing.tick, timing.tick);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => break,
+            at = tick.tick() => state = api.on_tick(state, at).await,
+        }
+    }
+}
+
+impl Signal {
     /// `RegisterPeer`, or `RegisterPk` while the key is unconfirmed or when asked for it.
     async fn register(self) -> Self {
         if !self.key_confirmed {
@@ -151,7 +178,7 @@ impl Device {
             .register_peer(&self.identity.keys.id, wait)
             .await;
         let request_pk = matches!(result, Ok(true));
-        self.record(Kind::RegisterPeer, started, result.map(|_| ()));
+        record(&self.shared, Kind::RegisterPeer, started, result);
         match request_pk {
             true => self.register_pk().await,
             false => self,
@@ -163,13 +190,15 @@ impl Device {
         let wait = self.shared.udp_timeout;
         let result = self.rendezvous.register_pk(&self.identity.keys, wait).await;
         let key_confirmed = result.is_ok();
-        self.record(Kind::RegisterPk, started, result);
+        record(&self.shared, Kind::RegisterPk, started, result);
         Self {
             key_confirmed,
             ..self
         }
     }
+}
 
+impl Api {
     async fn on_tick(&self, state: DeviceState, at: Instant) -> DeviceState {
         let (state, plan) = state.tick(at);
         let state = match plan.sysinfo {
@@ -196,7 +225,7 @@ impl Device {
             Ok(reply) => requests::sysinfo_reply(reply.status, &reply.body),
             Err(failure) => (SysinfoOutcome::Other, Err(failure)),
         };
-        self.record(Kind::Sysinfo, started, result);
+        record(&self.shared, Kind::Sysinfo, started, result);
         outcome
     }
 
@@ -206,7 +235,7 @@ impl Device {
         let (started, reply) = self.post("/api/heartbeat", &body).await;
         let result = reply.and_then(|reply| requests::heartbeat_reply(reply.status, &reply.body));
         let parsed = result.clone().unwrap_or_default();
-        self.record(Kind::Heartbeat, started, result.map(|_| ()));
+        record(&self.shared, Kind::Heartbeat, started, result);
         parsed
     }
 
@@ -215,31 +244,23 @@ impl Device {
         let body = requests::audit(self.identity.sender(), call, &nonce);
         let (started, reply) = self.post("/api/audit/conn", &body).await;
         let result = reply.and_then(|reply| requests::audit_reply(reply.status, &reply.body));
-        self.record(Kind::Audit, started, result);
+        record(&self.shared, Kind::Audit, started, result);
     }
 
     async fn post(&self, path: &str, body: &Value) -> (std::time::Instant, Result<Reply, Failure>) {
         let started = std::time::Instant::now();
         let local = IpAddr::V4(self.identity.ip);
         let (api, limit) = (self.shared.api, self.shared.http_timeout);
-        let reply = http::send(
-            local,
-            api,
-            Method::POST,
-            path,
-            Some(body.to_string()),
-            limit,
-        )
-        .await;
+        let json = Some(body.to_string());
+        let reply = http::send(local, api, Method::POST, path, json, limit).await;
         (started, reply)
     }
+}
 
-    fn record<T>(&self, kind: Kind, started: std::time::Instant, result: Result<T, Failure>) {
-        let latency = started.elapsed();
-        self.shared
-            .recorder
-            .record(kind, latency, result.map(|_| ()));
-    }
+/// Files a finished call, its latency measured from `started`.
+fn record<T>(shared: &Shared, kind: Kind, started: std::time::Instant, result: Result<T, Failure>) {
+    let latency = started.elapsed();
+    shared.recorder.record(kind, latency, result.map(|_| ()));
 }
 
 #[cfg(test)]

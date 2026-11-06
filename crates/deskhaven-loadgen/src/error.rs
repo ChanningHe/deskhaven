@@ -43,4 +43,6 @@ pub enum LoadgenError {
     Db(#[from] sea_orm::DbErr),
     #[error("cannot start the async runtime")]
     Runtime(#[source] io::Error),
+    #[error("interrupted by {0}; the server was stopped")]
+    Interrupted(&'static str),
 }

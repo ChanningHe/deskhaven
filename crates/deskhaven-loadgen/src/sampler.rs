@@ -7,6 +7,7 @@ use tokio::task::JoinSet;
 use tokio::time::{MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
 
+use crate::LoadgenError;
 use crate::procfs::{self, ProcSample};
 use crate::stats::{Phase, Recorder};
 
@@ -50,6 +51,21 @@ impl Sampler {
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         Usage::from_samples(&samples, procfs::ticks_per_second())
+    }
+}
+
+/// The largest RSS of process `pid`, sampled every second for `window` (first sample now).
+pub async fn max_rss(pid: u32, window: Duration) -> Result<u64, LoadgenError> {
+    let deadline = tokio::time::Instant::now() + window;
+    let mut every = interval(EVERY);
+    every.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut largest = 0;
+    loop {
+        every.tick().await;
+        largest = largest.max(procfs::sample(pid)?.rss_bytes);
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(largest);
+        }
     }
 }
 

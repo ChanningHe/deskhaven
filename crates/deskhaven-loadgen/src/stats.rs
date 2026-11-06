@@ -66,6 +66,8 @@ pub enum Failure {
     Timeout,
     /// Socket or protocol error.
     Transport(String),
+    /// Any failure once a series already holds [`MAX_FAILURE_KINDS`] distinct ones.
+    Other,
 }
 
 impl fmt::Display for Failure {
@@ -75,9 +77,14 @@ impl fmt::Display for Failure {
             Self::Body(what) => write!(f, "body: {what}"),
             Self::Timeout => f.write_str("timeout"),
             Self::Transport(what) => write!(f, "transport: {what}"),
+            Self::Other => f.write_str("other (distinct failure kinds capped)"),
         }
     }
 }
+
+/// Distinct failure keys kept per series: bodies and transport errors carry free text, so
+/// a misbehaving server could otherwise grow the map without bound.
+pub const MAX_FAILURE_KINDS: usize = 16;
 
 /// Nearest-rank percentile (`p` in 0–100) of ascending `sorted` samples; `None` if empty.
 pub fn percentile(sorted: &[Duration], p: f64) -> Option<Duration> {
@@ -149,7 +156,14 @@ impl Recorder {
         let entry = series.entry((phase, kind)).or_default();
         match result {
             Ok(()) => entry.samples.push(latency),
-            Err(failure) => *entry.failures.entry(failure).or_default() += 1,
+            Err(failure) => {
+                let known = entry.failures.contains_key(&failure);
+                let key = match known || entry.failures.len() < MAX_FAILURE_KINDS {
+                    true => failure,
+                    false => Failure::Other,
+                };
+                *entry.failures.entry(key).or_default() += 1;
+            }
         }
     }
 
@@ -199,6 +213,28 @@ mod tests {
         assert_eq!(percentile(&sorted, 50.0), Some(Duration::from_millis(20)));
         assert_eq!(percentile(&sorted, 99.0), Some(Duration::from_millis(30)));
         assert_eq!(percentile(&sorted, 1.0), Some(Duration::from_millis(10)));
+    }
+
+    #[test]
+    fn distinct_failure_kinds_are_capped() {
+        // Arrange
+        let recorder = Recorder::default();
+
+        // Act: 20 different bodies, then one already known.
+        for n in 0..20 {
+            let body = Err(Failure::Body(format!("garbage {n}")));
+            recorder.record(Kind::Sysinfo, Duration::ZERO, body);
+        }
+        let known = Err(Failure::Body("garbage 0".to_owned()));
+        recorder.record(Kind::Sysinfo, Duration::ZERO, known);
+
+        // Assert
+        let summary = recorder.summary(Phase::Idle, Kind::Sysinfo);
+        assert_eq!(summary.failures.len(), MAX_FAILURE_KINDS + 1);
+        assert_eq!(summary.failures.get(&Failure::Other), Some(&4));
+        let first = Failure::Body("garbage 0".to_owned());
+        assert_eq!(summary.failures.get(&first), Some(&2));
+        assert_eq!(summary.failed(), 21);
     }
 
     #[test]

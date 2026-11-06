@@ -69,6 +69,11 @@ impl Snapshot {
         Self { tables, commits }
     }
 
+    /// Rows inserted, updated or deleted, all tables together.
+    pub fn rows_written(&self) -> i64 {
+        self.tables.values().map(RowWrites::total).sum()
+    }
+
     pub fn table(&self, name: &str) -> RowWrites {
         self.tables.get(name).copied().unwrap_or_default()
     }
