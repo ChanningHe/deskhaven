@@ -2,15 +2,18 @@
 //!
 //! - Username: 1-64 characters of `[A-Za-z0-9._@-]` (the schema CHECKs the same set);
 //!   `username_norm` is its ASCII lowercase.
-//! - Email: kept as entered; `email_norm` is the **whole address** lowercased (Unicode
-//!   `to_lowercase`). RFC 5321 allows a case-sensitive local part, but no mainstream provider
-//!   uses one, and folding it prevents two accounts (or an OIDC link) differing only in case.
+//! - Email: kept as entered; `email_norm` is the **whole address** with its ASCII letters
+//!   lowercased. RFC 5321 allows a case-sensitive local part, but no mainstream provider uses
+//!   one, and folding it prevents two accounts (or an OIDC link) differing only in case.
+//!   Non-ASCII characters are compared as entered (M4-05): Unicode `to_lowercase` maps some of
+//!   them onto ASCII letters (the Kelvin sign U+212A becomes `k`), so an IdP that asserts
+//!   `\u{212A}evin@corp.example` as verified could otherwise be linked to `kevin@corp.example`.
 //!   Validation is deliberately shallow: at most 254 characters, no whitespace or control
 //!   characters, exactly one `@` with a non-empty part on each side. Deliverability is
-//!   proven by verification, not by syntax. No Unicode normalization (NFC / NFKC) is applied:
-//!   differently composed forms of the same internationalized address are distinct.
-//!   Accepted trade-off (no extra dependency; such addresses are rare and verification
-//!   catches typos).
+//!   proven by verification, not by syntax. No Unicode normalization (NFC / NFKC) or case
+//!   folding is applied: differently composed or cased forms of the same internationalized
+//!   address are distinct. Accepted trade-off (no extra dependency; such addresses are rare,
+//!   and a false "distinct" only fails to link, never links the wrong account).
 
 use super::UserError;
 use crate::text::{self, NOTE_MAX_LEN};
@@ -69,7 +72,7 @@ pub(super) fn email(raw: &str) -> Result<Email, UserError> {
         {
             Ok(Email {
                 value: raw.to_owned(),
-                norm: raw.to_lowercase(),
+                norm: raw.to_ascii_lowercase(),
             })
         }
         _ => Err(malformed()),
@@ -114,10 +117,23 @@ mod tests {
     }
 
     #[test]
-    fn email_norm_lowercases_the_whole_address() {
-        let email = email("Ünïcode.User@Example.COM").ok();
-        let norm = email.map(|e| e.norm);
-        assert_eq!(norm.as_deref(), Some("ünïcode.user@example.com"));
+    fn email_norm_lowercases_ascii_letters_of_the_whole_address_only() {
+        let norm = |raw: &str| email(raw).ok().map(|e| e.norm);
+
+        assert_eq!(
+            norm("Ünïcode.User@Example.COM").as_deref(),
+            Some("Ünïcode.user@example.com")
+        );
+        // Unicode lowercasing maps the Kelvin sign (U+212A) to ASCII `k`; ASCII-only folding
+        // keeps such an address distinct from the ASCII one it imitates.
+        assert_eq!(
+            norm("\u{212A}evin@corp.example").as_deref(),
+            Some("\u{212A}evin@corp.example")
+        );
+        assert_ne!(
+            norm("\u{212A}evin@corp.example"),
+            norm("kevin@corp.example")
+        );
     }
 
     #[test]
