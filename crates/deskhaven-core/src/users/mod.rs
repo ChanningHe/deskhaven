@@ -22,7 +22,7 @@ mod policy;
 mod write;
 
 use std::future::Future;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
 
 use deskhaven_config::settings::AUTH_PASSWORD_MIN_LENGTH;
 use deskhaven_db::entity::{group_member, user};
@@ -49,6 +49,7 @@ pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char};
 pub(crate) use write::lock_active_owners;
 
 use crate::clock::{SharedClock, SystemClock};
+use crate::commit_hooks::CommitHooks;
 use crate::pagination::Page;
 use crate::settings::SettingsService;
 use crate::text::contains_pattern;
@@ -64,7 +65,7 @@ struct Inner {
     settings: SettingsService,
     hasher: PasswordHasher,
     clock: SharedClock,
-    hooks: RwLock<Vec<CommitHook>>,
+    hooks: CommitHooks<UserChange>,
     events: broadcast::Sender<UserEvent>,
 }
 
@@ -89,7 +90,7 @@ impl UserService {
             settings,
             hasher,
             clock,
-            hooks: RwLock::default(),
+            hooks: CommitHooks::default(),
             events,
         };
         Self {
@@ -103,13 +104,10 @@ impl UserService {
     }
 
     /// Calls `hook` synchronously after every later committed [`UserChange`], before the
-    /// writing call returns and before the matching event is broadcast.
+    /// writing call returns and before the matching event is broadcast. A panicking hook is
+    /// logged and skipped; a hook may register another one, which runs from the next change.
     pub fn register_commit_hook(&self, hook: CommitHook) {
-        self.inner
-            .hooks
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(hook);
+        self.inner.hooks.register(hook);
     }
 
     pub async fn get(&self, id: i64) -> Result<User, UserError> {
@@ -205,11 +203,7 @@ impl Inner {
     /// After commit: the hooks first (synchronously), then the event if there is one. No
     /// receiver is not an error: nobody needs to react.
     fn committed(&self, change: UserChange) {
-        let hooks = self.hooks.read().unwrap_or_else(PoisonError::into_inner);
-        for hook in hooks.iter() {
-            hook(&change);
-        }
-        drop(hooks);
+        self.hooks.run(&change);
         if let UserChange::Event(event) = change {
             let _ = self.events.send(event);
         }

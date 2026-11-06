@@ -8,7 +8,7 @@ mod list;
 mod write;
 
 use std::future::Future;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
 
 use deskhaven_db::entity::{group, group_member, user};
 use deskhaven_db::is_foreign_key_violation;
@@ -21,6 +21,7 @@ use sea_orm::{
 pub use deskhaven_db::entity::managed_by::ManagedBy;
 pub use list::{GroupQuery, GroupSort, GroupSortField, GroupSummary};
 
+use crate::commit_hooks::CommitHooks;
 use crate::console_audit::{GuardError, Refused};
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::User;
@@ -154,37 +155,32 @@ pub enum GroupChange {
 }
 
 /// Called synchronously after each committed [`GroupChange`], before the writing call
-/// returns. Must be fast and must not block or panic.
+/// returns. Must be fast and must not block; a panic is logged and skipped.
 pub type GroupCommitHook = Arc<dyn Fn(&GroupChange) + Send + Sync>;
 
 /// Manages groups and membership. Cheap to clone (clones share the hooks).
 #[derive(Clone)]
 pub struct GroupService {
     db: DatabaseConnection,
-    hooks: Arc<RwLock<Vec<GroupCommitHook>>>,
+    hooks: CommitHooks<GroupChange>,
 }
 
 impl GroupService {
     pub fn new(db: DatabaseConnection) -> Self {
         Self {
             db,
-            hooks: Arc::default(),
+            hooks: CommitHooks::default(),
         }
     }
 
-    /// Calls `hook` after every later committed [`GroupChange`].
+    /// Calls `hook` after every later committed [`GroupChange`]. A hook may register another
+    /// one, which runs from the next change on.
     pub fn register_commit_hook(&self, hook: GroupCommitHook) {
-        self.hooks
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(hook);
+        self.hooks.register(hook);
     }
 
     fn committed(&self, change: GroupChange) {
-        let hooks = self.hooks.read().unwrap_or_else(PoisonError::into_inner);
-        for hook in hooks.iter() {
-            hook(&change);
-        }
+        self.hooks.run(&change);
     }
 
     pub async fn get(&self, id: i64) -> Result<Group, GroupError> {

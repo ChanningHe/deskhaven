@@ -7,7 +7,9 @@
 //! 1. **Commit hooks** ([`UserService::register_commit_hook`](super::UserService::register_commit_hook)):
 //!    called synchronously with a [`UserChange`] before the writing call returns, for state
 //!    that must be consistent the moment it does (cache invalidation). Hooks must be fast and
-//!    must not block or panic. Role and status changes reach hooks too, so cached roles and
+//!    must not block. A panicking hook is caught and logged; the write still succeeds and the
+//!    other hooks and the event still run. A hook may register further hooks (they apply from
+//!    the next change on). Role and status changes reach hooks too, so cached roles and
 //!    statuses never outlive the call that changed them.
 //! 2. **Events** ([`UserService::subscribe`](super::UserService::subscribe)): a
 //!    `tokio::sync::broadcast` channel of [`UserEvent`], sent right after the hooks. Core does

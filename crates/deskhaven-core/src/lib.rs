@@ -8,6 +8,7 @@ pub mod audit_query;
 pub mod auth;
 pub mod client_config;
 pub mod clock;
+mod commit_hooks;
 pub mod console_audit;
 pub mod crypto;
 pub mod devices;
