@@ -1,8 +1,9 @@
 //! `<public_url>/api/oidc/callback`: the browser comes back from the IdP with
 //! `?code=&state=` (or `?error=&state=`).
 //!
-//! - `GET` completes nothing. It shows which device the flow would sign in (RustDesk id,
-//!   host name and OS the device gave at `/api/oidc/auth`, escaped) and a button. This stops
+//! - `GET` completes nothing. It shows which device the flow would sign in (RustDesk id
+//!   first and in bold; host name and OS the device gave at `/api/oidc/auth`, escaped and
+//!   labelled as unverified, since a device can call itself anything) and a button. This stops
 //!   cross-device consent phishing: an attacker who sends their flow's authorization URL to
 //!   someone already signed in at the IdP gets a page naming the attacker's device, not a
 //!   silent login (`deskhaven_core::oidc` `preview`).
@@ -53,7 +54,8 @@ const SUCCESS: &str = "Login successful. You can close this window and return to
 const INVALID_LINK: &str =
     "This login link is invalid, expired or already used. Start the login again from RustDesk.";
 const SERVER_ERROR: &str = "The login could not be completed. Please try again later.";
-const WARNING: &str = "Only continue if you started this login on that device yourself.";
+const WARNING: &str = "Only continue if you started this login on that device yourself and \
+                       its RustDesk ID is the one your RustDesk client shows.";
 /// The console page that completes a console login (`web/src/routes/login.oidc.tsx`).
 pub const CONSOLE_COMPLETION_PATH: &str = "/login/oidc";
 
@@ -149,31 +151,58 @@ fn to_console(console_url: &str, raw_query: &str) -> Response {
     }
 }
 
+/// The confirmation page's text, escaped: a question, notes under it, the button.
+struct Confirmation {
+    question: String,
+    notes: Vec<String>,
+    button: &'static str,
+}
+
 fn confirmation(provider: &str, device: &DeviceSummary, denied: bool) -> Response {
+    let parts = confirmation_parts(provider, device, denied);
+    page::confirm(&parts.question, &parts.notes, parts.button)
+}
+
+/// The device is named by its RustDesk ID, first and in bold: the one thing the user can
+/// check against their own client. Name and OS are whatever the device sent at
+/// `/api/oidc/auth` (an attacker's device can call itself "Your work laptop"), so they are
+/// only a note, labelled as unverified.
+fn confirmation_parts(provider: &str, device: &DeviceSummary, denied: bool) -> Confirmation {
     let provider = escape(provider);
-    let details: Vec<String> = [device.name.as_deref(), device.os.as_deref()]
-        .into_iter()
-        .flatten()
-        .filter(|s| !s.is_empty())
-        .map(escape)
-        .collect();
-    let target = match details.is_empty() {
-        true => format!("RustDesk device {}", escape(&device.rustdesk_id)),
-        false => format!(
-            "RustDesk device {} ({})",
-            escape(&device.rustdesk_id),
-            details.join(", ")
-        ),
-    };
+    let target = format!(
+        "RustDesk device <strong>{}</strong>",
+        escape(&device.rustdesk_id)
+    );
+    let reported = reported(device);
     if denied {
-        let question = format!("{provider} did not sign you in. Tell {target} to stop waiting?");
-        return page::confirm(&question, "", "Stop waiting");
+        return Confirmation {
+            question: format!("{provider} did not sign you in. Tell {target} to stop waiting?"),
+            notes: reported.into_iter().collect(),
+            button: "Stop waiting",
+        };
     }
-    page::confirm(
-        &format!("Sign in {target} with {provider}?"),
-        WARNING,
-        "Sign in",
-    )
+    Confirmation {
+        question: format!("Sign in {target} with {provider}?"),
+        notes: reported.into_iter().chain([WARNING.to_owned()]).collect(),
+        button: "Sign in",
+    }
+}
+
+/// What the device said about itself, escaped and labelled; `None` when it said nothing.
+fn reported(device: &DeviceSummary) -> Option<String> {
+    let fields: Vec<String> = [("name", &device.name), ("system", &device.os)]
+        .into_iter()
+        .filter_map(|(label, value)| {
+            let value = value.as_deref().filter(|v| !v.is_empty())?;
+            Some(format!("{label} \u{201c}{}\u{201d}", escape(value)))
+        })
+        .collect();
+    (!fields.is_empty()).then(|| {
+        format!(
+            "Reported by the device itself, not verified: {}.",
+            fields.join(", ")
+        )
+    })
 }
 
 /// The failure of a client flow; successes are recorded when the session is collected.
@@ -191,4 +220,52 @@ async fn record(state: &AppState, client: ClientAddr, report: &CallbackReport) {
         method: LoginMethod::Oidc,
     };
     event::record(state, client, &attempted, None, LoginResult::from(*failure)).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: Option<&str>, os: Option<&str>) -> DeviceSummary {
+        DeviceSummary {
+            rustdesk_id: "123456789".to_owned(),
+            name: name.map(str::to_owned),
+            os: os.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn the_rustdesk_id_comes_first_and_the_self_description_is_labelled() {
+        let shown = device(Some("Your work PC"), Some("linux"));
+
+        let parts = confirmation_parts("corp", &shown, false);
+
+        assert_eq!(
+            parts.question,
+            "Sign in RustDesk device <strong>123456789</strong> with corp?"
+        );
+        assert_eq!(parts.button, "Sign in");
+        let reported = &parts.notes[0];
+        assert!(
+            reported.starts_with("Reported by the device itself"),
+            "{reported}"
+        );
+        assert!(reported.contains("Your work PC") && reported.contains("linux"));
+        assert!(parts.notes.last().unwrap().contains("RustDesk ID"));
+    }
+
+    #[test]
+    fn a_device_that_said_nothing_gets_no_reported_line_and_markup_is_escaped() {
+        let silent = confirmation_parts("corp", &device(None, Some("")), false);
+        let hostile = confirmation_parts("<i>p</i>", &device(Some("<b>x</b>"), None), true);
+
+        assert_eq!(silent.notes, [WARNING.to_owned()]);
+        assert!(
+            hostile
+                .question
+                .starts_with("&lt;i&gt;p&lt;/i&gt; did not sign you in.")
+        );
+        assert!(hostile.notes[0].contains("&lt;b&gt;x&lt;/b&gt;"));
+        assert_eq!(hostile.button, "Stop waiting");
+    }
 }

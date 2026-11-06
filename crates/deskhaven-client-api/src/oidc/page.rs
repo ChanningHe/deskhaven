@@ -14,10 +14,12 @@ pub(super) fn message(message: &str) -> Response {
     render(&format!("<p>{message}</p>"))
 }
 
-/// A question with one button that POSTs to this same URL (query included).
-pub(super) fn confirm(question: &str, warning: &str, button: &str) -> Response {
+/// A question, a paragraph per note (all already escaped or static), and one button that
+/// POSTs to this same URL (query included).
+pub(super) fn confirm(question: &str, notes: &[String], button: &str) -> Response {
+    let notes: String = notes.iter().map(|n| format!("<p>{n}</p>")).collect();
     render(&format!(
-        "<p>{question}</p><p>{warning}</p>\
+        "<p>{question}</p>{notes}\
          <form method=\"post\"><button type=\"submit\">{button}</button></form>"
     ))
 }
