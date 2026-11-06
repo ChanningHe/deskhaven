@@ -54,6 +54,8 @@ pub struct Measured {
     pub db_commits: Option<i64>,
     /// Both server processes (load run, idle restart) exited with status 0 after SIGTERM.
     pub server_exit_clean: bool,
+    /// Devices whose setup failed (socket bind), in any phase: they never registered.
+    pub devices_failed_to_start: u64,
 }
 
 /// One row of the NFR table.

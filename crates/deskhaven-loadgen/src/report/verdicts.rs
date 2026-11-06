@@ -34,7 +34,19 @@ pub fn verdicts(m: &Measured, t: &Targets) -> Vec<Verdict> {
         batched(m),
         whole_database(m),
         shutdown(m),
+        failed_to_start(m),
     ]
+}
+
+/// A device whose socket could not be bound never registers; its failure happens at its
+/// start (usually in the ramp), so it is counted outside the phase-bound series.
+fn failed_to_start(m: &Measured) -> Verdict {
+    Verdict {
+        nfr: "Devices failed to start",
+        target: "0 (any phase)".to_owned(),
+        measured: format!("{} of {}", m.devices_failed_to_start, m.devices),
+        pass: m.devices_failed_to_start == 0,
+    }
 }
 
 fn ms(d: Duration) -> String {

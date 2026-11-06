@@ -113,14 +113,9 @@ pub async fn run_signal(identity: Identity, shared: Arc<Shared>, start_at: Insta
     let rendezvous = match Rendezvous::bind(IpAddr::V4(identity.ip), shared.signal).await {
         Ok(rendezvous) => rendezvous,
         Err(err) => {
+            // The device never registers: counted whatever the phase, so the run fails.
             tracing::warn!(ip = %identity.ip, error = %err, "cannot bind the device socket");
-            let failure: Result<(), _> = Err(Failure::Transport(format!("bind: {err}")));
-            record(
-                &shared,
-                Kind::RegisterPk,
-                std::time::Instant::now(),
-                failure,
-            );
+            shared.recorder.record_start_failure();
             return;
         }
     };

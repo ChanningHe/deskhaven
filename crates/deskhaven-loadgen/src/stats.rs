@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -138,6 +138,8 @@ impl Series {
 pub struct Recorder {
     phase: AtomicU8,
     series: Mutex<HashMap<(Phase, Kind), Series>>,
+    /// Devices whose setup failed, any phase.
+    start_failures: AtomicU64,
 }
 
 impl Recorder {
@@ -165,6 +167,15 @@ impl Recorder {
                 *entry.failures.entry(key).or_default() += 1;
             }
         }
+    }
+
+    /// A device whose setup failed (it never sends anything); counted whatever the phase.
+    pub fn record_start_failure(&self) {
+        self.start_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn start_failures(&self) -> u64 {
+        self.start_failures.load(Ordering::Relaxed)
     }
 
     pub fn summary(&self, phase: Phase, kind: Kind) -> Summary {
@@ -213,6 +224,18 @@ mod tests {
         assert_eq!(percentile(&sorted, 50.0), Some(Duration::from_millis(20)));
         assert_eq!(percentile(&sorted, 99.0), Some(Duration::from_millis(30)));
         assert_eq!(percentile(&sorted, 1.0), Some(Duration::from_millis(10)));
+    }
+
+    #[test]
+    fn start_failures_are_counted_in_every_phase() {
+        let recorder = Recorder::default();
+
+        recorder.set_phase(Phase::Ramp);
+        recorder.record_start_failure();
+        recorder.set_phase(Phase::Steady);
+        recorder.record_start_failure();
+
+        assert_eq!(recorder.start_failures(), 2);
     }
 
     #[test]

@@ -2,9 +2,9 @@
 //! settle, measure the steady window, stop everything; then restart the server on the now
 //! populated database and sample its idle RSS. SIGINT / SIGTERM stop the server too.
 
+mod interrupt;
 mod summary;
 
-use std::future::Future;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +22,7 @@ use crate::report::{Measured, Report};
 use crate::sampler::{self, Sampler};
 use crate::server::{Server, ServerConfig};
 use crate::stats::{Phase, Recorder};
+use interrupt::Interrupt;
 
 /// Startup includes migrations and loading the peer table.
 const READY_LIMIT: Duration = Duration::from_secs(60);
@@ -81,13 +82,19 @@ pub async fn run(config: &Config) -> Result<Report, LoadgenError> {
     let identities = (0..config.devices)
         .map(|index| Identity::new(index, config.first_ip))
         .collect::<Result<Vec<_>, _>>()?;
+    // Dropping `_watcher` (end of the run) stops watching the signals.
+    let (interrupt, _watcher) = Interrupt::watch();
     let mut server = Server::spawn(&config.server)?;
     let server_config = server.config().clone();
-    let measured = interruptible(measure(config, &mut server, identities)).await;
+    let measured = interrupt
+        .guard(measure(config, &mut server, identities))
+        .await;
     let first_clean = server.stop().await;
     let report = measured?;
     let first_clean = first_clean?;
-    let (idle_rss, second_clean) = idle_after_load(&server_config, config.idle).await?;
+    // A signal during that stop skips the restart.
+    interrupt.check()?;
+    let (idle_rss, second_clean) = idle_after_load(&server_config, config.idle, &interrupt).await?;
     let measured = Measured {
         idle_rss_bytes: Some(idle_rss),
         server_exit_clean: first_clean && second_clean,
@@ -101,55 +108,22 @@ pub async fn run(config: &Config) -> Result<Report, LoadgenError> {
 async fn idle_after_load(
     config: &ServerConfig,
     window: Duration,
+    interrupt: &Interrupt,
 ) -> Result<(u64, bool), LoadgenError> {
     let mut server = Server::restart(config)?;
     let pid = server.pid();
-    let sampled = interruptible(async {
-        server.wait_ready(READY_LIMIT).await?;
-        tracing::info!(
-            ?window,
-            "sampling the idle server on the populated database"
-        );
-        sampler::max_rss(pid, window).await
-    })
-    .await;
+    let sampled = interrupt
+        .guard(async {
+            server.wait_ready(READY_LIMIT).await?;
+            tracing::info!(
+                ?window,
+                "sampling the idle server on the populated database"
+            );
+            sampler::max_rss(pid, window).await
+        })
+        .await;
     let clean = server.stop().await;
     Ok((sampled?, clean?))
-}
-
-/// `work`, unless SIGINT or SIGTERM comes first (then `work` is dropped, which aborts the
-/// device and sampler tasks, and the caller stops the server).
-async fn interruptible<T>(
-    work: impl Future<Output = Result<T, LoadgenError>>,
-) -> Result<T, LoadgenError> {
-    tokio::select! {
-        result = work => result,
-        signal = interrupted() => Err(LoadgenError::Interrupted(signal)),
-    }
-}
-
-#[cfg(unix)]
-async fn interrupted() -> &'static str {
-    use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut term), Ok(mut int)) = (
-        signal(SignalKind::terminate()),
-        signal(SignalKind::interrupt()),
-    ) else {
-        tracing::warn!("cannot watch SIGINT / SIGTERM; interrupting will orphan the server");
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = term.recv() => "SIGTERM",
-        _ = int.recv() => "SIGINT",
-    }
-}
-
-#[cfg(not(unix))]
-async fn interrupted() -> &'static str {
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => "Ctrl-C",
-        Err(_) => std::future::pending().await,
-    }
 }
 
 /// Database snapshots at the edges of the run and of the steady window.

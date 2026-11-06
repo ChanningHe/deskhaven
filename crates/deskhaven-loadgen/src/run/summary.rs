@@ -50,6 +50,7 @@ pub(super) fn report(
         db_row_writes: db_steady.rows_written(),
         db_commits: db_steady.commits,
         server_exit_clean: false,
+        devices_failed_to_start: recorder.start_failures(),
     };
     Report {
         title: format!(

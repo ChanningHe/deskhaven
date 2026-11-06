@@ -39,6 +39,7 @@ fn passing() -> Measured {
         db_row_writes: 33_040,
         db_commits: Some(2_093),
         server_exit_clean: true,
+        devices_failed_to_start: 0,
     }
 }
 
@@ -60,12 +61,13 @@ const RSS: &str = "Idle RSS";
 const BATCHED: &str = "Heartbeat not written per row";
 const WHOLE_DB: &str = "Database writes, all tables";
 const SHUTDOWN: &str = "Server shutdown";
+const START: &str = "Devices failed to start";
 
 #[test]
 fn a_good_run_passes_every_nfr() {
     let all = verdicts(&passing(), &NFR);
 
-    assert_eq!(all.len(), 11);
+    assert_eq!(all.len(), 12);
     assert!(all.iter().all(|v| v.pass), "{all:#?}");
     assert_eq!(verdict(&passing(), RATE).measured, "666.7 req/s");
     assert_eq!(verdict(&passing(), REGISTER_RATE).measured, "833.3 req/s");
@@ -149,6 +151,21 @@ fn an_unclean_server_shutdown_fails_the_run() {
 
     assert!(!verdict(&unclean, SHUTDOWN).pass);
     assert!(verdicts(&unclean, &NFR).iter().any(|v| !v.pass));
+}
+
+#[test]
+fn a_device_that_never_started_fails_the_run_whatever_the_phase() {
+    // A bind failure happens at the device's start, in the ramp, outside the steady window.
+    let lost = Measured {
+        devices_failed_to_start: 1,
+        ..passing()
+    };
+
+    let v = verdict(&lost, START);
+
+    assert!(!v.pass);
+    assert_eq!(v.measured, "1 of 10000");
+    assert!(verdict(&passing(), START).pass);
 }
 
 #[test]

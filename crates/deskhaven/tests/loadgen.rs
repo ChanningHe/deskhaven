@@ -87,6 +87,7 @@ fn assert_client_side(report: &Report) {
         u64::try_from(DEVICES).unwrap(),
         "one RegisterPk each:\n{report}"
     );
+    assert_eq!(report.measured.devices_failed_to_start, 0, "{report}");
     let (peer_ok, peer_failed) = total(report, Kind::RegisterPeer);
     assert!(peer_ok > 0 && peer_failed == 0, "RegisterPeer:\n{report}");
     let (sysinfo_ok, _) = total(report, Kind::Sysinfo);
