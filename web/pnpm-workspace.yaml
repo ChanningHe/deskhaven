@@ -28,8 +28,10 @@ auditConfig:
   ignoreGhsas:
     # minimatch 10 (eslint 10, ts-morph via the shadcn CLI): denial of service by crafted globs.
     # Patched only in 11.0.1 (a new major, days old) which eslint 10 does not accept; the
-    # patterns come from our own lint and TS configuration.
+    # patterns come from our own lint and TS configuration. Re-check by 2027-01-31, or as
+    # soon as eslint accepts minimatch 11.
     - GHSA-g3hv-75wg-m249
     # deepmerge (shadcn CLI only, run by hand to add components): prototype poisoning of the
     # merged object; no patched version exists. Nothing at build or run time uses it.
+    # Re-check by 2027-01-31, or on the next shadcn bump.
     - GHSA-gcqx-w48m-w2h4
