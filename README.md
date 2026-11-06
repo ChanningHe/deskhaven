@@ -1,3 +1,5 @@
+<img src="web/public/favicon.svg" alt="" width="72" height="72">
+
 # deskhaven
 
 Self-hosted, open-source server for the official RustDesk client: rendezvous (signal) server,
