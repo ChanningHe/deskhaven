@@ -13,12 +13,15 @@ use sea_orm::{
     QueryOrder, QuerySelect, SqlErr,
 };
 
-use super::options::{self, Options};
+use super::options;
+use super::sealing;
 use super::{NewStrategy, Strategy, StrategyError, StrategyService, StrategyUpdate};
 use crate::console_audit::TxGuard;
 use crate::text::{self, NOTE_MAX_LEN};
 
 const NAME_MAX_LEN: usize = 64;
+/// A new row's options before they are sealed under its id.
+const EMPTY_OPTIONS: &str = "{}";
 
 impl StrategyService {
     pub async fn create(&self, new: NewStrategy) -> Result<Strategy, StrategyError> {
@@ -33,12 +36,13 @@ impl StrategyService {
     ) -> Result<Strategy, StrategyError> {
         let name = validate_name(&new.name)?;
         let note = validate_note(&new.note)?;
-        let stored = validated_options(&new.options)?;
+        options::validate(&new.options)?;
         self.detached(move |inner| async move {
             let now = inner.clock.now();
             let model = strategy::ActiveModel {
                 name: Set(name),
-                options: Set(stored),
+                // Sealing binds secrets to the row id: the options follow the insert.
+                options: Set(EMPTY_OPTIONS.to_owned()),
                 note: Set(note),
                 managed_by: Set(ManagedBy::Ui),
                 created_at: Set(now),
@@ -46,7 +50,11 @@ impl StrategyService {
                 ..Default::default()
             };
             let tx = begin_write(&inner.db).await?;
-            let created = Strategy::from(model.insert(&tx).await.map_err(name_conflict)?);
+            let inserted = model.insert(&tx).await.map_err(name_conflict)?;
+            let stored = sealing::encode(&inner.crypto, inserted.id, &new.options)?;
+            let mut row: strategy::ActiveModel = inserted.into();
+            row.options = Set(stored);
+            let created = Strategy::from_row(row.update(&tx).await?, &inner.crypto);
             guard.check(&tx, None, Some(&created)).await?;
             tx.commit().await?;
             Ok(created)
@@ -55,7 +63,8 @@ impl StrategyService {
     }
 
     pub async fn get(&self, id: i64) -> Result<Strategy, StrategyError> {
-        Ok(find(&self.inner.db, id).await?.into())
+        let row = find(&self.inner.db, id).await?;
+        Ok(Strategy::from_row(row, &self.inner.crypto))
     }
 
     pub async fn get_by_name(&self, name: &str) -> Result<Strategy, StrategyError> {
@@ -63,7 +72,8 @@ impl StrategyService {
             .filter(strategy::Column::Name.eq(name.trim()))
             .one(&self.inner.db)
             .await?;
-        Ok(found.ok_or(StrategyError::NotFound)?.into())
+        let row = found.ok_or(StrategyError::NotFound)?;
+        Ok(Strategy::from_row(row, &self.inner.crypto))
     }
 
     /// Every strategy, ordered by name.
@@ -72,7 +82,11 @@ impl StrategyService {
             .order_by_asc(strategy::Column::Name)
             .all(&self.inner.db)
             .await?;
-        Ok(rows.into_iter().map(Strategy::from).collect())
+        let crypto = &self.inner.crypto;
+        Ok(rows
+            .into_iter()
+            .map(|row| Strategy::from_row(row, crypto))
+            .collect())
     }
 
     /// Applies `update`; any successful non-empty update advances the strategy version. An
@@ -96,7 +110,7 @@ impl StrategyService {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
             let current = writable(&tx, id).await?;
-            let before = Strategy::from(current.clone());
+            let before = Strategy::from_row(current.clone(), &inner.crypto);
             if update.is_empty() {
                 return Ok(before);
             }
@@ -104,7 +118,8 @@ impl StrategyService {
             if update.options.is_some() || !update.options_patch.is_empty() {
                 let base = update.options.unwrap_or_else(|| before.options.clone());
                 let merged = options::patched(base, &update.options_patch);
-                changes.options = Set(validated_options(&merged)?);
+                options::validate(&merged)?;
+                changes.options = Set(sealing::encode(&inner.crypto, id, &merged)?);
             }
             if let Some(name) = name {
                 changes.name = Set(name);
@@ -113,7 +128,8 @@ impl StrategyService {
                 changes.note = Set(note);
             }
             changes.updated_at = Set(inner.clock.now());
-            let updated = Strategy::from(changes.update(&tx).await.map_err(name_conflict)?);
+            let row = changes.update(&tx).await.map_err(name_conflict)?;
+            let updated = Strategy::from_row(row, &inner.crypto);
             guard.check(&tx, Some(&before), Some(&updated)).await?;
             tx.commit().await?;
             inner.cache.invalidate();
@@ -137,7 +153,11 @@ impl StrategyService {
             let tx = begin_write(&inner.db).await?;
             let current = writable(&tx, id).await?;
             guard
-                .check(&tx, Some(&Strategy::from(current.clone())), None)
+                .check(
+                    &tx,
+                    Some(&Strategy::from_row(current.clone(), &inner.crypto)),
+                    None,
+                )
                 .await?;
             current.delete(&tx).await?;
             tx.commit().await?;
@@ -164,11 +184,6 @@ async fn writable(db: &impl ConnectionTrait, id: i64) -> Result<strategy::Model,
         ManagedBy::Config => Err(StrategyError::ManagedByConfig),
         _ => Ok(strategy),
     }
-}
-
-fn validated_options(options: &Options) -> Result<String, StrategyError> {
-    options::validate(options)?;
-    options::encode(options)
 }
 
 fn invalid(field: &'static str, reason: impl Into<String>) -> StrategyError {

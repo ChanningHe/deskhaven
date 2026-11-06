@@ -143,7 +143,7 @@ impl AppState {
             Arc::clone(&clock),
             Arc::new(Ldap3Connector::new()),
         );
-        let strategies = StrategyService::new(db.clone(), Arc::clone(&clock));
+        let strategies = StrategyService::new(db.clone(), Arc::clone(&crypto), Arc::clone(&clock));
         strategies.watch_users(&users);
         strategies.watch_groups(&groups);
         let devices = DeviceService::new(

@@ -12,14 +12,17 @@ use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Select};
 use super::StrategyError;
 use super::effective::Snapshot;
 use super::model::{Assignment, Target};
-use super::options::{self, Options};
+use super::options::Options;
+use super::sealing;
+use crate::crypto::SecretBox;
 
 pub(super) async fn snapshot(
     db: &impl ConnectionTrait,
+    crypto: &SecretBox,
     version: i64,
 ) -> Result<Snapshot, StrategyError> {
     let assignments = assignments(db).await?;
-    let options = assigned_options(db, &assignments).await?;
+    let options = assigned_options(db, crypto, &assignments).await?;
     let members = group_members(db, &assignments).await?;
     Ok(Snapshot::build(version, &assignments, options, members))
 }
@@ -49,6 +52,7 @@ pub(super) async fn assignments(
 /// Options of every strategy that has an assignment.
 async fn assigned_options(
     db: &impl ConnectionTrait,
+    crypto: &SecretBox,
     assignments: &[Assignment],
 ) -> Result<HashMap<i64, Options>, StrategyError> {
     let assigned: HashSet<i64> = assignments.iter().map(|a| a.strategy_id).collect();
@@ -60,8 +64,8 @@ async fn assigned_options(
     for row in rows {
         // One damaged row must not take every device's strategy down with it: its layer is
         // skipped, and the console shows it flagged (`Strategy::options_corrupt`).
-        match options::decode(&row.options) {
-            Some(parsed) => drop(options.insert(row.id, parsed)),
+        match sealing::decode(crypto, row.id, &row.options) {
+            Some(opened) => drop(options.insert(row.id, opened.options)),
             None => tracing::error!(
                 strategy_id = row.id,
                 "stored strategy options are unreadable; the strategy is ignored"

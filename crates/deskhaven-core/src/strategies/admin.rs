@@ -89,7 +89,7 @@ impl StrategyService {
             .into_iter()
             .map(|row| StrategySummary {
                 assignment_count: counts.get(&row.id).copied().unwrap_or(0),
-                strategy: row.into(),
+                strategy: Strategy::from_row(row, &self.inner.crypto),
             })
             .collect();
         Ok(Page {

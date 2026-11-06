@@ -6,7 +6,8 @@ When you finish, you have a backup you can restore, and deskhaven runs a newer v
 
 The `deskhaven-data` volume holds everything: the key pair, the master key and the SQLite
 database. The master key encrypts the secrets in the database (OIDC and LDAP passwords,
-two-factor seeds, address book passwords); a database without it loses them.
+two-factor seeds, address book passwords, proxy passwords in strategies); a database
+without it loses them.
 
 With [PostgreSQL](postgresql.md), back up the database and the volume.
 

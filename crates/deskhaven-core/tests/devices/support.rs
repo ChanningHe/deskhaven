@@ -68,7 +68,7 @@ pub async fn ctx_on(conn: DatabaseConnection, clock: Arc<ManualClock>) -> Ctx {
     let hasher = PasswordHasher::new(FAST).unwrap();
     let users = UserService::with_clock(conn.clone(), settings.clone(), hasher, clock.clone());
     let groups = GroupService::new(conn.clone());
-    let strategies = StrategyService::new(conn.clone(), clock.clone());
+    let strategies = StrategyService::new(conn.clone(), crypto.clone(), clock.clone());
     strategies.watch_users(&users);
     strategies.watch_groups(&groups);
     let books = AddressBookService::new(conn.clone(), settings.clone(), crypto.clone());

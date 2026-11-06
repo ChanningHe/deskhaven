@@ -118,7 +118,7 @@ async fn a_restart_counts_as_a_change() {
         let before = version(&c.svc, &inputs).await;
 
         c.clock.advance(Duration::from_secs(30));
-        let restarted = StrategyService::new(db.conn.clone(), c.clock.clone());
+        let restarted = StrategyService::new(db.conn.clone(), c.crypto.clone(), c.clock.clone());
 
         let after = version(&restarted, &inputs).await;
         assert!(after > before);

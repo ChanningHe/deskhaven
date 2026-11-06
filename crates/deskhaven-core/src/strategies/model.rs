@@ -3,7 +3,9 @@ use deskhaven_db::entity::strategy;
 use deskhaven_db::entity::strategy_assignment::TargetType;
 use deskhaven_db::time::TimestampMs;
 
-use super::options::{self, Options, OptionsPatch};
+use super::options::{Options, OptionsPatch};
+use super::sealing;
+use crate::crypto::SecretBox;
 
 /// What a strategy is assigned to. Each target has at most one strategy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -75,11 +77,12 @@ pub struct Strategy {
     pub updated_at: TimestampMs,
 }
 
-impl From<strategy::Model> for Strategy {
-    /// Never fails: a row whose options cannot be read is shown flagged
-    /// ([`Strategy::options_corrupt`]) so the console can still list, repair or delete it.
-    fn from(m: strategy::Model) -> Self {
-        let decoded = options::decode(&m.options);
+impl Strategy {
+    /// The row with its secret options opened. Never fails: a row whose options cannot be
+    /// read is shown flagged ([`Strategy::options_corrupt`]) so the console can still list,
+    /// repair or delete it.
+    pub(super) fn from_row(m: strategy::Model, crypto: &SecretBox) -> Self {
+        let decoded = sealing::decode(crypto, m.id, &m.options).map(|o| o.options);
         Self {
             id: m.id,
             name: m.name,
@@ -94,8 +97,8 @@ impl From<strategy::Model> for Strategy {
 }
 
 /// Input of [`StrategyService::create`](super::StrategyService::create); the strategy is
-/// managed in the console (`ui`). Its options reach every device it applies to in clear: no
-/// secrets (see the module documentation).
+/// managed in the console (`ui`). Its options reach every device it applies to in clear,
+/// secret ones included (sealed at rest only; see the module documentation).
 #[derive(Clone, Debug, Default)]
 pub struct NewStrategy {
     pub name: String,

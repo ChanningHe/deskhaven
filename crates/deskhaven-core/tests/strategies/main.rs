@@ -9,4 +9,5 @@ mod effective;
 mod group_hooks;
 mod invalidation;
 mod modified_at;
+mod secrets;
 mod support;

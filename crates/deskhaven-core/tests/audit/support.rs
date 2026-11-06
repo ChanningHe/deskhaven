@@ -45,7 +45,7 @@ pub async fn ctx(db: &TestDb) -> Ctx {
     let (settings, _) = SettingsService::load(conn.clone(), crypto.clone(), PinSet::empty())
         .await
         .unwrap();
-    let strategies = StrategyService::new(conn.clone(), clock.clone());
+    let strategies = StrategyService::new(conn.clone(), crypto.clone(), clock.clone());
     let devices = DeviceService::new(conn.clone(), settings, crypto, strategies, clock.clone());
     let audit = AuditService::new(conn.clone(), devices, clock.clone());
     let c = Ctx { conn, clock, audit };

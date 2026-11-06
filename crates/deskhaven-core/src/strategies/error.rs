@@ -2,6 +2,7 @@ use sea_orm::DbErr;
 
 use super::Target;
 use crate::console_audit::{GuardError, Refused};
+use crate::crypto::CryptoError;
 
 /// Why a strategy operation failed. Variants are stable for API error mapping; database
 /// details stay in the source chain.
@@ -37,6 +38,10 @@ pub enum StrategyError {
 
     #[error("strategy storage failed")]
     Database(#[source] DbErr),
+
+    /// A secret option value could not be sealed (`sealing`).
+    #[error("sealing a secret strategy option failed")]
+    Crypto(#[source] CryptoError),
 }
 
 impl From<DbErr> for StrategyError {

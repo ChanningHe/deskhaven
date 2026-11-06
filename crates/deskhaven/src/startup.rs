@@ -193,7 +193,7 @@ pub async fn open_state(
         tracing::warn!("{warning}");
     }
 
-    Ok(AppState::new(
+    let state = AppState::new(
         db,
         settings,
         crypto,
@@ -208,7 +208,16 @@ pub async fn open_state(
             },
             signal_port: config.signal.port,
         },
-    ))
+    );
+    // Rows from before secret strategy options were sealed at rest (06 §5).
+    let sealed = state.strategies.seal_plaintext_secrets().await?;
+    if sealed > 0 {
+        tracing::info!(
+            strategies = sealed,
+            "sealed plaintext secret strategy options"
+        );
+    }
+    Ok(state)
 }
 
 #[cfg(unix)]

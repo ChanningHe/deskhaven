@@ -37,6 +37,7 @@ const FAST: HashParams = HashParams {
 pub struct Ctx {
     pub conn: DatabaseConnection,
     pub clock: Arc<ManualClock>,
+    pub crypto: Arc<SecretBox>,
     pub svc: StrategyService,
     pub users: UserService,
     pub groups: GroupService,
@@ -46,19 +47,20 @@ pub struct Ctx {
 /// watching users and groups.
 pub async fn ctx(db: &TestDb) -> Ctx {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
-    let (settings, _) = SettingsService::load(db.conn.clone(), crypto, PinSet::empty())
+    let (settings, _) = SettingsService::load(db.conn.clone(), crypto.clone(), PinSet::empty())
         .await
         .unwrap();
     let clock = Arc::new(ManualClock::at(T0_MS));
     let hasher = PasswordHasher::new(FAST).unwrap();
     let users = UserService::with_clock(db.conn.clone(), settings, hasher, clock.clone());
     let groups = GroupService::new(db.conn.clone());
-    let svc = StrategyService::new(db.conn.clone(), clock.clone());
+    let svc = StrategyService::new(db.conn.clone(), crypto.clone(), clock.clone());
     svc.watch_users(&users);
     svc.watch_groups(&groups);
     Ctx {
         conn: db.conn.clone(),
         clock,
+        crypto,
         svc,
         users,
         groups,

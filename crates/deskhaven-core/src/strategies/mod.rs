@@ -9,10 +9,12 @@
 //! - **Cache and version** ([`StrategyCache`]): effective strategies are computed from one
 //!   in-memory snapshot, and `modified_at` is a counter that only grows.
 //!
-//! **No secrets in strategies.** A strategy's options are sent in clear to every device it
-//! applies to, and a device's placement (owner, device group) can come from its own
-//! `preset-*` fields when `devices.accept_presets` is on; treat every option value as
-//! readable by any device of the targets it is assigned to.
+//! **Secrets in strategies reach devices in clear.** Values of the options the catalog marks
+//! secret (proxy and preset address book passwords, ICE servers) are sealed at rest
+//! (`sealing`), but a strategy's options are sent in clear to every device it applies to,
+//! and a device's placement (owner, device group) can come from its own `preset-*` fields
+//! when `devices.accept_presets` is on; treat every option value as readable by any device
+//! of the targets it is assigned to.
 //!
 //! Anything that deletes a user, user group, device group or device removes the strategy
 //! assignments of that target in the same transaction (`forget_*`) and invalidates the cache
@@ -31,6 +33,7 @@ mod error;
 mod load;
 mod model;
 mod options;
+mod sealing;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -47,6 +50,7 @@ pub use model::{Assignment, NewStrategy, Strategy, StrategyUpdate, Target};
 pub use options::{KEY_MAX_LEN, MAX_OPTIONS, Options, OptionsPatch, VALUE_MAX_LEN};
 
 use crate::clock::SharedClock;
+use crate::crypto::SecretBox;
 use crate::groups::{GroupChange, GroupService};
 use crate::users::{UserChange, UserEvent, UserService};
 use cache::Lookup;
@@ -60,6 +64,8 @@ pub struct StrategyService {
 
 struct Inner {
     db: DatabaseConnection,
+    /// Seals and opens secret option values (`sealing`).
+    crypto: Arc<SecretBox>,
     clock: SharedClock,
     cache: StrategyCache,
 }
@@ -67,10 +73,15 @@ struct Inner {
 impl StrategyService {
     /// Timestamps and the strategy version come from `clock` (share it with the other
     /// services).
-    pub fn new(db: DatabaseConnection, clock: SharedClock) -> Self {
+    pub fn new(db: DatabaseConnection, crypto: Arc<SecretBox>, clock: SharedClock) -> Self {
         let cache = StrategyCache::new(Arc::clone(&clock));
         Self {
-            inner: Arc::new(Inner { db, clock, cache }),
+            inner: Arc::new(Inner {
+                db,
+                crypto,
+                clock,
+                cache,
+            }),
         }
     }
 
@@ -120,7 +131,8 @@ impl StrategyService {
             Lookup::Hit(snapshot) => return Ok(snapshot),
             Lookup::Miss(ticket) => ticket,
         };
-        let snapshot = Arc::new(load::snapshot(&self.inner.db, ticket.version).await?);
+        let inner = &self.inner;
+        let snapshot = Arc::new(load::snapshot(&inner.db, &inner.crypto, ticket.version).await?);
         cache.store(ticket, &snapshot);
         Ok(snapshot)
     }
