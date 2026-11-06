@@ -20,6 +20,11 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 
 ## Signalling
 
+- **Relay requests are not authorised.** Anyone who knows an online device's ID can ask
+  the server to relay a connection to it, naming any `host:port` as the relay: the device
+  then connects there, which reveals its IP address. The official client sends no licence
+  key with this request, so checking one would break every relayed connection. Connection
+  authorisation (a session token checked by the server) is planned.
 - **Registration limits cost memory under a flood.** The per-address limits on key
   registrations remember up to 50 000 source addresses for a day, about 125 MB at worst
   (sources that each registered hundreds of IDs). The compose files set no `mem_limit`.
