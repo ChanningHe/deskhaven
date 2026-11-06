@@ -34,6 +34,7 @@ pub(crate) fn validate(cfg: &Bootstrap) -> (Vec<String>, Vec<Warning>) {
     problems.extend(check_log_level(&cfg.log.level));
     problems.extend(check_database(cfg));
     problems.extend(check_signal_port(cfg));
+    problems.extend(check_ws_listen(cfg));
     problems.extend(port_conflicts(&bindings(cfg)));
     if cfg.data_dir.as_os_str().is_empty() {
         problems.push("data_dir: must not be empty".to_owned());
@@ -99,6 +100,12 @@ fn check_signal_port(cfg: &Bootstrap) -> Option<String> {
     let in_range = port.checked_sub(1).is_some_and(|p| p > 0) && port.checked_add(2).is_some();
     (cfg.signal.enabled && !in_range)
         .then(|| format!("signal.port: {port} leaves no room for port-1 and port+2"))
+}
+
+/// An OS-assigned WebSocket port could not be published to clients or proxied.
+fn check_ws_listen(cfg: &Bootstrap) -> Option<String> {
+    let zero = cfg.signal.ws_listen.is_some_and(|addr| addr.port() == 0);
+    (cfg.signal.enabled && zero).then(|| "signal.ws_listen: needs a port other than 0".to_owned())
 }
 
 fn bindings(cfg: &Bootstrap) -> Vec<Binding> {
@@ -192,6 +199,14 @@ mod tests {
             problems,
             ["signal NAT test (port-1) conflicts with signal.ws_listen on port 21115/Tcp"]
         );
+    }
+
+    /// Re-review LOW-6: clients and proxies need a known port.
+    #[test]
+    fn signal_ws_listen_needs_a_port() {
+        let (problems, _) = validate(&with_ws_listen("127.0.0.1:0"));
+
+        assert_eq!(problems, ["signal.ws_listen: needs a port other than 0"]);
     }
 
     fn overlap(a: &str, b: &str) -> bool {
