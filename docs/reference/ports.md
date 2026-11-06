@@ -26,20 +26,28 @@ setups that lose it.
 ## Connection limits on 21116/tcp and 21118/tcp
 
 Every connection to the rendezvous TCP port costs the server a key exchange offer before the
-client has sent anything, so connections are admitted only within these limits; a refused
-connection is closed at once and the client retries:
+client has sent anything. Limits per source refuse a new connection (it is closed at once
+and the client retries); they only ever affect that source:
 
-| Limit | Value |
+| Per source | Value |
 | --- | --- |
-| New connections to 21116 per source | 256 at once, then 64 per second |
-| Connections to 21116 of one source that have not sent their first message yet | 64 (and 256 per IPv6 /48) |
-| Such connections in all | 2048, or 1/16 of the open-file limit if that is more; at the cap the oldest is closed to let the new one in |
+| New connections to 21116 | 256 at once, then 64 per second |
+| Connections not yet past their first message (21116) or handshake (21118) | 64 per source, 256 per IPv6 /48 |
+| Connections to 21116 and 21118 | 1024 per source, 4096 per IPv6 /48 |
 | Time to send the first message on 21116 | 15 s |
-| Connections to 21116 and 21118 of one source | 1024 |
-| Connections to 21116 and 21118 in all | 1/4 of the open-file limit (16 384 with the systemd unit's 65 536), at least 1024 |
+
+Global caps never refuse a new connection. When one is full, the least valuable existing
+connection is closed to let the new one in:
+
+| Global cap | Value | When full, closed first |
+| --- | --- | --- |
+| Pending connections on 21116 | a quarter of the connection cap | the oldest of the source holding the most |
+| Pending connections on 21118 | an eighth of the connection cap | the oldest of the source holding the most |
+| Connections to 21116 and 21118 | a quarter of the open-file limit, from 64 up to 32 768 (16 384 with the systemd unit's 65 536) | a pending one, then the connection idle the longest without a registered device, registered devices last |
 
 A source is an IPv4 address or an IPv6 /64. On 21118 the source is the client address your
-proxy reports (`security.trusted_proxies`), counted once the WebSocket handshake is done.
+proxy reports (`security.trusted_proxies`), counted once the WebSocket handshake is done;
+before it, connections from a trusted proxy only count towards the 21118 pending cap.
 Clients normally send their first message within a round trip, so many devices behind one
 NAT address stay well inside these limits. A large office or a carrier-grade NAT that puts
 more than 1024 TCP- or WebSocket-mode clients behind one public address will see the extra
