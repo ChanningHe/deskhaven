@@ -219,13 +219,16 @@ fn member_ids(group_id: i64) -> sea_orm::sea_query::SelectStatement {
         .into_query()
 }
 
-/// Case-insensitive literal substring match on username, email and display name. SQLite's
-/// `lower()` folds ASCII only, so non-ASCII display names match case-sensitively there.
+/// Case-insensitive literal substring match on username, email and display name. Username and
+/// email are matched against their stored ASCII-lowercased forms with `q` folded the same way
+/// (non-ASCII letters match as typed, M4-05). SQLite's `lower()` folds ASCII only, so
+/// non-ASCII display names match case-sensitively there.
 fn matches_text(q: &str) -> Condition {
-    let like = || contains_pattern(&q.to_lowercase());
+    let norm = || contains_pattern(&q.to_ascii_lowercase());
+    let lower = || contains_pattern(&q.to_lowercase());
     let display_name = Expr::expr(Func::lower(Expr::col(user::Column::DisplayName)));
     Condition::any()
-        .add(user::Column::UsernameNorm.like(like()))
-        .add(user::Column::EmailNorm.like(like()))
-        .add(display_name.like(like()))
+        .add(user::Column::UsernameNorm.like(norm()))
+        .add(user::Column::EmailNorm.like(norm()))
+        .add(display_name.like(lower()))
 }

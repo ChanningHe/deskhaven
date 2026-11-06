@@ -818,3 +818,31 @@ async fn unknown_users_are_not_found() {
     })
     .await;
 }
+
+/// Re-review LOW-4: the search folds `q` the way `email_norm` is folded (ASCII only), so a
+/// non-ASCII part of an address matches as stored.
+#[tokio::test]
+async fn search_matches_emails_with_their_ascii_folding() {
+    each_migrated_backend(async |db: &TestDb| {
+        let svc = service(db).await;
+        let new = NewUser {
+            email: Some("Ünïcode.User@Example.COM".to_owned()),
+            ..local("uni")
+        };
+        svc.create(new).await.unwrap();
+        let search = |q: &str| UserQuery {
+            q: Some(q.to_owned()),
+            page: PageRequest {
+                page: 1,
+                page_size: 10,
+            },
+            ..UserQuery::default()
+        };
+
+        for q in ["Ünïcode.USER", "ünïcode.user@example"] {
+            let found = svc.list(&search(q)).await.unwrap();
+            assert_eq!(found.total, u64::from(q.starts_with('Ü')), "{q}");
+        }
+    })
+    .await;
+}
