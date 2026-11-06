@@ -2,7 +2,9 @@
 
 When you finish, your server is tightened beyond the defaults for life on the internet.
 
-1. **Back up the master key**, as in [Back up and upgrade](backup-upgrade.md#what-to-back-up).
+1. **Back up the master key apart from the database** and move it out of the data volume
+   into a secret file ([how](backup-upgrade.md#keep-the-master-key-apart)): a backup that
+   holds both gives away every stored secret.
 2. **Require two-factor authentication**: **Identity → Require two-factor authentication
    for**, at least **Administrators and owners**. A covered user enrols in the console
    before the RustDesk client lets them sign in. Accounts that sign in with OIDC are exempt;

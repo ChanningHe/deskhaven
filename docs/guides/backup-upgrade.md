@@ -9,6 +9,12 @@ database. The master key encrypts the secrets in the database (OIDC and LDAP pas
 two-factor seeds, address book passwords, proxy passwords in strategies); a database
 without it loses them.
 
+Whoever holds both the master key and the database reads every one of those secrets, so a
+backup of the whole volume carries the key next to what it protects. Keep a copy of the key
+apart from your database backups, for example in a password manager, and
+[move it out of the volume](#keep-the-master-key-apart) so routine backups no longer
+contain it.
+
 With [PostgreSQL](postgresql.md), back up the database and the volume.
 
 ## Back up
@@ -41,6 +47,61 @@ Use the name of your backup file.
 
 On a [binary deployment](binary-systemd.md), the same files are in `/var/lib/deskhaven`:
 stop the service and archive that directory.
+
+If the master key lives in a secret file (next section), put that file back too before
+starting.
+
+## Keep the master key apart
+
+deskhaven reads the master key from `security.master_key` when it is set, and from
+`master.key` in the volume only otherwise. A variable ending in `_FILE` takes its value from
+a file, and `master.key` is already in that format, so the key can live in a secret file
+outside the volume. Run in the `deskhaven` directory:
+
+```sh
+docker run --rm -v deskhaven_deskhaven-data:/data:ro busybox cat /data/master.key > master.key
+sudo chown 65532:65532 master.key && sudo chmod 0400 master.key
+```
+
+Merge this into `compose.override.yaml`
+([how](../reference/configuration.md#in-the-compose-deployment)):
+
+```yaml
+services:
+  deskhaven:
+    environment:
+      DESKHAVEN_SECURITY__MASTER_KEY_FILE: /run/secrets/master_key
+    secrets: [master_key]
+
+secrets:
+  master_key:
+    file: ./master.key
+```
+
+Apply it with `docker compose up -d --wait`, then check that deskhaven uses the file:
+`docker compose run --rm deskhaven config check` says to back up "the security.master_key
+value" and prints no warning. Only then remove the copy in the volume:
+
+```sh
+docker run --rm -v deskhaven_deskhaven-data:/data busybox rm /data/master.key
+```
+
+Back up `master.key` from the `deskhaven` directory to a different place than the volume
+backups. Without it they cannot be restored.
+
+On a binary deployment, pass the key as a systemd credential: copy
+`/var/lib/deskhaven/master.key` to `/etc/deskhaven/master.key` (mode `0400`, owned by root),
+add this to the service (`systemctl edit deskhaven`) and restart it:
+
+```ini
+[Service]
+LoadCredential=master_key:/etc/deskhaven/master.key
+Environment=DESKHAVEN_SECURITY__MASTER_KEY_FILE=%d/master_key
+```
+
+Once `journalctl -u deskhaven` shows it running without a master key warning, delete
+`/var/lib/deskhaven/master.key`. Never delete it first: without a configured key,
+deskhaven generates a new one, and the secrets sealed under the old one are lost.
 
 ## Upgrade
 
