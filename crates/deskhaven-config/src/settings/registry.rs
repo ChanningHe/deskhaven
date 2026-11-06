@@ -47,9 +47,11 @@ settings! {
         rule: range(minutes(5), days(365)),
     }
     /// Most usable client and console sessions one user holds; signing in once more ends
-    /// the user's least recently used session.
+    /// the user's least recently used session. Every RustDesk client signed in to an
+    /// account holds one session, so an account shared by more devices than this logs the
+    /// least recently used device out.
     AUTH_MAX_SESSIONS_PER_USER: u32 = "auth.max_sessions_per_user" {
-        default: 100,
+        default: 1000,
         rule: range(1, 10_000),
     }
     /// Minimum password length (the maximum is fixed at 256).

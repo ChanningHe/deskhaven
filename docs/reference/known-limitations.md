@@ -93,6 +93,11 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   two-factor authentication** covers. A local account linked this way can no longer sign in
   through the provider once it enables two-factor authentication, becomes an admin or
   owner, or is covered by that requirement; it signs in with its password instead.
+- **One account holds at most `auth.max_sessions_per_user` sessions** (default 1000). Each
+  RustDesk client signed in to the account and each console sign-in is one session; one
+  more ends the least recently used, without notice. An account shared by more devices
+  than that keeps logging its least used devices out: raise the setting, up to 10000, or
+  give the devices their own accounts. The console lists the 200 most recently used.
 - **LDAP has no setting for a private CA.** Directory certificates are checked against the
   operating system's CA store; in the container image that holds public CAs only.
 - **Sessions outlive directory changes.** An account disabled or a password changed in

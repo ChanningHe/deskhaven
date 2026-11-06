@@ -48,8 +48,8 @@
     },
     {
       "category": "auth",
-      "default": 100,
-      "description": "Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session.",
+      "default": 1000,
+      "description": "Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session. Every RustDesk client signed in to an account holds one session, so an account shared by more devices than this logs the least recently used device out.",
       "key": "auth.max_sessions_per_user",
       "max": 10000,
       "min": 1,
