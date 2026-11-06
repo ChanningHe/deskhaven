@@ -681,3 +681,13 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   websocket listener with the other listeners (`bind`, `port + 2`). `ws_listen: Some(addr)` binds
   it at `addr` instead (deskhaven: `signal.ws_listen`, so a binary deployment can keep it on
   loopback behind its TLS proxy); `None` keeps the upstream behavior. Test: `tests/ws_listen.rs`.
+- 2026-11-06, M4-05 review HIGH-2, RegisterPk per-source limits (new `ip_blocker.rs`; `peer.rs`
+  `IP_BLOCKER` now holds an `IpBlocker`, `IpBlockMap` removed; `rendezvous_server.rs`
+  `check_ip_blocker`, `on_tick`; the free functions `check_ip_block` / `prune_ip_blocks` and
+  `MAX_IP_BLOCK_ENTRIES` removed, their tests replaced by `ip_blocker::tests`): upstream keyed the map
+  by the full IP string and kept every id string (up to 301 x 253 bytes per IP); the M1-03 cap
+  then refused every new IP once 100 000 were tracked, for up to a day, so one IPv6 /64 or a
+  spoofed IPv4 flood locked new devices out. Sources are now the IPv4 address (IPv4-mapped
+  canonicalised) or the IPv6 /64, ids are 64-bit keyed hashes (8 bytes each), and a full table
+  evicts its least recently seen tenth instead of refusing. The per-source limits are
+  upstream's (31 RegisterPk per 60 s window, 301 distinct ids per day).

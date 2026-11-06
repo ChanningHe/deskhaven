@@ -30,6 +30,7 @@ mod rendezvous_server;
 // Vendored upstream code; trips no clippy lints. Crate-private since M1-03.
 mod common;
 mod control;
+mod ip_blocker;
 mod kx;
 mod log_limit;
 // Vendored upstream code; clean up incrementally.

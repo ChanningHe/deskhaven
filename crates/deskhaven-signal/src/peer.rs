@@ -1,5 +1,6 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
 use crate::common::*;
+use crate::ip_blocker::IpBlocker;
 use crate::log_limit::Redacted;
 use crate::persist::{Persist, QueueFull, SaveState, WRITE_QUEUE};
 use crate::store::{PeerStore, StoreError};
@@ -12,14 +13,14 @@ use hbb_common::{
         time::Duration,
     },
 };
-use std::{collections::HashMap, collections::HashSet, net::SocketAddr, sync::Arc, time::Instant};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
 
-// deskhaven: crate-visible for `prune_ip_blocks` (rendezvous_server.rs).
-pub(crate) type IpBlockMap = HashMap<String, ((u32, Instant), (HashSet<String>, Instant))>;
+// deskhaven (M4-05): the map behind IP_BLOCKER is `ip_blocker::IpBlocker` (sources keyed by
+// IPv4 address / IPv6 /64, id hashes, eviction instead of a lockout when full).
 #[allow(dead_code)] // only used by the unused USER_STATUS static (upstream)
 type UserStatusMap = HashMap<Vec<u8>, Arc<(Option<Vec<u8>>, bool)>>;
 lazy_static::lazy_static! {
-    pub(crate) static ref IP_BLOCKER: Mutex<IpBlockMap> = Default::default();
+    pub(crate) static ref IP_BLOCKER: Mutex<IpBlocker> = Default::default();
     pub(crate) static ref USER_STATUS: RwLock<UserStatusMap> = Default::default();
 }
 // deskhaven: IP_CHANGES, IpChangesMap, IP_CHANGE_DUR and IP_CHANGE_DUR_X2 removed: the map was

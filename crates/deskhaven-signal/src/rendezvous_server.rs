@@ -166,9 +166,6 @@ pub(crate) type Receiver = mpsc::UnboundedReceiver<Data>;
 // deskhaven (M1-06): the ROTATION_RELAY_SERVER static moved into `AllowAll` (control.rs).
 type RelayServers = Vec<String>;
 const CHECK_RELAY_TIMEOUT: u64 = 3_000;
-// deskhaven: hard cap on IP_BLOCKER entries (one per client IP seen in the last day); see
-// `check_ip_block`.
-const MAX_IP_BLOCK_ENTRIES: usize = 100_000;
 // deskhaven (M1-05): RegisterPk key bounds. A RustDesk pk is an ed25519 public key; client
 // uuids are machine ids (16-64 bytes in practice), so 128 leaves ample room.
 const REGISTER_PK_LEN: usize = sign::PUBLICKEYBYTES;
@@ -496,7 +493,7 @@ impl RendezvousServer {
     // IP_BLOCKER (upstream only pruned from the console's `ib`), starts the relay health check
     // (upstream), and (re)resolves the configured relay list while entries are unresolved.
     async fn on_tick(&mut self) {
-        prune_ip_blocks(&mut *IP_BLOCKER.lock().await, Instant::now());
+        IP_BLOCKER.lock().await.prune(Instant::now());
         self.accept_gate.prune(Instant::now());
         if self.relay_servers0.len() > 1 {
             let rs = self.relay_servers0.clone();
@@ -754,7 +751,7 @@ impl RendezvousServer {
         let ip = addr.ip().to_string();
         if id.len() < 6 || id.len() > MAX_PEER_ID_LEN {
             return Some(UUID_MISMATCH);
-        } else if !self.check_ip_blocker(&ip, &id).await {
+        } else if !self.check_ip_blocker(addr.ip(), &id).await {
             return Some(TOO_FREQUENT);
         }
         // ControlPlane hook (M5): `control.register_pk(&RegisterInfo { id, uuid,
@@ -1439,9 +1436,9 @@ impl RendezvousServer {
         Ok(())
     }
 
-    // deskhaven: body moved to the free function `check_ip_block` (testable, with a cap).
-    async fn check_ip_blocker(&self, ip: &str, id: &str) -> bool {
-        check_ip_block(&mut *IP_BLOCKER.lock().await, ip, id, MAX_IP_BLOCK_ENTRIES)
+    // deskhaven: the accounting lives in `ip_blocker.rs` (M4-05).
+    async fn check_ip_blocker(&self, ip: IpAddr, id: &str) -> bool {
+        IP_BLOCKER.lock().await.check(ip, id, Instant::now())
     }
 
     // deskhaven: was `parse_relay_servers(&str)`. Takes a list that is already resolved and
@@ -1455,40 +1452,6 @@ impl RendezvousServer {
         self.relay_servers0 = Arc::new(relay_servers);
         self.relay_servers.store(self.relay_servers0.clone());
     }
-}
-
-// deskhaven: upstream `check_ip_blocker` body, unchanged except for the cap: when the map
-// already holds `max_entries` IPs, a new IP is refused (TOO_FREQUENT) without an insert, so the
-// map stays bounded between prunes. Known IPs keep their normal accounting.
-fn check_ip_block(lock: &mut IpBlockMap, ip: &str, id: &str, max_entries: usize) -> bool {
-    let now = Instant::now();
-    if let Some(old) = lock.get_mut(ip) {
-        let counter = &mut old.0;
-        if counter.1.elapsed().as_secs() > IP_BLOCK_DUR {
-            counter.0 = 0;
-        } else if counter.0 > 30 {
-            return false;
-        }
-        counter.0 += 1;
-        counter.1 = now;
-
-        let counter = &mut old.1;
-        let is_new = counter.0.get(id).is_none();
-        if counter.1.elapsed().as_secs() > DAY_SECONDS {
-            counter.0.clear();
-        } else if counter.0.len() > 300 {
-            return !is_new;
-        }
-        if is_new {
-            counter.0.insert(id.to_owned());
-        }
-        counter.1 = now;
-    } else if lock.len() >= max_entries {
-        return false;
-    } else {
-        lock.insert(ip.to_owned(), ((0, now), (Default::default(), now)));
-    }
-    true
 }
 
 impl RendezvousServer {
@@ -1769,17 +1732,6 @@ async fn check_relay_servers(rs0: Arc<RelayServers>, tx: Sender) {
     if !rs.is_empty() {
         tx.send(Data::RelayServers(rs0, rs)).ok();
     }
-}
-
-// deskhaven: upstream pruned IP_BLOCKER only from the removed console command `ib`, so it grew
-// by one entry per client IP forever. Same predicate as `ib` (keep while the 60 s register
-// counter or the daily id set is live), now run on the relay-check timer; `now` is a parameter
-// for testing.
-fn prune_ip_blocks(map: &mut IpBlockMap, now: Instant) {
-    map.retain(|_, (counter, ids)| {
-        now.saturating_duration_since(counter.1).as_secs() <= IP_BLOCK_DUR
-            || now.saturating_duration_since(ids.1).as_secs() <= DAY_SECONDS
-    });
 }
 
 // deskhaven: upstream spawned this and exited the process on failure (TEST_HBBS=no
@@ -2362,61 +2314,6 @@ mod tests {
         assert_eq!(local_ip(Some("")).await, detected);
         assert_eq!(local_ip(None).await, detected);
         assert_eq!(local_ip(Some("10.1.1.1")).await, "10.1.1.1");
-    }
-
-    // deskhaven (M1-03): IP_BLOCKER entries are pruned with upstream's `ib` predicate (kept
-    // while either the 60 s register counter or the daily id set is still live).
-    #[test]
-    fn ip_blocks_pruned_once_both_windows_expired() {
-        let t0 = Instant::now();
-        let entry =
-            |counter_at: Instant, ids_at: Instant| ((1, counter_at), (Default::default(), ids_at));
-        let day = Duration::from_secs(DAY_SECONDS);
-        let later = t0 + day;
-        let mut map: IpBlockMap = HashMap::new();
-        map.insert("idle".to_owned(), entry(t0, t0));
-        map.insert("counter-live".to_owned(), entry(later, t0));
-        map.insert("ids-live".to_owned(), entry(t0, later));
-
-        prune_ip_blocks(&mut map, t0 + day);
-        assert_eq!(map.len(), 3, "the daily id window is still live for all");
-
-        prune_ip_blocks(&mut map, later + Duration::from_secs(1));
-        let mut kept: Vec<_> = map.keys().cloned().collect();
-        kept.sort();
-        assert_eq!(
-            kept,
-            ["counter-live", "ids-live"],
-            "idle: both windows expired"
-        );
-
-        prune_ip_blocks(&mut map, later + day + Duration::from_secs(1));
-        assert!(map.is_empty(), "both windows expired for all");
-    }
-
-    // deskhaven (M1-03): IP_BLOCKER is capped; when full, new IPs are refused (TOO_FREQUENT)
-    // without an insert, while known IPs keep their normal accounting.
-    #[test]
-    fn ip_block_cap_refuses_new_ips_only() {
-        const CAP: usize = 2;
-        let mut map: IpBlockMap = HashMap::new();
-        assert!(check_ip_block(&mut map, "1.1.1.1", "id1", CAP));
-        assert!(check_ip_block(&mut map, "2.2.2.2", "id2", CAP));
-
-        assert!(
-            !check_ip_block(&mut map, "3.3.3.3", "id3", CAP),
-            "full: new ip refused"
-        );
-        assert!(!map.contains_key("3.3.3.3"), "and not inserted");
-
-        assert!(
-            check_ip_block(&mut map, "1.1.1.1", "id1", CAP),
-            "known ip unaffected"
-        );
-        assert_eq!(map.len(), CAP);
-
-        map.remove("2.2.2.2"); // pruning frees a slot
-        assert!(check_ip_block(&mut map, "3.3.3.3", "id3", CAP));
     }
 
     // deskhaven (M1-07 review, H1): `IdPk{id, pk: ""}` encodes to 32 bytes for a 30-byte id,

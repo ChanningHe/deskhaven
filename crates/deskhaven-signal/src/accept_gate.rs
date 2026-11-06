@@ -194,7 +194,7 @@ impl Drop for Pending {
 }
 
 /// The address itself for IPv4 (IPv4-mapped IPv6 included), its /64 for IPv6.
-fn source_key(ip: IpAddr) -> IpAddr {
+pub(crate) fn source_key(ip: IpAddr) -> IpAddr {
     match ip.to_canonical() {
         IpAddr::V6(v6) => {
             let net = u128::from(v6) & !u128::from(u64::MAX);
