@@ -33,9 +33,12 @@ use support::{
 
 /// The server's frame limit (`rendezvous_server.rs` `MAX_FRAME_LEN`).
 const MAX_FRAME_LEN: usize = 64 * 1024;
-/// The server's limit for the first frame on the main and websocket ports
+/// The server's limit for the first frame on the websocket port, handshake included
 /// (`FIRST_FRAME_TIMEOUT`, upstream's 30 s per frame).
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// The same on the main port, from the KeyExchange offer (`MAIN_FIRST_FRAME_TIMEOUT`,
+/// M4-05 review H-A).
+const MAIN_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(15);
 /// The same on the NAT test port (`NAT_FIRST_FRAME_TIMEOUT`, M1-07): clients send their
 /// TestNatRequest / OnlineRequest right after connecting.
 const NAT_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
@@ -222,7 +225,7 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
     // Arrange
     let server = TestServer::start().await;
     let ports: [(SocketAddr, Duration, &str); 3] = [
-        (server.main_addr(), FIRST_FRAME_TIMEOUT, "main"),
+        (server.main_addr(), MAIN_FIRST_FRAME_TIMEOUT, "main"),
         (server.nat_addr(), NAT_FIRST_FRAME_TIMEOUT, "nat"),
         (
             server.ws_addr(),
@@ -245,7 +248,7 @@ async fn silent_connection_is_closed_after_the_first_frame_timeout() {
 }
 
 /// A first frame shortly before its port's limit is still served: on the main port after
-/// 28 s (an unlogged controller's first frame can take half its whole connect time, DNS and
+/// 13 s (an unlogged controller's first frame can take half its whole connect time, DNS and
 /// failed addresses included; M1-07 review), on the NAT test port after 8 s. Paused clock.
 #[tokio::test(start_paused = true)]
 async fn first_frame_within_the_first_frame_timeout_is_served() {
@@ -258,7 +261,7 @@ async fn first_frame_within_the_first_frame_timeout_is_served() {
     // Act + Assert
     tokio::time::advance(NAT_FIRST_FRAME_TIMEOUT - SLACK * 2).await;
     assert!(nat.test_nat().await.port > 0, "nat");
-    tokio::time::advance(FIRST_FRAME_TIMEOUT - NAT_FIRST_FRAME_TIMEOUT).await;
+    tokio::time::advance(MAIN_FIRST_FRAME_TIMEOUT - NAT_FIRST_FRAME_TIMEOUT).await;
     assert!(main.test_nat().await.port > 0, "main");
     server.stop().await;
 }
@@ -272,7 +275,7 @@ async fn request_after_the_key_exchange_gets_the_idle_timeout() {
     let server = TestServer::start().await;
     let mut conn = server.tcp().await;
     let offer = read_offer(&mut conn).await;
-    tokio::time::advance(FIRST_FRAME_TIMEOUT - SLACK * 2).await;
+    tokio::time::advance(MAIN_FIRST_FRAME_TIMEOUT - SLACK * 2).await;
     answer(&mut conn, &server.public_key, KxClient::Current, &offer)
         .await
         .unwrap();

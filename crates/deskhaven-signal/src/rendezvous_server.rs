@@ -1,5 +1,5 @@
 // Modified by deskhaven; see crates/deskhaven-signal/CHANGES.md (AGPL-3.0 §5a).
-use crate::accept_gate::{AcceptGate, Pending};
+use crate::accept_gate::{AcceptGate, Connection, Pending};
 use crate::accept_retry;
 use crate::addr_mangle;
 use crate::claimed_addr::{ClaimedAddr, ClaimedAddrs};
@@ -130,6 +130,14 @@ const STREAM_HEARTBEAT: Duration = Duration::from_secs(10);
 /// stalled controller can hold up the answering peer's connection task (`send_to_tcp_sync`).
 const STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// deskhaven (M4-05): resolves once `token` is cancelled; never without one.
+async fn wait_cancelled(token: Option<&tokio_util::sync::CancellationToken>) {
+    match token {
+        Some(token) => token.cancelled().await,
+        None => std::future::pending().await,
+    }
+}
+
 /// The next message queued for this connection's peer; pending while none is registered.
 async fn next_outbound(outbox: &mut Option<StreamOutbox>) -> Option<RendezvousMessage> {
     match outbox {
@@ -200,6 +208,10 @@ const MAX_FRAME_LEN: usize = 64 * 1024;
 /// record and blocked UDP, more with a retransmit or slow DNS (client.rs `_start_inner`; M1-07
 /// review). Kept at 30 s for that margin.
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+/// deskhaven (M4-05 review H-A): the same on the main port, from the KeyExchange offer. Silent
+/// connections there hold a pending slot (`accept_gate`), so they get half as long; the
+/// unlogged controller's worst case above (about 9 s) still fits.
+const MAIN_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(15);
 /// The same on the NAT test port (port - 1), whose clients send TestNatRequest / OnlineRequest
 /// right after connecting (M1-07; upstream: 30 s): a connection that never speaks holds its
 /// task a third as long.
@@ -593,8 +605,12 @@ impl RendezvousServer {
                 res = accept_retry::accept(listener3, &mut pause3) => {
                     match res {
                         Ok((stream, addr))  => {
-                            stream.set_nodelay(true).ok();
-                            self.handle_listener(stream, addr, key, true, None).await;
+                            // deskhaven (M4-05 review M-A): connections in all are capped.
+                            if let Some(connection) = self.accept_gate.open_logged() {
+                                stream.set_nodelay(true).ok();
+                                self.handle_listener(stream, addr, key, true, connection, None)
+                                    .await;
+                            }
                         }
                         Err(err) => {
                            log::error!("listener3.accept failed: {}", err);
@@ -606,9 +622,11 @@ impl RendezvousServer {
                     match res {
                         // deskhaven (M4-05): a refused connection is closed before any work.
                         Ok((stream, addr)) => {
-                            if let Some(pending) = self.accept_gate.admit_logged(addr.ip()) {
+                            if let Some(admitted) = self.accept_gate.admit_logged(addr.ip()) {
                                 stream.set_nodelay(true).ok();
-                                self.handle_listener(stream, addr, key, false, Some(pending)).await;
+                                let pending = Some(admitted.pending);
+                                self.handle_listener(stream, addr, key, false, admitted.connection, pending)
+                                    .await;
                             }
                         }
                        Err(err) => {
@@ -1523,13 +1541,15 @@ impl RendezvousServer {
         });
     }
 
-    // deskhaven (M4-05): `pending` is the main port's handshake slot, held until the first frame.
+    // deskhaven (M4-05): `connection` is the connection's slot in the accept gate, `pending` the
+    // main port's handshake slot, held until the first frame.
     async fn handle_listener(
         &self,
         stream: TcpStream,
         addr: SocketAddr,
         key: &str,
         ws: bool,
+        connection: Connection,
         pending: Option<Pending>,
     ) {
         log::debug!("Tcp connection from {:?}, ws: {}", addr, ws);
@@ -1537,7 +1557,7 @@ impl RendezvousServer {
         let key = key.to_owned();
         self.tasks.spawn(async move {
             allow_err!(
-                rs.handle_listener_inner(stream, addr, &key, ws, pending)
+                rs.handle_listener_inner(stream, addr, &key, ws, connection, pending)
                     .await
             );
         });
@@ -1550,6 +1570,7 @@ impl RendezvousServer {
         mut addr: SocketAddr,
         key: &str,
         ws: bool,
+        mut connection: Connection,
         mut pending: Option<Pending>,
     ) -> ResultType<()> {
         // deskhaven (M1-08): the first complete frame (websocket: handshake included) must
@@ -1557,7 +1578,14 @@ impl RendezvousServer {
         // previous one, and a frame over MAX_FRAME_LEN ends the connection as soon as its
         // header is read. Upstream gave every frame 30 s, the handshake no limit at all and
         // frames no size limit.
-        let first_frame = TokioInstant::now() + FIRST_FRAME_TIMEOUT;
+        let first_frame = TokioInstant::now()
+            + if ws {
+                FIRST_FRAME_TIMEOUT
+            } else {
+                MAIN_FIRST_FRAME_TIMEOUT
+            };
+        // deskhaven (M4-05 review H-A): the gate closes the oldest pending connection at its cap.
+        let evicted = pending.as_ref().map(Pending::evicted);
         let mut sink;
         let mut reader;
         let mut kx;
@@ -1597,6 +1625,10 @@ impl RendezvousServer {
                 addr = claim.addr();
                 _claim = Some(claim);
             }
+            // deskhaven (M4-05 review M-A): counted per source once the client IP is known.
+            if !connection.bind_source(&self.accept_gate, addr.ip()) {
+                bail!("too many connections from {}", addr.ip());
+            }
             sink = Some(Sink::Ws(a));
             reader = Reader::Ws(b);
             // deskhaven (M1-07): no KeyExchange on websocket; clients skip it there
@@ -1635,6 +1667,7 @@ impl RendezvousServer {
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {
+                _ = wait_cancelled(evicted.as_ref()), if pending.is_some() => break,
                 res = timeout_at(deadline, reader.next()) => {
                     let Ok(Some(frame)) = res else { break };
                     drop(pending.take());

@@ -142,6 +142,24 @@ fn signal_ws_listen_reaches_the_signal_config() {
     assert_eq!(cfg.bind, None, "the other listeners stay on all interfaces");
 }
 
+/// M4-05 review H-A / M-A: the signal ports' global connection caps follow the open-file limit.
+#[cfg(unix)]
+#[test]
+fn the_accept_limits_follow_the_open_file_limit() {
+    // Arrange
+    let pair = SignalKeyPair::generate().unwrap();
+    let soft = rustix::process::getrlimit(rustix::process::Resource::Nofile).current;
+
+    // Act
+    let cfg = base_config(&Default::default(), &Default::default(), &pair).unwrap();
+
+    // Assert
+    assert_eq!(
+        cfg.accept_limits,
+        deskhaven_signal::AcceptLimits::for_open_files(soft)
+    );
+}
+
 #[test]
 fn signal_settings_follow_the_snapshot() {
     // Arrange

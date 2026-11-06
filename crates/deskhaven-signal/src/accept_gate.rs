@@ -1,37 +1,53 @@
-//! Admission control of the main TCP port (deskhaven code, not vendored; M4-05).
+//! Admission control of the main TCP port and the websocket port (deskhaven code, not
+//! vendored; M4-05).
 //!
 //! Each accepted main-port connection gets a KeyExchange offer at once (an X25519 key
 //! generation and two Ed25519 signatures, about 100 µs), before the client has sent anything.
-//! The gate decides at accept time, before any of that work, whether a connection may start
-//! its handshake:
+//! The gate decides at accept time, before any of that work, whether a connection may start.
+//! What it bounds, and nothing more:
 //!
-//! - **per-IP accept budget**: a token bucket of `per_ip_burst` connections refilled at
-//!   `per_ip_per_second`, bounding the CPU one source can spend on offers;
-//! - **per-IP pending handshakes**: at most `per_ip_pending` connections of one source that have
-//!   not sent their first frame;
-//! - **global pending handshakes**: at most `pending` such connections in all, bounding memory
-//!   and tasks under a flood of silent connections from many sources.
+//! - **connections** (main and websocket port, established or pending): at most
+//!   `per_ip_connections` per source and `connections` in all, so neither one source nor a
+//!   flood can run the process out of file descriptors through these ports. A websocket
+//!   connection counts in all from its accept and per source from its handshake (behind a
+//!   proxy the source is only known then);
+//! - **accept rate** (main port): a token bucket of `per_ip_burst` connections refilled at
+//!   `per_ip_per_second` per source, bounding the CPU one source spends on offers;
+//! - **pending handshakes** (main port, connections that have not sent their first frame): at
+//!   most `per_ip_pending` per source and `per_net_pending` per IPv6 /48. When `pending` are
+//!   pending in all, the **oldest** one is closed to admit the new one instead of refusing it:
+//!   clients send their first frame within a round trip of the offer, so silent connections
+//!   cannot keep anyone out (review H-A).
 //!
-//! IPv6 sources are keyed by their /64, which a single host usually controls in full. A
-//! refused connection is simply closed. A [`Pending`] slot is released when it is dropped:
-//! the connection sent its first frame or ended.
+//! Sources are IPv4 addresses (IPv4-mapped IPv6 included) and IPv6 /64s, which a single host
+//! usually controls in full. A refused connection is simply closed. [`Connection`] and
+//! [`Pending`] release their slot when dropped.
 
-use std::collections::HashMap;
+#[cfg(test)]
+mod tests;
+
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv6Addr};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use hbb_common::log;
+use tokio_util::sync::CancellationToken;
 
 use crate::log_limit::LogLimit;
 
-/// Refusals are logged at most once a minute, with their count.
+/// Refusals and evictions are logged at most once a minute each, with their count.
 static REFUSED_LOG: LogLimit = LogLimit::new(Duration::from_secs(60));
+static EVICTED_LOG: LogLimit = LogLimit::new(Duration::from_secs(60));
 
-/// Most source keys tracked at once. Beyond it, unknown sources skip the per-IP limits (only
-/// the global cap applies) rather than being refused, so a flood from many addresses cannot
-/// lock new legitimate sources out. Idle keys are pruned on the server's timer.
+/// Most sources tracked at once. Beyond it, unknown sources skip the per-source limits (the
+/// global caps still apply) rather than being refused, so a flood from many addresses cannot
+/// lock new legitimate sources out. Idle sources are pruned on the server's timer.
 const MAX_TRACKED: usize = 100_000;
+/// Share of `RLIMIT_NOFILE` for connections of these ports (the HTTP listeners take half).
+const NOFILE_CONNECTIONS_DIVISOR: u64 = 4;
+/// Share of `RLIMIT_NOFILE` for pending handshakes.
+const NOFILE_PENDING_DIVISOR: u64 = 16;
 
 /// Limits of [`AcceptGate`]; see the module docs. A zero disables nothing: it refuses
 /// everything that limit covers.
@@ -43,8 +59,14 @@ pub struct AcceptLimits {
     pub per_ip_per_second: u32,
     /// Connections of one source that have not sent their first frame.
     pub per_ip_pending: u32,
-    /// Connections in all that have not sent their first frame.
+    /// Connections in all that have not sent their first frame; beyond it the oldest is closed.
     pub pending: u32,
+    /// Pending connections of one IPv6 /48 (all its /64s together).
+    pub per_net_pending: u32,
+    /// Connections of one source, established or pending.
+    pub per_ip_connections: u32,
+    /// Connections in all (main and websocket port), established or pending.
+    pub connections: u32,
 }
 
 impl Default for AcceptLimits {
@@ -52,13 +74,38 @@ impl Default for AcceptLimits {
     /// after a server restart, controllers of a support desk) are not throttled noticeably:
     /// connections normally send their first frame within a round trip of the offer, so
     /// pending counts stay far below the caps, and one source refilling at 64/s spends well
-    /// under 1% of a core on offers.
+    /// under 1% of a core on offers. The global caps fit an open-file limit of 65 536.
     fn default() -> Self {
         Self {
             per_ip_burst: 256,
             per_ip_per_second: 64,
             per_ip_pending: 64,
             pending: 2048,
+            per_net_pending: 256,
+            per_ip_connections: 1024,
+            connections: 16_384,
+        }
+    }
+}
+
+impl AcceptLimits {
+    /// The defaults with the global caps scaled to the open-file soft limit (`None`: unknown
+    /// or unlimited, keep the defaults): a quarter of it for connections, a sixteenth for
+    /// pending handshakes, never below 1024 connections and 2048 pending.
+    pub fn for_open_files(soft_limit: Option<u64>) -> Self {
+        let base = Self::default();
+        let Some(limit) = soft_limit else {
+            return base;
+        };
+        let share = |divisor: u64, floor: u32| {
+            u32::try_from(limit / divisor)
+                .unwrap_or(u32::MAX)
+                .max(floor)
+        };
+        Self {
+            connections: share(NOFILE_CONNECTIONS_DIVISOR, 1024),
+            pending: share(NOFILE_PENDING_DIVISOR, base.pending),
+            ..base
         }
     }
 }
@@ -66,11 +113,17 @@ impl Default for AcceptLimits {
 /// Why a connection was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Refused {
+    /// The server has `connections` connections.
+    Connections,
+    /// The source has `per_ip_connections` connections.
+    SourceConnections,
     /// The source's accept budget is used up.
     Rate,
     /// The source has `per_ip_pending` connections pending.
     SourcePending,
-    /// The server has `pending` connections pending.
+    /// The source's IPv6 /48 has `per_net_pending` connections pending.
+    NetPending,
+    /// `pending` is zero.
     Pending,
 }
 
@@ -83,21 +136,46 @@ pub(crate) struct AcceptGate {
 
 #[derive(Default)]
 struct State {
-    pending: u32,
+    connections: u32,
+    next_seq: u64,
+    /// Pending handshakes by admission order (the first is the oldest).
+    pending: BTreeMap<u64, PendingEntry>,
     sources: HashMap<IpAddr, Source>,
+    /// Pending handshakes per IPv6 /48; an entry exists only while its count is non-zero.
+    nets: HashMap<IpAddr, u32>,
+}
+
+struct PendingEntry {
+    key: Option<IpAddr>,
+    net: Option<IpAddr>,
+    evict: CancellationToken,
 }
 
 struct Source {
     tokens: f64,
     refilled: Instant,
     pending: u32,
+    connections: u32,
 }
 
-/// A pending handshake slot; dropping it releases it.
+/// A connection slot; dropping it releases it.
+pub(crate) struct Connection {
+    state: Arc<Mutex<State>>,
+    /// The source it counts against, once known and if tracked.
+    key: Option<IpAddr>,
+}
+
+/// A pending handshake slot; dropping it releases it, unless it was evicted meanwhile.
 pub(crate) struct Pending {
     state: Arc<Mutex<State>>,
-    /// `None` when the source was not tracked (table full).
-    key: Option<IpAddr>,
+    seq: u64,
+    evicted: CancellationToken,
+}
+
+/// What a main-port connection holds from the gate.
+pub(crate) struct Admitted {
+    pub(crate) connection: Connection,
+    pub(crate) pending: Pending,
 }
 
 impl AcceptGate {
@@ -108,211 +186,252 @@ impl AcceptGate {
         }
     }
 
-    /// [`AcceptGate::admit`] now; a refusal is logged (at most once a minute, with a count).
-    pub(crate) fn admit_logged(&self, ip: IpAddr) -> Option<Pending> {
-        let now = Instant::now();
-        let refused = match self.admit(ip, now) {
-            Ok(pending) => return Some(pending),
-            Err(refused) => refused,
-        };
-        if let Some(count) = REFUSED_LOG.hit(now) {
-            log::warn!("refused {count} main-port connection(s); latest from {ip}: {refused:?}");
-        }
-        None
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Admits a connection from `ip` at `now`, or says why not.
-    pub(crate) fn admit(&self, ip: IpAddr, now: Instant) -> Result<Pending, Refused> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.pending >= self.limits.pending {
+    /// [`AcceptGate::admit`] now; a refusal is logged (at most once a minute, with a count).
+    pub(crate) fn admit_logged(&self, ip: IpAddr) -> Option<Admitted> {
+        self.admit(ip, Instant::now())
+            .map_err(|refused| log_refused(&format!("main-port connection from {ip}"), refused))
+            .ok()
+    }
+
+    /// [`AcceptGate::open`]; a refusal is logged like [`AcceptGate::admit_logged`]'s.
+    pub(crate) fn open_logged(&self) -> Option<Connection> {
+        self.open()
+            .map_err(|refused| log_refused("websocket connection", refused))
+            .ok()
+    }
+
+    /// Admits a main-port connection from `ip` at `now`, or says why not.
+    pub(crate) fn admit(&self, ip: IpAddr, now: Instant) -> Result<Admitted, Refused> {
+        let mut state = self.lock();
+        if state.connections >= self.limits.connections {
+            return Err(Refused::Connections);
+        }
+        if self.limits.pending == 0 {
             return Err(Refused::Pending);
         }
-        let key = source_key(ip);
+        let (key, net) = (source_key(ip), net_key(ip));
         let tracked = state.sources.contains_key(&key) || state.sources.len() < MAX_TRACKED;
         if tracked {
-            let source = state.sources.entry(key).or_insert_with(|| Source {
-                tokens: f64::from(self.limits.per_ip_burst),
-                refilled: now,
-                pending: 0,
-            });
-            self.take(source, now)?;
+            let source = state.source(key, &self.limits, now);
+            self.check_source(source)?;
         }
-        state.pending += 1;
-        Ok(Pending {
+        if let Some(net) = net
+            && state.nets.get(&net).copied().unwrap_or(0) >= self.limits.per_net_pending
+        {
+            return Err(Refused::NetPending);
+        }
+        if state.pending.len() >= self.limits.pending as usize {
+            state.evict_oldest();
+        }
+        Ok(state.commit(&self.state, tracked.then_some(key), net))
+    }
+
+    /// Opens a websocket connection slot (in all only; see [`Connection::bind_source`]).
+    pub(crate) fn open(&self) -> Result<Connection, Refused> {
+        let mut state = self.lock();
+        if state.connections >= self.limits.connections {
+            return Err(Refused::Connections);
+        }
+        state.connections += 1;
+        Ok(Connection {
             state: Arc::clone(&self.state),
-            key: tracked.then_some(key),
+            key: None,
         })
     }
 
-    /// Takes one token and one pending slot from `source`, or neither.
-    fn take(&self, source: &mut Source, now: Instant) -> Result<(), Refused> {
-        self.refill(source, now);
+    /// Whether `source` may open a pending connection now (bucket refilled first).
+    fn check_source(&self, source: &mut Source) -> Result<(), Refused> {
+        if source.connections >= self.limits.per_ip_connections {
+            return Err(Refused::SourceConnections);
+        }
         if source.pending >= self.limits.per_ip_pending {
             return Err(Refused::SourcePending);
         }
         if source.tokens < 1.0 {
             return Err(Refused::Rate);
         }
-        source.tokens -= 1.0;
-        source.pending += 1;
         Ok(())
     }
 
-    fn refill(&self, source: &mut Source, now: Instant) {
-        let elapsed = now.saturating_duration_since(source.refilled).as_secs_f64();
-        let rate = f64::from(self.limits.per_ip_per_second);
-        source.tokens = (source.tokens + elapsed * rate).min(f64::from(self.limits.per_ip_burst));
-        source.refilled = now;
-    }
-
-    /// Forgets sources with nothing pending and a full bucket: they are indistinguishable from
+    /// Forgets sources with no connection and a full bucket: they are indistinguishable from
     /// sources never seen.
     pub(crate) fn prune(&self, now: Instant) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let burst = f64::from(self.limits.per_ip_burst);
+        let limits = self.limits;
+        let mut state = self.lock();
         state.sources.retain(|_, source| {
-            self.refill(source, now);
-            source.pending > 0 || source.tokens < burst
+            source.refill(&limits, now);
+            source.pending > 0 || source.connections > 0 || source.tokens < source.burst(&limits)
         });
     }
+}
 
-    #[cfg(test)]
-    fn tracked(&self) -> usize {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.sources.len()
+impl State {
+    fn source(&mut self, key: IpAddr, limits: &AcceptLimits, now: Instant) -> &mut Source {
+        let source = self.sources.entry(key).or_insert_with(|| Source {
+            tokens: f64::from(limits.per_ip_burst),
+            refilled: now,
+            pending: 0,
+            connections: 0,
+        });
+        source.refill(limits, now);
+        source
+    }
+
+    /// Takes the slots of an admitted main-port connection (checked by the caller).
+    fn commit(
+        &mut self,
+        shared: &Arc<Mutex<State>>,
+        key: Option<IpAddr>,
+        net: Option<IpAddr>,
+    ) -> Admitted {
+        if let Some(source) = key.and_then(|key| self.sources.get_mut(&key)) {
+            source.tokens -= 1.0;
+            source.pending += 1;
+            source.connections += 1;
+        }
+        if let Some(net) = net {
+            *self.nets.entry(net).or_default() += 1;
+        }
+        self.connections += 1;
+        let (seq, evict) = (self.next_seq, CancellationToken::new());
+        self.next_seq += 1;
+        let entry = PendingEntry {
+            key,
+            net,
+            evict: evict.clone(),
+        };
+        self.pending.insert(seq, entry);
+        let connection = Connection {
+            state: Arc::clone(shared),
+            key,
+        };
+        let pending = Pending {
+            state: Arc::clone(shared),
+            seq,
+            evicted: evict,
+        };
+        Admitted {
+            connection,
+            pending,
+        }
+    }
+
+    /// Closes the oldest pending connection (its task sees the token) and frees its slot.
+    fn evict_oldest(&mut self) {
+        let Some((_, entry)) = self.pending.pop_first() else {
+            return;
+        };
+        self.release(&entry);
+        entry.evict.cancel();
+        if let Some(count) = EVICTED_LOG.hit(Instant::now()) {
+            log::warn!("closed {count} oldest pending main-port connection(s) at the cap");
+        }
+    }
+
+    fn release(&mut self, entry: &PendingEntry) {
+        if let Some(source) = entry.key.and_then(|key| self.sources.get_mut(&key)) {
+            source.pending = source.pending.saturating_sub(1);
+        }
+        if let Some(net) = entry.net
+            && let Some(count) = self.nets.get_mut(&net)
+        {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.nets.remove(&net);
+            }
+        }
+    }
+}
+
+impl Source {
+    fn burst(&self, limits: &AcceptLimits) -> f64 {
+        f64::from(limits.per_ip_burst)
+    }
+
+    fn refill(&mut self, limits: &AcceptLimits, now: Instant) {
+        let elapsed = now.saturating_duration_since(self.refilled).as_secs_f64();
+        let rate = f64::from(limits.per_ip_per_second);
+        self.tokens = (self.tokens + elapsed * rate).min(self.burst(limits));
+        self.refilled = now;
+    }
+}
+
+impl Connection {
+    /// Counts a websocket connection against `ip`'s source, once the handshake resolved it;
+    /// `false` (the connection must close) when the source is at `per_ip_connections`.
+    pub(crate) fn bind_source(&mut self, gate: &AcceptGate, ip: IpAddr) -> bool {
+        let key = source_key(ip);
+        let mut state = gate.lock();
+        if !state.sources.contains_key(&key) && state.sources.len() >= MAX_TRACKED {
+            return true;
+        }
+        let source = state.source(key, &gate.limits, Instant::now());
+        if source.connections >= gate.limits.per_ip_connections {
+            log_refused(
+                &format!("websocket connection from {ip}"),
+                Refused::SourceConnections,
+            );
+            return false;
+        }
+        source.connections += 1;
+        self.key = Some(key);
+        true
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.connections = state.connections.saturating_sub(1);
+        if let Some(source) = self.key.and_then(|key| state.sources.get_mut(&key)) {
+            source.connections = source.connections.saturating_sub(1);
+        }
+    }
+}
+
+impl Pending {
+    /// Cancelled when the gate closes this connection to make room for a newer one.
+    pub(crate) fn evicted(&self) -> CancellationToken {
+        self.evicted.clone()
     }
 }
 
 impl Drop for Pending {
     fn drop(&mut self) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.pending = state.pending.saturating_sub(1);
-        if let Some(source) = self.key.and_then(|key| state.sources.get_mut(&key)) {
-            source.pending = source.pending.saturating_sub(1);
+        if let Some(entry) = state.pending.remove(&self.seq) {
+            state.release(&entry);
         }
+    }
+}
+
+fn log_refused(what: &str, refused: Refused) {
+    if let Some(count) = REFUSED_LOG.hit(Instant::now()) {
+        log::warn!("refused {count} connection(s); latest a {what}: {refused:?}");
     }
 }
 
 /// The address itself for IPv4 (IPv4-mapped IPv6 included), its /64 for IPv6.
 pub(crate) fn source_key(ip: IpAddr) -> IpAddr {
     match ip.to_canonical() {
-        IpAddr::V6(v6) => {
-            let net = u128::from(v6) & !u128::from(u64::MAX);
-            IpAddr::V6(Ipv6Addr::from(net))
-        }
+        IpAddr::V6(v6) => prefix(v6, 64),
         v4 => v4,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::panic)]
-
-    use std::net::Ipv4Addr;
-
-    use super::*;
-
-    const LIMITS: AcceptLimits = AcceptLimits {
-        per_ip_burst: 4,
-        per_ip_per_second: 2,
-        per_ip_pending: 3,
-        pending: 5,
-    };
-
-    fn v4(last: u8) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(192, 0, 2, last))
+/// The /48 of an IPv6 address; `None` for IPv4.
+fn net_key(ip: IpAddr) -> Option<IpAddr> {
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => Some(prefix(v6, 48)),
+        IpAddr::V4(_) => None,
     }
+}
 
-    fn v6(text: &str) -> IpAddr {
-        text.parse().unwrap()
-    }
-
-    #[test]
-    fn a_source_gets_its_burst_then_the_refill_rate() {
-        let gate = AcceptGate::new(LIMITS);
-        let t0 = Instant::now();
-        for _ in 0..4 {
-            drop(gate.admit(v4(1), t0).unwrap());
-        }
-
-        assert_eq!(gate.admit(v4(1), t0).err(), Some(Refused::Rate));
-        assert!(gate.admit(v4(2), t0).is_ok());
-        let later = t0 + Duration::from_millis(500);
-        drop(gate.admit(v4(1), later).unwrap());
-        assert_eq!(gate.admit(v4(1), later).err(), Some(Refused::Rate));
-    }
-
-    #[test]
-    fn a_source_has_at_most_per_ip_pending_slots_until_one_is_released() {
-        let gate = AcceptGate::new(LIMITS);
-        let t0 = Instant::now();
-        let held: Vec<_> = (0..3).map(|_| gate.admit(v4(1), t0).unwrap()).collect();
-
-        assert_eq!(gate.admit(v4(1), t0).err(), Some(Refused::SourcePending));
-        drop(held);
-        assert!(gate.admit(v4(1), t0).is_ok());
-    }
-
-    #[test]
-    fn the_global_cap_counts_every_source() {
-        let gate = AcceptGate::new(LIMITS);
-        let t0 = Instant::now();
-        let held: Vec<_> = (1..=5).map(|n| gate.admit(v4(n), t0).unwrap()).collect();
-
-        assert_eq!(gate.admit(v4(9), t0).err(), Some(Refused::Pending));
-        drop(held);
-        assert!(gate.admit(v4(9), t0).is_ok());
-    }
-
-    #[test]
-    fn a_refusal_takes_neither_a_token_nor_a_slot() {
-        let gate = AcceptGate::new(AcceptLimits {
-            per_ip_pending: 1,
-            ..LIMITS
-        });
-        let t0 = Instant::now();
-        let held = gate.admit(v4(1), t0).unwrap();
-        for _ in 0..10 {
-            assert_eq!(gate.admit(v4(1), t0).err(), Some(Refused::SourcePending));
-        }
-        drop(held);
-
-        let left = (0..10).filter(|_| gate.admit(v4(1), t0).is_ok()).count();
-
-        assert_eq!(left, 3);
-    }
-
-    #[test]
-    fn ipv6_sources_share_their_slash_64_and_mapped_ipv4_is_ipv4() {
-        let gate = AcceptGate::new(LIMITS);
-        let t0 = Instant::now();
-        let _held: Vec<_> = ["2001:db8::1", "2001:db8::2", "2001:db8::ffff:1"]
-            .into_iter()
-            .map(|ip| gate.admit(v6(ip), t0).unwrap())
-            .collect();
-
-        assert_eq!(
-            gate.admit(v6("2001:db8:0:0:1::1"), t0).err(),
-            Some(Refused::SourcePending)
-        );
-        assert!(gate.admit(v6("2001:db8:0:1::1"), t0).is_ok());
-        assert_eq!(source_key(v6("::ffff:192.0.2.1")), v4(1));
-    }
-
-    #[test]
-    fn prune_forgets_only_idle_sources_with_a_full_bucket() {
-        let gate = AcceptGate::new(LIMITS);
-        let t0 = Instant::now();
-        let held = gate.admit(v4(1), t0).unwrap();
-        drop(gate.admit(v4(2), t0).unwrap());
-        drop(gate.admit(v4(3), t0).unwrap());
-
-        gate.prune(t0);
-        assert_eq!(gate.tracked(), 3);
-        gate.prune(t0 + Duration::from_secs(1));
-        assert_eq!(gate.tracked(), 1);
-        drop(held);
-        gate.prune(t0 + Duration::from_secs(1));
-        assert_eq!(gate.tracked(), 0);
-    }
+fn prefix(ip: Ipv6Addr, len: u32) -> IpAddr {
+    let mask = u128::MAX.checked_shl(128 - len).unwrap_or(0);
+    IpAddr::V6(Ipv6Addr::from(u128::from(ip) & mask))
 }

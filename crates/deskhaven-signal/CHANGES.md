@@ -713,3 +713,15 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   (panic with overflow checks, a garbage address without); RelayResponse, PunchHoleSent and
   LocalAddr whose address does not decode are now dropped (`addr_mangle::decode`, otherwise the
   same result). Test: `a_mangled_address_that_does_not_decode_is_dropped_without_a_panic`.
+- 2026-11-06, M4-05 review H-A and M-A (`accept_gate.rs` rewritten, tests in `accept_gate/tests.rs`;
+  `rendezvous_server.rs` `io_loop`, `handle_listener`, `handle_listener_inner`, new
+  `MAIN_FIRST_FRAME_TIMEOUT`, `wait_cancelled`; `server.rs`/`AcceptLimits` new fields): the global
+  pending cap refused every new main-port connection once full, so silent connections from a
+  few dozen sources locked 21116/tcp. At the cap the oldest pending connection is now closed
+  (cancel token) to admit the new one; pending connections are also capped per IPv6 /48; the
+  main port's first-frame limit is 15 s (websocket keeps 30 s). Established connections were
+  not bounded at all: connections of one source (main and websocket port; websocket counted
+  per source after the handshake, on the resolved client IP) and in all are capped
+  (`per_ip_connections`, `connections`; `AcceptLimits::for_open_files` scales the global caps
+  to `RLIMIT_NOFILE`, which deskhaven applies). Tests: `tests/accept_limits.rs`,
+  `accept_gate::tests`, `tests/limits.rs` (main-port first-frame limit).

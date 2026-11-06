@@ -11,25 +11,39 @@ use deskhaven_config::settings::{
 };
 use deskhaven_core::keys::SignalKeyPair;
 use deskhaven_http::TrustedProxies;
-use deskhaven_signal::{ClientIpResolver, SignalConfig, WsHeaders};
+use deskhaven_signal::{AcceptLimits, ClientIpResolver, SignalConfig, WsHeaders};
 use sodiumoxide::crypto::sign;
 
 /// The server configuration of `[signal]`, before relay settings: upstream defaults, all
 /// interfaces, the configured port, the hbbs key, and `security.trusted_proxies` for the
-/// websocket port's proxy headers.
+/// websocket port's proxy headers. The global connection caps of the signal ports follow the
+/// open-file soft limit (call after `raise_nofile_limit`).
 pub fn base_config(
     signal: &Signal,
     security: &Security,
     key: &SignalKeyPair,
 ) -> anyhow::Result<SignalConfig> {
     let trusted = TrustedProxies::new(security.trusted_proxies.iter().map(Cidr::net));
+    let open_files = open_file_limit();
     Ok(SignalConfig {
         bind: None,
         port: signal.port,
         ws_listen: signal.ws_listen,
         ws_client_ip: Arc::new(ProxyHeaders(trusted)),
+        accept_limits: AcceptLimits::for_open_files(open_files),
         ..SignalConfig::new(secret_key(key)?)
     })
+}
+
+/// The open-file soft limit; `None` when unlimited or unknown.
+#[cfg(unix)]
+fn open_file_limit() -> Option<u64> {
+    rustix::process::getrlimit(rustix::process::Resource::Nofile).current
+}
+
+#[cfg(not(unix))]
+fn open_file_limit() -> Option<u64> {
+    None
 }
 
 /// The HTTP API's real-IP rule (`X-Forwarded-For` from `security.trusted_proxies` only) for
