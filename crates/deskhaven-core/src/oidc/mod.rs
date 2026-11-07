@@ -85,6 +85,7 @@ mod http;
 mod identities;
 mod identity;
 mod link;
+mod link_verify;
 mod poll;
 mod preview;
 mod protocol;
@@ -113,8 +114,9 @@ pub use http::{
 };
 pub use identities::{Identity, IdentityChange};
 pub use link::LinkReport;
+pub use link_verify::LinkPending;
 pub use poll::{ClientLogin, PollOutcome};
-pub use preview::{CallbackPreview, DeviceSummary, LinkPreview, PreviewTarget};
+pub use preview::{CallbackPreview, DeviceSummary, PreviewTarget};
 pub use providers::{
     LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
 };

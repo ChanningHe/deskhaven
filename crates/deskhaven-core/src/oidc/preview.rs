@@ -13,7 +13,6 @@ use sea_orm::EntityTrait;
 use serde_json::Value;
 
 use super::OidcService;
-use super::callback::Expect;
 use super::context;
 use super::error::CallbackError;
 
@@ -47,13 +46,6 @@ pub struct CallbackPreview {
     pub target: PreviewTarget,
 }
 
-/// The pending link flow behind the console's confirmation page.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LinkPreview {
-    /// The provider's display name.
-    pub provider: String,
-}
-
 impl OidcService {
     /// The live flow of `state`, without touching it. [`CallbackError::InvalidState`] for
     /// an unknown, expired or already used state.
@@ -70,24 +62,6 @@ impl OidcService {
         Ok(CallbackPreview {
             provider: self.provider_display_name(row.provider_id).await?,
             target,
-        })
-    }
-
-    /// The live link flow of `state` for the browser holding `binding` and the signed-in
-    /// account `user_id`, without touching it; anything else is
-    /// [`CallbackError::InvalidState`].
-    pub async fn preview_link(
-        &self,
-        state: Option<&str>,
-        binding: Option<&str>,
-        user_id: i64,
-    ) -> Result<LinkPreview, CallbackError> {
-        let row = self.live_flow(state).await?;
-        if !Expect::Link(binding, user_id).admits(&row) {
-            return Err(CallbackError::InvalidState);
-        }
-        Ok(LinkPreview {
-            provider: self.provider_display_name(row.provider_id).await?,
         })
     }
 

@@ -6,11 +6,13 @@
 //!    and the account; refused up front for LDAP accounts and accounts that already have an
 //!    identity at the provider.
 //! 2. The IdP redirects to the callback, which sends a link flow on to the console. The
-//!    console shows [`OidcService::preview_link`] (which provider, which account) and the
-//!    user confirms.
-//! 3. [`OidcService::complete_link`] claims the flow only for the browser holding the
-//!    binding **and** the signed-in account it was started for, verifies the ID token, and
-//!    links `(provider, sub)` to that account (`linked_via = explicit`). The email plays no
+//!    console calls [`OidcService::verify_link`] (`link_verify`) for the browser holding
+//!    the binding and the account the flow was started for: it exchanges the code once,
+//!    verifies the ID token and stores the verified identity on the (unconsumed) flow, and
+//!    shows it (provider, subject, verified address, preferred username) with the account.
+//! 3. On confirmation, [`OidcService::complete_link`] claims the flow (same binding and
+//!    account), and links exactly that stored identity `(provider, sub)` to the account
+//!    (`linked_via = explicit`). The email plays no
 //!    part. Refused: the identity belongs to another account, the account has another
 //!    identity at this provider, an LDAP account. The same identity linked by email is
 //!    upgraded to `explicit`; linked explicitly already, it stays as it is. The guard records
@@ -31,7 +33,7 @@ use sea_orm::{
 };
 
 use super::OidcService;
-use super::callback::{CallbackParams, Expect};
+use super::callback::Expect;
 use super::claims::Asserted;
 use super::context;
 use super::error::{CallbackError, LinkFailure, OidcError};
@@ -99,20 +101,24 @@ impl OidcService {
         Ok(())
     }
 
-    /// Completes a link flow for the signed-in account `user_id` in the browser holding
-    /// `binding` (see the module docs). Anything else is [`CallbackError::InvalidState`]
-    /// and leaves the flow untouched.
+    /// Links the identity [`verify_link`](Self::verify_link) stored on the flow of `state`
+    /// to the signed-in account `user_id`, in the browser holding `binding` (see the module
+    /// docs). A flow not verified yet, refused at verification, or of another browser or
+    /// account is [`CallbackError::InvalidState`] and stays untouched. Single use: the flow
+    /// is claimed, then deleted.
     pub async fn complete_link(
         &self,
-        params: &CallbackParams<'_>,
+        state: Option<&str>,
         binding: Option<&str>,
         user_id: i64,
         guard: TxGuard<IdentityChange>,
     ) -> Result<LinkReport, CallbackError> {
-        let row = self
-            .claim(params.state, Expect::Link(binding, user_id))
-            .await?;
-        let report = self.finish_link(&row, user_id, params, guard).await;
+        let live = self.live_flow(state).await?;
+        if live.error.is_some() || context::link_asserted(&live.context).is_none() {
+            return Err(CallbackError::InvalidState);
+        }
+        let row = self.claim(state, Expect::Link(binding, user_id)).await?;
+        let report = self.finish_link(&row, user_id, guard).await;
         let deleted = oidc_flow::Entity::delete_by_id(row.id)
             .exec(&self.inner.db)
             .await;
@@ -126,22 +132,18 @@ impl OidcService {
         &self,
         row: &oidc_flow::Model,
         user_id: i64,
-        params: &CallbackParams<'_>,
         guard: TxGuard<IdentityChange>,
     ) -> Result<LinkReport, CallbackError> {
         let provider = oidc_provider::Entity::find_by_id(row.provider_id)
             .one(&self.inner.db)
             .await?
             .ok_or(CallbackError::InvalidState)?;
-        let (subject, outcome) = match self.verify_callback(row, &provider, params).await {
-            Ok(asserted) => {
-                let linked = self
-                    .link_verified(&provider, user_id, &asserted, guard)
-                    .await?;
-                (Some(asserted.subject), linked)
-            }
-            Err(failure) => (None, Err(LinkFailure::of(failure))),
-        };
+        // Exactly the identity the confirmation page showed.
+        let asserted = context::link_asserted(&row.context).ok_or(CallbackError::InvalidState)?;
+        let outcome = self
+            .link_verified(&provider, user_id, &asserted, guard)
+            .await?;
+        let subject = Some(asserted.subject);
         match &outcome {
             Ok(identity) => {
                 tracing::info!(user_id, provider = %provider.name, identity_id = identity.id, "OIDC identity linked");

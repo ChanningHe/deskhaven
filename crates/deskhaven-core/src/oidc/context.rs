@@ -5,6 +5,7 @@ use deskhaven_db::entity::user::AuthSource;
 use sea_orm::ActiveEnum;
 use serde_json::{Value, json};
 
+use super::claims::Asserted;
 use crate::sessions::{ClientDevice, TokenHash};
 use crate::users::CredentialStamp;
 
@@ -30,6 +31,38 @@ pub(crate) fn for_link(binding: &TokenHash, user_id: i64) -> Value {
 pub(crate) fn console_binding(raw: &str) -> Option<String> {
     let value: Value = serde_json::from_str(raw).ok()?;
     value.get("binding")?.as_str().map(str::to_owned)
+}
+
+/// `raw` with the verified identity of a link flow added (only what the confirmation shows
+/// and the link stores: the subject, an IdP-verified address, the preferred username);
+/// `None` when `raw` is not a JSON object.
+pub(crate) fn with_asserted(raw: &str, asserted: &Asserted) -> Option<String> {
+    let mut value: Value = serde_json::from_str(raw).ok()?;
+    value.as_object_mut()?.insert(
+        "asserted".to_owned(),
+        json!({
+            "subject": asserted.subject,
+            "email": asserted.verified_email(),
+            "preferred_username": asserted.preferred_username,
+        }),
+    );
+    Some(value.to_string())
+}
+
+/// The verified identity a link flow stored; `None` before the exchange.
+pub(crate) fn link_asserted(raw: &str) -> Option<Asserted> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let stored = value.get("asserted")?;
+    let text = |key: &str| stored.get(key).and_then(Value::as_str).map(str::to_owned);
+    let email = text("email");
+    Some(Asserted {
+        subject: text("subject")?,
+        email_verified: email.as_ref().map(|_| true),
+        email,
+        preferred_username: text("preferred_username"),
+        name: None,
+        groups: Vec::new(),
+    })
 }
 
 /// The account a link flow links to; `None` when the context is not one.

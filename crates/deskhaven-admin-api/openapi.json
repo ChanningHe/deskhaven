@@ -6235,7 +6235,7 @@
         "tags": [
           "me"
         ],
-        "summary": "Completes the link in the browser that started it (see the module docs).",
+        "summary": "Links the verified identity in the browser that started the flow (see the module docs).",
         "operationId": "complete_oidc_link",
         "parameters": [
           {
@@ -6252,7 +6252,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OidcCompleteRequest"
+                "$ref": "#/components/schemas/OidcLinkConfirm"
               }
             }
           },
@@ -6309,27 +6309,37 @@
         ]
       }
     },
-    "/admin/api/v1/me/identities/link/preview": {
-      "get": {
+    "/admin/api/v1/me/identities/link/verify": {
+      "post": {
         "tags": [
           "me"
         ],
-        "summary": "What the console's confirmation page shows for a link flow of this browser and account.",
-        "operationId": "preview_oidc_link",
+        "summary": "Verifies the IdP's answer of a link flow of this browser and account (see the module\ndocs).",
+        "operationId": "verify_oidc_link",
         "parameters": [
           {
-            "name": "state",
-            "in": "query",
-            "description": "The `state` the identity provider returned.",
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
             "required": true,
             "schema": {
               "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "The provider and the account",
+            "description": "The IdP identity, the provider and the account",
             "content": {
               "application/json": {
                 "schema": {
@@ -6349,7 +6359,7 @@
             }
           },
           "403": {
-            "description": "No live link flow of this browser and account (`oidc_failed`, reason `expired`)",
+            "description": "Refused (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
             "content": {
               "application/json": {
                 "schema": {
@@ -13318,17 +13328,49 @@
         },
         "additionalProperties": false
       },
-      "OidcLinkPreview": {
+      "OidcLinkConfirm": {
         "type": "object",
-        "description": "What the confirmation page names.",
+        "description": "Which link flow to confirm. Never logged.",
         "required": [
-          "provider",
-          "username"
+          "state"
         ],
         "properties": {
+          "state": {
+            "type": "string",
+            "description": "The `state` the identity provider returned."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OidcLinkPreview": {
+        "type": "object",
+        "description": "What the confirmation page names: the IdP identity and the account it will link to.",
+        "required": [
+          "provider",
+          "username",
+          "subject"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The IdP account's address, when the provider asserts it verified."
+          },
+          "preferred_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "provider": {
             "type": "string",
             "description": "The provider's display name."
+          },
+          "subject": {
+            "type": "string",
+            "description": "The provider's `sub` for the IdP account."
           },
           "username": {
             "type": "string",

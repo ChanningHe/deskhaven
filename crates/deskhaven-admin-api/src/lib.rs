@@ -64,7 +64,7 @@ pub use stack_error::render_stack_error;
 pub use users::{MAX_CSV_BYTES, MAX_IMPORT_ROWS};
 
 pub use account::{
-    IdentityUnlink, MyAccount, OidcLinkPreview, OidcLinkStart, OidcLinkState, PasswordChange,
+    IdentityUnlink, MyAccount, OidcLinkConfirm, OidcLinkPreview, OidcLinkStart, PasswordChange,
     ProfilePatch, QrCode, RecoveryCodesIssued, TotpConfirm, TotpEnabled, TotpEnrolment, TotpProof,
 };
 pub use account_setup::SetupStep;

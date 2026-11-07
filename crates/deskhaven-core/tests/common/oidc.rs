@@ -159,9 +159,22 @@ impl Env {
             code: Some(AUTH_CODE),
             error: None,
         };
+        let binding = Some(start.binding.expose());
+        let verified = self
+            .oidc
+            .verify_link(&params, binding, user_id)
+            .await
+            .unwrap();
+        if let Err(failure) = verified {
+            return LinkReport {
+                provider: PROVIDER.to_owned(),
+                subject: None,
+                outcome: Err(failure),
+            };
+        }
         let guard = self.link_guard(user_id, "user.identity_link");
         self.oidc
-            .complete_link(&params, Some(start.binding.expose()), user_id, guard)
+            .complete_link(params.state, binding, user_id, guard)
             .await
             .unwrap()
     }

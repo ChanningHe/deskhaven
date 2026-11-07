@@ -10,9 +10,10 @@
 //!    (409 `not_local_account`). Then a `link` flow, its authorization URL, and its browser
 //!    binding in the same HttpOnly cookie a console login uses.
 //! 2. The IdP redirects to the callback, which sends a link flow to the console's
-//!    `/me/oidc-link`. That page shows `GET /me/identities/link/preview?state=` (which
-//!    provider, which account) and a button.
-//! 3. `POST /me/identities/link/complete {state, code | error}` links the identity to the
+//!    `/me/oidc-link`. That page posts the IdP's answer to `POST /me/identities/link/verify`
+//!    (`link_confirm`): the code is exchanged once and the page shows the verified IdP
+//!    identity and the account, with a button.
+//! 3. `POST /me/identities/link/complete {state}` links exactly that identity to the
 //!    session's account, only in the browser holding the binding and only for the account
 //!    the flow was started for (anything else: `oidc_failed`, `expired`). Audited
 //!    `user.identity_link` in the linking transaction.
@@ -25,31 +26,29 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderMap, header};
-use axum::response::{AppendHeaders, IntoResponse, Response};
-use deskhaven_core::console_audit::TxGuard;
-use deskhaven_core::oidc::{
-    CallbackError, CallbackParams, FLOW_TTL, IdentityChange, LinkFailure, OidcError,
-};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
+
+use deskhaven_core::oidc::{FLOW_TTL, LinkFailure, OidcError};
 use deskhaven_core::state::AppState;
 use deskhaven_core::tfa::TfaError;
 use deskhaven_core::users::{AuthSource, Password, User};
 use garde::Validate;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 
 use super::reauth::{
     Failed, MAX_CODE_INPUT, MAX_PASSWORD_INPUT, not_local, password_failure, throttled, user_error,
 };
 use super::totp::tfa_error;
-use crate::audit::{Audit, AuditCtx, Audited};
-use crate::auth::{OIDC_BINDING_COOKIE, OidcCompleteRequest, OidcStart, clear_binding_cookie};
+use crate::audit::Audit;
+use crate::auth::{OIDC_BINDING_COOKIE, OidcStart};
 use crate::domain_error::invalid_field;
-use crate::session::{self, Client, ConsoleUser, http_only_cookie};
+use crate::session::{Client, ConsoleUser, http_only_cookie};
 use crate::transport::SecureTransport;
-use crate::users::view::IdentityView;
-use crate::{AdminApiError, ErrorCode, ValidJson, ValidQuery};
+
+use crate::{AdminApiError, ErrorCode, ValidJson};
 
 /// Longest accepted provider name or state (characters).
 const MAX_FIELD: usize = 2048;
@@ -68,23 +67,6 @@ pub struct OidcLinkStart {
     /// Required while TOTP is on: a current TOTP code or an unused recovery code.
     #[garde(inner(length(chars, min = 1, max = MAX_CODE_INPUT)))]
     pub code: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Validate, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct OidcLinkState {
-    /// The `state` the identity provider returned.
-    #[garde(length(chars, min = 1, max = MAX_FIELD))]
-    pub state: String,
-}
-
-/// What the confirmation page names.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct OidcLinkPreview {
-    /// The provider's display name.
-    pub provider: String,
-    /// The account the identity will be linked to (the session's).
-    pub username: String,
 }
 
 /// Starts linking an OIDC identity to the signed-in account (see the module docs).
@@ -188,106 +170,7 @@ fn start_error(err: OidcError) -> AdminApiError {
     }
 }
 
-/// What the console's confirmation page shows for a link flow of this browser and account.
-#[utoipa::path(
-    get,
-    path = "/me/identities/link/preview",
-    operation_id = "preview_oidc_link",
-    tag = "me",
-    security(("console_session" = ["self"])),
-    params(OidcLinkState),
-    responses(
-        (status = 200, description = "The provider and the account", body = OidcLinkPreview),
-        (status = 403, description = "No live link flow of this browser and account (`oidc_failed`, reason `expired`)", body = crate::ErrorEnvelope),
-    )
-)]
-pub async fn preview(
-    State(state): State<Arc<AppState>>,
-    ConsoleUser(principal): ConsoleUser,
-    headers: HeaderMap,
-    ValidQuery(query): ValidQuery<OidcLinkState>,
-) -> Result<Json<OidcLinkPreview>, AdminApiError> {
-    let binding = session::cookie(&headers, OIDC_BINDING_COOKIE);
-    let shown = state
-        .oidc
-        .preview_link(Some(&query.state), binding, principal.user_id)
-        .await
-        .map_err(callback_error)?;
-    let user = state
-        .users
-        .get(principal.user_id)
-        .await
-        .map_err(user_error)?;
-    Ok(Json(OidcLinkPreview {
-        provider: shown.provider,
-        username: user.username,
-    }))
-}
-
-/// Completes the link in the browser that started it (see the module docs).
-#[utoipa::path(
-    post,
-    path = "/me/identities/link/complete",
-    operation_id = "complete_oidc_link",
-    tag = "me",
-    security(("console_session" = ["self"])),
-    request_body = OidcCompleteRequest,
-    responses(
-        (status = 200, description = "Linked; the binding cookie is cleared", body = IdentityView),
-        (status = 403, description = "Not linked (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`", body = crate::ErrorEnvelope),
-    )
-)]
-pub async fn complete(
-    State(state): State<Arc<AppState>>,
-    _secure: SecureTransport,
-    ConsoleUser(principal): ConsoleUser,
-    ctx: AuditCtx,
-    headers: HeaderMap,
-    ValidJson(request): ValidJson<OidcCompleteRequest>,
-) -> Result<Response, AdminApiError> {
-    let params = CallbackParams {
-        state: Some(&request.state),
-        code: request.code.as_deref(),
-        error: request.error.as_deref(),
-    };
-    let binding = session::cookie(&headers, OIDC_BINDING_COOKIE);
-    let user_id = principal.user_id;
-    let guard = link_guard(&state, ctx, user_id);
-    let report = state
-        .oidc
-        .complete_link(&params, binding, user_id, guard)
-        .await
-        .map_err(callback_error)?;
-    let identity = report.outcome.map_err(|f| link_failed(f.code()))?;
-    let clear = AppendHeaders([(header::SET_COOKIE, clear_binding_cookie())]);
-    Ok((clear, Audited, Json(IdentityView::from(identity))).into_response())
-}
-
-/// Records `user.identity_link` in the linking transaction (the account must still be
-/// active).
-fn link_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<IdentityChange> {
-    TxGuard::for_account(
-        &state.console_audit,
-        user_id,
-        move |_, _, after: Option<&IdentityChange>| {
-            let audit = Audit::new("user.identity_link").target("user", user_id);
-            let audit = match after {
-                Some(change) => audit.after(&IdentityView::from(change.identity.clone())),
-                None => audit,
-            };
-            Ok(ctx.entry(audit))
-        },
-    )
-}
-
-fn callback_error(err: CallbackError) -> AdminApiError {
-    match err {
-        CallbackError::InvalidState => link_failed("expired"),
-        other => AdminApiError::internal(other),
-    }
-}
-
-fn link_failed(reason: &'static str) -> AdminApiError {
+pub(super) fn link_failed(reason: &'static str) -> AdminApiError {
     AdminApiError::new(ErrorCode::OidcFailed, "the OIDC identity was not linked")
         .with_details(json!({ "reason": reason }))
 }

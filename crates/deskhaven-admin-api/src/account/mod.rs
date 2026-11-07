@@ -13,7 +13,7 @@
 //! | `GET` | `/me/account` | the account page's data | |
 //! | `PATCH` | `/me` | display name | `user.profile_update` |
 //! | `POST` | `/me/identities/link` | start linking an OIDC identity (password, and a code with TOTP) | `user.identity_link_begin` |
-//! | `GET` | `/me/identities/link/preview` | what the link confirmation page names | |
+//! | `POST` | `/me/identities/link/verify` | exchange the IdP answer once, show the IdP identity | `user.identity_link_verify` |
 //! | `POST` | `/me/identities/link/complete` | link it to this account | `user.identity_link` |
 //! | `POST` | `/me/identities/{id}/unlink` | remove an OIDC identity (password) | `user.identity_unlink` |
 //!
@@ -23,6 +23,7 @@
 
 mod identities;
 mod link;
+mod link_confirm;
 mod password;
 mod profile;
 mod qr;
@@ -36,7 +37,8 @@ use crate::routes::{AdminRoutes, RouteError};
 
 pub use identities::IdentityUnlink;
 pub(crate) use identities::unlink_audit;
-pub use link::{OidcLinkPreview, OidcLinkStart, OidcLinkState};
+pub use link::OidcLinkStart;
+pub use link_confirm::{OidcLinkConfirm, OidcLinkPreview};
 pub use password::PasswordChange;
 pub use profile::{MyAccount, ProfilePatch};
 pub use qr::QrCode;
@@ -54,7 +56,7 @@ pub(crate) fn routes() -> Result<AdminRoutes, RouteError> {
         .routes(routes!(profile::view))?
         .routes(routes!(profile::edit))?
         .routes(routes!(link::start))?
-        .routes(routes!(link::preview))?
-        .routes(routes!(link::complete))?
+        .routes(routes!(link_confirm::verify))?
+        .routes(routes!(link_confirm::complete))?
         .routes(routes!(identities::unlink))
 }

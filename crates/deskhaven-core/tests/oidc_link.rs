@@ -9,7 +9,7 @@
 mod common;
 
 use common::oidc::{Env, PROVIDER, enable_totp};
-use common::oidc_idp::{AUTH_CODE, AuthRequest};
+use common::oidc_idp::{AUTH_CODE, AuthRequest, TokenSpec};
 use deskhaven_core::oidc::{
     CallbackError, CallbackParams, LinkFailure, LinkReport, OidcError, PreviewTarget,
 };
@@ -74,7 +74,7 @@ async fn the_signed_in_user_links_an_identity_whatever_its_email() {
 }
 
 #[tokio::test]
-async fn only_the_starting_browser_and_user_complete_a_link_flow() {
+async fn only_the_starting_browser_and_user_verify_and_complete_a_link_flow() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let alice = env.local_user("alice", None).await;
@@ -84,57 +84,143 @@ async fn only_the_starting_browser_and_user_complete_a_link_flow() {
         let request = AuthRequest::parse(&start.url);
         env.idp.mount_token(&env.spec("sub-a", &request)).await;
         let binding = start.binding.expose();
+        let state = Some(request.state.as_str());
         let guard = || env.link_guard(alice.id, "user.identity_link");
+        let answer = params(&request);
+        let verify = |binding, user| env.oidc.verify_link(&answer, binding, user);
 
-        let none = env
+        let unverified = env
             .oidc
-            .complete_link(&params(&request), None, alice.id, guard())
+            .complete_link(state, Some(binding), alice.id, guard())
             .await;
-        let wrong = env
-            .oidc
-            .complete_link(
-                &params(&request),
-                Some(other.binding.expose()),
-                alice.id,
-                guard(),
-            )
-            .await;
-        let other_user = env
-            .oidc
-            .complete_link(&params(&request), Some(binding), bob.id, guard())
-            .await;
+        let no_cookie = verify(None, alice.id).await;
+        let wrong = verify(Some(other.binding.expose()), alice.id).await;
+        let other_user = verify(Some(binding), bob.id).await;
         let as_login = env
             .oidc
             .complete_console(&params(&request), Some(binding))
             .await;
         let as_client = env.oidc.complete_callback(&params(&request)).await;
-        let preview_other = env
+        let verified = verify(Some(binding), alice.id).await.unwrap().unwrap();
+        let none = env.oidc.complete_link(state, None, alice.id, guard()).await;
+        let by_bob = env
             .oidc
-            .preview_link(Some(&request.state), Some(binding), bob.id)
+            .complete_link(state, Some(binding), bob.id, guard())
             .await;
-        let preview = env
-            .oidc
-            .preview_link(Some(&request.state), Some(binding), alice.id)
-            .await
-            .unwrap();
         let done = env
             .oidc
-            .complete_link(&params(&request), Some(binding), alice.id, guard())
-            .await
-            .unwrap();
+            .complete_link(state, Some(binding), alice.id, guard())
+            .await;
+        let again = env
+            .oidc
+            .complete_link(state, Some(binding), alice.id, guard())
+            .await;
 
         let b = db.backend;
-        for refused in [none, wrong, other_user] {
+        let invalid = |r: &Result<_, CallbackError>| matches!(r, Err(CallbackError::InvalidState));
+        assert!(invalid(&unverified), "{b}: not verified yet");
+        for refused in [&no_cookie, &wrong, &other_user] {
             assert!(matches!(refused, Err(CallbackError::InvalidState)), "{b}");
         }
         assert!(matches!(as_login, Err(CallbackError::InvalidState)), "{b}");
         assert!(matches!(as_client, Err(CallbackError::InvalidState)), "{b}");
-        assert!(
-            matches!(preview_other, Err(CallbackError::InvalidState)),
+        assert_eq!(verified.provider, env.provider.display_name, "{b}");
+        assert_eq!(verified.subject, "sub-a", "{b}");
+        assert!(invalid(&none) && invalid(&by_bob), "{b}");
+        assert_eq!(done.unwrap().outcome.unwrap().user_id, alice.id, "{b}");
+        assert!(invalid(&again), "{b}: single use");
+    })
+    .await;
+}
+
+/// The confirmation names the IdP identity: verification exchanges the code once, a reload
+/// answers from the flow, and confirming links exactly the identity shown.
+#[tokio::test]
+async fn verification_exchanges_once_and_the_confirmation_links_what_it_showed() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.local_user("alice", None).await;
+        let start = env.oidc.begin_link(PROVIDER, alice.id).await.unwrap();
+        let request = AuthRequest::parse(&start.url);
+        let spec = TokenSpec {
+            preferred_username: Some("alice.corp".to_owned()),
+            ..env
+                .spec("sub-a", &request)
+                .email("alice@corp.example", Some(true))
+        };
+        env.idp.mount_token(&spec).await;
+        let binding = Some(start.binding.expose());
+
+        let first = env
+            .oidc
+            .verify_link(&params(&request), binding, alice.id)
+            .await;
+        let reload = env
+            .oidc
+            .verify_link(&params(&request), binding, alice.id)
+            .await;
+        let guard = env.link_guard(alice.id, "user.identity_link");
+        let done = env
+            .oidc
+            .complete_link(Some(&request.state), binding, alice.id, guard)
+            .await
+            .unwrap();
+
+        let b = db.backend;
+        let shown = first.unwrap().unwrap();
+        assert_eq!(shown.subject, "sub-a", "{b}");
+        assert_eq!(shown.email.as_deref(), Some("alice@corp.example"), "{b}");
+        assert_eq!(
+            shown.preferred_username.as_deref(),
+            Some("alice.corp"),
             "{b}"
         );
-        assert_eq!(preview.provider, env.provider.display_name, "{b}");
-        assert_eq!(done.outcome.unwrap().user_id, alice.id, "{b}");
+        assert_eq!(reload.unwrap().unwrap(), shown, "{b}");
+        assert_eq!(env.idp.token_requests().await.len(), 1, "{b}: one exchange");
+        let linked = done.outcome.unwrap();
+        assert_eq!(linked.subject, "sub-a", "{b}");
+        assert_eq!(linked.email.as_deref(), Some("alice@corp.example"), "{b}");
+    })
+    .await;
+}
+
+/// A refusal at the IdP is answered at verification, again on a reload, and the flow can
+/// never be confirmed.
+#[tokio::test]
+async fn an_idp_refusal_is_reported_at_verification_and_never_confirmed() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.local_user("alice", None).await;
+        let start = env.oidc.begin_link(PROVIDER, alice.id).await.unwrap();
+        let request = AuthRequest::parse(&start.url);
+        let denied = CallbackParams {
+            state: Some(&request.state),
+            code: None,
+            error: Some("access_denied"),
+        };
+        let binding = Some(start.binding.expose());
+
+        let first = env
+            .oidc
+            .verify_link(&denied, binding, alice.id)
+            .await
+            .unwrap();
+        let reload = env
+            .oidc
+            .verify_link(&params(&request), binding, alice.id)
+            .await
+            .unwrap();
+        let guard = env.link_guard(alice.id, "user.identity_link");
+        let confirm = env
+            .oidc
+            .complete_link(Some(&request.state), binding, alice.id, guard)
+            .await;
+
+        let b = db.backend;
+        assert_eq!(first.err(), Some(LinkFailure::Denied), "{b}");
+        assert_eq!(reload.err(), Some(LinkFailure::Denied), "{b}");
+        assert!(matches!(confirm, Err(CallbackError::InvalidState)), "{b}");
+        assert_eq!(env.idp.token_requests().await.len(), 0, "{b}");
     })
     .await;
 }
@@ -222,14 +308,16 @@ async fn a_concurrent_second_link_at_the_same_provider_is_refused_at_completion(
         let request = AuthRequest::parse(&start.url);
         env.idp.mount_token(&env.spec("sub-b", &request)).await;
 
+        let binding = Some(start.binding.expose());
+        env.oidc
+            .verify_link(&params(&request), binding, alice.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let guard = env.link_guard(alice.id, "user.identity_link");
         let report = env
             .oidc
-            .complete_link(
-                &params(&request),
-                Some(start.binding.expose()),
-                alice.id,
-                env.link_guard(alice.id, "user.identity_link"),
-            )
+            .complete_link(Some(&request.state), binding, alice.id, guard)
             .await
             .unwrap();
 

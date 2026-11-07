@@ -25,7 +25,7 @@ use sea_orm::{EntityTrait, PaginatorTrait};
 use serde_json::{Value, json};
 
 const LINK: &str = "/admin/api/v1/me/identities/link";
-const PREVIEW: &str = "/admin/api/v1/me/identities/link/preview";
+const VERIFY: &str = "/admin/api/v1/me/identities/link/verify";
 const COMPLETE: &str = "/admin/api/v1/me/identities/link/complete";
 const LOGIN_START: &str = "/admin/api/v1/auth/oidc/start";
 const LOGIN_COMPLETE: &str = "/admin/api/v1/auth/oidc/complete";
@@ -81,17 +81,27 @@ impl Env {
         self.idp.mount_token(&spec).await;
     }
 
-    async fn complete(&self, console: &Console, request: &AuthRequest) -> common::Reply {
+    /// The confirmation page's first call: the IdP's answer, exchanged once.
+    async fn verify(&self, console: &Console, request: &AuthRequest) -> common::Reply {
         let body = json!({ "state": request.state, "code": AUTH_CODE });
+        self.h.post(VERIFY, Some(console), body).await
+    }
+
+    async fn complete(&self, console: &Console, request: &AuthRequest) -> common::Reply {
+        let body = json!({ "state": request.state });
         self.h.post(COMPLETE, Some(console), body).await
     }
 
-    /// Start, IdP answer for `subject`, completion in the same browser.
+    /// Start, IdP answer for `subject`, verification and confirmation in the same browser.
     async fn link(&self, console: &Console, subject: &str, proof: Value) -> common::Reply {
         let (request, binding) = self.started(console, proof).await;
         self.mount(subject, &request).await;
-        self.complete(&with_binding(console, &binding), &request)
-            .await
+        let browser = with_binding(console, &binding);
+        let verified = self.verify(&browser, &request).await;
+        if verified.status != 200 {
+            return verified;
+        }
+        self.complete(&browser, &request).await
     }
 }
 
@@ -165,28 +175,27 @@ async fn the_flow_completes_only_in_the_starting_browser_for_the_starting_accoun
         env.mount("sub-a", &request).await;
         let b = db.backend;
 
-        let no_cookie = env.complete(&alice, &request).await;
-        let other_account = env.complete(&with_binding(&bob, &binding), &request).await;
-        let preview = env
-            .h
-            .as_console(
-                Method::GET,
-                &format!("{PREVIEW}?state={}", request.state),
-                &with_binding(&alice, &binding),
-                None,
-            )
-            .await;
-        let done = env
-            .complete(&with_binding(&alice, &binding), &request)
-            .await;
+        let browser = with_binding(&alice, &binding);
+        let unverified = env.complete(&browser, &request).await;
+        let no_cookie = env.verify(&alice, &request).await;
+        let other_account = env.verify(&with_binding(&bob, &binding), &request).await;
+        let preview = env.verify(&browser, &request).await;
+        let reload = env.verify(&browser, &request).await;
+        let bob_confirms = env.complete(&with_binding(&bob, &binding), &request).await;
+        let done = env.complete(&browser, &request).await;
         let account = env.h.as_console(Method::GET, ACCOUNT, &alice, None).await;
 
+        assert_eq!(reason(&unverified), "expired", "{b}: not verified yet");
         assert_eq!(no_cookie.status, 403, "{b}: {:?}", no_cookie.body);
         assert_eq!(reason(&no_cookie), "expired", "{b}");
         assert_eq!(reason(&other_account), "expired", "{b}");
         assert_eq!(preview.status, 200, "{b}: {:?}", preview.body);
         assert_eq!(preview.body["provider"], "Corp SSO", "{b}");
         assert_eq!(preview.body["username"], "alice", "{b}");
+        assert_eq!(preview.body["subject"], "sub-a", "{b}");
+        assert_eq!(reload.body, preview.body, "{b}: a reload answers the same");
+        assert_eq!(env.idp.token_requests().await.len(), 1, "{b}: one exchange");
+        assert_eq!(reason(&bob_confirms), "expired", "{b}");
         assert_eq!(done.status, 200, "{b}: {:?}", done.body);
         assert_eq!(done.body["subject"], "sub-a", "{b}");
         assert_eq!(done.body["linked_via"], "explicit", "{b}");
