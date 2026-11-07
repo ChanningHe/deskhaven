@@ -49,6 +49,22 @@ pub(crate) fn with_asserted(raw: &str, asserted: &Asserted) -> Option<String> {
     Some(value.to_string())
 }
 
+/// `raw` marked as being verified since `now_ms` (the exchange is under way); `None` when
+/// `raw` is not a JSON object.
+pub(crate) fn with_verifying(raw: &str, now_ms: i64) -> Option<String> {
+    let mut value: Value = serde_json::from_str(raw).ok()?;
+    value
+        .as_object_mut()?
+        .insert("verifying_at".to_owned(), json!(now_ms));
+    Some(value.to_string())
+}
+
+/// When a verification of the link flow started, if one is under way.
+pub(crate) fn verifying_since(raw: &str) -> Option<i64> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    value.get("verifying_at")?.as_i64()
+}
+
 /// The verified identity a link flow stored; `None` before the exchange.
 pub(crate) fn link_asserted(raw: &str) -> Option<Asserted> {
     let value: Value = serde_json::from_str(raw).ok()?;

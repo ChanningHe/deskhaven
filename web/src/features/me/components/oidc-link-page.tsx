@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { isApiError } from '@/api/api-error'
 import { useCompleteOidcLink, useVerifyOidcLink } from '@/api/generated/me/me'
 import type { OidcLinkPreview } from '@/api/generated/model'
 import { PageHeader } from '@/components/common/page-header'
@@ -11,6 +12,14 @@ import type { OidcAnswer } from '@/features/auth/components/oidc-callback-page'
 
 import { refreshAccount } from '../invalidate'
 import { LinkFailure } from './link-failure'
+
+/** Asking again while another request verifies the same answer (409 `verifying`). */
+const RETRY_DELAY_MS = 1000
+const MAX_RETRIES = 10
+
+function isVerifying(error: unknown): boolean {
+  return isApiError(error) && error.code === 'conflict' && error.details?.reason === 'verifying'
+}
 
 function BackLink() {
   const { t } = useTranslation()
@@ -105,6 +114,9 @@ export function OidcLinkPage({ answer }: { answer: OidcAnswer }) {
   const state = first.state ?? ''
   const refusedAtIdp = first.error !== undefined
 
+  const [retries, setRetries] = useState(0)
+  const busyElsewhere = isVerifying(verify.error) && retries < MAX_RETRIES
+
   useEffect(() => {
     if (started.current) return
     started.current = true
@@ -113,10 +125,23 @@ export function OidcLinkPage({ answer }: { answer: OidcAnswer }) {
     verify.mutate({ data: { state, code: first.code ?? null, error: null } })
   }, [first, navigate, refusedAtIdp, state, verify])
 
+  // Another request (another tab) is exchanging this answer: ask again shortly; the
+  // server answers from the flow once it is done, without a second exchange.
+  useEffect(() => {
+    if (!busyElsewhere) return
+    const timer = setTimeout(() => {
+      setRetries((count) => count + 1)
+      verify.mutate({ data: { state, code: first.code ?? null, error: null } })
+    }, RETRY_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [busyElsewhere, first, state, verify])
+
   let failure
   if (state === '') failure = <LinkFailure reason="expired" />
   else if (refusedAtIdp) failure = <LinkFailure reason="denied" />
-  else if (verify.isError) failure = <LinkFailure error={verify.error} />
+  else if (verify.isError && !busyElsewhere) failure = <LinkFailure error={verify.error} />
   let body
   if (failure !== undefined) {
     body = (

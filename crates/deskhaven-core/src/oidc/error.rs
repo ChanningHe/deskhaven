@@ -91,6 +91,10 @@ pub enum CallbackError {
     /// Unknown, expired or already used `state` (or no state).
     #[error("unknown, expired or used OIDC state")]
     InvalidState,
+    /// Another request is verifying this link flow right now: ask again shortly (the code
+    /// is exchanged only once).
+    #[error("the OIDC link flow is being verified")]
+    Verifying,
     #[error("OIDC callback failed")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }

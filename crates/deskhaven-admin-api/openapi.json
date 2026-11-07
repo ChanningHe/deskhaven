@@ -6368,6 +6368,16 @@
               }
             }
           },
+          "409": {
+            "description": "Another request is verifying this flow (`conflict`, `details.reason: verifying`): ask again shortly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Too many rejected sessions from this address (`rate_limited`).",
             "content": {

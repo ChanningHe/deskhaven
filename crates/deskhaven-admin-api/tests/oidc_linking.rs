@@ -196,6 +196,20 @@ async fn the_flow_completes_only_in_the_starting_browser_for_the_starting_accoun
         assert_eq!(reload.body, preview.body, "{b}: a reload answers the same");
         assert_eq!(env.idp.token_requests().await.len(), 1, "{b}: one exchange");
         assert_eq!(reason(&bob_confirms), "expired", "{b}");
+        // One verification row (the reload answered from the flow), naming the provider
+        // as the other link rows do.
+        let verifications: Vec<_> = env
+            .h
+            .audit_rows()
+            .await
+            .into_iter()
+            .filter(|r| r.action == "user.identity_link_verify")
+            .collect();
+        assert_eq!(verifications.len(), 1, "{b}");
+        let after: Value =
+            serde_json::from_str(verifications[0].after.as_deref().unwrap()).unwrap();
+        assert_eq!(after["provider"], "corp", "{b}");
+        assert_eq!(after["subject"], "sub-a", "{b}");
         assert_eq!(done.status, 200, "{b}: {:?}", done.body);
         assert_eq!(done.body["subject"], "sub-a", "{b}");
         assert_eq!(done.body["linked_via"], "explicit", "{b}");

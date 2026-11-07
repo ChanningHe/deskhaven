@@ -11,7 +11,7 @@ mod common;
 use common::oidc::{Env, PROVIDER, enable_totp};
 use common::oidc_idp::{AUTH_CODE, AuthRequest, TokenSpec};
 use deskhaven_core::oidc::{
-    CallbackError, CallbackParams, LinkFailure, LinkReport, OidcError, PreviewTarget,
+    CallbackError, CallbackParams, LinkFailure, LinkPending, LinkReport, OidcError, PreviewTarget,
 };
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
@@ -175,7 +175,19 @@ async fn verification_exchanges_once_and_the_confirmation_links_what_it_showed()
             Some("alice.corp"),
             "{b}"
         );
-        assert_eq!(reload.unwrap().unwrap(), shown, "{b}");
+        let reload = reload.unwrap().unwrap();
+        assert!(
+            shown.exchanged && !reload.exchanged,
+            "{b}: answered from the flow"
+        );
+        assert_eq!(
+            LinkPending {
+                exchanged: true,
+                ..reload
+            },
+            shown,
+            "{b}"
+        );
         assert_eq!(env.idp.token_requests().await.len(), 1, "{b}: one exchange");
         let linked = done.outcome.unwrap();
         assert_eq!(linked.subject, "sub-a", "{b}");

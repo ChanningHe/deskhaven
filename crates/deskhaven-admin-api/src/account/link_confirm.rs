@@ -5,8 +5,10 @@
 //!   username), the provider and the account; a reload answers the same without asking the
 //!   IdP again. Only for the browser holding the flow's binding cookie and the account the
 //!   flow was started for. A refusal at the IdP is 403 `oidc_failed` with the reason
-//!   (`denied`, `unavailable`, `invalid_token`); no live flow is reason `expired`. Recorded
-//!   as `user.identity_link_verify` (which IdP identity was presented; nothing changes).
+//!   (`denied`, `unavailable`, `invalid_token`); no live flow is reason `expired`; another
+//!   request verifying the same flow right now is 409 `conflict`, reason `verifying` (ask
+//!   again). The call that exchanged the code records `user.identity_link_verify` (which
+//!   IdP identity was presented, by provider name and subject; nothing changes).
 //! - `POST /me/identities/link/complete {state}`: links exactly the verified identity
 //!   (single use), audited `user.identity_link` in the linking transaction; refusals as in
 //!   `link`.
@@ -72,6 +74,7 @@ pub struct OidcLinkPreview {
     responses(
         (status = 200, description = "The IdP identity, the provider and the account", body = OidcLinkPreview),
         (status = 403, description = "Refused (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`", body = crate::ErrorEnvelope),
+        (status = 409, description = "Another request is verifying this flow (`conflict`, `details.reason: verifying`): ask again shortly", body = crate::ErrorEnvelope),
     )
 )]
 pub async fn verify(
@@ -95,17 +98,23 @@ pub async fn verify(
         .map_err(callback_error)?;
     let shown = verified.map_err(|f| link_failed(f.code()))?;
     let user = state.users.get(user_id).await.map_err(user_error)?;
-    let audit = Audit::new("user.identity_link_verify")
-        .target("user", user_id)
-        .after(&json!({ "provider": shown.provider, "subject": shown.subject }));
-    let reply = OidcLinkPreview {
+    // Recorded once, by the call that exchanged the code; a reload changes nothing.
+    let audit = shown.exchanged.then(|| {
+        Audit::new("user.identity_link_verify")
+            .target("user", user_id)
+            .after(&json!({ "provider": shown.provider_name, "subject": shown.subject }))
+    });
+    let reply = Json(OidcLinkPreview {
         provider: shown.provider,
         username: user.username,
         subject: shown.subject,
         email: shown.email,
         preferred_username: shown.preferred_username,
-    };
-    Ok((audit, Json(reply)).into_response())
+    });
+    Ok(match audit {
+        Some(audit) => (audit, reply).into_response(),
+        None => (Audited, reply).into_response(),
+    })
 }
 
 /// Links the verified identity in the browser that started the flow (see the module docs).
@@ -162,6 +171,10 @@ fn link_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<Identity
 fn callback_error(err: CallbackError) -> AdminApiError {
     match err {
         CallbackError::InvalidState => link_failed("expired"),
+        CallbackError::Verifying => {
+            AdminApiError::conflict("the link is being verified, ask again shortly")
+                .with_details(json!({ "reason": "verifying" }))
+        }
         other => AdminApiError::internal(other),
     }
 }

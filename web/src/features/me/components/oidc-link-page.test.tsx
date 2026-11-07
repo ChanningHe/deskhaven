@@ -86,6 +86,30 @@ describe('Link confirmation page', () => {
     expect(confirmed).toEqual({ state: 'st-1' })
   })
 
+  it('asks again while another request is verifying the same link', async () => {
+    let calls = 0
+    renderApp(PAGE, {
+      me: USER_ME,
+      api: {
+        [`POST ${VERIFY}`]: () => {
+          calls += 1
+          if (calls === 1) {
+            return {
+              status: 409,
+              body: { error: { code: 'conflict', message: 'x', details: { reason: 'verifying' } } },
+            }
+          }
+          return { body: SHOWN }
+        },
+      },
+    })
+
+    expect(
+      await screen.findByText(/将你的 Corp SSO 身份关联到账号 alice/, {}, { timeout: 3000 }),
+    ).toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
+
   it('shows a loading state while verifying', async () => {
     renderApp(PAGE, {
       me: USER_ME,
