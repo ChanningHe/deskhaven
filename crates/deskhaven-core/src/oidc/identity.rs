@@ -46,6 +46,7 @@ use serde_json::json;
 use super::OidcService;
 use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
+use super::identities::locked_account;
 use super::link::provider_identity;
 use super::provision::provision;
 use crate::console_audit::{self, Actor, NewConsoleAudit};
@@ -75,7 +76,12 @@ pub(crate) async fn resolve(
         Some(email) => find_by_email(tx, email).await?,
         None => None,
     };
-    if let Some(account) = by_email {
+    if let Some(found) = by_email {
+        // Locked (PostgreSQL) before the checks: two concurrent logins cannot both link an
+        // identity at one provider, and the conditions are read on the committed row.
+        let Some(account) = locked_account(tx, found.id).await? else {
+            return Ok(Err(Failure::NoLinkedAccount));
+        };
         // One identity per provider: another `sub` with the same address (a recreated or
         // recycled IdP account) never joins an account that already has one there.
         let has_one = provider_identity(tx, account.id, provider.id)
@@ -125,8 +131,9 @@ async fn linked_account(
         changed.email = Set(email);
         changed.update(tx).await?;
     }
-    // The foreign key cascades on account deletion, so the account exists.
-    let account = user::Entity::find_by_id(identity.user_id).one(tx).await?;
+    // Locked (PostgreSQL): the `email` re-check must not pass on a row a concurrent TOTP
+    // enrolment or promotion is changing. The foreign key cascades on account deletion.
+    let account = locked_account(tx, identity.user_id).await?;
     Ok(account.map(|account| (identity.linked_via, account)))
 }
 
