@@ -83,13 +83,21 @@ impl OidcService {
         guard: TxGuard<IdentityChange>,
     ) -> Result<(), IdentityError> {
         let tx = begin_write(&self.inner.db).await?;
-        let row = user_identity::Entity::find_by_id(id)
+        let owner = user_identity::Entity::find_by_id(id)
             .one(&tx)
             .await?
             .filter(|row| of_user.is_none_or(|owner| owner == row.user_id))
-            .ok_or(IdentityError::NotFound)?;
-        let account = locked_account(&tx, row.user_id)
+            .ok_or(IdentityError::NotFound)?
+            .user_id;
+        let account = locked_account(&tx, owner)
             .await?
+            .ok_or(IdentityError::NotFound)?;
+        // Read again under the account lock: a concurrent unlink of the same identity waits
+        // for the lock and then finds nothing (one removal, one audit row).
+        let row = user_identity::Entity::find_by_id(id)
+            .one(&tx)
+            .await?
+            .filter(|row| row.user_id == owner)
             .ok_or(IdentityError::NotFound)?;
         if account.auth_source == AuthSource::Oidc && identity_count(&tx, account.id).await? <= 1 {
             return Err(IdentityError::LastIdentity);
@@ -104,9 +112,11 @@ impl OidcService {
             identity: Identity::of(row.clone(), &provider),
         };
         guard.check(&tx, Some(&change), None).await?;
-        let by_email = row.linked_via == LinkedVia::Email;
-        row.delete(&tx).await?;
-        if by_email && account.email_verified {
+        let deleted = row.delete(&tx).await?;
+        if deleted.rows_affected != 1 {
+            return Err(IdentityError::NotFound);
+        }
+        if account.email_verified {
             self.unverify_email(&tx, account).await?;
         }
         tx.commit().await?;
@@ -114,9 +124,12 @@ impl OidcService {
         Ok(())
     }
 
-    /// An identity linked by email would be linked again at its next login while the email
-    /// conditions hold: removing one also marks the account's address unverified (an
-    /// administrator can mark it verified again; the holder can link explicitly).
+    /// A removed identity, whatever its source, would be linked again by email at its next
+    /// login while the email conditions hold (an account recovered after a compromise has
+    /// just lost its TOTP blocker too): removing one also marks the account's address
+    /// unverified. Other `email` identities of the account then stop at their next login.
+    /// An administrator can mark the address verified again; the holder can link
+    /// explicitly.
     async fn unverify_email<C: ConnectionTrait>(
         &self,
         conn: &C,

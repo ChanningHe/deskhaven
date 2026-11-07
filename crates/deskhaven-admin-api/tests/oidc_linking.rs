@@ -414,10 +414,10 @@ async fn administrators_unlink_by_the_account_rules() {
     .await;
 }
 
-/// Unlinking an identity linked by email marks the address unverified in the same change,
+/// Unlinking an identity, here an explicit one, marks the verified address unverified in the same change,
 /// and the audit row says so.
 #[tokio::test]
-async fn an_admin_unlinking_an_email_link_unverifies_the_address() {
+async fn an_admin_unlinking_an_explicit_link_unverifies_the_address() {
     each_migrated_backend(async |db: &TestDb| {
         let env = env(db).await;
         let admin = env.h.console("adam", Role::Admin).await;
@@ -435,7 +435,7 @@ async fn an_admin_unlinking_an_email_link_unverifies_the_address() {
             email_verified: sea_orm::ActiveValue::Set(true),
             email: sea_orm::ActiveValue::Set(Some("bob@example.com".to_owned())),
             created_at: sea_orm::ActiveValue::Set(deskhaven_db::time::now()),
-            linked_via: sea_orm::ActiveValue::Set(user_identity::LinkedVia::Email),
+            linked_via: sea_orm::ActiveValue::Set(user_identity::LinkedVia::Explicit),
             ..Default::default()
         };
         let id = sea_orm::ActiveModelTrait::insert(row, &env.h.state.db)

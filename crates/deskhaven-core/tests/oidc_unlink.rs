@@ -8,6 +8,7 @@
 mod common;
 
 use common::oidc::{Env, PROVIDER};
+use common::oidc_idp::TokenSpec;
 use deskhaven_core::console_audit::{Refused, TxGuard};
 use deskhaven_core::oidc::{Failure, IdentityError, NewProvider};
 use deskhaven_db::entity::user_identity::LinkedVia;
@@ -64,42 +65,76 @@ async fn a_user_lists_and_unlinks_an_identity_and_the_login_stops_working() {
     .await;
 }
 
-/// An identity linked by email would come back at the next login: unlinking it also marks
-/// the account's address unverified, in the same transaction. An explicit one leaves the
-/// address alone.
+/// Unlinking any identity (email, explicit or provisioned) marks the account's verified
+/// address unverified in the same transaction: otherwise the same IdP account would link
+/// again by email at its next login (an admin recovering a compromised account unlinks it
+/// and resets the second factor, which removes the last email-link blocker).
 #[tokio::test]
-async fn unlinking_an_email_identity_unverifies_the_address_so_it_stays_unlinked() {
+async fn unlinking_any_identity_unverifies_the_address_so_nothing_relinks_by_email() {
     each_migrated_backend(async |db: &TestDb| {
-        let env = Env::new(db).await;
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let verified = |email: &'static str| move |s: TokenSpec| s.email(email, Some(true));
         let alice = env.local_user("alice", Some("alice@example.com")).await;
         let bob = env.local_user("bob", Some("bob@example.com")).await;
-        let alice_email = |s: common::oidc_idp::TokenSpec| s.email("alice@example.com", Some(true));
-        env.login("sub-a", alice_email).await.1.outcome.unwrap();
-        env.link(bob.id, "sub-b", |s| s).await.outcome.unwrap();
-        let by_email = env.oidc.identities_of(alice.id).await.unwrap()[0].id;
-        let explicit = env.oidc.identities_of(bob.id).await.unwrap()[0].id;
-
+        env.login("sub-a", verified("alice@example.com"))
+            .await
+            .1
+            .outcome
+            .unwrap();
+        env.link(bob.id, "sub-b", verified("bob@example.com"))
+            .await
+            .outcome
+            .unwrap();
+        let olga = env.login("sub-o", verified("olga@example.com")).await.1;
+        let olga = olga.outcome.unwrap().user;
+        second_identity(&env, db, olga.id).await;
         let guard = || env.link_guard(1, "user.identity_unlink");
-        env.oidc
-            .unlink_identity(by_email, None, guard())
-            .await
-            .unwrap();
-        env.oidc
-            .unlink_identity(explicit, None, guard())
-            .await
-            .unwrap();
-        let again = env.login("sub-a", alice_email).await.1;
+
+        for user_id in [alice.id, bob.id, olga.id] {
+            let id = env.oidc.identities_of(user_id).await.unwrap()[0].id;
+            env.oidc.unlink_identity(id, None, guard()).await.unwrap();
+        }
+        let alice_again = env.login("sub-a", verified("alice@example.com")).await.1;
+        let bob_again = env.login("sub-b", verified("bob@example.com")).await.1;
 
         let b = db.backend;
-        assert!(
-            !env.users.get(alice.id).await.unwrap().email_verified,
+        for user_id in [alice.id, bob.id, olga.id] {
+            let user = env.users.get(user_id).await.unwrap();
+            assert!(!user.email_verified, "{b}: {}", user.username);
+        }
+        assert_eq!(
+            alice_again.outcome.err(),
+            Some(Failure::NoLinkedAccount),
             "{b}"
         );
-        assert!(env.users.get(bob.id).await.unwrap().email_verified, "{b}");
-        assert_eq!(again.outcome.err(), Some(Failure::NoLinkedAccount), "{b}");
-        assert_eq!(identity_count(db).await, 0, "{b}");
+        assert_eq!(
+            bob_again.outcome.err(),
+            Some(Failure::NoLinkedAccount),
+            "{b}: explicit"
+        );
+        assert_eq!(identity_count(db).await, 1, "{b}: olga's second identity");
     })
     .await;
+}
+
+/// A second (explicit) identity of `user_id` at another provider.
+async fn second_identity(env: &Env, db: &TestDb, user_id: i64) {
+    let mut other = NewProvider::new("other", env.idp.issuer.clone(), "other-client");
+    other.client_secret = Some("s".to_owned());
+    let other = env.oidc.create_provider(other).await.unwrap();
+    user_identity::ActiveModel {
+        user_id: sea_orm::ActiveValue::Set(user_id),
+        provider_id: sea_orm::ActiveValue::Set(other.id),
+        subject: sea_orm::ActiveValue::Set(format!("other-{user_id}")),
+        email_verified: sea_orm::ActiveValue::Set(false),
+        email: sea_orm::ActiveValue::Set(None),
+        created_at: sea_orm::ActiveValue::Set(deskhaven_db::time::now()),
+        linked_via: sea_orm::ActiveValue::Set(LinkedVia::Explicit),
+        ..Default::default()
+    }
+    .insert(&db.conn)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

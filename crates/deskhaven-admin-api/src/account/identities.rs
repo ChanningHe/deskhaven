@@ -3,8 +3,8 @@
 //! (one throttle attempt, see `reauth`); removing a way in needs no second factor. OIDC
 //! accounts have no password (409 `not_local_account`: an administrator unlinks for them),
 //! and their last identity stays anyway (409 `last_identity`). Another account's identity
-//! is 404. Audited `user.identity_unlink` in the removing transaction. An identity linked by
-//! email also marks the account's address unverified, so it is not linked again by itself.
+//! is 404. Audited `user.identity_unlink` in the removing transaction. Any removal also marks
+//! a verified account address unverified, so the identity is not linked again by email.
 
 use std::sync::Arc;
 
@@ -14,7 +14,6 @@ use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::oidc::IdentityChange;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{AuthSource, Password};
-use deskhaven_db::entity::user_identity::LinkedVia;
 use garde::Validate;
 use serde::Deserialize;
 use serde_json::json;
@@ -87,7 +86,7 @@ fn unlink_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<Identi
 }
 
 /// `user.identity_unlink` on account `user_id`, with the removed identity as `before`.
-/// Removing an identity linked by email also marks the account's address unverified (core
+/// Removing any identity also marks a verified account address unverified (core
 /// `unlink_identity`), recorded as `after.email_verified: false` of the same row.
 pub(crate) fn unlink_audit(user_id: i64, before: Option<&IdentityChange>) -> Audit {
     let audit = Audit::new("user.identity_unlink").target("user", user_id);
@@ -95,7 +94,7 @@ pub(crate) fn unlink_audit(user_id: i64, before: Option<&IdentityChange>) -> Aud
         return audit;
     };
     let audit = audit.before(&IdentityView::from(change.identity.clone()));
-    match change.identity.linked_via == LinkedVia::Email && change.user.email_verified {
+    match change.user.email_verified {
         true => audit.after(&json!({ "email_verified": false })),
         false => audit,
     }
