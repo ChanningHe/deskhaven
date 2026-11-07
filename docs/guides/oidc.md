@@ -79,9 +79,11 @@ A provider login also joins an existing account by itself when all of these hold
 These conditions are checked again at every login through an identity linked this way. If
 one fails later, that login is refused and the user links the account as above.
 
-Unlinking an identity that was linked by email also marks the account's email unverified;
-otherwise the next login would link it again. To allow linking by email again, mark the
-email verified in the user's details; the user can also link the identity themselves.
+Unlinking any linked sign-in, however it was linked, also marks the account's email
+unverified; otherwise the same provider account would link again by email at its next
+login. The account's other sign-ins that were linked by email then stop working at their
+next login. To allow linking by email again, check the address and mark it verified in the
+user's details; the user can also link sign-ins themselves.
 
 Every link by email and every account the provider creates is recorded in the console audit
 log, with the system as the actor.

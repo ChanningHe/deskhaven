@@ -31,7 +31,9 @@ When you finish, your server is tightened beyond the defaults for life on the in
 Resetting the password, resetting two-factor authentication and revoking sessions leave the
 account's linked OIDC sign-ins in place, and those sign in without a password or second
 factor. Open the user under **Users**, check **Linked sign-ins**, and **Unlink** every one
-you do not trust. Then reset the password and two-factor authentication, and revoke the
-sessions.
+you do not trust. Unlinking also marks the account's email unverified, so the unlinked
+sign-in cannot come back by email after the reset; mark the email verified again only
+once the account is safe. Then reset the password and two-factor authentication, and
+revoke the sessions.
 
 What remains open is listed in [Known limitations](../reference/known-limitations.md).

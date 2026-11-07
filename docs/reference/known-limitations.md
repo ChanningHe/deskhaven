@@ -118,6 +118,11 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   account that **Require two-factor authentication** covers and that has no second factor
   yet signs in, but its console session is limited to setting one up, as after a password
   sign-in.
+- **Sessions from a sign-in linked by email outlive its conditions.** The conditions of
+  [linking by email](../guides/oidc.md#link-by-email) are checked at each sign-in. When one
+  stops holding (two-factor authentication enabled, a promotion, a lowered
+  `auth.oidc.link_email_max_role`, a changed email), the next sign-in is refused, but
+  sessions already issued stay valid until they expire or are revoked.
 - **One account holds at most `auth.max_sessions_per_user` sessions** (default 1000). Each
   RustDesk client signed in to the account and each console sign-in is one session; one
   more ends the least recently used, without notice. An account shared by more devices
