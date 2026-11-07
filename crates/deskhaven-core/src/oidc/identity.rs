@@ -41,12 +41,14 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
 };
+use serde_json::json;
 
 use super::OidcService;
 use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
 use super::link::provider_identity;
 use super::provision::provision;
+use crate::console_audit::{self, Actor, NewConsoleAudit};
 use crate::users::lookup::{email_norm, find_by_email, is_valid_email};
 use crate::users::{AuthSource, Role, Status};
 
@@ -87,6 +89,12 @@ pub(crate) async fn resolve(
             refused => return Ok(refused),
         };
         insert_identity(svc, tx, provider.id, account.id, asserted, LinkedVia::Email).await?;
+        let after = json!({
+            "provider": provider.name,
+            "subject": asserted.subject,
+            "linked_via": "email",
+        });
+        audit_login(svc, tx, "user.identity_link", account.id, after).await?;
         return Ok(Ok(account));
     }
     if !provider.auto_provision {
@@ -169,6 +177,30 @@ fn active(account: user::Model) -> Resolution {
         Status::Disabled => Err(Failure::Disabled),
         Status::Unverified => Err(Failure::Unverified),
     }
+}
+
+/// A console audit row for an account change the login itself made (an email link, a
+/// provisioned account), in the login's transaction. The actor is the system: no
+/// administrator acted. `after` names the provider and carries no claim value other than
+/// the subject.
+pub(super) async fn audit_login(
+    svc: &OidcService,
+    tx: &DatabaseTransaction,
+    action: &str,
+    user_id: i64,
+    after: serde_json::Value,
+) -> Result<(), DbErr> {
+    let entry = NewConsoleAudit {
+        actor: Actor::System,
+        action: action.to_owned(),
+        target_type: "user".to_owned(),
+        target_id: user_id.to_string(),
+        before: None,
+        after: Some(after),
+        ip: None,
+    };
+    console_audit::insert(tx, &entry, svc.inner.now_ms()).await?;
+    Ok(())
 }
 
 pub(super) async fn insert_identity(

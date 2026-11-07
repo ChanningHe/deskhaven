@@ -12,9 +12,10 @@ use common::oidc::{Env, enable_totp};
 use common::set;
 use deskhaven_core::oidc::Failure;
 use deskhaven_core::users::{Credential, NewUser, Password, Role};
+use deskhaven_db::entity::console_audit;
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::json;
 
 #[derive(Clone, Copy, Debug)]
@@ -218,6 +219,65 @@ async fn provisioning_never_creates_a_second_account_for_a_refused_address() {
                 .await
                 .unwrap()
                 .is_none(),
+            "{b}"
+        );
+    })
+    .await;
+}
+
+/// Identities the login itself creates are audited with the system as the actor: an email
+/// link as `user.identity_link` (`linked_via: email`), a provisioned account as
+/// `user.create`, each naming the provider and no claim value beyond the subject.
+#[tokio::test]
+async fn email_links_and_provisioning_are_audited_as_the_system() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+        let (user_id, email) = account(&env, db, 0, BASE).await;
+        env.login("sub-e", |s| s.email(&email, Some(true)))
+            .await
+            .1
+            .outcome
+            .unwrap();
+        let olga = env
+            .login("sub-o", |s| s.email("olga@corp.example", Some(true)))
+            .await
+            .1;
+        let olga = olga.outcome.unwrap().user.id;
+
+        let rows = console_audit::Entity::find()
+            .order_by_asc(console_audit::Column::Id)
+            .all(&db.conn)
+            .await
+            .unwrap();
+
+        let b = db.backend;
+        let summary: Vec<(&str, String)> = rows
+            .iter()
+            .map(|r| (r.action.as_str(), r.target_id.clone()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("user.identity_link", user_id.to_string()),
+                ("user.create", olga.to_string())
+            ],
+            "{b}"
+        );
+        for row in &rows {
+            assert_eq!(row.actor_kind, console_audit::ActorKind::System, "{b}");
+            let after = row.after.as_deref().unwrap();
+            assert!(after.contains("\"provider\":\"corp\""), "{b}: {after}");
+            // The email link names no claim value but the subject (the provisioned row also
+            // names the new account, whose username may come from a claim).
+            let addresses = ["case0@example.com"];
+            assert!(!addresses.iter().any(|a| after.contains(a)), "{b}: {after}");
+        }
+        assert!(
+            rows[0]
+                .after
+                .as_deref()
+                .unwrap()
+                .contains("\"linked_via\":\"email\""),
             "{b}"
         );
     })

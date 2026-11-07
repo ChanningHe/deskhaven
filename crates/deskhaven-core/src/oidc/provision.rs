@@ -9,11 +9,12 @@ use deskhaven_db::entity::user_identity::LinkedVia;
 use deskhaven_db::entity::{group, group_member, oidc_provider};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
+use serde_json::json;
 
 use super::OidcService;
 use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
-use super::identity::{Resolution, insert_identity, stored_email};
+use super::identity::{Resolution, audit_login, insert_identity, stored_email};
 use super::username;
 use crate::users::lookup::username_taken;
 use crate::users::{Credential, NewUser, Role, UserError};
@@ -59,6 +60,15 @@ pub(super) async fn provision(
     )
     .await?;
     join_groups(svc, tx, account.id, &asserted.groups).await?;
+    let after = json!({
+        "username": account.username,
+        "role": if is_admin { "admin" } else { "user" },
+        "auth_source": "oidc",
+        "provider": provider.name,
+        "subject": asserted.subject,
+        "linked_via": "provisioned",
+    });
+    audit_login(svc, tx, "user.create", account.id, after).await?;
     tracing::info!(provider = %provider.name, user_id = account.id, "OIDC account provisioned");
     Ok(Ok(account))
 }

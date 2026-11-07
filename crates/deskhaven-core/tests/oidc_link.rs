@@ -17,7 +17,7 @@ use deskhaven_core::users::Role;
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
 use deskhaven_db::entity::{console_audit, oidc_flow};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{EntityTrait, PaginatorTrait};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
 fn params(request: &AuthRequest) -> CallbackParams<'_> {
     CallbackParams {
@@ -178,7 +178,11 @@ async fn an_identity_of_another_account_is_refused() {
             "{b}: the link flow is gone, the client login waits"
         );
         assert_eq!(
-            console_audit::Entity::find().count(&db.conn).await.unwrap(),
+            console_audit::Entity::find()
+                .filter(console_audit::Column::Action.eq("user.identity_link"))
+                .count(&db.conn)
+                .await
+                .unwrap(),
             0,
             "{b}: a refused link is not audited as one"
         );
