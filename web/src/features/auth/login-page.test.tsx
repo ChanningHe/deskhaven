@@ -84,7 +84,7 @@ describe('login page', () => {
     await user.type(await screen.findByLabelText('验证码'), '000000')
     await user.click(screen.getByRole('button', { name: '验证' }))
 
-    expect(await screen.findByText(/验证码错误或已被使用/)).toBeInTheDocument()
+    expect(await screen.findByText(/每个验证码只能使用一次/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '返回' }))
     expect(await screen.findByRole('heading', { name: '登录 deskhaven' })).toBeInTheDocument()
   })

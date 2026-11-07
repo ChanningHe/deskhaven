@@ -288,7 +288,7 @@
       "invalid_credentials": "用户名或密码错误。",
       "account_disabled": "该账号已被禁用，请联系管理员。",
       "account_unverified": "该账号尚未验证。",
-      "invalid_code": "验证码错误或已被使用，请检查验证器的时间后重试。",
+      "invalid_code": "验证码不正确，或刚刚已经用过。每个验证码只能使用一次，请等验证器显示新的验证码后再输入；如果一直提示错误，请检查设备时间是否准确。",
       "invalid_challenge": "验证已过期，请重新登录。",
       "wrong_password": "当前密码错误。",
       "insecure_transport": "必须通过 HTTPS（或到 localhost 的 SSH 隧道）访问控制台；在明文 HTTP 下浏览器会丢弃登录 Cookie。",

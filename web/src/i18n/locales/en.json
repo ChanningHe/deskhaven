@@ -288,7 +288,7 @@
       "invalid_credentials": "Wrong username or password.",
       "account_disabled": "This account is disabled. Contact an administrator.",
       "account_unverified": "This account is not verified yet.",
-      "invalid_code": "The code is wrong or was already used. Check your authenticator's time and try again.",
+      "invalid_code": "The code is wrong or was just used. Each code works only once, so wait for your authenticator to show a new one. If this keeps happening, check that your device's clock is correct.",
       "invalid_challenge": "The verification expired. Sign in again.",
       "wrong_password": "The current password is wrong.",
       "insecure_transport": "This console must be opened over HTTPS (or an SSH tunnel to localhost); the browser drops the sign-in cookies on plain HTTP.",
