@@ -140,9 +140,14 @@ impl OidcService {
             .ok_or(CallbackError::InvalidState)?;
         // Exactly the identity the confirmation page showed.
         let asserted = context::link_asserted(&row.context).ok_or(CallbackError::InvalidState)?;
-        let outcome = self
-            .link_verified(&provider, user_id, &asserted, guard)
-            .await?;
+        // Disabled since the verification: no new way in through it.
+        let outcome = match provider.enabled {
+            true => {
+                self.link_verified(&provider, user_id, &asserted, guard)
+                    .await?
+            }
+            false => Err(LinkFailure::Unavailable),
+        };
         let subject = Some(asserted.subject);
         match &outcome {
             Ok(identity) => {
