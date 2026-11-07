@@ -18,6 +18,7 @@ secret.
 | Authentik | **Applications → Create with provider**, OAuth2/OpenID | `https://authentik.example.com/application/o/<slug>/` |
 | Google | Google Cloud console, **APIs & Services → Credentials → OAuth client ID**, web application | `https://accounts.google.com` |
 | Entra ID | **App registrations → New registration**, platform Web; a secret under **Certificates & secrets** | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+| Pocket ID | **OIDC Clients → Add OIDC Client**, public client off, callback URL from the console | its `APP_URL`, no trailing slash: `https://id.example.com` |
 
 The issuer must match the provider's own `issuer` exactly, trailing slash included. It
 cannot be changed later.
@@ -45,9 +46,43 @@ provider's administrators alone decide who is in that group.
 - Authentik: the default `profile` scope already sends `groups`.
 - Entra ID: **Token configuration → Add groups claim**. It sends group object IDs, so the
   admin group is an object ID.
+- Pocket ID: sends `groups` only when asked for it. Set the provider's **Scopes** to
+  `openid profile email groups`.
 
-## Existing accounts
+## Link an existing account
 
-A provider identity joins an existing account only when both have the same verified email.
-Entra ID sends no `email_verified`, so it never joins existing accounts. See
+Someone who already has a deskhaven account links the provider to it once:
+
+1. Sign in to the console with the account's password.
+2. Open **My account → Linked sign-ins** and choose **Link** next to the provider.
+3. Enter the password, and the two-factor code if the account has one.
+4. Sign in at the provider, then confirm **Link** on the page that names the provider and
+   the account.
+
+From then on the account signs in through the provider in the console and in the RustDesk
+client, without its two-factor code: the account is as safe as its provider account.
+**Unlink** removes the link (password required). Administrators see the linked sign-ins
+in a user's details and can unlink them, but cannot link for someone. LDAP accounts cannot
+link.
+
+## Link by email
+
+A provider login also joins an existing account by itself when all of these hold:
+
+- the provider says the address is verified (`email_verified`; Entra ID never does);
+- the account's address is the same and verified (an administrator marks it verified in
+  the user's details, after checking it);
+- the account has no two-factor authentication and is not an LDAP account;
+- the account's role is at most `auth.oidc.link_email_max_role` (default `user`; `off`
+  turns this off).
+
+These conditions are checked again at every login through an identity linked this way. If
+one fails later, that login is refused and the user links the account as above.
+
+> **Warning:** set `auth.oidc.link_email_max_role` to `admin` or `owner` only when the
+> provider does not let its users change their own email address. Otherwise anyone who can
+> set an administrator's address at the provider signs in as that administrator.
+
+With **Create an account for unknown users** on, an address that belongs to an account
+that may not be joined is refused; no second account is created. See
 [Known limitations](../reference/known-limitations.md#accounts-and-sign-in).

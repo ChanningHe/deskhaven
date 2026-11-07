@@ -103,9 +103,9 @@ Apply changes with `docker compose up -d --wait`.
 | `auth.lockout.duration` | `1m`–`1d` | `15m` | Base lockout duration (exponential backoff is capped at 24h). |
 | `auth.ip_rate_limit.per_minute` | `1`–`10000` | `20` | Requests per minute per IP on login-type endpoints. |
 | `auth.registration` | `disabled`, `invite`, `open` | `disabled` | Self-service registration mode. |
-| `auth.tfa.enforce` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor. A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in. |
+| `auth.tfa.enforce` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask for it). A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in. |
 | `auth.email_code.enabled` | `true`, `false` | `false` | Allow email one-time codes as a second factor (requires SMTP). |
-| `auth.oidc.link_verified_email` | `true`, `false` | `true` | Link OIDC logins to existing users by email only when `email_verified` is true. |
+| `auth.oidc.link_email_max_role` | `off`, `user`, `admin`, `owner` | `user` | Highest role an OIDC login may reach by linking an existing account by email (both sides verified, no TOTP, not LDAP); `off` never links by email. `admin` and `owner` let the identity provider take those accounts over by email: only with an IdP whose users cannot change their own email address. |
 
 ### smtp
 

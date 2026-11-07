@@ -84,9 +84,9 @@ settings! {
         default: Registration::Disabled,
         on_bad_row: strict(Registration::Disabled),
     }
-    /// Which users must enroll a second factor. A covered user without one is refused by the
-    /// RustDesk client until they enroll in the web console, which asks them to at their
-    /// next console sign-in.
+    /// Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask
+    /// for it). A covered user without one is refused by the RustDesk client until they enroll
+    /// in the web console, which asks them to at their next console sign-in.
     AUTH_TFA_ENFORCE: TfaEnforce = "auth.tfa.enforce" {
         default: TfaEnforce::Off,
         // Stricter than `off` without forcing every user to enroll at once.

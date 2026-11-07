@@ -107,13 +107,17 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   6-digit code from the authenticator app.
 - **A temporary password must be changed in the console only.** The RustDesk client signs
   in with it as is.
-- **OIDC accounts have no local second factor.** Require MFA at the identity provider.
-- **An OIDC identity cannot be linked to an existing account by hand.** It is linked
-  automatically only when both sides have a verified email, and never for LDAP accounts,
-  accounts with two-factor authentication, admins or owners, or accounts that **Require
-  two-factor authentication** covers. A local account linked this way can no longer sign in
-  through the provider once it enables two-factor authentication, becomes an admin or
-  owner, or is covered by that requirement; it signs in with its password instead.
+- **OIDC sign-ins never ask for the local second factor.** This holds for accounts the
+  provider created and for local accounts with a linked sign-in, owners included; **Require
+  two-factor authentication** applies to password sign-ins only. Require MFA at the
+  identity provider. See [OIDC](../guides/oidc.md#link-an-existing-account).
+- **Accounts that sign in only through OIDC cannot link or unlink sign-ins themselves.**
+  Linking and unlinking ask for the account's password, which they do not have. An
+  administrator unlinks for them; the last linked sign-in of such an account stays.
+- **A console sign-in through OIDC may still ask for two-factor enrolment.** A local
+  account that **Require two-factor authentication** covers and that has no second factor
+  yet signs in, but its console session is limited to setting one up, as after a password
+  sign-in.
 - **One account holds at most `auth.max_sessions_per_user` sessions** (default 1000). Each
   RustDesk client signed in to the account and each console sign-in is one session; one
   more ends the least recently used, without notice. An account shared by more devices

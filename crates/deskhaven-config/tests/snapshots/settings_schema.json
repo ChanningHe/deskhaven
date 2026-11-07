@@ -129,7 +129,7 @@
     {
       "category": "auth",
       "default": "off",
-      "description": "Which users must enroll a second factor. A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in.",
+      "description": "Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask for it). A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in.",
       "key": "auth.tfa.enforce",
       "on_bad_row": "admins",
       "sensitive": false,
