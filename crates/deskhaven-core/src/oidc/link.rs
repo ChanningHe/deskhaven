@@ -142,8 +142,20 @@ impl OidcService {
             }
             Err(failure) => (None, Err(LinkFailure::of(failure))),
         };
-        if let Ok(identity) = &outcome {
-            tracing::info!(user_id, provider = %provider.name, identity_id = identity.id, "OIDC identity linked");
+        match &outcome {
+            Ok(identity) => {
+                tracing::info!(user_id, provider = %provider.name, identity_id = identity.id, "OIDC identity linked");
+            }
+            // Refused by the link rules (not the IdP): worth a look; never the subject.
+            Err(
+                failure @ (LinkFailure::IdentityTaken
+                | LinkFailure::ProviderLinked
+                | LinkFailure::DirectoryAccount
+                | LinkFailure::AccountInactive),
+            ) => {
+                tracing::warn!(user_id, provider = %provider.name, reason = failure.code(), "OIDC identity link refused");
+            }
+            Err(_) => {}
         }
         Ok(LinkReport {
             provider: provider.name,
