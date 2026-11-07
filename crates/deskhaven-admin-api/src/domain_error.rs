@@ -5,6 +5,7 @@ use deskhaven_core::api_tokens::ApiTokenError;
 use deskhaven_core::console_audit::Refused;
 use deskhaven_core::devices::DeviceError;
 use deskhaven_core::groups::GroupError;
+use deskhaven_core::oidc::IdentityError;
 use deskhaven_core::sessions::SessionError;
 use deskhaven_core::tfa::TfaError;
 use deskhaven_core::users::{PasswordError, UserError};
@@ -55,6 +56,20 @@ impl From<UserError> for AdminApiError {
             UserError::Password(PasswordError::Busy) => {
                 Self::new(ErrorCode::Unavailable, "server busy, try again later")
             }
+            other => Self::internal(other),
+        }
+    }
+}
+
+impl From<IdentityError> for AdminApiError {
+    fn from(err: IdentityError) -> Self {
+        match err {
+            IdentityError::NotFound => Self::not_found("identity not found"),
+            IdentityError::LastIdentity => Self::new(
+                ErrorCode::LastIdentity,
+                "the account signs in only through this identity",
+            ),
+            IdentityError::Refused(r) => refused(r),
             other => Self::internal(other),
         }
     }

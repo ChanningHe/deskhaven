@@ -96,6 +96,11 @@ fn codes_are_stable_snake_case_with_fixed_statuses() {
             StatusCode::CONFLICT,
         ),
         (ErrorCode::TfaEnforced, "tfa_enforced", StatusCode::CONFLICT),
+        (
+            ErrorCode::LastIdentity,
+            "last_identity",
+            StatusCode::CONFLICT,
+        ),
     ];
     for (code, wire, status) in cases {
         assert_eq!(serde_json::to_value(code).unwrap(), json!(wire));

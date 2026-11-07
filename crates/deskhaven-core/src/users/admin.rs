@@ -99,6 +99,12 @@ impl ValidProfile {
             (row.email, row.email_norm) = split_email(email);
         }
         if let Some(verified) = self.update.email_verified {
+            if verified && row.email.is_none() {
+                return Err(UserError::Invalid {
+                    field: "email_verified",
+                    reason: "the account has no email address".to_owned(),
+                });
+            }
             row.email_verified = verified;
         }
         if let Some(must_change) = self.update.must_change_password {

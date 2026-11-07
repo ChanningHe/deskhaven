@@ -1,8 +1,10 @@
 //! Wire types of the user endpoints. Timestamps are unix milliseconds (UTC).
 
 use deskhaven_core::groups::Group;
+use deskhaven_core::oidc::Identity;
 use deskhaven_core::sessions::{Session, SessionKind};
 use deskhaven_core::users::{AuthSource, Password, Status, User};
+use deskhaven_db::entity::user_identity::LinkedVia;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -159,11 +161,65 @@ impl From<Session> for SessionView {
     }
 }
 
-/// One account with its groups and usable sessions (the console's user drawer).
+/// How an OIDC identity came to its account (M4-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkedViaView {
+    /// The IdP login created the account.
+    Provisioned,
+    /// Linked automatically by verified email; re-checked at every login.
+    Email,
+    /// Linked by the account holder.
+    Explicit,
+}
+
+impl From<LinkedVia> for LinkedViaView {
+    fn from(via: LinkedVia) -> Self {
+        match via {
+            LinkedVia::Provisioned => Self::Provisioned,
+            LinkedVia::Email => Self::Email,
+            LinkedVia::Explicit => Self::Explicit,
+        }
+    }
+}
+
+/// An OIDC identity linked to an account: signing in through it asks for no local second
+/// factor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct IdentityView {
+    pub id: i64,
+    /// The provider's name.
+    pub provider: String,
+    pub provider_display_name: String,
+    /// The provider's `sub` for this account.
+    pub subject: String,
+    /// The last address the provider asserted verified.
+    pub email: Option<String>,
+    pub linked_via: LinkedViaView,
+    pub created_at: i64,
+}
+
+impl From<Identity> for IdentityView {
+    fn from(i: Identity) -> Self {
+        Self {
+            id: i.id,
+            provider: i.provider_name,
+            provider_display_name: i.provider_display_name,
+            subject: i.subject,
+            email: i.email,
+            linked_via: i.linked_via.into(),
+            created_at: i.created_at.timestamp_millis(),
+        }
+    }
+}
+
+/// One account with its groups, OIDC identities and usable sessions (the console's user
+/// drawer).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct UserDetail {
     pub user: UserView,
     pub groups: Vec<GroupRef>,
+    pub identities: Vec<IdentityView>,
     /// The most recently used usable sessions, at most 200 (`sessions_total` counts all).
     pub sessions: Vec<SessionView>,
     /// Usable sessions of the account.

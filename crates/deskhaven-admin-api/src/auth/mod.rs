@@ -47,6 +47,7 @@ use crate::session::{self, session_cookies};
 use deskhaven_core::auth::limiter::ThrottleError;
 
 pub(crate) use failure::BUSY_RETRY_AFTER;
+pub(crate) use oidc::clear_binding_cookie;
 pub use oidc::{
     OIDC_BINDING_COOKIE, OidcCompleteRequest, OidcProvider, OidcStart, OidcStartRequest,
 };

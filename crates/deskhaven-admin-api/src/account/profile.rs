@@ -23,7 +23,7 @@ use super::reauth::user_error;
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::me::Me;
 use crate::session::ConsoleUser;
-use crate::users::view::AuthSourceView;
+use crate::users::view::{AuthSourceView, IdentityView};
 use crate::{AdminApiError, RoleView, ValidJson};
 
 /// Longest accepted display name (characters), as for administrators.
@@ -48,6 +48,11 @@ pub struct MyAccount {
     pub can_use_totp: bool,
     /// `auth.tfa.enforce` covers this account: TOTP cannot be turned off.
     pub tfa_required: bool,
+    /// The account can link OIDC identities itself (local accounts: the link needs the
+    /// password).
+    pub can_link_oidc: bool,
+    /// The OIDC identities that sign in to this account.
+    pub identities: Vec<IdentityView>,
     pub last_login_at: Option<i64>,
     pub created_at: i64,
 }
@@ -85,7 +90,10 @@ pub async fn view(
         .await
         .map_err(AdminApiError::internal)?;
     let can_use_totp = user.auth_source != AuthSource::Oidc;
+    let identities = state.oidc.identities_of(user.id).await?;
     Ok(Json(MyAccount {
+        can_link_oidc: user.auth_source == AuthSource::Local,
+        identities: identities.into_iter().map(Into::into).collect(),
         can_change_password: user.auth_source == AuthSource::Local,
         can_use_totp,
         tfa_required: can_use_totp && state.tfa.enforced_for(user.role),

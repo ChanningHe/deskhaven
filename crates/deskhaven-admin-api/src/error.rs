@@ -82,6 +82,8 @@ pub enum ErrorCode {
     NotLocalAccount,
     /// `auth.tfa.enforce` requires a second factor of this account: it cannot be turned off.
     TfaEnforced,
+    /// The only OIDC identity of an account that signs in through OIDC alone (M4-09).
+    LastIdentity,
     // Settings (05 §3.2, §3.4).
     /// The setting is fixed by the configuration file or an environment variable
     /// (`details.keys`).
@@ -123,6 +125,7 @@ impl ErrorCode {
             | Self::ManagedByConfig
             | Self::NotLocalAccount
             | Self::TfaEnforced
+            | Self::LastIdentity
             | Self::SettingPinned
             | Self::VersionConflict => StatusCode::CONFLICT,
         }
@@ -162,6 +165,7 @@ impl ErrorCode {
             Self::ManagedByConfig => "managed_by_config",
             Self::NotLocalAccount => "not_local_account",
             Self::TfaEnforced => "tfa_enforced",
+            Self::LastIdentity => "last_identity",
             Self::SettingPinned => "setting_pinned",
             Self::VersionConflict => "version_conflict",
         }

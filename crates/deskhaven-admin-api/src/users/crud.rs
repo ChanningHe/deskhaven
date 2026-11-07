@@ -80,9 +80,15 @@ pub struct UserPatch {
     /// Blank: the username.
     #[garde(length(chars, max = 128))]
     pub display_name: Option<String>,
-    /// An empty string removes the address. A new address is unverified.
+    /// An empty string removes the address. A new address is unverified unless
+    /// `email_verified` is set in the same request.
     #[garde(length(chars, max = 254))]
     pub email: Option<String>,
+    /// Mark the address verified (or not) after checking it out of band. A verified
+    /// address lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).
+    /// `true` needs an address.
+    #[garde(skip)]
+    pub email_verified: Option<bool>,
     #[garde(skip)]
     pub role: Option<RoleView>,
     #[garde(length(chars, max = 2000))]
@@ -113,9 +119,11 @@ pub async fn get_user(
         page_size: MAX_PAGE_SIZE,
     };
     let sessions = state.sessions.list_for_user(id, recent).await?;
+    let identities = state.oidc.identities_of(id).await?;
     Ok(Json(UserDetail {
         user: user.into(),
         groups: groups.into_iter().map(Into::into).collect(),
+        identities: identities.into_iter().map(Into::into).collect(),
         sessions: sessions.items.into_iter().map(Into::into).collect(),
         sessions_total: sessions.total,
     }))
@@ -193,6 +201,7 @@ pub async fn update_user(
         profile: ProfileUpdate {
             display_name: body.display_name,
             email: body.email.map(|e| Some(e).filter(|e| !e.is_empty())),
+            email_verified: body.email_verified,
             note: body.note,
             ..ProfileUpdate::default()
         },

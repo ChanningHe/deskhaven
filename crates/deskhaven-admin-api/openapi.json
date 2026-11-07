@@ -6111,6 +6111,395 @@
         ]
       }
     },
+    "/admin/api/v1/me/identities/link": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Starts linking an OIDC identity to the signed-in account (see the module docs).",
+        "operationId": "start_oidc_link",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcLinkStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The authorization URL; the binding cookie is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcStart"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The account cannot link (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown or disabled provider, or OIDC not configured (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An OIDC account: no password to re-authenticate with (`not_local_account`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong password (`wrong_password`), wrong code (`invalid_code`), or a missing field (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The provider or the directory is unreachable, or password hashing saturated (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/identities/link/complete": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Completes the link in the browser that started it (see the module docs).",
+        "operationId": "complete_oidc_link",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Linked; the binding cookie is cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not linked (`oidc_failed`, `details.reason`), plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/identities/link/preview": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "What the console's confirmation page shows for a link flow of this browser and account.",
+        "operationId": "preview_oidc_link",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "The `state` the identity provider returned.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider and the account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcLinkPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No live link flow of this browser and account (`oidc_failed`, reason `expired`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/me/identities/{id}/unlink": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Removes one of the signed-in user's OIDC identities.",
+        "operationId": "unlink_my_identity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Identity id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityUnlink"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Unlinked"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain-HTTP console (`insecure_transport`), or `csrf_failed`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such identity of this account (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An OIDC account (`not_local_account`), or its last identity (`last_identity`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong password (`wrong_password`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (`rate_limited`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password hashing saturated or directory unreachable (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/me/password": {
       "post": {
         "tags": [
@@ -9475,6 +9864,108 @@
         ]
       }
     },
+    "/admin/api/v1/users/{id}/identities/{identity_id}": {
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Removes an OIDC identity of an account.",
+        "operationId": "unlink_user_identity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "identity_id",
+            "in": "path",
+            "description": "Identity id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unlinked"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner accounts need an owner (`owner_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such identity of this user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The last identity of an OIDC account (`last_identity`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/admin/api/v1/users/{id}/reset-2fa": {
       "post": {
         "tags": [
@@ -11062,6 +11553,7 @@
           "managed_by_config",
           "not_local_account",
           "tfa_enforced",
+          "last_identity",
           "setting_pinned",
           "version_conflict"
         ]
@@ -11273,6 +11765,63 @@
           "request_host",
           "unknown"
         ]
+      },
+      "IdentityUnlink": {
+        "type": "object",
+        "description": "The re-authentication of an unlink. Never logged.",
+        "required": [
+          "current_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IdentityView": {
+        "type": "object",
+        "description": "An OIDC identity linked to an account: signing in through it asks for no local second\nfactor.",
+        "required": [
+          "id",
+          "provider",
+          "provider_display_name",
+          "subject",
+          "linked_via",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The last address the provider asserted verified."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "linked_via": {
+            "$ref": "#/components/schemas/LinkedViaView"
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider's name."
+          },
+          "provider_display_name": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "description": "The provider's `sub` for this account."
+          }
+        }
       },
       "IdsBody": {
         "type": "object",
@@ -11919,6 +12468,15 @@
         },
         "additionalProperties": false
       },
+      "LinkedViaView": {
+        "type": "string",
+        "description": "How an OIDC identity came to its account (M4-09).",
+        "enum": [
+          "provisioned",
+          "email",
+          "explicit"
+        ]
+      },
       "LockoutCleared": {
         "type": "object",
         "required": [
@@ -12125,6 +12683,8 @@
           "can_change_password",
           "can_use_totp",
           "tfa_required",
+          "can_link_oidc",
+          "identities",
           "created_at"
         ],
         "properties": {
@@ -12134,6 +12694,10 @@
           "can_change_password": {
             "type": "boolean",
             "description": "The account has a local password to change (not LDAP or OIDC accounts)."
+          },
+          "can_link_oidc": {
+            "type": "boolean",
+            "description": "The account can link OIDC identities itself (local accounts: the link needs the\npassword)."
           },
           "can_use_totp": {
             "type": "boolean",
@@ -12158,6 +12722,13 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityView"
+            },
+            "description": "The OIDC identities that sign in to this account."
           },
           "last_login_at": {
             "type": [
@@ -12743,6 +13314,51 @@
           },
           "state": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OidcLinkPreview": {
+        "type": "object",
+        "description": "What the confirmation page names.",
+        "required": [
+          "provider",
+          "username"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "The provider's display name."
+          },
+          "username": {
+            "type": "string",
+            "description": "The account the identity will be linked to (the session's)."
+          }
+        }
+      },
+      "OidcLinkStart": {
+        "type": "object",
+        "description": "Which provider to link, and the re-authentication. Never logged.",
+        "required": [
+          "provider",
+          "current_password"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required while TOTP is on: a current TOTP code or an unused recovery code."
+          },
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "description": "The account's current password."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider's name (as `GET /auth/oidc/providers` lists it)."
           }
         },
         "additionalProperties": false
@@ -15765,10 +16381,11 @@
       },
       "UserDetail": {
         "type": "object",
-        "description": "One account with its groups and usable sessions (the console's user drawer).",
+        "description": "One account with its groups, OIDC identities and usable sessions (the console's user\ndrawer).",
         "required": [
           "user",
           "groups",
+          "identities",
           "sessions",
           "sessions_total"
         ],
@@ -15777,6 +16394,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GroupRef"
+            }
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityView"
             }
           },
           "sessions": {
@@ -15813,7 +16436,14 @@
               "string",
               "null"
             ],
-            "description": "An empty string removes the address. A new address is unverified."
+            "description": "An empty string removes the address. A new address is unverified unless\n`email_verified` is set in the same request."
+          },
+          "email_verified": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Mark the address verified (or not) after checking it out of band. A verified\naddress lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).\n`true` needs an address."
           },
           "note": {
             "type": [
