@@ -32,10 +32,15 @@ export interface UserActionHandlers {
 
 interface UserActionsProps extends UserActionHandlers {
   user: UserView
+  /** Linked OIDC identities: resets leave them in place, so the confirmations say so. */
+  identityCount: number
 }
 
+/** Resets that leave linked sign-ins working (they ask for no local password or factor). */
+const IDENTITIES_UNTOUCHED: readonly Confirmed[] = ['resetPassword', 'reset2fa']
+
 /** Account actions of the drawer; only shown to someone who may manage the account. */
-export function UserActions({ user, onDeleted, onResetPassword }: UserActionsProps) {
+export function UserActions({ user, identityCount, onDeleted, onResetPassword }: UserActionsProps) {
   const { t } = useTranslation()
   const me = useMe()
   const queryClient = useQueryClient()
@@ -150,7 +155,12 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
         open={confirming}
         onOpenChange={setConfirming}
         title={t(`users.confirm.${action}.title`)}
-        description={t(`users.confirm.${action}.description`, { username: user.username })}
+        description={[
+          t(`users.confirm.${action}.description`, { username: user.username }),
+          identityCount > 0 && IDENTITIES_UNTOUCHED.includes(action)
+            ? t('users.confirm.identitiesNote', { count: identityCount })
+            : '',
+        ].join(' ')}
         confirmLabel={t(`users.confirm.${action}.confirm`)}
         {...(action === 'delete' ? { confirmText: user.username } : {})}
         destructive={action !== 'resetPassword'}

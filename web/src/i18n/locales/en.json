@@ -641,7 +641,8 @@
         "directory_account": "Directory (LDAP) accounts cannot link sign-ins.",
         "account_inactive": "Your account is no longer active.",
         "expired": "This link expired or was opened in another browser or account. Start again from My account."
-      }
+      },
+      "unlinkEmailNote": "It was linked by email, so your email is marked unverified and does not link again by itself; you can link the sign-in yourself here."
     }
   },
   "notFound": {
@@ -872,8 +873,10 @@
       "unlink": {
         "title": "Unlink this sign-in?",
         "description": "The {{provider}} identity no longer signs in to {{username}}.",
-        "confirm": "Unlink"
-      }
+        "confirm": "Unlink",
+        "emailNote": "It was linked by email, so the account’s email is marked unverified and does not link again by itself; mark it verified again if needed."
+      },
+      "identitiesNote": "Linked sign-ins still on this account: {{count}}. They are not affected and sign in without a password or second factor; unlink them below if the account is compromised."
     }
   },
   "tokens": {

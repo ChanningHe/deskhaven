@@ -100,6 +100,25 @@ describe('My account: linked sign-ins', () => {
   })
 })
 
+describe('My account: unlinking an email link', () => {
+  it('says the email will be marked unverified', async () => {
+    const { user } = renderApp('/me', {
+      me: USER_ME,
+      api: {
+        [`GET ${ACCOUNT_PATH}`]: {
+          body: account({ identities: [{ ...LINKED, linked_via: 'email' }] }),
+        },
+        [`GET ${PROVIDERS}`]: { body: [] },
+      },
+    })
+
+    await user.click(await screen.findByRole('button', { name: '解除关联' }))
+
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getByText(/你的邮箱将被标记为未验证/)).toBeInTheDocument()
+  })
+})
+
 describe('Link confirmation page', () => {
   it('names the provider and the account, then links on confirmation', async () => {
     let sent: unknown

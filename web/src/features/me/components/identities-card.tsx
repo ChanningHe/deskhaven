@@ -125,7 +125,12 @@ export function IdentitiesCard({ account }: { account: MyAccount }) {
         open={pending?.kind === 'unlink'}
         onOpenChange={close}
         title={t('me.identities.unlinkTitle')}
-        description={t('me.identities.unlinkDescription')}
+        description={[
+          t('me.identities.unlinkDescription'),
+          pending?.kind === 'unlink' && pending.identity.linked_via === 'email'
+            ? t('me.identities.unlinkEmailNote')
+            : '',
+        ].join(' ')}
         submitLabel={t('me.identities.unlinkSubmit')}
         askCode={false}
         onSubmit={async (currentPassword) => {

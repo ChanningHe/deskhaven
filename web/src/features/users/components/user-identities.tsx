@@ -74,10 +74,14 @@ export function UserIdentities({ user, identities, editable }: UserIdentitiesPro
           if (!open) setTarget(undefined)
         }}
         title={t('users.confirm.unlink.title')}
-        description={t('users.confirm.unlink.description', {
-          provider: target?.provider_display_name ?? '',
-          username: user.username,
-        })}
+        description={[
+          t('users.confirm.unlink.description', {
+            provider: target?.provider_display_name ?? '',
+            username: user.username,
+          }),
+          // An email link would come back at the next login: the server unverifies the address.
+          target?.linked_via === 'email' ? t('users.confirm.unlink.emailNote') : '',
+        ].join(' ')}
         confirmLabel={t('users.confirm.unlink.confirm')}
         destructive
         onConfirm={unlink}

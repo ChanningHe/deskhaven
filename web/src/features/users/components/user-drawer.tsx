@@ -90,7 +90,9 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
           </p>
         )}
         <UserEditForm key={user.id} user={user} editable={editable} />
-        {editable ? <UserActions user={user} {...handlers} /> : null}
+        {editable ? (
+          <UserActions user={user} identityCount={detail.identities.length} {...handlers} />
+        ) : null}
         <UserIdentities user={user} identities={detail.identities} editable={editable} />
         <section className="grid gap-2">
           <h3 className="text-sm font-medium">{t('users.drawer.groups')}</h3>
