@@ -7,9 +7,10 @@ use deskhaven_db::begin_write;
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
 use deskhaven_db::entity::{oidc_provider, user};
 use deskhaven_db::time::TimestampMs;
+use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel,
+    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 
 use super::OidcService;
@@ -99,13 +100,32 @@ impl OidcService {
             .await?
             .ok_or(IdentityError::NotFound)?;
         let change = IdentityChange {
-            user: User::from(account),
+            user: User::from(account.clone()),
             identity: Identity::of(row.clone(), &provider),
         };
         guard.check(&tx, Some(&change), None).await?;
+        let by_email = row.linked_via == LinkedVia::Email;
         row.delete(&tx).await?;
+        if by_email && account.email_verified {
+            self.unverify_email(&tx, account).await?;
+        }
         tx.commit().await?;
         tracing::info!(user_id = change.user.id, provider = %provider.name, "OIDC identity unlinked");
+        Ok(())
+    }
+
+    /// An identity linked by email would be linked again at its next login while the email
+    /// conditions hold: removing one also marks the account's address unverified (an
+    /// administrator can mark it verified again; the holder can link explicitly).
+    async fn unverify_email<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        account: user::Model,
+    ) -> Result<(), DbErr> {
+        let mut row = account.into_active_model();
+        row.email_verified = Set(false);
+        row.updated_at = Set(self.inner.clock.now());
+        row.update(conn).await?;
         Ok(())
     }
 }

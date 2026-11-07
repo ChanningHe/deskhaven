@@ -64,6 +64,44 @@ async fn a_user_lists_and_unlinks_an_identity_and_the_login_stops_working() {
     .await;
 }
 
+/// An identity linked by email would come back at the next login: unlinking it also marks
+/// the account's address unverified, in the same transaction. An explicit one leaves the
+/// address alone.
+#[tokio::test]
+async fn unlinking_an_email_identity_unverifies_the_address_so_it_stays_unlinked() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.local_user("alice", Some("alice@example.com")).await;
+        let bob = env.local_user("bob", Some("bob@example.com")).await;
+        let alice_email = |s: common::oidc_idp::TokenSpec| s.email("alice@example.com", Some(true));
+        env.login("sub-a", alice_email).await.1.outcome.unwrap();
+        env.link(bob.id, "sub-b", |s| s).await.outcome.unwrap();
+        let by_email = env.oidc.identities_of(alice.id).await.unwrap()[0].id;
+        let explicit = env.oidc.identities_of(bob.id).await.unwrap()[0].id;
+
+        let guard = || env.link_guard(1, "user.identity_unlink");
+        env.oidc
+            .unlink_identity(by_email, None, guard())
+            .await
+            .unwrap();
+        env.oidc
+            .unlink_identity(explicit, None, guard())
+            .await
+            .unwrap();
+        let again = env.login("sub-a", alice_email).await.1;
+
+        let b = db.backend;
+        assert!(
+            !env.users.get(alice.id).await.unwrap().email_verified,
+            "{b}"
+        );
+        assert!(env.users.get(bob.id).await.unwrap().email_verified, "{b}");
+        assert_eq!(again.outcome.err(), Some(Failure::NoLinkedAccount), "{b}");
+        assert_eq!(identity_count(db).await, 0, "{b}");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn the_last_identity_of_an_oidc_account_cannot_be_unlinked() {
     each_migrated_backend(async |db: &TestDb| {

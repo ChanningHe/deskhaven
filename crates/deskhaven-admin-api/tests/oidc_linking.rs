@@ -414,6 +414,76 @@ async fn administrators_unlink_by_the_account_rules() {
     .await;
 }
 
+/// Unlinking an identity linked by email marks the address unverified in the same change,
+/// and the audit row says so.
+#[tokio::test]
+async fn an_admin_unlinking_an_email_link_unverifies_the_address() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = env(db).await;
+        let admin = env.h.console("adam", Role::Admin).await;
+        let new = NewUser {
+            email: Some("bob@example.com".to_owned()),
+            email_verified: true,
+            ..NewUser::new("bob", Credential::Oidc)
+        };
+        let bob = env.h.state.users.create(new).await.unwrap().id;
+        let provider = env.h.state.oidc.list_providers().await.unwrap()[0].id;
+        let row = user_identity::ActiveModel {
+            user_id: sea_orm::ActiveValue::Set(bob),
+            provider_id: sea_orm::ActiveValue::Set(provider),
+            subject: sea_orm::ActiveValue::Set("sub-b".to_owned()),
+            email_verified: sea_orm::ActiveValue::Set(true),
+            email: sea_orm::ActiveValue::Set(Some("bob@example.com".to_owned())),
+            created_at: sea_orm::ActiveValue::Set(deskhaven_db::time::now()),
+            linked_via: sea_orm::ActiveValue::Set(user_identity::LinkedVia::Email),
+            ..Default::default()
+        };
+        let id = sea_orm::ActiveModelTrait::insert(row, &env.h.state.db)
+            .await
+            .unwrap()
+            .id;
+        // A second identity, so the oidc account may lose this one.
+        oidc_account_identity(&env.h, bob, "sub-b2").await;
+
+        let path = format!("/admin/api/v1/users/{bob}/identities/{id}");
+        let reply = env.h.as_console(Method::DELETE, &path, &admin, None).await;
+
+        let b = db.backend;
+        assert_eq!(reply.status, 204, "{b}: {:?}", reply.body);
+        assert!(
+            !env.h.state.users.get(bob).await.unwrap().email_verified,
+            "{b}"
+        );
+        let rows = env.h.audit_rows().await;
+        let unlink = rows
+            .iter()
+            .find(|r| r.action == "user.identity_unlink")
+            .unwrap();
+        let after: Value = serde_json::from_str(unlink.after.as_deref().unwrap()).unwrap();
+        assert_eq!(after, json!({ "email_verified": false }), "{b}");
+    })
+    .await;
+}
+
+async fn oidc_account_identity(h: &Harness, user_id: i64, subject: &str) {
+    let mut second = NewProvider::new("second", "https://second.example.com", "c");
+    second.client_secret = Some("s".to_owned());
+    let provider = h.state.oidc.create_provider(second).await.unwrap().id;
+    let row = user_identity::ActiveModel {
+        user_id: sea_orm::ActiveValue::Set(user_id),
+        provider_id: sea_orm::ActiveValue::Set(provider),
+        subject: sea_orm::ActiveValue::Set(subject.to_owned()),
+        email_verified: sea_orm::ActiveValue::Set(false),
+        email: sea_orm::ActiveValue::Set(None),
+        created_at: sea_orm::ActiveValue::Set(deskhaven_db::time::now()),
+        linked_via: sea_orm::ActiveValue::Set(user_identity::LinkedVia::Explicit),
+        ..Default::default()
+    };
+    sea_orm::ActiveModelTrait::insert(row, &h.state.db)
+        .await
+        .unwrap();
+}
+
 /// An `oidc` account with one identity (as provisioning leaves it): (user id, identity id).
 async fn oidc_account(h: &Harness, subject: &str) -> (i64, i64) {
     let new = NewUser::new(format!("u-{subject}"), Credential::Oidc);
