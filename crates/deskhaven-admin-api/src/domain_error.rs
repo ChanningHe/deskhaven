@@ -32,6 +32,10 @@ pub(crate) fn refused(refused: Refused) -> AdminApiError {
             ErrorCode::OwnerRequired,
             "only an owner may manage owner accounts",
         ),
+        crate::users::EMAIL_CHANGED => {
+            AdminApiError::conflict("the address changed since it was checked")
+                .with_details(json!({ "reason": "email_changed" }))
+        }
         _ => AdminApiError::forbidden(),
     }
 }

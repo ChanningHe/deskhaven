@@ -14,6 +14,7 @@ use utoipa::ToSchema;
 
 use super::rules::Acting;
 use super::view::{ShownSecret, UserCreated, UserDetail, UserView};
+use crate::domain_error::invalid_field;
 use crate::{
     AdminApiError, AuditCtx, Audited, ConsoleUser, ErrorCode, RoleView, ValidJson, ValidPath,
 };
@@ -80,15 +81,18 @@ pub struct UserPatch {
     /// Blank: the username.
     #[garde(length(chars, max = 128))]
     pub display_name: Option<String>,
-    /// An empty string removes the address. A new address is unverified unless
-    /// `email_verified` is set in the same request.
+    /// An empty string removes the address. A new address is unverified.
     #[garde(length(chars, max = 254))]
     pub email: Option<String>,
     /// Mark the address verified (or not) after checking it out of band. A verified
     /// address lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).
-    /// `true` needs an address.
+    /// `true` is its own step: never with `email`, and with `expected_email`.
     #[garde(skip)]
     pub email_verified: Option<bool>,
+    /// With `email_verified: true`: the address that was checked. A different stored
+    /// address (changed meanwhile) is 409 `conflict`, `details.reason: email_changed`.
+    #[garde(length(chars, max = 254))]
+    pub expected_email: Option<String>,
     #[garde(skip)]
     pub role: Option<RoleView>,
     #[garde(length(chars, max = 2000))]
@@ -185,7 +189,7 @@ pub async fn create_user(
         (status = 200, description = "The updated account", body = UserView),
         (status = 403, description = "Owner accounts and the owner role need an owner (`owner_required`)", body = Problem),
         (status = 404, description = "No such user", body = Problem),
-        (status = 409, description = "Email taken (`conflict`) or the last owner (`last_owner`)", body = Problem),
+        (status = 409, description = "Email taken (`conflict`), the address changed since it was checked (`conflict`, `details.reason: email_changed`) or the last owner (`last_owner`)", body = Problem),
         (status = 422, description = "Invalid field (`validation_failed`)", body = Problem),
     )
 )]
@@ -197,6 +201,7 @@ pub async fn update_user(
     ValidJson(body): ValidJson<UserPatch>,
 ) -> Result<(Audited, Json<UserView>), AdminApiError> {
     let acting = Acting::new(&principal, ctx);
+    let expected = expected_email(&body)?;
     let edit = AccountEdit {
         profile: ProfileUpdate {
             display_name: body.display_name,
@@ -208,9 +213,27 @@ pub async fn update_user(
         role: body.role.map(Into::into),
         status: None,
     };
-    let guard = acting.user_guard(&state.console_audit, "user.update", None);
+    let guard = acting.update_guard(&state.console_audit, expected);
     let user = state.users.edit(id, edit, guard).await?;
     Ok((Audited, Json(user.into())))
+}
+
+/// Marking an address verified is its own step, about the address the administrator
+/// checked: never with a new `email`, always with `expected_email`.
+fn expected_email(body: &UserPatch) -> Result<Option<String>, AdminApiError> {
+    if body.email_verified != Some(true) {
+        return Ok(None);
+    }
+    if body.email.is_some() {
+        return Err(invalid_field(
+            "email_verified",
+            "mark an address verified in its own request, after the change",
+        ));
+    }
+    match body.expected_email.as_deref() {
+        Some(expected) if !expected.is_empty() => Ok(Some(expected.to_owned())),
+        _ => Err(invalid_field("expected_email", "required")),
+    }
 }
 
 /// Deletes an account with its sessions, memberships and personal address book (audited

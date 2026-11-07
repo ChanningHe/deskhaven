@@ -45,6 +45,26 @@ impl Acting {
         check_target(self.role, Some(target), None)
     }
 
+    /// The guard of `user.update`: the account rules, and with `expected` (an address being
+    /// marked verified) the stored address must still be that one (case-insensitively), or
+    /// the change is refused with [`EMAIL_CHANGED`].
+    pub fn update_guard(&self, log: &ConsoleAuditLog, expected: Option<String>) -> TxGuard<User> {
+        let ctx = self.ctx.clone();
+        self.ctx.admin_guard(
+            log,
+            move |role, before: Option<&User>, after: Option<&User>| {
+                if let Some(expected) = &expected {
+                    let stored = before.and_then(|u| u.email.as_deref());
+                    if !stored.is_some_and(|s| s.eq_ignore_ascii_case(expected.trim())) {
+                        return Err(Refused::new(EMAIL_CHANGED));
+                    }
+                }
+                check_target(role, before, after)?;
+                Ok(ctx.entry(audit_of("user.update", before, after, None)))
+            },
+        )
+    }
+
     /// A guard applying the account rules and recording `action` on the account, with
     /// `extra` members merged into the `after` snapshot.
     pub fn user_guard(
@@ -58,18 +78,31 @@ impl Acting {
             log,
             move |role, before: Option<&User>, after: Option<&User>| {
                 check_target(role, before, after)?;
-                let id = after.or(before).map_or(0, |u| u.id);
-                let mut audit = Audit::new(action).target("user", id);
-                if let Some(before) = before {
-                    audit = audit.before(&UserSnapshot::from(before));
-                }
-                if let Some(after) = after {
-                    audit = audit.after(&with_extra(UserSnapshot::from(after), extra));
-                }
-                Ok(ctx.entry(audit))
+                Ok(ctx.entry(audit_of(action, before, after, extra)))
             },
         )
     }
+}
+
+/// [`Refused::code`] of an address marked verified that is no longer the stored one.
+pub(crate) const EMAIL_CHANGED: &str = "email_changed";
+
+/// The audit row of `action` on an account seen `before` and `after` the change.
+fn audit_of(
+    action: &'static str,
+    before: Option<&User>,
+    after: Option<&User>,
+    extra: Option<Value>,
+) -> Audit {
+    let id = after.or(before).map_or(0, |u| u.id);
+    let mut audit = Audit::new(action).target("user", id);
+    if let Some(before) = before {
+        audit = audit.before(&UserSnapshot::from(before));
+    }
+    if let Some(after) = after {
+        audit = audit.after(&with_extra(UserSnapshot::from(after), extra));
+    }
+    audit
 }
 
 pub(crate) fn check_target(

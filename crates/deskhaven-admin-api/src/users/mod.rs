@@ -15,6 +15,7 @@ pub(crate) mod view;
 use utoipa_axum::routes;
 
 pub use import::{MAX_CSV_BYTES, MAX_IMPORT_ROWS};
+pub(crate) use rules::EMAIL_CHANGED;
 
 use crate::{AdminRoutes, RouteError};
 

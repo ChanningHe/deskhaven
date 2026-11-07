@@ -9637,7 +9637,7 @@
             }
           },
           "409": {
-            "description": "Email taken (`conflict`) or the last owner (`last_owner`)",
+            "description": "Email taken (`conflict`), the address changed since it was checked (`conflict`, `details.reason: email_changed`) or the last owner (`last_owner`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -16436,14 +16436,21 @@
               "string",
               "null"
             ],
-            "description": "An empty string removes the address. A new address is unverified unless\n`email_verified` is set in the same request."
+            "description": "An empty string removes the address. A new address is unverified."
           },
           "email_verified": {
             "type": [
               "boolean",
               "null"
             ],
-            "description": "Mark the address verified (or not) after checking it out of band. A verified\naddress lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).\n`true` needs an address."
+            "description": "Mark the address verified (or not) after checking it out of band. A verified\naddress lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).\n`true` is its own step: never with `email`, and with `expected_email`."
+          },
+          "expected_email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "With `email_verified: true`: the address that was checked. A different stored\naddress (changed meanwhile) is 409 `conflict`, `details.reason: email_changed`."
           },
           "note": {
             "type": [
