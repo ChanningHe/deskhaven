@@ -223,3 +223,22 @@ async fn provisioning_never_creates_a_second_account_for_a_refused_address() {
     })
     .await;
 }
+
+/// One identity per provider: a second `sub` with the same verified address (a recreated
+/// IdP account) never joins an account that already has an identity there.
+#[tokio::test]
+async fn a_second_subject_with_the_same_address_is_refused() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let (user_id, email) = account(&env, db, 0, BASE).await;
+        env.link(user_id, "sub-1", |s| s).await.outcome.unwrap();
+
+        let other = env.login("sub-2", |s| s.email(&email, Some(true))).await.1;
+
+        let b = db.backend;
+        assert_eq!(other.outcome.err(), Some(Failure::NoLinkedAccount), "{b}");
+        let rows = user_identity::Entity::find().all(&db.conn).await.unwrap();
+        assert_eq!(rows.len(), 1, "{b}");
+    })
+    .await;
+}

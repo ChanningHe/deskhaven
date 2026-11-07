@@ -127,6 +127,12 @@ pub async fn start(
         (true, Some(code)) => Some(code.trim()),
         (false, _) => None,
     };
+    // Refusals first: an unknown provider or a refused account spends no code.
+    state
+        .oidc
+        .check_link(&body.provider, user.id)
+        .await
+        .map_err(start_error)?;
     let password = Password::new(body.current_password.as_str());
     let verify = reauthenticate(&state, &user, &password, code);
     throttled(&state, client, &user.username, verify).await?;

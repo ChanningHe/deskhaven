@@ -38,11 +38,14 @@ use deskhaven_config::settings::{AUTH_OIDC_LINK_EMAIL_MAX_ROLE, LinkEmailMaxRole
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
 use deskhaven_db::entity::{oidc_provider, user};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
+};
 
 use super::OidcService;
 use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
+use super::link::provider_identity;
 use super::provision::provision;
 use crate::users::lookup::{email_norm, find_by_email, is_valid_email};
 use crate::users::{AuthSource, Role, Status};
@@ -71,7 +74,12 @@ pub(crate) async fn resolve(
         None => None,
     };
     if let Some(account) = by_email {
-        if !email_link_holds(&account, asserted, ceiling) {
+        // One identity per provider: another `sub` with the same address (a recreated or
+        // recycled IdP account) never joins an account that already has one there.
+        let has_one = provider_identity(tx, account.id, provider.id)
+            .await?
+            .is_some();
+        if has_one || !email_link_holds(&account, asserted, ceiling) {
             return Ok(Err(Failure::NoLinkedAccount));
         }
         let account = match active(account) {
@@ -170,7 +178,7 @@ pub(super) async fn insert_identity(
     user_id: i64,
     asserted: &Asserted,
     linked_via: LinkedVia,
-) -> Result<user_identity::Model, CallbackError> {
+) -> Result<user_identity::Model, DbErr> {
     let email = stored_email(asserted);
     let row = user_identity::ActiveModel {
         user_id: Set(user_id),
@@ -182,7 +190,7 @@ pub(super) async fn insert_identity(
         linked_via: Set(linked_via),
         ..Default::default()
     };
-    Ok(row.insert(tx).await?)
+    row.insert(tx).await
 }
 
 #[cfg(test)]

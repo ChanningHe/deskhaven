@@ -27,6 +27,7 @@ use deskhaven_db::entity::{oidc_provider, user};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
+    SqlErr,
 };
 
 use super::OidcService;
@@ -62,6 +63,23 @@ impl OidcService {
         provider: &str,
         user_id: i64,
     ) -> Result<ConsoleFlowStart, OidcError> {
+        self.check_link(provider, user_id).await?;
+        let binding = SessionToken::generate()?;
+        let row = FlowRow {
+            flow: Flow::Link,
+            context: context::for_link(&binding.hash(), user_id),
+            client_code_hash: None,
+        };
+        let url = self.begin(provider, row).await?;
+        Ok(ConsoleFlowStart {
+            url,
+            binding: BrowserBinding::new(binding),
+        })
+    }
+
+    /// Whether account `user_id` may start linking at the enabled provider `provider`; the
+    /// caller runs it before re-authenticating, so a refusal spends no code.
+    pub async fn check_link(&self, provider: &str, user_id: i64) -> Result<(), OidcError> {
         let found = self
             .enabled_provider(provider)
             .await?
@@ -78,17 +96,7 @@ impl OidcService {
         if existing.is_some_and(|row| row.linked_via != LinkedVia::Email) {
             return Err(OidcError::LinkRefused(LinkFailure::ProviderLinked));
         }
-        let binding = SessionToken::generate()?;
-        let row = FlowRow {
-            flow: Flow::Link,
-            context: context::for_link(&binding.hash(), user_id),
-            client_code_hash: None,
-        };
-        let url = self.begin(provider, row).await?;
-        Ok(ConsoleFlowStart {
-            url,
-            binding: BrowserBinding::new(binding),
-        })
+        Ok(())
     }
 
     /// Completes a link flow for the signed-in account `user_id` in the browser holding
@@ -204,7 +212,7 @@ impl OidcService {
                 if provider_identity(tx, user_id, provider.id).await?.is_some() {
                     return Ok(Err(LinkFailure::ProviderLinked));
                 }
-                insert_identity(
+                let inserted = insert_identity(
                     self,
                     tx,
                     provider.id,
@@ -212,7 +220,17 @@ impl OidcService {
                     asserted,
                     LinkedVia::Explicit,
                 )
-                .await?
+                .await;
+                match inserted {
+                    Ok(row) => row,
+                    // Linked to another account concurrently (unique `(provider, sub)`).
+                    Err(err)
+                        if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) =>
+                    {
+                        return Ok(Err(LinkFailure::IdentityTaken));
+                    }
+                    Err(err) => return Err(err.into()),
+                }
             }
         };
         Ok(Ok(Some((account, Identity::of(row, provider)))))
@@ -251,7 +269,7 @@ async fn by_key<C: sea_orm::ConnectionTrait>(
         .await
 }
 
-async fn provider_identity<C: sea_orm::ConnectionTrait>(
+pub(super) async fn provider_identity<C: sea_orm::ConnectionTrait>(
     conn: &C,
     user_id: i64,
     provider_id: i64,
