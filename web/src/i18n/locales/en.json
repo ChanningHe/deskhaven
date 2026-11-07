@@ -304,7 +304,8 @@
       "not_local_account": "This account signs in through single sign-on or LDAP; its password and second factor are managed there.",
       "tfa_enforced": "Two-factor authentication is required for this account, so it cannot be turned off.",
       "setting_pinned": "This setting is fixed by the server configuration and cannot be changed here.",
-      "version_conflict": "The setting was changed by someone else. Reload and try again."
+      "version_conflict": "The setting was changed by someone else. Reload and try again.",
+      "last_identity": "This account signs in only through this identity, so it cannot be removed."
     }
   },
   "theme": {
@@ -443,7 +444,7 @@
       "denied": "The sign-in was cancelled or denied at the identity provider.",
       "unavailable": "The identity provider is unavailable. Try again later.",
       "invalid_token": "The identity provider's answer could not be verified.",
-      "no_linked_account": "No account is linked to this identity. Sign in with your password and link it under My account.",
+      "no_linked_account": "No account is linked to this identity. Sign in with your existing account, then link it under My account → Linked sign-ins.",
       "disabled": "This account is disabled.",
       "unverified": "This account is not verified yet.",
       "provisioning_failed": "No account could be created for this identity.",
@@ -607,6 +608,40 @@
       "adminManaged": "Managed by administrators",
       "truncated": "Showing {{shown}} of {{total}} shared address books.",
       "editInClient": "Edit address book entries in the client."
+    },
+    "identities": {
+      "title": "Linked sign-ins",
+      "description": "Identity provider accounts that sign in to this account.",
+      "warning": "Signing in through a linked identity does not ask for this account’s two-factor code: the account is only as safe as the identity provider account.",
+      "none": "No identity is linked yet.",
+      "notLinkable": "Only accounts with a local password link sign-ins themselves. An administrator can remove a linked identity.",
+      "link": "Link {{name}}",
+      "linkTitle": "Link a sign-in",
+      "linkDescription": "Confirm it is you, then sign in at the identity provider with the account you want to link.",
+      "linkSubmit": "Continue to the identity provider",
+      "unlink": "Unlink",
+      "unlinkTitle": "Unlink this sign-in?",
+      "unlinkDescription": "The identity provider account no longer signs in to this account. Enter your current password to confirm.",
+      "unlinkSubmit": "Unlink",
+      "via": {
+        "provisioned": "Created by sign-in",
+        "email": "Linked by email",
+        "explicit": "Linked by you"
+      },
+      "confirmTitle": "Link a sign-in",
+      "confirmQuestion": "Link your {{provider}} identity to the account {{username}}?",
+      "confirmSubmit": "Link",
+      "back": "Back to my account",
+      "reasons": {
+        "denied": "The sign-in was cancelled or denied at the identity provider.",
+        "unavailable": "The identity provider is unavailable. Try again later.",
+        "invalid_token": "The identity provider’s answer could not be verified.",
+        "identity_taken": "This identity is already linked to another account.",
+        "provider_linked": "Your account already has a sign-in linked at this identity provider.",
+        "directory_account": "Directory (LDAP) accounts cannot link sign-ins.",
+        "account_inactive": "Your account is no longer active.",
+        "expired": "This link expired or was opened in another browser or account. Start again from My account."
+      }
     }
   },
   "notFound": {
@@ -789,7 +824,10 @@
         "console": "Console"
       },
       "save": "Save changes",
-      "saved": "Saved"
+      "saved": "Saved",
+      "identities": "Linked sign-ins",
+      "noIdentities": "No identity is linked.",
+      "unlink": "Unlink"
     },
     "actions": {
       "title": "Actions",
@@ -802,7 +840,8 @@
       "enable": "Enable",
       "delete": "Delete",
       "temporaryTitle": "New temporary password for {{username}}",
-      "temporaryDescription": "All sessions were signed out. The user must change this password at next sign-in."
+      "temporaryDescription": "All sessions were signed out. The user must change this password at next sign-in.",
+      "markEmailVerified": "Mark email verified"
     },
     "confirm": {
       "disable": {
@@ -829,6 +868,11 @@
         "title": "Delete this account?",
         "description": "{{username}}, their sessions, group memberships and personal address book are deleted. This cannot be undone.",
         "confirm": "Delete account"
+      },
+      "unlink": {
+        "title": "Unlink this sign-in?",
+        "description": "The {{provider}} identity no longer signs in to {{username}}.",
+        "confirm": "Unlink"
       }
     }
   },
@@ -987,7 +1031,10 @@
       "description": "You have unsaved changes to the settings. They are lost if you leave this page.",
       "confirm": "Leave page"
     },
-    "pinnedDropped": "These settings were fixed by the server configuration meanwhile; your edits to them were dropped: {{keys}}"
+    "pinnedDropped": "These settings were fixed by the server configuration meanwhile; your edits to them were dropped: {{keys}}",
+    "risk": {
+      "linkEmailMaxRole": "With admin or owner, the identity provider can take over administrator or owner accounts through their email address. Only use it with a provider whose users cannot change their own email address."
+    }
   },
   "devices": {
     "tableLabel": "Devices",

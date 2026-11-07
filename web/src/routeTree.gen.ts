@@ -28,6 +28,7 @@ import { Route as AppUsersRouteImport } from './routes/_app/users'
 import { Route as AccountPasswordRouteImport } from './routes/account.password'
 import { Route as AccountTwoFactorRouteImport } from './routes/account.two-factor'
 import { Route as LoginOidcRouteImport } from './routes/login_.oidc'
+import { Route as AppMeOidcLinkRouteImport } from './routes/_app/me_.oidc-link'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -123,6 +124,11 @@ const LoginOidcRoute = LoginOidcRouteImport.update({
   path: '/login/oidc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppMeOidcLinkRoute = AppMeOidcLinkRouteImport.update({
+  id: '/me_/oidc-link',
+  path: '/me/oidc-link',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/account/password': typeof AccountPasswordRoute
   '/account/two-factor': typeof AccountTwoFactorRoute
   '/login/oidc': typeof LoginOidcRoute
+  '/me/oidc-link': typeof AppMeOidcLinkRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/account/two-factor': typeof AccountTwoFactorRoute
   '/login/oidc': typeof LoginOidcRoute
   '/': typeof AppIndexRoute
+  '/me/oidc-link': typeof AppMeOidcLinkRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -185,6 +193,7 @@ export interface FileRoutesById {
   '/account/two-factor': typeof AccountTwoFactorRoute
   '/login_/oidc': typeof LoginOidcRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/me_/oidc-link': typeof AppMeOidcLinkRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/account/password'
     | '/account/two-factor'
     | '/login/oidc'
+    | '/me/oidc-link'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/account/two-factor'
     | '/login/oidc'
     | '/'
+    | '/me/oidc-link'
   id:
     | '__root__'
     | '/_app'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/account/two-factor'
     | '/login_/oidc'
     | '/_app/'
+    | '/_app/me_/oidc-link'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -394,6 +406,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginOidcRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/me_/oidc-link': {
+      id: '/_app/me_/oidc-link'
+      path: '/me/oidc-link'
+      fullPath: '/me/oidc-link'
+      preLoaderRoute: typeof AppMeOidcLinkRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -411,6 +430,7 @@ interface AppRouteChildren {
   AppTokensRoute: typeof AppTokensRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppMeOidcLinkRoute: typeof AppMeOidcLinkRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -427,6 +447,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppTokensRoute: AppTokensRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
+  AppMeOidcLinkRoute: AppMeOidcLinkRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

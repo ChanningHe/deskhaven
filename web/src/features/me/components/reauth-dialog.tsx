@@ -20,6 +20,8 @@ interface ReauthDialogProps {
   title: string
   description: string
   submitLabel: string
+  /** Also ask for an authenticator or recovery code (default); without it the code is ''. */
+  askCode?: boolean
   /** Performs the action with the typed password and code; a rejection is shown and keeps the dialog open. */
   onSubmit: (currentPassword: string, code: string) => Promise<unknown>
 }
@@ -27,9 +29,10 @@ interface ReauthDialogProps {
 // Rendered inside the popup, which unmounts on close: every opening starts empty.
 function ReauthForm({
   submitLabel,
+  askCode = true,
   onSubmit,
   onDone,
-}: Pick<ReauthDialogProps, 'submitLabel' | 'onSubmit'> & { onDone: () => void }) {
+}: Pick<ReauthDialogProps, 'submitLabel' | 'askCode' | 'onSubmit'> & { onDone: () => void }) {
   const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
@@ -68,17 +71,19 @@ function ReauthForm({
           setPassword(event.target.value)
         }}
       />
-      <TextField
-        id="me-reauth-code"
-        label={t('me.tfa.proofCode')}
-        autoComplete="one-time-code"
-        spellCheck={false}
-        required
-        value={code}
-        onChange={(event) => {
-          setCode(event.target.value)
-        }}
-      />
+      {askCode ? (
+        <TextField
+          id="me-reauth-code"
+          label={t('me.tfa.proofCode')}
+          autoComplete="one-time-code"
+          spellCheck={false}
+          required
+          value={code}
+          onChange={(event) => {
+            setCode(event.target.value)
+          }}
+        />
+      ) : null}
       {error === undefined ? null : <ErrorAlert error={error} />}
       <DialogFooter>
         <Button type="submit" disabled={pending} aria-busy={pending}>

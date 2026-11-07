@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { SettingView } from '@/api/generated/model'
 
-import type { Problem } from '../editor'
+import type { Editor, Problem } from '../editor'
 
 /** The accepted range or shape of a value, under its control. */
 export function RangeHint({ setting }: { setting: SettingView }) {
@@ -21,6 +21,23 @@ export function RangeHint({ setting }: { setting: SettingView }) {
     hint = t('settings.hint.secret')
   }
   return hint === undefined ? null : <p className="text-xs text-muted-foreground">{hint}</p>
+}
+
+/** Values of a setting that hand an outside party power over privileged accounts. */
+const RISKY_VALUES: Readonly<Record<string, readonly string[]>> = {
+  'auth.oidc.link_email_max_role': ['admin', 'owner'],
+}
+
+/** A standing warning while the shown value is a risky one (see `RISKY_VALUES`). */
+export function RiskHint({ setting, editor }: { setting: SettingView; editor: Editor }) {
+  const { t } = useTranslation()
+  const risky = RISKY_VALUES[setting.key] ?? []
+  if (typeof editor !== 'string' || !risky.includes(editor)) return null
+  return (
+    <p role="note" className="text-xs text-warning">
+      {t('settings.risk.linkEmailMaxRole')}
+    </p>
+  )
 }
 
 /** A client-side finding about the edited value, as a message. */

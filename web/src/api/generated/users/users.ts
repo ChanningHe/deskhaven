@@ -874,6 +874,91 @@ export const useEnableUser = <TError = ErrorType<ErrorEnvelope>, TContext = unkn
 > => {
   return useMutation(getEnableUserMutationOptions(options), queryClient)
 }
+export const getUnlinkUserIdentityUrl = (id: number, identityId: number) => {
+  return `/admin/api/v1/users/${encodeURIComponent(id)}/identities/${encodeURIComponent(identityId)}`
+}
+
+/**
+ * @summary Removes an OIDC identity of an account.
+ */
+export const unlinkUserIdentity = async (
+  id: number,
+  identityId: number,
+  options?: Parameters<typeof apiFetch>[1],
+): Promise<void> => {
+  return apiFetch<void>(getUnlinkUserIdentityUrl(id, identityId), {
+    ...options,
+    method: 'DELETE',
+  })
+}
+
+export const getUnlinkUserIdentityMutationKey = () => ['unlinkUserIdentity'] as const
+
+export const getUnlinkUserIdentityMutationOptions = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkUserIdentity>>,
+    TError,
+    UnlinkUserIdentityMutationVariables,
+    TContext
+  >
+  request?: SecondParameter<typeof apiFetch>
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlinkUserIdentity>>,
+  TError,
+  UnlinkUserIdentityMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUnlinkUserIdentityMutationKey()
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined }
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlinkUserIdentity>>,
+    UnlinkUserIdentityMutationVariables
+  > = (props) => {
+    const { id, identityId } = props ?? {}
+
+    return unlinkUserIdentity(id, identityId, requestOptions)
+  }
+
+  return { mutationFn, ...mutationOptions }
+}
+
+export type UnlinkUserIdentityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlinkUserIdentity>>
+>
+
+export type UnlinkUserIdentityMutationError = ErrorType<ErrorEnvelope>
+export type UnlinkUserIdentityMutationVariables = { id: number; identityId: number }
+
+/**
+ * @summary Removes an OIDC identity of an account.
+ */
+export const useUnlinkUserIdentity = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlinkUserIdentity>>,
+      TError,
+      UnlinkUserIdentityMutationVariables,
+      TContext
+    >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlinkUserIdentity>>,
+  TError,
+  UnlinkUserIdentityMutationVariables,
+  TContext
+> => {
+  return useMutation(getUnlinkUserIdentityMutationOptions(options), queryClient)
+}
 export const getResetUser2faUrl = (id: number) => {
   return `/admin/api/v1/users/${encodeURIComponent(id)}/reset-2fa`
 }

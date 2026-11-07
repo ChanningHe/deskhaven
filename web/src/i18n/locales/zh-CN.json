@@ -304,7 +304,8 @@
       "not_local_account": "该账号通过单点登录或 LDAP 登录，其密码与第二因素由身份提供方管理。",
       "tfa_enforced": "此账号必须使用两步验证，无法关闭。",
       "setting_pinned": "该设置由服务器配置固定，无法在此修改。",
-      "version_conflict": "该设置已被他人修改，请重新载入后再试。"
+      "version_conflict": "该设置已被他人修改，请重新载入后再试。",
+      "last_identity": "此账号只能通过这个身份登录，无法移除。"
     }
   },
   "theme": {
@@ -443,7 +444,7 @@
       "denied": "身份提供方取消或拒绝了登录。",
       "unavailable": "身份提供方暂时不可用，请稍后重试。",
       "invalid_token": "无法验证身份提供方的应答。",
-      "no_linked_account": "没有账号关联到此身份。请先用密码登录，并在“我的”中完成绑定。",
+      "no_linked_account": "没有账号关联到此身份。请先用原账号登录，再到“我的 → 关联的登录方式”中关联。",
       "disabled": "该账号已被禁用。",
       "unverified": "该账号尚未验证。",
       "provisioning_failed": "无法为此身份创建账号。",
@@ -607,6 +608,40 @@
       "adminManaged": "由管理员管理",
       "truncated": "仅显示 {{shown}} / {{total}} 个共享地址簿。",
       "editInClient": "地址簿内容请在客户端中编辑。"
+    },
+    "identities": {
+      "title": "关联的登录方式",
+      "description": "可以登录到本账号的身份提供方账号。",
+      "warning": "用已关联的身份登录时不再需要本账号的两步验证码，账号安全取决于该身份提供方账号。",
+      "none": "尚未关联任何身份。",
+      "notLinkable": "只有使用本地密码的账号可以自行关联登录方式。管理员可以移除已关联的身份。",
+      "link": "关联 {{name}}",
+      "linkTitle": "关联登录方式",
+      "linkDescription": "先确认是你本人，然后在身份提供方用要关联的账号登录。",
+      "linkSubmit": "前往身份提供方",
+      "unlink": "解除关联",
+      "unlinkTitle": "解除这个登录方式的关联？",
+      "unlinkDescription": "该身份提供方账号将不能再登录到本账号。请输入当前密码确认。",
+      "unlinkSubmit": "解除关联",
+      "via": {
+        "provisioned": "登录时创建",
+        "email": "按邮箱关联",
+        "explicit": "本人关联"
+      },
+      "confirmTitle": "关联登录方式",
+      "confirmQuestion": "将你的 {{provider}} 身份关联到账号 {{username}}？",
+      "confirmSubmit": "关联",
+      "back": "返回我的账号",
+      "reasons": {
+        "denied": "已在身份提供方取消或拒绝登录。",
+        "unavailable": "身份提供方暂时不可用，请稍后再试。",
+        "invalid_token": "无法验证身份提供方的应答。",
+        "identity_taken": "这个身份已关联到其他账号。",
+        "provider_linked": "你的账号已关联了这个身份提供方的登录方式。",
+        "directory_account": "目录（LDAP）账号不能关联登录方式。",
+        "account_inactive": "你的账号已不可用。",
+        "expired": "此链接已过期，或在其他浏览器或账号中打开。请从“我的”重新开始。"
+      }
     }
   },
   "notFound": {
@@ -789,7 +824,10 @@
         "console": "控制台"
       },
       "save": "保存修改",
-      "saved": "已保存"
+      "saved": "已保存",
+      "identities": "关联的登录方式",
+      "noIdentities": "未关联任何身份。",
+      "unlink": "解除关联"
     },
     "actions": {
       "title": "操作",
@@ -802,7 +840,8 @@
       "enable": "启用",
       "delete": "删除",
       "temporaryTitle": "{{username}} 的新临时密码",
-      "temporaryDescription": "所有会话均已退出，用户下次登录时必须修改此密码。"
+      "temporaryDescription": "所有会话均已退出，用户下次登录时必须修改此密码。",
+      "markEmailVerified": "标记邮箱已验证"
     },
     "confirm": {
       "disable": {
@@ -829,6 +868,11 @@
         "title": "删除此账户？",
         "description": "{{username}} 及其会话、用户组成员关系和个人地址簿都将被删除，且无法恢复。",
         "confirm": "删除账户"
+      },
+      "unlink": {
+        "title": "解除这个登录方式的关联？",
+        "description": "{{provider}} 身份将不能再登录到 {{username}}。",
+        "confirm": "解除关联"
       }
     }
   },
@@ -987,7 +1031,10 @@
       "description": "设置中有未保存的更改，离开此页将丢失。",
       "confirm": "离开此页"
     },
-    "pinnedDropped": "以下设置已被服务器配置固定，你对它们的修改已丢弃：{{keys}}"
+    "pinnedDropped": "以下设置已被服务器配置固定，你对它们的修改已丢弃：{{keys}}",
+    "risk": {
+      "linkEmailMaxRole": "设为 admin 或 owner 时，身份提供方可以凭邮箱接管管理员或所有者账号。只在身份提供方不允许用户自行修改邮箱时使用。"
+    }
   },
   "devices": {
     "tableLabel": "设备",

@@ -40,7 +40,13 @@ export function pageOf(items: unknown[], total = items.length): MockHandler {
 }
 
 export function userDetail(target: UserView): UserDetail {
-  return { user: target, groups: [{ id: 3, name: 'ops' }], sessions: [], sessions_total: 0 }
+  return {
+    user: target,
+    groups: [{ id: 3, name: 'ops' }],
+    identities: [],
+    sessions: [],
+    sessions_total: 0,
+  }
 }
 
 /** Mutations in the cache whose result still holds a temporary password. */

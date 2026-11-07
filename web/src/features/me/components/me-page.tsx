@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 
 import { BooksTab } from './books-tab'
 import { DevicesTab } from './devices-tab'
+import { IdentitiesCard } from './identities-card'
 import { PasswordCard } from './password-card'
 import { ProfileCard } from './profile-card'
 import { SessionsTab } from './sessions-tab'
@@ -45,6 +46,7 @@ export function MePage() {
               <ProfileCard account={account} />
               <PasswordCard account={account} />
               <TwoFactorCard account={account} />
+              <IdentitiesCard account={account} />
             </>
           )}
         </TabsPanel>

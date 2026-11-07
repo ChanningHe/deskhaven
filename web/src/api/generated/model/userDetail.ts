@@ -3,14 +3,17 @@
  * Run `pnpm gen:api` to regenerate.
  */
 import type { GroupRef } from './groupRef'
+import type { IdentityView } from './identityView'
 import type { SessionView } from './sessionView'
 import type { UserView } from './userView'
 
 /**
- * One account with its groups and usable sessions (the console's user drawer).
+ * One account with its groups, OIDC identities and usable sessions (the console's user
+ * drawer).
  */
 export interface UserDetail {
   groups: GroupRef[]
+  identities: IdentityView[]
   /** The most recently used usable sessions, at most 200 (`sessions_total` counts all). */
   sessions: SessionView[]
   /**

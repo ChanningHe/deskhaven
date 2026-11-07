@@ -9,6 +9,7 @@ import {
   resetUser2fa,
   revokeUserSessions,
   unlockUser,
+  updateUser,
 } from '@/api/generated/users/users'
 import type { UserView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -95,6 +96,17 @@ export function UserActions({ user, onDeleted, onResetPassword }: UserActionsPro
         <Button variant="outline" size="sm" onClick={ask('revoke')}>
           {t('users.actions.revoke')}
         </Button>
+        {user.email !== null && user.email !== undefined && !user.email_verified ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void run(() => updateUser(user.id, { email_verified: true }))}
+          >
+            {t('users.actions.markEmailVerified')}
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"

@@ -44,6 +44,7 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   managed_by_config: 'errors.codes.managed_by_config',
   not_local_account: 'errors.codes.not_local_account',
   tfa_enforced: 'errors.codes.tfa_enforced',
+  last_identity: 'errors.codes.last_identity',
   setting_pinned: 'errors.codes.setting_pinned',
   version_conflict: 'errors.codes.version_conflict',
 }

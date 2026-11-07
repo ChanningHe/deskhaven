@@ -41,6 +41,7 @@ export const ErrorCode = {
   managed_by_config: 'managed_by_config',
   not_local_account: 'not_local_account',
   tfa_enforced: 'tfa_enforced',
+  last_identity: 'last_identity',
   setting_pinned: 'setting_pinned',
   version_conflict: 'version_conflict',
 } as const

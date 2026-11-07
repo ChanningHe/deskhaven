@@ -3,6 +3,7 @@
  * Run `pnpm gen:api` to regenerate.
  */
 import type { AuthSourceView } from './authSourceView'
+import type { IdentityView } from './identityView'
 import type { RoleView } from './roleView'
 
 /**
@@ -12,6 +13,11 @@ export interface MyAccount {
   auth_source: AuthSourceView
   /** The account has a local password to change (not LDAP or OIDC accounts). */
   can_change_password: boolean
+  /**
+   * The account can link OIDC identities itself (local accounts: the link needs the
+   * password).
+   */
+  can_link_oidc: boolean
   /** The account can hold a TOTP second factor (OIDC sign-ins never ask for one). */
   can_use_totp: boolean
   created_at: number
@@ -20,6 +26,8 @@ export interface MyAccount {
   email?: string | null
   email_verified: boolean
   id: number
+  /** The OIDC identities that sign in to this account. */
+  identities: IdentityView[]
   /** @nullable */
   last_login_at?: number | null
   /**

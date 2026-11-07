@@ -26,6 +26,8 @@ export function account(overrides: Partial<MyAccount> = {}): MyAccount {
     can_change_password: true,
     can_use_totp: true,
     tfa_required: false,
+    can_link_oidc: true,
+    identities: [],
     last_login_at: 1_800_000_000_000,
     created_at: 1_700_000_000_000,
     ...overrides,

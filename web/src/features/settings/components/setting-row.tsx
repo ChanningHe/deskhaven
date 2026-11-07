@@ -10,7 +10,7 @@ import type { Draft } from '../drafts'
 import { problemOf, toEditor } from '../editor'
 import type { Editor } from '../editor'
 import { valueSource } from '../format'
-import { ProblemText, RangeHint } from './setting-hints'
+import { ProblemText, RangeHint, RiskHint } from './setting-hints'
 import { SettingControl } from './setting-control'
 
 interface SettingRowProps {
@@ -85,6 +85,7 @@ export function SettingRow({
           onChange={onEdit}
         />
         <RangeHint setting={setting} />
+        <RiskHint setting={setting} editor={editor} />
         <div id={problemId}>
           {problem === undefined ? null : <ProblemText problem={problem} />}
           {serverProblems.map((reason) => (
