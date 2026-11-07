@@ -21,7 +21,7 @@ mod value;
 use serde_json::{Value as Json, json};
 
 pub use def::{AnySetting, Setting};
-pub use enums::{AcceptPresets, AclAction, Registration, SmtpTls, TfaEnforce};
+pub use enums::{AcceptPresets, AclAction, LinkEmailMaxRole, Registration, SmtpTls, TfaEnforce};
 pub use kind::{Bound, ListRule, Range, SettingType};
 pub use pins::{PinError, PinProblem, PinSet};
 pub use registry::*;

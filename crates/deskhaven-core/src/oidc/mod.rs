@@ -40,20 +40,25 @@
 //!
 //! The identity key is `(provider_id, sub)` (`user_identities`). It stands for
 //! `(issuer, sub)` because a provider's issuer can never change after creation (the update
-//! API has no issuer field); a different issuer is a different provider. An unknown identity
-//! is linked to an existing account by email only when the ID token says
-//! `email_verified: true`, `auth.oidc.link_verified_email` is on, and the account's own
-//! address is verified, it has no TOTP and it is not an admin or owner (see `identity`); a
-//! missing claim counts as false. Otherwise, when the email belongs to an account, the login
-//! is refused (the user links the account in the console). With no such account and
-//! `auto_provision` on, a new `oidc` account is created. Only IdP-verified addresses are ever
-//! stored. Accounts are never matched by username. Disabled and unverified accounts are
-//! refused. Accepted: the refusal versus provisioning difference tells an IdP user whether an
-//! address has a deskhaven account (the clearer experience for its real owner).
+//! API has no issuer field); a different issuer is a different provider. Each identity
+//! records how it was linked (`linked_via`): `provisioned` (the IdP login created the
+//! account), `explicit` (the signed-in account holder linked it, `link`) or `email`. An
+//! unknown identity is linked to an existing account by email only when the ID token says
+//! `email_verified: true` (a missing claim counts as false), the account's own address is
+//! verified, its role is within `auth.oidc.link_email_max_role`, it has no TOTP and it is
+//! not an LDAP account; an `email` identity is re-checked against the same conditions at
+//! every login (see `identity`). Otherwise, when the email belongs to an account, the login
+//! is refused (the holder signs in with the account and links the identity explicitly).
+//! With no such account and `auto_provision` on, a new `oidc` account is created. Only
+//! IdP-verified addresses are ever stored. Accounts are never matched by username. Disabled
+//! and unverified accounts are refused. Accepted: the refusal versus provisioning difference
+//! tells an IdP user whether an address has a deskhaven account (the clearer experience for
+//! its real owner).
 //!
-//! OIDC logins do not ask for the account's local second factor: the IdP authenticates, and
-//! multi-factor policy belongs there. That is why accounts with TOTP are never linked by
-//! email.
+//! OIDC logins do not ask for the account's local second factor, and `auth.tfa.enforce`
+//! constrains password logins only: the IdP authenticates, and multi-factor policy belongs
+//! there. That is why accounts with TOTP are never linked by email, only explicitly by
+//! their holder.
 //!
 //! # Callback URL
 //!
@@ -77,11 +82,14 @@ mod discovery;
 mod error;
 mod flow;
 mod http;
+mod identities;
 mod identity;
+mod link;
 mod poll;
 mod preview;
 mod protocol;
 mod providers;
+mod provision;
 mod resolver;
 mod url_policy;
 mod username;
@@ -94,15 +102,19 @@ use url::Url;
 
 pub use callback::{CallbackParams, CallbackReport, FlowKind, OidcLogin};
 pub use discovery::NEGATIVE_TTL;
-pub use error::{CallbackError, Failure, OidcError, PollError, ProviderError};
+pub use error::{
+    CallbackError, Failure, IdentityError, LinkFailure, OidcError, PollError, ProviderError,
+};
 pub(crate) use flow::expired_flows;
 pub use flow::{BrowserBinding, ClientCode, ClientFlowStart, ConsoleFlowStart};
 pub use http::{
     CONNECT_TIMEOUT, FetchError, FetchFuture, HttpFetch, MAX_RESPONSE_BYTES, REQUEST_TIMEOUT,
     ReqwestFetch,
 };
+pub use identities::{Identity, IdentityChange};
+pub use link::LinkReport;
 pub use poll::{ClientLogin, PollOutcome};
-pub use preview::{CallbackPreview, DeviceSummary};
+pub use preview::{CallbackPreview, DeviceSummary, LinkPreview, PreviewTarget};
 pub use providers::{
     LoginButton, MAX_ICON_LEN, MAX_NAME_LEN, NewProvider, Provider, ProviderUpdate,
 };

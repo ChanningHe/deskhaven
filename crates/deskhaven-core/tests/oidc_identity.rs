@@ -1,5 +1,5 @@
 //! Which account an OIDC login reaches (06 §3.4): the `(provider, sub)` identity, email
-//! linking by `email_verified` true / false / missing and `auth.oidc.link_verified_email`,
+//! linking by `email_verified` true / false / missing and `auth.oidc.link_email_max_role`,
 //! auto-provisioning (username rules, collisions, email, group mapping, admin group) and
 //! inactive accounts. Both backends.
 
@@ -43,9 +43,10 @@ async fn verified_email_links_the_existing_account_once_then_the_identity_is_use
         let (_, first) = env
             .login("sub-a", |s| s.email("alice@example.com", Some(true)))
             .await;
-        // The IdP address changes later: the identity still decides.
+        // Later logins go through the identity (no second link), and its address follows
+        // the token's verified one.
         let (_, second) = env
-            .login("sub-a", |s| s.email("alice@new.example.com", Some(false)))
+            .login("sub-a", |s| s.email("ALICE@example.com", Some(true)))
             .await;
 
         assert_eq!(user_id(&first), alice.id, "{}", db.backend);
@@ -58,9 +59,8 @@ async fn verified_email_links_the_existing_account_once_then_the_identity_is_use
             (alice.id, env.provider.id)
         );
         assert_eq!(linked[0].subject, "sub-a");
-        // The refresh never stores an unverified address.
-        assert_eq!(linked[0].email, None);
-        assert!(!linked[0].email_verified);
+        assert_eq!(linked[0].email.as_deref(), Some("ALICE@example.com"));
+        assert!(linked[0].email_verified);
         // Still the local account it was.
         let row = env.users.get(alice.id).await.unwrap();
         assert_eq!(row.auth_source, AuthSource::Local);
@@ -107,7 +107,7 @@ async fn verified_email_does_not_link_when_linking_is_turned_off() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         env.local_user("alice", Some("alice@example.com")).await;
-        set(&env.settings, "auth.oidc.link_verified_email", json!(false)).await;
+        set(&env.settings, "auth.oidc.link_email_max_role", json!("off")).await;
 
         let (_, report) = env
             .login("sub-a", |s| s.email("alice@example.com", Some(true)))

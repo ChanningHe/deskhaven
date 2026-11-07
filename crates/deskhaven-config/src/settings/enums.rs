@@ -88,6 +88,13 @@ setting_enum! {
 }
 
 setting_enum! {
+    /// The highest role an OIDC login may reach by linking an existing account through its
+    /// verified email; `off` never links by email. Ordered: each variant covers the ones
+    /// before it.
+    LinkEmailMaxRole { Off = "off", User = "user", Admin = "admin", Owner = "owner" }
+}
+
+setting_enum! {
     /// SMTP transport security.
     SmtpTls { Starttls = "starttls", Tls = "tls", None = "none" }
 }

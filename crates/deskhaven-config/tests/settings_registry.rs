@@ -34,7 +34,7 @@ const P0_DEFAULTS: &[(&str, &str)] = &[
     ("auth.registration", r#""disabled""#),
     ("auth.tfa.enforce", r#""off""#),
     ("auth.email_code.enabled", "false"),
-    ("auth.oidc.link_verified_email", "true"),
+    ("auth.oidc.link_email_max_role", r#""user""#),
     ("smtp.host", r#""""#),
     ("smtp.port", "587"),
     ("smtp.tls", r#""starttls""#),

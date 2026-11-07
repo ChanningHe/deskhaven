@@ -224,6 +224,37 @@ async fn regenerating_replaces_every_recovery_code() {
     .await;
 }
 
+/// M4-09: proving possession (before linking an OIDC identity) spends the code once.
+#[tokio::test]
+async fn proving_possession_spends_the_code_once() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::new(db).await;
+        let alice = env.enrolled("alice").await;
+        let (bob, _) = env.user("bob", Role::User).await;
+        let next = env.code_in(&alice, 1);
+        let recovery = first_code(&alice.recovery);
+
+        let proved = env.tfa.prove_possession(alice.user_id, &next).await;
+        let replayed = env.tfa.prove_possession(alice.user_id, &next).await;
+        let wrong = env
+            .tfa
+            .prove_possession(alice.user_id, &env.wrong_code(&alice))
+            .await;
+        let by_recovery = env.tfa.prove_possession(alice.user_id, &recovery).await;
+        let without = env.tfa.prove_possession(bob, "123456").await;
+
+        let b = db.backend;
+        assert!(proved.is_ok(), "{b}: {proved:?}");
+        assert!(matches!(replayed, Err(TfaError::InvalidCode)), "{b}");
+        assert!(matches!(wrong, Err(TfaError::InvalidCode)), "{b}");
+        assert!(by_recovery.is_ok(), "{b}: {by_recovery:?}");
+        assert!(matches!(without, Err(TfaError::NotEnabled)), "{b}");
+        let left = env.tfa.status(alice.user_id).await.unwrap();
+        assert_eq!(left.recovery_codes_left, 9, "{b}");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn disable_forgets_seed_codes_and_pending_challenges() {
     each_migrated_backend(async |db: &TestDb| {

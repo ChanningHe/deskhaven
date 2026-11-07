@@ -150,11 +150,18 @@
     },
     {
       "category": "auth",
-      "default": true,
-      "description": "Link OIDC logins to existing users by email only when `email_verified` is true.",
-      "key": "auth.oidc.link_verified_email",
+      "default": "user",
+      "description": "Highest role an OIDC login may reach by linking an existing account by email (both sides verified, no TOTP, not LDAP); `off` never links by email. `admin` and `owner` let the identity provider take those accounts over by email: only with an IdP whose users cannot change their own email address.",
+      "key": "auth.oidc.link_email_max_role",
+      "on_bad_row": "off",
       "sensitive": false,
-      "type": "bool"
+      "type": "enum",
+      "variants": [
+        "off",
+        "user",
+        "admin",
+        "owner"
+      ]
     },
     {
       "category": "smtp",

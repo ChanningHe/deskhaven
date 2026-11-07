@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::registry::lookup;
+use super::registry::{lookup, replaced};
 use super::update::echo_key;
 use super::value::Value;
 use crate::Source;
@@ -40,7 +40,8 @@ impl PinSet {
                 reason,
             };
             let Some(setting) = lookup(key) else {
-                problems.push(problem("unknown setting".to_owned()));
+                let reason = replaced(key).unwrap_or("unknown setting");
+                problems.push(problem(reason.to_owned()));
                 continue;
             };
             match setting.coerce(pin.value()) {

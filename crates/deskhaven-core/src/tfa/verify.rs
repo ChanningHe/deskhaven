@@ -79,6 +79,29 @@ impl TfaService {
             method,
         })
     }
+
+    /// The account holder proves possession of the factor for a sensitive change that is
+    /// not itself a factor change (linking an OIDC identity, M4-09): `code` is a current
+    /// TOTP code or an unused recovery code, spent (anti-replay) in its own transaction.
+    /// [`TfaError::InvalidCode`] for a wrong one, [`TfaError::NotEnabled`] while TOTP is
+    /// off.
+    pub async fn prove_possession(&self, user_id: i64, code: &str) -> Result<(), TfaError> {
+        let inner = &self.inner;
+        let txn = begin_write(&inner.db).await?;
+        let user = user::Entity::find_by_id(user_id)
+            .lock_exclusive()
+            .one(&txn)
+            .await?
+            .ok_or(TfaError::NotFound)?;
+        if user.totp_enabled_at.is_none() {
+            return Err(TfaError::NotEnabled);
+        }
+        if !inner.spend_code(&txn, &user, code).await? {
+            return Err(TfaError::InvalidCode);
+        }
+        txn.commit().await?;
+        Ok(())
+    }
 }
 
 impl Inner {

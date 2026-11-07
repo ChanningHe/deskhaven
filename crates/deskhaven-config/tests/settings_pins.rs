@@ -177,6 +177,50 @@ fn unknown_pin_keys_are_listed() {
     });
 }
 
+/// M4-09 replaced the boolean with a role ceiling: an old configuration fails to start
+/// and names the new key, from the file and the environment alike.
+#[test]
+fn the_replaced_email_link_key_names_its_successor() {
+    Jail::expect_with(|jail| {
+        jail.clear_env();
+        jail.set_env(
+            "DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_VERIFIED_EMAIL",
+            "true",
+        );
+        jail.create_file(
+            "deskhaven.toml",
+            "[settings]\n\"auth.oidc.link_verified_email\" = false\n",
+        )?;
+
+        let err = pins(jail).unwrap_err();
+
+        assert!(err.contains("auth.oidc.link_verified_email"), "{err}");
+        assert!(err.contains("auth.oidc.link_email_max_role"), "{err}");
+        assert!(!err.contains("unknown setting"), "{err}");
+        Ok(())
+    });
+}
+
+#[test]
+fn the_email_link_role_ceiling_pins_from_the_environment() {
+    Jail::expect_with(|jail| {
+        jail.clear_env();
+        jail.set_env(
+            "DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_EMAIL_MAX_ROLE",
+            "Admin",
+        );
+
+        let pins = pins(jail)?;
+        let (s, _) = Snapshot::build(&pins, Vec::new());
+
+        assert_eq!(
+            s.get(&settings::AUTH_OIDC_LINK_EMAIL_MAX_ROLE),
+            settings::LinkEmailMaxRole::Admin
+        );
+        Ok(())
+    });
+}
+
 #[test]
 fn unknown_pin_keys_are_sanitized_in_errors() {
     Jail::expect_with(|jail| {

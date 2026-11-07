@@ -13,6 +13,7 @@ use sea_orm::EntityTrait;
 use serde_json::Value;
 
 use super::OidcService;
+use super::callback::Expect;
 use super::context;
 use super::error::CallbackError;
 
@@ -27,13 +28,30 @@ pub struct DeviceSummary {
     pub os: Option<String>,
 }
 
+/// Where a flow completes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PreviewTarget {
+    /// A client flow: confirmed on the callback page, for this device.
+    Device(DeviceSummary),
+    /// A console login: completed by the console page that started it.
+    Console,
+    /// A link flow: confirmed and completed on the console's link page.
+    Link,
+}
+
 /// The pending flow behind a callback.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallbackPreview {
     /// The provider's display name.
     pub provider: String,
-    /// `None` for a console flow.
-    pub device: Option<DeviceSummary>,
+    pub target: PreviewTarget,
+}
+
+/// The pending link flow behind the console's confirmation page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkPreview {
+    /// The provider's display name.
+    pub provider: String,
 }
 
 impl OidcService {
@@ -44,33 +62,58 @@ impl OidcService {
         state: Option<&str>,
     ) -> Result<CallbackPreview, CallbackError> {
         let row = self.live_flow(state).await?;
-        let provider = oidc_provider::Entity::find_by_id(row.provider_id)
+        let target = match row.flow {
+            Flow::Console => PreviewTarget::Console,
+            Flow::Link => PreviewTarget::Link,
+            Flow::Client => PreviewTarget::Device(device_summary(&row.context)?),
+        };
+        Ok(CallbackPreview {
+            provider: self.provider_display_name(row.provider_id).await?,
+            target,
+        })
+    }
+
+    /// The live link flow of `state` for the browser holding `binding` and the signed-in
+    /// account `user_id`, without touching it; anything else is
+    /// [`CallbackError::InvalidState`].
+    pub async fn preview_link(
+        &self,
+        state: Option<&str>,
+        binding: Option<&str>,
+        user_id: i64,
+    ) -> Result<LinkPreview, CallbackError> {
+        let row = self.live_flow(state).await?;
+        if !Expect::Link(binding, user_id).admits(&row) {
+            return Err(CallbackError::InvalidState);
+        }
+        Ok(LinkPreview {
+            provider: self.provider_display_name(row.provider_id).await?,
+        })
+    }
+
+    async fn provider_display_name(&self, provider_id: i64) -> Result<String, CallbackError> {
+        let provider = oidc_provider::Entity::find_by_id(provider_id)
             .one(&self.inner.db)
             .await?
             .ok_or(CallbackError::InvalidState)?;
-        let device = match row.flow {
-            Flow::Console => None,
-            Flow::Client => {
-                let device = context::client_device(&row.context)
-                    .ok_or_else(|| CallbackError::Internal("corrupt OIDC flow context".into()))?;
-                let text = |key: &str| {
-                    device
-                        .info
-                        .as_ref()
-                        .and_then(|info| info.get(key))
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                };
-                Some(DeviceSummary {
-                    name: text("name"),
-                    os: text("os"),
-                    rustdesk_id: device.rustdesk_id,
-                })
-            }
-        };
-        Ok(CallbackPreview {
-            provider: provider.display_name,
-            device,
-        })
+        Ok(provider.display_name)
     }
+}
+
+fn device_summary(raw: &str) -> Result<DeviceSummary, CallbackError> {
+    let device = context::client_device(raw)
+        .ok_or_else(|| CallbackError::Internal("corrupt OIDC flow context".into()))?;
+    let text = |key: &str| {
+        device
+            .info
+            .as_ref()
+            .and_then(|info| info.get(key))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    Ok(DeviceSummary {
+        name: text("name"),
+        os: text("os"),
+        rustdesk_id: device.rustdesk_id,
+    })
 }

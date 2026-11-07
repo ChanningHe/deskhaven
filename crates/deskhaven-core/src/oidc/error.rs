@@ -64,6 +64,9 @@ pub enum OidcError {
     /// Discovery failed or returned unusable endpoints.
     #[error("the OIDC provider is unavailable: {0}")]
     Unavailable(String),
+    /// A link flow cannot start for this account (M4-09).
+    #[error("the account cannot link this provider: {0:?}")]
+    LinkRefused(LinkFailure),
     #[error("OIDC login state failed")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -153,6 +156,81 @@ impl Failure {
 
     pub(crate) fn from_code(code: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|f| f.code() == code)
+    }
+}
+
+/// Why a link flow did not link (M4-09). Nothing was written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkFailure {
+    /// The IdP returned an error (user cancelled, consent denied) or no code.
+    Denied,
+    /// Discovery or the token request failed, or the provider was disabled meanwhile.
+    Unavailable,
+    /// The token response or ID token failed verification.
+    InvalidToken,
+    /// The identity is linked to another account.
+    IdentityTaken,
+    /// The account already has (another) identity at this provider.
+    ProviderLinked,
+    /// LDAP accounts: the directory decides on them, an OIDC login would outlive it.
+    DirectoryAccount,
+    /// The account is gone or no longer active.
+    AccountInactive,
+}
+
+impl LinkFailure {
+    /// Stable machine name (the admin API's `details.reason`).
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unavailable => "unavailable",
+            Self::InvalidToken => "invalid_token",
+            Self::IdentityTaken => "identity_taken",
+            Self::ProviderLinked => "provider_linked",
+            Self::DirectoryAccount => "directory_account",
+            Self::AccountInactive => "account_inactive",
+        }
+    }
+
+    /// The link outcome of a failed token verification step.
+    pub(crate) const fn of(failure: Failure) -> Self {
+        match failure {
+            Failure::Denied => Self::Denied,
+            Failure::InvalidToken => Self::InvalidToken,
+            _ => Self::Unavailable,
+        }
+    }
+}
+
+/// Why listing or removing an identity failed.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum IdentityError {
+    /// No such identity (or not one of the given account's).
+    #[error("identity not found")]
+    NotFound,
+    /// The only identity of an account that signs in through OIDC alone.
+    #[error("the account's last OIDC identity cannot be removed")]
+    LastIdentity,
+    /// The caller's [`TxGuard`](crate::console_audit::TxGuard) declined the change.
+    #[error(transparent)]
+    Refused(#[from] Refused),
+    #[error("identity storage failed")]
+    Database(#[source] DbErr),
+}
+
+impl From<DbErr> for IdentityError {
+    fn from(err: DbErr) -> Self {
+        Self::Database(err)
+    }
+}
+
+impl From<GuardError> for IdentityError {
+    fn from(err: GuardError) -> Self {
+        match err {
+            GuardError::Refused(refused) => Self::Refused(refused),
+            GuardError::Database(db) => Self::Database(db),
+        }
     }
 }
 

@@ -21,10 +21,21 @@ pub(crate) fn for_console(binding: &TokenHash) -> Value {
     json!({ "binding": binding.as_str() })
 }
 
-/// The browser binding hash of a console flow; `None` when the context is not one.
+/// A link flow: the browser binding (as for a console flow) and the account it links to.
+pub(crate) fn for_link(binding: &TokenHash, user_id: i64) -> Value {
+    json!({ "binding": binding.as_str(), "user_id": user_id })
+}
+
+/// The browser binding hash of a console or link flow; `None` when the context has none.
 pub(crate) fn console_binding(raw: &str) -> Option<String> {
     let value: Value = serde_json::from_str(raw).ok()?;
     value.get("binding")?.as_str().map(str::to_owned)
+}
+
+/// The account a link flow links to; `None` when the context is not one.
+pub(crate) fn link_user(raw: &str) -> Option<i64> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    value.get("user_id")?.as_i64()
 }
 
 /// The device of a client flow; `None` when the context is not one.

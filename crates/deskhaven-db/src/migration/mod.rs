@@ -24,6 +24,8 @@ mod m20261103_000026_settings_history_reset;
 mod m20261103_000027_device_strategy_keys;
 mod m20261103_000028_device_display_name;
 mod m20261106_000029_email_norm_ascii;
+mod m20261107_000030_oidc_link_sources;
+mod m20261107_000031_link_email_max_role;
 
 pub struct Migrator;
 
@@ -47,6 +49,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261103_000027_device_strategy_keys::Migration),
             Box::new(m20261103_000028_device_display_name::Migration),
             Box::new(m20261106_000029_email_norm_ascii::Migration),
+            Box::new(m20261107_000030_oidc_link_sources::Migration),
+            Box::new(m20261107_000031_link_email_max_role::Migration),
         ]
     }
 }

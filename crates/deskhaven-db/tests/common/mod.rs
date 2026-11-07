@@ -131,6 +131,7 @@ pub fn identity_row(user_id: i64, provider_id: i64, subject: &str) -> user_ident
         email: Set(Some("a@example.com".to_owned())),
         email_verified: Set(true),
         created_at: Set(ts(T0_MS)),
+        linked_via: Set(user_identity::LinkedVia::Explicit),
     }
 }
 

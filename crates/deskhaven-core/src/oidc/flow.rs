@@ -45,6 +45,10 @@ pub struct ClientFlowStart {
 pub struct BrowserBinding(SessionToken);
 
 impl BrowserBinding {
+    pub(super) fn new(token: SessionToken) -> Self {
+        Self(token)
+    }
+
     pub fn expose(&self) -> &str {
         self.0.expose()
     }
@@ -65,10 +69,10 @@ pub struct ConsoleFlowStart {
 }
 
 /// What differs between the flow kinds at the start.
-struct FlowRow {
-    flow: Flow,
-    context: serde_json::Value,
-    client_code_hash: Option<String>,
+pub(super) struct FlowRow {
+    pub(super) flow: Flow,
+    pub(super) context: serde_json::Value,
+    pub(super) client_code_hash: Option<String>,
 }
 
 impl OidcService {
@@ -111,7 +115,7 @@ impl OidcService {
     }
 
     /// Stores the flow row and returns the IdP's authorization URL.
-    async fn begin(&self, provider: &str, row: FlowRow) -> Result<Url, OidcError> {
+    pub(super) async fn begin(&self, provider: &str, row: FlowRow) -> Result<Url, OidcError> {
         let redirect_uri = self
             .inner
             .redirect_uri

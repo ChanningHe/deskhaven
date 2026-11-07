@@ -44,8 +44,11 @@ async fn norm_of(conn: &DatabaseConnection, username: &str) -> String {
 #[tokio::test]
 async fn the_migration_recomputes_email_norm_as_ascii_lowercase() {
     each_backend(async |db: &TestDb| {
-        let before_last = u32::try_from(Migrator::migrations().len() - 1).unwrap();
-        migrate_steps(&db.conn, Some(before_last)).await;
+        let before = Migrator::migrations()
+            .iter()
+            .position(|m| m.name() == "m20261106_000029_email_norm_ascii")
+            .unwrap();
+        migrate_steps(&db.conn, Some(u32::try_from(before).unwrap())).await;
         insert_user(
             &db.conn,
             "kelvin",

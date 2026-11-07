@@ -4,6 +4,21 @@ use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;
 
+/// How an identity came to its account (M4-09).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Text")]
+pub enum LinkedVia {
+    /// The IdP login created the account (`auto_provision`).
+    #[sea_orm(string_value = "provisioned")]
+    Provisioned,
+    /// Linked automatically by verified email; re-checked at every login.
+    #[sea_orm(string_value = "email")]
+    Email,
+    /// Linked by the signed-in account holder.
+    #[sea_orm(string_value = "explicit")]
+    Explicit,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "user_identities")]
 pub struct Model {
@@ -16,6 +31,7 @@ pub struct Model {
     pub email: Option<String>,
     pub email_verified: bool,
     pub created_at: TimestampMs,
+    pub linked_via: LinkedVia,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

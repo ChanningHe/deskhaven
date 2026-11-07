@@ -71,28 +71,37 @@ pub struct CallbackReport {
 
 /// What a completion requires of the flow before claiming it.
 #[derive(Clone, Copy)]
-enum Expect<'a> {
+pub(super) enum Expect<'a> {
     Client,
     /// The browser binding the console sent back (`None`: no cookie).
     Console(Option<&'a str>),
+    /// A link flow: the browser binding, and the signed-in account it must have been
+    /// started for.
+    Link(Option<&'a str>, i64),
 }
 
 impl Expect<'_> {
-    fn admits(self, row: &oidc_flow::Model) -> bool {
+    pub(super) fn admits(self, row: &oidc_flow::Model) -> bool {
         match (self, row.flow) {
             (Self::Client, Flow::Client) => true,
-            (Self::Console(Some(presented)), Flow::Console) => {
-                let (Some(hash), Some(stored)) = (
-                    TokenHash::of_presented(presented),
-                    context::console_binding(&row.context),
-                ) else {
-                    return false;
-                };
-                bool::from(hash.as_str().as_bytes().ct_eq(stored.as_bytes()))
+            (Self::Console(presented), Flow::Console) => bound(presented, row),
+            (Self::Link(presented, user_id), Flow::Link) => {
+                context::link_user(&row.context) == Some(user_id) && bound(presented, row)
             }
             _ => false,
         }
     }
+}
+
+/// Whether `presented` is the browser binding of the flow (constant-time compare).
+fn bound(presented: Option<&str>, row: &oidc_flow::Model) -> bool {
+    let (Some(hash), Some(stored)) = (
+        presented.and_then(TokenHash::of_presented),
+        context::console_binding(&row.context),
+    ) else {
+        return false;
+    };
+    bool::from(hash.as_str().as_bytes().ct_eq(stored.as_bytes()))
 }
 
 impl OidcService {
@@ -193,7 +202,7 @@ impl OidcService {
     }
 
     /// Marks the live flow of `state` consumed and returns it, when `expect` admits it.
-    async fn claim(
+    pub(super) async fn claim(
         &self,
         state: Option<&str>,
         expect: Expect<'_>,
@@ -219,7 +228,7 @@ impl OidcService {
     }
 
     /// The identity the IdP asserts for this flow, or why there is none.
-    async fn verify_callback(
+    pub(super) async fn verify_callback(
         &self,
         row: &oidc_flow::Model,
         provider: &oidc_provider::Model,
@@ -357,6 +366,8 @@ impl OidcService {
 fn flow_kind(row: &oidc_flow::Model) -> Result<FlowKind, CallbackError> {
     match row.flow {
         Flow::Console => Ok(FlowKind::Console),
+        // Never admitted by a login completion.
+        Flow::Link => Err(CallbackError::InvalidState),
         Flow::Client => context::client_device(&row.context)
             .map(|device| FlowKind::Client {
                 rustdesk_id: device.rustdesk_id,

@@ -11,6 +11,9 @@ pub enum Flow {
     Client,
     #[sea_orm(string_value = "console")]
     Console,
+    /// A signed-in console user linking an identity to their own account (M4-09).
+    #[sea_orm(string_value = "link")]
+    Link,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]

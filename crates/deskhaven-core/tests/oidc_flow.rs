@@ -9,7 +9,9 @@ mod common;
 use chrono::Duration as ChronoDuration;
 use common::oidc::{Env, PUBLIC_URL, device};
 use common::oidc_idp::{AUTH_CODE, AuthRequest, CLIENT_ID, KEY_B, TokenSpec, s256};
-use deskhaven_core::oidc::{CallbackError, CallbackParams, FLOW_TTL, Failure, FlowKind, OidcError};
+use deskhaven_core::oidc::{
+    CallbackError, CallbackParams, FLOW_TTL, Failure, FlowKind, OidcError, PreviewTarget,
+};
 use deskhaven_db::entity::oidc_flow;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::EntityTrait;
@@ -205,7 +207,9 @@ async fn the_callback_preview_names_the_device_and_consumes_nothing() {
         let completed = env.callback(&request).await;
         let after = env.oidc.preview_callback(Some(&request.state)).await;
 
-        let shown = first.device.clone().unwrap();
+        let PreviewTarget::Device(shown) = first.target.clone() else {
+            panic!("{}: not a device preview", db.backend)
+        };
         assert_eq!(shown.rustdesk_id, device().rustdesk_id, "{}", db.backend);
         assert_eq!(shown.name.as_deref(), Some("oidc-host"));
         assert_eq!(shown.os.as_deref(), Some("linux"));

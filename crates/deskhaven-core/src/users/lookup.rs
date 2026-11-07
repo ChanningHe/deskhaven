@@ -51,6 +51,11 @@ pub(crate) async fn username_taken<C: ConnectionTrait>(
     Ok(found > 0)
 }
 
+/// The normalized form of `raw` (what `users.email_norm` holds); `None` when malformed.
+pub(crate) fn email_norm(raw: &str) -> Option<String> {
+    normalize::email(raw).ok().map(|email| email.norm)
+}
+
 /// Whether `raw` is an email address the user service accepts.
 pub(crate) fn is_valid_email(raw: &str) -> bool {
     normalize::email(raw).is_ok()

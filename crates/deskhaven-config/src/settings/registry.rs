@@ -3,7 +3,7 @@
 //! APIs all derive from these declarations.
 
 use super::def::{AnySetting, Setting, settings, strict};
-use super::enums::{AcceptPresets, AclAction, Registration, SmtpTls, TfaEnforce};
+use super::enums::{AcceptPresets, AclAction, LinkEmailMaxRole, Registration, SmtpTls, TfaEnforce};
 use super::kind::{SettingType, max_items, range};
 use super::text::{TextRule, max_len};
 use super::value::HostPort;
@@ -96,9 +96,13 @@ settings! {
     AUTH_EMAIL_CODE_ENABLED: bool = "auth.email_code.enabled" {
         default: false,
     }
-    /// Link OIDC logins to existing users by email only when `email_verified` is true.
-    AUTH_OIDC_LINK_VERIFIED_EMAIL: bool = "auth.oidc.link_verified_email" {
-        default: true,
+    /// Highest role an OIDC login may reach by linking an existing account by email (both
+    /// sides verified, no TOTP, not LDAP); `off` never links by email. `admin` and `owner`
+    /// let the identity provider take those accounts over by email: only with an IdP whose
+    /// users cannot change their own email address.
+    AUTH_OIDC_LINK_EMAIL_MAX_ROLE: LinkEmailMaxRole = "auth.oidc.link_email_max_role" {
+        default: LinkEmailMaxRole::User,
+        on_bad_row: strict(LinkEmailMaxRole::Off),
     }
     /// SMTP server host name; empty = SMTP not configured.
     SMTP_HOST: String = "smtp.host" {
@@ -215,4 +219,20 @@ pub fn all() -> &'static [&'static dyn AnySetting] {
 /// The setting declared under `key`.
 pub fn lookup(key: &str) -> Option<&'static dyn AnySetting> {
     ALL.iter().copied().find(|s| s.key() == key)
+}
+
+/// Keys that existed once and were replaced: `(old key, what to configure instead)`. A pin
+/// under an old key fails startup with this hint instead of "unknown setting"; a stored row
+/// was converted by its migration.
+const REPLACED: &[(&str, &str)] = &[(
+    "auth.oidc.link_verified_email",
+    "replaced by auth.oidc.link_email_max_role (true: \"user\", false: \"off\")",
+)];
+
+/// The hint for a replaced `key`, if it is one.
+pub fn replaced(key: &str) -> Option<&'static str> {
+    REPLACED
+        .iter()
+        .find(|(old, _)| *old == key)
+        .map(|(_, hint)| *hint)
 }

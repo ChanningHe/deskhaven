@@ -79,7 +79,7 @@ pub(crate) const fn failure_message(failure: Failure) -> &'static str {
         Failure::Unavailable => PROVIDER_UNAVAILABLE_MESSAGE,
         Failure::InvalidToken => "OIDC login failed: the provider's answer could not be verified",
         Failure::NoLinkedAccount => {
-            "No account is linked to this OIDC login: log in with your password and link it in the web console"
+            "No account is linked to this OIDC login: sign in to the web console with your existing account and link it under My account, Linked sign-ins"
         }
         Failure::Disabled => DISABLED_MESSAGE,
         Failure::Unverified => UNVERIFIED_MESSAGE,

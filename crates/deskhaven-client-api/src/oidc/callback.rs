@@ -14,6 +14,9 @@
 //!   console's `/login/oidc` with the IdP's query, where the browser that started the login
 //!   (holding the flow's binding cookie on the console origin) completes it through the
 //!   admin API. `POST` treats a console flow as an invalid link and leaves it untouched.
+//! - A **link** flow (M4-09, a signed-in user linking an identity to their account) goes
+//!   the same way to the console's `/me/oidc-link`, which names the provider and the
+//!   account, and completes it for that account in that browser only.
 //!
 //! Otherwise always 200 with a small HTML page (`page`): the reader is a person, and the
 //! HTTP stack replaces the body of any non-JSON 4xx/5xx under `/api`, which would hide the
@@ -22,7 +25,8 @@
 //! | case | `GET` | `POST` |
 //! |---|---|---|
 //! | live client flow | confirmation | the outcome: success, or the failure's message |
-//! | live console flow | 303 to the console | invalid link |
+//! | live console flow | 303 to the console's login completion | invalid link |
+//! | live link flow | 303 to the console's link confirmation | invalid link |
 //! | IdP `error` or no `code` | "stop waiting?" confirmation | denied (the client stops polling) |
 //! | unknown, expired or already used state | invalid link | invalid link |
 //! | server error | generic | generic |
@@ -41,6 +45,7 @@ use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::oidc::{
     CallbackError, CallbackParams, CallbackPreview, CallbackReport, DeviceSummary, FlowKind,
+    PreviewTarget,
 };
 use deskhaven_core::state::AppState;
 
@@ -56,8 +61,10 @@ const INVALID_LINK: &str =
 const SERVER_ERROR: &str = "The login could not be completed. Please try again later.";
 const WARNING: &str = "Only continue if you started this login on that device yourself and \
                        its RustDesk ID is the one your RustDesk client shows.";
-/// The console page that completes a console login (`web/src/routes/login.oidc.tsx`).
+/// The console page that completes a console login (`web/src/routes/login_.oidc.tsx`).
 pub const CONSOLE_COMPLETION_PATH: &str = "/login/oidc";
+/// The console page that confirms and completes a link (`web/src/routes/_app/me_.oidc-link.tsx`).
+pub const CONSOLE_LINK_PATH: &str = "/me/oidc-link";
 
 /// The callback query, decoded.
 struct Query {
@@ -93,14 +100,20 @@ impl Query {
 /// console flow; nothing changes.
 pub async fn confirm(State(state): State<Arc<AppState>>, RawQuery(raw): RawQuery) -> Response {
     let query = Query::parse(raw.as_deref());
+    let raw_query = raw.as_deref().unwrap_or_default();
     match state.oidc.preview_callback(query.state.as_deref()).await {
         Ok(CallbackPreview {
             provider,
-            device: Some(device),
+            target: PreviewTarget::Device(device),
         }) => confirmation(&provider, &device, query.is_denied()),
-        Ok(CallbackPreview { device: None, .. }) => {
-            to_console(&state.console_url, raw.as_deref().unwrap_or_default())
-        }
+        Ok(CallbackPreview {
+            target: PreviewTarget::Console,
+            ..
+        }) => to_console(&state.console_url, CONSOLE_COMPLETION_PATH, raw_query),
+        Ok(CallbackPreview {
+            target: PreviewTarget::Link,
+            ..
+        }) => to_console(&state.console_url, CONSOLE_LINK_PATH, raw_query),
         Err(CallbackError::InvalidState) => page::message(INVALID_LINK),
         Err(err) => {
             tracing::error!(error = %err, "OIDC callback preview failed");
@@ -133,11 +146,11 @@ pub async fn complete(
     page::message(message)
 }
 
-/// A console login completes in the console itself (the browser that started it holds
-/// the flow's binding cookie there): `303` to `<console>/login/oidc?<the IdP's query>`.
+/// A console login or link completes in the console itself (the browser that started it
+/// holds the flow's binding cookie there): `303` to `<console><path>?<the IdP's query>`.
 /// Only the query is copied; the target is fixed, so this is no open redirect.
-fn to_console(console_url: &str, raw_query: &str) -> Response {
-    let location = format!("{console_url}{CONSOLE_COMPLETION_PATH}?{raw_query}");
+fn to_console(console_url: &str, path: &str, raw_query: &str) -> Response {
+    let location = format!("{console_url}{path}?{raw_query}");
     match HeaderValue::from_str(&location) {
         Ok(location) => (
             StatusCode::SEE_OTHER,
