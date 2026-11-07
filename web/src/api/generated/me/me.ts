@@ -30,13 +30,13 @@ import type {
   MyAddressBooks,
   MySessionsRevoked,
   OidcCompleteRequest,
+  OidcLinkConfirm,
   OidcLinkPreview,
   OidcLinkStart,
   OidcStart,
   PaginatedMyDevice,
   PaginatedMySession,
   PasswordChange,
-  PreviewOidcLinkParams,
   ProfilePatch,
   RecoveryCodesIssued,
   TotpConfirm,
@@ -750,10 +750,10 @@ export const getCompleteOidcLinkUrl = () => {
 }
 
 /**
- * @summary Completes the link in the browser that started it (see the module docs).
+ * @summary Links the verified identity in the browser that started the flow (see the module docs).
  */
 export const completeOidcLink = async (
-  oidcCompleteRequest: OidcCompleteRequest,
+  oidcLinkConfirm: OidcLinkConfirm,
   options?: Parameters<typeof apiFetch>[1],
 ): Promise<IdentityView> => {
   const getHeaders = (
@@ -779,7 +779,7 @@ export const completeOidcLink = async (
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(oidcCompleteRequest),
+    body: JSON.stringify(oidcLinkConfirm),
   })
 }
 
@@ -824,12 +824,12 @@ export const getCompleteOidcLinkMutationOptions = <
 export type CompleteOidcLinkMutationResult = NonNullable<
   Awaited<ReturnType<typeof completeOidcLink>>
 >
-export type CompleteOidcLinkMutationBody = OidcCompleteRequest
+export type CompleteOidcLinkMutationBody = OidcLinkConfirm
 export type CompleteOidcLinkMutationError = ErrorType<ErrorEnvelope>
-export type CompleteOidcLinkMutationVariables = { data: OidcCompleteRequest }
+export type CompleteOidcLinkMutationVariables = { data: OidcLinkConfirm }
 
 /**
- * @summary Completes the link in the browser that started it (see the module docs).
+ * @summary Links the verified identity in the browser that started the flow (see the module docs).
  */
 export const useCompleteOidcLink = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
   options?: {
@@ -850,139 +850,111 @@ export const useCompleteOidcLink = <TError = ErrorType<ErrorEnvelope>, TContext 
 > => {
   return useMutation(getCompleteOidcLinkMutationOptions(options), queryClient)
 }
-export const getPreviewOidcLinkUrl = (params: PreviewOidcLinkParams) => {
-  const normalizedParams = new URLSearchParams()
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  })
-
-  const stringifiedParams = normalizedParams.toString()
-
-  return stringifiedParams.length > 0
-    ? `/admin/api/v1/me/identities/link/preview?${stringifiedParams}`
-    : `/admin/api/v1/me/identities/link/preview`
+export const getVerifyOidcLinkUrl = () => {
+  return `/admin/api/v1/me/identities/link/verify`
 }
 
 /**
- * @summary What the console's confirmation page shows for a link flow of this browser and account.
+ * @summary Verifies the IdP's answer of a link flow of this browser and account (see the module
+docs).
  */
-export const previewOidcLink = async (
-  params: PreviewOidcLinkParams,
+export const verifyOidcLink = async (
+  oidcCompleteRequest: OidcCompleteRequest,
   options?: Parameters<typeof apiFetch>[1],
 ): Promise<OidcLinkPreview> => {
-  return apiFetch<OidcLinkPreview>(getPreviewOidcLinkUrl(params), {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {}
+    if (h instanceof Headers) return Object.fromEntries(h.entries())
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      )
+    }
+    const headers: Record<string, string | readonly string[]> = {}
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value
+    }
+    return headers
+  }
+  return apiFetch<OidcLinkPreview>(getVerifyOidcLinkUrl(), {
     ...options,
-    method: 'GET',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(oidcCompleteRequest),
   })
 }
 
-export const getPreviewOidcLinkQueryKey = (params?: PreviewOidcLinkParams) => {
-  return [`/admin/api/v1/me/identities/link/preview`, ...(params ? [params] : [])] as const
-}
+export const getVerifyOidcLinkMutationKey = () => ['verifyOidcLink'] as const
 
-export const getPreviewOidcLinkQueryOptions = <
-  TData = Awaited<ReturnType<typeof previewOidcLink>>,
+export const getVerifyOidcLinkMutationOptions = <
   TError = ErrorType<ErrorEnvelope>,
->(
-  params: PreviewOidcLinkParams,
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof previewOidcLink>>, TError, TData>>
-    request?: SecondParameter<typeof apiFetch>
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {}
-
-  const queryKey = queryOptions?.queryKey ?? getPreviewOidcLinkQueryKey(params)
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof previewOidcLink>>> = ({ signal }) =>
-    previewOidcLink(params, { signal, ...requestOptions })
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof previewOidcLink>>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof verifyOidcLink>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> }
-}
+    VerifyOidcLinkMutationVariables,
+    TContext
+  >
+  request?: SecondParameter<typeof apiFetch>
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof verifyOidcLink>>,
+  TError,
+  VerifyOidcLinkMutationVariables,
+  TContext
+> => {
+  const mutationKey = getVerifyOidcLinkMutationKey()
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined }
 
-export type PreviewOidcLinkQueryResult = NonNullable<Awaited<ReturnType<typeof previewOidcLink>>>
-export type PreviewOidcLinkQueryError = ErrorType<ErrorEnvelope>
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof verifyOidcLink>>,
+    VerifyOidcLinkMutationVariables
+  > = (props) => {
+    const { data } = props ?? {}
 
-export function usePreviewOidcLink<
-  TData = Awaited<ReturnType<typeof previewOidcLink>>,
-  TError = ErrorType<ErrorEnvelope>,
->(
-  params: PreviewOidcLinkParams,
-  options: {
-    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof previewOidcLink>>, TError, TData>> &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof previewOidcLink>>,
-          TError,
-          Awaited<ReturnType<typeof previewOidcLink>>
-        >,
-        'initialData'
-      >
-    request?: SecondParameter<typeof apiFetch>
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function usePreviewOidcLink<
-  TData = Awaited<ReturnType<typeof previewOidcLink>>,
-  TError = ErrorType<ErrorEnvelope>,
->(
-  params: PreviewOidcLinkParams,
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof previewOidcLink>>, TError, TData>> &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof previewOidcLink>>,
-          TError,
-          Awaited<ReturnType<typeof previewOidcLink>>
-        >,
-        'initialData'
-      >
-    request?: SecondParameter<typeof apiFetch>
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function usePreviewOidcLink<
-  TData = Awaited<ReturnType<typeof previewOidcLink>>,
-  TError = ErrorType<ErrorEnvelope>,
->(
-  params: PreviewOidcLinkParams,
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof previewOidcLink>>, TError, TData>>
-    request?: SecondParameter<typeof apiFetch>
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary What the console's confirmation page shows for a link flow of this browser and account.
- */
-
-export function usePreviewOidcLink<
-  TData = Awaited<ReturnType<typeof previewOidcLink>>,
-  TError = ErrorType<ErrorEnvelope>,
->(
-  params: PreviewOidcLinkParams,
-  options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof previewOidcLink>>, TError, TData>>
-    request?: SecondParameter<typeof apiFetch>
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getPreviewOidcLinkQueryOptions(params, options)
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>
+    return verifyOidcLink(data, requestOptions)
   }
 
-  return withQueryKey(query, queryOptions.queryKey)
+  return { mutationFn, ...mutationOptions }
 }
 
+export type VerifyOidcLinkMutationResult = NonNullable<Awaited<ReturnType<typeof verifyOidcLink>>>
+export type VerifyOidcLinkMutationBody = OidcCompleteRequest
+export type VerifyOidcLinkMutationError = ErrorType<ErrorEnvelope>
+export type VerifyOidcLinkMutationVariables = { data: OidcCompleteRequest }
+
+/**
+ * @summary Verifies the IdP's answer of a link flow of this browser and account (see the module
+docs).
+ */
+export const useVerifyOidcLink = <TError = ErrorType<ErrorEnvelope>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof verifyOidcLink>>,
+      TError,
+      VerifyOidcLinkMutationVariables,
+      TContext
+    >
+    request?: SecondParameter<typeof apiFetch>
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof verifyOidcLink>>,
+  TError,
+  VerifyOidcLinkMutationVariables,
+  TContext
+> => {
+  return useMutation(getVerifyOidcLinkMutationOptions(options), queryClient)
+}
 export const getUnlinkMyIdentityUrl = (id: number) => {
   return `/admin/api/v1/me/identities/${encodeURIComponent(id)}/unlink`
 }

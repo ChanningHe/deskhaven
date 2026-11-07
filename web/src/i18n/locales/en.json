@@ -642,7 +642,14 @@
         "account_inactive": "Your account is no longer active.",
         "expired": "This link expired or was opened in another browser or account. Start again from My account."
       },
-      "unlinkEmailNote": "It was linked by email, so your email is marked unverified and does not link again by itself; you can link the sign-in yourself here."
+      "unlinkEmailNote": "Your email is then marked unverified, so this sign-in does not link again by itself. Sign-ins linked by email stop working until an administrator marks the email verified again; you can link them yourself here.",
+      "unlinkNamed": "Unlink {{provider}}",
+      "verifying": "Checking the answer of the identity provider…",
+      "fields": {
+        "subject": "Identity provider ID",
+        "email": "Verified email",
+        "username": "Username there"
+      }
     }
   },
   "notFound": {
@@ -828,7 +835,12 @@
       "saved": "Saved",
       "identities": "Linked sign-ins",
       "noIdentities": "No identity is linked.",
-      "unlink": "Unlink"
+      "unlink": "Unlink",
+      "via": {
+        "provisioned": "Created by sign-in",
+        "email": "Linked by email",
+        "explicit": "Linked explicitly"
+      }
     },
     "actions": {
       "title": "Actions",
@@ -874,10 +886,17 @@
         "title": "Unlink this sign-in?",
         "description": "The {{provider}} identity no longer signs in to {{username}}.",
         "confirm": "Unlink",
-        "emailNote": "It was linked by email, so the account’s email is marked unverified and does not link again by itself; mark it verified again if needed."
+        "emailNote": "The account’s email is then marked unverified, so the sign-in does not link again by itself. Its other sign-ins linked by email stop working until you mark the email verified again."
       },
-      "identitiesNote": "Linked sign-ins still on this account: {{count}}. They are not affected and sign in without a password or second factor; unlink them below if the account is compromised."
-    }
+      "identitiesNote": "Linked sign-ins still on this account: {{count}}. They are not affected and sign in without a password or second factor; unlink them below if the account is compromised.",
+      "markVerified": {
+        "title": "Mark the email verified?",
+        "description": "Only after checking out of band that {{email}} belongs to {{username}}. An identity provider asserting this address can then sign in to the account by itself, up to the role allowed by auth.oidc.link_email_max_role.",
+        "confirm": "Mark verified"
+      }
+    },
+    "emailVerified": "Email verified",
+    "emailUnverified": "Email unverified"
   },
   "tokens": {
     "search": "Search tokens by name",

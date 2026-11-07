@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { unlinkUserIdentity } from '@/api/generated/users/users'
 import type { IdentityView, UserView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import { ErrorAlert } from '@/components/common/error-alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -25,18 +24,15 @@ interface UserIdentitiesProps {
 export function UserIdentities({ user, identities, editable }: UserIdentitiesProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  // `target` outlives `open`: the dialog keeps its texts while it animates closed.
   const [target, setTarget] = useState<IdentityView | undefined>(undefined)
-  const [error, setError] = useState<unknown>(undefined)
+  const [open, setOpen] = useState(false)
 
+  // A rejection propagates: the confirmation shows it and stays open.
   const unlink = async () => {
     if (target === undefined) return
-    setError(undefined)
-    try {
-      await unlinkUserIdentity(user.id, target.id)
-      await invalidateAccounts(queryClient)
-    } catch (caught) {
-      setError(caught)
-    }
+    await unlinkUserIdentity(user.id, target.id)
+    await invalidateAccounts(queryClient)
   }
 
   return (
@@ -50,14 +46,18 @@ export function UserIdentities({ user, identities, editable }: UserIdentitiesPro
             <li key={identity.id} className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{identity.provider_display_name}</span>
               <span className="text-muted-foreground">{identity.email ?? identity.subject}</span>
-              <Badge variant="outline">{t(`me.identities.via.${identity.linked_via}`)}</Badge>
+              <Badge variant="outline">{t(`users.drawer.via.${identity.linked_via}`)}</Badge>
               {editable ? (
                 <Button
                   size="sm"
                   variant="outline"
                   className="ms-auto"
+                  aria-label={t('me.identities.unlinkNamed', {
+                    provider: identity.provider_display_name,
+                  })}
                   onClick={() => {
                     setTarget(identity)
+                    setOpen(true)
                   }}
                 >
                   {t('users.drawer.unlink')}
@@ -67,21 +67,23 @@ export function UserIdentities({ user, identities, editable }: UserIdentitiesPro
           ))}
         </ul>
       )}
-      {error === undefined ? null : <ErrorAlert error={error} />}
       <ConfirmDialog
-        open={target !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setTarget(undefined)
-        }}
+        open={open}
+        onOpenChange={setOpen}
         title={t('users.confirm.unlink.title')}
-        description={[
-          t('users.confirm.unlink.description', {
-            provider: target?.provider_display_name ?? '',
-            username: user.username,
-          }),
-          // An email link would come back at the next login: the server unverifies the address.
-          target?.linked_via === 'email' ? t('users.confirm.unlink.emailNote') : '',
-        ].join(' ')}
+        description={
+          <>
+            <span className="block">
+              {t('users.confirm.unlink.description', {
+                provider: target?.provider_display_name ?? '',
+                username: user.username,
+              })}
+            </span>
+            {user.email_verified ? (
+              <span className="mt-2 block">{t('users.confirm.unlink.emailNote')}</span>
+            ) : null}
+          </>
+        }
         confirmLabel={t('users.confirm.unlink.confirm')}
         destructive
         onConfirm={unlink}

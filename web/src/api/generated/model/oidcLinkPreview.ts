@@ -4,11 +4,20 @@
  */
 
 /**
- * What the confirmation page names.
+ * What the confirmation page names: the IdP identity and the account it will link to.
  */
 export interface OidcLinkPreview {
+  /**
+   * The IdP account's address, when the provider asserts it verified.
+   * @nullable
+   */
+  email?: string | null
+  /** @nullable */
+  preferred_username?: string | null
   /** The provider's display name. */
   provider: string
+  /** The provider's `sub` for the IdP account. */
+  subject: string
   /** The account the identity will be linked to (the session's). */
   username: string
 }

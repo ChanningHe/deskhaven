@@ -21,7 +21,7 @@ import { invalidateAccounts } from '../invalidate'
 import { canDelete } from '../user-rules'
 
 /** Actions that ask for confirmation first (08 §1.4). */
-type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'delete'
+type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'markVerified' | 'delete'
 
 /** What the page does for the drawer's actions. */
 export interface UserActionHandlers {
@@ -72,6 +72,9 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
     revoke: async () => revokeUserSessions(user.id).then(refresh),
     reset2fa: async () => resetUser2fa(user.id).then(refresh),
     resetPassword: async () => onResetPassword(user).then(refresh),
+    // The address the administrator checked: a changed one is refused (409).
+    markVerified: async () =>
+      updateUser(user.id, { email_verified: true, expected_email: user.email ?? '' }).then(refresh),
     delete: async () =>
       deleteUser(user.id).then(() => {
         onDeleted()
@@ -102,13 +105,7 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
           {t('users.actions.revoke')}
         </Button>
         {user.email !== null && user.email !== undefined && !user.email_verified ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            aria-busy={busy}
-            onClick={() => void run(() => updateUser(user.id, { email_verified: true }))}
-          >
+          <Button variant="outline" size="sm" onClick={ask('markVerified')}>
             {t('users.actions.markEmailVerified')}
           </Button>
         ) : null}
@@ -155,15 +152,24 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
         open={confirming}
         onOpenChange={setConfirming}
         title={t(`users.confirm.${action}.title`)}
-        description={[
-          t(`users.confirm.${action}.description`, { username: user.username }),
-          identityCount > 0 && IDENTITIES_UNTOUCHED.includes(action)
-            ? t('users.confirm.identitiesNote', { count: identityCount })
-            : '',
-        ].join(' ')}
+        description={
+          <>
+            <span className="block">
+              {t(`users.confirm.${action}.description`, {
+                username: user.username,
+                email: user.email ?? '',
+              })}
+            </span>
+            {identityCount > 0 && IDENTITIES_UNTOUCHED.includes(action) ? (
+              <span className="mt-2 block">
+                {t('users.confirm.identitiesNote', { count: identityCount })}
+              </span>
+            ) : null}
+          </>
+        }
         confirmLabel={t(`users.confirm.${action}.confirm`)}
         {...(action === 'delete' ? { confirmText: user.username } : {})}
-        destructive={action !== 'resetPassword'}
+        destructive={action !== 'resetPassword' && action !== 'markVerified'}
         onConfirm={confirmed[action]}
       />
     </section>

@@ -14,18 +14,23 @@ export interface UserPatch {
    */
   display_name?: string | null
   /**
-   * An empty string removes the address. A new address is unverified unless
-   * `email_verified` is set in the same request.
+   * An empty string removes the address. A new address is unverified.
    * @nullable
    */
   email?: string | null
   /**
    * Mark the address verified (or not) after checking it out of band. A verified
    * address lets OIDC logins link the account by email (`auth.oidc.link_email_max_role`).
-   * `true` needs an address.
+   * `true` is its own step: never with `email`, and with `expected_email`.
    * @nullable
    */
   email_verified?: boolean | null
+  /**
+   * With `email_verified: true`: the address that was checked. A different stored
+   * address (changed meanwhile) is 409 `conflict`, `details.reason: email_changed`.
+   * @nullable
+   */
+  expected_email?: string | null
   /** @nullable */
   note?: string | null
   role?: RoleView | null

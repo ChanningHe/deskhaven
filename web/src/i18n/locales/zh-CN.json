@@ -642,7 +642,14 @@
         "account_inactive": "你的账号已不可用。",
         "expired": "此链接已过期，或在其他浏览器或账号中打开。请从“我的”重新开始。"
       },
-      "unlinkEmailNote": "该身份是按邮箱关联的，你的邮箱将被标记为未验证，不会再自动关联；你可以在这里自行关联。"
+      "unlinkEmailNote": "解除后你的邮箱将被标记为未验证，这个登录方式不会再自动关联。按邮箱关联的登录方式将不能使用，直到管理员重新标记邮箱已验证；你也可以在这里自行关联。",
+      "unlinkNamed": "解除关联 {{provider}}",
+      "verifying": "正在验证身份提供方的应答…",
+      "fields": {
+        "subject": "身份提供方 ID",
+        "email": "已验证邮箱",
+        "username": "在身份提供方的用户名"
+      }
     }
   },
   "notFound": {
@@ -828,7 +835,12 @@
       "saved": "已保存",
       "identities": "关联的登录方式",
       "noIdentities": "未关联任何身份。",
-      "unlink": "解除关联"
+      "unlink": "解除关联",
+      "via": {
+        "provisioned": "登录时创建",
+        "email": "按邮箱关联",
+        "explicit": "显式关联"
+      }
     },
     "actions": {
       "title": "操作",
@@ -874,10 +886,17 @@
         "title": "解除这个登录方式的关联？",
         "description": "{{provider}} 身份将不能再登录到 {{username}}。",
         "confirm": "解除关联",
-        "emailNote": "该身份是按邮箱关联的，账号邮箱将被标记为未验证，不会再自动关联；需要时可重新标记为已验证。"
+        "emailNote": "解除后账号邮箱将被标记为未验证，该登录方式不会再自动关联。此账号其他按邮箱关联的登录方式将不能使用，直到你重新标记邮箱已验证。"
       },
-      "identitiesNote": "此账号仍有 {{count}} 个关联的登录方式，不受影响，登录时无需密码或两步验证；如账号已被盗用，请在下方解除关联。"
-    }
+      "identitiesNote": "此账号仍有 {{count}} 个关联的登录方式，不受影响，登录时无需密码或两步验证；如账号已被盗用，请在下方解除关联。",
+      "markVerified": {
+        "title": "标记邮箱已验证？",
+        "description": "请先通过其他途径确认 {{email}} 属于 {{username}}。之后，身份提供方声明此邮箱的账号即可登录此账号（角色不超过 auth.oidc.link_email_max_role 允许的范围）。",
+        "confirm": "标记已验证"
+      }
+    },
+    "emailVerified": "邮箱已验证",
+    "emailUnverified": "邮箱未验证"
   },
   "tokens": {
     "search": "按名称搜索令牌",

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SubmitEvent } from 'react'
+import type { ReactNode, SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ErrorAlert } from '@/components/common/error-alert'
@@ -18,10 +18,12 @@ interface ReauthDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  description: string
+  description: ReactNode
   submitLabel: string
   /** Also ask for an authenticator or recovery code (default); without it the code is ''. */
   askCode?: boolean
+  /** Shows a rejection (default: the generic alert). */
+  renderError?: (error: unknown) => ReactNode
   /** Performs the action with the typed password and code; a rejection is shown and keeps the dialog open. */
   onSubmit: (currentPassword: string, code: string) => Promise<unknown>
 }
@@ -30,9 +32,12 @@ interface ReauthDialogProps {
 function ReauthForm({
   submitLabel,
   askCode = true,
+  renderError = (error) => <ErrorAlert error={error} />,
   onSubmit,
   onDone,
-}: Pick<ReauthDialogProps, 'submitLabel' | 'askCode' | 'onSubmit'> & { onDone: () => void }) {
+}: Pick<ReauthDialogProps, 'submitLabel' | 'askCode' | 'renderError' | 'onSubmit'> & {
+  onDone: () => void
+}) {
   const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
@@ -84,7 +89,7 @@ function ReauthForm({
           }}
         />
       ) : null}
-      {error === undefined ? null : <ErrorAlert error={error} />}
+      {error === undefined ? null : renderError(error)}
       <DialogFooter>
         <Button type="submit" disabled={pending} aria-busy={pending}>
           {submitLabel}

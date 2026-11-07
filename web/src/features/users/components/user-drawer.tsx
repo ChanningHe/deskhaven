@@ -81,6 +81,11 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
           <Badge variant="outline">
             {user.totp_enabled ? t('users.tfaOn') : t('users.tfaOff')}
           </Badge>
+          {user.email === null || user.email === undefined ? null : (
+            <Badge variant="outline">
+              {user.email_verified ? t('users.emailVerified') : t('users.emailUnverified')}
+            </Badge>
+          )}
         </div>
       </SheetHeader>
       <div className="grid gap-6 px-4 pb-6">
@@ -93,7 +98,12 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
         {editable ? (
           <UserActions user={user} identityCount={detail.identities.length} {...handlers} />
         ) : null}
-        <UserIdentities user={user} identities={detail.identities} editable={editable} />
+        <UserIdentities
+          key={user.id}
+          user={user}
+          identities={detail.identities}
+          editable={editable}
+        />
         <section className="grid gap-2">
           <h3 className="text-sm font-medium">{t('users.drawer.groups')}</h3>
           {detail.groups.length === 0 ? (
