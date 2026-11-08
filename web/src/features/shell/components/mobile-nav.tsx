@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 
 import { Brand } from './brand'
 import { SidebarNav } from './sidebar-nav'
+import { VersionInfo } from './version-info'
 
 /** Navigation drawer for small screens (below md). */
 export function MobileNav() {
@@ -39,6 +40,7 @@ export function MobileNav() {
             setOpen(false)
           }}
         />
+        <VersionInfo className="border-t px-3 py-3" />
       </SheetContent>
     </Sheet>
   )

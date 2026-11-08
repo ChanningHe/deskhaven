@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 import { Brand } from './brand'
 import { SidebarNav } from './sidebar-nav'
+import { VersionInfo } from './version-info'
 
 const SIDEBAR_ID = 'app-sidebar'
 
@@ -32,7 +33,13 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         <Brand compact={collapsed} />
       </div>
       <SidebarNav collapsed={collapsed} />
-      <div className={cn('flex border-t p-2', collapsed ? 'justify-center' : 'justify-end')}>
+      <div
+        className={cn(
+          'flex items-center gap-2 border-t p-2',
+          collapsed ? 'justify-center' : 'justify-between pl-3',
+        )}
+      >
+        {collapsed ? null : <VersionInfo className="min-w-0" />}
         <Button
           variant="ghost"
           size="icon"
