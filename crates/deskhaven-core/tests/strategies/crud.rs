@@ -205,10 +205,15 @@ async fn config_managed_strategies_are_read_only() {
 
 /// A strategy whose stored options were damaged outside the service.
 async fn insert_corrupt(db: &TestDb, name: &str) -> i64 {
+    insert_stored(db, name, "[1]").await
+}
+
+/// A strategy row with `stored` options, written past the service.
+async fn insert_stored(db: &TestDb, name: &str, stored: &str) -> i64 {
     let now = time::now();
     let row = strategy::ActiveModel {
         name: Set(name.to_owned()),
-        options: Set("[1]".to_owned()),
+        options: Set(stored.to_owned()),
         note: Set(String::new()),
         managed_by: Set(ManagedBy::Ui),
         created_at: Set(now),
@@ -295,6 +300,67 @@ async fn a_corrupt_strategy_can_be_repaired_or_deleted() {
 
         c.svc.delete(doomed).await.unwrap();
         assert_eq!(c.svc.list().await.unwrap().len(), 1);
+    })
+    .await;
+}
+
+const SPACED_WHITELIST: &str = " 10.0.0.0/8, 192.0.2.1 ,,";
+const CLEAN_WHITELIST: &str = "10.0.0.0/8,192.0.2.1";
+
+/// Clients before rustdesk 78450f4 (#16692) do not trim IP whitelist entries, so every write
+/// (create, replacement, patch) stores the whitelist without spaces or empty entries, and
+/// devices get it that way. Other options keep their spaces.
+#[tokio::test]
+async fn ip_whitelist_entries_are_stored_and_delivered_without_spaces() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let b = db.backend;
+        let inputs = super::support::device_inputs(1, None, None);
+        let spaced = opts(&[("whitelist", SPACED_WHITELIST), ("k", " v ")]);
+        let clean = opts(&[("whitelist", CLEAN_WHITELIST), ("k", " v ")]);
+
+        let created = c.svc.create(NewStrategy::new("s", spaced.clone())).await;
+        let created = created.unwrap();
+        c.svc.assign(Target::Global, created.id).await.unwrap();
+
+        assert_eq!(created.options, clean, "{b}: create");
+        assert_eq!(c.svc.get(created.id).await.unwrap().options, clean, "{b}");
+        assert_eq!(c.options(&inputs).await, clean, "{b}: delivered");
+
+        let replace = StrategyUpdate {
+            options: Some(spaced),
+            ..StrategyUpdate::default()
+        };
+        let replaced = c.svc.update(created.id, replace).await.unwrap();
+        assert_eq!(replaced.options, clean, "{b}: replacement");
+        let patch = StrategyUpdate {
+            options_patch: [("whitelist".to_owned(), Some(" , ".to_owned()))].into(),
+            ..StrategyUpdate::default()
+        };
+        let patched = c.svc.update(created.id, patch).await.unwrap();
+        assert_eq!(patched.options["whitelist"], "", "{b}: patch");
+        assert_eq!(c.options(&inputs).await["whitelist"], "", "{b}: delivered");
+    })
+    .await;
+}
+
+/// Rows stored before writes were normalized are delivered normalized; the console shows
+/// them as stored until the next write.
+#[tokio::test]
+async fn ip_whitelist_of_an_older_row_is_delivered_without_spaces() {
+    each_migrated_backend(async |db: &TestDb| {
+        let c = ctx(db).await;
+        let b = db.backend;
+        let stored = format!(r#"{{"whitelist":"{SPACED_WHITELIST}"}}"#);
+        let id = insert_stored(db, "old", &stored).await;
+        c.svc.assign(Target::Global, id).await.unwrap();
+        let inputs = super::support::device_inputs(1, None, None);
+
+        let delivered = c.options(&inputs).await;
+
+        assert_eq!(delivered, opts(&[("whitelist", CLEAN_WHITELIST)]), "{b}");
+        let shown = c.svc.get(id).await.unwrap().options;
+        assert_eq!(shown, opts(&[("whitelist", SPACED_WHITELIST)]), "{b}");
     })
     .await;
 }

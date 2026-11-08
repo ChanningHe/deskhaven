@@ -8,6 +8,7 @@ mod common;
 use axum::http::{Method, StatusCode};
 use common::{Console, Harness, harness};
 use deskhaven_admin_api::AdminRoutes;
+use deskhaven_core::strategies::{DeviceInputs, Target};
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::strategy;
@@ -183,6 +184,39 @@ async fn strategies_are_created_patched_listed_and_deleted_with_audit() {
         let secret = patched["options"].as_array().unwrap().iter();
         let secret = secret.clone().find(|o| o["key"] == "proxy-password");
         assert_eq!(secret.unwrap()["changed"], false);
+    })
+    .await;
+}
+
+/// Clients before rustdesk 78450f4 (#16692) do not trim IP whitelist entries: a spaced
+/// whitelist is stored, shown and pushed to devices without the spaces.
+#[tokio::test]
+async fn ip_whitelist_is_stored_and_pushed_without_spaces() {
+    each_migrated_backend(async |db: &TestDb| {
+        let (h, admin) = setup(db).await;
+        let body = json!({ "name": "lan", "options": { "whitelist": "10.0.0.0/8, 192.0.2.1" } });
+        let clean = json!({ "whitelist": "10.0.0.0/8,192.0.2.1" });
+
+        let created = h.write(Method::POST, STRATEGIES, &admin, body).await;
+        let id = created.body["id"].as_i64().unwrap();
+        let shown = h.get(&one(id), &admin).await.body["options"].clone();
+        let patch = json!({ "options": { "whitelist": " 192.0.2.7 ,, 10.0.0.0/8 " } });
+        let patched = h.write(Method::PATCH, &one(id), &admin, patch).await;
+        h.state.strategies.assign(Target::Global, id).await.unwrap();
+        let pushed = h
+            .state
+            .strategies
+            .effective(&DeviceInputs::default())
+            .await
+            .unwrap();
+
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        assert_eq!(created.body["options"], clean);
+        assert_eq!(shown, clean);
+        assert_eq!(patched.status, StatusCode::OK, "{}", patched.body);
+        let clean = "192.0.2.7,10.0.0.0/8";
+        assert_eq!(patched.body["options"], json!({ "whitelist": clean }));
+        assert_eq!(pushed.options["whitelist"], clean);
     })
     .await;
 }

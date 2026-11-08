@@ -26,6 +26,31 @@ pub(super) fn patched(mut options: Options, patch: &OptionsPatch) -> Options {
     options
 }
 
+/// The IP whitelist option: comma-separated IP addresses or CIDR ranges.
+const IP_WHITELIST: &str = "whitelist";
+
+/// `options` as clients should get them: the IP whitelist without spaces around its entries
+/// and without empty entries. Clients trim entries since rustdesk 78450f4 (#16692,
+/// connection.rs `ip_whitelist_entries`); older ones do not, so `"10.0.0.0/8, 192.0.2.1"`
+/// blocks 192.0.2.1 on them. Applied on write and again when loading what devices get, which
+/// also covers rows stored before.
+pub(super) fn normalized(options: Options) -> Options {
+    options
+        .into_iter()
+        .map(|(key, value)| match key.as_str() {
+            IP_WHITELIST => {
+                let entries: Vec<&str> = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|entry| !entry.is_empty())
+                    .collect();
+                (key, entries.join(","))
+            }
+            _ => (key, value),
+        })
+        .collect()
+}
+
 /// Most options one strategy may carry.
 pub const MAX_OPTIONS: usize = 256;
 /// Longest option name, in characters.
@@ -104,6 +129,42 @@ mod tests {
             .map(|i| (format!("k{i}"), String::new()))
             .collect();
         assert!(validate(&many).is_err());
+    }
+
+    #[test]
+    fn ip_whitelist_entries_lose_surrounding_spaces_and_empty_entries() {
+        let cases = [
+            ("10.0.0.0/8, 192.0.2.1", "10.0.0.0/8,192.0.2.1"),
+            (" 10.0.0.1 ,\t2001:db8::/32 ", "10.0.0.1,2001:db8::/32"),
+            ("10.0.0.1,,192.0.2.1,", "10.0.0.1,192.0.2.1"),
+            ("10.0.0.1,192.0.2.1", "10.0.0.1,192.0.2.1"),
+            ("0.0.0.0", "0.0.0.0"),
+            (" , ", ""),
+            ("", ""),
+        ];
+        for (value, want) in cases {
+            assert_eq!(
+                normalized(one("whitelist", value)),
+                one("whitelist", want),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_options_are_left_as_they_are() {
+        let options = Options::from([
+            ("id-whitelist".to_owned(), "123, 456".to_owned()),
+            ("custom-rendezvous-server".to_owned(), " host ".to_owned()),
+            ("whitelist".to_owned(), "10.0.0.1, 10.0.0.2".to_owned()),
+        ]);
+
+        let got = normalized(options.clone());
+
+        assert_eq!(got["id-whitelist"], "123, 456");
+        assert_eq!(got["custom-rendezvous-server"], " host ");
+        assert_eq!(got["whitelist"], "10.0.0.1,10.0.0.2");
+        assert_eq!(got.len(), options.len());
     }
 
     #[test]

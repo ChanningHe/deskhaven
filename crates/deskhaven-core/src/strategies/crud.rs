@@ -37,6 +37,7 @@ impl StrategyService {
         let name = validate_name(&new.name)?;
         let note = validate_note(&new.note)?;
         options::validate(&new.options)?;
+        let new_options = options::normalized(new.options);
         self.detached(move |inner| async move {
             let now = inner.clock.now();
             let model = strategy::ActiveModel {
@@ -51,7 +52,7 @@ impl StrategyService {
             };
             let tx = begin_write(&inner.db).await?;
             let inserted = model.insert(&tx).await.map_err(name_conflict)?;
-            let stored = sealing::encode(&inner.crypto, inserted.id, &new.options)?;
+            let stored = sealing::encode(&inner.crypto, inserted.id, &new_options)?;
             let mut row: strategy::ActiveModel = inserted.into();
             row.options = Set(stored);
             let created = Strategy::from_row(row.update(&tx).await?, &inner.crypto);
@@ -119,6 +120,7 @@ impl StrategyService {
                 let base = update.options.unwrap_or_else(|| before.options.clone());
                 let merged = options::patched(base, &update.options_patch);
                 options::validate(&merged)?;
+                let merged = options::normalized(merged);
                 changes.options = Set(sealing::encode(&inner.crypto, id, &merged)?);
             }
             if let Some(name) = name {

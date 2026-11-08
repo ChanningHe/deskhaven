@@ -12,7 +12,7 @@ use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Select};
 use super::StrategyError;
 use super::effective::Snapshot;
 use super::model::{Assignment, Target};
-use super::options::Options;
+use super::options::{Options, normalized};
 use super::sealing;
 use crate::crypto::SecretBox;
 
@@ -63,9 +63,11 @@ async fn assigned_options(
     let mut options = HashMap::with_capacity(rows.len());
     for row in rows {
         // One damaged row must not take every device's strategy down with it: its layer is
-        // skipped, and the console shows it flagged (`Strategy::options_corrupt`).
+        // skipped, and the console shows it flagged (`Strategy::options_corrupt`). Rows written
+        // before writes were normalized are normalized here; the version a restart starts makes
+        // every device fetch them again.
         match sealing::decode(crypto, row.id, &row.options) {
-            Some(opened) => drop(options.insert(row.id, opened.options)),
+            Some(opened) => drop(options.insert(row.id, normalized(opened.options))),
             None => tracing::error!(
                 strategy_id = row.id,
                 "stored strategy options are unreadable; the strategy is ignored"
