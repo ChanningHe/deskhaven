@@ -420,6 +420,8 @@ async fn relayed_pk(port: u16, licence_key: &str, target: &UdpSocket) -> Vec<u8>
         .send(&rv(|m| {
             m.set_request_relay(RequestRelay {
                 id: TARGET.to_owned(),
+                // Required: hbbs drops a RequestRelay without one.
+                uuid: "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12".to_owned(),
                 licence_key: licence_key.to_owned(),
                 relay_server: PINNED_RELAY.to_owned(),
                 ..Default::default()

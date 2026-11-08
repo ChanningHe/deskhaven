@@ -216,6 +216,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 // controller). A message over a bound is dropped and its connection closed. Forwarded
 // RequestRelays wait in a peer's queue (STREAM_OUTBOX_LEN), so this also bounds that memory.
 /// RequestRelay / RelayResponse `uuid`: clients send `Uuid::new_v4().to_string()` (36 chars).
+/// Stricter than the client's own 128 (`is_relay_uuid`).
 const MAX_RELAY_UUID_LEN: usize = 64;
 /// `relay_server` (`host:port`): a DNS name (at most 253) plus `:` and a 5-digit port; a
 /// bracketed IPv6 literal is shorter.
@@ -224,15 +225,30 @@ const MAX_RELAY_SERVER_LEN: usize = 259;
 /// "1.4.1").
 const MAX_VERSION_LEN: usize = 64;
 
-/// Whether a message's passed-on strings are within their bounds (logged when not).
-fn within_bounds(what: &str, uuid: &str, relay_server: &str, version: &str) -> bool {
-    let ok = uuid.len() <= MAX_RELAY_UUID_LEN
+/// Whether `uuid` is a relay uuid clients accept: `[A-Za-z0-9_-]{1,128}` since rustdesk 78450f4
+/// (#16858, common.rs `check_relay_uuid`; client.rs `create_relay` and the controlled side's
+/// RequestRelay check refuse any other), capped here at MAX_RELAY_UUID_LEN. The relay pairs
+/// both sides by it; checked here too so that older clients, which pass it on unchecked, are
+/// never handed anything else.
+fn is_relay_uuid(uuid: &str) -> bool {
+    !uuid.is_empty()
+        && uuid.len() <= MAX_RELAY_UUID_LEN
+        && uuid
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Whether a message's passed-on strings are within their bounds (logged when not); `uuid`
+/// (`None`: the message carries none) must be a relay uuid.
+fn within_bounds(what: &str, uuid: Option<&str>, relay_server: &str, version: &str) -> bool {
+    let ok = uuid.is_none_or(is_relay_uuid)
         && relay_server.len() <= MAX_RELAY_SERVER_LEN
         && version.len() <= MAX_VERSION_LEN;
     if !ok {
         log::debug!(
-            "dropped {what} with oversized fields (uuid {}, relay_server {}, version {} bytes)",
-            uuid.len(),
+            "dropped {what} with oversized fields or a malformed uuid (uuid {}, relay_server {}, \
+             version {} bytes)",
+            uuid.map_or(0, str::len),
             relay_server.len(),
             version.len()
         );
@@ -871,8 +887,9 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
-                    // deskhaven (M1-08 review): passed-on strings are bounded.
-                    if !within_bounds("RequestRelay", &rf.uuid, &rf.relay_server, "") {
+                    // deskhaven (M1-08 review): passed-on strings are bounded; the uuid is
+                    // required (clients always send one).
+                    if !within_bounds("RequestRelay", Some(&rf.uuid), &rf.relay_server, "") {
                         return false;
                     }
                     // there maybe several attempt, so sink can be none
@@ -919,8 +936,11 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
-                    // deskhaven (M1-08 review): passed-on strings are bounded.
-                    if !within_bounds("RelayResponse", &rr.uuid, &rr.relay_server, &rr.version) {
+                    // deskhaven (M1-08 review): passed-on strings are bounded. The uuid is
+                    // optional: the answer to a RequestRelay carries none (rendezvous_mediator.rs
+                    // `create_relay`, `initiate` false), only a relay the target starts does.
+                    let uuid = Some(rr.uuid.as_str()).filter(|uuid| !uuid.is_empty());
+                    if !within_bounds("RelayResponse", uuid, &rr.relay_server, &rr.version) {
                         return false;
                     }
                     // deskhaven (M4-05): an address that does not decode is dropped.
@@ -947,12 +967,12 @@ impl RendezvousServer {
                 }
                 // deskhaven (M1-08 review): passed-on strings are bounded (both arms).
                 Some(rendezvous_message::Union::PunchHoleSent(phs)) => {
-                    if within_bounds("PunchHoleSent", "", &phs.relay_server, &phs.version) {
+                    if within_bounds("PunchHoleSent", None, &phs.relay_server, &phs.version) {
                         allow_err!(self.handle_hole_sent(phs, addr, None).await);
                     }
                 }
                 Some(rendezvous_message::Union::LocalAddr(la)) => {
-                    if within_bounds("LocalAddr", "", &la.relay_server, &la.version) {
+                    if within_bounds("LocalAddr", None, &la.relay_server, &la.version) {
                         allow_err!(self.handle_local_addr(la, addr, None).await);
                     }
                 }
@@ -2404,6 +2424,53 @@ mod tests {
             let msg = sign::verify(&signed, &server_pk).unwrap();
             assert_ne!(msg.len(), sign::PUBLICKEYBYTES, "id {id_len}");
         }
+    }
+
+    // deskhaven: relay uuids follow the client's `check_relay_uuid` (rustdesk 78450f4,
+    // `[A-Za-z0-9_-]{1,128}`) within the server's tighter MAX_RELAY_UUID_LEN; a message without
+    // one (`None`) passes on, one with an empty uuid does not.
+    #[test]
+    fn relay_uuids_are_limited_to_the_client_character_set_and_the_server_cap() {
+        let at_cap = "u".repeat(MAX_RELAY_UUID_LEN);
+        let over_cap = "u".repeat(MAX_RELAY_UUID_LEN + 1);
+        let client_max = "u".repeat(128);
+        let valid = [
+            "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "a",
+            "A-z_09",
+            at_cap.as_str(),
+        ];
+        let invalid = [
+            "",
+            "a b",
+            " a",
+            "a/b",
+            "../relay",
+            "a.b",
+            "uuid\u{e9}",
+            "\u{ff21}",
+            "\r\nPING\r\n",
+            "a\0",
+            over_cap.as_str(),
+            client_max.as_str(),
+        ];
+
+        for uuid in valid {
+            assert!(is_relay_uuid(uuid), "rejected {uuid:?}");
+            assert!(
+                within_bounds("test", Some(uuid), "", ""),
+                "rejected {uuid:?}"
+            );
+        }
+        for uuid in invalid {
+            assert!(!is_relay_uuid(uuid), "accepted {uuid:?}");
+            assert!(
+                !within_bounds("test", Some(uuid), "", ""),
+                "accepted {uuid:?}"
+            );
+        }
+        assert!(within_bounds("test", None, "", ""));
     }
 
     // deskhaven (M4-05 review, HIGH-1): a reply to source port 0 fails (EINVAL), and that

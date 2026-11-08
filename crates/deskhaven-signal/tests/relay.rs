@@ -15,7 +15,7 @@ use deskhaven_signal::{
     HttpProxyResponse, RegisterInfo, RegisterVerdict, SignalConfig,
 };
 use hbb_common::{
-    rendezvous_proto::{ControlledContext, IdPk, NatType, RequestRelay},
+    rendezvous_proto::{ControlledContext, IdPk, NatType, RelayResponse, RequestRelay},
     tokio,
 };
 use std::{
@@ -166,6 +166,110 @@ async fn forwarded_strings_over_their_bounds_are_dropped() {
         .send(&rv(|m| m.set_punch_hole_sent(sent)))
         .await;
     ok.assert_silent().await;
+    server.stop().await;
+}
+
+/// Relay uuids follow the client's rule (rustdesk 78450f4 #16858, common.rs `check_relay_uuid`:
+/// `[A-Za-z0-9_-]{1,128}`) within the server's 64-byte bound, so older clients that pass the
+/// uuid on unchecked never get anything else. A RequestRelay with a uuid outside it (empty
+/// included) is dropped like an oversized one: the target hears nothing and the controller's
+/// connection is closed.
+#[tokio::test]
+async fn request_relay_with_a_uuid_outside_the_client_rule_is_dropped() {
+    // Arrange
+    let server = TestServer::start().await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let base = request_relay(TARGET, &server.licence_key);
+    let bad = [
+        "",
+        "relay uuid",
+        "relay/uuid",
+        "relay.uuid",
+        "relay-uuid-\u{e9}",
+        &"u".repeat(MAX_RELAY_UUID_LEN + 1),
+    ];
+
+    for uuid in ["a", "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12", "A_z-0"] {
+        // Act
+        let mut controller = server.tcp().await;
+        let req = RequestRelay {
+            uuid: uuid.to_owned(),
+            ..base.clone()
+        };
+        controller.request_relay(req).await;
+
+        // Assert
+        let fwd = expect_msg!(target.recv().await, RequestRelay);
+        assert_eq!(fwd.uuid, uuid);
+    }
+    for uuid in bad {
+        // Act
+        let mut controller = server.tcp().await;
+        let req = RequestRelay {
+            uuid: uuid.to_owned(),
+            ..base.clone()
+        };
+        controller.request_relay(req).await;
+
+        // Assert
+        controller.assert_closed().await;
+        target.assert_silent().await;
+    }
+    server.stop().await;
+}
+
+/// The same rule on the RelayResponse a target sends back: one with a malformed uuid is dropped
+/// (its connection closed, the controller hears nothing). One without a uuid is how clients
+/// answer a RequestRelay (rendezvous_mediator.rs `create_relay`, `initiate` false), so it still
+/// reaches the controller.
+#[tokio::test]
+async fn relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_passes() {
+    // Arrange
+    let server = TestServer::start().await;
+    let (mut target, _) = server.online_peer(TARGET).await;
+    let mut controller = server.tcp().await;
+    controller
+        .request_relay(request_relay(TARGET, &server.licence_key))
+        .await;
+    let fwd = expect_msg!(target.recv().await, RequestRelay);
+    let answer = relay_response(&fwd, TARGET);
+    let over_cap = "u".repeat(MAX_RELAY_UUID_LEN + 1);
+
+    for uuid in [
+        "relay uuid",
+        "relay/uuid",
+        "relay.uuid",
+        "\u{e9}",
+        &over_cap,
+    ] {
+        // Act
+        let mut target_tcp = server.tcp().await;
+        let bad = RelayResponse {
+            uuid: uuid.to_owned(),
+            ..answer.clone()
+        };
+        target_tcp.send(&rv(|m| m.set_relay_response(bad))).await;
+
+        // Assert
+        target_tcp.assert_closed().await;
+        controller.assert_silent().await;
+    }
+
+    // Act
+    let unset = RelayResponse {
+        uuid: String::new(),
+        ..answer
+    };
+    server
+        .tcp()
+        .await
+        .send(&rv(|m| m.set_relay_response(unset)))
+        .await;
+    let res = expect_msg!(controller.recv().await, RelayResponse);
+
+    // Assert
+    assert_eq!(res.uuid, "");
+    assert_eq!(res.relay_server, fwd.relay_server);
     server.stop().await;
 }
 

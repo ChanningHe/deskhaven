@@ -745,3 +745,13 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   table forgets the least recently seen idle sources instead of skipping the per-source checks;
   an evicted connection gets no KeyExchange offer. Tests: `tests/accept_limits.rs`,
   `accept_gate::tests`.
+- 2026-11-08, relay uuid rule (`rendezvous_server.rs` `is_relay_uuid`, `within_bounds`, the
+  RequestRelay / RelayResponse arms of `handle_tcp`): a passed-on relay uuid must also match the
+  client's own rule (rustdesk 78450f4, #16858, common.rs `check_relay_uuid`:
+  `[A-Za-z0-9_-]{1,128}`), within the existing 64-byte `MAX_RELAY_UUID_LEN`, so older clients,
+  which do not check it, are never handed anything else. Required in RequestRelay; optional in
+  RelayResponse (the answer to a RequestRelay carries none). A message outside the rule is
+  treated like an oversized one: dropped and its connection closed. Tests:
+  `relay_uuids_are_limited_to_the_client_character_set_and_the_server_cap`,
+  `request_relay_with_a_uuid_outside_the_client_rule_is_dropped`,
+  `relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_passes`.
