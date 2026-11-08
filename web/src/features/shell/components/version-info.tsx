@@ -15,15 +15,15 @@ export function VersionInfo({ className }: VersionInfoProps) {
   if (info === undefined) return null
 
   return (
-    <p className={cn('flex flex-wrap gap-x-2 text-xs text-muted-foreground', className)}>
-      <span>v{info.version}</span>
+    <p className={cn('flex text-xs text-muted-foreground', className)}>
       <a
         href={info.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="underline-offset-4 hover:text-foreground hover:underline"
+        title={t('shell.sourceCode')}
+        className="truncate underline-offset-4 hover:text-foreground hover:underline"
       >
-        {t('shell.sourceCode')}
+        v{info.version}
       </a>
     </p>
   )

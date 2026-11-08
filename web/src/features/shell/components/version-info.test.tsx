@@ -41,8 +41,9 @@ describe('server version', () => {
     const { fetchSpy } = await renderShell()
 
     expect(await within(sidebar()).findByText('v0.1.0-rc.4')).toBeInTheDocument()
-    const link = within(sidebar()).getByRole('link', { name: '源代码' })
+    const link = within(sidebar()).getByRole('link', { name: 'v0.1.0-rc.4' })
     expect(link).toHaveAttribute('href', 'https://github.com/ChanningHe/deskhaven')
+    expect(link).toHaveAttribute('title', '查看源代码')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(callsTo(fetchSpy, '/api/version')).toBe(1)
@@ -57,7 +58,7 @@ describe('server version', () => {
     await querySettled(queryClient)
     expect(callsTo(fetchSpy, '/api/version')).toBe(1)
     expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '源代码' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^v\d/ })).not.toBeInTheDocument()
   })
 
   it.each([
@@ -70,7 +71,7 @@ describe('server version', () => {
 
     await querySettled(queryClient)
     expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '源代码' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^v\d/ })).not.toBeInTheDocument()
   })
 
   it('hides the text when the sidebar is collapsed', async () => {
@@ -100,7 +101,7 @@ describe('server version', () => {
     const drawer = await screen.findByRole('dialog')
 
     expect(await within(drawer).findByText('v0.1.0-rc.4')).toBeInTheDocument()
-    expect(within(drawer).getByRole('link', { name: '源代码' })).toHaveAttribute(
+    expect(within(drawer).getByRole('link', { name: 'v0.1.0-rc.4' })).toHaveAttribute(
       'href',
       'https://github.com/ChanningHe/deskhaven',
     )
@@ -110,7 +111,7 @@ describe('server version', () => {
     renderApp('/login', { me: null, api: versionApi() })
 
     expect(await screen.findByText('v0.1.0-rc.4')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '源代码' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'v0.1.0-rc.4' })).toHaveAttribute(
       'href',
       'https://github.com/ChanningHe/deskhaven',
     )
