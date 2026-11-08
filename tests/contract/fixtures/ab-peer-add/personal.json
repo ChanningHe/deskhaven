@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/ab_model.dart:1548-1578", "flutter/lib/models/ab_model.dart:2002-2026", "flutter/lib/common/widgets/dialog.dart:2466-2477"],
   "description": "Adding a peer to the personal book (the client removes 'password' first and posts Peer.toJson, including same_server and device_group_name): success is HTTP 200 with an EMPTY body; any body is shown as an error.",
   "seed": ["client-session", "ab-personal"],

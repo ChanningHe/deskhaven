@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
-    "src/server/connection.rs:1527-1534",
-    "src/server/connection.rs:1563-1576",
-    "src/server/connection.rs:1711-1716"
+    "src/server/connection.rs:1523-1530",
+    "src/server/connection.rs:1559-1572",
+    "src/server/connection.rs:1707-1712"
   ],
   "description": "The controlled device reports a connection as it opens, before the login request, so session_id is still 0. Success is 200 with an empty body: anything else in a 2xx makes the client retry.",
   "seed": ["registered-device"],

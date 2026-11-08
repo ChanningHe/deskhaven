@@ -1,6 +1,6 @@
 //! `/api/audit/*` replies other than "stored": body limit, malformed bodies, rate limits,
 //! the controller note's buffer, and leniency towards newer clients. What the client does
-//! with each status: `src/server/connection.rs:1711-1746` (4xx but 408 / 429: dropped; 429
+//! with each status: `src/server/connection.rs:1707-1742` (4xx but 408 / 429: dropped; 429
 //! and 5xx: retried).
 #![allow(clippy::unwrap_used, clippy::panic)]
 

@@ -61,7 +61,7 @@ pub fn bearer(path: &str, token: &str) -> Request {
 }
 
 /// `POST /api/oidc/auth` as `OidcSession::auth` sends it (`src/hbbs_http/account.rs:160-176`,
-/// `post_request` always sets `Content-Type: application/json`, `src/common.rs:1760`).
+/// `post_request` always sets `Content-Type: application/json`, `src/common.rs:1774`).
 pub fn oidc_auth(op: &str) -> Request {
     let mut request = Request::new("POST", "/api/oidc/auth");
     request

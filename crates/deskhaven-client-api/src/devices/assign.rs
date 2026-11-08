@@ -1,4 +1,4 @@
-//! `POST /api/devices/cli` (03 §2.9; `src/core_main.rs:529-625`): `rustdesk --assign --token
+//! `POST /api/devices/cli` (03 §2.9; `src/core_main.rs:530-626`): `rustdesk --assign --token
 //! <t> [--user_name ...]`, with an API token holding the `assign` scope. The CLI prints
 //! "Done!" for an empty body and any other body as it is.
 //!
@@ -34,7 +34,7 @@ pub const MAX_ASSIGN_BODY: usize = 16 * 1024;
 const ID_NOT_FOUND: &str = "ID_NOT_FOUND";
 const INVALID_BODY: &str = "Invalid request body";
 
-/// The body `core_main.rs:557-614` builds; unknown keys are ignored.
+/// The body `core_main.rs:558-615` builds; unknown keys are ignored.
 #[derive(Deserialize)]
 struct Body {
     id: Option<String>,

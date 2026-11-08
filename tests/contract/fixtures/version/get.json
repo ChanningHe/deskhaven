@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
-    "src/common.rs:1256-1297"
+    "src/common.rs:1270-1311"
   ],
   "description": "deskhaven's own endpoint (AGPL-3.0 section 13 source offer, 06 security): the official client has no /api/version consumer at the tracked commit, so there is no client parser to mirror and no shape. The cited lines are how the client derives the API origin that serves any /api path. Needs no credentials; answers JSON with the source URL (the version value is pinned in tests/version.rs against the workspace version).",
   "request": {

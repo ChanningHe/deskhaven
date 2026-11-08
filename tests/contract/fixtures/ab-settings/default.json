@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/ab_model.dart:230-258", "flutter/lib/models/ab_model.dart:1386-1390"],
   "description": "max_peer_one_ab is an int the client compares with each book's peer count to show 'full'; it comes from addressbook.max_peers (default 1000).",
   "seed": ["client-session"],

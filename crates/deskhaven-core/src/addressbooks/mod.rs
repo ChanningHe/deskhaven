@@ -15,7 +15,7 @@
 //! - Peers: personal books keep the client's password `hash` and never a `password`; shared
 //!   books keep the `password` and never a `hash`. Both are sealed with the master key (AAD
 //!   context `address_book_peers.<hash_enc|password_enc>:<book id>:<rustdesk id>`): the
-//!   hash is the salted password the client connects with (`src/client.rs:4777-4799`), a
+//!   hash is the salted password the client connects with (`src/client.rs:4805-4827`), a
 //!   credential in its own right. Unknown peer fields are kept in `extra` and echoed back
 //!   (see [`PeerPatch`]).
 //! - Capacity: a book holds at most `addressbook.max_peers` peers (read at each add).

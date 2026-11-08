@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/ab_model.dart:1055-1089", "flutter/lib/models/ab_model.dart:1309-1323", "flutter/lib/models/peer_model.dart:70-83"],
   "description": "Legacy push: {data: <JSON string>} with exactly what _serialize() writes (peers via toCustomJson: id, username, hostname, platform, alias, tags, hash; tag_colors a JSON string). Success is 200 with an empty body (the client accepts empty or 'null'). The flow tests read the book back through both APIs.",
   "seed": ["client-session", "ab-personal"],

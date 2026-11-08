@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
     "src/server/connection.rs:1240-1242",
-    "src/server/connection.rs:1563-1576",
-    "src/server/connection.rs:1711-1716"
+    "src/server/connection.rs:1559-1572",
+    "src/server/connection.rs:1707-1712"
   ],
   "description": "The device reports the end of a connection. A close that arrives before the other messages of its connection is stored all the same: whichever message comes first creates the row.",
   "seed": ["registered-device"],

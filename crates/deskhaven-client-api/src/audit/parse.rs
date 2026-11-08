@@ -31,7 +31,7 @@ pub(super) enum ConnMessage {
     Note(ControllerNote),
 }
 
-/// `post_conn_audit` (`connection.rs:1563-1576`) plus the note of `send_note`.
+/// `post_conn_audit` (`connection.rs:1559-1572`) plus the note of `send_note`.
 #[derive(Deserialize)]
 struct ConnBody {
     id: Option<String>,
@@ -50,7 +50,7 @@ struct ConnBody {
     note: Option<String>,
 }
 
-/// `post_file_audit` (`connection.rs:1594-1629`).
+/// `post_file_audit` (`connection.rs:1590-1625`).
 #[derive(Deserialize)]
 struct FileBody {
     id: Option<String>,
@@ -74,7 +74,7 @@ struct FileInfoBody {
     files: Option<Vec<Vec<Value>>>,
 }
 
-/// `post_alarm_audit` (`connection.rs:1631-1660`).
+/// `post_alarm_audit` (`connection.rs:1627-1656`).
 #[derive(Deserialize)]
 struct AlarmBody {
     id: Option<String>,

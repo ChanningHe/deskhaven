@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
     "src/ui_interface.rs:1145-1153",
     "src/ui_interface.rs:1193-1194",
-    "src/core_main.rs:670-676"
+    "src/core_main.rs:671-677"
   ],
   "description": "`--deploy --id <id>` where the id is registered to another machine (a different uuid): result ID_TAKEN, the existing device is left alone; the CLI prints \"Id `<id>` is already used by another machine on the server.\" and exits 6.",
   "seed": ["registered-device", "deploy-required", "api-token"],

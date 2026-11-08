@@ -13,7 +13,7 @@ use crate::text;
 pub use deskhaven_db::entity::file_transfer::Direction;
 
 /// Files listed per record at most (the client sends the ten largest,
-/// `src/server/connection.rs:1606-1608`).
+/// `src/server/connection.rs:1602-1604`).
 pub const MAX_FILES: usize = 10;
 const PEER_ID_MAX_CHARS: usize = 253;
 const PATH_MAX_CHARS: usize = 4096;
@@ -23,11 +23,11 @@ pub const MAX_INFO_KEYS: usize = 16;
 /// Longest stored alarm `info` string, in characters.
 pub const MAX_INFO_TEXT_CHARS: usize = 256;
 const MAX_INFO_KEY_CHARS: usize = 64;
-/// The keys of the client's alarm `info` objects (`src/server/connection.rs:1443-1478`,
+/// The keys of the client's alarm `info` objects (`src/server/connection.rs:1439-1474`,
 /// `1662-1671`, `4303-4590`), kept before any other.
 const KNOWN_INFO_KEYS: &[&str] = &["ip", "id", "name", "conn_type", "message"];
 
-/// A file transfer the controlled device reports (`src/server/connection.rs:1594-1629`).
+/// A file transfer the controlled device reports (`src/server/connection.rs:1590-1625`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileReport {
     /// The controller's RustDesk id.
@@ -51,10 +51,10 @@ pub struct FileInfo {
     pub files: Vec<(String, i64)>,
 }
 
-/// A security alarm the controlled device reports (`src/server/connection.rs:1631-1660`).
+/// A security alarm the controlled device reports (`src/server/connection.rs:1627-1656`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlarmReport {
-    /// `AlarmAuditType` (`src/server/connection.rs:6546-6558`); unknown values are stored.
+    /// `AlarmAuditType` (`src/server/connection.rs:6542-6554`); unknown values are stored.
     pub typ: i32,
     pub conn_id: i64,
     /// The decoded `info` JSON string; stored flat and cleaned (`clean_info`).

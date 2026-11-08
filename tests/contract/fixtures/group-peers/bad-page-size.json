@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/group_model.dart:224-282"],
   "description": "The client always pages with pageSize=100; a larger page is refused with 400 rather than silently truncated (the client's loop would skip devices).",
   "seed": ["client-session"],

@@ -1,4 +1,4 @@
-//! [`DeviceService::assign`]: `rustdesk --assign` (03 §2.9, `src/core_main.rs:529-625`),
+//! [`DeviceService::assign`]: `rustdesk --assign` (03 §2.9, `src/core_main.rs:530-626`),
 //! called with an API token holding the `assign` scope: an administrator's placement of a
 //! device, by name.
 //!

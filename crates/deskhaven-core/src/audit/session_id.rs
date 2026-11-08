@@ -10,7 +10,7 @@ pub(super) const UNBOUND: &str = "0";
 /// `connection_sessions.session_id` stores this text.
 ///
 /// The controlled device sends its connection's opening record before the login request
-/// arrives (`src/server/connection.rs:1527-1534`), so that record carries 0, the *unbound*
+/// arrives (`src/server/connection.rs:1523-1530`), so that record carries 0, the *unbound*
 /// session id; the authorization and close records carry the real one.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SessionId(String);

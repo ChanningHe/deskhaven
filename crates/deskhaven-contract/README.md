@@ -28,7 +28,7 @@ CONTRACT_FILTER=login-options/ nix develop -c cargo test -p deskhaven-contract -
 
    ```json
    {
-     "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+     "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
      "source": ["flutter/lib/models/user_model.dart:240-264"],
      "description": "What the client does with this reply, and why.",
      "seed": [],

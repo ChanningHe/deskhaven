@@ -73,7 +73,7 @@ pub enum ConnEvent {
     Close,
 }
 
-/// Who logged in and how (`src/server/connection.rs:1944-1952`).
+/// Who logged in and how (`src/server/connection.rs:1940-1948`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Authorization {
     /// The controller's RustDesk id and name (`LoginRequest.my_id` / `my_name`).

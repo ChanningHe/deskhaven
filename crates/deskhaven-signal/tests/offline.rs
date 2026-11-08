@@ -77,7 +77,7 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
 /// REG_TIMEOUT: a stale peer still got the RequestRelay (lost, it is gone) and the controller
 /// heard nothing until its attempts timed out. Now, like PunchHoleRequest (rs:750-757), a peer
 /// silent for REG_TIMEOUT is refused at once with RelayResponse{refuse_reason}, worded like
-/// the client's PunchHoleResponse OFFLINE message (a translation key, client.rs:1838-1839,
+/// the client's PunchHoleResponse OFFLINE message (a translation key, client.rs:1840-1841,
 /// 1010); once it registers again its RequestRelays are forwarded again.
 #[tokio::test]
 async fn request_relay_to_stale_peer_is_refused_as_offline() {

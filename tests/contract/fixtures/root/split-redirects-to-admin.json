@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
     "flutter/lib/common/widgets/peer_tab_page.dart:553-567",
     "flutter/lib/common/widgets/address_book.dart:436-441",
     "src/flutter_ffi.rs:1208-1210",
-    "src/common.rs:1256-1297"
+    "src/common.rs:1270-1311"
   ],
   "description": "The \"web console\" button opens the API server base URL (trailing slash removed) in the system browser, i.e. a browser GET / on the client API origin. With the console on its own listener that origin answers 302 to listen.admin_public_url and nothing else (empty body).",
   "listen": {

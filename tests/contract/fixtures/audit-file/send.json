@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
-    "src/server/connection.rs:1594-1629",
-    "src/server/connection.rs:6560-6563",
-    "src/server/connection.rs:1711-1716"
+    "src/server/connection.rs:1590-1625",
+    "src/server/connection.rs:6556-6559",
+    "src/server/connection.rs:1707-1712"
   ],
   "description": "The device reports files it sent to the controller (type 0 RemoteSend): info is a JSON string with the address, the controller's name, the file count and the ten largest files. 200 with an empty body means stored.",
   "seed": ["registered-device"],

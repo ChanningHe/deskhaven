@@ -1871,7 +1871,7 @@ fn signed_id_pk(id: String, pk: Bytes, sk: &sign::SecretKey) -> Bytes {
 }
 
 // deskhaven (M1-08): refusal texts of RelayResponse. Clients show `refuse_reason` as the error
-// (client.rs:1838-1839); these are the texts (and translation keys) the client itself uses for
+// (client.rs:1840-1841); these are the texts (and translation keys) the client itself uses for
 // PunchHoleResponse ID_NOT_EXIST / OFFLINE.
 const REFUSE_ID_NOT_EXIST: &str = "ID does not exist";
 const REFUSE_OFFLINE: &str = "Remote desktop is offline";

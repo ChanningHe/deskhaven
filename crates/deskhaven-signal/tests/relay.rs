@@ -100,7 +100,7 @@ async fn request_relay_is_forwarded_without_secrets_or_server_only_fields() {
 /// Changed in M1-08. Upstream (rs:546-553, no else branch) did not answer a RequestRelay for an
 /// id not in memory at all, so the client waited for each of its 3 attempts and then failed
 /// with "Timeout". It now gets RelayResponse{refuse_reason} at once, worded like the client's
-/// own PunchHoleResponse ID_NOT_EXIST message (a translation key, client.rs:1838-1839, 1007).
+/// own PunchHoleResponse ID_NOT_EXIST message (a translation key, client.rs:1840-1841, 1009).
 #[tokio::test]
 async fn request_relay_to_unknown_peer_is_refused_with_id_does_not_exist() {
     // Arrange

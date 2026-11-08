@@ -1,10 +1,10 @@
-//! `POST /api/audit/{conn,file,alarm}` (03 §2.3-§2.6; `src/server/connection.rs:1563-1760`,
-//! `src/ui_session_interface.rs:2104-2107`): audit records of the controlled device and the
+//! `POST /api/audit/{conn,file,alarm}` (03 §2.3-§2.6; `src/server/connection.rs:1559-1756`,
+//! `src/ui_session_interface.rs:2112-2115`): audit records of the controlled device and the
 //! controller's session note. No Authorization: the device is identified by `id` + `uuid`
 //! (06 §2); the work is `deskhaven_core::audit::AuditService`.
 //!
 //! The client reads only the status and whether a 2xx body is empty
-//! (`connection.rs:1711-1746`):
+//! (`connection.rs:1707-1742`):
 //!
 //! | case | status | body | client |
 //! |---|---|---|---|

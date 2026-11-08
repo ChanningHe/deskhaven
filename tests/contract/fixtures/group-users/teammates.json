@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/group_model.dart:160-222", "flutter/lib/common/hbbs/hbbs.dart:19-52"],
   "description": "The panel's user list (status=1): the caller and the active users sharing a group with them, by username. A disabled or unverified teammate and a user of another group stay out. total counts the whole visible set. Data minimisation: the caller's own row is complete (email, note), a teammate's carries neither the admin-written note (empty) nor the email (null).",
   "seed": ["client-session", "group-scope"],

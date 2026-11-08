@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
-    "src/core_main.rs:529-562",
-    "src/core_main.rs:581-614",
-    "src/core_main.rs:615-625"
+    "src/core_main.rs:530-563",
+    "src/core_main.rs:582-615",
+    "src/core_main.rs:616-626"
   ],
   "description": "`rustdesk --assign --token <t>` with every option: the body carries id and uuid plus each given option (the address_book_* details only with address_book_name). A token with the assign scope places the device: owner, strategy, device group, note, device names and a shared address book entry. Success is 200 with an empty body (the CLI prints \"Done!\"); what was placed is checked in crates/deskhaven-contract/tests/devices_cli.rs and crates/deskhaven-core/tests/devices/assign.rs.",
   "seed": ["registered-device", "device-preset-targets", "api-token"],

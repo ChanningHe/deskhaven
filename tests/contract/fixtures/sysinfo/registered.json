@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
     "src/hbbs_http/sync.rs:126-136",
     "src/hbbs_http/sync.rs:211-220",
     "src/common.rs:962-1006",
-    "src/common.rs:1760"
+    "src/common.rs:1774"
   ],
   "description": "A registered device uploads its sysinfo (get_sysinfo + version, id, base64 uuid; no Authorization, Content-Type application/json). The client compares the body with the exact text SYSINFO_UPDATED: only then it stops uploading and sets is_pro (hide_cm etc.). Plain text, no newline.",
   "seed": ["registered-device"],

@@ -1,6 +1,6 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
-  "source": ["flutter/lib/models/ab_model.dart:1432-1497", "flutter/lib/models/peer_model.dart:33-48", "src/client.rs:4776-4800"],
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "source": ["flutter/lib/models/ab_model.dart:1432-1497", "flutter/lib/models/peer_model.dart:33-48", "src/client.rs:4804-4828"],
   "description": "Peers of the personal book: the client-computed hash comes back (used for auto-login), never a password; forceAlwaysRelay is the string 'true' (the client compares with 'true'); an unknown field the client once sent is echoed back verbatim.",
   "seed": ["client-session", "ab-personal"],
   "request": {

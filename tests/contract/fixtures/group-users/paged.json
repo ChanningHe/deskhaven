@@ -1,5 +1,5 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": ["flutter/lib/models/group_model.dart:160-222"],
   "description": "Paging: the client asks pages until current * pageSize >= total, so total must stay the size of the whole visible set on every page, not of the page.",
   "seed": ["client-session", "group-scope"],

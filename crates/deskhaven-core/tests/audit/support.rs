@@ -87,7 +87,7 @@ pub fn session(id: u64) -> SessionId {
 }
 
 /// The first message: sent when the connection opens, before the login request, so its
-/// session id is still 0 (`src/server/connection.rs:1527-1534`).
+/// session id is still 0 (`src/server/connection.rs:1523-1530`).
 pub fn new_conn(conn_id: i64) -> Record {
     Record::Conn(ConnReport {
         conn_id,

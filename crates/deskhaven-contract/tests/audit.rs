@@ -1,6 +1,6 @@
 //! `POST /api/audit/{conn,file,alarm}` flows (03 §2.3-§2.6): what a sequence of records
 //! leaves behind. The client only reads the status and whether the body is empty
-//! (`src/server/connection.rs:1711-1746`); these tests read the audit tables.
+//! (`src/server/connection.rs:1707-1742`); these tests read the audit tables.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_contract::app::TestApp;
@@ -25,7 +25,7 @@ fn post(path: &str, body: Value) -> Request {
 }
 
 /// A record of the controlled device: `extra` plus the fields `post_conn_audit` adds
-/// (`src/server/connection.rs:1563-1576`).
+/// (`src/server/connection.rs:1559-1572`).
 fn conn(extra: Value, conn_id: i64, session_id: Value, nonce: &str) -> Request {
     let mut body = json!({
         "id": DEVICE_ID, "uuid": DEVICE_UUID_B64, "conn_id": conn_id,
@@ -207,7 +207,7 @@ async fn records_of_an_unknown_device_are_refused_with_404_and_store_nothing() {
     assert_eq!(audit_nonce::Entity::find().count(db).await.unwrap(), 0);
 }
 
-/// The controller's note (`src/ui_session_interface.rs:2104-2107`) can come before the
+/// The controller's note (`src/ui_session_interface.rs:2112-2115`) can come before the
 /// controlled device's authorization record names the session; it waits for it.
 #[tokio::test]
 async fn a_controller_note_before_the_session_lands_on_it() {

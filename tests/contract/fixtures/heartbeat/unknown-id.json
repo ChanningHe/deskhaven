@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "23e5bb471a040d62f0a6ad52591fb30784265b73",
+  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
   "source": [
     "src/hbbs_http/sync.rs:245-250",
-    "src/common.rs:1626-1631"
+    "src/common.rs:1640-1645"
   ],
   "description": "An id the signal server never registered (06 §2: refused, nothing changes). A 4xx reaches the client as-is (no TCP proxy fallback, which only 5xx triggers); its body is an object without any of the reply keys, so the client does nothing and tries again on its next heartbeat. Answered exactly like a uuid mismatch.",
   "seed": [],

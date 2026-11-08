@@ -9,7 +9,7 @@
 //! - **Rate limits** (see `limits`): per client network on every request, per device after
 //!   verification ([`Ingest::TooFrequent`]).
 //! - **De-duplication**: the client retries a record for up to 120 s with the same `nonce`
-//!   (`src/server/connection.rs:1674-1760`). The nonce goes into `audit_nonces` in the
+//!   (`src/server/connection.rs:1670-1756`). The nonce goes into `audit_nonces` in the
 //!   record's own transaction: a repeat is [`Ingest::Duplicate`] (answered like success,
 //!   nothing written), a failed write claims nothing. `received_at` lets the retention job
 //!   prune nonces (kept ≥ 24 h, far past the client's window). Records without a nonce (older
