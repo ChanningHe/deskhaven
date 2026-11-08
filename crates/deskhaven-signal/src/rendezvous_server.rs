@@ -216,7 +216,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 // controller). A message over a bound is dropped and its connection closed. Forwarded
 // RequestRelays wait in a peer's queue (STREAM_OUTBOX_LEN), so this also bounds that memory.
 /// RequestRelay / RelayResponse `uuid`: clients send `Uuid::new_v4().to_string()` (36 chars).
-/// Stricter than the client's own 128 (`is_relay_uuid`).
+/// Stricter than the client's own 128 (`check_relay_uuid`); the character rule is `is_relay_uuid`.
 const MAX_RELAY_UUID_LEN: usize = 64;
 /// `relay_server` (`host:port`): a DNS name (at most 253) plus `:` and a 5-digit port; a
 /// bracketed IPv6 literal is shorter.
