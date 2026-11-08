@@ -74,7 +74,7 @@ pub enum Ingest {
     },
 }
 
-/// The controller's note of a session (`src/ui_session_interface.rs:592-598`, `2104-2107`):
+/// The controller's note of a session (`src/ui_session_interface.rs:592-598`, `2112-2115`):
 /// `id` is the remote, i.e. the controlled, device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ControllerNote {

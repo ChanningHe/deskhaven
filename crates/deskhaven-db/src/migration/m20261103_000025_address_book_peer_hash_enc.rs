@@ -2,7 +2,7 @@
 //! at rest like the shared-book password.
 //!
 //! The hash the client stores in a personal book is not a verifier but the salted password
-//! itself: the client sends it as the connection password (`src/client.rs:4777-4799`), so
+//! itself: the client sends it as the connection password (`src/client.rs:4805-4827`), so
 //! whoever reads it can log in to that device (pass-the-hash). Migration 000022 stored it
 //! in clear (its header calls it "the password hash"); from here on it is sealed with the
 //! master key (AAD context `address_book_peers.hash_enc:<book id>:<rustdesk id>`, see

@@ -24,7 +24,7 @@ pub const MAX_INFO_KEYS: usize = 16;
 pub const MAX_INFO_TEXT_CHARS: usize = 256;
 const MAX_INFO_KEY_CHARS: usize = 64;
 /// The keys of the client's alarm `info` objects (`src/server/connection.rs:1439-1474`,
-/// `1662-1671`, `4303-4590`), kept before any other.
+/// `1658-1667`, `4299-4586`), kept before any other.
 const KNOWN_INFO_KEYS: &[&str] = &["ip", "id", "name", "conn_type", "message"];
 
 /// A file transfer the controlled device reports (`src/server/connection.rs:1590-1625`).

@@ -1,6 +1,6 @@
 //! Alarm `info` is self-reported JSON: stored as a flat object of scalars, strings cleaned
 //! and cut, keys bounded, nested values dropped (every client call site sends flat values,
-//! `src/server/connection.rs:1439-1474`, `4303-4590`).
+//! `src/server/connection.rs:1439-1474`, `4299-4586`).
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
