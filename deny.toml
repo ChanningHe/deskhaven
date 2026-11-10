@@ -90,6 +90,11 @@ ignore = [
     # it only verifies IdP ID token signatures with public JWKS keys (RS*/PS*), which the
     # advisory does not affect. Only the OIDC tests sign, with throwaway fixture keys.
     { id = "RUSTSEC-2023-0071", reason = "rsa: only public-key signature verification of ID tokens in production; Marvin concerns private-key operations" },
+    # Bundled SQLite < 3.54 (libsqlite3-sys 0.37 via sqlx-sqlite 0.9, which caps it at
+    # <0.38). The bug needs a crafted database/-wal pair; deskhaven only opens the one file
+    # named by its operator-set database URL, in a data dir writable by itself alone, and
+    # whoever can write there can already replace the database. Drop on the sqlx bump.
+    { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache leak needs an attacker-written database/-wal pair; deskhaven only opens its own operator-configured database file" },
 ]
 
 [sources]
