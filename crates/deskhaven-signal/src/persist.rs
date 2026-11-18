@@ -24,7 +24,7 @@
 //! Never-online `devices` rows are not cleaned up here; retention comes with admission (M5) and
 //! the device lifecycle (M2-20).
 
-use crate::peer::{LockPeer, Peer, PeerCache, PeerInfo};
+use crate::peer::{LockPeer, Peer, PeerCache, PeerInfo, is_peer_id};
 use crate::store::{PeerRecord, PeerStore, PeerUpsert, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
@@ -94,9 +94,9 @@ impl SaveState {
     }
 }
 
-/// Refused: the write queue is full and the id is not bound yet.
+/// Refused: the write queue is full and the id is not bound yet, or the id is not a peer id.
 #[derive(Debug)]
-pub(crate) struct QueueFull;
+pub(crate) struct Refused;
 
 /// Ids waiting for the writer, each at most once.
 #[derive(Default)]
@@ -164,15 +164,21 @@ impl Persist {
     /// Queues `id` for the writer. Call with the peer's write lock held and change the peer
     /// only on `Ok`: the writer reads the peer after taking its lock, so it sees the change.
     /// An id already queued is not queued again. Only an unbound id (`is_new`) is refused, and
-    /// only when the queue is full.
-    pub(crate) fn enqueue(&self, id: &str, is_new: bool) -> Result<(), QueueFull> {
+    /// only when the queue is full. An id that is not a peer id ([`is_peer_id`]) is never
+    /// queued: the store would refuse it (e.g. a NUL in PostgreSQL text) and the writer retry
+    /// it forever. RegisterPk refuses such ids first, so this is only a backstop.
+    pub(crate) fn enqueue(&self, id: &str, is_new: bool) -> Result<(), Refused> {
+        if !is_peer_id(id) {
+            log::warn!("peer store: registration of malformed id {id:?} refused");
+            return Err(Refused);
+        }
         let mut pending = self.pending();
         if pending.queued.contains(id) {
             return Ok(());
         }
         if is_new && pending.order.len() >= self.cap {
-            log::error!("peer store: registration of new id {id} refused, write queue full");
-            return Err(QueueFull);
+            log::error!("peer store: registration of new id {id:?} refused, write queue full");
+            return Err(Refused);
         }
         pending.push(id);
         drop(pending);
@@ -443,18 +449,18 @@ impl Writer {
             }
             Err(StoreError::UuidMismatch { .. }) => {
                 log::error!(
-                    "peer store: {id} is bound to another uuid in the store; loading that binding"
+                    "peer store: {id:?} is bound to another uuid in the store; loading that binding"
                 );
                 match self.persist.reload(id).await {
                     Ok(()) => Outcome::Stored,
                     Err(err) => {
-                        log::warn!("peer store: reloading {id} failed: {err:?}");
+                        log::warn!("peer store: reloading {id:?} failed: {err:?}");
                         Outcome::Failed
                     }
                 }
             }
             Err(err) => {
-                log::warn!("peer store: write of {id} failed: {err:?}");
+                log::warn!("peer store: write of {id:?} failed: {err:?}");
                 Outcome::Failed
             }
         }

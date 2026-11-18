@@ -10,10 +10,15 @@
 
 mod support;
 
+use deskhaven_signal::{MemoryPeerStore, PeerStore};
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{OK, UUID_MISMATCH},
+    rendezvous_proto::{
+        punch_hole_response::Failure::ID_NOT_EXIST,
+        register_pk_response::Result::{OK, UUID_MISMATCH},
+    },
     tokio,
 };
+use std::sync::Arc;
 use support::{
     Conn, PeerKeys, Rendezvous, TestServer, decode_addr, expect_msg, register_peer, register_pk,
 };
@@ -23,6 +28,19 @@ const ID: &str = "123456789";
 const MAX_ID_LEN: usize = 253;
 /// rs:396: RegisterPk ids shorter than this are refused.
 const MIN_PK_ID_LEN: usize = 6;
+/// deskhaven: ids of a valid length outside the client API's `[A-Za-z0-9_-]` (NUL, line break,
+/// zero-width space, right-to-left override, space, non-ASCII letter).
+const OUTSIDE_CHARSET: [&str; 7] = [
+    "10\u{0}aaa",
+    "abc\ndef",
+    "abc\rdef",
+    "abc\u{200b}def",
+    "abc\u{202e}def",
+    "abc def",
+    "abc\u{e9}def",
+];
+/// Inside it: a default numeric id, `-` / `_`, a 16-character custom id (RustDesk's longest).
+const INSIDE_CHARSET: [&str; 3] = ["123456789", "abc_def-12", "Custom-id_123456"];
 
 /// rs:612-653 `update_addr`: an id without a stored pk is asked for it (`request_pk`), and a
 /// RegisterPeer alone stores nothing; after RegisterPk it only refreshes the address. Address
@@ -146,6 +164,62 @@ async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
             "id len {}",
             id.len()
         );
+    }
+    server.stop().await;
+}
+
+/// deskhaven (changes rs:396-397, which checked only the length): an id outside the client
+/// API's character set gets UUID_MISMATCH like one of the wrong length, and is neither
+/// registered (no punch hole reaches it) nor stored; ids inside it are both.
+#[tokio::test]
+async fn register_pk_with_id_outside_the_client_character_set_gets_uuid_mismatch() {
+    // Arrange
+    let store = Arc::new(MemoryPeerStore::new());
+    let server = TestServer::start_with_store(|cfg| cfg, store.clone()).await;
+    let mut peer = server.udp().await;
+    let keys = PeerKeys::random();
+
+    // Act + Assert
+    for id in OUTSIDE_CHARSET {
+        assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
+    }
+    for id in INSIDE_CHARSET {
+        assert_eq!(peer.register_pk(id, &keys).await, OK, "{id:?}");
+    }
+    for id in OUTSIDE_CHARSET {
+        let mut controller = server.tcp().await;
+        controller.punch_hole_request(server.punch_req(id)).await;
+        let res = expect_msg!(controller.recv().await, PunchHoleResponse);
+        assert_eq!(res.failure.enum_value(), Ok(ID_NOT_EXIST), "{id:?}");
+    }
+    server.stop().await;
+    let mut stored: Vec<String> = store
+        .load_page(None, 100)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|rec| rec.id)
+        .collect();
+    stored.sort();
+    let mut expected = INSIDE_CHARSET.map(str::to_owned).to_vec();
+    expected.sort();
+    assert_eq!(stored, expected);
+}
+
+/// deskhaven: UDP RegisterPeer keeps upstream's length-only check (rs:376; the server's own
+/// self-test probes with an id outside the character set), but an id outside it can never
+/// become known: after its RegisterPk was refused, RegisterPeer is still asked for the pk.
+#[tokio::test]
+async fn register_peer_with_id_outside_the_client_character_set_stays_unknown() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut peer = server.udp().await;
+    let keys = PeerKeys::random();
+
+    // Act + Assert
+    for id in OUTSIDE_CHARSET {
+        assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
+        assert!(peer.register_peer(id).await.request_pk, "{id:?}");
     }
     server.stop().await;
 }

@@ -124,14 +124,14 @@ async fn accept_from(
     uuid: &[u8],
     pk: &[u8],
     from: SocketAddr,
-) -> Result<(), QueueFull> {
+) -> Result<(), Refused> {
     let peer = pm.get_or(id).await;
     let (uuid, pk) = (Bytes::copy_from_slice(uuid), Bytes::copy_from_slice(pk));
     let ip = from.ip().to_string();
     pm.update_pk(id.to_owned(), peer, from, uuid, pk, ip).await
 }
 
-async fn accept(pm: &mut PeerMap, id: &str, uuid: &[u8], pk: &[u8]) -> Result<(), QueueFull> {
+async fn accept(pm: &mut PeerMap, id: &str, uuid: &[u8], pk: &[u8]) -> Result<(), Refused> {
     accept_from(pm, id, uuid, pk, addr()).await
 }
 
@@ -391,6 +391,27 @@ async fn fleet_outage_keeps_peers_accepted_and_the_queue_bounded() {
         assert_eq!(rec.ip, Some(from(ROUNDS, n).ip()), "{id}");
     }
     tasks.shutdown().await;
+}
+
+/// Backstop behind RegisterPk's id check: an id outside the client character set is never
+/// queued (PostgreSQL refuses a NUL, and the writer would retry it forever), leaves no cached
+/// entry, and never reaches the store; a valid id next to it is saved.
+#[tokio::test]
+async fn malformed_ids_are_never_queued_or_stored() {
+    let store = Arc::new(ScriptedStore::default());
+    let (mut pm, tasks) = server(&store);
+
+    for id in ["10\0aaa", "abc\ndef", "abc\u{200b}def", "abc def"] {
+        assert!(accept(&mut pm, id, UUID, PK1).await.is_err(), "{id:?}");
+        assert!(pm.persist().enqueue(id, false).is_err(), "{id:?} bound");
+        assert!(pm.get(id).await.is_none(), "{id:?} cached");
+    }
+    assert_eq!(pm.persist().queued_len(), 0);
+    accept(&mut pm, ID, UUID, PK1).await.unwrap();
+    tasks.shutdown().await;
+
+    let ids: Vec<String> = store.attempts().into_iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, [ID]);
 }
 
 /// H-A.3: a full queue still accepts bound peers (memory updated, write owed) and refuses

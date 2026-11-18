@@ -666,7 +666,7 @@ impl RendezvousServer {
                 let pm = self.pm.clone();
                 self.tasks.spawn(async move {
                     if let Err(err) = pm.reload(&id).await {
-                        log::warn!("peer store: reloading {id} failed: {err:?}");
+                        log::warn!("peer store: reloading {id:?} failed: {err:?}");
                     }
                 });
             }
@@ -726,6 +726,10 @@ impl RendezvousServer {
             match msg_in.union {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
+                    // deskhaven: length only, not `is_peer_id`: RegisterPeer stores nothing
+                    // (`update_addr` only refreshes a peer RegisterPk registered, and that
+                    // refuses ids outside the character set), and the self-test probes with
+                    // SELF_TEST_ID, which is outside it.
                     if !rp.id.is_empty() && rp.id.len() <= MAX_PEER_ID_LEN {
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
@@ -793,7 +797,11 @@ impl RendezvousServer {
         }
         let id = rk.id;
         let ip = addr.ip().to_string();
-        if id.len() < 6 || id.len() > MAX_PEER_ID_LEN {
+        // deskhaven: an id outside the client API's character set (`is_peer_id`) is answered
+        // like one of the wrong length: UUID_MISMATCH makes a real client pick a new id
+        // (rendezvous_mediator.rs `handle_uuid_mismatch`). Checked before the IP blocker so
+        // refused ids cost no budget, and before memory, the store and the logs see it.
+        if id.len() < 6 || !is_peer_id(&id) {
             return Some(UUID_MISMATCH);
         } else if !self.check_ip_blocker(addr.ip(), &id).await {
             return Some(TOO_FREQUENT);
@@ -811,7 +819,7 @@ impl RendezvousServer {
                 if peer.uuid == rk.uuid {
                     if peer.info.ip != ip && peer.pk != rk.pk {
                         log::warn!(
-                            "Peer {} ip/pk mismatch: {}/{:?} vs {}/{:?}",
+                            "Peer {:?} ip/pk mismatch: {}/{:?} vs {}/{:?}",
                             id,
                             ip,
                             rk.pk,
@@ -823,7 +831,7 @@ impl RendezvousServer {
                     }
                 } else {
                     log::warn!(
-                        "Peer {} uuid mismatch: {} vs stored {}",
+                        "Peer {:?} uuid mismatch: {} vs stored {}",
                         id,
                         Redacted(&rk.uuid),
                         Redacted(&peer.uuid)
@@ -991,7 +999,7 @@ impl RendezvousServer {
                 // and ignored RegisterPeer). Same checks and answers as over UDP; once
                 // registered, the connection stays open as the peer's channel (heartbeats,
                 // deliveries; see `handle_listener_inner`). A dropped RegisterPk (malformed)
-                // or RegisterPeer (bad id) closes the connection.
+                // or RegisterPeer (bad id: not `is_peer_id`) closes the connection.
                 Some(rendezvous_message::Union::RegisterPk(rk)) => {
                     let id = rk.id.clone();
                     let Some(res) = self.register_pk(rk, addr).await else {
@@ -1009,7 +1017,7 @@ impl RendezvousServer {
                 // only an accepted RegisterPk (uuid-checked) binds the connection. TCP-mode
                 // clients never send it (they only send RegisterPk).
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
-                    if rp.id.is_empty() || rp.id.len() > MAX_PEER_ID_LEN {
+                    if !is_peer_id(&rp.id) {
                         return false;
                     }
                     Self::send_to_sink(sink, register_peer_response(true)).await;
@@ -1064,7 +1072,7 @@ impl RendezvousServer {
             self.control.peer_online(&id, socket_addr.ip());
         }
         if let Some(old) = ip_change {
-            log::info!("IP change of {} from {} to {}", id, old, socket_addr);
+            log::info!("IP change of {:?} from {} to {}", id, old, socket_addr);
         }
         socket
             .send(&register_peer_response(request_pk), socket_addr)
@@ -1166,7 +1174,7 @@ impl RendezvousServer {
         match stream {
             Some(tx) => {
                 if let Err(err) = tx.try_send(msg) {
-                    log::debug!("message to {id} over its connection dropped: {err}");
+                    log::debug!("message to {id:?} over its connection dropped: {err}");
                 }
             }
             None => self.tx.send(Data::Msg(msg.into(), peer_addr))?,
@@ -1257,7 +1265,7 @@ impl RendezvousServer {
         let mut ph = ph;
         if !key.is_empty() && ph.licence_key != key {
             log::warn!(
-                "Authentication failed from {} for peer {} - invalid key",
+                "Authentication failed from {} for peer {:?} - invalid key",
                 addr,
                 ph.id
             );
@@ -1832,6 +1840,11 @@ async fn run_self_test(test_addr: SocketAddr) -> ResultType<()> {
     })
 }
 
+/// deskhaven: the id the self-test's RegisterPeer names (upstream's literal). Outside
+/// `is_peer_id`, so no client can register it and the probe never touches a real peer; UDP
+/// RegisterPeer therefore checks only the id's length.
+const SELF_TEST_ID: &str = "(:test_hbbs:)";
+
 // temp solution to solve udp socket failure
 async fn test_hbbs(addr: SocketAddr) -> ResultType<()> {
     let mut addr = addr;
@@ -1846,7 +1859,7 @@ async fn test_hbbs(addr: SocketAddr) -> ResultType<()> {
     let mut socket = FramedSocket::new(config::Config::get_any_listen_addr(addr.is_ipv4())).await?;
     let mut msg_out = RendezvousMessage::new();
     msg_out.set_register_peer(RegisterPeer {
-        id: "(:test_hbbs:)".to_owned(),
+        id: SELF_TEST_ID.to_owned(),
         ..Default::default()
     });
     let mut last_time_recv = Instant::now();
@@ -2424,6 +2437,14 @@ mod tests {
             let msg = sign::verify(&signed, &server_pk).unwrap();
             assert_ne!(msg.len(), sign::PUBLICKEYBYTES, "id {id_len}");
         }
+    }
+
+    // deskhaven: the self-test's id must stay unregistrable (see SELF_TEST_ID) but pass the
+    // UDP RegisterPeer check, or the self-test times out and stops the server.
+    #[test]
+    fn self_test_id_is_not_a_peer_id_but_fits_register_peer() {
+        assert!(!is_peer_id(SELF_TEST_ID));
+        assert!(!SELF_TEST_ID.is_empty() && SELF_TEST_ID.len() <= MAX_PEER_ID_LEN);
     }
 
     // deskhaven: relay uuids follow the client's `check_relay_uuid` (rustdesk 78450f4,

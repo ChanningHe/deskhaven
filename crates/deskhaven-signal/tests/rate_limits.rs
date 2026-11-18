@@ -10,7 +10,7 @@
 mod support;
 
 use hbb_common::{
-    rendezvous_proto::register_pk_response::Result::{OK, TOO_FREQUENT},
+    rendezvous_proto::register_pk_response::Result::{OK, TOO_FREQUENT, UUID_MISMATCH},
     tokio::{
         self,
         time::{Duration, sleep},
@@ -71,5 +71,31 @@ async fn thirty_third_register_pk_from_one_ip_within_60s_is_too_frequent() {
     // Assert
     assert_eq!(refused, TOO_FREQUENT);
     assert_eq!(other_ip, OK);
+    server.stop().await;
+}
+
+/// deskhaven: RegisterPk with an id outside the client API's character set is refused
+/// (UUID_MISMATCH) before the per-IP limit counts it, so it costs that IP no budget: after
+/// more refused ones than the limit, all 32 valid registrations are still accepted.
+#[tokio::test]
+async fn malformed_ids_do_not_consume_the_per_ip_budget() {
+    // Arrange
+    let server = TestServer::start().await;
+    let mut busy = server.udp().await;
+    let keys = PeerKeys::random();
+    for i in 0..=PER_IP_LIMIT {
+        let id = format!("peer {i:04}");
+        assert_eq!(busy.register_pk(&id, &keys).await, UUID_MISMATCH, "#{i}");
+    }
+
+    // Act + Assert
+    for i in 0..PER_IP_LIMIT {
+        let id = format!("peer-{i:04}");
+        assert_eq!(busy.register_pk(&id, &keys).await, OK, "#{i}");
+    }
+    assert_eq!(
+        busy.register_pk("peer-over-limit", &keys).await,
+        TOO_FREQUENT
+    );
     server.stop().await;
 }

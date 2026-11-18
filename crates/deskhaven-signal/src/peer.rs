@@ -2,7 +2,7 @@
 use crate::common::*;
 use crate::ip_blocker::IpBlocker;
 use crate::log_limit::Redacted;
-use crate::persist::{Persist, QueueFull, SaveState, WRITE_QUEUE};
+use crate::persist::{Persist, Refused, SaveState, WRITE_QUEUE};
 use crate::store::{PeerStore, StoreError};
 use crate::tasks::Tasks;
 use hbb_common::{
@@ -30,6 +30,19 @@ pub const IP_BLOCK_DUR: u64 = 60;
 // Same bound as the Pro server: a longer id is not a normal RustDesk id or hostname,
 // and every peer entry and punch-request record keeps its own copy.
 pub const MAX_PEER_ID_LEN: usize = 253;
+
+/// deskhaven: whether `id` may be registered or stored: 1..=MAX_PEER_ID_LEN bytes of ASCII
+/// letters, digits, `-` and `_`, the rule the client API applies to RustDesk ids
+/// (deskhaven-client-api login/request.rs `is_rustdesk_id`). RustDesk's numeric ids and custom
+/// ids (`^[a-zA-Z][\w-]{5,15}$`) are inside it; anything else (NUL, line breaks, invisible or
+/// bidi characters) would break the store write, forge log lines or look like another device.
+pub(crate) fn is_peer_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_PEER_ID_LEN
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
 
 // deskhaven: no serde any more; the info JSON column of upstream's `peer` table is gone
 // (the store keeps the IP itself).
@@ -99,9 +112,9 @@ impl PeerMap {
     }
 
     // deskhaven: the store write is queued (coalesced per id), not awaited. Fails, before
-    // touching the peer, only for an id that is not bound yet when the queue is full; the
-    // caller then refuses the registration. Upstream awaited the database and ignored the
-    // result.
+    // touching the peer, only for an id that is not bound yet when the queue is full (or one
+    // that is not a peer id, which the caller already refused); the caller then refuses the
+    // registration. Upstream awaited the database and ignored the result.
     // deskhaven (M1-07 review, H1): a refused id also loses the default entry `get_or` made
     // for it, so no peer without a key stays behind (it answered punch holes as OFFLINE and
     // had its empty pk signed). Removed under the peer's lock (lock order peer -> map; nothing
@@ -115,11 +128,11 @@ impl PeerMap {
         uuid: Bytes,
         pk: Bytes,
         ip: String,
-    ) -> Result<(), QueueFull> {
+    ) -> Result<(), Refused> {
         // deskhaven (M2-12 review): the uuid is never logged (proof of identity for the
         // device endpoints), only its length.
         log::info!(
-            "update_pk {} {:?} uuid {} {:?}",
+            "update_pk {:?} {:?} uuid {} {:?}",
             id,
             addr,
             Redacted(&uuid),
@@ -183,5 +196,44 @@ impl PeerMap {
     // (M2-12, device deletion); the writer also calls `Persist::reload` on UuidMismatch.
     pub(crate) async fn reload(&self, id: &str) -> Result<(), StoreError> {
         self.persist.reload(id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // deskhaven: the client API's RustDesk id rule, within MAX_PEER_ID_LEN.
+    #[test]
+    fn peer_ids_are_limited_to_the_client_character_set_and_the_length_cap() {
+        let at_cap = "1".repeat(MAX_PEER_ID_LEN);
+        let over_cap = "1".repeat(MAX_PEER_ID_LEN + 1);
+        let valid = [
+            "123456789",
+            "abc_def-12",
+            "Custom-id_123456",
+            "a",
+            at_cap.as_str(),
+        ];
+        let invalid = [
+            "",
+            "10\0aaa",
+            "abc\ndef",
+            "abc\rdef",
+            "abc\u{200b}def",
+            "abc\u{202e}def",
+            "abc def",
+            "abc\u{e9}def",
+            "\u{ff21}bcdef",
+            "abc.def",
+            over_cap.as_str(),
+        ];
+
+        for id in valid {
+            assert!(is_peer_id(id), "rejected {id:?}");
+        }
+        for id in invalid {
+            assert!(!is_peer_id(id), "accepted {id:?}");
+        }
     }
 }

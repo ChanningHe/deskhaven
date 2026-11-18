@@ -167,7 +167,8 @@ pub fn require_json(headers: &HeaderMap) -> Result<(), ClientApiError> {
     is_json.then_some(()).ok_or_else(invalid)
 }
 
-/// RustDesk ids are numeric or custom ids of ASCII letters, digits, `-` and `_`.
+/// RustDesk ids are numeric or custom ids of ASCII letters, digits, `-` and `_`. The signal
+/// server registers only such ids (deskhaven-signal peer.rs `is_peer_id`); keep both in step.
 fn is_rustdesk_id(id: &str) -> bool {
     !id.is_empty()
         && id

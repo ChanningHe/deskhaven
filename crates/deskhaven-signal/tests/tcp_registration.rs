@@ -24,7 +24,7 @@ use hbb_common::{
 use std::sync::Arc;
 use support::{
     Conn, PeerKeys, REG_TIMEOUT, Rendezvous, STEP, TestServer, decode_addr, expect_msg,
-    online_bits, punch_hole_sent, register_pk, request_relay, rv,
+    online_bits, punch_hole_sent, register_peer, register_pk, request_relay, rv,
 };
 
 const POLL: Duration = Duration::from_millis(20);
@@ -128,6 +128,36 @@ async fn register_pk_over_tcp_applies_the_udp_checks() {
     );
     malformed.send(&register_pk("tcp-peer-bad", &bad_pk)).await;
     malformed.assert_closed().await;
+    server.stop().await;
+}
+
+/// deskhaven: an id outside the client API's character set (`[A-Za-z0-9_-]`) gets the UDP
+/// answers over a stream too: RegisterPk is answered UUID_MISMATCH and the connection stays
+/// usable (the client picks a new id on it); RegisterPeer closes the connection, over TCP and
+/// websocket alike.
+#[tokio::test]
+async fn ids_outside_the_client_character_set_are_refused_over_streams() {
+    const BAD_ID: &str = "abc\ndef";
+    // Arrange
+    let server = TestServer::start().await;
+    let mut conn = server.tcp().await;
+    let mut tcp_peer = server.tcp().await;
+    let mut ws_peer = server.ws().await;
+
+    // Act + Assert
+    assert_eq!(
+        conn.register_pk(BAD_ID, &PeerKeys::random()).await,
+        UUID_MISMATCH
+    );
+    assert_eq!(
+        conn.register_pk("tcp-peer-renamed", &PeerKeys::random())
+            .await,
+        OK
+    );
+    tcp_peer.send(&register_peer("abc\u{202e}def")).await;
+    tcp_peer.assert_closed().await;
+    ws_peer.send(&register_peer("10\u{0}aaa")).await;
+    ws_peer.assert_closed().await;
     server.stop().await;
 }
 
