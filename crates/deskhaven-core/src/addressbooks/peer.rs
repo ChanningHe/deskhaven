@@ -154,8 +154,50 @@ impl Peer {
     }
 }
 
+/// Free-text peer fields, single-line (the note is the one multi-line field).
+const CLIENT_TEXT_KEYS: [&str; 7] = [
+    ALIAS,
+    USERNAME,
+    HOSTNAME,
+    PLATFORM,
+    RDP_PORT,
+    RDP_USERNAME,
+    LOGIN_NAME,
+];
+
+/// A tag name as pushed by the RustDesk client: control and bidirectional formatting
+/// characters removed instead of refused (see [`PeerPatch::from_client_json`]).
+pub fn client_tag_name(raw: &str) -> String {
+    text::strip_bidi_and_control(raw, usize::MAX, false)
+}
+
 impl PeerPatch {
-    /// Parses and validates a client peer object. `id` is required.
+    /// [`from_json`](Self::from_json) for a peer the RustDesk client pushed: control and
+    /// bidirectional formatting characters are stripped from the free-text fields and tag
+    /// names instead of refused, so one peer reporting a Hebrew or Arabic hostname (they
+    /// carry LRM / RLM) does not fail the whole sync. Console writes stay strict.
+    ///
+    /// Not stripped: `id`, `hash` and `password`. They are identifiers and secrets
+    /// computed by the client; removing a character would silently turn them into other
+    /// values (a different peer, a hash that never verifies), so they are still refused.
+    /// Non-string values are left for `from_json` to refuse.
+    pub fn from_client_json(mut value: Value) -> Result<Self, AddressBookError> {
+        if let Value::Object(map) = &mut value {
+            for key in CLIENT_TEXT_KEYS {
+                strip_string(map, key, false);
+            }
+            strip_string(map, NOTE, true);
+            if let Some(Value::Array(tags)) = map.get_mut(TAGS) {
+                for tag in tags {
+                    strip_value(tag, false);
+                }
+            }
+        }
+        Self::from_json(value)
+    }
+
+    /// Parses and validates a peer object (the console's writes, server-built entries).
+    /// `id` is required.
     pub fn from_json(value: Value) -> Result<Self, AddressBookError> {
         let Value::Object(mut map) = value else {
             return Err(invalid("peer", "must be a JSON object"));
@@ -188,6 +230,19 @@ impl PeerPatch {
             extra: map,
             ..patch
         })
+    }
+}
+
+fn strip_string(map: &mut Map<String, Value>, key: &str, multiline: bool) {
+    if let Some(value) = map.get_mut(key) {
+        strip_value(value, multiline);
+    }
+}
+
+/// `value`, when it is a string, without control and bidirectional formatting characters.
+fn strip_value(value: &mut Value, multiline: bool) {
+    if let Value::String(raw) = value {
+        *raw = text::strip_bidi_and_control(raw, usize::MAX, multiline);
     }
 }
 
@@ -393,6 +448,55 @@ mod tests {
         ] {
             assert!(parse(bad.clone()).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn client_peers_are_stripped_of_control_and_bidi_characters_not_refused() {
+        let patch = PeerPatch::from_client_json(json!({
+            "id": "1",
+            "hostname": "\u{05E9}\u{200F}\u{05DC}\u{05D5}\u{05DD}",
+            "alias": "\u{202E}nimda\u{0}",
+            "username": "u\u{200E}", "platform": "Li\u{2066}nux", "rdpPort": "33\u{7}89",
+            "rdpUsername": "r\u{061C}", "loginName": "l\u{202A}",
+            "note": "l1\n\u{202E}l2\t\u{0}",
+            "tags": ["\u{200F}t", "a\u{200D}b"],
+        }))
+        .unwrap();
+
+        assert_eq!(
+            patch.hostname.as_deref(),
+            Some("\u{05E9}\u{05DC}\u{05D5}\u{05DD}")
+        );
+        assert_eq!(patch.alias.as_deref(), Some("nimda"));
+        assert_eq!(patch.username.as_deref(), Some("u"));
+        assert_eq!(patch.platform.as_deref(), Some("Linux"));
+        assert_eq!(patch.rdp_port.as_deref(), Some("3389"));
+        assert_eq!(patch.rdp_username.as_deref(), Some("r"));
+        assert_eq!(patch.login_name.as_deref(), Some("l"));
+        assert_eq!(patch.note.as_deref(), Some("l1\nl2\t"));
+        assert_eq!(
+            patch.tags,
+            Some(vec!["t".to_owned(), "a\u{200D}b".to_owned()])
+        );
+    }
+
+    #[test]
+    fn client_peers_still_refuse_what_stripping_would_change_in_meaning() {
+        for bad in [
+            json!({ "id": "a\u{0}b" }),
+            json!({ "id": "1", "hash": "h\u{202E}" }),
+            json!({ "id": "1", "alias": 3 }),
+            json!({ "id": "1", "alias": "x".repeat(256) }),
+            json!({ "id": "1", "tags": ["."] }),
+            json!({ "id": "1", "tags": ["\u{200F}"] }),
+        ] {
+            assert!(PeerPatch::from_client_json(bad.clone()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn client_tag_names_lose_control_and_bidi_characters() {
+        assert_eq!(client_tag_name("\u{202E}la\u{0}b\u{200F}el"), "label");
     }
 
     #[test]

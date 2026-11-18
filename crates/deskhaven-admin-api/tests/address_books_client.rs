@@ -236,3 +236,51 @@ async fn client_writes_show_up_in_the_console_and_rule_1_cannot_write() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn client_pushes_with_formatting_characters_are_stored_stripped_but_the_console_refuses_them()
+{
+    each_migrated_backend(async |db: &TestDb| {
+        let s = scene(db).await;
+        let book = format!("{BOOKS}/{}", s.guid);
+        let add = format!("/api/ab/peer/add/{}", s.guid);
+        let body = json!({
+            "id": "400", "hostname": "\u{05E9}\u{200F}\u{05DC}", "alias": "\u{202E}nimda",
+            "tags": ["\u{200F}lobby"]
+        });
+        let tag = json!({ "name": "\u{202E}vip", "color": 1 });
+
+        let (written, _) = client_call(&s.h, Method::POST, &add, &s.alice, Some(body)).await;
+        let tag_path = format!("/api/ab/tag/add/{}", s.guid);
+        let (tagged, _) = client_call(&s.h, Method::POST, &tag_path, &s.alice, Some(tag)).await;
+
+        assert_eq!((written, tagged), (StatusCode::OK, StatusCode::OK));
+        let (_, peers) = read(&s, &s.alice, &peers_path(&s.guid)).await;
+        let stored = peers["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|peer| peer["id"] == "400")
+            .unwrap();
+        assert_eq!(stored["hostname"], "\u{05E9}\u{05DC}");
+        assert_eq!(stored["alias"], "nimda");
+        assert_eq!(stored["tags"], json!(["lobby"]));
+        let (_, tags) = read(&s, &s.alice, &format!("/api/ab/tags/{}", s.guid)).await;
+        assert!(tags.as_array().unwrap().iter().any(|t| t["name"] == "vip"));
+
+        for bad in [
+            json!({ "id": "401", "alias": "\u{202E}nimda" }),
+            json!({ "id": "402", "hostname": "h\u{200F}" }),
+        ] {
+            let url = format!("{book}/peers");
+            let refused = s.h.write(Method::POST, &url, &s.admin, bad).await;
+            assert_eq!(refused.status, 422, "{}", refused.body);
+        }
+        let bad_tag = json!({ "name": "\u{202E}vip", "color": 1 });
+        let refused =
+            s.h.write(Method::POST, &format!("{book}/tags"), &s.admin, bad_tag)
+                .await;
+        assert_eq!(refused.status, 422, "{}", refused.body);
+    })
+    .await;
+}

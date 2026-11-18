@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use deskhaven_core::addressbooks::{
-    AddressBookError, BookReplacement, MAX_BOOK_TAGS, PeerPatch, ReplacementTag,
+    AddressBookError, BookReplacement, MAX_BOOK_TAGS, PeerPatch, ReplacementTag, client_tag_name,
 };
 use serde::Deserializer as _;
 use serde::de::{self, DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
@@ -186,7 +186,7 @@ impl<'de> Visitor<'de> for Names<'_> {
         let mut names = Vec::new();
         while names.len() < MAX_TAGS {
             match seq.next_element::<String>()? {
-                Some(name) => names.push(name),
+                Some(name) => names.push(client_tag_name(&name)),
                 None => return Ok(names),
             }
         }
@@ -249,7 +249,7 @@ fn peer<E: de::Error>(raw: &RawValue, stash: Stash) -> Result<PeerPatch, E> {
         return Err(invalid(format!("must be at most {MAX_PEER_BYTES} bytes")));
     }
     let value = serde_json::from_str(raw.get()).map_err(E::custom)?;
-    PeerPatch::from_json(value).map_err(|err| abort(stash, ab_error(err)))
+    PeerPatch::from_client_json(value).map_err(|err| abort(stash, ab_error(err)))
 }
 
 /// `tag_colors`: a JSON string holding `{name: int}` (what the client writes) or the object
@@ -293,7 +293,7 @@ impl<'de> Visitor<'de> for Colors<'_> {
                 };
                 return Err(abort(self.0, ab_error(error)));
             }
-            colors.insert(name, map.next_value::<i64>()?);
+            colors.insert(client_tag_name(&name), map.next_value::<i64>()?);
         }
         Ok(colors)
     }
@@ -336,6 +336,31 @@ mod tests {
             .collect();
         assert_eq!(tags, [("a", Some(7)), ("b", None)]);
         assert_eq!(parsed.peers[0].id, "1");
+    }
+
+    #[test]
+    fn parse_strips_formatting_characters_instead_of_refusing_the_batch() {
+        let data = json!({
+            "tags": ["\u{200F}a"], "tag_colors": json!({ "a\u{202E}": 7 }).to_string(),
+            "peers": [
+                { "id": "1", "hostname": "\u{05E9}\u{200F}\u{05DC}", "alias": "\u{202E}nimda" },
+                { "id": "2", "tags": ["\u{200E}a"] }
+            ]
+        })
+        .to_string();
+
+        let parsed = parse(&data, 10).unwrap();
+
+        assert_eq!(
+            parsed.peers[0].hostname.as_deref(),
+            Some("\u{05E9}\u{05DC}")
+        );
+        assert_eq!(parsed.peers[0].alias.as_deref(), Some("nimda"));
+        assert_eq!(parsed.peers[1].tags, Some(vec!["a".to_owned()]));
+        assert_eq!(
+            (parsed.tags[0].name.as_str(), parsed.tags[0].color),
+            ("a", Some(7))
+        );
     }
 
     #[test]

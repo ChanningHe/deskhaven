@@ -164,6 +164,28 @@ async fn a_legacy_push_is_what_the_new_api_reads() {
 }
 
 #[tokio::test]
+async fn a_legacy_push_with_formatting_characters_is_stored_stripped_not_refused() {
+    let (app, out) = app_with(&["client-session", "ab-personal"]).await;
+    let (token, guid) = (&out["session_token"], &out["personal_guid"]);
+    let mut hebrew = legacy_peer("555555555", "\u{202E}nimda", &["\u{200F}ops"], "");
+    hebrew["hostname"] = json!("\u{05E9}\u{200F}\u{05DC}");
+    let doc = document(
+        &[("\u{200F}ops", 1)],
+        vec![legacy_peer(PERSONAL_PEER, "desk", &[], ""), hebrew],
+    );
+
+    let pushed = push_document(&app, token, &doc).await;
+    let (peers, tags) = new_api(&app, token, guid).await;
+
+    assert_done(&pushed);
+    let stored = peers.iter().find(|p| p["id"] == "555555555").unwrap();
+    assert_eq!(stored["hostname"], "\u{05E9}\u{05DC}");
+    assert_eq!(stored["alias"], "nimda");
+    assert_eq!(stored["tags"], json!(["ops"]));
+    assert_eq!(tags, [json!({ "name": "ops", "color": 1 })]);
+}
+
+#[tokio::test]
 async fn a_legacy_push_keeps_what_only_the_new_api_knows() {
     let (app, out) = app_with(&["client-session", "ab-personal"]).await;
     let (token, guid) = (&out["session_token"], &out["personal_guid"]);

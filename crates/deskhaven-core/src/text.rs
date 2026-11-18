@@ -47,11 +47,16 @@ pub(crate) fn is_dropped(c: char) -> bool {
         )
 }
 
-/// `raw` without control and [`is_bidi_control`] characters, cut to `max` characters: for
-/// imported text (an IdP's display name) that is cleaned rather than refused. Zero-width
-/// joiners stay; unlike [`clean`] this keeps emoji sequences and Persian / Indic names whole.
-pub(crate) fn strip_bidi_and_control(raw: &str, max: usize) -> String {
-    let kept = |c: &char| !c.is_control() && !is_bidi_control(*c);
+/// `raw` without control and [`is_bidi_control`] characters (newline and tab kept when
+/// `multiline`), cut to `max` characters: text that arrives from another system and must
+/// not fail the request over a formatting mark (an IdP's display name, a name pushed by
+/// the RustDesk client). Zero-width joiners stay; unlike [`clean`] this keeps emoji
+/// sequences and Persian / Indic names whole.
+pub(crate) fn strip_bidi_and_control(raw: &str, max: usize, multiline: bool) -> String {
+    let kept = |c: &char| {
+        let control = c.is_control() && !(multiline && matches!(c, '\n' | '\t'));
+        !control && !is_bidi_control(*c)
+    };
     raw.chars().filter(kept).take(max).collect()
 }
 
@@ -144,8 +149,19 @@ mod tests {
     fn imported_text_is_stripped_of_bidi_and_control_but_keeps_joiners() {
         let raw = "\u{202E}Ann\u{0}\u{200F}a\u{200D}b\u{200C}c";
 
-        assert_eq!(strip_bidi_and_control(raw, 64), "Anna\u{200D}b\u{200C}c");
-        assert_eq!(strip_bidi_and_control("abcdef", 3), "abc");
-        assert_eq!(problem(&strip_bidi_and_control(raw, 64), 64, false), None);
+        assert_eq!(
+            strip_bidi_and_control(raw, 64, false),
+            "Anna\u{200D}b\u{200C}c"
+        );
+        assert_eq!(strip_bidi_and_control("abcdef", 3, false), "abc");
+        assert_eq!(
+            problem(&strip_bidi_and_control(raw, 64, false), 64, false),
+            None
+        );
+        assert_eq!(
+            strip_bidi_and_control("a\n\u{202E}b\tc\u{0}", 64, true),
+            "a\nb\tc"
+        );
+        assert_eq!(strip_bidi_and_control("a\nb\tc", 64, false), "abc");
     }
 }

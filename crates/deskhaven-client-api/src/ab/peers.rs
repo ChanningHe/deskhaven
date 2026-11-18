@@ -85,5 +85,5 @@ pub async fn remove(
 
 fn peer_patch(body: &[u8]) -> Result<PeerPatch, ClientApiError> {
     let value: Value = parse_body(body)?;
-    PeerPatch::from_json(value).map_err(ab_error)
+    PeerPatch::from_client_json(value).map_err(ab_error)
 }

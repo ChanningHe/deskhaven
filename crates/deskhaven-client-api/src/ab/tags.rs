@@ -8,7 +8,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use deskhaven_core::addressbooks::{Actor, Tag};
+use deskhaven_core::addressbooks::{Actor, Tag, client_tag_name};
 use deskhaven_core::state::AppState;
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +34,7 @@ impl From<Tag> for TagBody {
 impl From<TagBody> for Tag {
     fn from(body: TagBody) -> Self {
         Self {
-            name: body.name,
+            name: client_tag_name(&body.name),
             color: body.color,
         }
     }
@@ -99,7 +99,7 @@ pub async fn rename(
     let names: RenameBody = parse_body(&body)?;
     let actor = Actor::User(principal.user_id);
     service(&state)
-        .rename_tag(actor, &guid, &names.old, &names.new)
+        .rename_tag(actor, &guid, &names.old, &client_tag_name(&names.new))
         .await
         .map_err(ab_error)?;
     Ok(StatusCode::OK)

@@ -60,7 +60,7 @@ pub use deskhaven_db::entity::address_book::Kind;
 pub use deskhaven_db::entity::address_book_share::Rule;
 pub use error::AddressBookError;
 pub use import::{ImportReport, MAX_IMPORT_DEVICES};
-pub use peer::{EXTRA_MAX_BYTES, Peer, PeerPatch, PeerSecret, TAG_NAME_MAX_LEN};
+pub use peer::{EXTRA_MAX_BYTES, Peer, PeerPatch, PeerSecret, TAG_NAME_MAX_LEN, client_tag_name};
 pub use shares::{Share, Subject};
 pub use tags::MAX_BOOK_TAGS;
 

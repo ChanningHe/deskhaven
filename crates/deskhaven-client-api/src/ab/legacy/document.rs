@@ -12,7 +12,7 @@
 //! `_deserialize` (`:1325-1356`) and, in the Sciter UI, by `JSON.parse` / `JSON.stringify`
 //! (`src/ui/ab.tis:650-670`).
 //!
-//! Peers use the per-item API's codec (`Peer::to_json`, `PeerPatch::from_json`), so every
+//! Peers use the per-item API's codec (`Peer::to_json`, `PeerPatch::from_client_json`), so every
 //! field both APIs share is one definition; a legacy client ignores the fields it does not
 //! know and a push without them leaves the stored values alone. Reading a push is
 //! [`super::parse`].

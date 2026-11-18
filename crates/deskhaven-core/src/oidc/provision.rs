@@ -91,7 +91,7 @@ async fn free_username(
 /// service refuses them, and a login must not fail over the IdP's display name), cut to
 /// the user service's limit; blank leaves the username as the display name.
 fn display_name(name: Option<&str>) -> String {
-    text::strip_bidi_and_control(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
+    text::strip_bidi_and_control(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS, false)
 }
 
 async fn join_groups(
