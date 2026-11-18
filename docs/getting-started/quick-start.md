@@ -14,7 +14,7 @@ certificate, and you are signed in to it as the owner.
 
 ```sh
 mkdir deskhaven && cd deskhaven
-base=https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.0/deploy/compose
+base=https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.1/deploy/compose
 curl -fsSL -O "$base/compose.yaml" -O "$base/compose.caddy.yaml" -O "$base/Caddyfile"
 curl -fsSL -o .env "$base/.env.example"
 ```
