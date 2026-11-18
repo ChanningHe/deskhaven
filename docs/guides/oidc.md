@@ -43,6 +43,12 @@ by another device, the login is refused with "This RustDesk ID belongs to anothe
 on this server". A client that has not connected to this server yet can still sign in, but
 the page says that the server cannot vouch for the ID.
 
+- With the signal server disabled in this process (`signal.enabled = false`), the server
+  can only see an ID that already has a device row in its database, so most client
+  sign-ins show the "has not connected to this server yet" warning.
+- The ID and device check applies whatever `devices.verify_uuid` says; that setting only
+  governs the device endpoints (heartbeat and sysinfo).
+
 ## Groups and admins
 
 Set **Group claim** to the ID token claim that lists the user's groups, usually `groups`.

@@ -14,13 +14,23 @@ clients keep working from anywhere.
 
 ## Before any address rule
 
-The rule only holds while nothing reaches the backend ports directly. Check that 21114,
-21118 and 21119 are not reachable from outside:
+The rule only holds while nothing reaches the backend ports directly. For restricting the
+console only 21114 (the console and the client API) matters, and the port of a separate
+admin listener if you run one ([how](separate-console.md)). Keep those off the outside:
 
-- The compose deployment and the systemd unit bind them to `127.0.0.1` already.
+- The compose deployment publishes 21114 on `127.0.0.1` only.
+- The systemd unit sets `listen.client_api` to `127.0.0.1:21114`.
 - A binary you start yourself listens on `0.0.0.0:21114`: set
   `listen.client_api = "127.0.0.1:21114"`.
 - `docker run -p 21114:21114` publishes it on every interface: use `-p 127.0.0.1:21114:21114`.
+
+The WebSocket ports 21118 (deskhaven) and 21119 (the relay's) serve no console or
+management interface, but they are meant for the proxy too, so firewall them as well. The
+compose deployment publishes both on `127.0.0.1`. The systemd unit binds 21118 to loopback
+(`signal.ws_listen`); 21119 has no bind setting and listens on all interfaces, which the
+nftables rule in the unit's header closes (see [Binary with systemd](binary-systemd.md)). A
+binary you start yourself listens on all interfaces for 21118 unless you set
+`signal.ws_listen`.
 
 TCP and UDP 21115-21117 never pass the proxy and carry no management interface.
 
@@ -118,10 +128,17 @@ the range: the restricted paths must answer 403.
 
 ## Traefik
 
-Extend the [Traefik file](reverse-proxy.md#traefik) (same entry point, certificate resolver
-and services). Every router must pin `Host(...)`, and `priority` must be explicit: Traefik's
+The examples are for Traefik v3 (`ipAllowList`; v2 called it `ipWhiteList`). Extend the
+[Traefik file](reverse-proxy.md#traefik) (same entry point, certificate resolver and
+services). Every router must pin `Host(...)`, and `priority` must be explicit: Traefik's
 default is the rule's length, which would put the wrong router first. Keep `sanitizePath`
 at its default (`true`).
+
+The path matching was tested on Traefik 3.7 with the default `sanitizePath` and the default
+handling of encoded characters, which refuses encoded slashes and dots. On another version,
+keep those defaults and check that a request with `%2e`, `%2f` or `%5c` in the path is
+rejected (see the `encodedCharacters` settings of your version's entry point
+documentation); the address rule is only as exact as that.
 
 ### Console only from trusted addresses
 

@@ -141,6 +141,9 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   LDAP keeps its deskhaven sessions until they expire or are revoked.
 - **Read-only members of a shared address book receive its saved peer passwords.** The
   client needs them in clear to connect.
+- **RustDesk IDs with non-ASCII letters cannot sign in.** Custom IDs such as `a张三1234`,
+  which the client allows, are registered and reachable, but cannot sign in, send
+  heartbeats or sysinfo: the client API accepts only `[A-Za-z0-9_-]` IDs.
 
 ## HTTP
 
