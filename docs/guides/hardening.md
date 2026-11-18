@@ -10,7 +10,8 @@ When you finish, your server is tightened beyond the defaults for life on the in
    before the RustDesk client lets them sign in. OIDC sign-ins are exempt, also into local
    accounts with a [linked sign-in](oidc.md#link-an-existing-account); require MFA at the
    identity provider.
-3. **Keep the console off the internet**: [give it its own port](separate-console.md).
+3. **Keep the console off the internet**: [give it its own port](separate-console.md), or
+   [restrict it to trusted addresses](restrict-console.md) at your proxy.
 4. **Refuse the old key exchange** once all your clients support version 1 of it, that is
    RustDesk 1.5.0 or later: set `signal.require_kx_v1` to `true` under **Settings →
    Signalling**. Version 0 uses one key for both directions. Signed-in 1.4.x clients only

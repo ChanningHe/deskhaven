@@ -14,6 +14,7 @@ Start with the three getting-started pages; the guides and the reference are for
 - [Run without a domain](guides/no-domain.md) (LAN, SSH tunnel)
 - [Use PostgreSQL](guides/postgresql.md)
 - [Keep the console off the internet](guides/separate-console.md)
+- [Restrict the console to trusted addresses](guides/restrict-console.md) (nginx, Traefik)
 - [Sign in with OIDC](guides/oidc.md) (Keycloak, Authentik, Google, Entra ID)
 - [Sign in with LDAP or Active Directory](guides/ldap.md)
 - [Switch from the RustDesk OSS server](guides/migrate-from-oss.md)

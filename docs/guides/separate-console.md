@@ -30,3 +30,6 @@ On a binary deployment, add to `/etc/deskhaven/deskhaven.toml` and restart deskh
 admin = "127.0.0.1:21113"
 admin_public_url = "http://localhost:21113"
 ```
+
+To reach the console without a tunnel, firewall the port to your own addresses, or see
+[Restrict the console to trusted addresses](restrict-console.md) for rules at a reverse proxy.

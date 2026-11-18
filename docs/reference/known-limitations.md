@@ -130,10 +130,26 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   give the devices their own accounts. The console lists the 200 most recently used.
 - **LDAP has no setting for a private CA.** Directory certificates are checked against the
   operating system's CA store; in the container image that holds public CAs only.
+- **OIDC auto-provisioning can claim a directory user's name.** With `auto_provision` on
+  and an LDAP directory enabled, a new OIDC account takes `preferred_username` as its
+  username when it is free. At an identity provider where users choose their own username,
+  someone can take `bob` before the directory user bob first signs in; bob's directory
+  sign-in then fails, because the name belongs to an OIDC account, until an administrator
+  renames or deletes it. Enable auto-provisioning only at an identity provider whose usernames
+  users cannot choose, or sign the directory users in once first.
 - **Sessions outlive directory changes.** An account disabled or a password changed in
   LDAP keeps its deskhaven sessions until they expire or are revoked.
 - **Read-only members of a shared address book receive its saved peer passwords.** The
   client needs them in clear to connect.
+
+## HTTP
+
+- **There is no `Host` allow-list.** deskhaven does not check the `Host` header, so a
+  DNS-rebinding page can read the unauthenticated GET endpoints (setup status, OIDC provider
+  list, version, readiness) through a victim's browser. Sessions are not exposed: the
+  cookies are host-only (`__Host-`) and sign-in refuses plain http from a non-loopback
+  origin. Make the reverse proxy answer only for your host name: the shipped nginx and Caddy
+  configurations do, and Traefik routers must use `Host(...)`.
 
 ## Features not there yet
 
