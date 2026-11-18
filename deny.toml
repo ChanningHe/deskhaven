@@ -95,6 +95,13 @@ ignore = [
     # named by its operator-set database URL, in a data dir writable by itself alone, and
     # whoever can write there can already replace the database. Drop on the sqlx bump.
     { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache leak needs an attacker-written database/-wal pair; deskhaven only opens its own operator-configured database file" },
+    # chrono was declared unmaintained (no vulnerability). It is load-bearing below us
+    # (sea-orm, sqlx, openidconnect, oauth2, hbb_common, flexi_logger) and in our own
+    # timestamps; moving to jiff/time is a migration, not a patch-release change.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no known vulnerability; required by sea-orm/sqlx/openidconnect/hbb_common; migration tracked separately" },
+    # humantime is unmaintained only because it wraps chrono. We use parse_duration for
+    # config durations; a replacement must accept the same syntax, so it waits with chrono.
+    { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained (wraps chrono), no known vulnerability; config duration syntax depends on it" },
 ]
 
 [sources]
