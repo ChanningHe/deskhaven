@@ -167,8 +167,10 @@ pub fn require_json(headers: &HeaderMap) -> Result<(), ClientApiError> {
     is_json.then_some(()).ok_or_else(invalid)
 }
 
-/// RustDesk ids are numeric or custom ids of ASCII letters, digits, `-` and `_`. The signal
-/// server registers only such ids (deskhaven-signal peer.rs `is_peer_id`); keep both in step.
+/// Ids of ASCII letters, digits, `-` and `_`: numeric and ASCII custom ids. Narrower than what
+/// the signal server registers (deskhaven-signal peer.rs `is_peer_id`, which also takes the
+/// client's non-ASCII custom ids such as `aé12345`), so a device with such an id registers but
+/// cannot sign in, as in v0.1.0. The length is bounded elsewhere (`MAX_DEVICE_FIELD_LEN`).
 fn is_rustdesk_id(id: &str) -> bool {
     !id.is_empty()
         && id

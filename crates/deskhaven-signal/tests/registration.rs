@@ -28,19 +28,29 @@ const ID: &str = "123456789";
 const MAX_ID_LEN: usize = 253;
 /// rs:396: RegisterPk ids shorter than this are refused.
 const MIN_PK_ID_LEN: usize = 6;
-/// deskhaven: ids of a valid length outside the client API's `[A-Za-z0-9_-]` (NUL, line break,
-/// zero-width space, right-to-left override, space, non-ASCII letter).
-const OUTSIDE_CHARSET: [&str; 7] = [
+/// deskhaven: ids of a valid length that are not peer ids (`is_peer_id`): NUL, line breaks,
+/// zero-width space, zero-width joiner, right-to-left override, space, and a non-ASCII id the
+/// client's custom id rule refuses (first character not an ASCII letter).
+const NOT_PEER_IDS: [&str; 8] = [
     "10\u{0}aaa",
     "abc\ndef",
     "abc\rdef",
     "abc\u{200b}def",
+    "abc\u{200d}def",
     "abc\u{202e}def",
     "abc def",
-    "abc\u{e9}def",
+    "\u{e9}bcdef",
 ];
-/// Inside it: a default numeric id, `-` / `_`, a 16-character custom id (RustDesk's longest).
-const INSIDE_CHARSET: [&str; 3] = ["123456789", "abc_def-12", "Custom-id_123456"];
+/// Peer ids: a default numeric id, `-` / `_`, a 16-character custom id (RustDesk's longest),
+/// and custom ids the client accepts with Unicode `\w` (letter, CJK, connector punctuation).
+const PEER_IDS: [&str; 6] = [
+    "123456789",
+    "abc_def-12",
+    "Custom-id_123456",
+    "a\u{e9}12345",
+    "a\u{5f20}\u{4e09}1234",
+    "a\u{203f}bcdef",
+];
 
 /// rs:612-653 `update_addr`: an id without a stored pk is asked for it (`request_pk`), and a
 /// RegisterPeer alone stores nothing; after RegisterPk it only refreshes the address. Address
@@ -168,11 +178,11 @@ async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
     server.stop().await;
 }
 
-/// deskhaven (changes rs:396-397, which checked only the length): an id outside the client
-/// API's character set gets UUID_MISMATCH like one of the wrong length, and is neither
-/// registered (no punch hole reaches it) nor stored; ids inside it are both.
+/// deskhaven (changes rs:396-397, which checked only the length): an id that is not a peer id
+/// gets UUID_MISMATCH like one of the wrong length, and is neither registered (no punch hole
+/// reaches it) nor stored; peer ids, non-ASCII custom ids included, are both.
 #[tokio::test]
-async fn register_pk_with_id_outside_the_client_character_set_gets_uuid_mismatch() {
+async fn register_pk_with_a_malformed_id_gets_uuid_mismatch() {
     // Arrange
     let store = Arc::new(MemoryPeerStore::new());
     let server = TestServer::start_with_store(|cfg| cfg, store.clone()).await;
@@ -180,13 +190,13 @@ async fn register_pk_with_id_outside_the_client_character_set_gets_uuid_mismatch
     let keys = PeerKeys::random();
 
     // Act + Assert
-    for id in OUTSIDE_CHARSET {
+    for id in NOT_PEER_IDS {
         assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
     }
-    for id in INSIDE_CHARSET {
+    for id in PEER_IDS {
         assert_eq!(peer.register_pk(id, &keys).await, OK, "{id:?}");
     }
-    for id in OUTSIDE_CHARSET {
+    for id in NOT_PEER_IDS {
         let mut controller = server.tcp().await;
         controller.punch_hole_request(server.punch_req(id)).await;
         let res = expect_msg!(controller.recv().await, PunchHoleResponse);
@@ -201,23 +211,23 @@ async fn register_pk_with_id_outside_the_client_character_set_gets_uuid_mismatch
         .map(|rec| rec.id)
         .collect();
     stored.sort();
-    let mut expected = INSIDE_CHARSET.map(str::to_owned).to_vec();
+    let mut expected = PEER_IDS.map(str::to_owned).to_vec();
     expected.sort();
     assert_eq!(stored, expected);
 }
 
 /// deskhaven: UDP RegisterPeer keeps upstream's length-only check (rs:376; the server's own
-/// self-test probes with an id outside the character set), but an id outside it can never
-/// become known: after its RegisterPk was refused, RegisterPeer is still asked for the pk.
+/// self-test probes with an id that is not a peer id), but such an id can never become known:
+/// after its RegisterPk was refused, RegisterPeer is still asked for the pk.
 #[tokio::test]
-async fn register_peer_with_id_outside_the_client_character_set_stays_unknown() {
+async fn register_peer_with_a_malformed_id_stays_unknown() {
     // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
 
     // Act + Assert
-    for id in OUTSIDE_CHARSET {
+    for id in NOT_PEER_IDS {
         assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
         assert!(peer.register_peer(id).await.request_pk, "{id:?}");
     }

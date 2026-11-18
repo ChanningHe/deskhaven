@@ -757,22 +757,31 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_passes`.
 - 2026-11-18, peer id rule (`peer.rs` `is_peer_id`; `rendezvous_server.rs` `register_pk`, the
   stream RegisterPeer arm of `handle_tcp`, `SELF_TEST_ID`; `persist.rs` `Persist::enqueue`):
-  a registered id must match the client API's RustDesk id rule (deskhaven-client-api
-  login/request.rs `is_rustdesk_id`: `[A-Za-z0-9_-]`), within the existing length bounds; it
-  covers RustDesk's numeric ids and custom ids (`^[a-zA-Z][\w-]{5,15}$`). Upstream checked only
-  the length, so an unauthenticated RegisterPk could register an id with a NUL (refused by
-  PostgreSQL, so the writer requeued it forever and its batch stopped every device's
-  last_seen), line breaks (forged log lines) or invisible / bidi characters (a device that
-  looks like another in the console). RegisterPk with such an id gets UUID_MISMATCH like one of
-  the wrong length (a client picks a new id), before the IP blocker counts it; RegisterPeer
-  over TCP / websocket closes the connection. UDP RegisterPeer keeps the length-only check: it
-  stores nothing, and the self-test probes with `(:test_hbbs:)`, outside the rule on purpose so
-  no client can register it. Backstop: the write queue refuses such ids (`Refused`, was
-  `QueueFull`). Ids in signal logs are printed with `{:?}` so control characters are escaped.
-  Tests: `peer_ids_are_limited_to_the_client_character_set_and_the_length_cap`,
+  within the existing length bounds, a registered id is either ASCII letters, digits, `-` and
+  `_` (numeric ids, ASCII custom ids, legacy ids), or a custom id the client itself accepts
+  (`hbb_common::is_valid_custom_id`, fae47e0 lib.rs: `^[a-zA-Z][\w-]{5,15}$` with Unicode
+  `\w`, used by "Change ID" and `--set-id`, e.g. `aé12345`, `a张三1234`) that contains no
+  Join_Control character (U+200C ZWNJ / U+200D ZWJ: in `\w` but invisible). The pattern is
+  compiled once with hbb_common's `regex` re-export (`is_valid_custom_id` rebuilds it per call,
+  milliseconds per unauthenticated packet); a test checks both agree. Every id the
+  client accepts must stay registrable: a refused RegisterPk gets UUID_MISMATCH and the client
+  silently replaces its id with a random one (rendezvous_mediator.rs `handle_uuid_mismatch`).
+  Upstream checked only the length, so an unauthenticated RegisterPk could register an id with
+  a NUL (refused by PostgreSQL, so the writer requeued it forever and its batch stopped every
+  device's last_seen), line breaks (forged log lines) or invisible / bidi characters (a device
+  that looks like another in the console); none of these are `\w`, so they stay refused.
+  RegisterPk with such an id gets UUID_MISMATCH like one of the wrong length, before the IP
+  blocker counts it; RegisterPeer over TCP / websocket closes the connection. UDP RegisterPeer
+  keeps the length-only check: it stores nothing, and the self-test probes with
+  `(:test_hbbs:)`, outside the rule on purpose so no client can register it. Backstop: the
+  write queue refuses such ids (`Refused`, was `QueueFull`). Ids in signal logs are printed
+  with `{:?}` so control characters are escaped. The client API's sign-in
+  (`is_rustdesk_id`) still takes ASCII ids only. Tests:
+  `peer_ids_are_ascii_ids_or_client_custom_ids_within_the_length_cap`,
+  `non_ascii_peer_ids_follow_the_client_custom_id_rule`,
   `self_test_id_is_not_a_peer_id_but_fits_register_peer`,
   `malformed_ids_are_never_queued_or_stored`,
-  `register_pk_with_id_outside_the_client_character_set_gets_uuid_mismatch`,
-  `register_peer_with_id_outside_the_client_character_set_stays_unknown`,
-  `ids_outside_the_client_character_set_are_refused_over_streams`,
+  `register_pk_with_a_malformed_id_gets_uuid_mismatch`,
+  `register_peer_with_a_malformed_id_stays_unknown`,
+  `malformed_ids_are_refused_over_streams`,
   `malformed_ids_do_not_consume_the_per_ip_budget`.

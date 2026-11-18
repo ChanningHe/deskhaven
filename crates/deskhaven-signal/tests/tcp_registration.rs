@@ -131,16 +131,18 @@ async fn register_pk_over_tcp_applies_the_udp_checks() {
     server.stop().await;
 }
 
-/// deskhaven: an id outside the client API's character set (`[A-Za-z0-9_-]`) gets the UDP
-/// answers over a stream too: RegisterPk is answered UUID_MISMATCH and the connection stays
-/// usable (the client picks a new id on it); RegisterPeer closes the connection, over TCP and
-/// websocket alike.
+/// deskhaven: an id that is not a peer id (`is_peer_id`) gets the UDP answers over a stream
+/// too: RegisterPk is answered UUID_MISMATCH and the connection stays usable (the client picks
+/// a new id on it); RegisterPeer closes the connection, over TCP and websocket alike. A
+/// non-ASCII custom id the client accepts is a peer id over streams as well.
 #[tokio::test]
-async fn ids_outside_the_client_character_set_are_refused_over_streams() {
+async fn malformed_ids_are_refused_over_streams() {
     const BAD_ID: &str = "abc\ndef";
+    const UNICODE_ID: &str = "a\u{5f20}\u{4e09}1234";
     // Arrange
     let server = TestServer::start().await;
     let mut conn = server.tcp().await;
+    let mut ws_conn = server.ws().await;
     let mut tcp_peer = server.tcp().await;
     let mut ws_peer = server.ws().await;
 
@@ -154,6 +156,11 @@ async fn ids_outside_the_client_character_set_are_refused_over_streams() {
             .await,
         OK
     );
+    assert_eq!(
+        ws_conn.register_pk(UNICODE_ID, &PeerKeys::random()).await,
+        OK
+    );
+    assert!(ws_conn.register_peer(UNICODE_ID).await.request_pk);
     tcp_peer.send(&register_peer("abc\u{202e}def")).await;
     tcp_peer.assert_closed().await;
     ws_peer.send(&register_peer("10\u{0}aaa")).await;

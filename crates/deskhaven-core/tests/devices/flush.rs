@@ -84,6 +84,36 @@ async fn contacts_are_written_in_batches_and_flushed_offline_entries_evicted() {
     .await;
 }
 
+/// The signal server registers the client's non-ASCII custom ids; their contacts are written
+/// like any other (bound as text, matched against `devices.rustdesk_id`).
+#[tokio::test]
+async fn contacts_of_non_ascii_custom_ids_are_written() {
+    const UNICODE_IDS: [&str; 3] = ["a\u{e9}12345", "a\u{5f20}\u{4e09}1234", "a\u{203f}bcdef"];
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let c = ctx(db).await;
+        for id in UNICODE_IDS {
+            c.device(id).await;
+        }
+        c.clock.advance(Duration::from_secs(3));
+        for (n, id) in (1..).zip(UNICODE_IDS) {
+            c.devices.presence().heartbeat(id, ip(n), &[]);
+        }
+
+        // Act
+        let report = c.flusher(10).flush().await;
+
+        // Assert
+        let b = db.backend;
+        assert_eq!((report.written, report.failed), (3, 0), "{b}");
+        for (n, id) in (1..).zip(UNICODE_IDS) {
+            let written = c.last_seen(id).await;
+            assert_eq!(written, (T0_MS + 3_000, ip(n).to_string()), "{b}: {id}");
+        }
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn last_seen_never_moves_backwards() {
     each_migrated_backend(async |db: &TestDb| {

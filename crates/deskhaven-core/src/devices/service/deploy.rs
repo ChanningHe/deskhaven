@@ -182,8 +182,10 @@ fn parse(req: DeployRequest) -> Option<Keys> {
     })
 }
 
-/// An id the signal server registers and the client accepts as a custom id: ASCII letters,
-/// digits, `-` and `_`, within the signal server's length bounds.
+/// ASCII letters, digits, `-` and `_`, within RegisterPk's length bounds: a subset of the ids
+/// the signal server registers (deskhaven-signal peer.rs `is_peer_id`, which also takes the
+/// client's non-ASCII custom ids), with the same character set as the client API's sign-in
+/// (deskhaven-client-api login/request.rs `is_rustdesk_id`, which caps ids at 128 bytes).
 fn is_deployable_id(id: &str) -> bool {
     (DEPLOY_ID_MIN_LEN..=DEPLOY_ID_MAX_LEN).contains(&id.len())
         && id

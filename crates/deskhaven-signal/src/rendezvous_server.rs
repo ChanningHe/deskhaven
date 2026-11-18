@@ -728,8 +728,8 @@ impl RendezvousServer {
                     // B registered
                     // deskhaven: length only, not `is_peer_id`: RegisterPeer stores nothing
                     // (`update_addr` only refreshes a peer RegisterPk registered, and that
-                    // refuses ids outside the character set), and the self-test probes with
-                    // SELF_TEST_ID, which is outside it.
+                    // refuses ids that are not peer ids), and the self-test probes with
+                    // SELF_TEST_ID, which is not one.
                     if !rp.id.is_empty() && rp.id.len() <= MAX_PEER_ID_LEN {
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
@@ -797,10 +797,11 @@ impl RendezvousServer {
         }
         let id = rk.id;
         let ip = addr.ip().to_string();
-        // deskhaven: an id outside the client API's character set (`is_peer_id`) is answered
-        // like one of the wrong length: UUID_MISMATCH makes a real client pick a new id
-        // (rendezvous_mediator.rs `handle_uuid_mismatch`). Checked before the IP blocker so
-        // refused ids cost no budget, and before memory, the store and the logs see it.
+        // deskhaven: an id that is not a peer id (`is_peer_id`: ASCII ids and the client's own
+        // custom ids) is answered like one of the wrong length: UUID_MISMATCH makes a client
+        // pick a new id (rendezvous_mediator.rs `handle_uuid_mismatch`), so `is_peer_id` must
+        // never refuse an id the client accepts. Checked before the IP blocker so refused ids
+        // cost no budget, and before memory, the store and the logs see it.
         if id.len() < 6 || !is_peer_id(&id) {
             return Some(UUID_MISMATCH);
         } else if !self.check_ip_blocker(addr.ip(), &id).await {

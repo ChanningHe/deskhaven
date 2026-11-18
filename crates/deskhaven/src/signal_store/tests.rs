@@ -70,6 +70,50 @@ async fn upsert_then_get_round_trips_through_devices() {
     .await;
 }
 
+/// The signal server registers the client's non-ASCII custom ids (`is_peer_id`); they are
+/// stored and found as written, and the preload's keyset paging (one row per page here)
+/// visits each exactly once.
+#[tokio::test]
+async fn non_ascii_custom_ids_round_trip_through_devices() {
+    const IDS: [&str; 4] = [
+        ID,
+        "a\u{e9}12345",
+        "a\u{5f20}\u{4e09}1234",
+        "a\u{203f}bcdef",
+    ];
+    each_migrated_backend(async |db: &TestDb| {
+        let store = store(&db.conn);
+        let b = db.backend;
+        for id in IDS {
+            let rec = PeerUpsert {
+                id: id.to_owned(),
+                ..upsert(OWNER_UUID, PK1, 7)
+            };
+            store.upsert_pk(&rec).await.unwrap();
+        }
+
+        for id in IDS {
+            let rec = store.get(id).await.unwrap();
+            assert_eq!(rec.map(|r| r.id).as_deref(), Some(id), "{b}");
+        }
+        let mut paged: Vec<String> = Vec::new();
+        loop {
+            let after = paged.last().map(String::as_str);
+            let page = store.load_page(after, 1).await.unwrap();
+            let Some(rec) = page.into_iter().next() else {
+                break;
+            };
+            paged.push(rec.id);
+            assert!(paged.len() <= IDS.len(), "{b}: paging repeats {paged:?}");
+        }
+        paged.sort();
+        let mut expected = IDS.map(str::to_owned).to_vec();
+        expected.sort();
+        assert_eq!(paged, expected, "{b}");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn load_page_returns_devices_as_peer_records_after_the_cursor() {
     each_migrated_backend(async |db: &TestDb| {

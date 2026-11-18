@@ -393,25 +393,35 @@ async fn fleet_outage_keeps_peers_accepted_and_the_queue_bounded() {
     tasks.shutdown().await;
 }
 
-/// Backstop behind RegisterPk's id check: an id outside the client character set is never
-/// queued (PostgreSQL refuses a NUL, and the writer would retry it forever), leaves no cached
-/// entry, and never reaches the store; a valid id next to it is saved.
+/// Backstop behind RegisterPk's id check: an id that is not a peer id is never queued
+/// (PostgreSQL refuses a NUL, and the writer would retry it forever), leaves no cached entry,
+/// and never reaches the store; valid ids next to it, a non-ASCII custom id included, are
+/// saved.
 #[tokio::test]
 async fn malformed_ids_are_never_queued_or_stored() {
+    const UNICODE_ID: &str = "a\u{e9}12345";
     let store = Arc::new(ScriptedStore::default());
     let (mut pm, tasks) = server(&store);
 
-    for id in ["10\0aaa", "abc\ndef", "abc\u{200b}def", "abc def"] {
+    for id in [
+        "10\0aaa",
+        "abc\ndef",
+        "abc\u{200b}def",
+        "abc\u{200d}def",
+        "abc def",
+    ] {
         assert!(accept(&mut pm, id, UUID, PK1).await.is_err(), "{id:?}");
         assert!(pm.persist().enqueue(id, false).is_err(), "{id:?} bound");
         assert!(pm.get(id).await.is_none(), "{id:?} cached");
     }
     assert_eq!(pm.persist().queued_len(), 0);
     accept(&mut pm, ID, UUID, PK1).await.unwrap();
+    accept(&mut pm, UNICODE_ID, UUID, PK1).await.unwrap();
     tasks.shutdown().await;
 
-    let ids: Vec<String> = store.attempts().into_iter().map(|(id, _)| id).collect();
-    assert_eq!(ids, [ID]);
+    let mut ids: Vec<String> = store.attempts().into_iter().map(|(id, _)| id).collect();
+    ids.sort();
+    assert_eq!(ids, [ID, UNICODE_ID]);
 }
 
 /// H-A.3: a full queue still accepts bound peers (memory updated, write owed) and refuses

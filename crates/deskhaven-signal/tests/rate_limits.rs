@@ -74,7 +74,7 @@ async fn thirty_third_register_pk_from_one_ip_within_60s_is_too_frequent() {
     server.stop().await;
 }
 
-/// deskhaven: RegisterPk with an id outside the client API's character set is refused
+/// deskhaven: RegisterPk with an id that is not a peer id (`is_peer_id`) is refused
 /// (UUID_MISMATCH) before the per-IP limit counts it, so it costs that IP no budget: after
 /// more refused ones than the limit, all 32 valid registrations are still accepted.
 #[tokio::test]
