@@ -31,6 +31,7 @@ pub use store::value_context;
 
 use crate::console_audit::TxGuard;
 use crate::crypto::SecretBox;
+use crate::text;
 
 /// Longest accepted history note.
 pub const MAX_REASON_LEN: usize = 500;
@@ -164,11 +165,7 @@ fn check_reason(reason: Option<&str>) -> Result<(), SettingsError> {
     let Some(reason) = reason else {
         return Ok(());
     };
-    let problem = if reason.chars().count() > MAX_REASON_LEN {
-        format!("must be at most {MAX_REASON_LEN} characters")
-    } else if reason.chars().any(char::is_control) {
-        "must not contain control characters".to_owned()
-    } else {
+    let Some(problem) = text::problem(reason, MAX_REASON_LEN, false) else {
         return Ok(());
     };
     Err(SettingsError::Invalid {

@@ -175,6 +175,25 @@ async fn provisioning_creates_an_active_oidc_account_with_the_asserted_profile()
 }
 
 #[tokio::test]
+async fn provisioning_strips_bidi_controls_from_the_asserted_name_instead_of_failing_the_login() {
+    each_migrated_backend(async |db: &TestDb| {
+        let env = Env::with(db, |p| p.auto_provision = true).await;
+
+        let (_, report) = env
+            .login("sub-rlo", |s| TokenSpec {
+                preferred_username: Some("mallory".to_owned()),
+                name: Some("\u{202E}nimda\u{200F}".to_owned()),
+                ..s.email("mallory@example.com", Some(true))
+            })
+            .await;
+
+        let mallory = env.users.get(user_id(&report)).await.unwrap();
+        assert_eq!(mallory.display_name, "nimda", "{}", db.backend);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn provisioned_usernames_follow_the_username_rules_and_avoid_existing_accounts() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::with(db, |p| p.auto_provision = true).await;

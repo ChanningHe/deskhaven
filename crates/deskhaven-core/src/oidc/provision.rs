@@ -16,6 +16,7 @@ use super::claims::Asserted;
 use super::error::{CallbackError, Failure};
 use super::identity::{Resolution, audit_login, insert_identity, stored_email};
 use super::username;
+use crate::text;
 use crate::users::lookup::username_taken;
 use crate::users::{Credential, NewUser, Role, UserError};
 
@@ -86,14 +87,11 @@ async fn free_username(
     Ok(None)
 }
 
-/// The `name` claim without control characters, cut to the user service's limit; blank
-/// leaves the username as the display name.
+/// The `name` claim without control or bidirectional formatting characters (the user
+/// service refuses them, and a login must not fail over the IdP's display name), cut to
+/// the user service's limit; blank leaves the username as the display name.
 fn display_name(name: Option<&str>) -> String {
-    name.unwrap_or_default()
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_DISPLAY_NAME_CHARS)
-        .collect()
+    text::strip_bidi_and_control(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
 }
 
 async fn join_groups(

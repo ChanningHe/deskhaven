@@ -140,6 +140,30 @@ async fn the_profile_edits_the_display_name_of_the_session_user_only() {
 }
 
 #[tokio::test]
+async fn the_profile_refuses_bidirectional_formatting_characters_in_the_display_name() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = harness(db, AdminRoutes::new()).await;
+        let alice_id = h.user("alice", Role::User).await;
+        let alice = h.signed_in("alice").await;
+        let b = db.backend;
+
+        let spoof = h
+            .as_console(
+                Method::PATCH,
+                ME,
+                &alice,
+                Some(json!({ "display_name": "\u{202E}nimda" })),
+            )
+            .await;
+
+        assert_eq!(spoof.status, 422, "{b}: {:?}", spoof.body);
+        let alice_row = h.state.users.get(alice_id).await.unwrap();
+        assert_eq!(alice_row.display_name, "alice", "{b}: unchanged");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn regenerating_recovery_codes_re_authenticates_and_replaces_every_code() {
     each_migrated_backend(async |db: &TestDb| {
         let h = harness(db, AdminRoutes::new()).await;
