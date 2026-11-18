@@ -54,7 +54,9 @@ static CLIENT_CUSTOM_ID_RE: LazyLock<Option<Regex>> =
 ///   or
 /// - a custom id the client itself accepts ([`CLIENT_CUSTOM_ID`], Unicode `\w`), e.g.
 ///   `aé12345` or `a张三1234`, minus the Join_Control characters ZWNJ / ZWJ, which `\w`
-///   includes but which are invisible (an id that looks like another).
+///   includes but which are invisible. Other invisible `\w` marks (variation selectors,
+///   U+034F, Hangul fillers) and homoglyphs still pass: look-alike ids are a display matter
+///   (docs/reference/known-limitations.md).
 ///
 /// Refusing an id the client accepts is not harmless: RegisterPk answers UUID_MISMATCH and the
 /// client silently replaces its id with a random one. Everything else stays out: NUL (refused

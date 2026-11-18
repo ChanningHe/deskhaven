@@ -142,8 +142,13 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 - **Read-only members of a shared address book receive its saved peer passwords.** The
   client needs them in clear to connect.
 - **RustDesk IDs with non-ASCII letters cannot sign in.** Custom IDs such as `a张三1234`,
-  which the client allows, are registered and reachable, but cannot sign in, send
-  heartbeats or sysinfo: the client API accepts only `[A-Za-z0-9_-]` IDs.
+  which the client allows, are registered, reachable and report heartbeats and sysinfo, but
+  cannot sign in (password or OIDC): sign-in accepts only `[A-Za-z0-9_-]` IDs.
+- **Look-alike RustDesk IDs.** The signal server accepts every custom ID the client accepts,
+  so an ID can use letters from another script that look like Latin ones, or invisible marks
+  such as variation selectors, and look like another device's ID in the console. Only the
+  zero-width joiner and non-joiner are refused; a client whose custom ID contains one is given
+  a new numeric ID.
 
 ## HTTP
 
