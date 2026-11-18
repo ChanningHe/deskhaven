@@ -65,13 +65,9 @@ impl LdapService {
     }
 }
 
-/// The directory's name without control, bidi-override or zero-width characters (they
-/// make a name read as another in the console), cut to the user service's limit; blank
-/// leaves the username as the display name.
+/// The directory's name cleaned like every imported name ([`text::clean_import`]: control,
+/// bidi-override and zero-width characters make a name read as another in the console), cut
+/// to the user service's limit; blank leaves the username as the display name.
 fn display_name(name: Option<&str>) -> String {
-    name.unwrap_or_default()
-        .chars()
-        .filter(|c| !text::is_dropped(*c))
-        .take(MAX_DISPLAY_NAME_CHARS)
-        .collect()
+    text::clean_import(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
 }

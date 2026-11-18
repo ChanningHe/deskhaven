@@ -87,11 +87,12 @@ async fn free_username(
     Ok(None)
 }
 
-/// The `name` claim without control or bidirectional formatting characters (the user
-/// service refuses them, and a login must not fail over the IdP's display name), cut to
-/// the user service's limit; blank leaves the username as the display name.
+/// The `name` claim cleaned like every imported name ([`text::clean_import`]: the user
+/// service refuses control, bidirectional and zero-width characters, and a login must not
+/// fail over the IdP's display name), cut to the user service's limit; blank leaves the
+/// username as the display name.
 fn display_name(name: Option<&str>) -> String {
-    text::strip_bidi_and_control(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS, false)
+    text::clean_import(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
 }
 
 async fn join_groups(

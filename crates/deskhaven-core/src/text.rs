@@ -32,31 +32,46 @@ pub(crate) fn problem(raw: &str, max: usize, multiline: bool) -> Option<String> 
         .then(|| "must not contain control or bidirectional formatting characters".to_owned())
 }
 
+/// Zero-width characters other than the joiners: invisible, so they make look-alike names.
+fn is_zero_width_filler(c: char) -> bool {
+    matches!(
+        c,
+        '\u{180E}' // Mongolian vowel separator (invisible)
+            | '\u{200B}' // zero-width space
+            | '\u{2060}'
+            ..='\u{2064}' // word joiner, invisible operators
+            | '\u{FEFF}' // zero-width no-break space (BOM)
+    )
+}
+
 /// Characters dropped from self-reported device text: control characters, [`is_bidi_control`]
 /// characters (which can make a hostname read as something else in the console) and
-/// zero-width characters (which make look-alike names).
+/// zero-width characters, joiners included (which make look-alike names).
 pub(crate) fn is_dropped(c: char) -> bool {
     c.is_control()
         || is_bidi_control(c)
-        || matches!(
-            c,
-            '\u{180E}' // Mongolian vowel separator (invisible)
-                | '\u{200B}'..='\u{200D}' // zero-width space / non-joiner / joiner
-                | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
-                | '\u{FEFF}' // zero-width no-break space (BOM)
-        )
+        || is_zero_width_filler(c)
+        || matches!(c, '\u{200C}' | '\u{200D}') // zero-width non-joiner / joiner
 }
 
 /// `raw` without control and [`is_bidi_control`] characters (newline and tab kept when
-/// `multiline`), cut to `max` characters: text that arrives from another system and must
-/// not fail the request over a formatting mark (an IdP's display name, a name pushed by
-/// the RustDesk client). Zero-width joiners stay; unlike [`clean`] this keeps emoji
-/// sequences and Persian / Indic names whole.
+/// `multiline`), cut to `max` characters: data pushed by the RustDesk client is stored
+/// cleaned rather than refused, so one odd peer name cannot fail a whole sync. Unlike
+/// [`clean`] and [`clean_import`] it keeps joiners and zero-width spaces.
 pub(crate) fn strip_bidi_and_control(raw: &str, max: usize, multiline: bool) -> String {
     let kept = |c: &char| {
         let control = c.is_control() && !(multiline && matches!(c, '\n' | '\t'));
         !control && !is_bidi_control(*c)
     };
+    raw.chars().filter(kept).take(max).collect()
+}
+
+/// `raw` without control, [`is_bidi_control`] and zero-width characters, cut to `max`
+/// characters: the one cleaning of names imported from an identity provider (OIDC claims,
+/// LDAP attributes), cleaned rather than refused so a login never fails over a name. The
+/// joiners stay, so emoji sequences and Persian / Indic names stay whole.
+pub(crate) fn clean_import(raw: &str, max: usize) -> String {
+    let kept = |c: &char| !c.is_control() && !is_bidi_control(*c) && !is_zero_width_filler(*c);
     raw.chars().filter(kept).take(max).collect()
 }
 
@@ -146,12 +161,25 @@ mod tests {
     }
 
     #[test]
-    fn imported_text_is_stripped_of_bidi_and_control_but_keeps_joiners() {
+    fn imported_text_loses_bidi_control_and_zero_width_characters_but_keeps_joiners() {
+        let raw = "\u{202E}Ann\u{0}\u{200F}a\u{200B}\u{FEFF}\u{2060}\u{180E}\u{200D}b\u{200C}c";
+
+        assert_eq!(clean_import(raw, 64), "Anna\u{200D}b\u{200C}c");
+        assert_eq!(clean_import("abcdef", 3), "abc");
+        assert_eq!(problem(&clean_import(raw, 64), 64, false), None);
+    }
+
+    #[test]
+    fn client_text_is_stripped_of_bidi_and_control_but_keeps_joiners_and_zero_width_spaces() {
         let raw = "\u{202E}Ann\u{0}\u{200F}a\u{200D}b\u{200C}c";
 
         assert_eq!(
             strip_bidi_and_control(raw, 64, false),
             "Anna\u{200D}b\u{200C}c"
+        );
+        assert_eq!(
+            strip_bidi_and_control("a\u{200B}b", 64, false),
+            "a\u{200B}b"
         );
         assert_eq!(strip_bidi_and_control("abcdef", 3, false), "abc");
         assert_eq!(

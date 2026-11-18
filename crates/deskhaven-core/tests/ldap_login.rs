@@ -322,19 +322,23 @@ async fn provisioning_keeps_an_address_another_account_holds_off_the_new_one() {
 }
 
 #[tokio::test]
-async fn provisioned_display_names_lose_control_bidi_and_zero_width_characters() {
+async fn provisioned_display_names_lose_control_bidi_and_zero_width_characters_but_keep_joiners() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
         let dn = env.fake.add_user("alice");
         env.fake.set_attr(
             &dn,
             "cn",
-            &["A\u{061C}li\u{202E}ce\u{200B} Lid\u{7}de\u{180E}ll"],
+            &["A\u{061C}li\u{202E}ce\u{200B} Lid\u{7}de\u{180E}ll\u{200C}\u{200D}"],
         );
 
         let alice = env.login("alice", USER_PASSWORD).await.unwrap().user;
 
-        assert_eq!(alice.display_name, "Alice Liddell", "{}", db.backend);
+        assert_eq!(
+            alice.display_name, "Alice Liddell\u{200C}\u{200D}",
+            "{}",
+            db.backend
+        );
     })
     .await;
 }
