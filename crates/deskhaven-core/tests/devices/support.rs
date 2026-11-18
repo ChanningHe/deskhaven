@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64_022::Engine as _;
@@ -17,8 +18,8 @@ use deskhaven_core::addressbooks::{
 use deskhaven_core::clock::ManualClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::devices::{
-    DeviceRepository, DeviceService, Presets, Registration, SYSINFO_WRITE_INTERVAL, Sysinfo,
-    SysinfoOutcome, SysinfoReport,
+    DeviceRepository, DeviceService, LiveLookup, LiveRegistrations, LiveUnknown, Presets,
+    Registration, SYSINFO_WRITE_INTERVAL, Sysinfo, SysinfoOutcome, SysinfoReport,
 };
 use deskhaven_core::groups::GroupService;
 use deskhaven_core::pagination::PageRequest;
@@ -88,6 +89,32 @@ pub async fn ctx_on(conn: DatabaseConnection, clock: Arc<ManualClock>) -> Ctx {
         strategies,
         books,
         devices,
+    }
+}
+
+/// The signal server's memory, as the test sets it; `None`: it does not answer in time.
+pub struct Live {
+    pub known: Option<Vec<(String, Vec<u8>)>>,
+    pub asked: AtomicUsize,
+}
+
+impl Live {
+    pub fn new(known: Option<Vec<(String, Vec<u8>)>>) -> Arc<Self> {
+        Arc::new(Self {
+            known,
+            asked: AtomicUsize::new(0),
+        })
+    }
+}
+
+impl LiveRegistrations for Live {
+    fn uuid_of<'a>(&'a self, rustdesk_id: &'a str) -> LiveLookup<'a> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        let found = self.known.as_ref().map(|known| {
+            let entry = known.iter().find(|(id, _)| id == rustdesk_id);
+            entry.map(|(_, uuid)| uuid.clone())
+        });
+        Box::pin(async move { found.ok_or(LiveUnknown) })
     }
 }
 

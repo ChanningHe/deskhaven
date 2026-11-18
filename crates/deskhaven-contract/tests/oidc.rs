@@ -7,12 +7,16 @@
 #[path = "../../deskhaven-core/tests/common/oidc_idp.rs"]
 mod oidc_idp;
 
-use deskhaven_client_api::{OIDC_INVALID_LOGIN_MESSAGE, OIDC_PENDING_MESSAGE};
+use deskhaven_client_api::{
+    OIDC_ID_TAKEN_MESSAGE, OIDC_INVALID_LOGIN_MESSAGE, OIDC_PENDING_MESSAGE,
+};
 use deskhaven_contract::app::{TestApp, TestOptions};
 use deskhaven_contract::check::Reply;
+use deskhaven_contract::device_seeds::{DEVICE_ID, DEVICE_UUID_B64, registered_device};
+use deskhaven_contract::fixture::{Body, Request};
 use deskhaven_contract::mirror::{AuthBody, ErrorBody, LoginOptions, OidcAuthUrl};
 use deskhaven_contract::requests::{
-    bearer, from, oidc_auth, oidc_callback, oidc_confirm, oidc_query,
+    bearer, device_info, from, oidc_auth, oidc_callback, oidc_confirm, oidc_query,
 };
 use deskhaven_contract::seeds::{SEED_RUSTDESK_ID, SEED_UUID};
 use deskhaven_contract::shapes;
@@ -20,12 +24,18 @@ use deskhaven_core::clock::{Clock, SystemClock};
 use deskhaven_core::oidc::NewProvider;
 use deskhaven_core::users::Status;
 use deskhaven_db::entity::login_event::{self, Client, Method};
+use deskhaven_db::entity::oidc_flow;
 use oidc_idp::{AUTH_CODE, AuthRequest, CLIENT_ID, CLIENT_SECRET, MockIdp, TokenSpec};
 use sea_orm::{EntityTrait, QueryOrder};
 use serde_json::{Value, json};
 
 const PUBLIC_URL: &str = "https://rd.example.com";
 const PROVIDER: &str = "corp";
+/// Base64 of a uuid no seeded device registered with.
+const OTHER_UUID_B64: &str = "b3RoZXItbWFjaGluZQ==";
+/// The confirmation page's warnings (`callback.rs`), by a phrase each.
+const REGISTERED_WARNING: &str = "is the one your RustDesk client shows";
+const UNREGISTERED_WARNING: &str = "has not connected to this server yet";
 
 struct Env {
     app: TestApp,
@@ -57,6 +67,15 @@ fn text(reply: &Reply) -> String {
 
 fn error_of(reply: &Reply) -> (u16, String) {
     (reply.status, reply.json::<ErrorBody>().unwrap().error)
+}
+
+/// `/api/oidc/auth` as the client sends it, from the device `id` / `uuid`.
+fn auth_as(id: &str, uuid: &str) -> Request {
+    let mut request = oidc_auth(PROVIDER);
+    request.body = Body::Json(json!({
+        "op": PROVIDER, "id": id, "uuid": uuid, "deviceInfo": device_info(),
+    }));
+    request
 }
 
 fn header<'r>(reply: &'r Reply, name: &str) -> &'r str {
@@ -459,6 +478,11 @@ async fn the_redirect_shows_the_device_and_completes_only_on_confirmation() {
         page.contains(SEED_RUSTDESK_ID) && page.contains("flow-host") && page.contains("linux"),
         "{page}"
     );
+    // The seed id never registered here: the page says so instead of the usual warning.
+    assert!(
+        page.contains(UNREGISTERED_WARNING) && !page.contains(REGISTERED_WARNING),
+        "{page}"
+    );
     assert!(
         page.contains("<form method=\"post\">") && !page.contains("action="),
         "{page}"
@@ -558,6 +582,112 @@ async fn the_confirmation_page_escapes_the_device_and_never_reflects_the_request
     );
     assert!(!page.contains("<script>") && !page.contains("<b>") && !page.contains("<i>"));
     assert!(!page.contains("evil"));
+    assert!(page.contains(UNREGISTERED_WARNING), "{page}");
+}
+
+/// Whose id: an id registered with another uuid is refused before any flow exists (the
+/// attacker's flow for a victim's shared id).
+#[tokio::test]
+async fn auth_refuses_an_id_registered_with_another_uuid() {
+    let env = env().await;
+    registered_device(&env.app.state).await.unwrap();
+
+    let taken = env
+        .app
+        .send(&auth_as(DEVICE_ID, OTHER_UUID_B64))
+        .await
+        .unwrap();
+    let not_base64 = env.app.send(&auth_as(DEVICE_ID, SEED_UUID)).await.unwrap();
+    let own = env
+        .app
+        .send(&auth_as(DEVICE_ID, DEVICE_UUID_B64))
+        .await
+        .unwrap();
+
+    assert_eq!(error_of(&taken), (403, OIDC_ID_TAKEN_MESSAGE.to_owned()));
+    assert_eq!(
+        error_of(&not_base64),
+        (403, OIDC_ID_TAKEN_MESSAGE.to_owned())
+    );
+    assert_eq!(own.status, 200, "{}", text(&own));
+    let flows = oidc_flow::Entity::find()
+        .all(&env.app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(flows.len(), 1, "only the device's own flow was stored");
+}
+
+/// Whose id: the registered device itself gets the usual confirmation and its session.
+#[tokio::test]
+async fn a_registered_device_logs_in_with_the_usual_confirmation() {
+    let env = env().await;
+    registered_device(&env.app.state).await.unwrap();
+    let reply = env
+        .app
+        .send(&auth_as(DEVICE_ID, DEVICE_UUID_B64))
+        .await
+        .unwrap();
+    let start: OidcAuthUrl = reply.json().unwrap();
+    let request = AuthRequest::parse(&start.url);
+    let spec = TokenSpec::for_flow("sub-1", &request.nonce, SystemClock.now_ms());
+    env.idp.mount_token(&spec).await;
+    let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+
+    let page = text(&env.app.send(&oidc_callback(&pairs)).await.unwrap());
+    let confirmed = text(&env.app.send(&oidc_confirm(&pairs)).await.unwrap());
+    let collected = env
+        .app
+        .send(&oidc_query(&start.code, DEVICE_ID, DEVICE_UUID_B64))
+        .await
+        .unwrap();
+
+    assert!(
+        page.contains(DEVICE_ID) && page.contains("<form method=\"post\">"),
+        "{page}"
+    );
+    assert!(
+        page.contains(REGISTERED_WARNING) && !page.contains(UNREGISTERED_WARNING),
+        "{page}"
+    );
+    assert!(confirmed.contains("Login successful"), "{confirmed}");
+    assert_eq!(collected.status, 200, "{}", text(&collected));
+}
+
+/// Whose id: checked again on the page and at the confirmation, since the id may have
+/// registered with another uuid after `/api/oidc/auth` let the flow start.
+#[tokio::test]
+async fn an_id_registered_by_another_device_meanwhile_is_not_signed_in() {
+    let env = env().await;
+    let reply = env
+        .app
+        .send(&auth_as(DEVICE_ID, OTHER_UUID_B64))
+        .await
+        .unwrap();
+    let start: OidcAuthUrl = reply.json().unwrap();
+    let request = AuthRequest::parse(&start.url);
+    let spec = TokenSpec::for_flow("sub-1", &request.nonce, SystemClock.now_ms());
+    env.idp.mount_token(&spec).await;
+    let pairs = [("code", AUTH_CODE), ("state", request.state.as_str())];
+    registered_device(&env.app.state).await.unwrap();
+
+    let page = text(&env.app.send(&oidc_callback(&pairs)).await.unwrap());
+    let confirmed = text(&env.app.send(&oidc_confirm(&pairs)).await.unwrap());
+    let polled = env
+        .app
+        .send(&oidc_query(&start.code, DEVICE_ID, OTHER_UUID_B64))
+        .await
+        .unwrap();
+
+    assert!(
+        page.contains("belongs to another device") && !page.contains("<form"),
+        "{page}"
+    );
+    assert!(
+        confirmed.contains("belongs to another device"),
+        "{confirmed}"
+    );
+    assert!(env.idp.token_requests().await.is_empty());
+    assert_eq!(error_of(&polled), (404, OIDC_PENDING_MESSAGE.to_owned()));
 }
 
 /// M1: an IdP error asks before telling the device to stop; the confirmation fails the flow.

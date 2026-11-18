@@ -12,10 +12,22 @@
 //! |---|---|---|
 //! | flow started | 200 | `{code, url}` |
 //! | malformed, not `application/json`, bad device | 400 | `{"error": "Invalid login request"}` |
+//! | `id` registered here with another `uuid` | 403 | `{"error": ID_TAKEN_MESSAGE}` |
 //! | no `public_url` | 404 | `{"error": NOT_CONFIGURED_MESSAGE}` |
 //! | unknown or disabled `op` | 404 | `{"error": UNKNOWN_PROVIDER_MESSAGE}` |
 //! | IP over `auth.ip_rate_limit.per_minute` | 429 + `Retry-After` | `{"error": "Please try later"}` |
 //! | IdP discovery failed | 502 | `{"error": PROVIDER_UNAVAILABLE_MESSAGE}` |
+//! | the signal server cannot tell who holds `id` in time | 503 + `Retry-After` | `{"error": "Please try later"}` |
+//!
+//! **Whose id** (`DeviceService::id_holder`): nothing in the request proves that `id` is the
+//! device's own, and ids are shared routinely (remote support). Someone who starts a flow
+//! for another person's id and sends them the authorization URL would get a confirmation
+//! page naming that person's own id, and the session. So an id registered here with
+//! another uuid is refused; a real client's id and uuid always match the registration
+//! (the signal server answers `UUID_MISMATCH` otherwise, and the client picks another id).
+//! An id not registered yet is let through (a new client may log in right after its first
+//! contact), and the confirmation page says plainly that the server cannot vouch for it.
+//! The confirmation page and its `POST` check again (see `callback`).
 //!
 //! Only the per-IP limiter applies (there is no username to count, see
 //! `deskhaven_core::auth::limiter`); it bounds flow rows and outbound discovery requests.
@@ -58,6 +70,7 @@ pub const PROVIDER_UNAVAILABLE_MESSAGE: &str = "The OIDC provider is unavailable
 /// The client keeps polling on exactly this message (`account.rs:323`).
 pub const PENDING_MESSAGE: &str = "No authed oidc is found";
 pub const INVALID_LOGIN_MESSAGE: &str = "OIDC login expired, please log in again";
+pub const ID_TAKEN_MESSAGE: &str = "This RustDesk ID belongs to another device on this server";
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()

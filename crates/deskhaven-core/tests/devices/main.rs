@@ -10,6 +10,7 @@ mod deploy;
 mod deploy_guards;
 mod flush;
 mod heartbeat;
+mod holder;
 mod presets;
 mod support;
 mod sysinfo;

@@ -5,45 +5,16 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use deskhaven_core::devices::{
-    DEPLOY_NEW_IDS_PER_IP_PER_DAY, DeployOutcome, DeployRequest, LiveLookup, LiveRegistrations,
-    LiveUnknown,
-};
+use deskhaven_core::devices::{DEPLOY_NEW_IDS_PER_IP_PER_DAY, DeployOutcome, DeployRequest};
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 
 use super::deploy::{PK, request, requester};
-use super::support::{ID, ctx, uuid_of};
+use super::support::{ID, Live, ctx, uuid_of};
 
 const OTHER_ID: &str = "246813579";
-
-/// The signal server's memory, as the test sets it; `None`: it does not answer in time.
-struct Live {
-    known: Option<Vec<(String, Vec<u8>)>>,
-    asked: AtomicUsize,
-}
-
-impl Live {
-    fn new(known: Option<Vec<(String, Vec<u8>)>>) -> Arc<Self> {
-        Arc::new(Self {
-            known,
-            asked: AtomicUsize::new(0),
-        })
-    }
-}
-
-impl LiveRegistrations for Live {
-    fn uuid_of<'a>(&'a self, rustdesk_id: &'a str) -> LiveLookup<'a> {
-        self.asked.fetch_add(1, Ordering::SeqCst);
-        let found = self.known.as_ref().map(|known| {
-            let entry = known.iter().find(|(id, _)| id == rustdesk_id);
-            entry.map(|(_, uuid)| uuid.clone())
-        });
-        Box::pin(async move { found.ok_or(LiveUnknown) })
-    }
-}
 
 fn from(ip: IpAddr, rustdesk_id: &str) -> DeployRequest {
     DeployRequest {

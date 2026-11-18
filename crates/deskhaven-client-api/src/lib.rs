@@ -35,7 +35,8 @@ pub use error::{BoxError, ClientApiError, TRY_LATER_MESSAGE};
 pub use heartbeat::MAX_HEARTBEAT_BODY;
 pub use login::MAX_LOGIN_BODY;
 pub use oidc::{
-    INVALID_LOGIN_MESSAGE as OIDC_INVALID_LOGIN_MESSAGE, PENDING_MESSAGE as OIDC_PENDING_MESSAGE,
+    ID_TAKEN_MESSAGE as OIDC_ID_TAKEN_MESSAGE, INVALID_LOGIN_MESSAGE as OIDC_INVALID_LOGIN_MESSAGE,
+    PENDING_MESSAGE as OIDC_PENDING_MESSAGE,
 };
 pub use stack_error::render_stack_error;
 pub use sysinfo::MAX_SYSINFO_BODY;

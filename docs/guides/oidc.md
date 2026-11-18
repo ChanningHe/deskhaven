@@ -33,6 +33,16 @@ Under **OIDC providers**, choose **New provider** and enter:
 
 Choose **Create provider**. The console sign-in page and the RustDesk client now offer it.
 
+## Sign in from the RustDesk client
+
+After the provider, the browser shows which RustDesk device is about to be signed in.
+Continue only if its RustDesk ID is the one your client shows.
+
+A client signs in only under its own RustDesk ID. When the ID is registered on this server
+by another device, the login is refused with "This RustDesk ID belongs to another device
+on this server". A client that has not connected to this server yet can still sign in, but
+the page says that the server cannot vouch for the ID.
+
 ## Groups and admins
 
 Set **Group claim** to the ID token claim that lists the user's groups, usually `groups`.

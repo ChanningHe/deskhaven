@@ -31,6 +31,7 @@ mod assign;
 mod assign_steps;
 mod deploy;
 mod heartbeat;
+mod holder;
 mod registry;
 
 pub use admin::{
@@ -43,6 +44,7 @@ pub use deploy::{
     DEPLOY_ID_MAX_LEN, DEPLOY_ID_MIN_LEN, DeployOutcome, DeployRequest, LIVE_RETRY_AFTER,
 };
 pub use heartbeat::{Heartbeat, HeartbeatOutcome, HeartbeatReply, StrategyPush};
+pub use holder::IdHolder;
 pub use registry::{LiveLookup, LiveRegistrations, LiveUnknown, Requester};
 
 use super::DeviceError;

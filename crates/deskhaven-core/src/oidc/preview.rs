@@ -5,7 +5,9 @@
 //! would redirect straight back and log the attacker's device in as the victim. So the
 //! redirect only shows which device is being signed in (from the flow, i.e. server-side
 //! data) and completes nothing; the user has to confirm (`complete_callback`). Reading the
-//! preview never consumes the flow.
+//! preview never consumes the flow. The reverse, a flow started for the victim's own
+//! (shared) RustDesk id, is the client API's check of who holds the id
+//! (`DeviceService::id_holder`), at the start and again here.
 
 use deskhaven_db::entity::oidc_flow::Flow;
 use deskhaven_db::entity::oidc_provider;
@@ -21,6 +23,9 @@ use super::error::CallbackError;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceSummary {
     pub rustdesk_id: String,
+    /// The uuid it sent (base64), never shown: what decides whether the id is its own
+    /// (`DeviceService::id_holder`).
+    pub uuid: String,
     /// `deviceInfo.name` (the host name).
     pub name: Option<String>,
     /// `deviceInfo.os`.
@@ -89,5 +94,6 @@ fn device_summary(raw: &str) -> Result<DeviceSummary, CallbackError> {
         name: text("name"),
         os: text("os"),
         rustdesk_id: device.rustdesk_id,
+        uuid: device.uuid,
     })
 }

@@ -7,7 +7,8 @@
 //!
 //! [`Presence`] tracks which devices are online (in memory only). [`DeviceService`] serves
 //! the device endpoints: id + uuid verification, sysinfo with its deployment presets, and the
-//! deletion of devices and device groups.
+//! deletion of devices and device groups; and tells the OIDC client login whom an id
+//! belongs to ([`IdHolder`]).
 
 mod disconnects;
 mod flush;
@@ -38,8 +39,8 @@ pub use service::{
     DeployOutcome, DeployRequest, DeviceAssignment, DeviceGroup, DeviceGroupQuery, DeviceGroupSort,
     DeviceGroupSortField, DeviceGroupSummary, DeviceGroupUpdate, DeviceQuery, DeviceRecord,
     DeviceService, DeviceSort, DeviceSortField, DeviceSummary, DeviceUpdate, FleetStats, Heartbeat,
-    HeartbeatOutcome, HeartbeatReply, LIVE_RETRY_AFTER, LiveLookup, LiveRegistrations, LiveUnknown,
-    Requester, StrategyPush, SysinfoOutcome, SysinfoReport, VersionCount,
+    HeartbeatOutcome, HeartbeatReply, IdHolder, LIVE_RETRY_AFTER, LiveLookup, LiveRegistrations,
+    LiveUnknown, Requester, StrategyPush, SysinfoOutcome, SysinfoReport, VersionCount,
 };
 pub use strategy_keys::MAX_PENDING;
 pub use sysinfo::{MAX_FIELD_CHARS, Sysinfo};

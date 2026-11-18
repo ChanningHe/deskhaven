@@ -9,6 +9,11 @@
 //!   silent login (`deskhaven_core::oidc` `preview`).
 //! - `POST` (the button; the form posts back to the same URL, query included, so the code
 //!   and state are never copied into the page) completes the flow once (single use).
+//! - **Whose id** (see `oidc`): both check again who holds the flow's RustDesk id, since a
+//!   device may have registered it in the minutes since `/api/oidc/auth`. An id registered
+//!   with the flow's uuid gets the usual warning; one not registered yet a plain one that
+//!   the server cannot vouch for it; one registered with another uuid no button, and its
+//!   `POST` completes nothing (the flow is left to expire; the client gives up polling).
 //!
 //! - A **console** flow (M3-02) is not completed here: `GET` answers `303` to the
 //!   console's `/login/oidc` with the IdP's query, where the browser that started the login
@@ -25,6 +30,7 @@
 //! | case | `GET` | `POST` |
 //! |---|---|---|
 //! | live client flow | confirmation | the outcome: success, or the failure's message |
+//! | live client flow, id registered with another uuid | id taken | id taken, nothing completed |
 //! | live console flow | 303 to the console's login completion | invalid link |
 //! | live link flow | 303 to the console's link confirmation | invalid link |
 //! | IdP `error` or no `code` | "stop waiting?" confirmation | denied (the client stops polling) |
@@ -42,6 +48,7 @@ use axum::extract::{RawQuery, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use deskhaven_core::auth::limiter::ClientAddr;
+use deskhaven_core::devices::IdHolder;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
 use deskhaven_core::oidc::{
     CallbackError, CallbackParams, CallbackPreview, CallbackReport, DeviceSummary, FlowKind,
@@ -61,6 +68,14 @@ const INVALID_LINK: &str =
 const SERVER_ERROR: &str = "The login could not be completed. Please try again later.";
 const WARNING: &str = "Only continue if you started this login on that device yourself and \
                        its RustDesk ID is the one your RustDesk client shows.";
+/// Instead of [`WARNING`] for an id not registered here yet: nothing ties it to the device
+/// that started the login.
+const UNREGISTERED_WARNING: &str = "This RustDesk ID has not connected to this server yet, so \
+                                    the server cannot tell which device started this login. \
+                                    If your RustDesk client does not show this ID, do not \
+                                    continue.";
+const ID_TAKEN: &str = "This login cannot be completed: its RustDesk ID belongs to another \
+                        device on this server. Nothing was signed in.";
 /// The console page that completes a console login (`web/src/routes/login_.oidc.tsx`).
 pub const CONSOLE_COMPLETION_PATH: &str = "/login/oidc";
 /// The console page that confirms and completes a link (`web/src/routes/_app/me_.oidc-link.tsx`).
@@ -105,7 +120,16 @@ pub async fn confirm(State(state): State<Arc<AppState>>, RawQuery(raw): RawQuery
         Ok(CallbackPreview {
             provider,
             target: PreviewTarget::Device(device),
-        }) => confirmation(&provider, &device, query.is_denied()),
+        }) => {
+            let ask = match query.is_denied() {
+                true => Ask::StopWaiting,
+                false => match admit(&state, &device).await {
+                    Ok(registered) => Ask::SignIn { registered },
+                    Err(message) => return page::message(message),
+                },
+            };
+            confirmation(&provider, &device, ask)
+        }
         Ok(CallbackPreview {
             target: PreviewTarget::Console,
             ..
@@ -129,6 +153,11 @@ pub async fn complete(
     RawQuery(raw): RawQuery,
 ) -> Response {
     let query = Query::parse(raw.as_deref());
+    if !query.is_denied()
+        && let Err(message) = recheck(&state, query.state.as_deref()).await
+    {
+        return page::message(message);
+    }
     let message = match state.oidc.complete_callback(&query.params()).await {
         Ok(report) => {
             record(&state, client, &report).await;
@@ -144,6 +173,46 @@ pub async fn complete(
         }
     };
     page::message(message)
+}
+
+/// Whether the device of a live client flow may be signed in: `Ok(true)` when its id is
+/// registered with its uuid, `Ok(false)` when the id is not registered yet; otherwise the
+/// message of the page that refuses.
+async fn admit(state: &AppState, device: &DeviceSummary) -> Result<bool, &'static str> {
+    match state
+        .devices
+        .id_holder(&device.rustdesk_id, &device.uuid)
+        .await
+    {
+        Ok(IdHolder::ThisDevice) => Ok(true),
+        Ok(IdHolder::Nobody) => Ok(false),
+        Ok(IdHolder::OtherDevice) => {
+            let id = device.rustdesk_id.as_str();
+            tracing::warn!(
+                rustdesk_id = id,
+                "OIDC confirmation refused: the id belongs to another device"
+            );
+            Err(ID_TAKEN)
+        }
+        // The signal server did not answer in time (logged there).
+        Ok(IdHolder::Unknown) => Err(SERVER_ERROR),
+        Err(err) => {
+            tracing::error!(error = %err, "OIDC device check failed");
+            Err(SERVER_ERROR)
+        }
+    }
+}
+
+/// [`admit`] again at the confirming `POST`. Anything but a live client flow passes:
+/// `complete_callback` gives its answer.
+async fn recheck(state: &AppState, flow_state: Option<&str>) -> Result<(), &'static str> {
+    match state.oidc.preview_callback(flow_state).await {
+        Ok(CallbackPreview {
+            target: PreviewTarget::Device(device),
+            ..
+        }) => admit(state, &device).await.map(drop),
+        _ => Ok(()),
+    }
 }
 
 /// A console login or link completes in the console itself (the browser that started it
@@ -164,6 +233,16 @@ fn to_console(console_url: &str, path: &str, raw_query: &str) -> Response {
     }
 }
 
+/// What the confirmation page asks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ask {
+    /// The IdP did not sign the user in: tell the device to stop waiting.
+    StopWaiting,
+    /// Sign the device in; `registered`: its id is registered here with its uuid (else not
+    /// registered yet, see [`UNREGISTERED_WARNING`]).
+    SignIn { registered: bool },
+}
+
 /// The confirmation page's text, escaped: a question, notes under it, the button.
 struct Confirmation {
     question: String,
@@ -171,8 +250,8 @@ struct Confirmation {
     button: &'static str,
 }
 
-fn confirmation(provider: &str, device: &DeviceSummary, denied: bool) -> Response {
-    let parts = confirmation_parts(provider, device, denied);
+fn confirmation(provider: &str, device: &DeviceSummary, ask: Ask) -> Response {
+    let parts = confirmation_parts(provider, device, ask);
     page::confirm(&parts.question, &parts.notes, parts.button)
 }
 
@@ -180,23 +259,27 @@ fn confirmation(provider: &str, device: &DeviceSummary, denied: bool) -> Respons
 /// check against their own client. Name and OS are whatever the device sent at
 /// `/api/oidc/auth` (an attacker's device can call itself "Your work laptop"), so they are
 /// only a note, labelled as unverified.
-fn confirmation_parts(provider: &str, device: &DeviceSummary, denied: bool) -> Confirmation {
+fn confirmation_parts(provider: &str, device: &DeviceSummary, ask: Ask) -> Confirmation {
     let provider = escape(provider);
     let target = format!(
         "RustDesk device <strong>{}</strong>",
         escape(&device.rustdesk_id)
     );
     let reported = reported(device);
-    if denied {
-        return Confirmation {
-            question: format!("{provider} did not sign you in. Tell {target} to stop waiting?"),
-            notes: reported.into_iter().collect(),
-            button: "Stop waiting",
-        };
-    }
+    let warning = match ask {
+        Ask::StopWaiting => {
+            return Confirmation {
+                question: format!("{provider} did not sign you in. Tell {target} to stop waiting?"),
+                notes: reported.into_iter().collect(),
+                button: "Stop waiting",
+            };
+        }
+        Ask::SignIn { registered: true } => WARNING,
+        Ask::SignIn { registered: false } => UNREGISTERED_WARNING,
+    };
     Confirmation {
         question: format!("Sign in {target} with {provider}?"),
-        notes: reported.into_iter().chain([WARNING.to_owned()]).collect(),
+        notes: reported.into_iter().chain([warning.to_owned()]).collect(),
         button: "Sign in",
     }
 }
@@ -242,6 +325,7 @@ mod tests {
     fn device(name: Option<&str>, os: Option<&str>) -> DeviceSummary {
         DeviceSummary {
             rustdesk_id: "123456789".to_owned(),
+            uuid: "aGVsbG8=".to_owned(),
             name: name.map(str::to_owned),
             os: os.map(str::to_owned),
         }
@@ -251,7 +335,7 @@ mod tests {
     fn the_rustdesk_id_comes_first_and_the_self_description_is_labelled() {
         let shown = device(Some("Your work PC"), Some("linux"));
 
-        let parts = confirmation_parts("corp", &shown, false);
+        let parts = confirmation_parts("corp", &shown, Ask::SignIn { registered: true });
 
         assert_eq!(
             parts.question,
@@ -268,9 +352,25 @@ mod tests {
     }
 
     #[test]
+    fn an_unregistered_id_gets_the_plain_warning_instead() {
+        let shown = device(Some("host"), None);
+
+        let parts = confirmation_parts("corp", &shown, Ask::SignIn { registered: false });
+
+        assert_eq!(parts.button, "Sign in");
+        assert_eq!(parts.notes.last(), Some(&UNREGISTERED_WARNING.to_owned()));
+        assert!(!parts.notes.contains(&WARNING.to_owned()));
+    }
+
+    #[test]
     fn a_device_that_said_nothing_gets_no_reported_line_and_markup_is_escaped() {
-        let silent = confirmation_parts("corp", &device(None, Some("")), false);
-        let hostile = confirmation_parts("<i>p</i>", &device(Some("<b>x</b>"), None), true);
+        let registered = Ask::SignIn { registered: true };
+        let silent = confirmation_parts("corp", &device(None, Some("")), registered);
+        let hostile = confirmation_parts(
+            "<i>p</i>",
+            &device(Some("<b>x</b>"), None),
+            Ask::StopWaiting,
+        );
 
         assert_eq!(silent.notes, [WARNING.to_owned()]);
         assert!(
