@@ -235,6 +235,32 @@ fn split_admin_listener_serves_health_and_client_root_redirects() {
     assert_eq!(status.code(), Some(0), "{}", server.logs());
 }
 
+#[test]
+fn split_admin_listener_serves_version_and_404s_other_api_paths() {
+    let dir = workdir("split-version");
+    let listen = format!("admin = \"127.0.0.1:{}\"", free_port());
+    let mut server = start(&dir, &config(&dir, &listen), &[]);
+    let admin = server.listening("admin");
+    wait_ready(admin);
+
+    let (status, response) = get(admin, "/api/version");
+    assert_eq!(status, 200, "{response}");
+    let body = response.split("\r\n\r\n").nth(1).unwrap_or_default();
+    let json: Value = serde_json::from_str(body).unwrap_or_else(|_| panic!("{response}"));
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "version": deskhaven_client_api::VERSION,
+            "source_url": deskhaven_client_api::SOURCE_URL,
+        })
+    );
+    let (status, response) = get(admin, "/api/login-options");
+    assert_eq!(status, 404, "{response}");
+
+    let (status, _) = server.terminate();
+    assert_eq!(status.code(), Some(0), "{}", server.logs());
+}
+
 /// The header value for `name` (case-insensitive) in a raw response head.
 fn header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
     let head = response.split("\r\n\r\n").next()?;

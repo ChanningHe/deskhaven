@@ -41,6 +41,16 @@ pub use stack_error::render_stack_error;
 pub use sysinfo::MAX_SYSINFO_BODY;
 pub use version::{SOURCE_URL, VERSION};
 
+/// `GET /api/version` alone, stateless. The console shows the version and the
+/// source offer (AGPL-3.0 §13) from it, so a split admin listener serves it
+/// too ([`router`] includes it; the route is defined only here).
+pub fn version_router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new().route("/api/version", get(version::version))
+}
+
 /// Client API routes, without middleware or state: the server applies the
 /// stack and provides the state (`with_state`) when composing. Handlers that
 /// need services take `State<Arc<AppState>>`.
@@ -53,7 +63,6 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/api/currentUser", post(account::current_user))
         .route("/api/logout", post(account::logout))
-        .route("/api/version", get(version::version))
         .route(
             "/api/sysinfo",
             post(sysinfo::sysinfo).layer(DefaultBodyLimit::max(sysinfo::MAX_SYSINFO_BODY)),
@@ -62,6 +71,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/api/heartbeat",
             post(heartbeat::heartbeat).layer(DefaultBodyLimit::max(MAX_HEARTBEAT_BODY)),
         )
+        .merge(version_router())
         .merge(oidc::routes())
         .merge(ab::routes())
         .merge(audit::routes())

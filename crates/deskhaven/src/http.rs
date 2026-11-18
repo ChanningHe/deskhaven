@@ -94,11 +94,14 @@ fn client_api_router(state: Arc<AppState>, readiness: impl ReadinessCheck) -> Ro
     health_routes(readiness).merge(deskhaven_client_api::router().with_state(state))
 }
 
-/// `/admin/api/v1/*` plus the console. The console serves every other path
+/// `/admin/api/v1/*`, `GET /api/version` (the console's version and source
+/// link; the client API router has the same route, which a single listener
+/// matches first) plus the console. The console serves every other path
 /// through its fallback, so it must stay the only router with a fallback.
 fn admin_router(admin_api: Router, readiness: impl ReadinessCheck) -> Router {
     health_routes(readiness)
         .merge(admin_api)
+        .merge(deskhaven_client_api::version_router())
         .merge(deskhaven_web::router())
 }
 
