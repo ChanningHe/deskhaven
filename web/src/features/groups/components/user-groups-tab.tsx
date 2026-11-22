@@ -117,7 +117,6 @@ export function UserGroupsTab() {
             icon={Boxes}
             title={t('pages.groups.emptyTitle')}
             description={t('pages.groups.emptyDescription')}
-            action={<CreateGroupButton onCreated={openGroup} />}
           />
         }
       />

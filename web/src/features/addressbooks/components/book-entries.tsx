@@ -166,7 +166,6 @@ export function BookEntries({ book }: { book: BookView }) {
             icon={Monitor}
             title={t('addressBooks.entries.emptyTitle')}
             description={t('addressBooks.entries.emptyDescription')}
-            action={actions}
           />
         }
       />

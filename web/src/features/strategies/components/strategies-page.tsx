@@ -82,7 +82,6 @@ export function StrategiesPage() {
             icon={SlidersHorizontal}
             title={t('pages.strategies.emptyTitle')}
             description={t('pages.strategies.emptyDescription')}
-            action={<CreateStrategyButton onCreated={open} />}
           />
         }
       />
