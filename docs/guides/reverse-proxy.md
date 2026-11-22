@@ -26,6 +26,9 @@ from the compose network's gateway, `172.30.114.1`, which deskhaven now trusts f
 | `/ws/relay` | `http://127.0.0.1:21119` (WebSocket) |
 | `/` | `http://127.0.0.1:21114` |
 
+`/ws/relay` also carries [browser remote control](browser-remote.md): point it at the relay
+listed first in `signal.relay_servers`.
+
 The proxy must set `X-Forwarded-For` to the client address. Without it every client shares
 the proxy's address, in sign-in limits and in the audit log.
 

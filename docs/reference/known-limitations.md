@@ -46,6 +46,26 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   deskhaven's own 21118 follows `signal.ws_listen`, which that unit sets to
   `127.0.0.1:21118`.
 
+## Browser remote control
+
+- **Chromium and Firefox are tested; Safari is not.** The browser decodes video with
+  WebCodecs and only asks for VP9, AV1 or VP8, so devices encode with one of those (in
+  software when they have no hardware encoder for it).
+- **The browser only reaches the relay behind `/ws/relay`**, the first entry of
+  `signal.relay_servers`. A device with a relay server of its own in its network settings
+  cannot be opened from the browser; one on the same LAN as the server, with no hairpin NAT,
+  may not reach that relay's public address.
+- **WebRTC needs a 1.5 client and UDP.** Older clients, clients behind a proxy, and clients
+  registered over WebSocket only answer over the relay.
+- **The TURN credential is shared** with every browser that opens a session
+  (`web_client.turn_credential`): use an account for that alone.
+- **The device sees the console user name as the caller's ID**, but the browser builds that
+  login message itself; the audit log, not the ID on the device, is the record of who
+  connected.
+- **The relay refuses devices that reach it over loopback** (hbbr treats loopback TCP as its
+  console): a device on the same host as the relay must use the host's network address.
+- **Not supported**: audio, file transfer, chat, several displays at once, H.264 / H.265.
+
 ## Client addresses
 
 - **The compose deployment serves the rendezvous ports (21115, 21116) on IPv4 only.** Its

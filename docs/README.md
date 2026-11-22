@@ -11,6 +11,7 @@ Start with the three getting-started pages; the guides and the reference are for
 ## Guides
 
 - [Use your own reverse proxy](guides/reverse-proxy.md) (nginx, Traefik)
+- [Control devices from the browser](guides/browser-remote.md)
 - [Run without a domain](guides/no-domain.md) (LAN, SSH tunnel)
 - [Use PostgreSQL](guides/postgresql.md)
 - [Keep the console off the internet](guides/separate-console.md)

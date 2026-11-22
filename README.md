@@ -3,8 +3,8 @@
 # deskhaven
 
 Self-hosted, open-source server for the official RustDesk client: rendezvous (signal) server,
-client API (accounts, 2FA, SSO, address books, groups, audit, strategies) and a modern web console,
-shipped as a single binary.
+client API (accounts, 2FA, SSO, address books, groups, audit, strategies) and a modern web console
+that can also control devices from the browser, shipped as a single binary.
 
 > **Status:** pre-release; the first version, v0.1.0, is not out yet.
 
