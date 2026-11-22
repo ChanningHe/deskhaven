@@ -73,3 +73,53 @@ nix develop -c pnpm exec playwright test -c e2e/codec/playwright.config.ts
 ```
 
 `pnpm e2e` does not run it: the console config only matches `*.spec.ts`.
+
+## Remote E2E (real RustDesk clients)
+
+`remote/` drives the browser remote page against official RustDesk clients under Xvfb. It has
+its own config and specs named `*.remote.ts`, so `pnpm e2e` and CI's `e2e` job never run it;
+it is a manual and nightly check (`.github/workflows/remote-e2e.yml`).
+
+`remote/global-setup.ts` starts, once per run, all with throwaway state: `deskhaven serve`
+(relay list pointing at the local hbbr, no public STUN, update check off), the upstream
+`hbbr` (`-k` = the server's public key), a same-origin Node proxy (`/ws/relay` to hbbr's
+WebSocket port, the rest to the console: the shape of `deploy/compose/Caddyfile`), and one
+`rustdesk --server` per client version, each on its own Xvfb with a fixed permanent password.
+The owner is created through the setup API, then `login.setup.remote.ts` signs in, turns
+`web_client.enabled` on and waits for the devices.
+
+| spec                   | covers                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5 |
+| `webrtc.remote.ts`     | (b) 1.5 over WebRTC; (c) UDP closed (relay-only ICE, no TURN): falls back to the relay    |
+| `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map  |
+| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry       |
+| `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)            |
+| `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute      |
+
+Needed on the machine: `Xvfb`, `xterm`, `xclock`, `xdotool`, `hbbr` (rustdesk-server 1.1.16),
+the client launchers, a non-loopback IPv4 address (hbbr treats loopback TCP as its admin
+console; override with `RD_E2E_HOST`), Playwright's browsers. On NixOS
+`remote/nix-env.sh` fetches pinned ones and prints the exports plus each launcher's store path
+and sha256:
+
+```sh
+cd web
+eval "$(e2e/remote/nix-env.sh)"
+export PLAYWRIGHT_BROWSERS_PATH=$(nix build --no-link --print-out-paths nixpkgs#playwright-driver.browsers)
+export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+nix develop -c pnpm e2e:remote              # chromium (all but @slow) and firefox (relay, webrtc)
+nix develop -c pnpm e2e:remote --project=chromium relay.remote.ts
+RD_E2E_SLOW=1 nix develop -c pnpm e2e:remote            # the soak; RD_E2E_SOAK_SECONDS=300
+```
+
+Outside nix (a Debian container): install `xvfb xterm x11-apps xdotool`, a RustDesk `.deb`
+(`RD_E2E_CLIENT_15=/usr/bin/rustdesk`; only one version can be installed at a time, so run
+once per version with the other variable unset), `hbbr` from the rustdesk-server release, and
+export `RD_E2E_HBBR`; the client needs `RUSTDESK_FORCED_DISPLAY_SERVER=x11`, which the stack sets.
+A client variable that is unset skips that version's tests. Logs of every process are in
+`e2e-results/remote/`.
+
+The WebRTC fallback test replaces `RTCPeerConnection` in the page with one that is
+relay-only without TURN servers: no candidate is ever gathered, in any browser, while the
+attempt itself still happens (the test counts the connections it made).

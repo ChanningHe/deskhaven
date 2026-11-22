@@ -1,0 +1,64 @@
+# Real-client E2E of the browser remote page (web/e2e/README.md, "Remote E2E"). Manual and
+# nightly only; never on pull requests, and not part of ci.yml.
+#
+# It depends on nix: the pinned official clients (rustdesk 1.5.0 from the flake.lock nixpkgs,
+# 1.4.3 from nixos-25.11 b6018f87), hbbr, Xvfb and Playwright's browsers all come from
+# nixpkgs, with their store paths and sha256 printed by web/e2e/remote/nix-env.sh into the log.
+# Without nix the specs run in a Debian container as the README describes (one client version
+# per run).
+#
+# Network egress needed: github.com (source, the nixpkgs tarballs), nixos.org and
+# cache.nixos.org (nix installer and binary cache), channels.nixos.org, registry.npmjs.org
+# (pnpm), crates.io, index.crates.io and static.crates.io (cargo). Nothing at run time: the
+# stack is local, the signal server has no public STUN and the update check is off.
+name: remote-e2e
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  remote-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Fetch sources
+        run: |
+          git clone --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" src
+          cd src
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --detach "$GITHUB_SHA"
+
+      - name: Install nix
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSfL https://install.determinate.systems/nix | sh -s -- install linux --no-confirm --init none
+          echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
+
+      - name: Build the console and the binary
+        working-directory: src
+        run: |
+          nix develop --accept-flake-config -c bash -c '
+            pnpm -C web install --frozen-lockfile --ignore-scripts &&
+            pnpm -C web build &&
+            cargo build -p deskhaven'
+
+      - name: Real-client E2E
+        working-directory: src/web
+        run: |
+          eval "$(e2e/remote/nix-env.sh)"
+          export PLAYWRIGHT_BROWSERS_PATH=$(nix build --no-link --print-out-paths nixpkgs#playwright-driver.browsers)
+          nix develop --accept-flake-config .. -c pnpm e2e:remote
+
+      - name: Keep the logs of a failed run
+        if: failure()
+        working-directory: src/web
+        run: tar -C e2e-results -czf "$RUNNER_TEMP/remote-e2e-results.tgz" remote
+
+      - name: Upload the logs of a failed run
+        if: failure()
+        run: |
+          echo "results are in $RUNNER_TEMP/remote-e2e-results.tgz; no upload action is used here"
