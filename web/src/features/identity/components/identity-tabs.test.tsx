@@ -129,6 +129,16 @@ describe('identity page: tabs', () => {
     })
   })
 
+  it('summarizes a policy that enforces nothing in one short word', async () => {
+    renderApp('/identity', {
+      api: { ...API, [`GET ${SETTINGS_PATH}`]: { body: [tfaSetting({ value: 'off' })] } },
+    })
+
+    await waitFor(() => {
+      expect(tab('双因素认证')).toHaveAccessibleDescription('不强制')
+    })
+  })
+
   it('summarizes no enabled provider and no directory', async () => {
     renderApp('/identity', {
       api: {

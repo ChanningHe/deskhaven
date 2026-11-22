@@ -1513,7 +1513,7 @@
   },
   "identity": {
     "tabs": {
-      "label": "Identity sources",
+      "label": "Identity settings",
       "oidc": "OIDC",
       "ldap": "LDAP",
       "tfa": "2FA",

@@ -6,7 +6,7 @@ export type IdentityTab = (typeof IDENTITY_TABS)[number]
 
 export interface IdentitySearch {
   /** Absent: the OIDC providers. */
-  tab?: 'ldap' | 'tfa' | undefined
+  tab?: Exclude<IdentityTab, 'oidc'> | undefined
 }
 
 export function parseIdentitySearch(raw: Record<string, unknown>): IdentitySearch {
