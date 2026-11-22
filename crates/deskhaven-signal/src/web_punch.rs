@@ -246,9 +246,10 @@ impl RendezvousServer {
         if elapsed >= REG_TIMEOUT as u128 {
             return Err(WebPunchError::Offline);
         }
+        // The configured first entry, not the health-checked list: the browser only reaches
+        // the relay behind `/ws/relay`, and the check reorders by probe completion.
         let relay_server = self
-            .relay_servers
-            .load()
+            .relay_config
             .first()
             .cloned()
             .ok_or(WebPunchError::NoRelay)?;

@@ -812,3 +812,8 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   cleared unless it answers a web punch (wire offers are never forwarded, so no device answers
   one). Tests: `tests/web_punch.rs`, `tests/web_ice.rs`, `web_routes::tests`,
   `a_wire_connection_on_the_claimed_address_does_not_take_a_web_answer`.
+- 2026-11-23, s4 final review (`rendezvous_server.rs`, `web_punch.rs`): a web punch names the
+  first configured relay (`relay_config`, now `pub(crate)`) instead of the head of the
+  health-checked list, which the check reorders by probe completion; the browser only reaches
+  the relay behind `/ws/relay`. Test:
+  `a_web_punch_names_the_first_configured_relay_whatever_the_health_check_order`.

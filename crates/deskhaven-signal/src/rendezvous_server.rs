@@ -345,7 +345,7 @@ pub(crate) struct RendezvousServer {
     relay_servers0: Arc<RelayServers>,
     // deskhaven: the configured relay list (initial config or last handle update); its
     // resolvable entries are `relay_servers0`.
-    relay_config: Arc<RelayServers>,
+    pub(crate) relay_config: Arc<RelayServers>,
     // deskhaven: configured entries that did not resolve on the last attempt, retried on the
     // timer while non-empty; `None` until the first attempt.
     relay_unresolved: Option<RelayServers>,
@@ -2691,5 +2691,45 @@ mod tests {
             f.rs.tcp_punch.lock().await.contains_key(&claimed),
             "wire sink untouched"
         );
+    }
+
+    // The browser only reaches the relay behind `/ws/relay`, which deployments document as the
+    // first configured entry; the health check reorders the handed-out list by probe
+    // completion, so a web punch must not take its relay from there.
+    #[hbb_common::tokio::test]
+    async fn a_web_punch_names_the_first_configured_relay_whatever_the_health_check_order() {
+        // Arrange: two relays, the health check having put the second one first.
+        const RELAY_OTHER: &str = "192.0.2.10:21117";
+        let mut f = fixture_with(&[RELAY_INIT, RELAY_OTHER]).await;
+        f.tick_and_resolve().await;
+        let checked = f.rs.relay_servers0.clone();
+        f.rs.handle_data(
+            Data::RelayServers(checked, vec![RELAY_OTHER.to_owned(), RELAY_INIT.to_owned()]),
+            &mut f.socket,
+        )
+        .await;
+        assert_eq!(f.relays(), [RELAY_OTHER, RELAY_INIT]);
+        let peer_addr = f.online_peer().await;
+        f.rs.pm.get_or(PEER_ID).await.write().await.pk = Bytes::from(vec![7; 32]);
+        let rs = f.rs.clone();
+
+        // Act
+        let _punch = tokio::spawn(async move {
+            rs.web_punch(crate::WebPunch {
+                target: PEER_ID.to_owned(),
+                offer: None,
+                client: "198.51.100.7".parse().unwrap(),
+            })
+            .await
+        });
+
+        // Assert
+        let ph = loop {
+            match timeout(5_000, f.rx.recv()).await.unwrap().unwrap() {
+                Data::Msg(msg, to) if to == peer_addr => break msg.punch_hole().clone(),
+                _ => {}
+            }
+        };
+        assert_eq!(ph.relay_server, RELAY_INIT);
     }
 }
