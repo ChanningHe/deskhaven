@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useId } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { isApiError } from '@/api/api-error'
@@ -11,13 +12,13 @@ import {
 } from '@/api/generated/settings/settings'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { NativeSelect } from '@/components/common/native-select'
+import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
+import { UnsavedGuard } from '@/components/common/unsaved-guard'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { valueSource } from '@/features/settings/format'
 import { useRebasedDraft } from '@/lib/use-rebased-draft'
-
-import { Section } from './form-controls'
 
 export const TFA_KEY = 'auth.tfa.enforce'
 const CHOICES = ['off', 'admins', 'all'] as const
@@ -33,28 +34,44 @@ function isChoice(value: unknown): value is Choice {
  */
 export function TfaSection({ isOwner }: { isOwner: boolean }) {
   const { t } = useTranslation()
+  if (isOwner) return <OwnerTfa />
   return (
-    <Section
-      id="identity-tfa"
-      title={t('identity.tfa.title')}
-      description={t('identity.tfa.description')}
-    >
-      {isOwner ? (
-        <TfaPolicy />
-      ) : (
-        <p className="text-sm text-muted-foreground">{t('identity.tfa.ownerOnly')}</p>
-      )}
-      <p className="text-xs text-muted-foreground">{t('identity.tfa.oidcNote')}</p>
-    </Section>
+    <TfaCard status={undefined}>
+      <p className="text-sm text-muted-foreground">{t('identity.tfa.ownerOnly')}</p>
+    </TfaCard>
   )
 }
 
-function TfaPolicy() {
+function TfaCard({ status, children }: { status: ReactNode; children: ReactNode }) {
+  const { t } = useTranslation()
+  return (
+    <SectionCard
+      title={t('identity.tfa.title')}
+      description={t('identity.tfa.description')}
+      status={status}
+    >
+      <div className="grid gap-4">
+        {children}
+        <p className="text-xs text-muted-foreground">{t('identity.tfa.oidcNote')}</p>
+      </div>
+    </SectionCard>
+  )
+}
+
+/** Only the owner reads the settings: an admin's page never requests them. */
+function OwnerTfa() {
   const query = useListSettings()
-  const setting = query.data?.find((s) => s.key === TFA_KEY)
-  if (query.error) return <ErrorAlert error={query.error} onRetry={() => void query.refetch()} />
-  if (setting === undefined) return null
-  return <PolicyForm setting={setting} />
+  const setting = query.error ? undefined : query.data?.find((s) => s.key === TFA_KEY)
+  return (
+    <TfaCard
+      status={
+        setting === undefined ? undefined : <SourceBadge source={valueSource(setting.source)} />
+      }
+    >
+      {query.error ? <ErrorAlert error={query.error} onRetry={() => void query.refetch()} /> : null}
+      {setting === undefined ? null : <PolicyForm setting={setting} />}
+    </TfaCard>
+  )
 }
 
 function PolicyForm({ setting }: { setting: SettingView }) {
@@ -84,10 +101,7 @@ function PolicyForm({ setting }: { setting: SettingView }) {
 
   return (
     <div className="grid gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Label htmlFor={id}>{t('identity.tfa.label')}</Label>
-        <SourceBadge source={valueSource(setting.source)} />
-      </div>
+      <Label htmlFor={id}>{t('identity.tfa.label')}</Label>
       <div className="flex flex-wrap items-center gap-2">
         <NativeSelect
           id={id}
@@ -124,6 +138,7 @@ function PolicyForm({ setting }: { setting: SettingView }) {
           {t('identity.tfa.saved')}
         </p>
       ) : null}
+      <UnsavedGuard dirty={changed.length > 0} />
     </div>
   )
 }

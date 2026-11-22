@@ -1559,6 +1559,18 @@
       "ownerOnly": "Only the owner can change the directory or run tests: whoever can change its address can sign in as any directory account.",
       "readOnly": "Defined in the configuration file; read-only here.",
       "empty": "No directory is configured.",
+      "status": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "unconfigured": "Not configured"
+      },
+      "groups": {
+        "connection": "Connection",
+        "serviceAccount": "Service account",
+        "userLookup": "User lookup",
+        "attributes": "Attribute mapping",
+        "groupMapping": "Group mapping"
+      },
       "fields": {
         "name": "Name",
         "url": "URL",

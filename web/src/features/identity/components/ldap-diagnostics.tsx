@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useTestLdapConnection, useTestLdapUser } from '@/api/generated/identity/identity'
 import type { LdapDiagnosticView, NewLdapDirectoryBody } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/features/auth/components/text-field'
 import { SECRET_MUTATION } from '@/features/users/secret-mutation'
@@ -14,7 +15,10 @@ import { FieldProblems } from './form-controls'
 /** What to test: the saved directory, or the form as typed. */
 export type TestTarget = { directory_id: number } | { directory: NewLdapDirectoryBody }
 
-/** "Test connection" and "test user" with their step-by-step result. Owner only. */
+/**
+ * The tests card: "test connection" and "test user" with their step-by-step result. Owner
+ * only. It stays outside the directory form: its buttons must never submit the directory.
+ */
 export function LdapDiagnostics({ target }: { target: TestTarget }) {
   const { t } = useTranslation()
   const id = useId()
@@ -45,56 +49,57 @@ export function LdapDiagnostics({ target }: { target: TestTarget }) {
     )
 
   return (
-    <div className="grid gap-3 rounded-lg border p-4">
-      <h3 className="text-sm font-semibold">{t('identity.diagnostics.title')}</h3>
-      <p className="text-xs text-muted-foreground">
-        {'directory_id' in target
-          ? t('identity.diagnostics.savedHint')
-          : t('identity.diagnostics.unsavedHint')}
-      </p>
-      <div>
-        <Button variant="outline" disabled={pending} onClick={() => void testConnection()}>
-          {t('identity.diagnostics.testConnection')}
-        </Button>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
-          id={`${id}-username`}
-          label={t('identity.diagnostics.username')}
-          value={username}
-          autoComplete="off"
-          onChange={(event) => {
-            setUsername(event.target.value)
-          }}
-        />
-        <TextField
-          id={`${id}-password`}
-          label={t('identity.diagnostics.password')}
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(event) => {
-            setPassword(event.target.value)
-          }}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground">{t('identity.diagnostics.passwordHint')}</p>
-      <div>
-        <Button
-          variant="outline"
-          disabled={pending || username.trim() === ''}
-          onClick={() => void testUser()}
-        >
-          {t('identity.diagnostics.testUser')}
-        </Button>
-      </div>
-      {error === undefined ? null : (
-        <div className="grid gap-1">
-          <ErrorAlert error={error} />
-          <FieldProblems error={error} />
+    <SectionCard title={t('identity.diagnostics.title')}>
+      <div className="grid gap-3">
+        <p className="text-xs text-muted-foreground">
+          {'directory_id' in target
+            ? t('identity.diagnostics.savedHint')
+            : t('identity.diagnostics.unsavedHint')}
+        </p>
+        <div>
+          <Button variant="outline" disabled={pending} onClick={() => void testConnection()}>
+            {t('identity.diagnostics.testConnection')}
+          </Button>
         </div>
-      )}
-      {result === undefined ? null : <DiagnosticResult result={result} />}
-    </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField
+            id={`${id}-username`}
+            label={t('identity.diagnostics.username')}
+            value={username}
+            autoComplete="off"
+            onChange={(event) => {
+              setUsername(event.target.value)
+            }}
+          />
+          <TextField
+            id={`${id}-password`}
+            label={t('identity.diagnostics.password')}
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value)
+            }}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">{t('identity.diagnostics.passwordHint')}</p>
+        <div>
+          <Button
+            variant="outline"
+            disabled={pending || username.trim() === ''}
+            onClick={() => void testUser()}
+          >
+            {t('identity.diagnostics.testUser')}
+          </Button>
+        </div>
+        {error === undefined ? null : (
+          <div className="grid gap-1">
+            <ErrorAlert error={error} />
+            <FieldProblems error={error} />
+          </div>
+        )}
+        {result === undefined ? null : <DiagnosticResult result={result} />}
+      </div>
+    </SectionCard>
   )
 }

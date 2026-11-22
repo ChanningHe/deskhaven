@@ -12,6 +12,7 @@ import type { OidcProviderView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,6 @@ import {
 } from '@/components/ui/table'
 import { CopyField } from '@/features/client-setup/components/copy-field'
 
-import { Section } from './form-controls'
 import { ProviderDialog } from './provider-dialog'
 import type { ProviderTarget } from './provider-dialog'
 
@@ -51,8 +51,7 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
       : editing
 
   return (
-    <Section
-      id="identity-oidc"
+    <SectionCard
       title={t('identity.oidc.title')}
       description={t('identity.oidc.description')}
       actions={
@@ -68,43 +67,47 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
         ) : undefined
       }
     >
-      {isOwner ? null : (
-        <p className="text-sm text-muted-foreground">{t('identity.oidc.ownerOnly')}</p>
-      )}
-      {query.error ? <ErrorAlert error={query.error} onRetry={() => void query.refetch()} /> : null}
-      {query.data === undefined ? null : (
-        <>
-          <CopyField
-            label={t('identity.oidc.callbackUrl')}
-            value={query.data.callback_url ?? ''}
-            hint={
-              query.data.callback_url == null
-                ? t('identity.oidc.callbackMissing')
-                : t('identity.oidc.callbackHint')
-            }
-          />
-          {query.data.items.length === 0 ? (
-            <EmptyState
-              icon={KeyRound}
-              headingLevel={3}
-              title={t('identity.oidc.emptyTitle')}
-              description={t('identity.oidc.emptyDescription')}
+      <div className="space-y-4">
+        {isOwner ? null : (
+          <p className="text-sm text-muted-foreground">{t('identity.oidc.ownerOnly')}</p>
+        )}
+        {query.error ? (
+          <ErrorAlert error={query.error} onRetry={() => void query.refetch()} />
+        ) : null}
+        {query.data === undefined ? null : (
+          <>
+            <CopyField
+              label={t('identity.oidc.callbackUrl')}
+              value={query.data.callback_url ?? ''}
+              hint={
+                query.data.callback_url == null
+                  ? t('identity.oidc.callbackMissing')
+                  : t('identity.oidc.callbackHint')
+              }
             />
-          ) : (
-            <ProviderTable
-              providers={query.data.items}
-              isOwner={isOwner}
-              onEdit={(provider) => {
-                setEditing({ kind: 'stored', provider })
-              }}
-              onDelete={(provider) => {
-                setDeleting(provider)
-                setConfirming(true)
-              }}
-            />
-          )}
-        </>
-      )}
+            {query.data.items.length === 0 ? (
+              <EmptyState
+                icon={KeyRound}
+                headingLevel={3}
+                title={t('identity.oidc.emptyTitle')}
+                description={t('identity.oidc.emptyDescription')}
+              />
+            ) : (
+              <ProviderTable
+                providers={query.data.items}
+                isOwner={isOwner}
+                onEdit={(provider) => {
+                  setEditing({ kind: 'stored', provider })
+                }}
+                onDelete={(provider) => {
+                  setDeleting(provider)
+                  setConfirming(true)
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
       <ProviderDialog
         target={shown}
         readOnly={!isOwner}
@@ -125,7 +128,7 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
           await queryClient.invalidateQueries({ queryKey: getListOidcProviderConfigsQueryKey() })
         }}
       />
-    </Section>
+    </SectionCard>
   )
 }
 

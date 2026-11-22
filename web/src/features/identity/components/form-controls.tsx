@@ -61,33 +61,3 @@ export function FieldProblems({ error }: { error: unknown }) {
     </ul>
   )
 }
-
-/** A titled part of the identity page. */
-export function Section({
-  id,
-  title,
-  description,
-  actions,
-  children,
-}: {
-  id: string
-  title: string
-  description: string
-  actions?: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <section aria-labelledby={id} className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h2 id={id} className="text-base font-semibold">
-            {title}
-          </h2>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        {actions === undefined ? null : <div className="shrink-0">{actions}</div>}
-      </div>
-      {children}
-    </section>
-  )
-}

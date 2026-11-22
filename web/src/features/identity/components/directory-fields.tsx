@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { FieldGroup } from '@/components/common/field-group'
 import { TextField } from '@/features/auth/components/text-field'
 
 import type { TranslationResources } from '@/i18n/resources'
@@ -13,17 +14,37 @@ type TextKey = {
 }[keyof DirectoryDraft]
 
 type FieldLabel = keyof TranslationResources['identity']['ldap']['fields']
+type GroupTitle = keyof TranslationResources['identity']['ldap']['groups']
+type CheckKey = 'enabled' | 'start_tls' | 'tls_verify'
 
-/** Search and mapping fields in form order: draft key, label, optional hint. */
-const SEARCH_FIELDS: readonly (readonly [TextKey, FieldLabel, FieldLabel?])[] = [
-  ['user_base_dn', 'userBaseDn'],
-  ['user_filter', 'userFilter', 'userFilterHint'],
-  ['username_attr', 'usernameAttr', 'usernameAttrHint'],
-  ['email_attr', 'emailAttr'],
-  ['display_name_attr', 'displayNameAttr'],
-  ['group_base_dn', 'groupBaseDn', 'groupBaseDnHint'],
-  ['group_filter', 'groupFilter', 'groupFilterHint'],
-  ['admin_group_dn', 'adminGroupDn', 'adminGroupDnHint'],
+/** The search and mapping groups in form order: draft key, label, optional hint. */
+const SEARCH_GROUPS: readonly (readonly [
+  GroupTitle,
+  readonly (readonly [TextKey, FieldLabel, FieldLabel?])[],
+])[] = [
+  [
+    'userLookup',
+    [
+      ['user_base_dn', 'userBaseDn'],
+      ['user_filter', 'userFilter', 'userFilterHint'],
+      ['username_attr', 'usernameAttr', 'usernameAttrHint'],
+    ],
+  ],
+  [
+    'attributes',
+    [
+      ['email_attr', 'emailAttr'],
+      ['display_name_attr', 'displayNameAttr'],
+    ],
+  ],
+  [
+    'groupMapping',
+    [
+      ['group_base_dn', 'groupBaseDn', 'groupBaseDnHint'],
+      ['group_filter', 'groupFilter', 'groupFilterHint'],
+      ['admin_group_dn', 'adminGroupDn', 'adminGroupDnHint'],
+    ],
+  ],
 ]
 
 interface DirectoryFieldsProps {
@@ -36,7 +57,7 @@ interface DirectoryFieldsProps {
   disabled: boolean
 }
 
-/** The inputs of the LDAP directory form. */
+/** The inputs of the LDAP directory form, in five titled groups. */
 export function DirectoryFields(props: DirectoryFieldsProps) {
   const { draft, set, disabled } = props
   const { t } = useTranslation()
@@ -54,40 +75,37 @@ export function DirectoryFields(props: DirectoryFieldsProps) {
       }}
     />
   )
+  const check = (key: CheckKey, label: FieldLabel) => (
+    <CheckField
+      label={t(`identity.ldap.fields.${label}`)}
+      checked={draft[key]}
+      disabled={disabled}
+      onChange={(checked) => {
+        set({ [key]: checked })
+      }}
+    />
+  )
   return (
-    <div className="grid gap-3">
-      {text('name', 'name')}
-      {text('url', 'url', 'urlHint')}
-      <CheckField
-        label={t('identity.ldap.fields.startTls')}
-        checked={draft.start_tls}
-        disabled={disabled}
-        onChange={(checked) => {
-          set({ start_tls: checked })
-        }}
-      />
-      <CheckField
-        label={t('identity.ldap.fields.tlsVerify')}
-        checked={draft.tls_verify}
-        disabled={disabled}
-        onChange={(checked) => {
-          set({ tls_verify: checked })
-        }}
-      />
-      {draft.tls_verify ? null : (
-        <Warning tone="destructive">{t('identity.ldap.fields.tlsVerifyWarning')}</Warning>
-      )}
-      {text('bind_dn', 'bindDn', 'bindDnHint')}
-      <PasswordField {...props} id={`${id}-bind_password`} />
-      {SEARCH_FIELDS.map(([key, label, hint]) => text(key, label, hint))}
-      <CheckField
-        label={t('identity.ldap.fields.enabled')}
-        checked={draft.enabled}
-        disabled={disabled}
-        onChange={(checked) => {
-          set({ enabled: checked })
-        }}
-      />
+    <div className="grid gap-8">
+      <FieldGroup title={t('identity.ldap.groups.connection')}>
+        {check('enabled', 'enabled')}
+        {text('name', 'name')}
+        {text('url', 'url', 'urlHint')}
+        {check('start_tls', 'startTls')}
+        {check('tls_verify', 'tlsVerify')}
+        {draft.tls_verify ? null : (
+          <Warning tone="destructive">{t('identity.ldap.fields.tlsVerifyWarning')}</Warning>
+        )}
+      </FieldGroup>
+      <FieldGroup title={t('identity.ldap.groups.serviceAccount')}>
+        {text('bind_dn', 'bindDn', 'bindDnHint')}
+        <PasswordField {...props} id={`${id}-bind_password`} />
+      </FieldGroup>
+      {SEARCH_GROUPS.map(([title, fields]) => (
+        <FieldGroup key={title} title={t(`identity.ldap.groups.${title}`)}>
+          {fields.map(([key, label, hint]) => text(key, label, hint))}
+        </FieldGroup>
+      ))}
     </div>
   )
 }

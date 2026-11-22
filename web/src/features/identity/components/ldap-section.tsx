@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next'
 import { useListLdapDirectories } from '@/api/generated/identity/identity'
 import type { LdapDirectoryView } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
+import { Badge } from '@/components/ui/badge'
 
 import { directoryDraft } from '../ldap-form'
 import { DirectoryFields } from './directory-fields'
 import { DirectoryForm } from './directory-form'
-import { Section } from './form-controls'
 import { LdapDiagnostics } from './ldap-diagnostics'
 
 const ignore = () => undefined
@@ -28,48 +29,79 @@ export function LdapSection({ isOwner }: { isOwner: boolean }) {
   const query = useListLdapDirectories()
   const directory = query.data === undefined ? undefined : shownDirectory(query.data)
   const managed = directory?.managed_by === 'config'
+  const status =
+    query.data === undefined || query.error ? undefined : <SavedState directory={directory} />
+  const alert = query.error ? (
+    <ErrorAlert error={query.error} onRetry={() => void query.refetch()} />
+  ) : null
 
+  if (query.data !== undefined && isOwner && !managed) {
+    return (
+      <DirectoryForm
+        key={directory?.id ?? 'new'}
+        directory={directory}
+        status={status}
+        alert={alert}
+      />
+    )
+  }
   return (
-    <Section
-      id="identity-ldap"
-      title={t('identity.ldap.title')}
-      description={t('identity.ldap.description')}
-    >
-      {isOwner ? null : (
-        <p className="flex items-start gap-2 text-sm text-muted-foreground">
-          <ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          {t('identity.ldap.ownerOnly')}
-        </p>
-      )}
-      {query.error ? <ErrorAlert error={query.error} onRetry={() => void query.refetch()} /> : null}
-      {query.data === undefined ? null : (
-        <LdapBody directory={directory} isOwner={isOwner} managed={managed} />
-      )}
-    </Section>
+    <>
+      <SectionCard
+        title={t('identity.ldap.title')}
+        description={t('identity.ldap.description')}
+        status={status}
+      >
+        <div className="grid gap-6">
+          {isOwner ? null : (
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {t('identity.ldap.ownerOnly')}
+            </p>
+          )}
+          {alert}
+          {query.data === undefined ? null : (
+            <ReadOnlyDirectory directory={directory} managed={managed} />
+          )}
+        </div>
+      </SectionCard>
+      {isOwner && directory !== undefined ? (
+        <LdapDiagnostics target={{ directory_id: directory.id }} />
+      ) : null}
+    </>
   )
 }
 
-interface LdapBodyProps {
+/** The stored directory's state, never the form's draft. */
+function SavedState({ directory }: { directory: LdapDirectoryView | undefined }) {
+  const { t } = useTranslation()
+  if (directory === undefined) {
+    return <Badge variant="outline">{t('identity.ldap.status.unconfigured')}</Badge>
+  }
+  return (
+    <>
+      <Badge variant={directory.enabled ? 'success' : 'secondary'}>
+        {directory.enabled ? t('identity.ldap.status.enabled') : t('identity.ldap.status.disabled')}
+      </Badge>
+      {directory.managed_by === 'config' ? <SourceBadge source={{ kind: 'file' }} /> : null}
+    </>
+  )
+}
+
+interface ReadOnlyDirectoryProps {
   directory: LdapDirectoryView | undefined
-  isOwner: boolean
   managed: boolean
 }
 
-function LdapBody({ directory, isOwner, managed }: LdapBodyProps) {
+function ReadOnlyDirectory({ directory, managed }: ReadOnlyDirectoryProps) {
   const { t } = useTranslation()
-  if (isOwner && !managed) {
-    return <DirectoryForm key={directory?.id ?? 'new'} directory={directory} />
-  }
   if (directory === undefined) {
     return <p className="text-sm text-muted-foreground">{t('identity.ldap.empty')}</p>
   }
   return (
-    <div className="grid gap-6">
+    <>
       {managed ? (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <SourceBadge source={{ kind: 'file' }} />
-          {t('identity.ldap.readOnly')}
-        </p>
+        <p className="text-xs text-muted-foreground">{t('identity.ldap.readOnly')}</p>
       ) : null}
       <DirectoryFields
         draft={directoryDraft(directory)}
@@ -78,7 +110,6 @@ function LdapBody({ directory, isOwner, managed }: LdapBodyProps) {
         needsPassword={false}
         disabled
       />
-      {isOwner ? <LdapDiagnostics target={{ directory_id: directory.id }} /> : null}
-    </div>
+    </>
   )
 }

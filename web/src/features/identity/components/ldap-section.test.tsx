@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { ADMIN_ME } from '@/test/fixtures'
-import { callsTo } from '@/test/mock-api'
+import { callsTo, errorEnvelope } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
 import {
@@ -29,6 +29,10 @@ function api(directories: unknown[], extra: Record<string, unknown> = {}) {
 
 function ldapSection() {
   return within(screen.getByRole('region', { name: 'LDAP 目录' }))
+}
+
+async function findLdapSection() {
+  return within(await screen.findByRole('region', { name: 'LDAP 目录' }))
 }
 
 describe('identity page: LDAP directory', () => {
@@ -85,7 +89,7 @@ describe('identity page: LDAP directory', () => {
       }),
     })
     await screen.findByRole('button', { name: '测试连接' })
-    const section = ldapSection()
+    const section = within(screen.getByRole('region', { name: '测试目录' }))
     expect(section.getByText(/计入该账户的登录锁定/)).toBeInTheDocument()
     await user.type(section.getByLabelText('用户名'), 'alice')
     await user.type(section.getByLabelText('密码（可选）'), 'pw-1')
@@ -144,6 +148,70 @@ describe('identity page: LDAP directory', () => {
     await waitFor(() => {
       expect(patched).toEqual({ url: 'ldaps://other.example.org', bind_password: 'new-pw' })
     })
+  })
+
+  it('shows the saved state in the card header, not the draft', async () => {
+    const { user } = renderApp('/identity', { api: api([directoryView()]) })
+    const enabled = await screen.findByRole('checkbox', { name: '启用' })
+    expect(ldapSection().getByText('已启用')).toBeInTheDocument()
+
+    await user.click(enabled)
+
+    expect(enabled).not.toBeChecked()
+    expect(ldapSection().getByText('已启用')).toBeInTheDocument()
+    expect(ldapSection().queryByText('已停用')).not.toBeInTheDocument()
+  })
+
+  it('marks a disabled directory', async () => {
+    renderApp('/identity', { me: ADMIN_ME, api: api([directoryView({ enabled: false })]) })
+
+    const section = await findLdapSection()
+    expect(await section.findByText('已停用')).toBeInTheDocument()
+  })
+
+  it('marks a missing directory', async () => {
+    renderApp('/identity', { me: ADMIN_ME, api: api([]) })
+
+    const section = await findLdapSection()
+    expect(await section.findByText('未配置')).toBeInTheDocument()
+    expect(section.getByText('尚未配置目录。')).toBeInTheDocument()
+  })
+
+  it('marks a config-managed directory and still offers the owner its tests', async () => {
+    renderApp('/identity', { api: api([directoryView({ managed_by: 'config' })]) })
+
+    const section = await findLdapSection()
+    expect(await section.findByText('已启用')).toBeInTheDocument()
+    expect(section.getByText('配置锁定')).toBeInTheDocument()
+    expect(section.getByText('由配置文件定义，在此处只读。')).toBeInTheDocument()
+    expect(section.queryByRole('button', { name: '保存修改' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '测试目录' })).toBeInTheDocument()
+  })
+
+  it('shows no state while the directories cannot be read', async () => {
+    renderApp('/identity', {
+      api: api([], {
+        [`GET ${DIRECTORIES_PATH}`]: { status: 404, body: errorEnvelope('not_found') },
+      }),
+    })
+
+    const section = await findLdapSection()
+    expect(await section.findByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(section.queryByText('未配置')).not.toBeInTheDocument()
+    expect(section.queryByText('已启用')).not.toBeInTheDocument()
+  })
+
+  it('groups the fields and keeps the tests in their own card outside the form', async () => {
+    renderApp('/identity', { api: api([directoryView()]) })
+    await screen.findByLabelText('URL')
+
+    const groups = ldapSection()
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(groups).toEqual(['连接', '服务账号', '用户查找', '属性映射', '组映射'])
+    const tests = screen.getByRole('region', { name: '测试目录' })
+    expect(tests.closest('form')).toBeNull()
+    expect(screen.getByRole('region', { name: 'LDAP 目录' })).not.toContainElement(tests)
   })
 
   it('warns in red when certificate verification is turned off', async () => {
