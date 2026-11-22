@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   accountStatusVariant,
+  enabledVariant,
   flagVariant,
   loginResultVariant,
   tokenStatusVariant,
@@ -31,5 +32,10 @@ describe('status variants', () => {
   it('colours an on/off fact (2FA enabled, email verified, current session)', () => {
     expect(flagVariant(true)).toBe('success')
     expect(flagVariant(false)).toBe('outline')
+  })
+
+  it('colours a switch someone turns on or off (an OIDC provider, the LDAP directory)', () => {
+    expect(enabledVariant(true)).toBe('success')
+    expect(enabledVariant(false)).toBe('secondary')
   })
 })

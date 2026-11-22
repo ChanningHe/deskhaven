@@ -6,6 +6,7 @@ import type { LdapDirectoryView } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
+import { enabledVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 
 import { directoryDraft, shownDirectory } from '../ldap-form'
@@ -82,7 +83,7 @@ function SavedState({ directory }: { directory: LdapDirectoryView | undefined })
   }
   return (
     <>
-      <Badge variant={directory.enabled ? 'success' : 'secondary'}>
+      <Badge variant={enabledVariant(directory.enabled)}>
         {directory.enabled ? t('identity.ldap.status.enabled') : t('identity.ldap.status.disabled')}
       </Badge>
       {directory.managed_by === 'config' ? <SourceBadge source={{ kind: 'file' }} /> : null}

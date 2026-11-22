@@ -46,8 +46,8 @@ function Overview({ data }: { data: OverviewView }) {
   const format = (n: number) => new Intl.NumberFormat(i18n.language).format(n)
   const { online, total } = data.devices
   return (
-    <div className="space-y-8">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-6">
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           label={t('overview.tiles.devices')}
           value={`${format(online)} / ${format(total)}`}
@@ -71,7 +71,7 @@ function Overview({ data }: { data: OverviewView }) {
           attention={data.failed_logins_24h > 0}
         />
       </div>
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         <VersionChart versions={data.client_versions} format={format} />
         <RecentAlarms alarms={data.recent_alarms} />
       </div>

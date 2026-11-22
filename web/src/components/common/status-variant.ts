@@ -31,3 +31,7 @@ export function loginResultVariant(result: string): StatusVariant {
 
 /** A fact that is either in effect or not: 2FA enabled, email verified, current session. */
 export const flagVariant = (on: boolean): StatusVariant => (on ? 'success' : 'outline')
+
+/** A switch someone turns on or off: an OIDC provider, the LDAP directory. */
+export const enabledVariant = (enabled: boolean): StatusVariant =>
+  enabled ? 'success' : 'secondary'

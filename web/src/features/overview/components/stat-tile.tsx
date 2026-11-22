@@ -17,7 +17,7 @@ interface StatTileProps {
 /** One headline number of the overview. */
 export function StatTile({ label, value, hint, meter, attention = false }: StatTileProps) {
   return (
-    <div className="space-y-2 rounded-lg border bg-card p-4 text-card-foreground">
+    <div className="space-y-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs sm:px-6 sm:py-5">
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className={cn('text-3xl font-semibold tabular-nums', attention && 'text-warning')}>
         {value}

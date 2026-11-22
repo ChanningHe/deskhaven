@@ -1540,8 +1540,6 @@
         "source": "Source",
         "actions": "Actions"
       },
-      "enabled": "Enabled",
-      "disabled": "Disabled",
       "edit": "Edit {{name}}",
       "view": "View {{name}}",
       "delete": "Delete {{name}}",

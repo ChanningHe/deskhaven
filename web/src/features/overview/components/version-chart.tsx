@@ -1,7 +1,10 @@
+import { ChartNoAxesColumn } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { ClientVersions } from '@/api/generated/model'
+import { EmptyState } from '@/components/common/empty-state'
+import { SectionCard } from '@/components/common/section-card'
 import { cn } from '@/lib/utils'
 
 import { versionBars } from '../bars'
@@ -21,15 +24,16 @@ export function VersionChart({
   const { t } = useTranslation()
   const bars = versionBars(versions)
   return (
-    <section aria-labelledby="overview-versions" className="space-y-3">
-      <div className="space-y-1">
-        <h2 id="overview-versions" className="text-sm font-medium">
-          {t('overview.versions.title')}
-        </h2>
-        <p className="text-xs text-muted-foreground">{t('overview.versions.selfReported')}</p>
-      </div>
+    <SectionCard
+      title={t('overview.versions.title')}
+      description={t('overview.versions.selfReported')}
+    >
       {bars.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('overview.versions.empty')}</p>
+        <EmptyState
+          icon={ChartNoAxesColumn}
+          headingLevel={3}
+          title={t('overview.versions.empty')}
+        />
       ) : (
         <ul className="space-y-2">
           {bars.map((bar) => (
@@ -58,6 +62,6 @@ export function VersionChart({
           ))}
         </ul>
       )}
-    </section>
+    </SectionCard>
   )
 }

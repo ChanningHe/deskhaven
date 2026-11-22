@@ -1540,8 +1540,6 @@
         "source": "来源",
         "actions": "操作"
       },
-      "enabled": "已启用",
-      "disabled": "已停用",
       "edit": "编辑 {{name}}",
       "view": "查看 {{name}}",
       "delete": "删除 {{name}}",

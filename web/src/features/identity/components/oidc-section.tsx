@@ -1,19 +1,13 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  deleteOidcProvider,
-  getListOidcProviderConfigsQueryKey,
-  useListOidcProviderConfigs,
-} from '@/api/generated/identity/identity'
+import { useListOidcProviderConfigs } from '@/api/generated/identity/identity'
 import type { OidcProviderView } from '@/api/generated/model'
-import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
+import { enabledVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,8 +20,7 @@ import {
 } from '@/components/ui/table'
 import { CopyField } from '@/features/client-setup/components/copy-field'
 
-import { ProviderDialog } from './provider-dialog'
-import type { ProviderTarget } from './provider-dialog'
+import { useProviderDialogs } from './use-provider-dialogs'
 
 /**
  * OIDC providers: the callback URL to register, the list, create / edit / delete. Writes are
@@ -35,20 +28,8 @@ import type { ProviderTarget } from './provider-dialog'
  */
 export function OidcSection({ isOwner }: { isOwner: boolean }) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   const query = useListOidcProviderConfigs()
-  const [editing, setEditing] = useState<ProviderTarget | undefined>(undefined)
-  // `deleting` outlives `confirming`: the dialog keeps its texts while it animates closed.
-  const [deleting, setDeleting] = useState<OidcProviderView | undefined>(undefined)
-  const [confirming, setConfirming] = useState(false)
-  // The dialog edits the polled copy, so a concurrent change rebases the draft.
-  const shown =
-    editing?.kind === 'stored'
-      ? {
-          kind: 'stored' as const,
-          provider: query.data?.items.find((p) => p.id === editing.provider.id) ?? editing.provider,
-        }
-      : editing
+  const { edit, remove, dialogs } = useProviderDialogs(query.data?.items, !isOwner)
 
   return (
     <SectionCard
@@ -58,7 +39,7 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
         isOwner ? (
           <Button
             onClick={() => {
-              setEditing({ kind: 'new' })
+              edit({ kind: 'new' })
             }}
           >
             <Plus aria-hidden />
@@ -99,37 +80,15 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
                 providers={query.data.items}
                 isOwner={isOwner}
                 onEdit={(provider) => {
-                  setEditing({ kind: 'stored', provider })
+                  edit({ kind: 'stored', provider })
                 }}
-                onDelete={(provider) => {
-                  setDeleting(provider)
-                  setConfirming(true)
-                }}
+                onDelete={remove}
               />
             )}
           </>
         )}
       </div>
-      <ProviderDialog
-        target={shown}
-        readOnly={!isOwner}
-        onClose={() => {
-          setEditing(undefined)
-        }}
-      />
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t('identity.oidc.confirmDelete.title')}
-        description={t('identity.oidc.confirmDelete.description', { name: deleting?.name ?? '' })}
-        confirmLabel={t('identity.oidc.confirmDelete.confirm')}
-        confirmText={deleting?.name ?? ''}
-        onConfirm={async () => {
-          if (deleting === undefined) return
-          await deleteOidcProvider(deleting.id)
-          await queryClient.invalidateQueries({ queryKey: getListOidcProviderConfigsQueryKey() })
-        }}
-      />
+      {dialogs}
     </SectionCard>
   )
 }
@@ -169,8 +128,10 @@ function ProviderTable({ providers, isOwner, onEdit, onDelete }: ProviderTablePr
               </TableCell>
               <TableCell className="font-mono text-xs break-all">{provider.issuer}</TableCell>
               <TableCell>
-                <Badge variant={provider.enabled ? 'success' : 'secondary'}>
-                  {provider.enabled ? t('identity.oidc.enabled') : t('identity.oidc.disabled')}
+                <Badge variant={enabledVariant(provider.enabled)}>
+                  {provider.enabled
+                    ? t('identity.ldap.status.enabled')
+                    : t('identity.ldap.status.disabled')}
                 </Badge>
               </TableCell>
               <TableCell>

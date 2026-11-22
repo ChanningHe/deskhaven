@@ -5,10 +5,11 @@ import { cn } from '@/lib/utils'
 
 type Shown = 'online' | 'offline' | 'disabled'
 
+/** Disabled is someone's choice, not a fault: a hollow ring, told from offline by its shape. */
 const DOT_CLASS: Record<Shown, string> = {
   online: 'bg-success',
   offline: 'bg-muted-foreground/40',
-  disabled: 'bg-destructive',
+  disabled: 'border-2 border-muted-foreground',
 }
 
 function shownOf(device: Pick<DeviceView, 'online' | 'status'>): Shown {

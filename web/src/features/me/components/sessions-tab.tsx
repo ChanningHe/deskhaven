@@ -13,6 +13,7 @@ import type { MySession } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SectionCard } from '@/components/common/section-card'
+import { flagVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -65,7 +66,9 @@ function SessionRow({
       <TableCell>
         <div className="flex flex-wrap items-center gap-1">
           <Badge variant="outline">{t(`me.sessions.kind.${session.kind}`)}</Badge>
-          {session.current ? <Badge variant="success">{t('me.sessions.current')}</Badge> : null}
+          {session.current ? (
+            <Badge variant={flagVariant(true)}>{t('me.sessions.current')}</Badge>
+          ) : null}
         </div>
       </TableCell>
       <TableCell>
