@@ -1767,7 +1767,7 @@
       "clipboardOff": "The device has turned off the clipboard.",
       "ctrlAltDelHint": "Send Ctrl+Alt+Del to the device",
       "displayHint": "Switch display",
-      "keyboardModeHint": "How keys are sent to the device",
+      "keyboardModeHint": "How keys are sent to the device. Press Esc twice to leave the remote screen.",
       "sendClipboardHint": "Send this computer’s clipboard to the device",
       "remoteClipboardHint": "Show what was copied on the device"
     },
@@ -1785,6 +1785,7 @@
       "close": "Close"
     },
     "screen": "Remote screen. Click it to control the device; keys go to the device while it has focus.",
+    "leaveHint": "Press Esc twice to leave the remote screen.",
     "status": {
       "connecting": "Connecting",
       "active": "Connected",

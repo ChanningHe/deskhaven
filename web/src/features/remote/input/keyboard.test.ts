@@ -15,6 +15,7 @@ function press(key: string, code: string, extra: Partial<KeyInput> = {}): KeyInp
     capsLock: false,
     numLock: false,
     modifiers: NO_MODIFIERS,
+    time: 0,
     ...extra,
   }
 }
@@ -198,7 +199,8 @@ describe('Legacy mode', () => {
     ['ContextMenu', 'ContextMenu', ControlKey.Apps],
     ['PrintScreen', 'PrintScreen', ControlKey.Snapshot],
   ])('%s (%s) is a control key', (key, code, controlKey) => {
-    expect(encoder().key(press(key, code))[0]?.union).toEqual({
+    const e = encoder()
+    expect([...e.key(press(key, code)), ...e.flush()][0]?.union).toEqual({
       case: 'controlKey',
       value: controlKey,
     })
@@ -257,5 +259,73 @@ describe('any mode', () => {
     ])
     expect(e.releaseAll()).toEqual([])
     expect(e.key(release(press('a', 'KeyA')))).toEqual([])
+  })
+})
+
+// Windows browsers report AltGr as a ControlLeft keydown and an AltRight keydown at the same
+// time; rustdesk 1.5.0 drops that ControlLeft (src/keyboard.rs:1062-1071, 1499-1501).
+describe('AltGr on a Windows browser', () => {
+  const ctrl = (time: number) =>
+    press('Control', 'ControlLeft', { time, modifiers: mods({ ctrl: true }) })
+  const withAltGr = (time: number): Partial<KeyInput> => ({
+    time,
+    altGraph: true,
+    modifiers: mods({ ctrl: true, alt: true }),
+  })
+  const altGr = (time: number) => press('AltGraph', 'AltRight', withAltGr(time))
+
+  it.each([KeyboardMode.Translate, KeyboardMode.Legacy])(
+    'mode %i never sends the ControlLeft that comes with AltGr',
+    (mode) => {
+      const e = new KeyboardEncoder(mode, 'Linux')
+      expect(e.key(ctrl(100))).toEqual([])
+      const sent = [...e.key(altGr(100)), ...e.key(press('@', 'KeyQ', withAltGr(101)))]
+      sent.push(...e.key(release(ctrl(200))), ...e.key(release(altGr(200))))
+      const controls = sent.filter((k) => k.union.case === 'controlKey')
+      expect(controls.map((k) => k.union.value)).not.toContain(ControlKey.Control)
+      expect(sent.flatMap((k) => k.modifiers)).not.toContain(ControlKey.Control)
+    },
+  )
+
+  it('types the AltGr character as a sequence in Translate mode', () => {
+    const e = new KeyboardEncoder(KeyboardMode.Translate, 'Linux')
+    e.key(ctrl(100))
+    e.key(altGr(100))
+    expect(e.key(press('@', 'KeyQ', withAltGr(101))).map(brief)).toEqual([
+      { mode: KeyboardMode.Translate, down: true, seq: '@', modifiers: [] },
+    ])
+  })
+
+  it('sends a Ctrl the user pressed once the next key shows it is not AltGr', () => {
+    const e = new KeyboardEncoder(KeyboardMode.Legacy, 'Linux')
+    expect(e.key(ctrl(100))).toEqual([])
+    const c = press('c', 'KeyC', { time: 300, modifiers: mods({ ctrl: true }) })
+    expect(e.key(c).map((k) => [k.down, k.union.case, k.union.value])).toEqual([
+      [true, 'controlKey', ControlKey.Control],
+      [true, 'chr', 'c'.codePointAt(0)],
+    ])
+    e.key(ctrl(400))
+    expect(e.key(release(ctrl(500))).map((k) => k.down)).toEqual([true, false])
+    e.key(ctrl(600))
+    expect(e.key(altGr(900)).map((k) => k.union.value)).toEqual([
+      ControlKey.Control,
+      ControlKey.RAlt,
+    ])
+  })
+
+  it('sends a held Ctrl before other input, and forgets it when keys are let go', () => {
+    const e = new KeyboardEncoder(KeyboardMode.Translate, 'Linux')
+    e.key(ctrl(100))
+    expect(e.flush().map((k) => k.union.value)).toEqual([ControlKey.Control])
+    expect(e.flush()).toEqual([])
+    expect(e.releaseAll()).toHaveLength(1)
+    e.key(ctrl(200))
+    expect(e.releaseAll()).toEqual([])
+    expect(e.key(release(ctrl(300)))).toEqual([])
+  })
+
+  it('leaves Map mode alone, as the desktop client does', () => {
+    const e = new KeyboardEncoder(KeyboardMode.Map, 'Windows')
+    expect(e.key(ctrl(100)).map((k) => k.union.value)).toEqual([0x1d])
   })
 })

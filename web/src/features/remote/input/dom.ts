@@ -17,6 +17,7 @@ export function keyInput(e: KeyboardEvent): RemoteInput {
     capsLock: e.getModifierState('CapsLock'),
     numLock: e.getModifierState('NumLock'),
     modifiers: modifiersOf(e),
+    time: e.timeStamp,
   }
 }
 

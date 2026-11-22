@@ -47,12 +47,18 @@ export function encodeInput(input: RemoteInput, ctx: InputContext): Message[] {
       if (!at) return []
       const button = input.action === 'move' ? null : input.button
       if (input.action !== 'move' && button === null) return []
-      return [mouseEvent(mouseMask(input.action, button), at.x, at.y, input.modifiers)]
+      return [
+        ...keyMessages(ctx.keyboard.flush()),
+        mouseEvent(mouseMask(input.action, button), at.x, at.y, input.modifiers),
+      ]
     }
     case 'wheel': {
       const notches = wheelNotches(input.deltaX, input.deltaY)
       if (!notches) return []
-      return [mouseEvent(mouseMask('wheel', null), notches.x, notches.y, input.modifiers)]
+      return [
+        ...keyMessages(ctx.keyboard.flush()),
+        mouseEvent(mouseMask('wheel', null), notches.x, notches.y, input.modifiers),
+      ]
     }
     case 'key':
       return keyMessages(ctx.keyboard.key(input))

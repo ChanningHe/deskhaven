@@ -1,6 +1,6 @@
 import { ClipboardCopy, ClipboardPaste, Keyboard, Maximize, Minimize, Monitor } from 'lucide-react'
 import { useId } from 'react'
-import type { ComponentProps, ReactElement, ReactNode } from 'react'
+import type { ComponentProps, ReactElement, ReactNode, Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { NativeSelect } from '@/components/common/native-select'
@@ -87,6 +87,7 @@ function Divider() {
 }
 
 interface ToolbarProps {
+  ref?: Ref<HTMLDivElement>
   session: Session
   fullscreen: boolean
   onFullscreen: () => void
@@ -96,6 +97,7 @@ interface ToolbarProps {
 
 /** Input, display and clipboard controls, in that order, as compact icon groups. */
 export function Toolbar({
+  ref,
   session,
   fullscreen,
   onFullscreen,
@@ -113,6 +115,7 @@ export function Toolbar({
 
   return (
     <div
+      ref={ref}
       role="toolbar"
       aria-label={t('remote.toolbar.label')}
       className="flex min-w-0 flex-wrap items-stretch gap-0.5"

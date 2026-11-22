@@ -23,6 +23,7 @@ const KEY_A = {
   capsLock: false,
   numLock: false,
   modifiers: NO_MODIFIERS,
+  time: 0,
 }
 
 describe('session keyboard mode', () => {

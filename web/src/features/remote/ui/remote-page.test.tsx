@@ -40,6 +40,25 @@ async function open(f = fakeDeps()) {
   return { ...view, f, session }
 }
 
+/** Focuses the screen's keyboard input, as a click on the screen does. */
+function focusScreen(): HTMLTextAreaElement {
+  const keys = screen.getByRole<HTMLTextAreaElement>('textbox', { name: /远程屏幕/ })
+  act(() => {
+    keys.focus()
+  })
+  return keys
+}
+
+/** A cancelable key event on `target` at `time` (KeyboardEvent.timeStamp). */
+function key(target: Element, type: 'keydown' | 'keyup', init: KeyboardEventInit, time = 0) {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init })
+  Object.defineProperty(event, 'timeStamp', { value: time })
+  act(() => {
+    target.dispatchEvent(event)
+  })
+  return event
+}
+
 function set(session: FakeSession, state: Parameters<FakeSession['state']['set']>[0]) {
   act(() => {
     session.state.set(state)
@@ -184,16 +203,13 @@ describe('remote page: active session', () => {
     act(() => {
       session.activate()
     })
-    const screenCanvas = screen.getByRole('application', { name: /远程屏幕/ })
-    act(() => {
-      screenCanvas.focus()
-    })
+    const keys = focusScreen()
     const down = new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', cancelable: true })
-    screenCanvas.dispatchEvent(down)
-    fireEvent.keyDown(screenCanvas, { key: 'F12', code: 'F12' })
-    fireEvent.contextMenu(screenCanvas)
+    keys.dispatchEvent(down)
+    fireEvent.keyDown(keys, { key: 'F12', code: 'F12' })
+    fireEvent.contextMenu(screen.getByTestId('remote-screen'))
     act(() => {
-      screenCanvas.blur()
+      keys.blur()
     })
     expect(down.defaultPrevented).toBe(true)
     expect(session.inputs).toMatchObject([
@@ -237,5 +253,57 @@ describe('remote page: active session', () => {
     await user.type(await screen.findByLabelText('要发送的文本'), 'typed')
     await user.click(screen.getByRole('button', { name: '发送' }))
     expect(session.pasted).toEqual(['from here', 'typed'])
+  })
+  it('sends what an IME commits as text, and no keys while it composes', async () => {
+    const { session } = await open()
+    act(() => {
+      session.activate()
+    })
+    const keys = focusScreen()
+    const start = key(keys, 'keydown', { key: 'Process', code: 'KeyN' })
+    keys.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }))
+    const composing = key(keys, 'keydown', { key: 'i', code: 'KeyI', isComposing: true })
+    key(keys, 'keyup', { key: 'i', code: 'KeyI', isComposing: true })
+    keys.value = '你'
+    keys.dispatchEvent(new CompositionEvent('compositionend', { data: '你' }))
+    const a = key(keys, 'keydown', { key: 'a', code: 'KeyA' })
+    expect(start.defaultPrevented).toBe(false)
+    expect(composing.defaultPrevented).toBe(false)
+    expect(a.defaultPrevented).toBe(true)
+    expect(keys).toHaveValue('')
+    expect(session.inputs).toEqual([
+      { kind: 'text', text: '你' },
+      expect.objectContaining({ kind: 'key', down: true, key: 'a', code: 'KeyA' }),
+    ])
+  })
+
+  it('leaves the screen for the toolbar on Esc twice, letting go of held keys', async () => {
+    const { session } = await open()
+    act(() => {
+      session.activate()
+    })
+    const keys = focusScreen()
+    expect(keys).toHaveAccessibleDescription(/连按两次 Esc/)
+    const escape = { key: 'Escape', code: 'Escape' }
+    key(keys, 'keydown', { key: 'Tab', code: 'Tab' }, 100)
+    key(keys, 'keydown', escape, 200)
+    key(keys, 'keyup', escape, 260)
+    expect(document.activeElement).toBe(keys)
+    const second = key(keys, 'keydown', escape, 1000)
+    expect(document.activeElement).toBe(keys)
+    key(keys, 'keyup', escape, 1050)
+    const third = key(keys, 'keydown', escape, 1300)
+
+    expect(second.defaultPrevented).toBe(true)
+    expect(third.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ctrl+Alt+Del' }))
+    expect(session.inputs.map((i) => (i.kind === 'key' ? `${i.key} ${i.down}` : i.kind))).toEqual([
+      'Tab true',
+      'Escape true',
+      'Escape false',
+      'Escape true',
+      'Escape false',
+      'release',
+    ])
   })
 })

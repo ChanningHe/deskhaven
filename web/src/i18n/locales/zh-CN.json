@@ -1767,7 +1767,7 @@
       "clipboardOff": "设备已关闭剪贴板。",
       "ctrlAltDelHint": "向设备发送 Ctrl+Alt+Del",
       "displayHint": "切换显示器",
-      "keyboardModeHint": "按键发送到设备的方式",
+      "keyboardModeHint": "按键发送到设备的方式。连按两次 Esc 离开远程画面。",
       "sendClipboardHint": "把本机剪贴板发送到设备",
       "remoteClipboardHint": "查看设备上复制的内容"
     },
@@ -1785,6 +1785,7 @@
       "close": "关闭"
     },
     "screen": "远程屏幕。点击后即可控制设备；获得焦点时按键会发送到设备。",
+    "leaveHint": "连按两次 Esc 离开远程画面。",
     "status": {
       "connecting": "连接中",
       "active": "已连接",

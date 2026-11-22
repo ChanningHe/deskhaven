@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { getListSettingsQueryKey, useUpdateSettings } from '@/api/generated/settings/settings'
 import type { SettingView } from '@/api/generated/model'
+import { ME_QUERY_KEY } from '@/features/auth/session'
 import { SECRET_MUTATION } from '@/features/users/secret-mutation'
 
 import { conflictsOf, fieldProblemsOf } from './conflicts'
@@ -19,6 +20,9 @@ import type { Drafts } from './drafts'
 import type { Editor } from './editor'
 
 type Problems = Readonly<Record<string, readonly string[]>>
+
+// `me` carries `web_client_enabled`, which the console uses to offer the browser remote.
+const ME_SETTINGS_PREFIX = 'web_client.'
 
 /** Everything the page does with unsaved edits: stage, save, resolve a conflict. */
 export function useSettingsEditor(settings: readonly SettingView[]) {
@@ -49,6 +53,9 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
       queryClient.setQueryData(getListSettingsQueryKey(), updated)
       setDrafts(NO_DRAFTS)
       setSavedCount(changes.length)
+      if (changes.some(({ key }) => key.startsWith(ME_SETTINGS_PREFIX))) {
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY })
+      }
     } catch (error) {
       setConflicts(conflictsOf(error))
       setProblems(fieldProblemsOf(error))

@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { DeviceDetail, DeviceView } from '@/api/generated/model'
+import { OWNER_ME } from '@/test/fixtures'
 import { renderApp } from '@/test/render-app'
 import { pageOf, userView } from '@/features/users/test-data'
 
@@ -28,6 +29,21 @@ describe('device drawer: details', () => {
     expect(within(reported).getByText('15.5GB')).toBeInTheDocument()
     expect(within(reported).getByText('1.4.1')).toBeInTheDocument()
     expect(within(drawer).getByText(/服务器无法核实/)).toBeInTheDocument()
+  })
+
+  it('checks again whether the browser remote is on when it opens', async () => {
+    const me = { ...OWNER_ME }
+    const { user, router } = renderApp('/devices', {
+      api: api({ 'GET /admin/api/v1/me': () => ({ body: me }) }),
+    })
+    const open = await screen.findByRole('button', { name: ALPHA.rustdesk_id })
+    me.web_client_enabled = true
+
+    await user.click(open)
+    const drawer = await screen.findByRole('dialog', { name: 'alpha' })
+
+    expect(await within(drawer).findByRole('link', { name: '浏览器连接' })).toBeInTheDocument()
+    expect(router.state.location.search).toMatchObject({ device: 1 })
   })
 
   it('shows the effective strategy with the layer each option comes from', async () => {

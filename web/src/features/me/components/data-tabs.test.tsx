@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { USER_ME } from '@/test/fixtures'
-import { requestedUrl } from '@/test/mock-api'
+import { callsTo, requestedUrl } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 import type { RenderAppOptions } from '@/test/render-app'
 
@@ -39,6 +39,23 @@ describe('My account: devices', () => {
     const urls = fetchSpy.mock.calls.map((_, index) => requestedUrl(fetchSpy, index))
     const listed = urls.find((url) => url.pathname === DEVICES_PATH)
     expect(listed?.searchParams.get('page_size')).toBe('200')
+  })
+
+  it('checks again whether the browser remote is on when the tab opens', async () => {
+    const me = { ...USER_ME }
+    const { user: actor, fetchSpy } = open({
+      'GET /admin/api/v1/me': () => ({ body: me }),
+      [`GET ${DEVICES_PATH}`]: {
+        body: { items: [device('100000001', { online: true })], total: 1, page: 1, page_size: 200 },
+      },
+    })
+    await screen.findByRole('tab', { name: '设备' })
+    me.web_client_enabled = true
+
+    await actor.click(screen.getByRole('tab', { name: '设备' }))
+
+    expect(await screen.findByRole('link', { name: '浏览器连接' })).toBeInTheDocument()
+    expect(callsTo(fetchSpy, '/admin/api/v1/me')).toBe(2)
   })
 
   it('says when no device is assigned to the user', async () => {

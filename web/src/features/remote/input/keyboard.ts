@@ -33,6 +33,8 @@ export interface KeyInput {
   capsLock: boolean
   numLock: boolean
   modifiers: Modifiers
+  /** KeyboardEvent.timeStamp, in milliseconds. */
+  time: number
 }
 
 // Column of KEY_CODES for each peer platform that reads Map-mode position codes.
@@ -44,6 +46,23 @@ const TABLE_COLUMN: Readonly<Record<string, 0 | 1 | 2>> = {
 
 // Peers before 1.2.0 know only Legacy (rustdesk 1.5.0 src/common.rs:1910-1927).
 const MIN_VERSION_MAP_TRANSLATE = '1.2.0'
+
+// Windows reports AltGr as a ControlLeft keydown from the OS and the AltRight keydown, both at
+// the same moment. The desktop client drops that ControlLeft by its 0x021D scan code in Legacy
+// and Translate modes (rustdesk 1.5.0 src/keyboard.rs:1062-1071, 1499-1501); a browser has no
+// scan code, so the pair is told apart by time instead.
+const ALTGR_CTRL_GAP_MS = 10
+
+function isAltGrPair(ctrl: KeyInput, next: KeyInput): boolean {
+  const gap = next.time - ctrl.time
+  return (
+    next.down &&
+    next.code === 'AltRight' &&
+    next.key === 'AltGraph' &&
+    gap >= 0 &&
+    gap <= ALTGR_CTRL_GAP_MS
+  )
+}
 
 export function supportedKeyboardModes(platform: string, version: string): KeyboardMode[] {
   if (!atLeast(version, MIN_VERSION_MAP_TRANSLATE)) return [KeyboardMode.Legacy]
@@ -68,7 +87,10 @@ function keyEvent(fields: MessageInitShape<typeof KeyEventSchema>): KeyEvent {
   return create(KeyEventSchema, fields)
 }
 
-/** The modifiers a legacy event lists: those held, except the key itself. */
+/**
+ * The modifiers a legacy event lists: those held, except the key itself. Ctrl held with AltGr is
+ * AltGr's own (rustdesk 1.5.0 src/keyboard.rs:1037-1049).
+ */
 function legacyModifiers(input: KeyInput, controlKey: ControlKey | null): ControlKey[] {
   const own: Readonly<Partial<Record<ControlKey, ControlKey>>> = {
     [ControlKey.RAlt]: ControlKey.Alt,
@@ -77,8 +99,9 @@ function legacyModifiers(input: KeyInput, controlKey: ControlKey | null): Contro
     [ControlKey.RWin]: ControlKey.Meta,
   }
   const self = controlKey === null ? null : (own[controlKey] ?? controlKey)
+  const modifiers = input.altGraph ? { ...input.modifiers, ctrl: false } : input.modifiers
   return [
-    ...modifierKeys(input.modifiers).filter((k) => k !== self),
+    ...modifierKeys(modifiers).filter((k) => k !== self),
     ...lockModifiers(input.code, input.capsLock, input.numLock),
   ]
 }
@@ -92,6 +115,8 @@ export class KeyboardEncoder {
   readonly #platform: string
   readonly #column: 0 | 1 | 2 | null
   readonly #pressed = new Map<string, KeyEvent>()
+  /** A ControlLeft keydown kept back until the next input shows whether AltGr sent it. */
+  #heldCtrl: KeyInput | null = null
 
   constructor(mode: KeyboardMode, platform: string) {
     const column = TABLE_COLUMN[platform] ?? null
@@ -105,6 +130,25 @@ export class KeyboardEncoder {
 
   key(input: KeyInput): KeyEvent[] {
     if (input.composing || input.key === 'Process') return []
+    const held = this.#heldCtrl
+    this.#heldCtrl = null
+    if (held && isAltGrPair(held, input)) return this.#encode(input)
+    const flushed = held ? this.#encode(held) : []
+    if (this.mode !== KeyboardMode.Map && input.down && input.code === 'ControlLeft') {
+      this.#heldCtrl = input
+      return flushed
+    }
+    return [...flushed, ...this.#encode(input)]
+  }
+
+  /** Sends a held-back Ctrl; called before any other input that Ctrl may modify. */
+  flush(): KeyEvent[] {
+    const held = this.#heldCtrl
+    this.#heldCtrl = null
+    return held ? this.#encode(held) : []
+  }
+
+  #encode(input: KeyInput): KeyEvent[] {
     if (!input.down) return this.#release(input.code)
     const event = this.#down(input)
     if (!event) return []
@@ -116,12 +160,14 @@ export class KeyboardEncoder {
   text(text: string): KeyEvent[] {
     if (text === '') return []
     return [
+      ...this.flush(),
       keyEvent({ mode: KeyboardMode.Translate, down: true, union: { case: 'seq', value: text } }),
     ]
   }
 
   /** Key-up for everything held down on the peer, for when the view loses focus. */
   releaseAll(): KeyEvent[] {
+    this.#heldCtrl = null
     const released = [...this.#pressed.keys()].flatMap((code) => this.#release(code))
     this.#pressed.clear()
     return released

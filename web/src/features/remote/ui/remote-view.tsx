@@ -1,5 +1,5 @@
 import { Info, Unplug } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -77,6 +77,10 @@ export function RemoteView({
   const peer = useStore(session.peer)
   const remoteText = useStore(session.remoteClipboard)
   const { keyboard, clipboard } = useStore(session.permissions)
+  const toolbar = useRef<HTMLDivElement>(null)
+  const leaveScreen = useCallback(() => {
+    toolbar.current?.querySelector<HTMLElement>('button:enabled, select:enabled')?.focus()
+  }, [])
   useEffect(() => {
     if (!sent) return
     const timer = setTimeout(() => {
@@ -112,6 +116,7 @@ export function RemoteView({
         hostname={peer?.info.hostname === '' ? undefined : peer?.info.hostname}
         tools={
           <Toolbar
+            ref={toolbar}
             session={session}
             fullscreen={fullscreen}
             onFullscreen={toggle}
@@ -130,7 +135,7 @@ export function RemoteView({
       />
       <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
       <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
-        <RemoteScreen session={session} />
+        <RemoteScreen session={session} onLeave={leaveScreen} />
         {panel === 'paste' && clipboard ? (
           <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
         ) : null}

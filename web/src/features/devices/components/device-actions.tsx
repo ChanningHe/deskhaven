@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DangerZone } from '@/components/common/danger-zone'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Button } from '@/components/ui/button'
+import { useFreshMe } from '@/features/me/fresh-me'
 import { RemoteConnectButton } from '@/features/remote/ui/connect-button'
 
 import { invalidateDevices } from '../invalidate'
@@ -26,6 +27,8 @@ export function DeviceActions({ device }: { device: DeviceView }) {
   const [confirming, setConfirming] = useState(false)
   const update = useUpdateDevice()
   const refresh = () => invalidateDevices(queryClient)
+  // Opening the drawer checks again whether the browser remote is on.
+  useFreshMe()
 
   /** Enabling needs no confirmation; the button stays disabled until it settles. */
   const enable = () => {

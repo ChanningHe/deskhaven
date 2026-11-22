@@ -14,10 +14,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useMe } from '@/features/auth/session'
 import { DeviceStatusBadge } from '@/features/devices/components/device-status-badge'
 import { RemoteConnectButton } from '@/features/remote/ui/connect-button'
 import { formatDateTime, nonBlank } from '@/lib/format'
+
+import { useFreshMe } from '../fresh-me'
 
 /** Everyone sees their devices in one page: assigned devices are few. */
 const PAGE_SIZE = 200
@@ -65,7 +66,7 @@ function DeviceRow({
 /** The devices the user owns, read only, with their online state. */
 export function DevicesTab() {
   const { t, i18n } = useTranslation()
-  const remote = useMe().web_client_enabled
+  const remote = useFreshMe().web_client_enabled
   const query = useListMyDevices({ page_size: PAGE_SIZE })
   const devices = query.data?.items ?? []
   const total = query.data?.total ?? 0

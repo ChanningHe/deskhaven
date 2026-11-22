@@ -14,7 +14,7 @@ import {
   type Link,
 } from '../handshake/handshake'
 import { supportedDecoding, type DecoderSupport } from '../handshake/login'
-import { startSession, type Session } from '../session/session'
+import { CLOSED_BY_USER, startSession, type Session } from '../session/session'
 import { ValueStore, type Store } from '../session/store'
 import { RelayTransport, type RelayOptions } from '../transport/relay'
 import type { KeyedTransport } from '../transport/transport'
@@ -109,7 +109,9 @@ interface Attempt {
  * Connects the browser to one device: opens the server session (with a WebRTC offer where the
  * browser can make one), takes the data channel or the relay, starts the handshake and the
  * peer session on it, and closes the server session again once the peer session ends or the
- * page leaves. Each connect replaces the previous attempt.
+ * page leaves. Each connect replaces the previous attempt. After a handshake fails over WebRTC,
+ * connects go by the relay alone until a handshake over it succeeds: such a failure (a
+ * fingerprint mismatch, a peer that drops the channel) tends to repeat.
  */
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
@@ -117,6 +119,7 @@ export class RemoteController {
   readonly #deviceId: string
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
+  #relayOnly = false
 
   constructor(deviceId: string, deps: ConnectDeps = browserDeps) {
     this.#deviceId = deviceId
@@ -165,7 +168,7 @@ export class RemoteController {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }
-    const offerer = await this.#offerer()
+    const offerer = this.#relayOnly ? null : await this.#offerer()
     if (this.#stale(attempt)) {
       offerer?.close()
       return
@@ -217,9 +220,19 @@ export class RemoteController {
     this.#transport.set(link.kind)
     const session = this.#deps.startSession(link, params)
     attempt.session = session
+    let handshaken = false
     const stop = session.state.subscribe(() => {
-      if (session.state.get().kind !== 'closed') return
+      const state = session.state.get()
+      if (state.kind !== 'closed') {
+        if (state.kind === 'connecting') return
+        handshaken = true
+        this.#relayOnly = false
+        return
+      }
       stop()
+      if (!handshaken && link.kind === 'webrtc' && state.reason !== CLOSED_BY_USER) {
+        this.#relayOnly = true
+      }
       this.#release(attempt)
     })
     this.#phase.set({ kind: 'session', session })

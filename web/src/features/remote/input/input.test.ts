@@ -42,6 +42,7 @@ describe('DOM adapters', () => {
       capsLock: true,
       numLock: false,
       modifiers: { alt: true, ctrl: true, shift: false, meta: false },
+      time: e.timeStamp,
     })
     expect(keyInput(new KeyboardEvent('keyup', { key: 'a' }))).toMatchObject({ down: false })
   })
@@ -116,5 +117,15 @@ describe('encodeInput', () => {
     expect(encodeInput(key, ctx).map((m) => m.union.case)).toEqual(['keyEvent'])
     expect(encodeInput({ kind: 'text', text: 'é' }, ctx)).toHaveLength(1)
     expect(encodeInput({ kind: 'release' }, ctx)).toHaveLength(1)
+  })
+  it('sends a Ctrl it held back before the pointer event it modifies', () => {
+    const ctx = { ...context(), keyboard: new KeyboardEncoder(KeyboardMode.Legacy, 'Linux') }
+    const ctrl = keyInput(new KeyboardEvent('keydown', { key: 'Control', code: 'ControlLeft' }))
+    expect(encodeInput(ctrl, ctx)).toEqual([])
+    expect(encodeInput(pointer('down', 'left'), ctx).map((m) => m.union.case)).toEqual([
+      'keyEvent',
+      'mouseEvent',
+    ])
+    expect(encodeInput(pointer('up', 'left'), ctx).map((m) => m.union.case)).toEqual(['mouseEvent'])
   })
 })

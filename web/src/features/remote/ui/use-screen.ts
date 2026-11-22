@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { keyInput, pointerInput, wheelInput } from '../input/dom'
+import { pointerInput, wheelInput } from '../input/dom'
 import type { Session } from '../session/session'
 import { canvasPoint, drawCursor, drawFrame, type Size } from './draw'
 
@@ -85,26 +85,31 @@ export function useCursor(session: Session, canvas: RefObject<HTMLCanvasElement 
   return { paint, moveTo }
 }
 
-// Keys the browser keeps: full screen and the developer tools. Everything else the focused
-// screen takes, so the page's own shortcuts (find, save, back) do not fire.
-const BROWSER_KEYS: ReadonlySet<string> = new Set(['F11', 'F12'])
-
-/** Captures keyboard, mouse and wheel on the focused screen canvas and sends them to the peer. */
+/**
+ * Captures mouse and wheel on the screen canvas and sends them to the peer. A press focuses
+ * `keys`, the screen's keyboard input, which follows the pointer so that an IME opens its
+ * candidate window where the user is.
+ */
 export function useScreenInput(
   session: Session,
   canvas: RefObject<HTMLCanvasElement | null>,
+  keys: RefObject<HTMLTextAreaElement | null>,
   onPointer: (point: { x: number; y: number }) => void,
 ) {
   useEffect(() => {
     const view = canvas.current
-    if (!view) return
+    const area = keys.current
+    if (!view || !area) return
     const onPointerEvent = (e: PointerEvent) => {
       if (e.type === 'pointerdown') {
-        view.focus()
+        area.focus({ preventScroll: true })
         view.setPointerCapture(e.pointerId)
       }
       e.preventDefault()
-      const point = canvasPoint(view, view.getBoundingClientRect(), e.clientX, e.clientY)
+      const box = view.getBoundingClientRect()
+      area.style.left = `${e.clientX - box.left}px`
+      area.style.top = `${e.clientY - box.top}px`
+      const point = canvasPoint(view, box, e.clientX, e.clientY)
       if (point) onPointer(point)
       const input = pointerInput(e, view)
       if (input) session.input(input)
@@ -112,14 +117,6 @@ export function useScreenInput(
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       session.input(wheelInput(e))
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (BROWSER_KEYS.has(e.code) || e.isComposing) return
-      e.preventDefault()
-      session.input(keyInput(e))
-    }
-    const onBlur = () => {
-      session.input({ kind: 'release' })
     }
     const onContextMenu = (e: Event) => {
       e.preventDefault()
@@ -129,9 +126,6 @@ export function useScreenInput(
       ['pointermove', onPointerEvent as EventListener],
       ['pointerup', onPointerEvent as EventListener],
       ['wheel', onWheel as EventListener, { passive: false }],
-      ['keydown', onKey as EventListener],
-      ['keyup', onKey as EventListener],
-      ['blur', onBlur],
       ['contextmenu', onContextMenu],
     ]
     for (const [type, listener, options] of listeners)
@@ -139,5 +133,5 @@ export function useScreenInput(
     return () => {
       for (const [type, listener] of listeners) view.removeEventListener(type, listener)
     }
-  }, [session, canvas, onPointer])
+  }, [session, canvas, keys, onPointer])
 }
