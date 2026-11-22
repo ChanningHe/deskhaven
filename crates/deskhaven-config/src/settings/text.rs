@@ -3,6 +3,7 @@
 
 use serde_json::{Map, Value as Json};
 
+use super::ice::{MAX_ICE_SERVERS, is_ice_url_list};
 use super::value::is_host;
 
 /// Shape a non-empty text value must have.
@@ -13,6 +14,8 @@ enum Format {
     Host,
     /// `local@domain`: one `@`, both sides non-empty, no whitespace.
     Email,
+    /// Comma-separated ICE server URLs (`ice.rs`).
+    IceUrls,
 }
 
 /// Text constraints; control and invisible formatting characters are
@@ -45,6 +48,13 @@ impl TextRule {
         }
     }
 
+    pub const fn ice_urls(self) -> Self {
+        Self {
+            format: Format::IceUrls,
+            ..self
+        }
+    }
+
     pub(crate) fn check(&self, text: &str) -> Result<(), String> {
         if text.chars().count() > self.max_len {
             return Err(format!("must be at most {} characters", self.max_len));
@@ -62,6 +72,11 @@ impl TextRule {
             Format::Host => Err("must be a host name or IP address".to_owned()),
             Format::Email if is_email(text) => Ok(()),
             Format::Email => Err("must be an email address (local@domain)".to_owned()),
+            Format::IceUrls if is_ice_url_list(text) => Ok(()),
+            Format::IceUrls => Err(format!(
+                "must be at most {MAX_ICE_SERVERS} comma-separated stun:, stuns:, turn: or \
+                 turns: URLs (host[:port], TURN optionally ?transport=udp|tcp)"
+            )),
         }
     }
 
@@ -71,6 +86,7 @@ impl TextRule {
             Format::Any => None,
             Format::Host => Some("host"),
             Format::Email => Some("email"),
+            Format::IceUrls => Some("ice_urls"),
         };
         if let Some(format) = format {
             map.insert("format".to_owned(), Json::from(format));

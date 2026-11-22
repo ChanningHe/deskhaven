@@ -64,6 +64,8 @@ pub enum SchemaBound {
 pub enum TextFormat {
     Host,
     Email,
+    /// Comma-separated `stun:` / `stuns:` / `turn:` / `turns:` URLs.
+    IceUrls,
 }
 
 /// What a form needs to edit one setting (derived from the registry declaration).

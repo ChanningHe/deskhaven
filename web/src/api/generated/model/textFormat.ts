@@ -11,4 +11,5 @@ export type TextFormat = (typeof TextFormat)[keyof typeof TextFormat]
 export const TextFormat = {
   host: 'host',
   email: 'email',
+  ice_urls: 'ice_urls',
 } as const

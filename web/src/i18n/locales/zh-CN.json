@@ -320,7 +320,17 @@
       "tfa_enforced": "此账号必须使用两步验证，无法关闭。",
       "setting_pinned": "该设置由服务器配置固定，无法在此修改。",
       "version_conflict": "该设置已被他人修改，请重新载入后再试。",
-      "last_identity": "此账号只能通过这个身份登录，无法移除。"
+      "last_identity": "此账号只能通过这个身份登录，无法移除。",
+      "web_client_disabled": "此服务器未开启浏览器远程。",
+      "device_offline": "设备离线。",
+      "device_no_answer": "设备未及时响应，请重试。",
+      "foreign_relay": "设备使用自己的中继服务器，浏览器无法连接。",
+      "no_relay": "此服务器未配置中继服务器。",
+      "invalid_offer": "浏览器发送的连接请求无效。",
+      "invalid_candidate": "浏览器发送的网络候选无效。",
+      "session_closed": "远程会话已结束。",
+      "too_many_candidates": "远程会话交换的网络候选过多。",
+      "too_many_sessions": "打开的远程会话过多，请先关闭一个再试。"
     }
   },
   "theme": {
@@ -985,7 +995,8 @@
       "addressbook": "地址簿",
       "audit": "审计保留",
       "signal": "信令",
-      "updates": "更新"
+      "updates": "更新",
+      "web_client": "浏览器远程"
     },
     "nav": {
       "label": "设置类别",

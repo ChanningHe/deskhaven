@@ -12,6 +12,7 @@ const CATEGORY_LABELS = {
   audit: 'settings.categories.audit',
   signal: 'settings.categories.signal',
   updates: 'settings.categories.updates',
+  web_client: 'settings.categories.web_client',
 } as const
 
 function isKnown(category: string): category is keyof typeof CATEGORY_LABELS {

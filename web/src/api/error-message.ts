@@ -47,6 +47,16 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   last_identity: 'errors.codes.last_identity',
   setting_pinned: 'errors.codes.setting_pinned',
   version_conflict: 'errors.codes.version_conflict',
+  web_client_disabled: 'errors.codes.web_client_disabled',
+  device_offline: 'errors.codes.device_offline',
+  device_no_answer: 'errors.codes.device_no_answer',
+  foreign_relay: 'errors.codes.foreign_relay',
+  no_relay: 'errors.codes.no_relay',
+  invalid_offer: 'errors.codes.invalid_offer',
+  invalid_candidate: 'errors.codes.invalid_candidate',
+  session_closed: 'errors.codes.session_closed',
+  too_many_candidates: 'errors.codes.too_many_candidates',
+  too_many_sessions: 'errors.codes.too_many_sessions',
 }
 
 // For responses without a (known) code: a proxy error page, a future code.

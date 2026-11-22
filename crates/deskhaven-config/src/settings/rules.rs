@@ -3,9 +3,11 @@
 use serde_json::{Value as Json, json};
 
 use super::def::AnySetting;
+use super::ice::{ice_urls, turn_host};
 use super::registry::{
     AUTH_EMAIL_CODE_ENABLED, AUTH_LOCKOUT_DURATION, AUTH_LOCKOUT_WINDOW, AUTH_SESSION_IDLE_TTL,
-    AUTH_SESSION_TTL, LOCKOUT_GLOBAL_FACTOR, SMTP_FROM, SMTP_HOST,
+    AUTH_SESSION_TTL, LOCKOUT_GLOBAL_FACTOR, SMTP_FROM, SMTP_HOST, WEB_CLIENT_ICE_SERVERS,
+    WEB_CLIENT_TURN_CREDENTIAL,
 };
 use super::snapshot::Snapshot;
 use super::update::Problem;
@@ -34,7 +36,24 @@ static RULES: &[Rule] = &[
                   single source can trip the per-username global lockout)",
         holds: lockout_window_within_global_reach,
     },
+    Rule {
+        keys: &[&WEB_CLIENT_TURN_CREDENTIAL, &WEB_CLIENT_ICE_SERVERS],
+        message: "web_client.turn_credential is sent to one TURN server: every turn: and \
+                  turns: URL of web_client.ice_servers must name one host",
+        holds: turn_credential_has_one_host,
+    },
 ];
+
+fn turn_credential_has_one_host(s: &Snapshot) -> bool {
+    if s.get(&WEB_CLIENT_TURN_CREDENTIAL).is_empty() {
+        return true;
+    }
+    let urls = s.get(&WEB_CLIENT_ICE_SERVERS);
+    let mut hosts: Vec<String> = ice_urls(&urls).filter_map(turn_host).collect();
+    hosts.sort_unstable();
+    hosts.dedup();
+    hosts.len() <= 1
+}
 
 fn email_code_has_smtp(s: &Snapshot) -> bool {
     !s.get(&AUTH_EMAIL_CODE_ENABLED)

@@ -27,6 +27,8 @@ const MAX_RETENTION: Duration = days(3650);
 /// RFC 5321 limits: 255-octet domain, 254-octet path.
 const SMTP_TEXT: TextRule = max_len(254);
 const MAX_RELAYS: usize = 32;
+/// Room for eight ICE server URLs.
+const ICE_TEXT: TextRule = max_len(1024);
 
 /// The login lockout's per-username global row locks after this many times
 /// `auth.lockout.max_failures` (deskhaven-core `auth::limiter`). The cross-key rule
@@ -215,6 +217,31 @@ settings! {
         default: true,
         // A broken row must not silently turn outbound requests back on.
         on_bad_row: strict(false),
+    }
+    /// Let console users control their own devices from the browser (administrators and
+    /// owners: every device). Off refuses every web client session.
+    WEB_CLIENT_ENABLED: bool = "web_client.enabled" {
+        default: false,
+        on_bad_row: strict(false),
+    }
+    /// ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:`
+    /// or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN
+    /// servers.
+    WEB_CLIENT_ICE_SERVERS: String = "web_client.ice_servers" {
+        default: "stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,\
+                  stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443",
+        rule: ICE_TEXT.ice_urls(),
+    }
+    /// User name for the `turn:` / `turns:` servers of `web_client.ice_servers`; empty: none.
+    /// Handed to every browser that opens a web client session.
+    WEB_CLIENT_TURN_USERNAME: String = "web_client.turn_username" {
+        default: "",
+    }
+    /// Credential for the TURN server of `web_client.ice_servers` (while it is set, every
+    /// `turn:` / `turns:` URL there must name that one host, which receives it). Handed to
+    /// every browser that opens a web client session: use a TURN account for that alone.
+    WEB_CLIENT_TURN_CREDENTIAL: Secret = "web_client.turn_credential" {
+        default: (),
     }
 }
 

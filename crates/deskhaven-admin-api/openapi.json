@@ -10413,6 +10413,436 @@
           }
         ]
       }
+    },
+    "/admin/api/v1/web-client/sessions": {
+      "post": {
+        "tags": [
+          "web-client"
+        ],
+        "summary": "Opens a web client session: the server asks the device for a relay session (and, with\nan offer, a WebRTC answer) on the browser's behalf. Audited as `web_client.session.open`,\nwhatever the outcome.",
+        "operationId": "open_web_client_session",
+        "parameters": [
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenWebClientSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebClientSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The offer is invalid (`invalid_offer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The web client is disabled (`web_client_disabled`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such device the user may control (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device is offline (`device_offline`), uses a relay of its own (`foreign_relay`, `details.relay_server`), or no relay is configured (`no_relay`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many sessions per minute (`rate_limited`) or at once (`too_many_sessions`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No signal server is running in this process (`unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The device did not answer in time (`device_no_answer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/web-client/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "web-client"
+        ],
+        "summary": "Closes a web client session and revokes its route. Audited as\n`web_client.session.close`.",
+        "operationId": "close_web_client_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session of the user (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
+    },
+    "/admin/api/v1/web-client/sessions/{id}/candidates": {
+      "get": {
+        "tags": [
+          "web-client"
+        ],
+        "summary": "The device's ICE candidates from `after` on; when there are none yet, waits up to\n`wait` seconds for one (long poll) and answers an empty page if none came.",
+        "operationId": "poll_web_client_candidates",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Index of the first candidate wanted (the `next` of the previous page); default 0.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "Seconds to wait when there is none yet (0-20); default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The candidates and the next index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebClientCandidates"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), or the account setup is unfinished (`setup_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session of the user (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The route is closed and every candidate was read (`session_closed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many rejected sessions from this address (`rate_limited`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "web-client"
+        ],
+        "summary": "Passes one of the browser's ICE candidates to the device. Not audited (candidates are\nnetwork details of the session the open row covers).",
+        "operationId": "add_web_client_candidate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Deskhaven-CSRF",
+            "in": "header",
+            "description": "The `__Host-deskhaven_csrf` cookie's value; any non-empty value without a session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebClientCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Passed to the device"
+          },
+          "400": {
+            "description": "The signal server refuses the candidate (`invalid_candidate`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid console session (`unauthorized`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role not allowed (`forbidden`), the account setup is unfinished (`setup_required`), or a missing or wrong CSRF header or a cross-site request (`csrf_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session of the user (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The session's route is closed (`session_closed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The session passed the most candidates (`too_many_candidates`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "console_session": [
+              "self"
+            ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -11633,7 +12063,17 @@
           "tfa_enforced",
           "last_identity",
           "setting_pinned",
-          "version_conflict"
+          "version_conflict",
+          "web_client_disabled",
+          "device_offline",
+          "device_no_answer",
+          "foreign_relay",
+          "no_relay",
+          "invalid_offer",
+          "invalid_candidate",
+          "session_closed",
+          "too_many_candidates",
+          "too_many_sessions"
         ]
       },
       "ErrorEnvelope": {
@@ -11843,6 +12283,33 @@
           "request_host",
           "unknown"
         ]
+      },
+      "IceServerView": {
+        "type": "object",
+        "description": "One ICE server for `RTCPeerConnection` (`RTCIceServer`).",
+        "required": [
+          "urls"
+        ],
+        "properties": {
+          "credential": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "IdentityUnlink": {
         "type": "object",
@@ -13685,6 +14152,27 @@
         "properties": {
           "provider": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenWebClientSession": {
+        "type": "object",
+        "description": "Opens a web client session to a device.",
+        "required": [
+          "device_id"
+        ],
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "The RustDesk id of the device."
+          },
+          "offer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The browser's WebRTC offer endpoint (`webrtc://` + base64 of the JSON session\ndescription); without it only the relay is prepared."
           }
         },
         "additionalProperties": false
@@ -16298,7 +16786,8 @@
         "description": "Constraint of a text setting.",
         "enum": [
           "host",
-          "email"
+          "email",
+          "ice_urls"
         ]
       },
       "TextView": {
@@ -16689,6 +17178,104 @@
           "version": {
             "type": "string",
             "description": "As the device reported it: untrusted text."
+          }
+        }
+      },
+      "WebClientCandidate": {
+        "type": "object",
+        "description": "One of the browser's ICE candidates.",
+        "required": [
+          "candidate"
+        ],
+        "properties": {
+          "candidate": {
+            "type": "string",
+            "description": "The candidate line as `RTCIceCandidate.candidate` gives it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "WebClientCandidates": {
+        "type": "object",
+        "description": "The device's ICE candidates from `after` on.",
+        "required": [
+          "candidates",
+          "next"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The `after` of the next poll.",
+            "minimum": 0
+          }
+        }
+      },
+      "WebClientSession": {
+        "type": "object",
+        "description": "An opened web client session: everything the browser needs to reach the device over\nthe relay, or over WebRTC when `answer` is set.",
+        "required": [
+          "session_id",
+          "peer_id",
+          "signed_peer_pk",
+          "server_pk",
+          "uuid",
+          "relay_url",
+          "ice_servers",
+          "my_id",
+          "my_name"
+        ],
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The device's WebRTC answer endpoint, when an offer went out and it answered."
+          },
+          "ice_servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IceServerView"
+            }
+          },
+          "my_id": {
+            "type": "string",
+            "description": "`LoginRequest.my_id`: the console user name, chosen by the server."
+          },
+          "my_name": {
+            "type": "string",
+            "description": "`LoginRequest.my_name`: the user's display name, else the user name."
+          },
+          "peer_id": {
+            "type": "string",
+            "description": "The device's RustDesk id (`LoginRequest.username`)."
+          },
+          "relay_url": {
+            "type": "string",
+            "description": "The relay's WebSocket URL; a bare path is on the console's own origin."
+          },
+          "server_pk": {
+            "type": "string",
+            "description": "The signal server's public key (base64), the one RustDesk clients are configured with."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "For the candidate and close endpoints; valid for the user who opened it only."
+          },
+          "signed_peer_pk": {
+            "type": "string",
+            "description": "Base64 of the device key as the signal server signed it (`IdPk`); verify it with\n`server_pk` before trusting the device's `SignedId`."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "The relay session's uuid (`RequestRelay.uuid`)."
           }
         }
       }

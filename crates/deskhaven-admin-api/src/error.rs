@@ -90,6 +90,28 @@ pub enum ErrorCode {
     SettingPinned,
     /// The setting changed since it was read (`details.keys`, `details.conflicts`).
     VersionConflict,
+    // Web client (remote control from the console).
+    /// `web_client.enabled` is off.
+    WebClientDisabled,
+    /// The device has not been seen by the signal server for 30 s.
+    DeviceOffline,
+    /// The device did not answer the punch in time.
+    DeviceNoAnswer,
+    /// The device relays through a relay server of its own (`details.relay_server`), which
+    /// the browser cannot reach through this deployment.
+    ForeignRelay,
+    /// No relay server is configured (`signal.relay_servers`).
+    NoRelay,
+    /// The WebRTC offer is not an offer endpoint within the size limit.
+    InvalidOffer,
+    /// An ICE candidate the signal server refuses (empty or too long).
+    InvalidCandidate,
+    /// The session's route is closed (expired, no WebRTC session, or closed).
+    SessionClosed,
+    /// The session already passed the most ICE candidates to the device.
+    TooManyCandidates,
+    /// The user holds the most web client sessions at once.
+    TooManySessions,
 }
 
 impl ErrorCode {
@@ -128,6 +150,12 @@ impl ErrorCode {
             | Self::LastIdentity
             | Self::SettingPinned
             | Self::VersionConflict => StatusCode::CONFLICT,
+            Self::WebClientDisabled => StatusCode::FORBIDDEN,
+            Self::DeviceOffline | Self::ForeignRelay | Self::NoRelay => StatusCode::CONFLICT,
+            Self::DeviceNoAnswer => StatusCode::GATEWAY_TIMEOUT,
+            Self::InvalidOffer | Self::InvalidCandidate => StatusCode::BAD_REQUEST,
+            Self::SessionClosed => StatusCode::GONE,
+            Self::TooManyCandidates | Self::TooManySessions => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 
@@ -168,6 +196,16 @@ impl ErrorCode {
             Self::LastIdentity => "last_identity",
             Self::SettingPinned => "setting_pinned",
             Self::VersionConflict => "version_conflict",
+            Self::WebClientDisabled => "web_client_disabled",
+            Self::DeviceOffline => "device_offline",
+            Self::DeviceNoAnswer => "device_no_answer",
+            Self::ForeignRelay => "foreign_relay",
+            Self::NoRelay => "no_relay",
+            Self::InvalidOffer => "invalid_offer",
+            Self::InvalidCandidate => "invalid_candidate",
+            Self::SessionClosed => "session_closed",
+            Self::TooManyCandidates => "too_many_candidates",
+            Self::TooManySessions => "too_many_sessions",
         }
     }
 }

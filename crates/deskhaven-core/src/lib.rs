@@ -29,3 +29,4 @@ mod text;
 pub mod tfa;
 pub mod update;
 pub mod users;
+pub mod web_client;

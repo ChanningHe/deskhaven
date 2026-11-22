@@ -159,6 +159,15 @@ Apply changes with `docker compose up -d --wait`.
 | --- | --- | --- | --- |
 | `updates.check` | `true`, `false` | `true` | While on, admins using the console make the server ask GitHub (api.github.com) for the latest deskhaven release at most once a day; off sends no request. |
 
+### web_client
+
+| Key | Allowed values | Default | Description |
+| --- | --- | --- | --- |
+| `web_client.enabled` | `true`, `false` | `false` | Let console users control their own devices from the browser (administrators and owners: every device). Off refuses every web client session. |
+| `web_client.ice_servers` | text, at most 1024 characters | `stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443` | ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:` or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN servers. |
+| `web_client.turn_username` | text, at most 255 characters | empty | User name for the `turn:` / `turns:` servers of `web_client.ice_servers`; empty: none. Handed to every browser that opens a web client session. |
+| `web_client.turn_credential` | secret, at most 255 characters | unset | Credential for the TURN server of `web_client.ice_servers` (while it is set, every `turn:` / `turns:` URL there must name that one host, which receives it). Handed to every browser that opens a web client session: use a TURN account for that alone. |
+
 ### Rules across settings
 
 A change that breaks one of these is refused.
@@ -166,3 +175,4 @@ A change that breaks one of these is refused.
 - auth.email_code.enabled requires smtp.host and smtp.from to be set
 - auth.session_idle_ttl must not exceed auth.session_ttl
 - auth.lockout.window must not exceed 4 × auth.lockout.duration (otherwise a single source can trip the per-username global lockout)
+- web_client.turn_credential is sent to one TURN server: every turn: and turns: URL of web_client.ice_servers must name one host

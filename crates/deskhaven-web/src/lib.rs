@@ -48,7 +48,7 @@ mod serve;
 use axum::Router;
 use rust_embed::RustEmbed;
 
-pub use csp::CSP;
+pub use csp::{CSP, csp_connecting_to};
 
 /// The console assets compiled in from `web/dist`.
 #[derive(RustEmbed)]

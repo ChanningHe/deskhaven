@@ -21,6 +21,13 @@
         "auth.lockout.duration"
       ],
       "message": "auth.lockout.window must not exceed 4 × auth.lockout.duration (otherwise a single source can trip the per-username global lockout)"
+    },
+    {
+      "keys": [
+        "web_client.turn_credential",
+        "web_client.ice_servers"
+      ],
+      "message": "web_client.turn_credential is sent to one TURN server: every turn: and turns: URL of web_client.ice_servers must name one host"
     }
   ],
   "settings": [
@@ -393,6 +400,43 @@
       "on_bad_row": false,
       "sensitive": false,
       "type": "bool"
+    },
+    {
+      "category": "web_client",
+      "default": false,
+      "description": "Let console users control their own devices from the browser (administrators and owners: every device). Off refuses every web client session.",
+      "key": "web_client.enabled",
+      "on_bad_row": false,
+      "sensitive": false,
+      "type": "bool"
+    },
+    {
+      "category": "web_client",
+      "default": "stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443",
+      "description": "ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:` or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN servers.",
+      "format": "ice_urls",
+      "key": "web_client.ice_servers",
+      "max_length": 1024,
+      "sensitive": false,
+      "type": "string"
+    },
+    {
+      "category": "web_client",
+      "default": "",
+      "description": "User name for the `turn:` / `turns:` servers of `web_client.ice_servers`; empty: none. Handed to every browser that opens a web client session.",
+      "key": "web_client.turn_username",
+      "max_length": 255,
+      "sensitive": false,
+      "type": "string"
+    },
+    {
+      "category": "web_client",
+      "default": null,
+      "description": "Credential for the TURN server of `web_client.ice_servers` (while it is set, every `turn:` / `turns:` URL there must name that one host, which receives it). Handed to every browser that opens a web client session: use a TURN account for that alone.",
+      "key": "web_client.turn_credential",
+      "max_length": 255,
+      "sensitive": true,
+      "type": "secret"
     }
   ]
 }

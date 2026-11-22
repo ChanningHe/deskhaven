@@ -57,6 +57,13 @@ const P0_DEFAULTS: &[(&str, &str)] = &[
     ("signal.acl.default", r#""allow""#),
     ("signal.acl.on_error", r#""deny""#),
     ("updates.check", "true"),
+    ("web_client.enabled", "false"),
+    (
+        "web_client.ice_servers",
+        r#""stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443""#,
+    ),
+    ("web_client.turn_username", r#""""#),
+    ("web_client.turn_credential", r#"{"set":false}"#),
 ];
 
 #[test]
@@ -114,13 +121,13 @@ fn every_default_satisfies_its_own_rule() {
 }
 
 #[test]
-fn only_smtp_password_is_sensitive() {
+fn only_passwords_and_credentials_are_sensitive() {
     let sensitive: Vec<&str> = settings::all()
         .iter()
         .filter(|s| s.is_sensitive())
         .map(|s| s.key())
         .collect();
-    assert_eq!(sensitive, ["smtp.password"]);
+    assert_eq!(sensitive, ["smtp.password", "web_client.turn_credential"]);
 }
 
 #[test]
@@ -143,6 +150,43 @@ fn typed_access_returns_defaults() {
     assert_eq!(s.get(&settings::SIGNAL_ACL_ON_ERROR), AclAction::Deny);
     assert_eq!(s.get(&settings::DEVICES_ACCEPT_PRESETS), AcceptPresets::Off);
     assert_eq!(s.get(&settings::AUDIT_RETENTION_LOGIN), d("180d"));
+}
+
+/// A row that cannot be read keeps the web client off.
+#[test]
+fn an_unreadable_web_client_row_keeps_it_off() {
+    let setting = settings::lookup("web_client.enabled").unwrap();
+    assert_eq!(setting.bad_row_value().to_json(), json!(false));
+}
+
+/// ICE server URLs: `stun:` / `stuns:` / `turn:` / `turns:` with a host, an optional port and
+/// (TURN only) an optional transport, comma separated.
+#[test]
+fn ice_servers_accept_stun_and_turn_urls_only() {
+    let setting = settings::lookup("web_client.ice_servers").unwrap();
+    for good in [
+        "",
+        "stun:stun.example.com",
+        "stun:192.0.2.1:3478, turn:[2001:db8::1]:3478?transport=tcp",
+        "turns:turn.example.com:5349?transport=tcp,stuns:stun.example.com:5349",
+    ] {
+        assert!(setting.coerce(&json!(good)).is_ok(), "{good:?}");
+    }
+    for bad in [
+        "http://stun.example.com",
+        "stun:",
+        "stun://stun.example.com",
+        "stun:stun.example.com:0",
+        "stun:stun.example.com?transport=udp",
+        "turn:turn.example.com?transport=sctp",
+        "stun:a.example,,stun:b.example",
+        "stun:bad host",
+        "turn:user@turn.example.com",
+    ] {
+        assert!(setting.coerce(&json!(bad)).is_err(), "{bad:?}");
+    }
+    let nine = ["stun:s.example"; 9].join(",");
+    assert!(setting.coerce(&json!(nine)).is_err(), "at most 8 servers");
 }
 
 /// A row that cannot be read stops the update check rather than re-enabling it.
@@ -190,4 +234,34 @@ fn schema_export_matches_snapshot() {
         actual, expected,
         "schema changed; rerun with {UPDATE_ENV}=1"
     );
+}
+
+/// The TURN credential goes to one TURN server only: with it set, every `turn:` / `turns:`
+/// URL must name the same host.
+#[test]
+fn a_turn_credential_needs_a_single_turn_host() {
+    let check = |ice: &str, credential: &str| {
+        let changes = [
+            ("web_client.ice_servers", json!(ice)),
+            ("web_client.turn_credential", json!(credential)),
+        ]
+        .map(|(key, value)| settings::Change {
+            key: key.to_owned(),
+            value,
+            version: 0,
+        });
+        let accepted = settings::prepare(&settings::PinSet::empty(), &changes).unwrap();
+        let next = Snapshot::defaults().with_accepted(&accepted, None, 0);
+        settings::check_rules(&next, &["web_client.turn_credential"])
+    };
+    let one_host = "stun:s.example,turn:t.example:3478,turns:T.example:5349?transport=tcp";
+    let two_hosts = "turn:t.example:3478,turn:other.example:3478";
+
+    assert!(check(one_host, "s3cret").is_ok());
+    assert!(
+        check(two_hosts, "").is_ok(),
+        "no credential, nothing to leak"
+    );
+    let rejected = check(two_hosts, "s3cret").unwrap_err();
+    assert!(format!("{rejected:?}").contains("one host"), "{rejected:?}");
 }

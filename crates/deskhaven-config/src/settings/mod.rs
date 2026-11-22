@@ -9,6 +9,7 @@
 
 mod def;
 mod enums;
+mod ice;
 mod kind;
 mod pins;
 mod registry;
@@ -22,6 +23,7 @@ use serde_json::{Value as Json, json};
 
 pub use def::{AnySetting, Setting};
 pub use enums::{AcceptPresets, AclAction, LinkEmailMaxRole, Registration, SmtpTls, TfaEnforce};
+pub use ice::{MAX_ICE_SERVERS, ice_urls, is_turn_url};
 pub use kind::{Bound, ListRule, Range, SettingType};
 pub use pins::{PinError, PinProblem, PinSet};
 pub use registry::*;

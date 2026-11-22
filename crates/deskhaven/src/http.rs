@@ -10,6 +10,7 @@ use deskhaven_admin_api::{AdminRoutes, TrustedOrigins};
 use deskhaven_config::Cidr;
 use deskhaven_config::bootstrap::{Bootstrap, Listen};
 use deskhaven_core::state::AppState;
+use deskhaven_core::web_client::ws_origin;
 use deskhaven_http::{
     Apps, ErrorBodies, HttpConfig, ListenConfig, NotReady, ReadinessCheck, TrustedProxies,
     health_routes,
@@ -35,11 +36,31 @@ pub fn http_config(config: &Bootstrap, drain_timeout: Duration) -> HttpConfig {
     HttpConfig {
         trusted_proxies: TrustedProxies::new(config.security.trusted_proxies.iter().map(Cidr::net)),
         drain_timeout,
-        content_security_policy: Some(HeaderValue::from_static(deskhaven_web::CSP)),
+        content_security_policy: Some(console_csp(config)),
         strict_transport_security: hsts_for(&config.public_url),
         admin_strict_transport_security: hsts_for(&config.listen.admin_public_url),
         ..HttpConfig::default()
     }
+}
+
+/// The console's CSP: the static policy, plus the web client relay's WebSocket origin
+/// (`public_url`'s host) when the console is served from another origin (a split admin
+/// listener on another host or port).
+fn console_csp(config: &Bootstrap) -> HeaderValue {
+    let fixed = HeaderValue::from_static(deskhaven_web::CSP);
+    let Some(relay) = ws_origin(&config.public_url) else {
+        return fixed;
+    };
+    let console_url = match config.listen.admin_addr() {
+        Some(_) => &config.listen.admin_public_url,
+        None => &config.public_url,
+    };
+    if ws_origin(console_url).as_ref() == Some(&relay) {
+        return fixed;
+    }
+    deskhaven_web::csp_connecting_to(&relay)
+        .and_then(|csp| HeaderValue::from_str(&csp).ok())
+        .unwrap_or(fixed)
 }
 
 fn hsts_for(url: &str) -> Option<HeaderValue> {
@@ -180,6 +201,35 @@ mod tests {
 
         assert!(http.strict_transport_security.is_none());
         assert_eq!(http.admin_strict_transport_security.unwrap(), HSTS);
+    }
+
+    fn csp_of(config: &Bootstrap) -> String {
+        let http = http_config(config, DRAIN);
+        let csp = http.content_security_policy.unwrap();
+        csp.to_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn the_console_csp_admits_the_relay_only_on_another_origin() {
+        let single = with_public_url("https://rd.example.com");
+        let mut split = with_public_url("https://rd.example.com");
+        split.listen.admin = Some("127.0.0.1:21113".parse().unwrap());
+        split.listen.admin_public_url = "https://console.example.com".into();
+        let mut split_same_host = split.clone();
+        split_same_host.listen.admin_public_url = "https://RD.example.com/".into();
+        let mut split_without_public_url = split.clone();
+        split_without_public_url.public_url = String::new();
+
+        assert_eq!(csp_of(&single), deskhaven_web::CSP);
+        assert_eq!(csp_of(&split_same_host), deskhaven_web::CSP);
+        assert_eq!(csp_of(&split_without_public_url), deskhaven_web::CSP);
+        assert_eq!(
+            csp_of(&split),
+            deskhaven_web::CSP.replace(
+                "connect-src 'self';",
+                "connect-src 'self' wss://rd.example.com;"
+            )
+        );
     }
 
     #[test]

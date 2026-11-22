@@ -736,7 +736,7 @@ impl Target {
         self.0.send(&msg.write_to_bytes().unwrap()).await.unwrap();
     }
 
-    async fn recv(&mut self) -> RendezvousMessage {
+    pub(super) async fn recv(&mut self) -> RendezvousMessage {
         let mut buf = vec![0; 64 * 1024];
         let n = timeout(STEP, self.0.recv(&mut buf)).await.unwrap().unwrap();
         RendezvousMessage::parse_from_bytes(&buf[..n]).unwrap()

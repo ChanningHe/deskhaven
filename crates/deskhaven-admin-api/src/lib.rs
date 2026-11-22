@@ -41,6 +41,7 @@ mod strategies;
 pub mod transport;
 mod update_check;
 mod users;
+mod web_client;
 
 use std::sync::Arc;
 
@@ -99,6 +100,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = strategies::routes(routes)?;
     let routes = identity::routes(routes)?;
     let routes = update_check::routes(routes)?;
+    let routes = web_client::routes(routes)?;
     settings::routes(routes)
 }
 

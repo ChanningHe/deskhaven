@@ -177,9 +177,13 @@ impl SignalStatus {
     }
 
     /// The current server's handle.
+    pub(super) fn current(&self) -> SignalHandle {
+        self.0.borrow().clone()
+    }
+
     #[cfg(test)]
     pub(super) fn handle(&self) -> SignalHandle {
-        self.0.borrow().clone()
+        self.current()
     }
 }
 

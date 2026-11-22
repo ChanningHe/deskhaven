@@ -15,11 +15,14 @@
 //! - [`start`] fails startup if the first attempt cannot serve (port taken, peer registry not
 //!   loadable); afterwards a supervisor restarts the server with backoff whenever it fails
 //!   (`supervisor`), never leaving the process without a signal server silently.
+//! - The console's web client punches devices through the current server (`web_client`:
+//!   [`SignalStatus`] is the core's `WebPunches`).
 
 mod config;
 mod control;
 mod relay_sync;
 mod supervisor;
+mod web_client;
 
 pub use config::{SignalSettings, base_config, secret_key};
 pub use control::CoreControl;
@@ -33,3 +36,5 @@ mod deploy_tests;
 mod kx_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod web_client_tests;

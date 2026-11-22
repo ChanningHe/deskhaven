@@ -320,7 +320,17 @@
       "tfa_enforced": "Two-factor authentication is required for this account, so it cannot be turned off.",
       "setting_pinned": "This setting is fixed by the server configuration and cannot be changed here.",
       "version_conflict": "The setting was changed by someone else. Reload and try again.",
-      "last_identity": "This account signs in only through this identity, so it cannot be removed."
+      "last_identity": "This account signs in only through this identity, so it cannot be removed.",
+      "web_client_disabled": "Remote control from the browser is turned off on this server.",
+      "device_offline": "The device is offline.",
+      "device_no_answer": "The device did not answer in time. Try again.",
+      "foreign_relay": "The device uses a relay server of its own, which the browser cannot reach.",
+      "no_relay": "No relay server is configured on this server.",
+      "invalid_offer": "The browser sent an invalid connection offer.",
+      "invalid_candidate": "The browser sent an invalid network candidate.",
+      "session_closed": "The remote session has ended.",
+      "too_many_candidates": "The remote session exchanged too many network candidates.",
+      "too_many_sessions": "You have too many remote sessions open. Close one and try again."
     }
   },
   "theme": {
@@ -985,7 +995,8 @@
       "addressbook": "Address books",
       "audit": "Audit retention",
       "signal": "Signalling",
-      "updates": "Updates"
+      "updates": "Updates",
+      "web_client": "Browser remote control"
     },
     "nav": {
       "label": "Setting categories",

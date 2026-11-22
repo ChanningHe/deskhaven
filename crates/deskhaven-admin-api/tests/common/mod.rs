@@ -17,7 +17,7 @@ use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use deskhaven_admin_api::{AdminRoutes, SESSION_COOKIE, csrf_token};
 
 use deskhaven_config::settings::PinSet;
-use deskhaven_core::clock::SystemClock;
+use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MasterKey, SecretBox};
 use deskhaven_core::oidc::{FetchError, FetchFuture, HttpFetch};
 use deskhaven_core::sessions::ClientDevice;
@@ -39,6 +39,7 @@ pub mod login;
 pub mod own;
 pub mod probe;
 pub mod tokens;
+pub mod web_client;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
 /// Cheap Argon2id parameters: tests create many accounts.
@@ -89,11 +90,33 @@ pub async fn harness_with_updates(db: &TestDb, pins: PinSet, fetch: Arc<dyn Http
     build(db, AdminRoutes::new(), pins, fetch).await
 }
 
+/// The production routes with every service on `clock` (e.g. a `ManualClock`).
+pub async fn harness_on_clock(db: &TestDb, clock: SharedClock) -> Harness {
+    build_on(
+        db,
+        AdminRoutes::new(),
+        PinSet::empty(),
+        Arc::new(OfflineFetch),
+        clock,
+    )
+    .await
+}
+
 async fn build(
     db: &TestDb,
     extra: AdminRoutes,
     pins: PinSet,
     update_fetch: Arc<dyn HttpFetch>,
+) -> Harness {
+    build_on(db, extra, pins, update_fetch, Arc::new(SystemClock)).await
+}
+
+async fn build_on(
+    db: &TestDb,
+    extra: AdminRoutes,
+    pins: PinSet,
+    update_fetch: Arc<dyn HttpFetch>,
+    clock: SharedClock,
 ) -> Harness {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[9; 32])));
     let (settings, warnings) = SettingsService::load(db.conn.clone(), Arc::clone(&crypto), pins)
@@ -106,7 +129,7 @@ async fn build(
         crypto,
         "test-signal-key".to_owned(),
         PasswordHasher::new(FAST).unwrap(),
-        Arc::new(SystemClock),
+        clock,
         &StateConfig::default(),
     );
     let state = Arc::new(with_update_fetch(state, update_fetch));

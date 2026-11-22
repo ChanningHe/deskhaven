@@ -126,6 +126,9 @@ pub async fn start(
     if let Some(running) = &signal {
         forget_deleted_devices(&state, running.status.clone());
         share_registry_with_deploy(&state, running.status.clone());
+        state
+            .web_client
+            .set_punches(Arc::new(running.status.clone()));
     }
     Ok(Started {
         state,

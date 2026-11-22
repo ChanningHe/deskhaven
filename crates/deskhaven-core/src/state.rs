@@ -26,6 +26,7 @@ use crate::strategies::StrategyService;
 use crate::tfa::TfaService;
 use crate::update::UpdateService;
 use crate::users::{PasswordHasher, UserService};
+use crate::web_client::WebClientService;
 
 pub struct AppState {
     /// Migrated connection pool (cheap to clone).
@@ -71,6 +72,8 @@ pub struct AppState {
     pub setup: SetupService,
     /// The on-demand check for a newer deskhaven release.
     pub updates: Arc<UpdateService>,
+    /// Remote control from the console (web client sessions through the signal server).
+    pub web_client: WebClientService,
     /// See [`StateConfig::console_url`].
     pub console_url: String,
     /// `public_url` as configured (blank: unset).
@@ -165,6 +168,7 @@ impl AppState {
         let audit = AuditService::new(db.clone(), devices.clone(), Arc::clone(&clock));
         let setup = SetupService::new(db.clone(), users.clone(), Arc::clone(&clock));
         let api_tokens = ApiTokenService::new(db.clone(), Arc::clone(&clock));
+        let web_client = WebClientService::new(db.clone(), settings.clone(), Arc::clone(&clock));
         let sessions = SessionService::new(
             db.clone(),
             settings.clone(),
@@ -192,6 +196,7 @@ impl AppState {
             audit,
             setup,
             updates,
+            web_client,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
             public_url: config.public_url.trim().to_owned(),
             signal_port: config.signal_port,
