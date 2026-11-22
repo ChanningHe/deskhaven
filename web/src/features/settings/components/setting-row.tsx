@@ -6,6 +6,7 @@ import type { SettingView } from '@/api/generated/model'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 import type { Draft } from '../drafts'
 import { problemOf, toEditor } from '../editor'
@@ -57,10 +58,14 @@ export function SettingRow({
 
   return (
     <li
-      className="grid gap-3 py-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-6"
+      className={cn(
+        'relative grid gap-3 py-4 sm:grid-cols-2 sm:gap-8',
+        draft !== undefined &&
+          'before:absolute before:inset-y-3 before:-left-4 before:w-0.5 before:rounded-r-full before:bg-info sm:before:-left-6',
+      )}
       data-setting={setting.key}
     >
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-1 sm:pt-1">
         <div className="flex items-start gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <label htmlFor={id} className="font-mono text-sm font-medium break-all">
@@ -68,7 +73,9 @@ export function SettingRow({
             </label>
             <SourceBadge source={valueSource(source)} />
             {draft === undefined ? null : (
-              <span className="text-xs font-medium text-info">{t('settings.row.unsaved')}</span>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-info before:size-1.5 before:rounded-full before:bg-info">
+                {t('settings.row.unsaved')}
+              </span>
             )}
           </div>
           <HistoryButton onClick={onHistory} />
@@ -78,19 +85,21 @@ export function SettingRow({
         </p>
         {setting.pinned ? <PinnedNote source={source} /> : null}
       </div>
-      <div className="min-w-0 space-y-2">
-        <SettingControl
-          setting={setting}
-          id={id}
-          editor={editor}
-          disabled={disabled || setting.pinned || staged}
-          invalid={invalid}
-          describedBy={`${helpId} ${problemId}`}
-          onChange={onEdit}
-        />
-        <RangeHint setting={setting} />
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <SettingControl
+            setting={setting}
+            id={id}
+            editor={editor}
+            disabled={disabled || setting.pinned || staged}
+            invalid={invalid}
+            describedBy={`${helpId} ${problemId}`}
+            onChange={onEdit}
+          />
+          <RangeHint setting={setting} />
+        </div>
         <RiskHint setting={setting} editor={editor} />
-        <div id={problemId}>
+        <div id={problemId} className="empty:hidden">
           {problem === undefined ? null : <ProblemText problem={problem} />}
           {serverProblems.map((reason) => (
             <p key={reason} role="alert" className="text-xs text-destructive">
@@ -101,7 +110,7 @@ export function SettingRow({
         {staged ? (
           <p className="text-xs text-muted-foreground">{t('settings.row.willReset')}</p>
         ) : null}
-        <div className="flex flex-wrap gap-2">
+        <div className="-ml-1.5 flex flex-wrap gap-1 empty:hidden">
           {canReset ? (
             <Button
               type="button"
@@ -138,7 +147,7 @@ function HistoryButton({ onClick }: { onClick: () => void }) {
             variant="ghost"
             size="icon-xs"
             aria-label={label}
-            className="shrink-0"
+            className="-mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={onClick}
           />
         }

@@ -69,7 +69,7 @@ function SettingsForm({ settings }: { settings: readonly SettingView[] }) {
           }))}
           onJump={jump}
         />
-        <div className="min-w-0 space-y-6 [&_h2]:scroll-mt-20 xl:[&_h2]:scroll-mt-10">
+        <div className="min-w-0 space-y-6 [&_h2]:scroll-mt-22 [&_h2]:outline-none xl:[&_h2]:scroll-mt-10 [&>section]:transition-shadow [&>section:has(h2:focus)]:border-ring [&>section:has(h2:focus)]:ring-3 [&>section:has(h2:focus)]:ring-ring/50">
           {categories.map((category) => (
             <CategoryCard
               key={category.name}

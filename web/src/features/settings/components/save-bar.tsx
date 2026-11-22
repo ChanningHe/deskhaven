@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface SaveBarProps {
   count: number
@@ -28,10 +29,18 @@ export function SaveBar({
 }: SaveBarProps) {
   const { t } = useTranslation()
   return (
-    <div className="sticky bottom-0 -mx-4 grid gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur">
+    <div className="sticky bottom-0 -mx-4 grid gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0 xl:px-0">
       {error == null ? null : <ErrorAlert error={error} title={t('settings.save.failed')} />}
-      <div className="flex flex-wrap items-center gap-3">
-        <p role="status" className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p
+          role="status"
+          className={cn(
+            'flex items-center gap-2 text-sm',
+            count > 0
+              ? 'font-medium text-foreground before:size-2 before:rounded-full before:bg-info'
+              : 'text-muted-foreground',
+          )}
+        >
           {count > 0
             ? t('settings.save.pending', { count })
             : savedCount === undefined

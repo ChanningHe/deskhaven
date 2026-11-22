@@ -44,7 +44,7 @@ export function SettingControl({
   switch (schema.type) {
     case 'bool':
       return (
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-8 items-center gap-2 text-sm">
           <Checkbox
             {...shared}
             checked={editor === true}
@@ -112,7 +112,7 @@ export function SettingControl({
           inputMode={schema.type === 'u32' ? 'numeric' : undefined}
           autoComplete="off"
           spellCheck={false}
-          className={cn(schema.type === 'string' ? 'sm:max-w-sm' : 'sm:w-48')}
+          className={cn(schema.type === 'string' ? 'sm:max-w-sm' : 'sm:w-36')}
           value={String(editor)}
           onChange={(event) => {
             onChange(event.target.value)
