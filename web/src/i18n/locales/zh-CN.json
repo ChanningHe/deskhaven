@@ -35,7 +35,12 @@
   "common": {
     "loading": "加载中…",
     "cancel": "取消",
-    "close": "关闭"
+    "close": "关闭",
+    "leave": {
+      "title": "放弃未保存的修改？",
+      "description": "未保存的修改将会丢失。",
+      "confirm": "放弃修改"
+    }
   },
   "overview": {
     "loadFailed": "无法加载概览",
@@ -1048,11 +1053,6 @@
       "previous": "较新",
       "next": "较旧",
       "page": "第 {{page}} / {{pages}} 页"
-    },
-    "leave": {
-      "title": "不保存就离开？",
-      "description": "设置中有未保存的更改，离开此页将丢失。",
-      "confirm": "离开此页"
     },
     "pinnedDropped": "以下设置已被服务器配置固定，你对它们的修改已丢弃：{{keys}}",
     "risk": {

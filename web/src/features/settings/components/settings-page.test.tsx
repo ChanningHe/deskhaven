@@ -468,14 +468,14 @@ describe('settings page history and guards', () => {
     await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
     void router.navigate({ to: '/groups' })
 
-    const dialog = await screen.findByRole('alertdialog', { name: '不保存就离开？' })
+    const dialog = await screen.findByRole('alertdialog', { name: '放弃未保存的修改？' })
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
     expect(router.state.location.pathname).toBe('/settings')
     expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
 
     void router.navigate({ to: '/groups' })
-    const again = await screen.findByRole('alertdialog', { name: '不保存就离开？' })
-    await user.click(within(again).getByRole('button', { name: '离开此页' }))
+    const again = await screen.findByRole('alertdialog', { name: '放弃未保存的修改？' })
+    await user.click(within(again).getByRole('button', { name: '放弃修改' }))
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/groups')
     })

@@ -6,6 +6,7 @@ import type { SettingView } from '@/api/generated/model'
 import { useListSettings } from '@/api/generated/settings/settings'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { PageHeader } from '@/components/common/page-header'
+import { UnsavedGuard } from '@/components/common/unsaved-guard'
 
 import { categoryLabel, groupByCategory } from '../categories'
 import { problemOf } from '../editor'
@@ -14,7 +15,6 @@ import { ConflictDialog } from './conflict-dialog'
 import { HistoryDrawer } from './history-drawer'
 import { SaveBar } from './save-bar'
 import { SettingRow } from './setting-row'
-import { UnsavedGuard } from './unsaved-guard'
 
 /** Settings (05 §3): grouped by category, edited as one batch, with source and history. */
 export function SettingsPage() {

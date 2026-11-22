@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 type Shown = 'online' | 'offline' | 'disabled'
 
 const DOT_CLASS: Record<Shown, string> = {
-  online: 'bg-emerald-600 dark:bg-emerald-400',
+  online: 'bg-success',
   offline: 'bg-muted-foreground/40',
   disabled: 'bg-destructive',
 }
