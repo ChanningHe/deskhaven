@@ -34,6 +34,7 @@
     "@tanstack/react-table": "9.3.1",
     "class-variance-authority": "0.7.1",
     "cn": "0.5.1",
+    "fzstd": "0.1.1",
     "i18next": "26.7.1",
     "lucide-react": "1.66.0",
     "react": "19.3.1",

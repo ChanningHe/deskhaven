@@ -57,3 +57,19 @@ Reports, traces of failed tests and the server log land in
 `e2e-results/{sqlite,postgres}/`; `pnpm exec playwright show-trace <trace.zip>` opens a
 trace. CI (`.github/workflows/ci.yml`, job `e2e`) runs the suite once per backend and
 uploads that directory when a run fails.
+
+## Remote client codec check
+
+`codec/` holds browser checks of the remote client's media path that need no server, under
+their own config. `vp9-decode.codec.ts` bundles `src/features/remote/video/decode-check.ts`
+with Vite, loads it into Chromium on an https page (WebCodecs needs a secure context) and
+decodes the relay fixture's captured VP9 key frame through the video pipeline:
+
+```sh
+cd web
+export PLAYWRIGHT_BROWSERS_PATH=$(nix build --no-link --print-out-paths nixpkgs#playwright-driver.browsers)
+export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+nix develop -c pnpm exec playwright test -c e2e/codec/playwright.config.ts
+```
+
+`pnpm e2e` does not run it: the console config only matches `*.spec.ts`.
