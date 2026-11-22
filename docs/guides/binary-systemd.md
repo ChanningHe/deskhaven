@@ -4,7 +4,7 @@ When you finish, deskhaven and the relay run as hardened systemd services, behin
 nginx.
 
 You need the `deskhaven` binary for your architecture from the
-[v0.1.1 release](https://github.com/ChanningHe/deskhaven/releases/tag/v0.1.1), `hbbr` from
+[v0.1.2 release](https://github.com/ChanningHe/deskhaven/releases/tag/v0.1.2), `hbbr` from
 the [rustdesk-server 1.1.16 release](https://github.com/rustdesk/rustdesk-server/releases/tag/1.1.16),
 nginx with a certificate for your domain, and the [ports](../reference/ports.md) 80, 443
 and 21115–21117 open. Run the commands as root.
@@ -12,7 +12,7 @@ and 21115–21117 open. Run the commands as root.
 ## 1. Install deskhaven
 
 ```sh
-base=https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.1/deploy
+base=https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.2/deploy
 install -m 0755 deskhaven /usr/local/bin/deskhaven
 useradd --system --home-dir /var/lib/deskhaven --shell /usr/sbin/nologin deskhaven
 curl -fsSL -o /etc/systemd/system/deskhaven.service "$base/systemd/deskhaven.service"
