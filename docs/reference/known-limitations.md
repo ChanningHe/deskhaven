@@ -48,9 +48,9 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 
 ## Browser remote control
 
-- **Chromium and Firefox are tested; Safari is not.** The browser decodes video with
-  WebCodecs and only asks for VP9, AV1 or VP8, so devices encode with one of those (in
-  software when they have no hardware encoder for it).
+- **Chromium and Firefox are tested (keyboard input on Chromium only); Safari is not.** The
+  browser decodes video with WebCodecs and only asks for VP9, AV1 or VP8, so devices encode
+  with one of those (in software when they have no hardware encoder for it).
 - **The browser only reaches the relay behind `/ws/relay`**, the first entry of
   `signal.relay_servers`. A device with a relay server of its own in its network settings
   cannot be opened from the browser; one on the same LAN as the server, with no hairpin NAT,

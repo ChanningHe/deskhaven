@@ -17,7 +17,7 @@ client.
 - `signal.relay_servers` lists your relay, and its **first entry is the relay behind
   `/ws/relay`**. The browser can only reach that one.
 - Devices run a RustDesk client that uses this server's key and has no relay server of its
-  own in its network settings. Tested with 1.4.5 (relay only) and 1.5.0 (WebRTC and relay).
+  own in its network settings. Tested with 1.4.3 (relay only) and 1.5.0 (WebRTC and relay).
 
 ## Turn it on
 
