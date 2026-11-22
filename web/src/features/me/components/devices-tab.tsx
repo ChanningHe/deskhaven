@@ -67,6 +67,7 @@ export function DevicesTab() {
         {query.isSuccess && devices.length === 0 ? (
           <EmptyState
             icon={MonitorSmartphone}
+            headingLevel={3}
             title={t('me.devices.emptyTitle')}
             description={t('me.devices.emptyDescription')}
           />

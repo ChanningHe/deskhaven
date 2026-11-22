@@ -9,6 +9,7 @@ import { SourceBadge } from '@/components/common/source-badge'
 import { Badge } from '@/components/ui/badge'
 
 import { directoryDraft } from '../ldap-form'
+import type { DirtyReporter } from '../report-dirty'
 import { DirectoryFields } from './directory-fields'
 import { DirectoryForm } from './directory-form'
 import { LdapDiagnostics } from './ldap-diagnostics'
@@ -24,7 +25,12 @@ function shownDirectory(directories: readonly LdapDirectoryView[]): LdapDirector
  * The LDAP directory. Only the owner may change it or run tests (06 §3.6); admins see it
  * read-only. A directory from the configuration file is read-only for everyone.
  */
-export function LdapSection({ isOwner }: { isOwner: boolean }) {
+interface LdapSectionProps {
+  isOwner: boolean
+  onDirtyChange: DirtyReporter
+}
+
+export function LdapSection({ isOwner, onDirtyChange }: LdapSectionProps) {
   const { t } = useTranslation()
   const query = useListLdapDirectories()
   const directory = query.data === undefined ? undefined : shownDirectory(query.data)
@@ -42,6 +48,7 @@ export function LdapSection({ isOwner }: { isOwner: boolean }) {
         directory={directory}
         status={status}
         alert={alert}
+        onDirtyChange={onDirtyChange}
       />
     )
   }

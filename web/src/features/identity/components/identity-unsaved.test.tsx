@@ -58,4 +58,21 @@ describe('identity page: unsaved changes', () => {
     })
     expect(screen.queryByRole('alertdialog', { name: LEAVE })).not.toBeInTheDocument()
   })
+
+  it('asks once when both the LDAP form and the 2FA policy have unsaved edits', async () => {
+    const { user, router } = renderApp('/identity', { api: API })
+    await user.type(await screen.findByLabelText('名称'), '-eu')
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: '强制双因素认证的范围' }),
+      'all',
+    )
+
+    void router.navigate({ to: '/groups' })
+
+    const dialog = await screen.findByRole('alertdialog', { name: LEAVE })
+    await user.click(within(dialog).getByRole('button', { name: '放弃修改' }))
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/groups')
+    })
+  })
 })

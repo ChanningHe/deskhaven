@@ -14,11 +14,13 @@ import { ErrorAlert } from '@/components/common/error-alert'
 import { NativeSelect } from '@/components/common/native-select'
 import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
-import { UnsavedGuard } from '@/components/common/unsaved-guard'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { valueSource } from '@/features/settings/format'
 import { useRebasedDraft } from '@/lib/use-rebased-draft'
+
+import { useReportDirty } from '../report-dirty'
+import type { DirtyReporter } from '../report-dirty'
 
 export const TFA_KEY = 'auth.tfa.enforce'
 const CHOICES = ['off', 'admins', 'all'] as const
@@ -32,9 +34,14 @@ function isChoice(value: unknown): value is Choice {
  * The 2FA enforcement policy: the `auth.tfa.enforce` setting, through the settings API
  * (owner only, versioned, read-only while the server configuration pins it).
  */
-export function TfaSection({ isOwner }: { isOwner: boolean }) {
+interface TfaSectionProps {
+  isOwner: boolean
+  onDirtyChange: DirtyReporter
+}
+
+export function TfaSection({ isOwner, onDirtyChange }: TfaSectionProps) {
   const { t } = useTranslation()
-  if (isOwner) return <OwnerTfa />
+  if (isOwner) return <OwnerTfa onDirtyChange={onDirtyChange} />
   return (
     <TfaCard status={undefined}>
       <p className="text-sm text-muted-foreground">{t('identity.tfa.ownerOnly')}</p>
@@ -59,7 +66,7 @@ function TfaCard({ status, children }: { status: ReactNode; children: ReactNode 
 }
 
 /** Only the owner reads the settings: an admin's page never requests them. */
-function OwnerTfa() {
+function OwnerTfa({ onDirtyChange }: { onDirtyChange: DirtyReporter }) {
   const query = useListSettings()
   const setting = query.error ? undefined : query.data?.find((s) => s.key === TFA_KEY)
   return (
@@ -69,18 +76,26 @@ function OwnerTfa() {
       }
     >
       {query.error ? <ErrorAlert error={query.error} onRetry={() => void query.refetch()} /> : null}
-      {setting === undefined ? null : <PolicyForm setting={setting} />}
+      {setting === undefined ? null : (
+        <PolicyForm setting={setting} onDirtyChange={onDirtyChange} />
+      )}
     </TfaCard>
   )
 }
 
-function PolicyForm({ setting }: { setting: SettingView }) {
+interface PolicyFormProps {
+  setting: SettingView
+  onDirtyChange: DirtyReporter
+}
+
+function PolicyForm({ setting, onDirtyChange }: PolicyFormProps) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
   const current: Choice = isChoice(setting.value) ? setting.value : 'off'
   // Follows the server copy until the user picks a value (another owner may change it).
   const { draft, changed, conflicts, set, reset } = useRebasedDraft({ value: current })
+  useReportDirty(changed.length > 0, onDirtyChange)
   const choice = draft.value
   const mutation = useUpdateSettings()
   const stale = isApiError(mutation.error) && mutation.error.code === 'version_conflict'
@@ -138,7 +153,6 @@ function PolicyForm({ setting }: { setting: SettingView }) {
           {t('identity.tfa.saved')}
         </p>
       ) : null}
-      <UnsavedGuard dirty={changed.length > 0} />
     </div>
   )
 }

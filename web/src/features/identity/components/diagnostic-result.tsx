@@ -70,7 +70,7 @@ function ProbedUser({ user }: { user: LdapProbedUserView }) {
   ]
   return (
     <div className="rounded-lg border p-3">
-      <h4 className="mb-2 text-sm font-medium">{t('identity.diagnostics.user.title')}</h4>
+      <h3 className="mb-2 text-sm font-medium">{t('identity.diagnostics.user.title')}</h3>
       <dl className="grid gap-1 text-xs sm:grid-cols-[max-content_1fr] sm:gap-x-4">
         {rows.map(([label, value]) => (
           <div key={label} className="contents">

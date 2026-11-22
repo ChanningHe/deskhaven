@@ -13,7 +13,6 @@ import type { LdapDirectoryView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SectionCard } from '@/components/common/section-card'
-import { UnsavedGuard } from '@/components/common/unsaved-guard'
 import { Button } from '@/components/ui/button'
 import { SECRET_MUTATION } from '@/features/users/secret-mutation'
 import { useRebasedDraft } from '@/lib/use-rebased-draft'
@@ -27,6 +26,8 @@ import {
   newDirectoryBody,
 } from '../ldap-form'
 import type { DirectoryDraft } from '../ldap-form'
+import { useReportDirty } from '../report-dirty'
+import type { DirtyReporter } from '../report-dirty'
 import { DirectoryFields } from './directory-fields'
 import { FieldProblems } from './form-controls'
 import { LdapDiagnostics } from './ldap-diagnostics'
@@ -38,19 +39,21 @@ interface DirectoryFormProps {
   status: ReactNode
   /** A failed reload of the directories, shown above the fields. */
   alert: ReactNode
+  onDirtyChange: DirtyReporter
 }
 
 /**
  * The owner's directory card: create or edit, delete, and the tests card. Tests run against
  * the saved directory, or against the form as typed while it has unsaved changes.
  */
-export function DirectoryForm({ directory, status, alert }: DirectoryFormProps) {
+export function DirectoryForm({ directory, status, alert, onDirtyChange }: DirectoryFormProps) {
   const { t } = useTranslation()
   const form = useRebasedDraft(
     directory === undefined ? EMPTY_DIRECTORY : directoryDraft(directory),
   )
   const { draft, changed, conflicts, set } = form
   const { mutation, save } = useSaveDirectory(directory, form)
+  useReportDirty(changed.length > 0, onDirtyChange)
   const [confirming, setConfirming] = useState(false)
   const missingPassword = directory !== undefined && needsPassword(draft, changed)
   const target: TestTarget =
@@ -101,7 +104,6 @@ export function DirectoryForm({ directory, status, alert }: DirectoryFormProps) 
       {directory === undefined ? null : (
         <DeleteDialog directory={directory} open={confirming} onOpenChange={setConfirming} />
       )}
-      <UnsavedGuard dirty={changed.length > 0} />
     </>
   )
 }
