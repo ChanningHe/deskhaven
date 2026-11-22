@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 
-import { RemoteController, type ConnectDeps, type RemotePhase } from '../connect/controller'
+import {
+  RemoteController,
+  type ConnectDeps,
+  type RemotePhase,
+  type TransportKind,
+} from '../connect/controller'
 import type { Store } from '../session/store'
 
 export function useStore<T>(store: Store<T>): T {
@@ -11,6 +16,7 @@ export function useStore<T>(store: Store<T>): T {
 
 export interface Remote {
   phase: RemotePhase
+  transport: TransportKind
   reconnect: () => void
   disconnect: () => void
 }
@@ -36,6 +42,7 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
 
   return {
     phase: useStore(controller.phase),
+    transport: useStore(controller.transport),
     reconnect: () => {
       controller.connect()
     },

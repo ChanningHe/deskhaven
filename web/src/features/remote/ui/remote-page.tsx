@@ -145,16 +145,19 @@ function PhaseStep({ phase, frame, onReconnect, onDisconnect }: { phase: RemoteP
 }
 
 /**
- * Remote control of one device from the browser, over the relay: a full-viewport workspace
+ * Remote control of one device from the browser, over WebRTC or the relay: a full-viewport workspace
  * with one thin bar, outside the console's sidebar and top bar.
  */
 export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactNode }) {
-  const { phase, reconnect, disconnect } = useRemote(deviceId, useContext(RemoteDepsContext))
+  const { phase, transport, reconnect, disconnect } = useRemote(
+    deviceId,
+    useContext(RemoteDepsContext),
+  )
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
         phase={phase}
-        frame={{ deviceId, back }}
+        frame={{ deviceId, back, transport: transport === 'connecting' ? undefined : transport }}
         onReconnect={reconnect}
         onDisconnect={disconnect}
       />

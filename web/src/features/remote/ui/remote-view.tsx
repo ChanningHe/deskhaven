@@ -110,7 +110,6 @@ export function RemoteView({
         {...frame}
         status="active"
         hostname={peer?.info.hostname === '' ? undefined : peer?.info.hostname}
-        transport="relay"
         tools={
           <Toolbar
             session={session}

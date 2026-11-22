@@ -141,6 +141,16 @@ describe('remote page: leaving', () => {
 })
 
 describe('remote page: active session', () => {
+  it('names the link the session won the race on', async () => {
+    const { session } = await open()
+    act(() => {
+      session.activate()
+    })
+    const status = screen.getByText(/已连接/)
+    expect(status).toHaveTextContent('中继')
+    expect(status).not.toHaveTextContent('WebRTC')
+  })
+
   it('greys out the controls the device turned off', async () => {
     const { session } = await open()
     act(() => {

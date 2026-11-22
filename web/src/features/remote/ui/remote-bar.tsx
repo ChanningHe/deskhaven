@@ -17,13 +17,14 @@ export interface BarFrame {
   deviceId: string
   /** The way back to the console; the route supplies it so the page needs no router. */
   back?: ReactNode
+  /** The link the session runs over, once the race has a winner. */
+  transport?: Transport | undefined
 }
 
 interface RemoteBarProps extends BarFrame {
   status: BarStatus
   /** The peer's own name, once it has said it. */
   hostname?: string | undefined
-  transport?: Transport
   /** The session's controls; they drop to a second row on narrow screens. */
   tools?: ReactNode
   /** The last control, kept on the first row: the session's way out. */

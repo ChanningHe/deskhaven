@@ -1,21 +1,34 @@
-import type { WebClientSession } from '@/api/generated/model'
-import { closeWebClientSession, openWebClientSession } from '@/api/generated/web-client/web-client'
+import type { IceServerView, WebClientSession } from '@/api/generated/model'
+import {
+  addWebClientCandidate,
+  closeWebClientSession,
+  openWebClientSession,
+  pollWebClientCandidates,
+} from '@/api/generated/web-client/web-client'
 
 import { decodeBase64 } from '../bytes'
-import { startHandshake, type HandshakeParams, type Link } from '../handshake/handshake'
+import {
+  IDENTITY_TIMEOUT_MS,
+  startHandshake,
+  type HandshakeParams,
+  type Link,
+} from '../handshake/handshake'
 import { supportedDecoding, type DecoderSupport } from '../handshake/login'
 import { startSession, type Session } from '../session/session'
 import { ValueStore, type Store } from '../session/store'
 import { RelayTransport, type RelayOptions } from '../transport/relay'
 import type { KeyedTransport } from '../transport/transport'
+import { startTrickle, type Trickle, type TrickleApi } from '../transport/trickle'
+import { WebRtcTransport, type WebRtcOfferer } from '../transport/webrtc'
 import { probeVideoDecoders } from '../video/codec'
+import { WEBRTC_CONNECT_TIMEOUT_MS, paired, preferWebRtc, withTimeout } from './race'
 
 export type ConnectFailure =
   /** POST sessions failed; the error carries the API error code. */
   | { kind: 'api'; error: unknown }
   /** This browser decodes none of the codecs a peer can send. */
   | { kind: 'no_decoder' }
-  /** The opened session could not be started (malformed keys or relay URL). */
+  /** The opened session could not be started (malformed keys or relay URL, no link at all). */
   | { kind: 'error'; reason: string }
 
 export type RemotePhase =
@@ -26,17 +39,31 @@ export type RemotePhase =
   | { kind: 'session'; session: Session }
   | { kind: 'failed'; failure: ConnectFailure }
 
+/** How the session reaches the peer; `connecting` until the race between the two is decided. */
+export type TransportKind = 'connecting' | 'relay' | 'webrtc'
+
+export interface WebRtcDeps extends TrickleApi {
+  /** Rejects where WebRTC is unavailable or the offer cannot be sent: the relay goes alone. */
+  createOfferer(): Promise<WebRtcOfferer>
+}
+
 export interface ConnectDeps {
-  openSession(deviceId: string): Promise<WebClientSession>
+  /** `offer` asks the device for a WebRTC answer alongside the relay. */
+  openSession(deviceId: string, offer?: string): Promise<WebClientSession>
   closeSession(sessionId: string): Promise<void>
   probeDecoders(): Promise<DecoderSupport>
   createRelay(options: RelayOptions): KeyedTransport
   startSession(link: Link, params: HandshakeParams): Session
   location: Pick<Location, 'protocol' | 'host'>
+  /** Without it, the relay only. */
+  webrtc?: WebRtcDeps
 }
 
 export const browserDeps: ConnectDeps = {
-  openSession: (deviceId) => openWebClientSession({ device_id: deviceId }),
+  openSession: (deviceId, offer) =>
+    openWebClientSession(
+      offer === undefined ? { device_id: deviceId } : { device_id: deviceId, offer },
+    ),
   // keepalive: the close must outlive the page when it goes away (pagehide).
   closeSession: (sessionId) => closeWebClientSession(sessionId, { keepalive: true }),
   probeDecoders: probeVideoDecoders,
@@ -44,6 +71,12 @@ export const browserDeps: ConnectDeps = {
   startSession: (link, params) => startSession(startHandshake(link, params)),
   get location() {
     return window.location
+  },
+  webrtc: {
+    createOfferer: () => WebRtcTransport.create(),
+    postCandidate: (sessionId, candidate) => addWebClientCandidate(sessionId, { candidate }),
+    pollCandidates: (sessionId, after, signal) =>
+      pollWebClientCandidates(sessionId, { after }, { signal }),
   },
 }
 
@@ -68,15 +101,19 @@ interface Attempt {
   serverSession: string | null
   released: boolean
   session: Session | null
+  /** Closes what the attempt holds until a peer session owns the link. */
+  readonly pending: Set<() => void>
 }
 
 /**
- * Connects the browser to one device over the relay: opens the server session, starts the
- * handshake and the peer session, and closes the server session again once the peer session
- * ends or the page leaves. Each connect replaces the previous attempt.
+ * Connects the browser to one device: opens the server session (with a WebRTC offer where the
+ * browser can make one), takes the data channel or the relay, starts the handshake and the
+ * peer session on it, and closes the server session again once the peer session ends or the
+ * page leaves. Each connect replaces the previous attempt.
  */
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
+  readonly #transport = new ValueStore<TransportKind>('connecting')
   readonly #deviceId: string
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
@@ -90,14 +127,21 @@ export class RemoteController {
     return this.#phase
   }
 
+  /** The current attempt's transport. */
+  get transport(): Store<TransportKind> {
+    return this.#transport
+  }
+
   connect(): void {
     this.disconnect()
     const attempt: Attempt = {
       serverSession: null,
       released: false,
       session: null,
+      pending: new Set(),
     }
     this.#current = attempt
+    this.#transport.set('connecting')
     this.#phase.set({ kind: 'opening' })
     void this.#run(attempt)
   }
@@ -107,6 +151,8 @@ export class RemoteController {
     const attempt = this.#current
     if (!attempt) return
     this.#current = null
+    for (const close of attempt.pending) close()
+    attempt.pending.clear()
     attempt.session?.close()
     this.#release(attempt)
     if (this.#phase.get().kind === 'opening') this.#phase.set({ kind: 'idle' })
@@ -119,10 +165,23 @@ export class RemoteController {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }
+    const offerer = await this.#offerer()
+    if (this.#stale(attempt)) {
+      offerer?.close()
+      return
+    }
+    if (offerer) {
+      attempt.pending.add(() => {
+        offerer.close()
+      })
+    }
     let opened: WebClientSession
     try {
-      opened = await this.#deps.openSession(this.#deviceId)
+      opened = await (offerer
+        ? this.#deps.openSession(this.#deviceId, offerer.offer)
+        : this.#deps.openSession(this.#deviceId))
     } catch (error) {
+      offerer?.close()
       this.#fail(attempt, { kind: 'api', error })
       return
     }
@@ -131,14 +190,33 @@ export class RemoteController {
       this.#release(attempt)
       return
     }
+    let params: HandshakeParams
+    let link: Link
     try {
-      attempt.session = this.#start(opened, decoders)
+      params = this.#params(opened, decoders)
+      const relay = this.#deps.createRelay(this.#relayOptions(opened))
+      const webrtc = this.#deps.webrtc
+      if (offerer && opened.answer && webrtc) {
+        link = await this.#race(attempt, opened, opened.answer, offerer, relay, webrtc)
+      } else {
+        offerer?.close()
+        link = { kind: 'relay', transport: relay }
+      }
     } catch (error) {
+      offerer?.close()
+      if (this.#stale(attempt)) return
       this.#release(attempt)
       this.#fail(attempt, { kind: 'error', reason: errorText(error) })
       return
     }
-    const session = attempt.session
+    attempt.pending.clear()
+    if (this.#stale(attempt)) {
+      link.transport.close()
+      return
+    }
+    this.#transport.set(link.kind)
+    const session = this.#deps.startSession(link, params)
+    attempt.session = session
     const stop = session.state.subscribe(() => {
       if (session.state.get().kind !== 'closed') return
       stop()
@@ -147,10 +225,21 @@ export class RemoteController {
     this.#phase.set({ kind: 'session', session })
   }
 
-  #start(opened: WebClientSession, decoders: DecoderSupport): Session {
+  /** Null where the browser cannot offer: the relay goes alone. */
+  async #offerer(): Promise<WebRtcOfferer | null> {
+    const webrtc = this.#deps.webrtc
+    if (!webrtc) return null
+    try {
+      return await webrtc.createOfferer()
+    } catch {
+      return null
+    }
+  }
+
+  #params(opened: WebClientSession, decoders: DecoderSupport): HandshakeParams {
     // The target is the device the user picked, never the id the server echoes: the
     // handshake checks both signatures against it.
-    const params: HandshakeParams = {
+    return {
       targetId: this.#deviceId,
       serverPk: decodeBase64(opened.server_pk),
       signedPeerPk: decodeBase64(opened.signed_peer_pk),
@@ -158,13 +247,61 @@ export class RemoteController {
       myName: opened.my_name,
       decoders,
     }
-    const transport = this.#deps.createRelay({
+  }
+
+  #relayOptions(opened: WebClientSession): RelayOptions {
+    return {
       url: resolveRelayUrl(opened.relay_url, this.#deps.location),
       licenceKey: opened.server_pk,
       uuid: opened.uuid,
       targetId: this.#deviceId,
+    }
+  }
+
+  /**
+   * Brings up WebRTC and the relay side by side and keeps the one `preferWebRtc` picks, closing
+   * the other. Throws when both fail. The handshake then runs once, on the winner.
+   */
+  async #race(
+    attempt: Attempt,
+    opened: WebClientSession,
+    answer: string,
+    offerer: WebRtcOfferer,
+    relay: KeyedTransport,
+    webrtc: WebRtcDeps,
+  ): Promise<Link> {
+    const exchange: { trickle: Trickle | null } = { trickle: null }
+    attempt.pending.add(() => {
+      relay.close()
     })
-    return this.#deps.startSession({ kind: 'relay', transport }, params)
+    attempt.pending.add(() => {
+      exchange.trickle?.stop()
+    })
+    const channel = async () => {
+      const fingerprint = await offerer.accept(answer, iceServers(opened.ice_servers))
+      if (this.#stale(attempt)) throw new Error('connect replaced')
+      exchange.trickle = startTrickle(webrtc, opened.session_id, offerer)
+      await offerer.opened
+      return fingerprint
+    }
+    try {
+      const result = await preferWebRtc(
+        withTimeout(channel(), WEBRTC_CONNECT_TIMEOUT_MS, 'WebRTC connect timeout'),
+        withTimeout(paired(relay), IDENTITY_TIMEOUT_MS, 'relay pairing timeout'),
+      )
+      if (result.winner === 'webrtc') {
+        relay.close()
+        return { kind: 'webrtc', transport: offerer, remoteFingerprint: result.value }
+      }
+      offerer.close()
+      return { kind: 'relay', transport: result.value }
+    } catch (error) {
+      relay.close()
+      throw error
+    } finally {
+      // Once a link is chosen, candidates no longer matter (client.rs:1181 stops the bridge).
+      exchange.trickle?.stop()
+    }
   }
 
   /** A later connect or a disconnect replaced the attempt. */
@@ -185,6 +322,14 @@ export class RemoteController {
     // may be gone by the time this settles.
     this.#deps.closeSession(id).catch(() => undefined)
   }
+}
+
+function iceServers(views: IceServerView[]): RTCIceServer[] {
+  return views.map(({ urls, username, credential }) => ({
+    urls,
+    ...(username == null ? {} : { username }),
+    ...(credential == null ? {} : { credential }),
+  }))
 }
 
 function errorText(error: unknown): string {
