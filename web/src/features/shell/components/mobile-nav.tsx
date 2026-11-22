@@ -4,6 +4,10 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { hasPermission } from '@/features/auth/permissions'
+import { useMe } from '@/features/auth/session'
+
+import { useAvailableUpdate } from '../update'
 
 import { Brand } from './brand'
 import { SidebarNav } from './sidebar-nav'
@@ -13,6 +17,7 @@ import { VersionInfo } from './version-info'
 export function MobileNav() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const update = useAvailableUpdate(hasPermission(useMe().role, 'admin'))
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -40,7 +45,7 @@ export function MobileNav() {
             setOpen(false)
           }}
         />
-        <VersionInfo className="border-t px-3 py-3" />
+        <VersionInfo className="border-t px-3 py-3" update={update} />
       </SheetContent>
     </Sheet>
   )

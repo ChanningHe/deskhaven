@@ -10,7 +10,8 @@ TypeScript, ESLint and Prettier setup.
 client API (and console) on `127.0.0.1:<random>`, the signal server on a free port block,
 JSON logs captured to `e2e-results/<backend>/server.log`, and
 `DESKHAVEN_SETTINGS__AUTH__TFA__ENFORCE=admins` pinned. It reads the first-run setup link
-from the log and stops the server after the run.
+from the log and stops the server after the run. `DESKHAVEN_SETTINGS__UPDATES__CHECK=false`
+is pinned too, so a run never connects to GitHub.
 
 | project     | spec                   | flow                                                                                                                   |
 | ----------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |

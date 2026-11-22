@@ -34,7 +34,8 @@
     "commandEmpty": "没有匹配的结果",
     "commandHint": "按 Enter 执行高亮项，按 Esc 关闭。",
     "commandGroupPages": "页面",
-    "commandGroupPreferences": "偏好设置"
+    "commandGroupPreferences": "偏好设置",
+    "updateAvailable": "有新版本 v{{version}}"
   },
   "common": {
     "loading": "加载中…",
@@ -983,7 +984,8 @@
       "devices": "设备",
       "addressbook": "地址簿",
       "audit": "审计保留",
-      "signal": "信令"
+      "signal": "信令",
+      "updates": "更新"
     },
     "nav": {
       "label": "设置类别",

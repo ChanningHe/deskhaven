@@ -34,7 +34,8 @@
     "commandEmpty": "No matching results",
     "commandHint": "Press Enter to run the highlighted item, Esc to close.",
     "commandGroupPages": "Pages",
-    "commandGroupPreferences": "Preferences"
+    "commandGroupPreferences": "Preferences",
+    "updateAvailable": "Version v{{version}} is available"
   },
   "common": {
     "loading": "Loading…",
@@ -983,7 +984,8 @@
       "devices": "Devices",
       "addressbook": "Address books",
       "audit": "Audit retention",
-      "signal": "Signalling"
+      "signal": "Signalling",
+      "updates": "Updates"
     },
     "nav": {
       "label": "Setting categories",

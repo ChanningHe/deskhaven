@@ -159,6 +159,40 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   origin. Make the reverse proxy answer only for your host name: the shipped nginx and Caddy
   configurations do, and Traefik routers must use `Host(...)`.
 
+## Outbound connections
+
+The server opens connections of its own to:
+
+- **`api.github.com`**, to look for a newer deskhaven release (below). On by default.
+- **Your OIDC providers** (discovery document, keys, token endpoint), only for providers you
+  enabled.
+- **Your LDAP directory**, only when you enabled one.
+
+Nothing else: there is no telemetry, and SMTP sends nothing yet
+([Features not there yet](#features-not-there-yet)).
+
+The update check:
+
+- **When:** only while an administrator uses the console, at most once a day. A server whose
+  console nobody opens never asks, and a new installation cannot ask before its owner exists.
+  A newer release shows as a small icon next to the version in the console sidebar.
+- **What:** one `GET` of the latest release of `ChanningHe/deskhaven`, with the User-Agent
+  `deskhaven` and no version, instance ID or other detail. GitHub sees your server's outgoing
+  IP address.
+- **To turn it off**, pin it in the environment, which also keeps the console from turning it
+  back on:
+
+  ```sh
+  DESKHAVEN_SETTINGS__UPDATES__CHECK=false
+  ```
+
+  Or switch off `updates.check` under **Settings → Updates** in the console. Either way no
+  request is sent.
+- **Limits:** it uses no proxy and follows no redirect, so a server that reaches the internet
+  only through a proxy never learns of a release, and neither would this version if the
+  repository were renamed. A failed check is logged at `info`, shows nothing in the console
+  and is retried a day later.
+
 ## Features not there yet
 
 - **Email**: the `smtp.*` settings, `auth.email_code.enabled` and `auth.registration` have

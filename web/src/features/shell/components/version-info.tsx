@@ -1,15 +1,20 @@
+import { CircleArrowUp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
+import type { AvailableUpdate } from '../update'
 import { useServerVersion } from '../version'
 
 interface VersionInfoProps {
   className?: string
+  /** A newer release, shown as a small link next to the version. */
+  update?: AvailableUpdate | undefined
 }
 
 /** The server version and the source link (AGPL-3.0 section 13); nothing until known. */
-export function VersionInfo({ className }: VersionInfoProps) {
+export function VersionInfo({ className, update }: VersionInfoProps) {
   const { t } = useTranslation()
   const info = useServerVersion()
   if (info === undefined) return null
@@ -25,6 +30,31 @@ export function VersionInfo({ className }: VersionInfoProps) {
       >
         v{info.version}
       </a>
+      {update === undefined ? null : <UpdateLink update={update} />}
     </p>
+  )
+}
+
+function UpdateLink({ update }: { update: AvailableUpdate }) {
+  const { t } = useTranslation()
+  const label = t('shell.updateAvailable', { version: update.version })
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <a
+            href={update.releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={label}
+            className="ml-1.5 shrink-0 self-center rounded-sm text-info outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <CircleArrowUp aria-hidden className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }

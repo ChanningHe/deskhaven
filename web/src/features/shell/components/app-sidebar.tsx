@@ -2,7 +2,11 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { hasPermission } from '@/features/auth/permissions'
+import { useMe } from '@/features/auth/session'
 import { cn } from '@/lib/utils'
+
+import { useAvailableUpdate } from '../update'
 
 import { Brand } from './brand'
 import { SidebarNav } from './sidebar-nav'
@@ -19,6 +23,7 @@ interface AppSidebarProps {
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const { t } = useTranslation()
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose
+  const update = useAvailableUpdate(hasPermission(useMe().role, 'admin'))
 
   return (
     <div
@@ -39,7 +44,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
           collapsed ? 'justify-center' : 'justify-between pl-3',
         )}
       >
-        {collapsed ? null : <VersionInfo className="min-w-0" />}
+        {collapsed ? null : <VersionInfo className="min-w-0" update={update} />}
         <Button
           variant="ghost"
           size="icon"

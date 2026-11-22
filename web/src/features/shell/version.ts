@@ -16,7 +16,7 @@ export interface ServerVersion {
 }
 
 /** The https URL as normalised by the URL parser, or undefined for anything else. */
-function httpsUrlOf(value: string): string | undefined {
+export function httpsUrlOf(value: string): string | undefined {
   try {
     const url = new URL(value)
     return url.protocol === HTTPS_PROTOCOL ? url.href : undefined
