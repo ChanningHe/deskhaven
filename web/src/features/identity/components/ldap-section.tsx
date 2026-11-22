@@ -8,18 +8,13 @@ import { SectionCard } from '@/components/common/section-card'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Badge } from '@/components/ui/badge'
 
-import { directoryDraft } from '../ldap-form'
+import { directoryDraft, shownDirectory } from '../ldap-form'
 import type { DirtyReporter } from '../report-dirty'
 import { DirectoryFields } from './directory-fields'
 import { DirectoryForm } from './directory-form'
 import { LdapDiagnostics } from './ldap-diagnostics'
 
 const ignore = () => undefined
-
-/** The directory P0 uses: the enabled one, else the first. */
-function shownDirectory(directories: readonly LdapDirectoryView[]): LdapDirectoryView | undefined {
-  return directories.find((d) => d.enabled) ?? directories[0]
-}
 
 /**
  * The LDAP directory. Only the owner may change it or run tests (06 §3.6); admins see it

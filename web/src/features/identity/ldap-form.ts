@@ -47,6 +47,13 @@ export const EMPTY_DIRECTORY: DirectoryDraft = {
 /** Fields that decide where the bind password goes: changing one needs it again. */
 const CONNECTION_FIELDS = ['url', 'start_tls', 'tls_verify', 'bind_dn'] as const
 
+/** The directory P0 uses: the enabled one, else the first. */
+export function shownDirectory(
+  directories: readonly LdapDirectoryView[],
+): LdapDirectoryView | undefined {
+  return directories.find((d) => d.enabled) ?? directories[0]
+}
+
 export function directoryDraft(directory: LdapDirectoryView): DirectoryDraft {
   return {
     name: directory.name,

@@ -1512,6 +1512,16 @@
     }
   },
   "identity": {
+    "tabs": {
+      "label": "身份认证类别",
+      "oidc": "OIDC",
+      "ldap": "LDAP",
+      "tfa": "双因素认证",
+      "oidcEnabled_one": "{{count}} 个启用",
+      "oidcEnabled_other": "{{count}} 个启用",
+      "oidcNone": "未启用",
+      "tfaOff": "不强制"
+    },
     "oidc": {
       "title": "OIDC 提供方",
       "description": "通过 OpenID Connect 单点登录，适用于 RustDesk 客户端与本控制台。",

@@ -19,7 +19,7 @@ function tfaSection() {
 describe('identity page: 2FA policy', () => {
   it('saves the owner’s choice with the version it was read at', async () => {
     let patched: unknown
-    const { user } = renderApp('/identity', {
+    const { user } = renderApp('/identity?tab=tfa', {
       api: {
         ...BASE,
         [`GET ${SETTINGS_PATH}`]: { body: [tfaSetting()] },
@@ -54,7 +54,7 @@ describe('identity page: 2FA policy', () => {
   })
 
   it('is read-only while an environment variable pins it', async () => {
-    renderApp('/identity', {
+    renderApp('/identity?tab=tfa', {
       api: {
         ...BASE,
         [`GET ${SETTINGS_PATH}`]: {
@@ -77,7 +77,7 @@ describe('identity page: 2FA policy', () => {
   })
 
   it('tells about a concurrent change', async () => {
-    const { user } = renderApp('/identity', {
+    const { user } = renderApp('/identity?tab=tfa', {
       api: {
         ...BASE,
         [`GET ${SETTINGS_PATH}`]: { body: [tfaSetting()] },
@@ -92,7 +92,7 @@ describe('identity page: 2FA policy', () => {
   })
 
   it('shows admins that only the owner decides, without reading the settings', async () => {
-    const { fetchSpy } = renderApp('/identity', { me: ADMIN_ME, api: BASE })
+    const { fetchSpy } = renderApp('/identity?tab=tfa', { me: ADMIN_ME, api: BASE })
 
     expect(await screen.findByText('只有所有者可以修改此策略。')).toBeInTheDocument()
     expect(callsTo(fetchSpy, SETTINGS_PATH)).toBe(0)

@@ -37,7 +37,7 @@ async function findLdapSection() {
 
 describe('identity page: LDAP directory', () => {
   it('shows admins the directory read-only, without tests', async () => {
-    renderApp('/identity', { me: ADMIN_ME, api: api([directoryView()]) })
+    renderApp('/identity?tab=ldap', { me: ADMIN_ME, api: api([directoryView()]) })
 
     const section = within(await screen.findByRole('region', { name: 'LDAP 目录' }))
     expect(await section.findByLabelText('URL')).toHaveValue('ldaps://ldap.example.org')
@@ -49,7 +49,7 @@ describe('identity page: LDAP directory', () => {
 
   it('tests the saved directory and shows every step', async () => {
     let sent: Body | undefined
-    const { user } = renderApp('/identity', {
+    const { user } = renderApp('/identity?tab=ldap', {
       api: api([directoryView()], {
         [`POST ${CONNECTION_TEST_PATH}`]: ({ init }: { init: RequestInit }) => {
           sent = JSON.parse(init.body as string) as Body
@@ -80,7 +80,7 @@ describe('identity page: LDAP directory', () => {
 
   it('tests a user with a password and shows the entry found', async () => {
     let sent: Body | undefined
-    const { user } = renderApp('/identity', {
+    const { user } = renderApp('/identity?tab=ldap', {
       api: api([directoryView()], {
         [`POST ${USER_TEST_PATH}`]: ({ init }: { init: RequestInit }) => {
           sent = JSON.parse(init.body as string) as Body
@@ -105,7 +105,7 @@ describe('identity page: LDAP directory', () => {
 
   it('tests unsaved changes as a form and asks for the password when the URL changes', async () => {
     let sent: Body | undefined
-    const { user, fetchSpy } = renderApp('/identity', {
+    const { user, fetchSpy } = renderApp('/identity?tab=ldap', {
       api: api([directoryView()], {
         [`POST ${CONNECTION_TEST_PATH}`]: ({ init }: { init: RequestInit }) => {
           sent = JSON.parse(init.body as string) as Body
@@ -131,7 +131,7 @@ describe('identity page: LDAP directory', () => {
 
   it('saves only the edited fields with the re-entered password', async () => {
     let patched: Body | undefined
-    const { user } = renderApp('/identity', {
+    const { user } = renderApp('/identity?tab=ldap', {
       api: api([directoryView()], {
         [`PATCH ${DIRECTORIES_PATH}/4`]: ({ init }: { init: RequestInit }) => {
           patched = JSON.parse(init.body as string) as Body
@@ -151,7 +151,7 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('shows the saved state in the card header, not the draft', async () => {
-    const { user } = renderApp('/identity', { api: api([directoryView()]) })
+    const { user } = renderApp('/identity?tab=ldap', { api: api([directoryView()]) })
     const enabled = await screen.findByRole('checkbox', { name: '启用' })
     expect(ldapSection().getByText('已启用')).toBeInTheDocument()
 
@@ -163,14 +163,14 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('marks a disabled directory', async () => {
-    renderApp('/identity', { me: ADMIN_ME, api: api([directoryView({ enabled: false })]) })
+    renderApp('/identity?tab=ldap', { me: ADMIN_ME, api: api([directoryView({ enabled: false })]) })
 
     const section = await findLdapSection()
     expect(await section.findByText('已停用')).toBeInTheDocument()
   })
 
   it('marks a missing directory', async () => {
-    renderApp('/identity', { me: ADMIN_ME, api: api([]) })
+    renderApp('/identity?tab=ldap', { me: ADMIN_ME, api: api([]) })
 
     const section = await findLdapSection()
     expect(await section.findByText('未配置')).toBeInTheDocument()
@@ -178,7 +178,7 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('marks a config-managed directory and still offers the owner its tests', async () => {
-    renderApp('/identity', { api: api([directoryView({ managed_by: 'config' })]) })
+    renderApp('/identity?tab=ldap', { api: api([directoryView({ managed_by: 'config' })]) })
 
     const section = await findLdapSection()
     expect(await section.findByText('已启用')).toBeInTheDocument()
@@ -189,7 +189,7 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('shows no state while the directories cannot be read', async () => {
-    renderApp('/identity', {
+    renderApp('/identity?tab=ldap', {
       api: api([], {
         [`GET ${DIRECTORIES_PATH}`]: { status: 404, body: errorEnvelope('not_found') },
       }),
@@ -202,7 +202,7 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('groups the fields and keeps the tests in their own card outside the form', async () => {
-    renderApp('/identity', { api: api([directoryView()]) })
+    renderApp('/identity?tab=ldap', { api: api([directoryView()]) })
     await screen.findByLabelText('URL')
 
     const groups = ldapSection()
@@ -215,7 +215,7 @@ describe('identity page: LDAP directory', () => {
   })
 
   it('warns in red when certificate verification is turned off', async () => {
-    const { user } = renderApp('/identity', { api: api([]) })
+    const { user } = renderApp('/identity?tab=ldap', { api: api([]) })
     const verify = await screen.findByRole('checkbox', { name: '校验服务器证书' })
     expect(screen.queryByText(/证书校验已关闭/)).not.toBeInTheDocument()
 

@@ -21,14 +21,8 @@ import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { useReportDirty } from '../report-dirty'
 import type { DirtyReporter } from '../report-dirty'
-
-export const TFA_KEY = 'auth.tfa.enforce'
-const CHOICES = ['off', 'admins', 'all'] as const
-type Choice = (typeof CHOICES)[number]
-
-function isChoice(value: unknown): value is Choice {
-  return CHOICES.some((choice) => choice === value)
-}
+import { isTfaChoice, TFA_CHOICES, TFA_KEY } from '../tfa-policy'
+import type { TfaChoice } from '../tfa-policy'
 
 /**
  * The 2FA enforcement policy: the `auth.tfa.enforce` setting, through the settings API
@@ -92,7 +86,7 @@ function PolicyForm({ setting, onDirtyChange }: PolicyFormProps) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const current: Choice = isChoice(setting.value) ? setting.value : 'off'
+  const current: TfaChoice = isTfaChoice(setting.value) ? setting.value : 'off'
   // Follows the server copy until the user picks a value (another owner may change it).
   const { draft, changed, conflicts, set, reset } = useRebasedDraft({ value: current })
   useReportDirty(changed.length > 0, onDirtyChange)
@@ -111,7 +105,7 @@ function PolicyForm({ setting, onDirtyChange }: PolicyFormProps) {
     }
     queryClient.setQueryData(getListSettingsQueryKey(), saved)
     const after = saved.find((s) => s.key === TFA_KEY)?.value
-    reset({ value: isChoice(after) ? after : choice }, sent)
+    reset({ value: isTfaChoice(after) ? after : choice }, sent)
   }
 
   return (
@@ -125,10 +119,10 @@ function PolicyForm({ setting, onDirtyChange }: PolicyFormProps) {
           disabled={setting.pinned || mutation.isPending}
           onChange={(event) => {
             const value = event.target.value
-            if (isChoice(value)) set({ value })
+            if (isTfaChoice(value)) set({ value })
           }}
         >
-          {CHOICES.map((value) => (
+          {TFA_CHOICES.map((value) => (
             <option key={value} value={value}>
               {t(`identity.tfa.choices.${value}`)}
             </option>
