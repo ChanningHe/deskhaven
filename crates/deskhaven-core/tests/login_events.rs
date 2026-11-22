@@ -169,3 +169,46 @@ async fn deleting_the_user_keeps_the_event() {
     })
     .await;
 }
+
+async fn last_login_ms(db: &TestDb, user_id: i64) -> Option<i64> {
+    user::Entity::find_by_id(user_id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap()
+        .last_login_at
+        .map(|at| at.timestamp_millis())
+}
+
+#[tokio::test]
+async fn only_a_completed_login_stamps_the_users_last_login() {
+    each_migrated_backend(async |db: &TestDb| {
+        let log = LoginEventLog::new(db.conn.clone(), clock());
+        let alice = insert_user(db, "alice").await;
+        let bob = insert_user(db, "bob").await;
+
+        for result in [
+            LoginResult::InvalidCredentials,
+            LoginResult::SecondFactorRequired,
+            LoginResult::Disabled,
+        ] {
+            log.record(&event("alice", result, Some(alice)))
+                .await
+                .unwrap();
+        }
+        assert_eq!(last_login_ms(db, alice).await, None, "{}", db.backend);
+
+        log.record(&event("alice", LoginResult::Success, Some(alice)))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            last_login_ms(db, alice).await,
+            Some(T0_MS),
+            "{}",
+            db.backend
+        );
+        assert_eq!(last_login_ms(db, bob).await, None, "{}", db.backend);
+    })
+    .await;
+}

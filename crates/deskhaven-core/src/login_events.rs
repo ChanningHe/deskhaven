@@ -1,5 +1,6 @@
 //! Login event log (04 §7 `login_events`): the audit trail of login attempts, shared by the
-//! client and console login flows. Append-only from here; retention is the background
+//! client and console login flows. Append-only from here (a completed login also stamps
+//! `users.last_login_at`); retention is the background
 //! jobs' business (M2-20).
 //!
 //! What a row may hold: who tried (the user id when known, the attempted username, bounded
@@ -12,10 +13,11 @@
 
 use std::net::IpAddr;
 
-use deskhaven_db::entity::login_event;
-use deskhaven_db::time;
+use deskhaven_db::entity::{login_event, user};
+use deskhaven_db::time::{self, TimestampMs};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr};
+use sea_orm::sea_query::Expr;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 
 pub use deskhaven_db::entity::login_event::{Client as LoginClient, Method as LoginMethod};
 
@@ -155,6 +157,23 @@ impl LoginEventLog {
             created_at: Set(created_at),
             ..Default::default()
         };
-        row.insert(&self.db).await.map(drop)
+        row.insert(&self.db).await?;
+        match (event.result, event.user_id) {
+            (LoginResult::Success, Some(user_id)) => {
+                self.stamp_last_login(user_id, created_at).await
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// `users.last_login_at`: every completed login ends in a `Success` event, on either
+    /// login surface and by any method, so this is the one place that sees them all.
+    async fn stamp_last_login(&self, user_id: i64, at: TimestampMs) -> Result<(), DbErr> {
+        user::Entity::update_many()
+            .col_expr(user::Column::LastLoginAt, Expr::value(at))
+            .filter(user::Column::Id.eq(user_id))
+            .exec(&self.db)
+            .await
+            .map(drop)
     }
 }
