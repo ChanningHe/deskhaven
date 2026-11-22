@@ -606,7 +606,8 @@
         "os": "系统",
         "version": "版本",
         "status": "状态",
-        "lastSeen": "最后在线"
+        "lastSeen": "最后在线",
+        "actions": "操作"
       },
       "truncated": "仅显示 {{shown}} / {{total}} 台。",
       "selfReported": "主机名、系统和版本由设备自行上报，服务器无法验证。"
@@ -1696,5 +1697,89 @@
       "saved": "策略已保存。",
       "conflict": "他人修改了此策略，已显示当前值。再次保存以应用你的选择。"
     }
+  },
+  "remote": {
+    "title": "远程控制",
+    "device": "设备 {{id}}",
+    "back": "返回",
+    "connect": "浏览器连接",
+    "offline": "设备离线；设备在线时才能从浏览器连接。",
+    "disabled": "设备已停用；启用后才能从浏览器连接。",
+    "opening": "正在向设备请求会话…",
+    "connecting": "正在连接设备…",
+    "password": {
+      "title": "设备密码",
+      "description": "输入设备上设置的访问密码。没有密码时，也可以由设备前的人接受连接。",
+      "label": "密码",
+      "submit": "连接",
+      "wrong": "密码错误，请重试。"
+    },
+    "twoFactor": {
+      "title": "两步验证码",
+      "description": "设备要求输入其两步验证器中的验证码。",
+      "label": "验证码",
+      "submit": "验证",
+      "wrong": "验证码错误，请重试。"
+    },
+    "approval": {
+      "title": "等待对方同意",
+      "description": "需要设备前的人接受此连接。"
+    },
+    "ended": {
+      "title": "已断开",
+      "user": "你已结束会话。",
+      "timeout": "设备未在规定时间内完成连接。",
+      "link": "与中继服务器的连接已断开：{{reason}}",
+      "other": "会话已结束：{{reason}}",
+      "reconnect": "重新连接"
+    },
+    "errors": {
+      "title": "无法连接",
+      "web_client_disabled": "此服务器未开启浏览器远程。管理员可在“设置”中开启。",
+      "device_offline": "设备离线。请启动设备，或等它重新连上服务器。",
+      "device_no_answer": "设备未及时响应连接请求。请确认设备在线后重试。",
+      "foreign_relay": "设备被设置为使用另一台中继服务器（{{relay}}），浏览器无法连接。请在设备的网络设置中清空中继服务器，或改为本服务器的中继。",
+      "no_relay": "此服务器未配置中继服务器，浏览器无法连接设备。",
+      "too_many_sessions": "你打开的远程会话过多。请先在其他标签页关闭一个再重试。",
+      "rate_limited": "连接尝试过于频繁。请等一分钟后再试。",
+      "unavailable": "此部署中信令服务器未运行。请稍后再试。",
+      "not_found": "设备不存在，或你无权控制它。",
+      "noDecoder": "此浏览器无法解码设备的视频（经 WebCodecs 的 VP9、AV1 或 VP8）。请使用较新的 Chromium 内核浏览器。",
+      "failed": "无法启动会话：{{reason}}",
+      "retry": "重试"
+    },
+    "toolbar": {
+      "label": "会话控制",
+      "disconnect": "断开",
+      "ctrlAltDel": "Ctrl+Alt+Del",
+      "keyboardMode": "键盘模式",
+      "modes": {
+        "map": "映射",
+        "translate": "翻译",
+        "legacy": "传统"
+      },
+      "display": "显示器",
+      "displayN": "显示器 {{n}}",
+      "fullscreen": "全屏",
+      "exitFullscreen": "退出全屏",
+      "sendClipboard": "发送剪贴板",
+      "remoteClipboard": "远端剪贴板",
+      "keyboardOff": "设备已关闭键盘和鼠标控制。",
+      "clipboardOff": "设备已关闭剪贴板。"
+    },
+    "clipboard": {
+      "pasteTitle": "发送文本到设备",
+      "pasteHint": "浏览器不允许此页面读取剪贴板。请把文本粘贴到这里。",
+      "pasteLabel": "要发送的文本",
+      "send": "发送",
+      "sent": "已发送到设备剪贴板。",
+      "tooLong": "文本太长，无法发送。",
+      "remoteTitle": "设备上复制的内容",
+      "copy": "复制",
+      "copied": "已复制。",
+      "copyFailed": "复制失败。请选中文本手动复制。",
+      "close": "关闭"
+    },
+    "screen": "远程屏幕。点击后即可控制设备；获得焦点时按键会发送到设备。"
   }
 }

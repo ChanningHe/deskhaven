@@ -18,4 +18,6 @@ export interface Me {
   setup_required?: SetupStep | null
   totp_enabled: boolean
   username: string
+  /** `web_client.enabled`: whether the console offers browser remote control. */
+  web_client_enabled: boolean
 }

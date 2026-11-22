@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
+use deskhaven_config::settings::WEB_CLIENT_ENABLED;
 use deskhaven_core::sessions::AccountFlags;
 use deskhaven_core::state::AppState;
 use deskhaven_core::users::{Role, User, UserError};
@@ -58,6 +59,8 @@ pub struct Me {
     /// none. Until then only `/me`, the password change, the TOTP enrolment and logout
     /// answer (others: 403 `setup_required`).
     pub setup_required: Option<SetupStep>,
+    /// `web_client.enabled`: whether the console offers browser remote control.
+    pub web_client_enabled: bool,
 }
 
 impl Me {
@@ -73,6 +76,7 @@ impl Me {
             must_change_password: user.must_change_password,
             totp_enabled: user.totp_enabled,
             setup_required,
+            web_client_enabled: state.settings.snapshot().get(&WEB_CLIENT_ENABLED),
         }
     }
 }

@@ -58,6 +58,26 @@ async fn a_session_needs_a_console_session_and_the_switch_on() {
 }
 
 #[tokio::test]
+async fn me_tells_every_role_whether_the_switch_is_on() {
+    each_migrated_backend(async |db: &TestDb| {
+        // Arrange
+        let h = harness(db, AdminRoutes::new()).await;
+        let user = h.console("uma", Role::User).await;
+
+        // Act
+        let off = h.get("/admin/api/v1/me", &user).await;
+        enable(&h).await;
+        let on = h.get("/admin/api/v1/me", &user).await;
+
+        // Assert
+        let b = db.backend;
+        assert_eq!(off.body["web_client_enabled"], false, "{b}");
+        assert_eq!(on.body["web_client_enabled"], true, "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn without_a_signal_server_in_the_process_it_is_unavailable() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange

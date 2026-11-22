@@ -3,9 +3,10 @@ import { CursorTracker, type CursorView } from '../cursor/cursor'
 import type { Handshake } from '../handshake/handshake'
 import type { LoginState } from '../handshake/login'
 import { encodeInput, type RemoteInput } from '../input/input'
-import { KeyboardEncoder, keyboardModeFor } from '../input/keyboard'
+import { KeyboardEncoder, keyboardModeFor, supportedKeyboardModes } from '../input/keyboard'
 import {
   PermissionInfo_Permission,
+  type KeyboardMode,
   type Message,
   type Misc,
   type PeerInfo,
@@ -13,7 +14,15 @@ import {
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
 import { VideoPipeline } from '../video/pipeline'
 import { FrameQueue } from './frame-queue'
-import { closeReason, refreshVideo, videoReceived } from './messages'
+import {
+  captureDisplay,
+  closeReason,
+  ctrlAltDel,
+  keyMessage,
+  refreshVideo,
+  switchDisplay,
+  videoReceived,
+} from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { ValueStore, type Store } from './store'
 
@@ -42,7 +51,13 @@ export interface Session {
    */
   readonly frames: AsyncIterable<VideoFrame>
   login(password: string): Promise<void>
+  /** Only while the state is need_2fa; ignored otherwise. */
   submit2fa(code: string): void
+  /** One of supportedKeyboardModes for the peer; keys held in the old mode go up first. */
+  setKeyboardMode(mode: KeyboardMode): void
+  /** Asks the peer to stream display `index` of PeerView.displays. */
+  switchDisplay(index: number): void
+  ctrlAltDel(): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
   input(input: RemoteInput): void
   /** Sends our clipboard text; false when not active, not allowed or too long. */
@@ -116,7 +131,32 @@ class RemoteSession implements Session {
   }
 
   submit2fa(code: string): void {
+    if (this.state.get().kind !== 'need_2fa') return
     this.#handshake.submit2fa(code)
+  }
+
+  setKeyboardMode(mode: KeyboardMode): void {
+    const peer = this.peer.get()
+    if (!this.#keyboard || !peer || !this.#active()) return
+    if (!supportedKeyboardModes(peer.info.platform, peer.info.version).includes(mode)) return
+    for (const event of this.#keyboard.releaseAll()) this.#send(keyMessage(event))
+    this.#keyboard = new KeyboardEncoder(mode, peer.info.platform)
+    this.peer.set({ ...peer, keyboardMode: mode })
+  }
+
+  // rustdesk 1.5.0 src/ui_session_interface.rs:857-877: switch, then capture only that display.
+  switchDisplay(index: number): void {
+    const peer = this.peer.get()
+    if (!peer || !this.#active() || !Number.isInteger(index)) return
+    if (index < 0 || index >= peer.displays.length || index === peer.current) return
+    this.#send(switchDisplay(index))
+    this.#send(captureDisplay(index))
+  }
+
+  ctrlAltDel(): void {
+    const peer = this.peer.get()
+    if (!peer || !this.#active() || !this.permissions.get().keyboard) return
+    this.#send(keyMessage(ctrlAltDel(peer.info.platform)))
   }
 
   input(input: RemoteInput): void {

@@ -29,6 +29,7 @@ import { Route as AccountPasswordRouteImport } from './routes/account.password'
 import { Route as AccountTwoFactorRouteImport } from './routes/account.two-factor'
 import { Route as LoginOidcRouteImport } from './routes/login_.oidc'
 import { Route as AppMeOidcLinkRouteImport } from './routes/_app/me_.oidc-link'
+import { Route as AppRemoteDeviceIdRouteImport } from './routes/_app/remote.$deviceId'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -129,6 +130,11 @@ const AppMeOidcLinkRoute = AppMeOidcLinkRouteImport.update({
   path: '/me/oidc-link',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRemoteDeviceIdRoute = AppRemoteDeviceIdRouteImport.update({
+  id: '/remote/$deviceId',
+  path: '/remote/$deviceId',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/account/two-factor': typeof AccountTwoFactorRoute
   '/login/oidc': typeof LoginOidcRoute
   '/me/oidc-link': typeof AppMeOidcLinkRoute
+  '/remote/$deviceId': typeof AppRemoteDeviceIdRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/login/oidc': typeof LoginOidcRoute
   '/': typeof AppIndexRoute
   '/me/oidc-link': typeof AppMeOidcLinkRoute
+  '/remote/$deviceId': typeof AppRemoteDeviceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/login_/oidc': typeof LoginOidcRoute
   '/_app/': typeof AppIndexRoute
   '/_app/me_/oidc-link': typeof AppMeOidcLinkRoute
+  '/_app/remote/$deviceId': typeof AppRemoteDeviceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/account/two-factor'
     | '/login/oidc'
     | '/me/oidc-link'
+    | '/remote/$deviceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/login/oidc'
     | '/'
     | '/me/oidc-link'
+    | '/remote/$deviceId'
   id:
     | '__root__'
     | '/_app'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/login_/oidc'
     | '/_app/'
     | '/_app/me_/oidc-link'
+    | '/_app/remote/$deviceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -413,6 +425,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMeOidcLinkRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/remote/$deviceId': {
+      id: '/_app/remote/$deviceId'
+      path: '/remote/$deviceId'
+      fullPath: '/remote/$deviceId'
+      preLoaderRoute: typeof AppRemoteDeviceIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -431,6 +450,7 @@ interface AppRouteChildren {
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
   AppMeOidcLinkRoute: typeof AppMeOidcLinkRoute
+  AppRemoteDeviceIdRoute: typeof AppRemoteDeviceIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -448,6 +468,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
   AppMeOidcLinkRoute: AppMeOidcLinkRoute,
+  AppRemoteDeviceIdRoute: AppRemoteDeviceIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

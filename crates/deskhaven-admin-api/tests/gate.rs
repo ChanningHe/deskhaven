@@ -46,6 +46,7 @@ async fn me_returns_the_signed_in_user_for_every_role() {
                     "must_change_password": false,
                     "totp_enabled": false,
                     "setup_required": null,
+                    "web_client_enabled": false,
                 })
             );
             assert_eq!(reply.headers["cache-control"], "no-store");

@@ -13172,7 +13172,8 @@
           "display_name",
           "role",
           "must_change_password",
-          "totp_enabled"
+          "totp_enabled",
+          "web_client_enabled"
         ],
         "properties": {
           "display_name": {
@@ -13210,6 +13211,10 @@
           },
           "username": {
             "type": "string"
+          },
+          "web_client_enabled": {
+            "type": "boolean",
+            "description": "`web_client.enabled`: whether the console offers browser remote control."
           }
         }
       },

@@ -10,6 +10,7 @@ export function meFor(role: RoleView): Me {
     must_change_password: false,
     totp_enabled: true,
     setup_required: null,
+    web_client_enabled: false,
   }
 }
 

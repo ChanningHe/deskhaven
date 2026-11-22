@@ -606,7 +606,8 @@
         "os": "System",
         "version": "Version",
         "status": "Status",
-        "lastSeen": "Last seen"
+        "lastSeen": "Last seen",
+        "actions": "Actions"
       },
       "truncated": "Showing {{shown}} of {{total}} devices.",
       "selfReported": "Hostname, system and version are reported by the device itself; the server cannot verify them."
@@ -1696,5 +1697,89 @@
       "saved": "Policy saved.",
       "conflict": "Someone else changed the policy; the current value is shown. Save again to apply yours."
     }
+  },
+  "remote": {
+    "title": "Remote control",
+    "device": "Device {{id}}",
+    "back": "Back",
+    "connect": "Connect in browser",
+    "offline": "The device is offline; it must be online to connect from the browser.",
+    "disabled": "The device is disabled; enable it to connect from the browser.",
+    "opening": "Asking the device for a session…",
+    "connecting": "Connecting to the device…",
+    "password": {
+      "title": "Device password",
+      "description": "Enter the access password set on the device. Without one, the person at the device can accept the connection instead.",
+      "label": "Password",
+      "submit": "Connect",
+      "wrong": "Wrong password. Try again."
+    },
+    "twoFactor": {
+      "title": "Two-factor code",
+      "description": "The device asks for the code from its two-factor authenticator.",
+      "label": "Code",
+      "submit": "Verify",
+      "wrong": "Wrong code. Try again."
+    },
+    "approval": {
+      "title": "Waiting for approval",
+      "description": "The person at the device must accept this connection."
+    },
+    "ended": {
+      "title": "Disconnected",
+      "user": "You ended the session.",
+      "timeout": "The device did not finish the connection in time.",
+      "link": "The connection to the relay was lost: {{reason}}",
+      "other": "The session ended: {{reason}}",
+      "reconnect": "Reconnect"
+    },
+    "errors": {
+      "title": "Could not connect",
+      "web_client_disabled": "Remote control from the browser is turned off on this server. An administrator can turn it on in Settings.",
+      "device_offline": "The device is offline. Start it, or wait until it reconnects to the server.",
+      "device_no_answer": "The device did not answer the connection request in time. Check that it is online and try again.",
+      "foreign_relay": "The device is set to use another relay server ({{relay}}), which the browser cannot reach. Clear the relay server in the device's network settings, or set it to this server's relay.",
+      "no_relay": "No relay server is configured on this server, so the browser has no way to reach the device.",
+      "too_many_sessions": "You have too many remote sessions open. Close one in another tab and try again.",
+      "rate_limited": "Too many connection attempts. Wait a minute and try again.",
+      "unavailable": "The signal server is not running in this deployment. Try again later.",
+      "not_found": "There is no such device, or you may not control it.",
+      "noDecoder": "This browser cannot decode the device's video (VP9, AV1 or VP8 through WebCodecs). Use a recent Chromium-based browser.",
+      "failed": "The session could not be started: {{reason}}",
+      "retry": "Try again"
+    },
+    "toolbar": {
+      "label": "Session controls",
+      "disconnect": "Disconnect",
+      "ctrlAltDel": "Ctrl+Alt+Del",
+      "keyboardMode": "Keyboard mode",
+      "modes": {
+        "map": "Map",
+        "translate": "Translate",
+        "legacy": "Legacy"
+      },
+      "display": "Display",
+      "displayN": "Display {{n}}",
+      "fullscreen": "Full screen",
+      "exitFullscreen": "Exit full screen",
+      "sendClipboard": "Send clipboard",
+      "remoteClipboard": "Device clipboard",
+      "keyboardOff": "The device has turned off keyboard and mouse control.",
+      "clipboardOff": "The device has turned off the clipboard."
+    },
+    "clipboard": {
+      "pasteTitle": "Send text to the device",
+      "pasteHint": "The browser did not let this page read the clipboard. Paste the text here.",
+      "pasteLabel": "Text to send",
+      "send": "Send",
+      "sent": "Sent to the device clipboard.",
+      "tooLong": "The text is too long to send.",
+      "remoteTitle": "Copied on the device",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "copyFailed": "Could not copy. Select the text and copy it by hand.",
+      "close": "Close"
+    },
+    "screen": "Remote screen. Click it to control the device; keys go to the device while it has focus."
   }
 }

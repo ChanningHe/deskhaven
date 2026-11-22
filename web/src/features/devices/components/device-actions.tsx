@@ -12,10 +12,14 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DangerZone } from '@/components/common/danger-zone'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Button } from '@/components/ui/button'
+import { RemoteConnectButton } from '@/features/remote/ui/connect-button'
 
 import { invalidateDevices } from '../invalidate'
 
-/** Disable / enable in the drawer; disabling asks for confirmation first (08 §1.4). */
+/**
+ * Browser remote control, and disable / enable in the drawer; disabling asks for confirmation
+ * first (08 §1.4).
+ */
 export function DeviceActions({ device }: { device: DeviceView }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -36,6 +40,7 @@ export function DeviceActions({ device }: { device: DeviceView }) {
     <section aria-label={t('devices.actions.title')} className="grid gap-2">
       <h3 className="text-sm font-medium">{t('devices.actions.title')}</h3>
       <div className="flex flex-wrap gap-2">
+        <RemoteConnectButton device={device} />
         {device.status === 'active' ? (
           <Button
             variant="outline"
