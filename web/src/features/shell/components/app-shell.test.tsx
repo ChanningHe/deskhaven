@@ -1,7 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import type { Me } from '@/api/generated/model'
 import { LANGUAGE_STORAGE_KEY } from '@/i18n'
+import { USER_ME } from '@/test/fixtures'
 import { THEME_STORAGE_KEY } from '@/lib/theme/theme'
 import { renderApp } from '@/test/render-app'
 import type { RenderAppOptions } from '@/test/render-app'
@@ -15,8 +17,8 @@ const EMPTY_DEVICE_LISTS = {
   'GET /admin/api/v1/device-groups': EMPTY_PAGE,
 }
 
-async function renderShell(path = '/', api: RenderAppOptions['api'] = {}) {
-  const app = renderApp(path, { api })
+async function renderShell(path = '/', api: RenderAppOptions['api'] = {}, me?: Me) {
+  const app = renderApp(path, me === undefined ? { api } : { api, me })
   await screen.findByRole('navigation', { name: '主导航' })
   return app
 }
@@ -44,6 +46,30 @@ describe('app shell', () => {
       'API Token',
       '设置',
     ])
+  })
+
+  it('titles the two nav sections only while the sidebar is expanded', async () => {
+    const { user } = await renderShell()
+    const nav = screen.getByRole('navigation', { name: '主导航' })
+
+    const manage = within(nav).getByRole('list', { name: '管理' })
+    expect(within(manage).getByRole('link', { name: '设备' })).toBeInTheDocument()
+    const configure = within(nav).getByRole('list', { name: '配置' })
+    expect(within(configure).getByRole('link', { name: '设置' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '切换侧栏' }))
+
+    expect(within(nav).queryByText('管理')).not.toBeInTheDocument()
+    expect(within(nav).queryByText('配置')).not.toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: '设备' })).toBeInTheDocument()
+  })
+
+  it('leaves a lone nav section untitled', async () => {
+    await renderShell('/me', {}, USER_ME)
+    const nav = screen.getByRole('navigation', { name: '主导航' })
+
+    expect(within(nav).getByRole('link', { name: '我的' })).toBeInTheDocument()
+    expect(within(nav).getByRole('list')).not.toHaveAccessibleName()
   })
 
   it('navigates to a page that shows its header and empty state', async () => {

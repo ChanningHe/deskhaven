@@ -65,7 +65,7 @@ function SessionRow({
       <TableCell>
         <div className="flex flex-wrap items-center gap-1">
           <Badge variant="outline">{t(`me.sessions.kind.${session.kind}`)}</Badge>
-          {session.current ? <Badge>{t('me.sessions.current')}</Badge> : null}
+          {session.current ? <Badge variant="success">{t('me.sessions.current')}</Badge> : null}
         </div>
       </TableCell>
       <TableCell>

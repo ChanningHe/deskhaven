@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import type { SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -10,7 +10,7 @@ import {
   useUpdateGroup,
 } from '@/api/generated/groups/groups'
 import type { GroupView } from '@/api/generated/model'
-import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { DangerZone } from '@/components/common/danger-zone'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Button } from '@/components/ui/button'
@@ -82,18 +82,18 @@ function DrawerBody({ groupId, onDeleted }: { groupId: number; onDeleted: () => 
         )}
       </SheetHeader>
       <div className="grid gap-6 px-4 pb-6">
-        {editable ? <GroupForm key={group.id} group={group} onDeleted={onDeleted} /> : null}
+        {editable ? <GroupForm key={group.id} group={group} /> : null}
         <GroupMembers groupId={group.id} editable={editable} />
+        {editable ? <GroupDangerZone group={group} onDeleted={onDeleted} /> : null}
       </div>
     </>
   )
 }
 
-function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => void }) {
+function GroupForm({ group }: { group: GroupView }) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState(false)
   const { draft, changed, conflicts, set, reset } = useRebasedDraft({
     name: group.name,
     note: group.note,
@@ -118,64 +118,54 @@ function GroupForm({ group, onDeleted }: { group: GroupView; onDeleted: () => vo
     void invalidateAccounts(queryClient)
   }
 
-  // The confirm dialog is a sibling of the form, never inside it: React bubbles its submit
-  // through the portal, which would also save the form.
   return (
-    <>
-      <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
-        <Label htmlFor={`${id}-name`}>{t('groups.fields.name')}</Label>
-        <Input
-          id={`${id}-name`}
-          required
-          maxLength={64}
-          value={draft.name}
-          onChange={(e) => {
-            set({ name: e.target.value })
-          }}
-        />
-        <Label htmlFor={`${id}-note`}>{t('groups.fields.note')}</Label>
-        <Input
-          id={`${id}-note`}
-          value={draft.note}
-          onChange={(e) => {
-            set({ note: e.target.value })
-          }}
-        />
-        {conflicts.length > 0 ? (
-          <p role="status" className="text-xs text-warning">
-            {t('groups.drawer.conflict')}
-          </p>
-        ) : null}
-        {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
-            {t('groups.drawer.save')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            onClick={() => {
-              setConfirming(true)
-            }}
-          >
-            {t('groups.drawer.delete')}
-          </Button>
-        </div>
-      </form>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t('groups.confirmDelete.title')}
-        description={t('groups.confirmDelete.description', { name: group.name })}
-        confirmLabel={t('groups.confirmDelete.confirm')}
-        confirmText={group.name}
-        onConfirm={async () => {
-          await deleteGroup(group.id)
-          onDeleted()
-          await invalidateAccounts(queryClient)
+    <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
+      <Label htmlFor={`${id}-name`}>{t('groups.fields.name')}</Label>
+      <Input
+        id={`${id}-name`}
+        required
+        maxLength={64}
+        value={draft.name}
+        onChange={(e) => {
+          set({ name: e.target.value })
         }}
       />
-    </>
+      <Label htmlFor={`${id}-note`}>{t('groups.fields.note')}</Label>
+      <Input
+        id={`${id}-note`}
+        value={draft.note}
+        onChange={(e) => {
+          set({ note: e.target.value })
+        }}
+      />
+      {conflicts.length > 0 ? (
+        <p role="status" className="text-xs text-warning">
+          {t('groups.drawer.conflict')}
+        </p>
+      ) : null}
+      {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
+      <Button type="submit" size="sm" className="w-fit" disabled={!dirty || mutation.isPending}>
+        {t('groups.drawer.save')}
+      </Button>
+    </form>
+  )
+}
+
+function GroupDangerZone({ group, onDeleted }: { group: GroupView; onDeleted: () => void }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  return (
+    <DangerZone
+      label={t('groups.drawer.delete')}
+      title={t('groups.confirmDelete.title')}
+      description={t('groups.confirmDelete.description', { name: group.name })}
+      confirmLabel={t('groups.confirmDelete.confirm')}
+      confirmText={group.name}
+      onConfirm={async () => {
+        await deleteGroup(group.id)
+        onDeleted()
+        await invalidateAccounts(queryClient)
+      }}
+    />
   )
 }

@@ -11,6 +11,7 @@ import {
 import type { MyAccount } from '@/api/generated/model'
 import { SecretRevealDialog } from '@/components/common/secret-reveal-dialog'
 import { SectionCard } from '@/components/common/section-card'
+import { flagVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SECRET_MUTATION } from '@/features/users/secret-mutation'
@@ -52,7 +53,7 @@ export function TwoFactorCard({ account }: { account: MyAccount }) {
       {account.can_use_totp ? (
         <div className="space-y-3">
           <p className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant={account.totp_enabled ? 'secondary' : 'outline'}>
+            <Badge variant={flagVariant(account.totp_enabled)}>
               {account.totp_enabled ? t('me.tfa.on') : t('me.tfa.off')}
             </Badge>
             {account.totp_enabled ? (

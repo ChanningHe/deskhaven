@@ -16,7 +16,11 @@
     "clientSetup": "Client setup",
     "tokens": "API tokens",
     "settings": "Settings",
-    "me": "My account"
+    "me": "My account",
+    "sections": {
+      "manage": "Manage",
+      "configure": "Configure"
+    }
   },
   "shell": {
     "toggleSidebar": "Toggle sidebar",
@@ -40,6 +44,10 @@
       "title": "Discard unsaved changes?",
       "description": "Your unsaved changes will be lost.",
       "confirm": "Discard"
+    },
+    "dangerZone": {
+      "title": "Danger zone",
+      "description": "This cannot be undone."
     }
   },
   "overview": {

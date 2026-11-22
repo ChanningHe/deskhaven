@@ -3,16 +3,11 @@ import type { TFunction } from 'i18next'
 import type { UserView } from '@/api/generated/model'
 import { createDataTableColumnHelper } from '@/components/common/data-table'
 import type { DataTableColumnDef } from '@/components/common/data-table'
+import { accountStatusVariant, flagVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime } from '@/lib/format'
 
 const column = createDataTableColumnHelper<UserView>()
-
-const STATUS_VARIANT = {
-  active: 'secondary',
-  disabled: 'destructive',
-  unverified: 'outline',
-} as const
 
 /** Columns of the user table; `onOpen` shows an account in the drawer. */
 export function userColumns(
@@ -53,13 +48,19 @@ export function userColumns(
     column.accessor('totp_enabled', {
       header: t('users.columns.tfa'),
       meta: { label: t('users.columns.tfa') },
-      cell: ({ getValue }) => (getValue() ? t('users.tfaOn') : t('users.tfaOff')),
+      cell: ({ getValue }) => (
+        <Badge variant={flagVariant(getValue())}>
+          {getValue() ? t('users.tfaOn') : t('users.tfaOff')}
+        </Badge>
+      ),
     }),
     column.accessor('status', {
       header: t('users.columns.status'),
       meta: { label: t('users.columns.status') },
       cell: ({ getValue }) => (
-        <Badge variant={STATUS_VARIANT[getValue()]}>{t(`users.statuses.${getValue()}`)}</Badge>
+        <Badge variant={accountStatusVariant(getValue())}>
+          {t(`users.statuses.${getValue()}`)}
+        </Badge>
       ),
     }),
     column.accessor('last_login_at', {

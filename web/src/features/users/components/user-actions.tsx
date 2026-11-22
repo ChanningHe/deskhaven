@@ -13,19 +13,18 @@ import {
 } from '@/api/generated/users/users'
 import type { UserView } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { DangerZone } from '@/components/common/danger-zone'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Button } from '@/components/ui/button'
 import { useMe } from '@/features/auth/session'
 
 import { invalidateAccounts } from '../invalidate'
-import { canDelete } from '../user-rules'
 
 /** Actions that ask for confirmation first (08 §1.4). */
-type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'markVerified' | 'delete'
+type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'markVerified'
 
 /** What the page does for the drawer's actions. */
 export interface UserActionHandlers {
-  onDeleted: () => void
   /** Resets the password; the page shows the temporary one (see `useResetPasswordReveal`). */
   onResetPassword: (user: UserView) => Promise<unknown>
 }
@@ -40,7 +39,7 @@ interface UserActionsProps extends UserActionHandlers {
 const IDENTITIES_UNTOUCHED: readonly Confirmed[] = ['resetPassword', 'reset2fa']
 
 /** Account actions of the drawer; only shown to someone who may manage the account. */
-export function UserActions({ user, identityCount, onDeleted, onResetPassword }: UserActionsProps) {
+export function UserActions({ user, identityCount, onResetPassword }: UserActionsProps) {
   const { t } = useTranslation()
   const me = useMe()
   const queryClient = useQueryClient()
@@ -75,11 +74,6 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
     // The address the administrator checked: a changed one is refused (409).
     markVerified: async () =>
       updateUser(user.id, { email_verified: true, expected_email: user.email ?? '' }).then(refresh),
-    delete: async () =>
-      deleteUser(user.id).then(() => {
-        onDeleted()
-        return refresh()
-      }),
   }
 
   const ask = (next: Confirmed) => () => {
@@ -138,11 +132,6 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
             {t('users.actions.enable')}
           </Button>
         )}
-        {canDelete(me, user) ? (
-          <Button variant="destructive" size="sm" onClick={ask('delete')}>
-            {t('users.actions.delete')}
-          </Button>
-        ) : null}
       </div>
       <p role="status" className="text-xs text-muted-foreground">
         {unlocked ? t('users.actions.unlocked') : null}
@@ -168,10 +157,32 @@ export function UserActions({ user, identityCount, onDeleted, onResetPassword }:
           </>
         }
         confirmLabel={t(`users.confirm.${action}.confirm`)}
-        {...(action === 'delete' ? { confirmText: user.username } : {})}
         destructive={action !== 'resetPassword' && action !== 'markVerified'}
         onConfirm={confirmed[action]}
       />
     </section>
+  )
+}
+
+/** Deleting the account, at the bottom of the drawer; asks for the username first. */
+export function UserDangerZone({ user, onDeleted }: { user: UserView; onDeleted: () => void }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  return (
+    <DangerZone
+      label={t('users.actions.delete')}
+      title={t('users.confirm.delete.title')}
+      description={t('users.confirm.delete.description', {
+        username: user.username,
+        email: user.email ?? '',
+      })}
+      confirmLabel={t('users.confirm.delete.confirm')}
+      confirmText={user.username}
+      onConfirm={async () => {
+        await deleteUser(user.id)
+        onDeleted()
+        await invalidateAccounts(queryClient)
+      }}
+    />
   )
 }

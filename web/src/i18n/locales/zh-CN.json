@@ -16,7 +16,11 @@
     "clientSetup": "客户端配置",
     "tokens": "API Token",
     "settings": "设置",
-    "me": "我的"
+    "me": "我的",
+    "sections": {
+      "manage": "管理",
+      "configure": "配置"
+    }
   },
   "shell": {
     "toggleSidebar": "切换侧栏",
@@ -40,6 +44,10 @@
       "title": "放弃未保存的修改？",
       "description": "未保存的修改将会丢失。",
       "confirm": "放弃修改"
+    },
+    "dangerZone": {
+      "title": "危险操作",
+      "description": "此操作无法撤销。"
     }
   },
   "overview": {

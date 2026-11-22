@@ -117,6 +117,7 @@ export function DeviceGroupsTab() {
             icon={Boxes}
             title={t('deviceGroups.emptyTitle')}
             description={t('deviceGroups.emptyDescription')}
+            action={<CreateDeviceGroupButton onCreated={openGroup} />}
           />
         }
       />

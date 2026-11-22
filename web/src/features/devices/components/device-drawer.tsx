@@ -13,7 +13,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
-import { DeviceActions } from './device-actions'
+import { DeviceActions, DeviceDangerZone } from './device-actions'
 import { DeviceConnections } from './device-connections'
 import { DeviceManageForm } from './device-manage-form'
 import { DeviceReported } from './device-reported'
@@ -132,7 +132,8 @@ function LiveDetail({
       <DeviceReported detail={detail} />
       <DeviceConnections detail={detail} />
       <DeviceStrategy strategy={detail.strategy} />
-      <DeviceActions device={device} onDeleted={onDeleted} />
+      <DeviceActions device={device} />
+      <DeviceDangerZone device={device} onDeleted={onDeleted} />
     </div>
   )
 }

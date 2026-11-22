@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import type { SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,7 +11,7 @@ import {
   useUpdateDeviceGroup,
 } from '@/api/generated/device-groups/device-groups'
 import type { DeviceGroupView } from '@/api/generated/model'
-import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { DangerZone } from '@/components/common/danger-zone'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -99,7 +99,7 @@ function DrawerBody({ groupId, onDeleted }: { groupId: number; onDeleted: () => 
               onRetry={() => void query.refetch()}
             />
           )}
-          {editable ? <GroupForm key={group.id} group={group} onDeleted={onDeleted} /> : null}
+          {editable ? <GroupForm key={group.id} group={group} /> : null}
           <Link
             to="/devices"
             search={{ device_group: group.id }}
@@ -107,17 +107,17 @@ function DrawerBody({ groupId, onDeleted }: { groupId: number; onDeleted: () => 
           >
             {t('deviceGroups.drawer.viewDevices')}
           </Link>
+          {editable ? <GroupDangerZone group={group} onDeleted={onDeleted} /> : null}
         </div>
       )}
     </>
   )
 }
 
-function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: () => void }) {
+function GroupForm({ group }: { group: DeviceGroupView }) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState(false)
   const { draft, changed, conflicts, set, reset } = useRebasedDraft({
     name: group.name,
     note: group.note,
@@ -143,66 +143,56 @@ function GroupForm({ group, onDeleted }: { group: DeviceGroupView; onDeleted: ()
     void invalidateDevices(queryClient)
   }
 
-  // The confirm dialog is a sibling of the form, never inside it: React bubbles its submit
-  // through the portal, which would also save the form.
   return (
-    <>
-      <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
-        <Label htmlFor={`${id}-name`}>{t('deviceGroups.fields.name')}</Label>
-        <Input
-          id={`${id}-name`}
-          required
-          maxLength={64}
-          value={draft.name}
-          onChange={(e) => {
-            set({ name: e.target.value })
-          }}
-        />
-        <Label htmlFor={`${id}-note`}>{t('deviceGroups.fields.note')}</Label>
-        <Input
-          id={`${id}-note`}
-          value={draft.note}
-          onChange={(e) => {
-            set({ note: e.target.value })
-          }}
-        />
-        {conflicts.length > 0 ? (
-          <p role="status" className="text-xs text-warning">
-            {t('deviceGroups.drawer.conflict')}
-          </p>
-        ) : null}
-        {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>
-            {t('deviceGroups.drawer.save')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            onClick={() => {
-              setConfirming(true)
-            }}
-          >
-            {t('deviceGroups.drawer.delete')}
-          </Button>
-        </div>
-      </form>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t('deviceGroups.confirmDelete.title')}
-        description={t('deviceGroups.confirmDelete.description', { name: group.name })}
-        confirmLabel={t('deviceGroups.confirmDelete.confirm')}
-        confirmText={group.name}
-        onConfirm={async () => {
-          await deleteDeviceGroup(group.id)
-          onDeleted()
-          // Nothing to refetch: the group is gone.
-          queryClient.removeQueries({ queryKey: detailKey })
-          await invalidateDevices(queryClient)
+    <form className="grid gap-2" onSubmit={(event) => void submit(event)}>
+      <Label htmlFor={`${id}-name`}>{t('deviceGroups.fields.name')}</Label>
+      <Input
+        id={`${id}-name`}
+        required
+        maxLength={64}
+        value={draft.name}
+        onChange={(e) => {
+          set({ name: e.target.value })
         }}
       />
-    </>
+      <Label htmlFor={`${id}-note`}>{t('deviceGroups.fields.note')}</Label>
+      <Input
+        id={`${id}-note`}
+        value={draft.note}
+        onChange={(e) => {
+          set({ note: e.target.value })
+        }}
+      />
+      {conflicts.length > 0 ? (
+        <p role="status" className="text-xs text-warning">
+          {t('deviceGroups.drawer.conflict')}
+        </p>
+      ) : null}
+      {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
+      <Button type="submit" size="sm" className="w-fit" disabled={!dirty || mutation.isPending}>
+        {t('deviceGroups.drawer.save')}
+      </Button>
+    </form>
+  )
+}
+
+function GroupDangerZone({ group, onDeleted }: { group: DeviceGroupView; onDeleted: () => void }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  return (
+    <DangerZone
+      label={t('deviceGroups.drawer.delete')}
+      title={t('deviceGroups.confirmDelete.title')}
+      description={t('deviceGroups.confirmDelete.description', { name: group.name })}
+      confirmLabel={t('deviceGroups.confirmDelete.confirm')}
+      confirmText={group.name}
+      onConfirm={async () => {
+        await deleteDeviceGroup(group.id)
+        onDeleted()
+        // Nothing to refetch: the group is gone.
+        queryClient.removeQueries({ queryKey: getGetDeviceGroupQueryKey(group.id) })
+        await invalidateDevices(queryClient)
+      }}
+    />
   )
 }

@@ -3,18 +3,13 @@ import type { TFunction } from 'i18next'
 import type { ApiTokenView, Me } from '@/api/generated/model'
 import { createDataTableColumnHelper } from '@/components/common/data-table'
 import type { DataTableColumnDef } from '@/components/common/data-table'
+import { tokenStatusVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime } from '@/lib/format'
 
 import { RevokeButton } from './revoke-button'
 
 const column = createDataTableColumnHelper<ApiTokenView>()
-
-const STATUS_VARIANT = {
-  active: 'secondary',
-  revoked: 'destructive',
-  expired: 'outline',
-} as const
 
 function dateOrDash(at: number | null | undefined, language: string, empty: string): string {
   return at === null || at === undefined ? empty : formatDateTime(at, language)
@@ -75,7 +70,7 @@ export function tokenColumns(
       header: t('tokens.columns.status'),
       meta: { label: t('tokens.columns.status') },
       cell: ({ getValue }) => (
-        <Badge variant={STATUS_VARIANT[getValue()]}>{t(`tokens.statuses.${getValue()}`)}</Badge>
+        <Badge variant={tokenStatusVariant(getValue())}>{t(`tokens.statuses.${getValue()}`)}</Badge>
       ),
     }),
     column.display({

@@ -15,7 +15,7 @@ import { httpStatusOf } from '@/lib/http-error'
 
 import { BOOK_TABS, DEFAULT_BOOK_TAB } from '../addressbooks-search'
 import type { AddressBooksSearch, BookTab } from '../addressbooks-search'
-import { BookDetails } from './book-details'
+import { BookDangerZone, BookDetails } from './book-details'
 import { BookEntries } from './book-entries'
 import { BookShares } from './book-shares'
 import { BookTags } from './book-tags'
@@ -27,7 +27,7 @@ interface BookDrawerProps {
   onClose: () => void
 }
 
-/** Side drawer of one shared book: entries, tags, grants and the book's own details. */
+/** Side drawer of one shared book: entries, tags, grants, the book's own details and delete. */
 export function BookDrawer({ guid, onClose }: BookDrawerProps) {
   const { t } = useTranslation()
   return (
@@ -118,9 +118,10 @@ function DrawerBody({ guid, onDeleted }: { guid: string; onDeleted: () => void }
               <BookShares guid={guid} />
             </TabsPanel>
             <TabsPanel value="details">
-              <BookDetails key={book.guid} book={book} onDeleted={onDeleted} />
+              <BookDetails key={book.guid} book={book} />
             </TabsPanel>
           </Tabs>
+          <BookDangerZone book={book} onDeleted={onDeleted} />
         </div>
       )}
     </>

@@ -7,6 +7,7 @@ import { useUpdateMyProfile } from '@/api/generated/me/me'
 import type { MyAccount } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { SectionCard } from '@/components/common/section-card'
+import { flagVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,7 +70,7 @@ export function ProfileCard({ account }: { account: MyAccount }) {
           <div className="mt-2 flex items-center gap-2">
             <Label htmlFor={`${id}-email`}>{t('me.profile.email')}</Label>
             {account.email === null || account.email === undefined ? null : (
-              <Badge variant={account.email_verified ? 'secondary' : 'outline'}>
+              <Badge variant={flagVariant(account.email_verified)}>
                 {account.email_verified ? t('me.profile.verified') : t('me.profile.unverified')}
               </Badge>
             )}

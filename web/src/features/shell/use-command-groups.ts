@@ -34,7 +34,7 @@ export function useCommandGroups(): CommandGroup[] {
   const { role } = useMe()
 
   return useMemo(() => {
-    const visible = navSectionsFor(role).flat()
+    const visible = navSectionsFor(role).flatMap((section) => section.items)
     const navItems = visible.some((item) => item.key === ME_NAV_ITEM.key)
       ? visible
       : [...visible, ME_NAV_ITEM]

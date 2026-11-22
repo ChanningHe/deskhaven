@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Fragment } from 'react'
+import { Fragment, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Separator } from '@/components/ui/separator'
@@ -8,7 +8,7 @@ import { useMe } from '@/features/auth/session'
 import { cn } from '@/lib/utils'
 
 import { navSectionsFor } from '../nav-items'
-import type { NavItem } from '../nav-items'
+import type { NavItem, NavSection } from '../nav-items'
 
 interface SidebarNavProps {
   collapsed: boolean
@@ -48,24 +48,52 @@ function SidebarLink({ item, collapsed, onNavigate }: SidebarNavProps & { item: 
 export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
   const { t } = useTranslation()
   const { role } = useMe()
+  const sections = navSectionsFor(role)
+  // Titles tell sections apart; a lone section, or the icon rail, needs none.
+  const titled = !collapsed && sections.length > 1
   return (
     <nav aria-label={t('nav.label')} className="flex-1 overflow-y-auto p-2">
-      {navSectionsFor(role).map((section, index) => (
-        <Fragment key={section[0]?.key ?? index}>
+      {sections.map((section, index) => (
+        <Fragment key={section.title ?? index}>
           {index > 0 ? <Separator className="my-2" /> : null}
-          <ul className="flex flex-col gap-0.5">
-            {section.map((item) => (
-              <li key={item.key}>
-                <SidebarLink
-                  item={item}
-                  collapsed={collapsed}
-                  {...(onNavigate ? { onNavigate } : {})}
-                />
-              </li>
-            ))}
-          </ul>
+          <NavSectionList
+            section={section}
+            title={titled && section.title ? t(`nav.sections.${section.title}`) : undefined}
+            collapsed={collapsed}
+            {...(onNavigate ? { onNavigate } : {})}
+          />
         </Fragment>
       ))}
     </nav>
+  )
+}
+
+function NavSectionList({
+  section,
+  title,
+  ...link
+}: SidebarNavProps & { section: NavSection; title: string | undefined }) {
+  const titleId = useId()
+  return (
+    <>
+      {title === undefined ? null : (
+        <p
+          id={titleId}
+          className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted-foreground [:root:lang(en)_&]:tracking-wider [:root:lang(en)_&]:uppercase"
+        >
+          {title}
+        </p>
+      )}
+      <ul
+        aria-labelledby={title === undefined ? undefined : titleId}
+        className="flex flex-col gap-0.5"
+      >
+        {section.items.map((item) => (
+          <li key={item.key}>
+            <SidebarLink item={item} {...link} />
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }

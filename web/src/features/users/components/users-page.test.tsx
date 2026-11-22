@@ -124,6 +124,22 @@ describe('users page', () => {
     expect(deletes).toHaveLength(1)
   })
 
+  it('puts delete in a danger zone after everything else in the drawer', async () => {
+    renderApp('/users?user=5', {
+      api: {
+        [`GET ${LIST_PATH}`]: list([BOB]),
+        [`GET ${LIST_PATH}/5`]: { body: detail(BOB) },
+      },
+    })
+    const drawer = await screen.findByRole('dialog', { name: 'bob' })
+
+    const danger = within(drawer).getByRole('region', { name: '危险操作' })
+    expect(within(danger).getByRole('button', { name: '删除' })).toBeInTheDocument()
+    expect(within(drawer).getAllByRole('button', { name: '删除' })).toHaveLength(1)
+    const sessions = within(drawer).getByRole('heading', { name: '会话' })
+    expect(sessions.compareDocumentPosition(danger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('hides owner management and the owner role from admins', async () => {
     const { user: actor } = renderApp('/users?user=6', {
       me: ADMIN_ME,

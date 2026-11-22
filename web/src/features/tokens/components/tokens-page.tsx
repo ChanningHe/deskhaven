@@ -77,6 +77,7 @@ export function TokensPage() {
             icon={KeyRound}
             title={t('pages.tokens.emptyTitle')}
             description={t('pages.tokens.emptyDescription')}
+            action={<CreateTokenButton />}
           />
         }
       />

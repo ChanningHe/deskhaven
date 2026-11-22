@@ -25,25 +25,37 @@ export interface NavItem {
   icon: LucideIcon
 }
 
-type NavSections = readonly (readonly NavItem[])[]
+export interface NavSection {
+  /** `nav.sections.*`; the self-service fallback is never titled (it is always alone). */
+  title?: 'manage' | 'configure'
+  items: readonly NavItem[]
+}
+
+type NavSections = readonly NavSection[]
 
 /** Sidebar sections (08 §3.1): daily operations, then configuration. */
 export const NAV_SECTIONS: NavSections = [
-  [
-    { key: 'overview', to: '/', icon: LayoutDashboard },
-    { key: 'devices', to: '/devices', icon: Monitor },
-    { key: 'users', to: '/users', icon: Users },
-    { key: 'groups', to: '/groups', icon: Boxes },
-    { key: 'addressBooks', to: '/address-books', icon: BookUser },
-    { key: 'strategies', to: '/strategies', icon: SlidersHorizontal },
-    { key: 'audit', to: '/audit', icon: ScrollText },
-  ],
-  [
-    { key: 'identity', to: '/identity', icon: Fingerprint },
-    { key: 'clientSetup', to: '/client-setup', icon: MonitorCog },
-    { key: 'tokens', to: '/tokens', icon: KeyRound },
-    { key: 'settings', to: '/settings', icon: Settings },
-  ],
+  {
+    title: 'manage',
+    items: [
+      { key: 'overview', to: '/', icon: LayoutDashboard },
+      { key: 'devices', to: '/devices', icon: Monitor },
+      { key: 'users', to: '/users', icon: Users },
+      { key: 'groups', to: '/groups', icon: Boxes },
+      { key: 'addressBooks', to: '/address-books', icon: BookUser },
+      { key: 'strategies', to: '/strategies', icon: SlidersHorizontal },
+      { key: 'audit', to: '/audit', icon: ScrollText },
+    ],
+  },
+  {
+    title: 'configure',
+    items: [
+      { key: 'identity', to: '/identity', icon: Fingerprint },
+      { key: 'clientSetup', to: '/client-setup', icon: MonitorCog },
+      { key: 'tokens', to: '/tokens', icon: KeyRound },
+      { key: 'settings', to: '/settings', icon: Settings },
+    ],
+  },
 ]
 
 /** The self-service page; reachable from the account menu (and the palette). */
@@ -54,8 +66,9 @@ export const ME_NAV_ITEM: NavItem = { key: 'me', to: '/me', icon: UserRound }
  * the sidebar shows their own page instead of an empty list.
  */
 export function navSectionsFor(role: RoleView): NavSections {
-  const sections = NAV_SECTIONS.map((section) =>
-    section.filter((item) => hasPermission(role, PAGE_PERMISSIONS[item.key])),
-  ).filter((section) => section.length > 0)
-  return sections.length > 0 ? sections : [[ME_NAV_ITEM]]
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => hasPermission(role, PAGE_PERMISSIONS[item.key])),
+  })).filter((section) => section.items.length > 0)
+  return sections.length > 0 ? sections : [{ items: [ME_NAV_ITEM] }]
 }

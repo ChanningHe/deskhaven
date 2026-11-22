@@ -17,8 +17,8 @@ import { httpStatusOf } from '@/lib/http-error'
 import { STRATEGY_TABS } from '../strategies-search'
 import type { StrategiesSearch, StrategyTab } from '../strategies-search'
 import { optionCount } from './strategy-columns'
-import { DeleteStrategyButton } from './delete-strategy-button'
 import { StrategyAssignments } from './strategy-assignments'
+import { StrategyDangerZone } from './strategy-danger-zone'
 import { StrategyEditor } from './strategy-editor'
 import { StrategyPreview } from './strategy-preview'
 
@@ -79,16 +79,12 @@ function DrawerBody({ id, onDeleted }: { id: number; onDeleted: () => void }) {
             assignments: strategy.assignment_count,
           })}
         </SheetDescription>
-        <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
-          {editable ? (
-            <DeleteStrategyButton strategy={strategy} onDeleted={onDeleted} />
-          ) : (
-            <>
-              <SourceBadge source={{ kind: 'file' }} />
-              {t('strategies.drawer.readOnly')}
-            </>
-          )}
-        </div>
+        {editable ? null : (
+          <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+            <SourceBadge source={{ kind: 'file' }} />
+            {t('strategies.drawer.readOnly')}
+          </div>
+        )}
       </SheetHeader>
       {gone ? (
         <p role="alert" className="mx-4 rounded-lg bg-muted px-3 py-2 text-sm">
@@ -133,6 +129,7 @@ function DrawerBody({ id, onDeleted }: { id: number; onDeleted: () => void }) {
               <StrategyPreview />
             </TabsPanel>
           </Tabs>
+          {editable ? <StrategyDangerZone strategy={strategy} onDeleted={onDeleted} /> : null}
         </div>
       )}
     </>

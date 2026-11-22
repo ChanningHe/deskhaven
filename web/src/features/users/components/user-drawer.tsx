@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useGetUser } from '@/api/generated/users/users'
 import type { UserDetail } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { accountStatusVariant, flagVariant } from '@/components/common/status-variant'
 import { Badge } from '@/components/ui/badge'
 import {
   Sheet,
@@ -14,8 +15,8 @@ import {
 import { useMe } from '@/features/auth/session'
 import { formatDateTime } from '@/lib/format'
 
-import { canManage } from '../user-rules'
-import { UserActions } from './user-actions'
+import { canDelete, canManage } from '../user-rules'
+import { UserActions, UserDangerZone } from './user-actions'
 import type { UserActionHandlers } from './user-actions'
 import { UserEditForm } from './user-edit-form'
 import { UserIdentities } from './user-identities'
@@ -28,9 +29,13 @@ interface UserDrawerProps {
   onResetPassword: UserActionHandlers['onResetPassword']
 }
 
+interface DetailHandlers extends UserActionHandlers {
+  onDeleted: () => void
+}
+
 /** Side drawer of one account: details, edit form, actions, groups and sessions. */
 export function UserDrawer({ userId, onClose, onResetPassword }: UserDrawerProps) {
-  const handlers: UserActionHandlers = { onDeleted: onClose, onResetPassword }
+  const handlers: DetailHandlers = { onDeleted: onClose, onResetPassword }
   const { t } = useTranslation()
   return (
     <Sheet
@@ -46,7 +51,7 @@ export function UserDrawer({ userId, onClose, onResetPassword }: UserDrawerProps
   )
 }
 
-function DrawerBody({ userId, handlers }: { userId: number; handlers: UserActionHandlers }) {
+function DrawerBody({ userId, handlers }: { userId: number; handlers: DetailHandlers }) {
   const { t } = useTranslation()
   const query = useGetUser(userId)
   if (query.data === undefined) {
@@ -64,7 +69,7 @@ function DrawerBody({ userId, handlers }: { userId: number; handlers: UserAction
   return <Detail detail={query.data} handlers={handlers} />
 }
 
-function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserActionHandlers }) {
+function Detail({ detail, handlers }: { detail: UserDetail; handlers: DetailHandlers }) {
   const { t, i18n } = useTranslation()
   const me = useMe()
   const { user } = detail
@@ -76,13 +81,15 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
         <SheetDescription>{user.email ?? user.display_name}</SheetDescription>
         <div className="flex flex-wrap gap-1 pt-2">
           <Badge variant="outline">{t(`roles.${user.role}`)}</Badge>
-          <Badge variant="outline">{t(`users.statuses.${user.status}`)}</Badge>
+          <Badge variant={accountStatusVariant(user.status)}>
+            {t(`users.statuses.${user.status}`)}
+          </Badge>
           <Badge variant="outline">{t(`users.sources.${user.auth_source}`)}</Badge>
-          <Badge variant="outline">
+          <Badge variant={flagVariant(user.totp_enabled)}>
             {user.totp_enabled ? t('users.tfaOn') : t('users.tfaOff')}
           </Badge>
           {user.email === null || user.email === undefined ? null : (
-            <Badge variant="outline">
+            <Badge variant={flagVariant(user.email_verified)}>
               {user.email_verified ? t('users.emailVerified') : t('users.emailUnverified')}
             </Badge>
           )}
@@ -96,7 +103,11 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
         )}
         <UserEditForm key={user.id} user={user} editable={editable} />
         {editable ? (
-          <UserActions user={user} identityCount={detail.identities.length} {...handlers} />
+          <UserActions
+            user={user}
+            identityCount={detail.identities.length}
+            onResetPassword={handlers.onResetPassword}
+          />
         ) : null}
         <UserIdentities
           key={user.id}
@@ -147,6 +158,9 @@ function Detail({ detail, handlers }: { detail: UserDetail; handlers: UserAction
             </p>
           ) : null}
         </section>
+        {editable && canDelete(me, user) ? (
+          <UserDangerZone user={user} onDeleted={handlers.onDeleted} />
+        ) : null}
       </div>
     </>
   )

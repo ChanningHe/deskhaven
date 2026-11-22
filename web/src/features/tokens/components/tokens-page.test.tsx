@@ -41,6 +41,17 @@ describe('API tokens page', () => {
     expect(old.queryByRole('button', { name: /吊销令牌/ })).not.toBeInTheDocument()
   })
 
+  it('offers to create the first token from the empty state', async () => {
+    const { user: actor } = renderApp('/tokens', { api: { [`GET ${TOKENS_PATH}`]: pageOf([]) } })
+
+    const heading = await screen.findByRole('heading', { name: '暂无 API Token' })
+    const empty = heading.closest('section')
+    if (empty === null) throw new Error('the empty state is not a section')
+    await actor.click(within(empty).getByRole('button', { name: '新建令牌' }))
+
+    expect(await screen.findByRole('dialog', { name: '新建 API 令牌' })).toBeInTheDocument()
+  })
+
   it('keeps search and sort in the URL and in the list request', async () => {
     const { router, fetchSpy } = renderApp('/tokens?q=ci&sort=-name', {
       api: { [`GET ${TOKENS_PATH}`]: pageOf([CI]) },

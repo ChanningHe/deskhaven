@@ -107,29 +107,33 @@ export function BookEntries({ book }: { book: BookView }) {
   }, [])
   const columns = useMemo(() => peerColumns(t, setEditing), [t])
 
+  const actions = (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setImporting(true)
+        }}
+      >
+        <Download aria-hidden />
+        {t('addressBooks.entries.import')}
+      </Button>
+      <Button
+        size="sm"
+        onClick={() => {
+          setEditing('new')
+        }}
+      >
+        <Plus aria-hidden />
+        {t('addressBooks.entries.add')}
+      </Button>
+    </>
+  )
+
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setImporting(true)
-          }}
-        >
-          <Download aria-hidden />
-          {t('addressBooks.entries.import')}
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing('new')
-          }}
-        >
-          <Plus aria-hidden />
-          {t('addressBooks.entries.add')}
-        </Button>
-      </div>
+      <div className="flex flex-wrap justify-end gap-2">{actions}</div>
       <DataTable
         id="address-book-entries"
         label={t('addressBooks.entries.tableLabel')}
@@ -162,6 +166,7 @@ export function BookEntries({ book }: { book: BookView }) {
             icon={Monitor}
             title={t('addressBooks.entries.emptyTitle')}
             description={t('addressBooks.entries.emptyDescription')}
+            action={actions}
           />
         }
       />

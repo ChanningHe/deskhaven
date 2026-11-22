@@ -134,6 +134,7 @@ export function AddressBooksPage() {
             icon={BookUser}
             title={t('pages.addressBooks.emptyTitle')}
             description={t('pages.addressBooks.emptyDescription')}
+            action={<CreateBookButton onCreated={openBook} />}
           />
         }
       />

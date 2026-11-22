@@ -8,6 +8,7 @@ import { useListLoginAudit } from '@/api/generated/audit/audit'
 import type { LoginAuditView } from '@/api/generated/model'
 import { Badge } from '@/components/ui/badge'
 import { createDataTableColumnHelper } from '@/components/common/data-table'
+import { loginResultVariant } from '@/components/common/status-variant'
 import { formatDateTime } from '@/lib/format'
 
 import { clientLabel, methodLabel, resultLabel } from '../audit-labels'
@@ -22,9 +23,7 @@ const column = createDataTableColumnHelper<LoginAuditView>()
 
 function ResultBadge({ result }: { result: string }) {
   const { t } = useTranslation()
-  return (
-    <Badge variant={result === 'success' ? 'secondary' : 'outline'}>{resultLabel(t, result)}</Badge>
-  )
+  return <Badge variant={loginResultVariant(result)}>{resultLabel(t, result)}</Badge>
 }
 
 function loginColumns(t: TFunction, language: string, onOpen: (id: number) => void) {
