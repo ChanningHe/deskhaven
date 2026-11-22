@@ -1,0 +1,11 @@
+# `pnpm gen:proto` (run from web/): paths are relative to web/.
+version: v2
+clean: true
+inputs:
+  - directory: src/features/remote/proto
+plugins:
+  - local: node_modules/.bin/protoc-gen-es
+    out: src/features/remote/proto/gen
+    opt:
+      - target=js+dts
+      - import_extension=js

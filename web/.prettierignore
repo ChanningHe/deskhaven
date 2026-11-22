@@ -2,5 +2,6 @@ dist
 coverage
 pnpm-lock.yaml
 src/routeTree.gen.ts
+src/features/remote/proto/gen
 e2e-results
 e2e/.auth

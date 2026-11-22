@@ -14,8 +14,14 @@ minimumReleaseAgeExclude:
 # esbuild arrives through orval (API client generation, dev only). Its install
 # script only re-checks the platform binary that pnpm already installs as an
 # optional dependency, so it stays disabled.
+#
+# @bufbuild/buf (protobuf code generation for the remote client, dev only): its
+# install script only checks the platform binary that pnpm already installs as an
+# optional dependency, and otherwise downloads it with npm; the launcher in its bin
+# finds the optional dependency without it.
 allowBuilds:
   esbuild: false
+  '@bufbuild/buf': false
 
 # M4-05 (pnpm audit): orval's @scalar/json-magic pins undici 7.29 (GHSA-4qv8-2p9j-2685,
 # GHSA-f72v-6w45-q472, GHSA-xjj6-f33q-929c, GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx,

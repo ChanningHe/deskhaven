@@ -1,0 +1,25 @@
+{
+  "peer_id": "921418656",
+  "server_pub": "eGHegbnM+vpGELd0ylxMsvicoFSi7lUphN02s1hgCf4=",
+  "device_pk": "tbkiUhne+97Irq5FeMj/WmcdRlmH4hybQvW38YSVGmU=",
+  "peer_box_pk": "0I3D/sfL2V4GMKvSDBwVzOqrAzQ7PAo91eaU9BaNa1U=",
+  "peer_kx_version": 1,
+  "controller_box_pk": "Rrro/rRNzugyID3dMncURH/OTASDeM+g9gICRfVanQE=",
+  "controller_box_sk": "fNKDkOpt9eFP0PE3nvBB8QEstnlHrz7fbYxdU/oX/Uo=",
+  "symmetric_key": "g7/RzI6nOPiQxehYDhpMMwwfQRrm7f+82aPRGe92NIE=",
+  "password": "Spike-Pw-7f3a91",
+  "salt": "cztbpns8pqbxh3hg232ewez3z3maef67",
+  "challenge": "zi9r7h",
+  "encrypted_frames": [
+    {
+      "file": "hbbr-enc-01-Hash.bin",
+      "direction": "peer->controller",
+      "recv_seq": 1
+    },
+    {
+      "file": "hbbr-enc-06-VideoFrame.bin",
+      "direction": "peer->controller",
+      "recv_seq": 6
+    }
+  ]
+}

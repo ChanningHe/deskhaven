@@ -9,7 +9,13 @@ import tseslint from 'typescript-eslint'
 const MAX_COMPONENT_LINES = 200
 
 export default defineConfig([
-  globalIgnores(['dist', 'coverage', 'e2e-results', 'src/routeTree.gen.ts']),
+  globalIgnores([
+    'dist',
+    'coverage',
+    'e2e-results',
+    'src/routeTree.gen.ts',
+    'src/features/remote/proto/gen',
+  ]),
 
   {
     files: ['**/*.{ts,tsx}'],
