@@ -6,14 +6,8 @@
 //! the shape is deskhaven's own, `{"version", "source_url"}`.
 
 use axum::Json;
+pub use deskhaven_core::build::{SOURCE_URL, VERSION};
 use serde::Serialize;
-
-/// The workspace version (every crate shares it).
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Where the corresponding source of this build is offered. A constant on
-/// purpose: a deployment must not be able to point its users elsewhere by
-/// configuration; a fork changes it here when it changes the code.
-pub const SOURCE_URL: &str = "https://github.com/ChanningHe/deskhaven";
 
 #[derive(Debug, Serialize)]
 pub struct VersionInfo {
@@ -32,12 +26,6 @@ pub async fn version() -> Json<VersionInfo> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn source_url_is_an_absolute_https_url_without_trailing_slash() {
-        assert!(SOURCE_URL.starts_with("https://"));
-        assert!(!SOURCE_URL.ends_with('/'));
-    }
 
     #[tokio::test]
     async fn serializes_version_and_source_url_only() {

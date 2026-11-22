@@ -34,6 +34,12 @@ export const PINNED = {
   value: 'admins',
 } as const
 
+/** Pinned off for the whole run, so no run asks GitHub for the latest release. */
+export const NO_UPDATE_CHECK = {
+  env: 'DESKHAVEN_SETTINGS__UPDATES__CHECK',
+  value: 'false',
+} as const
+
 export const OWNER = {
   username: 'owner',
   password: 'e2e owner passphrase 1',

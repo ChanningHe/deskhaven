@@ -1552,6 +1552,7 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "sea-orm",
+ "semver",
  "serde",
  "serde_json",
  "sha1 0.11.0",

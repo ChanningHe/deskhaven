@@ -191,6 +191,10 @@ fastrand = "2.3"
 # admin API returns SVG path data the console draws under its strict CSP.
 qrcodegen = "1.8"
 
+# --- update check (0.1.2) ---
+# Compares the running version with the latest GitHub release tag; already in the graph.
+semver = "1.0.28"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

@@ -209,6 +209,13 @@ settings! {
         default: AclAction::Deny,
         on_bad_row: strict(AclAction::Deny),
     }
+    /// While on, admins using the console make the server ask GitHub (api.github.com) for the
+    /// latest deskhaven release at most once a day; off sends no request.
+    UPDATES_CHECK: bool = "updates.check" {
+        default: true,
+        // A broken row must not silently turn outbound requests back on.
+        on_bad_row: strict(false),
+    }
 }
 
 /// Every declared setting, in declaration order.

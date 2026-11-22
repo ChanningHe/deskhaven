@@ -39,6 +39,7 @@ mod setup;
 mod stack_error;
 mod strategies;
 pub mod transport;
+mod update_check;
 mod users;
 
 use std::sync::Arc;
@@ -97,6 +98,7 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = overview::routes(routes)?;
     let routes = strategies::routes(routes)?;
     let routes = identity::routes(routes)?;
+    let routes = update_check::routes(routes)?;
     settings::routes(routes)
 }
 

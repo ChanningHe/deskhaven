@@ -48,8 +48,8 @@ pub enum FetchError {
 pub type FetchFuture<'a> =
     Pin<Box<dyn Future<Output = Result<HttpResponse, FetchError>> + Send + 'a>>;
 
-/// Sends one request to an IdP. Implementations enforce the transport limits above; the URL
-/// policy is applied by the caller.
+/// Sends one request to an IdP (or the update check's to GitHub, `crate::update`).
+/// Implementations enforce the transport limits above; the URL policy is applied by the caller.
 pub trait HttpFetch: Send + Sync {
     fn fetch(&self, request: HttpRequest) -> FetchFuture<'_>;
 }

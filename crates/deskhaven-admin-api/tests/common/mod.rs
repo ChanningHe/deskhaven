@@ -8,6 +8,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -18,13 +19,16 @@ use deskhaven_admin_api::{AdminRoutes, SESSION_COOKIE, csrf_token};
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::SystemClock;
 use deskhaven_core::crypto::{MasterKey, SecretBox};
+use deskhaven_core::oidc::{FetchError, FetchFuture, HttpFetch};
 use deskhaven_core::sessions::ClientDevice;
 use deskhaven_core::settings::SettingsService;
 use deskhaven_core::state::{AppState, StateConfig};
+use deskhaven_core::update::UpdateService;
 use deskhaven_core::users::{Credential, HashParams, NewUser, Password, PasswordHasher, Role};
 use deskhaven_db::entity::console_audit;
 use deskhaven_db::testing::TestDb;
 use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
+use openidconnect::HttpRequest;
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -77,12 +81,26 @@ pub async fn harness(db: &TestDb, extra: AdminRoutes) -> Harness {
 
 /// [`harness`] with settings pinned by the bootstrap configuration.
 pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Harness {
+    build(db, extra, pins, Arc::new(OfflineFetch)).await
+}
+
+/// [`harness_pinned`] whose update check asks `fetch`.
+pub async fn harness_with_updates(db: &TestDb, pins: PinSet, fetch: Arc<dyn HttpFetch>) -> Harness {
+    build(db, AdminRoutes::new(), pins, fetch).await
+}
+
+async fn build(
+    db: &TestDb,
+    extra: AdminRoutes,
+    pins: PinSet,
+    update_fetch: Arc<dyn HttpFetch>,
+) -> Harness {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[9; 32])));
     let (settings, warnings) = SettingsService::load(db.conn.clone(), Arc::clone(&crypto), pins)
         .await
         .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
-    let state = Arc::new(AppState::new(
+    let state = AppState::new(
         db.conn.clone(),
         settings,
         crypto,
@@ -90,7 +108,8 @@ pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Ha
         PasswordHasher::new(FAST).unwrap(),
         Arc::new(SystemClock),
         &StateConfig::default(),
-    ));
+    );
+    let state = Arc::new(with_update_fetch(state, update_fetch));
     let routes = deskhaven_admin_api::api_routes()
         .unwrap()
         .merge(extra)
@@ -101,6 +120,56 @@ pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Ha
         ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
     );
     Harness { state, router }
+}
+
+/// `state` whose update check asks `fetch` instead of GitHub.
+pub fn with_update_fetch(state: AppState, fetch: Arc<dyn HttpFetch>) -> AppState {
+    let updates = UpdateService::new(state.settings.clone(), Arc::clone(&state.clock), fetch);
+    AppState {
+        updates: Arc::new(updates),
+        ..state
+    }
+}
+
+/// `state` whose update check never leaves the process.
+pub fn offline(state: AppState) -> AppState {
+    with_update_fetch(state, Arc::new(OfflineFetch))
+}
+
+/// Refuses every request: harness tests never reach GitHub.
+pub struct OfflineFetch;
+
+impl HttpFetch for OfflineFetch {
+    fn fetch(&self, _request: HttpRequest) -> FetchFuture<'_> {
+        Box::pin(async { Err(FetchError::Refused("tests stay offline")) })
+    }
+}
+
+/// Answers every request with a release tagged `tag`; counts the requests.
+pub struct FixedRelease {
+    tag: &'static str,
+    calls: AtomicUsize,
+}
+
+impl FixedRelease {
+    pub fn new(tag: &'static str) -> Self {
+        Self {
+            tag,
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl HttpFetch for FixedRelease {
+    fn fetch(&self, _request: HttpRequest) -> FetchFuture<'_> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let body = serde_json::json!({ "tag_name": self.tag }).to_string();
+        Box::pin(async move { Ok(openidconnect::http::Response::new(body.into_bytes())) })
+    }
 }
 
 impl Harness {

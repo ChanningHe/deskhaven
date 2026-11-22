@@ -56,6 +56,7 @@ const P0_DEFAULTS: &[(&str, &str)] = &[
     ("signal.require_kx_v1", "false"),
     ("signal.acl.default", r#""allow""#),
     ("signal.acl.on_error", r#""deny""#),
+    ("updates.check", "true"),
 ];
 
 #[test]
@@ -142,6 +143,14 @@ fn typed_access_returns_defaults() {
     assert_eq!(s.get(&settings::SIGNAL_ACL_ON_ERROR), AclAction::Deny);
     assert_eq!(s.get(&settings::DEVICES_ACCEPT_PRESETS), AcceptPresets::Off);
     assert_eq!(s.get(&settings::AUDIT_RETENTION_LOGIN), d("180d"));
+}
+
+/// A row that cannot be read stops the update check rather than re-enabling it.
+#[test]
+fn an_unreadable_update_check_row_turns_the_check_off() {
+    let setting = settings::lookup("updates.check").unwrap();
+    assert_eq!(setting.default_value().to_json(), json!(true));
+    assert_eq!(setting.bad_row_value().to_json(), json!(false));
 }
 
 #[test]

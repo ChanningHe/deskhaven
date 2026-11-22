@@ -153,6 +153,12 @@ Apply changes with `docker compose up -d --wait`.
 | `signal.acl.default` | `allow`, `deny` | `allow` | Connection ACL decision when no rule matches (not in effect yet). |
 | `signal.acl.on_error` | `allow`, `deny` | `deny` | Connection ACL decision when the control plane fails (fail closed; not in effect yet). |
 
+### updates
+
+| Key | Allowed values | Default | Description |
+| --- | --- | --- | --- |
+| `updates.check` | `true`, `false` | `true` | While on, admins using the console make the server ask GitHub (api.github.com) for the latest deskhaven release at most once a day; off sends no request. |
+
 ### Rules across settings
 
 A change that breaks one of these is refused.

@@ -44,7 +44,7 @@ pub async fn harness_with(
     use std::sync::Arc;
 
     let base = super::harness(db, deskhaven_admin_api::AdminRoutes::new()).await;
-    let state = Arc::new(deskhaven_core::state::AppState::new(
+    let state = Arc::new(super::offline(deskhaven_core::state::AppState::new(
         db.conn.clone(),
         base.state.settings.clone(),
         Arc::clone(&base.state.crypto),
@@ -52,7 +52,7 @@ pub async fn harness_with(
         deskhaven_core::users::PasswordHasher::default(),
         Arc::new(SystemClock),
         config,
-    ));
+    )));
     let routes = deskhaven_admin_api::api_routes()
         .unwrap()
         .merge(extra)
@@ -101,7 +101,10 @@ pub async fn harness_with_ldap_limits(
         connector,
     )
     .with_limits(limits);
-    let state = Arc::new(deskhaven_core::state::AppState { ldap, ..state });
+    let state = Arc::new(super::offline(deskhaven_core::state::AppState {
+        ldap,
+        ..state
+    }));
     let routes = deskhaven_admin_api::api_routes().unwrap();
     let router = deskhaven_http::apply_middleware(
         routes.into_router(Arc::clone(&state)),

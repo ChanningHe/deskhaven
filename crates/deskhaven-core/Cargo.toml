@@ -38,6 +38,7 @@ rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
 url = { workspace = true }
 serde = { workspace = true }
+semver = { workspace = true }
 # LDAP login (M2-11, 06 §3.5). Not in [workspace.dependencies]: only core uses it. No
 # default features (native-tls); rustls on the ring provider, like every TLS client here.
 ldap3 = { version = "=0.12.1", default-features = false, features = ["tls-rustls-ring"] }

@@ -9,6 +9,7 @@ import {
   BASE_URL_ENV,
   BINARY_ENV,
   DEFAULT_BINARY,
+  NO_UPDATE_CHECK,
   PG_URL_ENV,
   PINNED,
   SETUP_PATH_ENV,
@@ -37,6 +38,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       signalPort,
       env: {
         [PINNED.env]: PINNED.value,
+        [NO_UPDATE_CHECK.env]: NO_UPDATE_CHECK.value,
         ...(pgUrl ? { DESKHAVEN_DATABASE__URL: pgUrl } : {}),
       },
     })

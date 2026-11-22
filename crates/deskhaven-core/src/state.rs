@@ -18,12 +18,13 @@ use crate::devices::DeviceService;
 use crate::groups::GroupService;
 use crate::ldap::{Ldap3Connector, LdapService};
 use crate::login_events::LoginEventLog;
-use crate::oidc::{OidcService, ReqwestFetch};
+use crate::oidc::{HttpFetch, OidcService, ReqwestFetch};
 use crate::sessions::SessionService;
 use crate::settings::SettingsService;
 use crate::setup::SetupService;
 use crate::strategies::StrategyService;
 use crate::tfa::TfaService;
+use crate::update::UpdateService;
 use crate::users::{PasswordHasher, UserService};
 
 pub struct AppState {
@@ -68,6 +69,8 @@ pub struct AppState {
     pub audit: AuditService,
     /// First-run owner setup.
     pub setup: SetupService,
+    /// The on-demand check for a newer deskhaven release.
+    pub updates: Arc<UpdateService>,
     /// See [`StateConfig::console_url`].
     pub console_url: String,
     /// `public_url` as configured (blank: unset).
@@ -125,6 +128,7 @@ impl AppState {
             Arc::clone(&clock),
             users.clone(),
         );
+        let fetch: Arc<dyn HttpFetch> = Arc::new(ReqwestFetch::new());
         let oidc = OidcService::new(
             db.clone(),
             Arc::clone(&crypto),
@@ -132,8 +136,13 @@ impl AppState {
             users.clone(),
             Arc::clone(&clock),
             &config.public_url,
-            Arc::new(ReqwestFetch::new()),
+            Arc::clone(&fetch),
         );
+        let updates = Arc::new(UpdateService::new(
+            settings.clone(),
+            Arc::clone(&clock),
+            fetch,
+        ));
         let groups = GroupService::new(db.clone());
         let ldap = LdapService::new(
             db.clone(),
@@ -182,6 +191,7 @@ impl AppState {
             devices,
             audit,
             setup,
+            updates,
             console_url: config.console_url.trim().trim_end_matches('/').to_owned(),
             public_url: config.public_url.trim().to_owned(),
             signal_port: config.signal_port,
