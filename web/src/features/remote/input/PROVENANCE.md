@@ -26,8 +26,6 @@ in its `Cargo.lock`). Licence: MIT, `LICENSE` at that commit:
 > OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 > DEALINGS IN THE SOFTWARE.
 
-The user approved rdev as a source for these tables on 2026-11-22.
-
 | Column of `KEY_CODES` | rdev source at that commit                                                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | key (DOM `code`)      | `src/keycodes/chrome.rs`: DOM `KeyboardEvent.code` → rdev `Key` (entries with an empty code are left out)                                                                  |

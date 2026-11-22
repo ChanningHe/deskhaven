@@ -33,9 +33,12 @@ Who can connect:
 | administrator, owner | every device |
 
 The device still asks for its own password (or for the person at it to accept), exactly as
-for a desktop client. Disabled devices cannot be opened. Every session opened or closed is in
-the audit log (`web_client.session.open`, `web_client.session.close`), with the user, the
-device and the address it came from.
+for a desktop client. Disabled devices cannot be opened. Every session the browser opens is in
+the audit log (`web_client.session.open`), with the user, the device, the address it came
+from and the result. The server only takes part while the connection is set up, so it does not
+know when a session ends: `web_client.session.close` only appears for sessions closed within
+that first minute. Turning `web_client.enabled` off refuses new sessions; it does not end
+sessions already running.
 
 ## WebRTC and TURN
 

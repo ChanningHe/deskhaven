@@ -1740,7 +1740,7 @@
       "device_no_answer": "The device did not answer the connection request in time. Check that it is online and try again.",
       "foreign_relay": "The device is set to use another relay server ({{relay}}), which the browser cannot reach. Clear the relay server in the device's network settings, or set it to this server's relay.",
       "no_relay": "No relay server is configured on this server, so the browser has no way to reach the device.",
-      "too_many_sessions": "You have too many remote sessions open. Close one in another tab and try again.",
+      "too_many_sessions": "You started too many remote connections in a short time. Wait a minute and try again.",
       "rate_limited": "Too many connection attempts. Wait a minute and try again.",
       "unavailable": "The signal server is not running in this deployment. Try again later.",
       "not_found": "There is no such device, or you may not control it.",

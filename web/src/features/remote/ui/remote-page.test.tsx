@@ -120,7 +120,7 @@ describe('remote page: failures', () => {
   it.each([
     ['web_client_disabled', 403, '此服务器未开启浏览器远程'],
     ['device_offline', 409, '设备离线'],
-    ['too_many_sessions', 429, '远程会话过多'],
+    ['too_many_sessions', 429, '远程连接过多'],
   ] as const)('explains %s', async (code, status, text) => {
     const f = fakeDeps(() => Promise.reject(new ApiError(status, { code })))
     renderWithProviders(page(f))
