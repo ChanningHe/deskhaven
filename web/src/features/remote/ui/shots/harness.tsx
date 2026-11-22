@@ -55,8 +55,14 @@ function fixtureFrame(): VideoFrame {
   ctx.fillStyle = '#18181b'
   ctx.font = '28px sans-serif'
   ctx.fillText('Fixture frame 1280 × 800', 200, 220)
+  // A taskbar along the bottom edge, so the frame's own edge reads as part of the desktop.
   ctx.fillStyle = '#27272a'
   ctx.fillRect(0, HEIGHT - 48, WIDTH, 48)
+  ctx.fillStyle = '#52525b'
+  for (let i = 0; i < 5; i++) ctx.fillRect(16 + i * 44, HEIGHT - 38, 28, 28)
+  ctx.fillStyle = '#e4e4e7'
+  ctx.font = '16px sans-serif'
+  ctx.fillText('10:24', WIDTH - 64, HEIGHT - 18)
   return new VideoFrame(canvas, { timestamp: 0 })
 }
 
@@ -84,6 +90,8 @@ const shots: Shots = {
     const session = shots.session
     if (!session) throw new Error('no session yet')
     session.activate(displays, 'Windows')
+    const peer = session.peer.get()
+    if (peer) session.peer.set({ ...peer, info: { ...peer.info, hostname: 'front-desk' } })
     session.cursor.set({
       shape: { id: '1', width: 12, height: 18, hotX: 0, hotY: 0, rgba: arrow() },
       position: { x: 900, y: 420 },

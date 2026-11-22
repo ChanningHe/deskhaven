@@ -1701,7 +1701,7 @@
   "remote": {
     "title": "远程控制",
     "device": "设备 {{id}}",
-    "back": "返回",
+    "back": "返回控制台",
     "connect": "浏览器连接",
     "offline": "设备离线；设备在线时才能从浏览器连接。",
     "disabled": "设备已停用；启用后才能从浏览器连接。",
@@ -1759,13 +1759,17 @@
         "legacy": "传统"
       },
       "display": "显示器",
-      "displayN": "显示器 {{n}}",
       "fullscreen": "全屏",
       "exitFullscreen": "退出全屏",
       "sendClipboard": "发送剪贴板",
       "remoteClipboard": "远端剪贴板",
       "keyboardOff": "设备已关闭键盘和鼠标控制。",
-      "clipboardOff": "设备已关闭剪贴板。"
+      "clipboardOff": "设备已关闭剪贴板。",
+      "ctrlAltDelHint": "向设备发送 Ctrl+Alt+Del",
+      "displayHint": "切换显示器",
+      "keyboardModeHint": "按键发送到设备的方式",
+      "sendClipboardHint": "把本机剪贴板发送到设备",
+      "remoteClipboardHint": "查看设备上复制的内容"
     },
     "clipboard": {
       "pasteTitle": "发送文本到设备",
@@ -1780,6 +1784,15 @@
       "copyFailed": "复制失败。请选中文本手动复制。",
       "close": "关闭"
     },
-    "screen": "远程屏幕。点击后即可控制设备；获得焦点时按键会发送到设备。"
+    "screen": "远程屏幕。点击后即可控制设备；获得焦点时按键会发送到设备。",
+    "status": {
+      "connecting": "连接中",
+      "active": "已连接",
+      "ended": "未连接"
+    },
+    "transport": {
+      "relay": "中继",
+      "webrtc": "WebRTC"
+    }
   }
 }

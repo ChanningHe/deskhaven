@@ -163,7 +163,7 @@ describe('remote page: active session', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Ctrl+Alt+Del' }))
     await user.selectOptions(screen.getByLabelText('键盘模式'), '翻译')
-    await user.selectOptions(screen.getByLabelText('显示器'), '显示器 2')
+    await user.selectOptions(screen.getByLabelText('显示器'), '2')
     expect(session.ctrlAltDels).toBe(1)
     expect(session.modes).toEqual([KeyboardMode.Translate])
     expect(session.displays).toEqual([1])

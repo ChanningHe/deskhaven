@@ -3,6 +3,8 @@ import { useLayoutEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { cn } from '@/lib/utils'
+
 import type { Session } from '../session/session'
 import { fitSize } from './draw'
 import { useStore } from './use-remote'
@@ -39,15 +41,21 @@ export function RemoteScreen({ session }: { session: Session }) {
   return (
     <div
       ref={box}
-      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
+      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
     >
       {fit ? null : (
-        <p role="status" className="absolute flex items-center gap-2 text-sm text-white/70">
+        <p role="status" className="absolute flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle aria-hidden className="size-4 animate-spin" />
           {t('remote.connecting')}
         </p>
       )}
-      <div className="relative h-(--screen-h) w-(--screen-w)" style={fitStyle}>
+      <div
+        className={cn(
+          'relative h-(--screen-h) w-(--screen-w)',
+          fit && 'bg-black shadow-sm ring-1 ring-foreground/10',
+        )}
+        style={fitStyle}
+      >
         <canvas ref={video} aria-hidden className="absolute inset-0 size-full" />
         <canvas
           ref={overlay}

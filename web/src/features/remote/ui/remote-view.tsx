@@ -1,14 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import { Info, Unplug } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
 
 import type { Session } from '../session/session'
 import { PastePanel, RemoteClipboardPanel } from './clipboard-panels'
+import { RemoteBar, type BarFrame } from './remote-bar'
 import { RemoteScreen } from './remote-screen'
 import { Toolbar } from './toolbar'
 import { useStore } from './use-remote'
 
 type Panel = 'paste' | 'remote' | null
+
+const SENT_NOTICE_MS = 3000
 
 /** Reads the local clipboard; null when the browser does not let the page (no gesture, denied). */
 async function readClipboard(): Promise<string | null> {
@@ -20,41 +25,67 @@ async function readClipboard(): Promise<string | null> {
   }
 }
 
-function useFullscreen(element: RefObject<HTMLElement | null>) {
+// The whole document goes full screen, not the remote area: the page is already only the
+// remote area, and portalled tooltips and selects stay visible this way.
+function useFullscreen() {
   const [fullscreen, setFullscreen] = useState(false)
   useEffect(() => {
     const onChange = () => {
-      setFullscreen(
-        document.fullscreenElement !== null && document.fullscreenElement === element.current,
-      )
+      setFullscreen(document.fullscreenElement !== null)
     }
     document.addEventListener('fullscreenchange', onChange)
     return () => {
       document.removeEventListener('fullscreenchange', onChange)
     }
-  }, [element])
+  }, [])
   const toggle = () => {
     if (document.fullscreenElement) void document.exitFullscreen()
-    else void element.current?.requestFullscreen()
+    else void document.documentElement.requestFullscreen()
   }
   return { fullscreen, toggle }
 }
 
-/** The active session: toolbar, clipboard strips and the screen, together in full screen. */
+/** Why some controls are greyed out: the device turned them off. */
+function PermissionNotice({ keyboard, clipboard }: { keyboard: boolean; clipboard: boolean }) {
+  const { t } = useTranslation()
+  if (keyboard && clipboard) return null
+  return (
+    <p className="flex shrink-0 items-start gap-2 border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
+      <Info aria-hidden className="mt-px size-3.5 shrink-0" />
+      <span className="flex flex-wrap gap-x-3">
+        {keyboard ? null : <span>{t('remote.toolbar.keyboardOff')}</span>}
+        {clipboard ? null : <span>{t('remote.toolbar.clipboardOff')}</span>}
+      </span>
+    </p>
+  )
+}
+
+/** The active session: the bar with its controls, and the screen filling the rest. */
 export function RemoteView({
   session,
+  frame,
   onDisconnect,
 }: {
   session: Session
+  frame: BarFrame
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
-  const area = useRef<HTMLDivElement>(null)
   const [sent, setSent] = useState(false)
-  const { fullscreen, toggle } = useFullscreen(area)
+  const { fullscreen, toggle } = useFullscreen()
   const [panel, setPanel] = useState<Panel>(null)
+  const peer = useStore(session.peer)
   const remoteText = useStore(session.remoteClipboard)
-  const { clipboard } = useStore(session.permissions)
+  const { keyboard, clipboard } = useStore(session.permissions)
+  useEffect(() => {
+    if (!sent) return
+    const timer = setTimeout(() => {
+      setSent(false)
+    }, SENT_NOTICE_MS)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [sent])
   const close = () => {
     setPanel(null)
   }
@@ -74,30 +105,46 @@ export function RemoteView({
   }
 
   return (
-    <div
-      ref={area}
-      className="flex h-[calc(100svh-10rem)] min-h-80 flex-col overflow-hidden rounded-xl border bg-card [&:fullscreen]:h-svh [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
-    >
-      <Toolbar
-        session={session}
-        fullscreen={fullscreen}
-        onDisconnect={onDisconnect}
-        onFullscreen={toggle}
-        onSendClipboard={() => void sendClipboard()}
-        onShowRemoteClipboard={() => {
-          show(panel === 'remote' ? null : 'remote')
-        }}
+    <>
+      <RemoteBar
+        {...frame}
+        status="active"
+        hostname={peer?.info.hostname === '' ? undefined : peer?.info.hostname}
+        transport="relay"
+        tools={
+          <Toolbar
+            session={session}
+            fullscreen={fullscreen}
+            onFullscreen={toggle}
+            onSendClipboard={() => void sendClipboard()}
+            onShowRemoteClipboard={() => {
+              show(panel === 'remote' ? null : 'remote')
+            }}
+          />
+        }
+        end={
+          <Button variant="destructive" onClick={onDisconnect}>
+            <Unplug aria-hidden />
+            {t('remote.toolbar.disconnect')}
+          </Button>
+        }
       />
-      <p role="status" className="px-3 text-xs text-muted-foreground empty:hidden">
-        {sent ? t('remote.clipboard.sent') : null}
-      </p>
-      {panel === 'paste' && clipboard ? (
-        <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
-      ) : null}
-      {panel === 'remote' && clipboard && remoteText !== null ? (
-        <RemoteClipboardPanel text={remoteText} onClose={close} />
-      ) : null}
-      <RemoteScreen session={session} />
-    </div>
+      <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
+      <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
+        <RemoteScreen session={session} />
+        {panel === 'paste' && clipboard ? (
+          <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
+        ) : null}
+        {panel === 'remote' && clipboard && remoteText !== null ? (
+          <RemoteClipboardPanel text={remoteText} onClose={close} />
+        ) : null}
+        <p
+          role="status"
+          className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background shadow-md empty:hidden"
+        >
+          {sent ? t('remote.clipboard.sent') : null}
+        </p>
+      </div>
+    </>
   )
 }

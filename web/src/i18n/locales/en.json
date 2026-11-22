@@ -1701,7 +1701,7 @@
   "remote": {
     "title": "Remote control",
     "device": "Device {{id}}",
-    "back": "Back",
+    "back": "Back to console",
     "connect": "Connect in browser",
     "offline": "The device is offline; it must be online to connect from the browser.",
     "disabled": "The device is disabled; enable it to connect from the browser.",
@@ -1759,13 +1759,17 @@
         "legacy": "Legacy"
       },
       "display": "Display",
-      "displayN": "Display {{n}}",
       "fullscreen": "Full screen",
       "exitFullscreen": "Exit full screen",
       "sendClipboard": "Send clipboard",
       "remoteClipboard": "Device clipboard",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
-      "clipboardOff": "The device has turned off the clipboard."
+      "clipboardOff": "The device has turned off the clipboard.",
+      "ctrlAltDelHint": "Send Ctrl+Alt+Del to the device",
+      "displayHint": "Switch display",
+      "keyboardModeHint": "How keys are sent to the device",
+      "sendClipboardHint": "Send this computer’s clipboard to the device",
+      "remoteClipboardHint": "Show what was copied on the device"
     },
     "clipboard": {
       "pasteTitle": "Send text to the device",
@@ -1780,6 +1784,15 @@
       "copyFailed": "Could not copy. Select the text and copy it by hand.",
       "close": "Close"
     },
-    "screen": "Remote screen. Click it to control the device; keys go to the device while it has focus."
+    "screen": "Remote screen. Click it to control the device; keys go to the device while it has focus.",
+    "status": {
+      "connecting": "Connecting",
+      "active": "Connected",
+      "ended": "Not connected"
+    },
+    "transport": {
+      "relay": "Relay",
+      "webrtc": "WebRTC"
+    }
   }
 }

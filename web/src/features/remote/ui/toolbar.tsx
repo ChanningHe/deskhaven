@@ -1,9 +1,12 @@
-import { ClipboardCopy, ClipboardPaste, Keyboard, Maximize, Minimize, Unplug } from 'lucide-react'
+import { ClipboardCopy, ClipboardPaste, Keyboard, Maximize, Minimize, Monitor } from 'lucide-react'
 import { useId } from 'react'
+import type { ComponentProps, ReactElement, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { NativeSelect } from '@/components/common/native-select'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 import { supportedKeyboardModes } from '../input/keyboard'
 import { KeyboardMode } from '../proto/gen/message_pb.js'
@@ -22,19 +25,79 @@ function isShownMode(mode: KeyboardMode): mode is ShownMode {
   return mode in MODE_KEYS
 }
 
+// Native selects dressed as ghost toolbar buttons, with room on the left for an icon.
+const SELECT_CLASS =
+  'h-8 border-transparent bg-transparent pr-1 pl-8 hover:bg-muted dark:bg-transparent dark:hover:bg-muted/50'
+
+/** A control with its hint below it; the hint repeats or extends the control's name. */
+function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={render} />
+      <TooltipContent side="bottom">{hint}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** An icon-only button: its label is its accessible name, and its tooltip unless a hint is given. */
+function IconButton({
+  label,
+  hint = label,
+  ...props
+}: { label: string; hint?: string } & ComponentProps<typeof Button>) {
+  return (
+    <Hinted
+      hint={hint}
+      render={<Button variant="ghost" size="icon" aria-label={label} {...props} />}
+    />
+  )
+}
+
+/** A labelled native select with a leading icon. */
+function IconSelect({
+  id,
+  label,
+  hint,
+  icon,
+  ...props
+}: { id: string; label: string; hint: string; icon: ReactNode } & ComponentProps<'select'>) {
+  return (
+    <Hinted
+      hint={hint}
+      render={
+        <span className="relative inline-flex items-center">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 text-muted-foreground [&_svg]:size-4"
+          >
+            {icon}
+          </span>
+          <label htmlFor={id} className="sr-only">
+            {label}
+          </label>
+          <NativeSelect id={id} className={SELECT_CLASS} {...props} />
+        </span>
+      }
+    />
+  )
+}
+
+function Divider() {
+  return <Separator orientation="vertical" className="mx-1 my-1.5" />
+}
+
 interface ToolbarProps {
   session: Session
   fullscreen: boolean
-  onDisconnect: () => void
   onFullscreen: () => void
   onSendClipboard: () => void
   onShowRemoteClipboard: () => void
 }
 
+/** Input, display and clipboard controls, in that order, as compact icon groups. */
 export function Toolbar({
   session,
   fullscreen,
-  onDisconnect,
   onFullscreen,
   onSendClipboard,
   onShowRemoteClipboard,
@@ -49,93 +112,86 @@ export function Toolbar({
     : []
 
   return (
-    <div className="space-y-1 border-b bg-muted/50 px-3 py-2">
-      <div
-        role="toolbar"
-        aria-label={t('remote.toolbar.label')}
-        className="flex flex-wrap items-center gap-2"
-      >
-        <Button variant="destructive" size="sm" onClick={onDisconnect}>
-          <Unplug aria-hidden />
-          {t('remote.toolbar.disconnect')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!keyboard}
-          onClick={() => {
-            session.ctrlAltDel()
-          }}
-        >
-          {t('remote.toolbar.ctrlAltDel')}
-        </Button>
-        <span className="inline-flex items-center gap-1.5">
-          <Keyboard aria-hidden className="size-4 text-muted-foreground" />
-          <label htmlFor={`${id}-mode`} className="sr-only">
-            {t('remote.toolbar.keyboardMode')}
-          </label>
-          <NativeSelect
-            id={`${id}-mode`}
-            className="h-7"
-            disabled={!keyboard || modes.length < 2}
-            value={peer?.keyboardMode ?? ''}
-            onChange={(event) => {
-              const mode = modes.find((m) => String(m) === event.target.value)
-              if (mode !== undefined) session.setKeyboardMode(mode)
+    <div
+      role="toolbar"
+      aria-label={t('remote.toolbar.label')}
+      className="flex min-w-0 flex-wrap items-stretch gap-0.5"
+    >
+      <Hinted
+        hint={t('remote.toolbar.ctrlAltDelHint')}
+        render={
+          <Button
+            variant="ghost"
+            className="px-2 text-xs"
+            disabled={!keyboard}
+            onClick={() => {
+              session.ctrlAltDel()
             }}
           >
-            {modes.map((mode) => (
-              <option key={mode} value={mode}>
-                {t(`remote.toolbar.modes.${MODE_KEYS[mode]}`)}
-              </option>
-            ))}
-          </NativeSelect>
-        </span>
-        {peer && peer.displays.length > 1 ? (
-          <span className="inline-flex items-center gap-1.5">
-            <label htmlFor={`${id}-display`} className="text-sm text-muted-foreground">
-              {t('remote.toolbar.display')}
-            </label>
-            <NativeSelect
-              id={`${id}-display`}
-              className="h-7"
-              value={peer.current}
-              onChange={(event) => {
-                session.switchDisplay(Number(event.target.value))
-              }}
-            >
-              {peer.displays.map((_, index) => (
-                <option key={index} value={index}>
-                  {t('remote.toolbar.displayN', { n: index + 1 })}
-                </option>
-              ))}
-            </NativeSelect>
-          </span>
-        ) : null}
-        <Button variant="outline" size="sm" disabled={!clipboard} onClick={onSendClipboard}>
-          <ClipboardPaste aria-hidden />
-          {t('remote.toolbar.sendClipboard')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!clipboard || remoteText === null}
-          onClick={onShowRemoteClipboard}
+            {t('remote.toolbar.ctrlAltDel')}
+          </Button>
+        }
+      />
+      <IconSelect
+        id={`${id}-mode`}
+        label={t('remote.toolbar.keyboardMode')}
+        hint={t('remote.toolbar.keyboardModeHint')}
+        icon={<Keyboard />}
+        disabled={!keyboard || modes.length < 2}
+        value={peer?.keyboardMode ?? ''}
+        onChange={(event) => {
+          const mode = modes.find((m) => String(m) === event.target.value)
+          if (mode !== undefined) session.setKeyboardMode(mode)
+        }}
+      >
+        {modes.map((mode) => (
+          <option key={mode} value={mode}>
+            {t(`remote.toolbar.modes.${MODE_KEYS[mode]}`)}
+          </option>
+        ))}
+      </IconSelect>
+      <Divider />
+      {peer && peer.displays.length > 1 ? (
+        <IconSelect
+          id={`${id}-display`}
+          label={t('remote.toolbar.display')}
+          hint={t('remote.toolbar.displayHint')}
+          icon={<Monitor />}
+          value={peer.current}
+          onChange={(event) => {
+            session.switchDisplay(Number(event.target.value))
+          }}
         >
-          <ClipboardCopy aria-hidden />
-          {t('remote.toolbar.remoteClipboard')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={onFullscreen}>
-          {fullscreen ? <Minimize aria-hidden /> : <Maximize aria-hidden />}
-          {t(fullscreen ? 'remote.toolbar.exitFullscreen' : 'remote.toolbar.fullscreen')}
-        </Button>
-      </div>
-      {keyboard ? null : (
-        <p className="text-xs text-muted-foreground">{t('remote.toolbar.keyboardOff')}</p>
-      )}
-      {clipboard ? null : (
-        <p className="text-xs text-muted-foreground">{t('remote.toolbar.clipboardOff')}</p>
-      )}
+          {peer.displays.map((_, index) => (
+            <option key={index} value={index}>
+              {index + 1}
+            </option>
+          ))}
+        </IconSelect>
+      ) : null}
+      <IconButton
+        label={t(fullscreen ? 'remote.toolbar.exitFullscreen' : 'remote.toolbar.fullscreen')}
+        onClick={onFullscreen}
+      >
+        {fullscreen ? <Minimize aria-hidden /> : <Maximize aria-hidden />}
+      </IconButton>
+      <Divider />
+      <IconButton
+        label={t('remote.toolbar.sendClipboard')}
+        hint={t('remote.toolbar.sendClipboardHint')}
+        disabled={!clipboard}
+        onClick={onSendClipboard}
+      >
+        <ClipboardPaste aria-hidden />
+      </IconButton>
+      <IconButton
+        label={t('remote.toolbar.remoteClipboard')}
+        hint={t('remote.toolbar.remoteClipboardHint')}
+        disabled={!clipboard || remoteText === null}
+        onClick={onShowRemoteClipboard}
+      >
+        <ClipboardCopy aria-hidden />
+      </IconButton>
     </div>
   )
 }

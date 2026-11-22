@@ -9,10 +9,13 @@ import { copyToClipboard } from '@/lib/clipboard'
 const TEXTAREA_CLASS =
   'w-full rounded-lg border border-input bg-background px-2.5 py-1.5 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
 
-/** A strip under the toolbar; kept inside the remote area so it stays visible in full screen. */
+/** A card floating over the top right of the screen, under the clipboard controls. */
 function Strip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section aria-label={label} className="space-y-2 border-b bg-muted/30 px-3 py-3">
+    <section
+      aria-label={label}
+      className="absolute top-2 right-2 z-10 w-[min(24rem,calc(100%-1rem))] space-y-2 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"
+    >
       {children}
     </section>
   )

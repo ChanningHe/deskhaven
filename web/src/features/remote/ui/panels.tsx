@@ -7,7 +7,7 @@ import { SectionCard } from '@/components/common/section-card'
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/features/auth/components/text-field'
 
-/** A narrow card in the middle of the remote area: the steps before the screen shows. */
+/** A card in the middle of the remote stage: the steps before the screen shows. */
 function Step({
   title,
   description,
@@ -20,15 +20,13 @@ function Step({
   footer?: ReactNode
 }) {
   return (
-    <div className="mx-auto w-full max-w-md">
-      <SectionCard
-        title={title}
-        footer={footer}
-        {...(description === undefined ? {} : { description })}
-      >
-        {children}
-      </SectionCard>
-    </div>
+    <SectionCard
+      title={title}
+      footer={footer}
+      {...(description === undefined ? {} : { description })}
+    >
+      {children}
+    </SectionCard>
   )
 }
 
@@ -36,9 +34,9 @@ function Step({
 export function ProgressPanel({ text, onCancel }: { text: string; onCancel?: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 rounded-xl border bg-card px-6 py-10 text-center">
+    <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-10 text-center text-card-foreground shadow-xs">
       <LoaderCircle aria-hidden className="size-6 animate-spin text-muted-foreground" />
-      <p role="status" className="text-sm">
+      <p role="status" className="text-sm text-muted-foreground">
         {text}
       </p>
       {onCancel === undefined ? null : (
@@ -90,7 +88,7 @@ export function SecretPanel({ kind, wrong, onSubmit, onCancel }: SecretPanelProp
     setValue('')
   }
   return (
-    <form onSubmit={submit} className="mx-auto w-full max-w-md">
+    <form onSubmit={submit}>
       <SectionCard
         title={t(`remote.${kind}.title`)}
         description={t(`remote.${kind}.description`)}
