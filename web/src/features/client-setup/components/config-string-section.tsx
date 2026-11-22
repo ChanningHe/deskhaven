@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import type { ClientConfigView } from '@/api/generated/model'
+import { SectionCard } from '@/components/common/section-card'
 import { QrCode } from '@/features/auth/components/qr-code'
 
 import { CopyField } from './copy-field'
@@ -10,10 +11,7 @@ export function ConfigStringSection({ config }: { config: ClientConfigView }) {
   const { t } = useTranslation()
   const { config_string: configString, qr } = config
   return (
-    <section aria-labelledby="client-string" className="space-y-4">
-      <h2 id="client-string" className="text-base font-semibold">
-        {t('pages.clientSetup.string.title')}
-      </h2>
+    <SectionCard title={t('pages.clientSetup.string.title')}>
       {configString == null ? (
         <p className="text-sm text-muted-foreground">{t('pages.clientSetup.string.unavailable')}</p>
       ) : (
@@ -36,6 +34,6 @@ export function ConfigStringSection({ config }: { config: ClientConfigView }) {
           )}
         </div>
       )}
-    </section>
+    </SectionCard>
   )
 }

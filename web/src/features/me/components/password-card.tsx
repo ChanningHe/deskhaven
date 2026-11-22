@@ -6,11 +6,11 @@ import { useTranslation } from 'react-i18next'
 import { useChangePassword } from '@/api/generated/me/me'
 import type { MyAccount } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { Button } from '@/components/ui/button'
 import { TextField } from '@/features/auth/components/text-field'
 
 import { refreshAccount } from '../invalidate'
-import { Section } from './section'
 
 const EMPTY = { current: '', next: '', confirm: '' }
 
@@ -51,10 +51,36 @@ export function PasswordCard({ account }: { account: MyAccount }) {
     await refreshAccount(queryClient, me)
   }
 
+  if (!account.can_change_password) {
+    return (
+      <SectionCard title={t('me.password.title')} description={t('me.password.description')}>
+        <ExternalNotice source={account.auth_source} />
+      </SectionCard>
+    )
+  }
+
   return (
-    <Section title={t('me.password.title')} description={t('me.password.description')}>
-      {account.can_change_password ? (
-        <form className="grid max-w-md gap-3" onSubmit={(event) => void submit(event)}>
+    <form onSubmit={(event) => void submit(event)}>
+      <SectionCard
+        title={t('me.password.title')}
+        description={t('me.password.description')}
+        footer={
+          <>
+            {mutation.error ? (
+              <div className="w-full">
+                <ErrorAlert error={mutation.error} />
+              </div>
+            ) : null}
+            <Button type="submit" disabled={mutation.isPending || mismatch}>
+              {t('me.password.submit')}
+            </Button>
+            <p role="status" className="text-sm text-muted-foreground">
+              {done ? t('me.password.changed') : null}
+            </p>
+          </>
+        }
+      >
+        <div className="grid max-w-md gap-3">
           <TextField
             id="me-password-current"
             label={t('accountSetup.currentPassword')}
@@ -81,22 +107,8 @@ export function PasswordCard({ account }: { account: MyAccount }) {
             hint={mismatch ? t('setup.passwordMismatch') : undefined}
             {...field('confirm')}
           />
-          {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
-          <p role="status" className="text-sm text-muted-foreground">
-            {done ? t('me.password.changed') : null}
-          </p>
-          <Button
-            type="submit"
-            size="sm"
-            className="w-fit"
-            disabled={mutation.isPending || mismatch}
-          >
-            {t('me.password.submit')}
-          </Button>
-        </form>
-      ) : (
-        <ExternalNotice source={account.auth_source} />
-      )}
-    </Section>
+        </div>
+      </SectionCard>
+    </form>
   )
 }

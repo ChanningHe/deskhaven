@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useUpdateMyProfile } from '@/api/generated/me/me'
 import type { MyAccount } from '@/api/generated/model'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +14,6 @@ import { Label } from '@/components/ui/label'
 import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { refreshAccount } from '../invalidate'
-import { Section } from './section'
 
 const NAME_MAX_LENGTH = 128
 
@@ -38,44 +38,52 @@ export function ProfileCard({ account }: { account: MyAccount }) {
   }
 
   return (
-    <Section title={t('me.profile.title')} description={t('me.profile.description')}>
-      <form className="grid max-w-md gap-2" onSubmit={(event) => void submit(event)}>
-        <Label htmlFor={`${id}-name`}>{t('me.profile.displayName')}</Label>
-        <Input
-          id={`${id}-name`}
-          maxLength={NAME_MAX_LENGTH}
-          value={draft.display_name}
-          placeholder={account.username}
-          onChange={(e) => {
-            set({ display_name: e.target.value })
-          }}
-        />
-        <div className="mt-2 flex items-center gap-2">
-          <Label htmlFor={`${id}-email`}>{t('me.profile.email')}</Label>
-          {account.email === null || account.email === undefined ? null : (
-            <Badge variant={account.email_verified ? 'secondary' : 'outline'}>
-              {account.email_verified ? t('me.profile.verified') : t('me.profile.unverified')}
-            </Badge>
-          )}
+    <form onSubmit={(event) => void submit(event)}>
+      <SectionCard
+        title={t('me.profile.title')}
+        description={t('me.profile.description')}
+        footer={
+          <>
+            {mutation.error ? (
+              <div className="w-full">
+                <ErrorAlert error={mutation.error} />
+              </div>
+            ) : null}
+            <Button type="submit" disabled={changed.length === 0 || mutation.isPending}>
+              {t('me.profile.save')}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid max-w-md gap-2">
+          <Label htmlFor={`${id}-name`}>{t('me.profile.displayName')}</Label>
+          <Input
+            id={`${id}-name`}
+            maxLength={NAME_MAX_LENGTH}
+            value={draft.display_name}
+            placeholder={account.username}
+            onChange={(e) => {
+              set({ display_name: e.target.value })
+            }}
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <Label htmlFor={`${id}-email`}>{t('me.profile.email')}</Label>
+            {account.email === null || account.email === undefined ? null : (
+              <Badge variant={account.email_verified ? 'secondary' : 'outline'}>
+                {account.email_verified ? t('me.profile.verified') : t('me.profile.unverified')}
+              </Badge>
+            )}
+          </div>
+          <Input
+            id={`${id}-email`}
+            type="email"
+            readOnly
+            value={account.email ?? ''}
+            placeholder={t('me.profile.noEmail')}
+          />
+          <p className="text-xs text-muted-foreground">{t('me.profile.emailAdminHint')}</p>
         </div>
-        <Input
-          id={`${id}-email`}
-          type="email"
-          readOnly
-          value={account.email ?? ''}
-          placeholder={t('me.profile.noEmail')}
-        />
-        <p className="text-xs text-muted-foreground">{t('me.profile.emailAdminHint')}</p>
-        {mutation.error ? <ErrorAlert error={mutation.error} /> : null}
-        <Button
-          type="submit"
-          size="sm"
-          className="w-fit"
-          disabled={changed.length === 0 || mutation.isPending}
-        >
-          {t('me.profile.save')}
-        </Button>
-      </form>
-    </Section>
+      </SectionCard>
+    </form>
   )
 }

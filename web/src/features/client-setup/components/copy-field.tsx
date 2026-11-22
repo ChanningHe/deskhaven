@@ -39,7 +39,7 @@ export function CopyField({ label, value, hint, multiline = false }: CopyFieldPr
     },
   }
   return (
-    <div className="grid gap-1.5">
+    <div className="grid content-start gap-1.5">
       <p className="text-sm font-medium">{label}</p>
       <div className="flex items-start gap-2">
         {multiline ? (

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useListMyAddressBooks } from '@/api/generated/me/me'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -11,8 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-
-import { Section } from './section'
 
 /** The label key of a rule number: 1 read-only, 2 read-write, 3 full control. */
 function ruleKey(rule: number) {
@@ -29,44 +28,46 @@ export function BooksTab() {
   const sharedTotal = query.data?.shared_total ?? 0
 
   return (
-    <Section title={t('me.books.title')} description={t('me.books.description')}>
-      {query.isError ? (
-        <ErrorAlert
-          error={query.error}
-          title={t('me.books.loadFailed')}
-          onRetry={() => void query.refetch()}
-        />
-      ) : null}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('me.books.columns.name')}</TableHead>
-            <TableHead>{t('me.books.columns.kind')}</TableHead>
-            <TableHead>{t('me.books.columns.owner')}</TableHead>
-            <TableHead>{t('me.books.columns.rule')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {books.map((book) => (
-            <TableRow key={book.guid}>
-              <TableCell className="font-medium">{book.name}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{t(`me.books.kind.${book.kind}`)}</Badge>
-              </TableCell>
-              <TableCell>
-                {book.kind === 'personal' ? '—' : (book.owner ?? t('me.books.adminManaged'))}
-              </TableCell>
-              <TableCell>{t(`me.books.rule.${ruleKey(book.rule)}`)}</TableCell>
+    <SectionCard title={t('me.books.title')} description={t('me.books.description')}>
+      <div className="space-y-3">
+        {query.isError ? (
+          <ErrorAlert
+            error={query.error}
+            title={t('me.books.loadFailed')}
+            onRetry={() => void query.refetch()}
+          />
+        ) : null}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('me.books.columns.name')}</TableHead>
+              <TableHead>{t('me.books.columns.kind')}</TableHead>
+              <TableHead>{t('me.books.columns.owner')}</TableHead>
+              <TableHead>{t('me.books.columns.rule')}</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {sharedTotal > shown ? (
-        <p className="text-xs text-muted-foreground">
-          {t('me.books.truncated', { shown, total: sharedTotal })}
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">{t('me.books.editInClient')}</p>
-    </Section>
+          </TableHeader>
+          <TableBody>
+            {books.map((book) => (
+              <TableRow key={book.guid}>
+                <TableCell className="font-medium">{book.name}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{t(`me.books.kind.${book.kind}`)}</Badge>
+                </TableCell>
+                <TableCell>
+                  {book.kind === 'personal' ? '—' : (book.owner ?? t('me.books.adminManaged'))}
+                </TableCell>
+                <TableCell>{t(`me.books.rule.${ruleKey(book.rule)}`)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {sharedTotal > shown ? (
+          <p className="text-xs text-muted-foreground">
+            {t('me.books.truncated', { shown, total: sharedTotal })}
+          </p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">{t('me.books.editInClient')}</p>
+      </div>
+    </SectionCard>
   )
 }

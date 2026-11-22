@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useStartOidcLink, useUnlinkMyIdentity } from '@/api/generated/me/me'
 import type { IdentityView, MyAccount } from '@/api/generated/model'
+import { SectionCard } from '@/components/common/section-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useOidcProviders } from '@/features/auth/api'
@@ -13,7 +14,6 @@ import { assignLocation } from '@/lib/browser-location'
 import { refreshAccount } from '../invalidate'
 import { LinkFailure } from './link-failure'
 import { ReauthDialog } from './reauth-dialog'
-import { Section } from './section'
 
 type Pending = { kind: 'link'; provider: string } | { kind: 'unlink'; identity: IdentityView }
 
@@ -69,85 +69,87 @@ export function IdentitiesCard({ account }: { account: MyAccount }) {
   }
 
   return (
-    <Section title={t('me.identities.title')} description={t('me.identities.description')}>
-      <p role="note" className="text-sm text-warning">
-        {t('me.identities.warning')}
-      </p>
-      {account.identities.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('me.identities.none')}</p>
-      ) : (
-        <ul className="space-y-2">
-          {account.identities.map((identity) => (
-            <IdentityRow
-              key={identity.id}
-              identity={identity}
-              canUnlink={account.can_link_oidc}
-              onUnlink={() => {
-                ask({ kind: 'unlink', identity })
-              }}
-            />
-          ))}
-        </ul>
-      )}
-      {account.can_link_oidc ? (
-        <div className="flex flex-wrap gap-2">
-          {linkable.map(({ name }) => (
-            <Button
-              key={name}
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                ask({ kind: 'link', provider: name })
-              }}
-            >
-              <KeyRound aria-hidden />
-              {t('me.identities.link', { name })}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t('me.identities.notLinkable')}</p>
-      )}
-      <ReauthDialog
-        open={open && pending?.kind === 'link'}
-        onOpenChange={setOpen}
-        title={t('me.identities.linkTitle')}
-        description={t('me.identities.linkDescription')}
-        submitLabel={t('me.identities.linkSubmit')}
-        askCode={account.totp_enabled}
-        renderError={(error) => <LinkFailure error={error} />}
-        onSubmit={async (currentPassword, code) => {
-          if (pending?.kind !== 'link') return
-          const data = {
-            provider: pending.provider,
-            current_password: currentPassword,
-            code: account.totp_enabled ? code : null,
+    <SectionCard title={t('me.identities.title')} description={t('me.identities.description')}>
+      <div className="space-y-3">
+        <p role="note" className="text-sm text-warning">
+          {t('me.identities.warning')}
+        </p>
+        {account.identities.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('me.identities.none')}</p>
+        ) : (
+          <ul className="space-y-2">
+            {account.identities.map((identity) => (
+              <IdentityRow
+                key={identity.id}
+                identity={identity}
+                canUnlink={account.can_link_oidc}
+                onUnlink={() => {
+                  ask({ kind: 'unlink', identity })
+                }}
+              />
+            ))}
+          </ul>
+        )}
+        {account.can_link_oidc ? (
+          <div className="flex flex-wrap gap-2">
+            {linkable.map(({ name }) => (
+              <Button
+                key={name}
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  ask({ kind: 'link', provider: name })
+                }}
+              >
+                <KeyRound aria-hidden />
+                {t('me.identities.link', { name })}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('me.identities.notLinkable')}</p>
+        )}
+        <ReauthDialog
+          open={open && pending?.kind === 'link'}
+          onOpenChange={setOpen}
+          title={t('me.identities.linkTitle')}
+          description={t('me.identities.linkDescription')}
+          submitLabel={t('me.identities.linkSubmit')}
+          askCode={account.totp_enabled}
+          renderError={(error) => <LinkFailure error={error} />}
+          onSubmit={async (currentPassword, code) => {
+            if (pending?.kind !== 'link') return
+            const data = {
+              provider: pending.provider,
+              current_password: currentPassword,
+              code: account.totp_enabled ? code : null,
+            }
+            const { url } = await start.mutateAsync({ data })
+            assignLocation(url)
+          }}
+        />
+        <ReauthDialog
+          open={open && pending?.kind === 'unlink'}
+          onOpenChange={setOpen}
+          title={t('me.identities.unlinkTitle')}
+          description={
+            <>
+              <span className="block">{t('me.identities.unlinkDescription')}</span>
+              {account.email_verified ? (
+                <span className="mt-2 block">{t('me.identities.unlinkEmailNote')}</span>
+              ) : null}
+            </>
           }
-          const { url } = await start.mutateAsync({ data })
-          assignLocation(url)
-        }}
-      />
-      <ReauthDialog
-        open={open && pending?.kind === 'unlink'}
-        onOpenChange={setOpen}
-        title={t('me.identities.unlinkTitle')}
-        description={
-          <>
-            <span className="block">{t('me.identities.unlinkDescription')}</span>
-            {account.email_verified ? (
-              <span className="mt-2 block">{t('me.identities.unlinkEmailNote')}</span>
-            ) : null}
-          </>
-        }
-        submitLabel={t('me.identities.unlinkSubmit')}
-        askCode={false}
-        onSubmit={async (currentPassword) => {
-          if (pending?.kind !== 'unlink') return
-          const data = { current_password: currentPassword }
-          await unlink.mutateAsync({ id: pending.identity.id, data })
-          await refreshAccount(queryClient)
-        }}
-      />
-    </Section>
+          submitLabel={t('me.identities.unlinkSubmit')}
+          askCode={false}
+          onSubmit={async (currentPassword) => {
+            if (pending?.kind !== 'unlink') return
+            const data = { current_password: currentPassword }
+            await unlink.mutateAsync({ id: pending.identity.id, data })
+            await refreshAccount(queryClient)
+          }}
+        />
+      </div>
+    </SectionCard>
   )
 }

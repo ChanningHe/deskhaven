@@ -10,6 +10,7 @@ import {
 } from '@/api/generated/me/me'
 import type { MyAccount } from '@/api/generated/model'
 import { SecretRevealDialog } from '@/components/common/secret-reveal-dialog'
+import { SectionCard } from '@/components/common/section-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SECRET_MUTATION } from '@/features/users/secret-mutation'
@@ -17,7 +18,6 @@ import { SECRET_MUTATION } from '@/features/users/secret-mutation'
 import { refreshAccount } from '../invalidate'
 import { EnrolDialog } from './enrol-dialog'
 import { ReauthDialog } from './reauth-dialog'
-import { Section } from './section'
 
 type Dialog = 'enrol' | 'disable' | 'regenerate'
 
@@ -48,7 +48,7 @@ export function TwoFactorCard({ account }: { account: MyAccount }) {
   }
 
   return (
-    <Section title={t('me.tfa.title')} description={t('me.tfa.description')}>
+    <SectionCard title={t('me.tfa.title')} description={t('me.tfa.description')}>
       {account.can_use_totp ? (
         <div className="space-y-3">
           <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -148,6 +148,6 @@ export function TwoFactorCard({ account }: { account: MyAccount }) {
           regenerate.reset()
         }}
       />
-    </Section>
+    </SectionCard>
   )
 }

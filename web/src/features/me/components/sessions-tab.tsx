@@ -12,6 +12,7 @@ import {
 import type { MySession } from '@/api/generated/model'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,8 +25,6 @@ import {
 } from '@/components/ui/table'
 import { LOGIN_PATH } from '@/features/auth/session'
 import { formatDateTime, nonBlank } from '@/lib/format'
-
-import { Section } from './section'
 
 /** The most recently used sessions in one page: the server caps sessions per user. */
 const PAGE = { page_size: 200 }
@@ -128,64 +127,68 @@ export function SessionsTab() {
   const total = query.data?.total ?? 0
   const revokingCurrent = target !== 'others' && target?.current === true
   return (
-    <Section title={t('me.sessions.title')} description={t('me.sessions.description')}>
-      {query.isError ? (
-        <ErrorAlert
-          error={query.error}
-          title={t('me.sessions.loadFailed')}
-          onRetry={() => void query.refetch()}
+    <SectionCard title={t('me.sessions.title')} description={t('me.sessions.description')}>
+      <div className="space-y-3">
+        {query.isError ? (
+          <ErrorAlert
+            error={query.error}
+            title={t('me.sessions.loadFailed')}
+            onRetry={() => void query.refetch()}
+          />
+        ) : null}
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={sessions.filter((s) => !s.current).length === 0}
+            onClick={() => {
+              ask('others')
+            }}
+          >
+            {t('me.sessions.revokeOthers')}
+          </Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('me.sessions.columns.kind')}</TableHead>
+              <TableHead>{t('me.sessions.columns.device')}</TableHead>
+              <TableHead>{t('me.sessions.columns.ip')}</TableHead>
+              <TableHead>{t('me.sessions.columns.lastUsed')}</TableHead>
+              <TableHead className="w-px" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sessions.map((session) => (
+              <SessionRow key={session.id} session={session} onRevoke={ask} />
+            ))}
+          </TableBody>
+        </Table>
+        {total > sessions.length ? (
+          <p className="text-xs text-muted-foreground">
+            {t('me.sessions.truncated', { shown: sessions.length, total })}
+          </p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">{t('me.sessions.selfReported')}</p>
+        <ConfirmDialog
+          open={confirming}
+          onOpenChange={setConfirming}
+          title={
+            target === 'others' ? t('me.sessions.revokeOthersTitle') : t('me.sessions.revokeTitle')
+          }
+          description={
+            target === 'others'
+              ? t('me.sessions.revokeOthersDescription')
+              : revokingCurrent
+                ? t('me.sessions.revokeCurrentDescription')
+                : t('me.sessions.revokeDescription')
+          }
+          confirmLabel={
+            target === 'others' ? t('me.sessions.revokeOthers') : t('me.sessions.revoke')
+          }
+          onConfirm={revoke}
         />
-      ) : null}
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={sessions.filter((s) => !s.current).length === 0}
-          onClick={() => {
-            ask('others')
-          }}
-        >
-          {t('me.sessions.revokeOthers')}
-        </Button>
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('me.sessions.columns.kind')}</TableHead>
-            <TableHead>{t('me.sessions.columns.device')}</TableHead>
-            <TableHead>{t('me.sessions.columns.ip')}</TableHead>
-            <TableHead>{t('me.sessions.columns.lastUsed')}</TableHead>
-            <TableHead className="w-px" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sessions.map((session) => (
-            <SessionRow key={session.id} session={session} onRevoke={ask} />
-          ))}
-        </TableBody>
-      </Table>
-      {total > sessions.length ? (
-        <p className="text-xs text-muted-foreground">
-          {t('me.sessions.truncated', { shown: sessions.length, total })}
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">{t('me.sessions.selfReported')}</p>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={
-          target === 'others' ? t('me.sessions.revokeOthersTitle') : t('me.sessions.revokeTitle')
-        }
-        description={
-          target === 'others'
-            ? t('me.sessions.revokeOthersDescription')
-            : revokingCurrent
-              ? t('me.sessions.revokeCurrentDescription')
-              : t('me.sessions.revokeDescription')
-        }
-        confirmLabel={target === 'others' ? t('me.sessions.revokeOthers') : t('me.sessions.revoke')}
-        onConfirm={revoke}
-      />
-    </Section>
+    </SectionCard>
   )
 }

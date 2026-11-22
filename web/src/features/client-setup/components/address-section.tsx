@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import type { ClientConfigView } from '@/api/generated/model'
+import { SectionCard } from '@/components/common/section-card'
 
 import { CopyField } from './copy-field'
 
@@ -12,10 +13,7 @@ export function AddressSection({ config }: { config: ClientConfigView }) {
       ? t('pages.clientSetup.addresses.relayAuto')
       : t('pages.clientSetup.addresses.relayList')
   return (
-    <section aria-labelledby="client-addresses" className="space-y-4">
-      <h2 id="client-addresses" className="text-base font-semibold">
-        {t('pages.clientSetup.addresses.title')}
-      </h2>
+    <SectionCard title={t('pages.clientSetup.addresses.title')}>
       <div className="grid gap-4 md:grid-cols-2">
         <CopyField label={t('pages.clientSetup.addresses.idServer')} value={config.id_server} />
         <CopyField
@@ -30,6 +28,6 @@ export function AddressSection({ config }: { config: ClientConfigView }) {
         />
         <CopyField label={t('pages.clientSetup.addresses.publicKey')} value={config.public_key} />
       </div>
-    </section>
+    </SectionCard>
   )
 }

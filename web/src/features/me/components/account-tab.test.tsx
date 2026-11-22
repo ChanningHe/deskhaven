@@ -46,6 +46,19 @@ describe('My account: profile', () => {
     })
   })
 
+  it('puts each part of the account in its own titled region', async () => {
+    open({})
+
+    const profile = await screen.findByRole('region', { name: '个人资料' })
+    expect(within(profile).getByRole('button', { name: '保存资料' })).toBeInTheDocument()
+    const password = screen.getByRole('region', { name: '密码' })
+    expect(within(password).getByRole('button', { name: '修改密码' })).toBeInTheDocument()
+    for (const name of ['两步验证', '关联的登录方式']) {
+      const region = screen.getByRole('region', { name })
+      expect(within(region).getByRole('heading', { level: 2, name })).toBeInTheDocument()
+    }
+  })
+
   it('shows the email read-only and says an administrator changes it', async () => {
     open({})
 

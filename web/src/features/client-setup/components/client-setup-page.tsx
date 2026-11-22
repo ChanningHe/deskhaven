@@ -37,7 +37,7 @@ export function ClientSetupPage() {
 
 function ClientSetup({ config }: { config: ClientConfigView }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <HostWarning source={config.host_source} />
       <AddressSection config={config} />
       <ConfigStringSection config={config} />

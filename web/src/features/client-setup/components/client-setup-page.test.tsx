@@ -31,6 +31,15 @@ describe('client setup page', () => {
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
+  it('puts each part in its own titled region', async () => {
+    await openPage()
+
+    for (const name of ['服务器地址', '配置字符串', 'Windows 文件名', '命令行']) {
+      const region = screen.getByRole('region', { name })
+      expect(within(region).getByRole('heading', { level: 2, name })).toBeInTheDocument()
+    }
+  })
+
   it('copies a value with its own button', async () => {
     const { user } = await openPage()
 

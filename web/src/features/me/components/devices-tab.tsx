@@ -5,6 +5,7 @@ import { useListMyDevices } from '@/api/generated/me/me'
 import type { MyDevice } from '@/api/generated/model'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { SectionCard } from '@/components/common/section-card'
 import {
   Table,
   TableBody,
@@ -15,8 +16,6 @@ import {
 } from '@/components/ui/table'
 import { DeviceStatusBadge } from '@/features/devices/components/device-status-badge'
 import { formatDateTime, nonBlank } from '@/lib/format'
-
-import { Section } from './section'
 
 /** Everyone sees their devices in one page: assigned devices are few. */
 const PAGE_SIZE = 200
@@ -56,45 +55,47 @@ export function DevicesTab() {
   const total = query.data?.total ?? 0
 
   return (
-    <Section title={t('me.devices.title')} description={t('me.devices.description')}>
-      {query.isError ? (
-        <ErrorAlert
-          error={query.error}
-          title={t('me.devices.loadFailed')}
-          onRetry={() => void query.refetch()}
-        />
-      ) : null}
-      {query.isSuccess && devices.length === 0 ? (
-        <EmptyState
-          icon={MonitorSmartphone}
-          title={t('me.devices.emptyTitle')}
-          description={t('me.devices.emptyDescription')}
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('me.devices.columns.id')}</TableHead>
-              <TableHead>{t('me.devices.columns.hostname')}</TableHead>
-              <TableHead>{t('me.devices.columns.os')}</TableHead>
-              <TableHead>{t('me.devices.columns.version')}</TableHead>
-              <TableHead>{t('me.devices.columns.status')}</TableHead>
-              <TableHead>{t('me.devices.columns.lastSeen')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {devices.map((device) => (
-              <DeviceRow key={device.rustdesk_id} device={device} language={i18n.language} />
-            ))}
-          </TableBody>
-        </Table>
-      )}
-      {total > devices.length ? (
-        <p className="text-xs text-muted-foreground">
-          {t('me.devices.truncated', { shown: devices.length, total })}
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">{t('me.devices.selfReported')}</p>
-    </Section>
+    <SectionCard title={t('me.devices.title')} description={t('me.devices.description')}>
+      <div className="space-y-3">
+        {query.isError ? (
+          <ErrorAlert
+            error={query.error}
+            title={t('me.devices.loadFailed')}
+            onRetry={() => void query.refetch()}
+          />
+        ) : null}
+        {query.isSuccess && devices.length === 0 ? (
+          <EmptyState
+            icon={MonitorSmartphone}
+            title={t('me.devices.emptyTitle')}
+            description={t('me.devices.emptyDescription')}
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('me.devices.columns.id')}</TableHead>
+                <TableHead>{t('me.devices.columns.hostname')}</TableHead>
+                <TableHead>{t('me.devices.columns.os')}</TableHead>
+                <TableHead>{t('me.devices.columns.version')}</TableHead>
+                <TableHead>{t('me.devices.columns.status')}</TableHead>
+                <TableHead>{t('me.devices.columns.lastSeen')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.map((device) => (
+                <DeviceRow key={device.rustdesk_id} device={device} language={i18n.language} />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {total > devices.length ? (
+          <p className="text-xs text-muted-foreground">
+            {t('me.devices.truncated', { shown: devices.length, total })}
+          </p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">{t('me.devices.selfReported')}</p>
+      </div>
+    </SectionCard>
   )
 }
