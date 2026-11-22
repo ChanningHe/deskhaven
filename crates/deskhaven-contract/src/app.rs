@@ -5,6 +5,7 @@
 use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -18,12 +19,15 @@ use deskhaven_config::settings::{Change, PinSet};
 use deskhaven_core::clock::{SharedClock, SystemClock};
 use deskhaven_core::crypto::{MASTER_KEY_LEN, MasterKey, SecretBox};
 use deskhaven_core::ldap::{Connector, DirectoryLimits, Ldap3Connector, LdapService};
+use deskhaven_core::oidc::{FetchError, FetchFuture, HttpFetch};
 use deskhaven_core::sessions::SessionService;
 use deskhaven_core::settings::UpdateRequest;
 use deskhaven_core::state::{AppState, StateConfig};
+use deskhaven_core::update::UpdateService;
 use deskhaven_core::users::{PasswordHasher, UserService};
 use deskhaven_http::{ErrorBodies, apply_middleware, redirect_client_root, single_listener_router};
 use flate2::read::GzDecoder;
+use openidconnect::HttpRequest;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -45,6 +49,7 @@ const TEST_SIGNAL_PUBLIC_KEY: &str = "contract-test-signal-public-key";
 pub struct TestApp {
     pub state: Arc<AppState>,
     router: Router,
+    updates: Arc<OfflineFetch>,
     _shutdown: CancellationToken,
     _data_dir: TempDir,
 }
@@ -130,11 +135,13 @@ impl TestApp {
             (None, Some(clock)) => on_clock(&base, clock),
             (None, None) => base,
         };
-        // One instance: the routers and the seeds share it.
-        let state = Arc::new(match ldap {
+        let state = match ldap {
             Some(connector) => with_ldap(state, connector, ldap_limits.unwrap_or_default()),
             None => state,
-        });
+        };
+        let updates = Arc::new(OfflineFetch::default());
+        // One instance: the routers and the seeds share it.
+        let state = Arc::new(offline_updates(state, Arc::clone(&updates)));
         let shutdown = CancellationToken::new();
         let apps = deskhaven::http::apps(
             Arc::clone(&state),
@@ -159,9 +166,15 @@ impl TestApp {
         Ok(Self {
             state,
             router,
+            updates,
             _shutdown: shutdown,
             _data_dir: data_dir,
         })
+    }
+
+    /// Requests the update check sent (to the offline fetcher; never to GitHub).
+    pub fn update_requests(&self) -> usize {
+        self.updates.requests.load(Ordering::SeqCst)
     }
 
     /// Changes one runtime setting through the real settings service (hot
@@ -204,6 +217,29 @@ impl TestApp {
             body: decode(&headers, body.to_vec())?,
             headers,
         })
+    }
+}
+
+/// Refuses and counts every request: the harness serves the whole admin API, and its update
+/// check must not reach GitHub.
+#[derive(Default)]
+struct OfflineFetch {
+    requests: AtomicUsize,
+}
+
+impl HttpFetch for OfflineFetch {
+    fn fetch(&self, _request: HttpRequest) -> FetchFuture<'_> {
+        self.requests.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Err(FetchError::Refused("contract tests stay offline")) })
+    }
+}
+
+/// `state` whose update check asks `fetch`.
+fn offline_updates(state: AppState, fetch: Arc<OfflineFetch>) -> AppState {
+    let updates = UpdateService::new(state.settings.clone(), Arc::clone(&state.clock), fetch);
+    AppState {
+        updates: Arc::new(updates),
+        ..state
     }
 }
 

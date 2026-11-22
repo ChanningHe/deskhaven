@@ -1,4 +1,4 @@
-use std::sync::Mutex as StdMutex;
+use std::sync::{Mutex as StdMutex, PoisonError};
 use std::time::Duration;
 
 use deskhaven_config::settings::{Change, PinSet};
@@ -56,7 +56,7 @@ impl FakeFetch {
         &self,
         respond: impl Fn() -> Result<HttpResponse, FetchError> + Send + Sync + 'static,
     ) {
-        *self.respond.lock().unwrap() = Box::new(respond);
+        *self.respond.lock().unwrap_or_else(PoisonError::into_inner) = Box::new(respond);
     }
 }
 
@@ -65,7 +65,8 @@ impl HttpFetch for FakeFetch {
         self.requests.lock().unwrap().push(request);
         Box::pin(async move {
             let _permit = self.gate.acquire().await;
-            (self.respond.lock().unwrap())()
+            // A panicking `respond` poisons the lock; later replies still go through.
+            (self.respond.lock().unwrap_or_else(PoisonError::into_inner))()
         })
     }
 }
@@ -90,21 +91,25 @@ struct Fixture {
 }
 
 async fn fixture(db: &TestDb, current: &str, fetch: FakeFetch) -> Fixture {
+    let target = Target {
+        api_url: API.to_owned(),
+        current: Version::parse(current).unwrap(),
+    };
+    fixture_for(db, Some(target), fetch).await
+}
+
+async fn fixture_for(db: &TestDb, target: Option<Target>, fetch: FakeFetch) -> Fixture {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
     let (settings, _) = SettingsService::load(db.conn.clone(), crypto, PinSet::empty())
         .await
         .unwrap();
     let clock = Arc::new(ManualClock::at(T0_MS));
     let fetch = Arc::new(fetch);
-    let target = Target {
-        api_url: API.to_owned(),
-        current: Version::parse(current).unwrap(),
-    };
     let service = Arc::new(UpdateService::with_target(
         settings.clone(),
         Arc::clone(&clock) as SharedClock,
         Arc::clone(&fetch) as Arc<dyn HttpFetch>,
-        Some(target),
+        target,
     ));
     Fixture {
         service,
@@ -440,6 +445,42 @@ async fn concurrent_askers_share_one_request() {
 
         assert_eq!(f.fetch.calls(), 1);
         assert!(f.service.available().is_some());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn without_a_target_nothing_is_requested() {
+    each_migrated_backend(async |db: &TestDb| {
+        let f = fixture_for(db, None, FakeFetch::open(|| release("v0.2.0"))).await;
+
+        for _ in 0..3 {
+            assert_eq!(f.service.available(), None);
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        assert_eq!(f.fetch.calls(), 0);
+        assert!(!f.service.cache.lock().unwrap().in_flight);
+    })
+    .await;
+}
+
+/// A refresh that dies inside the request still ends: the next one comes a day later.
+#[tokio::test]
+async fn a_refresh_that_panics_is_retried_after_a_day() {
+    each_migrated_backend(async |db: &TestDb| {
+        let f = fixture(db, "0.1.1", FakeFetch::open(|| panic!("fetch exploded"))).await;
+        assert_eq!(checked(&f).await, None);
+
+        f.fetch.reply_with(|| release("v0.2.0"));
+        f.clock.advance(23 * HOUR);
+        checked(&f).await;
+        assert_eq!(f.fetch.calls(), 1);
+
+        f.clock.advance(2 * HOUR);
+        let offered = checked(&f).await;
+        assert_eq!(f.fetch.calls(), 2);
+        assert_eq!(offered.map(|u| u.version), Some(v("0.2.0")));
     })
     .await;
 }

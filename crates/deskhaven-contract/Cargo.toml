@@ -27,6 +27,8 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true, features = ["util"] }
+# `HttpRequest`, the parameter of the offline fetcher the update check gets in `app`.
+openidconnect = { workspace = true }
 # OidcAuthUrl.url is a url::Url in the client.
 url = { workspace = true, features = ["serde"] }
 
@@ -35,7 +37,6 @@ deskhaven-client-api = { workspace = true }
 # The mock IdP shared with the core tests (deskhaven-core/tests/common/oidc_idp.rs).
 base64_022 = { workspace = true }
 chrono = { workspace = true }
-openidconnect = { workspace = true }
 sha2 = { workspace = true }
 wiremock = { workspace = true }
 

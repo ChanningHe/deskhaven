@@ -146,7 +146,7 @@ impl UpdateService {
             let mut cache = self.cache();
             if cache.due(self.clock.elapsed_ms()) {
                 cache.in_flight = true;
-                tokio::spawn(Arc::clone(self).refresh());
+                tokio::spawn(Arc::clone(self).refresh(target.api_url.clone()));
             }
             cache.latest.clone()
         };
@@ -158,23 +158,17 @@ impl UpdateService {
             })
     }
 
-    async fn refresh(self: Arc<Self>) {
-        let result = match &self.target {
-            Some(target) => self.check(&target.api_url).await,
-            None => Err(CheckError::Request),
-        };
-        let mut cache = self.cache();
-        match result {
+    async fn refresh(self: Arc<Self>, api_url: String) {
+        let _finish = Finish(&self);
+        match self.check(&api_url).await {
             Ok(version) => {
                 tracing::debug!(%version, "update check: latest release");
-                cache.latest = Some(version);
+                self.cache().latest = Some(version);
             }
             Err(error) => {
                 tracing::info!(%error, setting = UPDATES_CHECK.key(), "update check failed");
             }
         }
-        cache.checked_at = Some(self.clock.elapsed_ms());
-        cache.in_flight = false;
     }
 
     async fn check(&self, api_url: &str) -> Result<Version, CheckError> {
@@ -196,6 +190,18 @@ impl UpdateService {
 
     fn cache(&self) -> MutexGuard<'_, Cache> {
         self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Ends a refresh however it ends (done, panicked, or cancelled at an await): without it a
+/// dead refresh would leave `in_flight` set and no check would ever run again.
+struct Finish<'a>(&'a UpdateService);
+
+impl Drop for Finish<'_> {
+    fn drop(&mut self) {
+        let mut cache = self.0.cache();
+        cache.checked_at = Some(self.0.clock.elapsed_ms());
+        cache.in_flight = false;
     }
 }
 
