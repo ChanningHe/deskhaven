@@ -46,6 +46,7 @@ mod net;
 mod server;
 mod tcp;
 mod udp;
+mod web;
 mod ws;
 
 #[allow(unused_imports)]
@@ -61,5 +62,6 @@ pub use {
     server::{TestServer, TrustXff, allow_all, config, memory_store, trusting, wait_until_ready},
     tcp::TcpClient,
     udp::UdpClient,
+    web::*,
     ws::WsClient,
 };

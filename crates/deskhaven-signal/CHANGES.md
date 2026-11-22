@@ -785,3 +785,30 @@ and the task that made it. `UPSTREAM` records the base commit and per-file check
   `register_peer_with_a_malformed_id_stays_unknown`,
   `malformed_ids_are_refused_over_streams`,
   `malformed_ids_do_not_consume_the_per_ip_budget`.
+- 2026-11-22, s4 web punch (new `web_punch.rs`, `web_routes.rs` with `web_routes/tests.rs`;
+  `rendezvous_server.rs` `Data::{WebPunch, ToPeer}`, `StreamPeer::ice`, `web_routes` and the
+  visibility of the fields `web_punch.rs` uses, `on_tick`, the RelayResponse and new
+  IceCandidate arms of `handle_tcp`, a test; `server.rs` `SignalHandle::web_punch`, `ReplySlot`
+  `Clone`; `lib.rs`). Independent implementation; wire behavior and limits follow rustdesk-server
+  PR #734 at 39b1b3f. `SignalHandle::web_punch` punches a device on behalf of an in-process
+  caller (the console's web client): it claims a port for the browser IP (`claimed_addr.rs`),
+  sends `PunchHole{nat_type: SYMMETRIC, relay_server: <first relay>, webrtc_sdp_offer}` over the
+  device's UDP or TCP channel (no offer while `always_use_relay` is on) and waits 15 s for the
+  device's RelayResponse, which must come from the device's registered IP and name its id; its
+  relay must be the one sent (else `ForeignRelay`), and the LAN `relay_server` rewrite does not
+  apply to it. The answer goes to the punch's route itself, never through `tcp_punch`: a web
+  punch's claimed address can equal a wire connection's (same IP and port), and that
+  connection's PunchHoleRequest parks its sink there. The returned `WebRoute` holds the punch's
+  WebRTC route for 60 s or until it (or both halves of `WebRoute::split`) is dropped: the
+  device's IceCandidates (on a KeyExchange-secured TCP connection, from its registered IP, with
+  the offer's DTLS fingerprint as session key) reach it, and its candidates reach the device. A
+  route without a WebRTC answer (relay only, or an answer missing or over 4096 bytes) is
+  revoked at once.
+  Limits: offer / answer 4096 bytes, candidate 2048, session key 256, 128 candidates per route
+  and direction, 256 IceCandidate frames and 16 unmatched ones per connection, 64 routes per
+  browser IP and 10 000 in total. Wire clients cannot start anything new: a PunchHoleRequest's
+  offer is still dropped; IceCandidates that match no route are dropped and counted (the
+  connection closed at the first before, now at the 17th); a RelayResponse's WebRTC answer is
+  cleared unless it answers a web punch (wire offers are never forwarded, so no device answers
+  one). Tests: `tests/web_punch.rs`, `tests/web_ice.rs`, `web_routes::tests`,
+  `a_wire_connection_on_the_claimed_address_does_not_take_a_web_answer`.

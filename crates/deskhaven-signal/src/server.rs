@@ -258,8 +258,14 @@ pub struct SignalHandle {
 
 /// deskhaven (M2-19): a one-shot reply carried in the loop's `Data` (which is `Clone` +
 /// `Debug`): the first `send` delivers, later ones and clones find it taken.
-#[derive(Clone)]
 pub(crate) struct ReplySlot<T>(Arc<std::sync::Mutex<Option<oneshot::Sender<T>>>>);
+
+// Not derived: clones share the slot, so `T` need not be `Clone` (a `WebRoute` is not).
+impl<T> Clone for ReplySlot<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<T> ReplySlot<T> {
     fn new() -> (Self, oneshot::Receiver<T>) {
@@ -413,6 +419,23 @@ impl SignalHandle {
             .send(Data::LiveUuid(id.to_owned(), slot))
             .map_err(|_| SignalError::Stopped)?;
         rx.await.map_err(|_| SignalError::Stopped)
+    }
+
+    /// Punches `req.target` on behalf of a browser (deskhaven, s4): sends the device a
+    /// PunchHole that forces relay to the first relay server and carries `req.offer`, and waits
+    /// up to [`WEB_PUNCH_TIMEOUT`](crate::WEB_PUNCH_TIMEOUT) for its RelayResponse. The
+    /// returned [`WebRoute`](crate::WebRoute) carries the relay session and, while it lives,
+    /// the WebRTC session's ICE candidates both ways. No [`ControlPlane`] hook is consulted,
+    /// like for a PunchHoleRequest: authorizing the browser is the caller's job.
+    pub async fn web_punch(
+        &self,
+        req: crate::WebPunch,
+    ) -> Result<crate::WebRoute, crate::WebPunchError> {
+        let (slot, rx) = ReplySlot::new();
+        self.tx
+            .send(Data::WebPunch(req, slot))
+            .map_err(|_| crate::WebPunchError::Stopped)?;
+        rx.await.map_err(|_| crate::WebPunchError::Stopped)?
     }
 
     fn ensure_running(&self) -> Result<(), SignalError> {

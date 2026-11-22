@@ -11,6 +11,7 @@ use crate::peer::*;
 use crate::server::{ClientIpResolver, Ports, SignalConfig, SignalError, Switches};
 use crate::store::PeerStore;
 use crate::tasks::Tasks;
+use crate::web_routes::{IceCount, Reply, WebRoutes};
 use arc_swap::ArcSwap;
 use hbb_common::{
     AddrMangle, ResultType, allow_err, bail,
@@ -78,12 +79,19 @@ pub(crate) enum Data {
     ReloadPeer(String),
     // deskhaven (M2-19): the uuid the peer map holds for an id (`SignalHandle::live_uuid`).
     LiveUuid(String, crate::server::ReplySlot<Option<Vec<u8>>>),
+    // deskhaven (s4): an in-process punch (`SignalHandle::web_punch`, web_punch.rs).
+    WebPunch(
+        crate::web_punch::WebPunch,
+        crate::server::ReplySlot<Result<crate::WebRoute, crate::WebPunchError>>,
+    ),
+    // deskhaven (s4): a web route's candidate for device `id` (`WebRoute::send_candidate`).
+    ToPeer(String, Box<RendezvousMessage>),
     // deskhaven (M1-06): test-only fault injection into the server loop.
     #[cfg(any(test, feature = "testing"))]
     Inject(crate::server::Fault),
 }
 
-const REG_TIMEOUT: i64 = 30_000;
+pub(crate) const REG_TIMEOUT: i64 = 30_000;
 type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
 type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
 enum Sink {
@@ -109,6 +117,8 @@ struct StreamPeer {
     outbox: Option<StreamOutbox>,
     // deskhaven (M1-07): a KeyExchange secured this connection (`ConnectReq::secured`, M5).
     secured: bool,
+    // deskhaven (s4): IceCandidate frames of this connection (web_routes.rs).
+    ice: IceCount,
 }
 /// Server-side entry (`stream_peers`, by id): where the connection is and its queue.
 struct StreamPeerTx {
@@ -320,18 +330,18 @@ pub(crate) struct RendezvousServer {
     // deskhaven (M1-08): peers registered over TCP / websocket, by id.
     stream_peers: Arc<Mutex<HashMap<String, StreamPeerTx>>>,
     // deskhaven (M1-08): per-connection addresses of websocket clients behind a proxy.
-    ws_addrs: ClaimedAddrs,
+    pub(crate) ws_addrs: ClaimedAddrs,
     // deskhaven (M1-08 review): decides whether a websocket client's proxy headers are trusted.
     ws_client_ip: Arc<dyn ClientIpResolver>,
     // deskhaven (M4-05): admission of main-port connections before the KeyExchange offer.
     accept_gate: AcceptGate,
-    pm: PeerMap,
-    tx: Sender,
+    pub(crate) pm: PeerMap,
+    pub(crate) tx: Sender,
     // deskhaven (M1-06): the relays handed out (resolved, health-checked subset), shared by the
     // server loop (the only writer) and every connection task (lock-free readers). Upstream
     // kept a plain `Arc` that each connection task cloned at accept (rs:1174-1182), so a list
     // change never reached connections that were already open.
-    relay_servers: Arc<ArcSwap<RelayServers>>,
+    pub(crate) relay_servers: Arc<ArcSwap<RelayServers>>,
     relay_servers0: Arc<RelayServers>,
     // deskhaven: the configured relay list (initial config or last handle update); its
     // resolvable entries are `relay_servers0`.
@@ -345,7 +355,9 @@ pub(crate) struct RendezvousServer {
     inner: Arc<Inner>,
     // deskhaven: runtime switches shared with the handle (`always_use_relay` was a static;
     // M1-07 adds `require_kx_v1`).
-    switches: Switches,
+    pub(crate) switches: Switches,
+    // deskhaven (s4): routes of in-process web punches (web_routes.rs).
+    pub(crate) web_routes: WebRoutes,
     // deskhaven (M1-06): policy hooks (07 §3.2); only `pick_relay` is called so far.
     control: Arc<dyn ControlPlane>,
     tasks: Tasks,
@@ -509,6 +521,7 @@ impl RendezvousServer {
                 punch_req_max: cfg.punch_req_max,
             }),
             switches,
+            web_routes: WebRoutes::default(),
             control,
             tasks,
         };
@@ -523,6 +536,7 @@ impl RendezvousServer {
     async fn on_tick(&mut self) {
         IP_BLOCKER.lock().await.prune(Instant::now());
         self.accept_gate.prune(Instant::now());
+        self.web_routes.sweep(TokioInstant::now());
         if self.relay_servers0.len() > 1 {
             let rs = self.relay_servers0.clone();
             let tx = self.tx.clone();
@@ -679,6 +693,20 @@ impl RendezvousServer {
                         None => None,
                     };
                     reply.send(uuid.filter(|uuid| !uuid.is_empty()));
+                });
+            }
+            // deskhaven (s4): waits for the device, so in its own task.
+            Data::WebPunch(req, reply) => {
+                let rs = self.clone();
+                self.tasks.spawn(async move {
+                    reply.send(rs.web_punch(req).await);
+                });
+            }
+            // deskhaven (s4): the peer lookup is off the loop.
+            Data::ToPeer(id, msg) => {
+                let rs = self.clone();
+                self.tasks.spawn(async move {
+                    rs.deliver_to_peer(&id, *msg).await;
                 });
             }
             #[cfg(any(test, feature = "testing"))]
@@ -956,6 +984,17 @@ impl RendezvousServer {
                     let Some(addr_b) = addr_mangle::decode(&rr.socket_addr) else {
                         return false;
                     };
+                    // deskhaven (s4): a web punch takes the answer only from its device; a
+                    // WebRTC answer reaches nobody else (wire offers are never forwarded).
+                    let now = TokioInstant::now();
+                    let web = match self.web_routes.reply(addr_b, rr.id(), addr.ip(), now) {
+                        Reply::Unrouted => false,
+                        Reply::Accept => true,
+                        Reply::Refuse => return false,
+                    };
+                    if !web || rr.webrtc_sdp_answer.len() > crate::web_routes::MAX_SDP_LEN {
+                        rr.webrtc_sdp_answer.clear();
+                    }
                     rr.socket_addr = Default::default();
                     let id = rr.id();
                     if !id.is_empty() {
@@ -963,7 +1002,8 @@ impl RendezvousServer {
                         rr.set_pk(pk);
                     }
                     let mut msg_out = RendezvousMessage::new();
-                    if !rr.relay_server.is_empty() {
+                    // deskhaven (s4): not for a web punch, whose browser uses the deployment's relay.
+                    if !web && !rr.relay_server.is_empty() {
                         if self.is_lan(addr_b) {
                             // https://github.com/rustdesk/rustdesk-server/issues/24
                             rr.relay_server = self.inner.local_ip.clone();
@@ -972,7 +1012,13 @@ impl RendezvousServer {
                         }
                     }
                     msg_out.set_relay_response(rr);
-                    allow_err!(self.send_to_tcp_sync(msg_out, addr_b).await);
+                    // deskhaven (s4): a web punch's answer goes to its route, never through
+                    // `tcp_punch`, whose keys a wire connection can share.
+                    if web {
+                        self.web_routes.answer(addr_b, msg_out);
+                    } else {
+                        allow_err!(self.send_to_tcp_sync(msg_out, addr_b).await);
+                    }
                 }
                 // deskhaven (M1-08 review): passed-on strings are bounded (both arms).
                 Some(rendezvous_message::Union::PunchHoleSent(phs)) => {
@@ -994,6 +1040,15 @@ impl RendezvousServer {
                     };
                     msg_out.set_test_nat_response(res);
                     Self::send_to_sink(sink, msg_out).await;
+                }
+                // deskhaven (s4): trickle ICE of web punch routes only (web_routes.rs). A device
+                // sends its candidates on a KeyExchange-secured TCP connection of their own,
+                // which stays open for the trickle.
+                Some(rendezvous_message::Union::IceCandidate(ice)) => {
+                    let trusted = !ws && conn.secured;
+                    return conn
+                        .ice
+                        .on_candidate(&self.web_routes, ice, addr.ip(), trusted);
                 }
                 // deskhaven (M1-08): registration over TCP / websocket, for clients in proxy,
                 // websocket or UDP-disabled mode (upstream answered RegisterPk with NOT_SUPPORT
@@ -1159,7 +1214,7 @@ impl RendezvousServer {
     // deskhaven (M1-08): delivers to peer `id` through its TCP / websocket connection while that
     // is its current address, otherwise over UDP like upstream (`Data::Msg`). A full or closed
     // connection queue drops the message (logged), as a lost datagram would be.
-    async fn send_to_peer(
+    pub(crate) async fn send_to_peer(
         &self,
         id: &str,
         msg: RendezvousMessage,
@@ -2564,5 +2619,77 @@ mod tests {
                     .await;
             assert!(!kept);
         }
+    }
+
+    // deskhaven (s4 review): a web punch's claimed address can equal a wire connection's real
+    // one (same IP, same port). That connection's PunchHoleRequest parks its sink in
+    // `tcp_punch` under the address; the device's answer must still reach the web punch,
+    // whose route never goes through `tcp_punch`.
+    #[hbb_common::tokio::test]
+    async fn a_wire_connection_on_the_claimed_address_does_not_take_a_web_answer() {
+        // Arrange: an online device and a web punch waiting for it.
+        let mut f = fixture().await;
+        let peer_addr = f.online_peer().await;
+        f.rs.pm.get_or(PEER_ID).await.write().await.pk = Bytes::from(vec![7; 32]);
+        let rs = f.rs.clone();
+        let punch = tokio::spawn(async move {
+            let req = crate::WebPunch {
+                target: PEER_ID.to_owned(),
+                offer: None,
+                client: "198.51.100.7".parse().unwrap(),
+            };
+            rs.web_punch(req).await
+        });
+        let ph = loop {
+            match timeout(5_000, f.rx.recv()).await.unwrap().unwrap() {
+                Data::Msg(msg, to) if to == peer_addr => break msg.punch_hole().clone(),
+                _ => {}
+            }
+        };
+        let claimed = addr_mangle::decode(&ph.socket_addr).unwrap();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let wire = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (wire_sink, _wire_reader) = Framed::new(wire, BytesCodec::new()).split();
+        let key = f.key.clone();
+
+        // Act: the wire connection punches from the claimed address, then the device answers.
+        let mut req = RendezvousMessage::new();
+        req.set_punch_hole_request(PunchHoleRequest {
+            id: PEER_ID.to_owned(),
+            licence_key: key.clone(),
+            ..Default::default()
+        });
+        let mut sink = Some(Sink::TcpStream(wire_sink, None));
+        let mut conn = StreamPeer::default();
+        let bytes = req.write_to_bytes().unwrap();
+        assert!(
+            f.rs.handle_tcp(&bytes, &mut sink, claimed, &key, false, &mut conn)
+                .await
+        );
+        let mut rr = RelayResponse {
+            socket_addr: ph.socket_addr.clone(),
+            uuid: "web-uuid".to_owned(),
+            relay_server: RELAY_INIT.to_owned(),
+            version: "1.5.0".to_owned(),
+            ..Default::default()
+        };
+        rr.set_id(PEER_ID.to_owned());
+        let mut answer = RendezvousMessage::new();
+        answer.set_relay_response(rr);
+        let bytes = answer.write_to_bytes().unwrap();
+        let from = SocketAddr::new(peer_addr.ip(), 50_001);
+        let mut conn = StreamPeer::default();
+        f.rs.handle_tcp(&bytes, &mut None, from, &key, false, &mut conn)
+            .await;
+
+        // Assert
+        let route = timeout(5_000, punch).await.unwrap().unwrap().unwrap();
+        assert_eq!(route.uuid, "web-uuid");
+        assert!(
+            f.rs.tcp_punch.lock().await.contains_key(&claimed),
+            "wire sink untouched"
+        );
     }
 }

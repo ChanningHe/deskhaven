@@ -42,6 +42,8 @@ mod persist;
 mod server;
 mod store;
 mod tasks;
+mod web_punch;
+mod web_routes;
 
 pub use accept_gate::AcceptLimits;
 pub use control::{
@@ -62,3 +64,7 @@ pub use server::{
     SignalError, SignalHandle, SignalServer, SocketPeerIp, WsHeaders, run,
 };
 pub use store::{MemoryPeerStore, PeerRecord, PeerStore, PeerUpsert, StoreError};
+pub use web_punch::{
+    CandidateReceiver, CandidateSender, WEB_PUNCH_TIMEOUT, WebPunch, WebPunchError, WebRoute,
+};
+pub use web_routes::{CandidateError, WEB_ROUTE_TTL};
