@@ -2,6 +2,8 @@ import type { TFunction } from 'i18next'
 
 import type { SettingView } from '@/api/generated/model'
 
+import type { Drafts } from './drafts'
+
 const CATEGORY_LABELS = {
   auth: 'settings.categories.auth',
   smtp: 'settings.categories.smtp',
@@ -34,4 +36,9 @@ export function groupByCategory(settings: readonly SettingView[]): Category[] {
     else group.settings.push(setting)
   }
   return groups
+}
+
+/** How many settings of `category` have an unsaved draft. */
+export function unsavedCount(category: Category, drafts: Drafts): number {
+  return category.settings.filter((setting) => drafts[setting.key] !== undefined).length
 }

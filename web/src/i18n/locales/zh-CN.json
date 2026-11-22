@@ -977,6 +977,11 @@
       "audit": "审计保留",
       "signal": "信令"
     },
+    "nav": {
+      "label": "设置类别",
+      "unsaved_one": "{{label}}，{{count}} 项未保存",
+      "unsaved_other": "{{label}}，{{count}} 项未保存"
+    },
     "row": {
       "unsaved": "未保存",
       "reset": "恢复默认",

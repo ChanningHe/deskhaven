@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SettingView } from '@/api/generated/model'
 import { ADMIN_ME } from '@/test/fixtures'
@@ -407,6 +407,79 @@ describe('settings page failed saves', () => {
   })
 })
 
+describe('settings page category navigation', () => {
+  const scrollIntoView = vi.fn()
+
+  beforeEach(() => {
+    scrollIntoView.mockClear()
+    // jsdom does not lay out, so it has no scrollIntoView.
+    Element.prototype.scrollIntoView = scrollIntoView
+  })
+
+  afterEach(() => {
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  })
+
+  function categoryNav(): HTMLElement {
+    return screen.getByRole('navigation', { name: '设置类别' })
+  }
+
+  it('has one button per category', async () => {
+    await openPage(sampleSettings())
+
+    const buttons = within(categoryNav()).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      '认证与会话',
+      '邮件（SMTP）',
+      '设备',
+      '信令',
+    ])
+  })
+
+  it('jumps to a category without asking to leave and focuses its heading', async () => {
+    const { user, router } = await openPage(sampleSettings())
+
+    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.click(within(categoryNav()).getByRole('button', { name: '信令' }))
+
+    const heading = screen.getByRole('heading', { name: '信令' })
+    expect(heading).toHaveFocus()
+    expect(scrollIntoView.mock.contexts).toEqual([heading])
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(router.state.location.href).toBe('/settings')
+    expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
+  })
+
+  it('counts the unsaved changes of each category until they are saved', async () => {
+    const initial = sampleSettings()
+    const after = withSetting(
+      withSetting(initial, 'auth.registration', modified('open', 1)),
+      'smtp.host',
+      modified('mail.example.com', 1),
+    )
+    const { user } = await openPage(initial, () => ({ body: after }))
+
+    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.type(screen.getByLabelText('smtp.host'), 'mail.example.com')
+
+    const nav = categoryNav()
+    expect(within(nav).getByRole('button', { name: '认证与会话，1 项未保存' })).toHaveTextContent(
+      '认证与会话1',
+    )
+    expect(within(nav).getByRole('button', { name: '邮件（SMTP），1 项未保存' })).toBeVisible()
+    expect(within(nav).getByRole('button', { name: '设备' })).toHaveTextContent(/^设备$/)
+
+    await user.click(screen.getByRole('button', { name: '保存更改' }))
+    await waitFor(() => {
+      expect(screen.getByText('已保存 2 项设置。')).toBeInTheDocument()
+    })
+    expect(within(nav).getByRole('button', { name: '认证与会话' })).toHaveTextContent(
+      /^认证与会话$/,
+    )
+    expect(within(nav).getByRole('button', { name: '邮件（SMTP）' })).toBeVisible()
+  })
+})
+
 describe('settings page history and guards', () => {
   it('opens the history of a key, newest first, with resets marked', async () => {
     const history = {
@@ -460,6 +533,17 @@ describe('settings page history and guards', () => {
       expect.stringContaining(`/settings/${TTL}/history`),
       expect.anything(),
     )
+  })
+
+  it('shows history as an icon button with its name as a tooltip', async () => {
+    const { user } = await openPage(sampleSettings())
+
+    const row = screen.getByLabelText(TTL).closest('li') as HTMLElement
+    const history = within(row).getByRole('button', { name: '历史' })
+    expect(history).toHaveTextContent(/^$/)
+
+    await user.hover(history)
+    expect(await screen.findByText('历史')).toBeVisible()
   })
 
   it('asks before leaving the page with unsaved changes', async () => {

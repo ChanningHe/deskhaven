@@ -977,6 +977,11 @@
       "audit": "Audit retention",
       "signal": "Signalling"
     },
+    "nav": {
+      "label": "Setting categories",
+      "unsaved_one": "{{label}}, {{count}} unsaved",
+      "unsaved_other": "{{label}}, {{count}} unsaved"
+    },
     "row": {
       "unsaved": "Unsaved",
       "reset": "Reset to default",

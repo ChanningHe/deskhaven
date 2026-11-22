@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { SettingView } from '@/api/generated/model'
 import { SourceBadge } from '@/components/common/source-badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 import type { Draft } from '../drafts'
 import { problemOf, toEditor } from '../editor'
@@ -60,14 +61,17 @@ export function SettingRow({
       data-setting={setting.key}
     >
       <div className="min-w-0 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor={id} className="font-mono text-sm font-medium break-all">
-            {setting.key}
-          </label>
-          <SourceBadge source={valueSource(source)} />
-          {draft === undefined ? null : (
-            <span className="text-xs font-medium text-info">{t('settings.row.unsaved')}</span>
-          )}
+        <div className="flex items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <label htmlFor={id} className="font-mono text-sm font-medium break-all">
+              {setting.key}
+            </label>
+            <SourceBadge source={valueSource(source)} />
+            {draft === undefined ? null : (
+              <span className="text-xs font-medium text-info">{t('settings.row.unsaved')}</span>
+            )}
+          </div>
+          <HistoryButton onClick={onHistory} />
         </div>
         <p id={helpId} className="text-xs text-muted-foreground">
           {setting.description}
@@ -116,13 +120,33 @@ export function SettingRow({
               {t('settings.row.undo')}
             </Button>
           )}
-          <Button type="button" variant="ghost" size="xs" onClick={onHistory}>
-            <History data-icon="inline-start" aria-hidden />
-            {t('settings.row.history')}
-          </Button>
         </div>
       </div>
     </li>
+  )
+}
+
+function HistoryButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation()
+  const label = t('settings.row.history')
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={label}
+            className="shrink-0"
+            onClick={onClick}
+          />
+        }
+      >
+        <History aria-hidden />
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 

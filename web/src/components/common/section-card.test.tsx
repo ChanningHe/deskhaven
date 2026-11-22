@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { SectionCard } from './section-card'
@@ -60,6 +61,25 @@ describe('SectionCard', () => {
     )
 
     expect(screen.getByRole('region', { name: 'Named' })).toBeInTheDocument()
+  })
+
+  it('makes the heading a focus target only when a title ref is asked for', () => {
+    const titleRef = createRef<HTMLHeadingElement>()
+    render(
+      <>
+        <SectionCard title="Target" titleRef={titleRef}>
+          <p>a</p>
+        </SectionCard>
+        <SectionCard title="Plain">
+          <p>b</p>
+        </SectionCard>
+      </>,
+    )
+
+    const target = screen.getByRole('heading', { name: 'Target' })
+    expect(titleRef.current).toBe(target)
+    expect(target).toHaveAttribute('tabindex', '-1')
+    expect(screen.getByRole('heading', { name: 'Plain' })).not.toHaveAttribute('tabindex')
   })
 
   it('gives each card its own heading id', () => {
