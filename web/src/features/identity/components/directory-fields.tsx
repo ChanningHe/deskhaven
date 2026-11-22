@@ -86,7 +86,7 @@ export function DirectoryFields(props: DirectoryFieldsProps) {
     />
   )
   return (
-    <div className="grid gap-8">
+    <div className="grid gap-6">
       <FieldGroup title={t('identity.ldap.groups.connection')}>
         {check('enabled', 'enabled')}
         {text('name', 'name')}

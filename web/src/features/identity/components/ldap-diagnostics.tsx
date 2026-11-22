@@ -49,48 +49,56 @@ export function LdapDiagnostics({ target }: { target: TestTarget }) {
     )
 
   return (
-    <SectionCard title={t('identity.diagnostics.title')}>
-      <div className="grid gap-3">
-        <p className="text-xs text-muted-foreground">
-          {'directory_id' in target
-            ? t('identity.diagnostics.savedHint')
-            : t('identity.diagnostics.unsavedHint')}
-        </p>
+    <SectionCard
+      title={t('identity.diagnostics.title')}
+      description={
+        'directory_id' in target
+          ? t('identity.diagnostics.savedHint')
+          : t('identity.diagnostics.unsavedHint')
+      }
+    >
+      <div className="grid max-w-xl gap-6">
         <div>
           <Button variant="outline" disabled={pending} onClick={() => void testConnection()}>
             {t('identity.diagnostics.testConnection')}
           </Button>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
-            id={`${id}-username`}
-            label={t('identity.diagnostics.username')}
-            value={username}
-            autoComplete="off"
-            onChange={(event) => {
-              setUsername(event.target.value)
-            }}
-          />
-          <TextField
-            id={`${id}-password`}
-            label={t('identity.diagnostics.password')}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => {
-              setPassword(event.target.value)
-            }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">{t('identity.diagnostics.passwordHint')}</p>
-        <div>
-          <Button
-            variant="outline"
-            disabled={pending || username.trim() === ''}
-            onClick={() => void testUser()}
-          >
-            {t('identity.diagnostics.testUser')}
-          </Button>
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField
+                id={`${id}-username`}
+                label={t('identity.diagnostics.username')}
+                value={username}
+                autoComplete="off"
+                onChange={(event) => {
+                  setUsername(event.target.value)
+                }}
+              />
+              <TextField
+                id={`${id}-password`}
+                label={t('identity.diagnostics.password')}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value)
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('identity.diagnostics.passwordHint')}
+            </p>
+          </div>
+          <div>
+            <Button
+              variant="outline"
+              disabled={pending || username.trim() === ''}
+              onClick={() => void testUser()}
+            >
+              {t('identity.diagnostics.testUser')}
+            </Button>
+          </div>
         </div>
         {error === undefined ? null : (
           <div className="grid gap-1">

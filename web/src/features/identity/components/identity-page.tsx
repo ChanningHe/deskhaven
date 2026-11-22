@@ -14,11 +14,13 @@ export function IdentityPage() {
   const me = useMe()
   const isOwner = hasPermission(me.role, 'owner')
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader title={t('nav.identity')} description={t('pages.identity.description')} />
-      <OidcSection isOwner={isOwner} />
-      <LdapSection isOwner={isOwner} />
-      <TfaSection isOwner={isOwner} />
+      <div className="space-y-6">
+        <OidcSection isOwner={isOwner} />
+        <LdapSection isOwner={isOwner} />
+        <TfaSection isOwner={isOwner} />
+      </div>
     </div>
   )
 }

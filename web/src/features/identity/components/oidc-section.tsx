@@ -67,7 +67,7 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
         ) : undefined
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-6">
         {isOwner ? null : (
           <p className="text-sm text-muted-foreground">{t('identity.oidc.ownerOnly')}</p>
         )}
@@ -76,15 +76,17 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
         ) : null}
         {query.data === undefined ? null : (
           <>
-            <CopyField
-              label={t('identity.oidc.callbackUrl')}
-              value={query.data.callback_url ?? ''}
-              hint={
-                query.data.callback_url == null
-                  ? t('identity.oidc.callbackMissing')
-                  : t('identity.oidc.callbackHint')
-              }
-            />
+            <div className="max-w-2xl">
+              <CopyField
+                label={t('identity.oidc.callbackUrl')}
+                value={query.data.callback_url ?? ''}
+                hint={
+                  query.data.callback_url == null
+                    ? t('identity.oidc.callbackMissing')
+                    : t('identity.oidc.callbackHint')
+                }
+              />
+            </div>
             {query.data.items.length === 0 ? (
               <EmptyState
                 icon={KeyRound}
@@ -140,64 +142,72 @@ interface ProviderTableProps {
   onDelete: (provider: OidcProviderView) => void
 }
 
+const HEAD = 'h-9 text-xs text-muted-foreground first:pl-3 last:pr-3'
+
 function ProviderTable({ providers, isOwner, onEdit, onDelete }: ProviderTableProps) {
   const { t } = useTranslation()
   return (
-    <Table aria-label={t('identity.oidc.tableLabel')}>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t('identity.oidc.columns.name')}</TableHead>
-          <TableHead>{t('identity.oidc.columns.issuer')}</TableHead>
-          <TableHead>{t('identity.oidc.columns.status')}</TableHead>
-          <TableHead>{t('identity.oidc.columns.source')}</TableHead>
-          <TableHead className="text-right">{t('identity.oidc.columns.actions')}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {providers.map((provider) => (
-          <TableRow key={provider.id}>
-            <TableCell>
-              <div className="font-medium">{provider.display_name}</div>
-              <div className="font-mono text-xs text-muted-foreground">{provider.name}</div>
-            </TableCell>
-            <TableCell className="font-mono text-xs break-all">{provider.issuer}</TableCell>
-            <TableCell>
-              <Badge variant={provider.enabled ? 'default' : 'secondary'}>
-                {provider.enabled ? t('identity.oidc.enabled') : t('identity.oidc.disabled')}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              {provider.managed_by === 'config' ? <SourceBadge source={{ kind: 'file' }} /> : null}
-            </TableCell>
-            <TableCell className="text-right whitespace-nowrap">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t(isOwner ? 'identity.oidc.edit' : 'identity.oidc.view', {
-                  name: provider.name,
-                })}
-                onClick={() => {
-                  onEdit(provider)
-                }}
-              >
-                <Pencil aria-hidden />
-              </Button>
-              {!isOwner || provider.managed_by === 'config' ? null : (
+    <div className="overflow-hidden rounded-lg border">
+      <Table aria-label={t('identity.oidc.tableLabel')}>
+        <TableHeader className="bg-muted/50">
+          <TableRow className="hover:bg-transparent">
+            <TableHead className={HEAD}>{t('identity.oidc.columns.name')}</TableHead>
+            <TableHead className={HEAD}>{t('identity.oidc.columns.issuer')}</TableHead>
+            <TableHead className={HEAD}>{t('identity.oidc.columns.status')}</TableHead>
+            <TableHead className={HEAD}>{t('identity.oidc.columns.source')}</TableHead>
+            <TableHead className={`${HEAD} text-right`}>
+              {t('identity.oidc.columns.actions')}
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {providers.map((provider) => (
+            <TableRow key={provider.id}>
+              <TableCell className="pl-3">
+                <div className="font-medium">{provider.display_name}</div>
+                <div className="font-mono text-xs text-muted-foreground">{provider.name}</div>
+              </TableCell>
+              <TableCell className="font-mono text-xs break-all">{provider.issuer}</TableCell>
+              <TableCell>
+                <Badge variant={provider.enabled ? 'success' : 'secondary'}>
+                  {provider.enabled ? t('identity.oidc.enabled') : t('identity.oidc.disabled')}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                {provider.managed_by === 'config' ? (
+                  <SourceBadge source={{ kind: 'file' }} />
+                ) : null}
+              </TableCell>
+              <TableCell className="pr-3 text-right whitespace-nowrap">
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={t('identity.oidc.delete', { name: provider.name })}
+                  aria-label={t(isOwner ? 'identity.oidc.edit' : 'identity.oidc.view', {
+                    name: provider.name,
+                  })}
                   onClick={() => {
-                    onDelete(provider)
+                    onEdit(provider)
                   }}
                 >
-                  <Trash2 aria-hidden />
+                  <Pencil aria-hidden />
                 </Button>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+                {!isOwner || provider.managed_by === 'config' ? null : (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('identity.oidc.delete', { name: provider.name })}
+                    onClick={() => {
+                      onDelete(provider)
+                    }}
+                  >
+                    <Trash2 aria-hidden />
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
