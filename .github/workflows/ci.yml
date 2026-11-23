@@ -209,7 +209,9 @@ jobs:
           git clean -ffdxq
       - run: .github/ci-setup.sh cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
       - name: build the tests
-        run: cargo nextest run --workspace --all-targets --no-run
+        run: |
+          cargo nextest list --workspace --all-targets --list-type binaries-only --message-format json >"$RUNNER_TEMP/binaries.json"
+          cargo metadata --format-version 1 --all-features --no-deps >"$RUNNER_TEMP/cargo.json"
       - name: tests (SQLite, PostgreSQL 16 and 17)
         shell: bash
         run: |
@@ -220,7 +222,9 @@ jobs:
               export DESKHAVEN_TEST_PG_URL="$2" DESKHAVEN_TEST_REQUIRE_PG=1
               profile=ci-pg
             fi
-            cargo nextest run --profile "$profile" --workspace --all-targets >"$RUNNER_TEMP/test-$1.log" 2>&1
+            # No cargo here: a missing web/dist makes every cargo call relink the binaries the other suites run.
+            cargo nextest run --profile "$profile" --binaries-metadata "$RUNNER_TEMP/binaries.json" \
+              --cargo-metadata "$RUNNER_TEMP/cargo.json" --workspace-remap . >"$RUNNER_TEMP/test-$1.log" 2>&1
           }
           names=(sqlite pg16 pg17)
           urls=("" postgres://deskhaven:deskhaven@pg16:5432/deskhaven_test postgres://deskhaven:deskhaven@pg17:5432/deskhaven_test)
