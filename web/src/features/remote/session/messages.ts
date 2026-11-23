@@ -12,6 +12,7 @@ import {
   type KeyEvent,
   type Message,
   type Misc,
+  type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { PLATFORM_WINDOWS, atLeast } from './peer'
 
@@ -19,8 +20,17 @@ function misc(union: Misc['union']): Message {
   return create(MessageSchema, { union: { case: 'misc', value: create(MiscSchema, { union }) } })
 }
 
+export interface OptionPatch {
+  peer?: OptionMessage
+  maxFps?: number
+}
+
+export function optionMessage(option: OptionMessage): Message {
+  return misc({ case: 'option', value: option })
+}
+
 export function customFps(fps: number): Message {
-  return misc({ case: 'option', value: create(OptionMessageSchema, { customFps: fps }) })
+  return optionMessage(create(OptionMessageSchema, { customFps: fps }))
 }
 
 // Peers from 1.2.4 refresh one display (rustdesk 1.5.0 src/ui_session_interface.rs:442-450,

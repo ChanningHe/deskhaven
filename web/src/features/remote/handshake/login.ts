@@ -1,4 +1,4 @@
-import { create } from '@bufbuild/protobuf'
+import { clone, create } from '@bufbuild/protobuf'
 
 import {
   LoginRequestSchema,
@@ -8,6 +8,7 @@ import {
   SupportedDecoding_PreferCodec,
   SupportedDecodingSchema,
   type Message,
+  type OptionMessage,
   type PeerInfo,
   type SupportedDecoding,
 } from '../proto/gen/message_pb.js'
@@ -64,10 +65,14 @@ export interface LoginFields {
   myName: string
   sessionId: bigint
   decoding: SupportedDecoding
+  option: OptionMessage
 }
 
 /** `password` is the login proof, or empty to ask the peer's user to accept the session. */
 export function loginRequest(fields: LoginFields, password: Uint8Array): Message {
+  const option = clone(OptionMessageSchema, fields.option)
+  option.disableAudio = OptionMessage_BoolOption.Yes
+  option.supportedDecoding = fields.decoding
   return create(MessageSchema, {
     union: {
       case: 'loginRequest',
@@ -79,10 +84,7 @@ export function loginRequest(fields: LoginFields, password: Uint8Array): Message
         myPlatform: CLIENT_PLATFORM,
         version: CLIENT_VERSION,
         sessionId: fields.sessionId,
-        option: create(OptionMessageSchema, {
-          disableAudio: OptionMessage_BoolOption.Yes,
-          supportedDecoding: fields.decoding,
-        }),
+        option,
       }),
     },
   })

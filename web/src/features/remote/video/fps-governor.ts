@@ -22,7 +22,7 @@ export interface FpsTick {
 // rustdesk 1.5.1 src/client/io_loop.rs:1557-1655, decode rate src/client.rs:4164-4193.
 export class FpsGovernor {
   readonly #tenths: number
-  readonly #userFps: number
+  #userFps: number
   #warmUp = 0
   #count = 0
   #totalMs = 0
@@ -36,6 +36,10 @@ export class FpsGovernor {
   constructor(options: FpsGovernorOptions) {
     this.#tenths = options.direct ? 9 : 8
     this.#userFps = options.userFps
+  }
+
+  setUserFps(fps: number): void {
+    this.#userFps = fps
   }
 
   decoded(serviceMs: number): void {
@@ -79,6 +83,10 @@ export class FpsGovernor {
 
   #trend(queued: number, decodeFps: number, limited: number): 'up' | 'down' | null {
     const last = this.#lastFps ?? this.#userFps
+    if (last > this.#userFps) {
+      this.#idle = 0
+      return 'down'
+    }
     if ((queued > 1 && last > limited) || queued > Math.max(1, Math.floor(decodeFps / 2))) {
       this.#idle = 0
       return 'down'

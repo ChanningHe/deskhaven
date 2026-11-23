@@ -17,6 +17,7 @@ import {
   HashSchema,
   LoginResponseSchema,
   MiscSchema,
+  OptionMessageSchema,
   PeerInfoSchema,
   SignedIdSchema,
   TestDelaySchema,
@@ -277,6 +278,7 @@ function syntheticPeer(dtlsFingerprint: string, kxVersion: number) {
       myId: 'admin',
       myName: 'Admin',
       decoders: { vp9: false, av1: false, vp8: true },
+      loginOption: create(OptionMessageSchema),
     },
     signedId: msg({
       case: 'signedId',

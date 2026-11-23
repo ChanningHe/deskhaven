@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { SupportedDecoding_PreferCodec } from '../proto/gen/message_pb.js'
-import { DECODER_PROBES, loginStateForError, probeDecoders, supportedDecoding } from './login'
+import { create } from '@bufbuild/protobuf'
+
+import {
+  ImageQuality,
+  OptionMessage_BoolOption,
+  OptionMessageSchema,
+  SupportedDecoding_PreferCodec,
+} from '../proto/gen/message_pb.js'
+import {
+  DECODER_PROBES,
+  loginRequest,
+  loginStateForError,
+  probeDecoders,
+  supportedDecoding,
+} from './login'
 
 describe('supportedDecoding', () => {
   it.each([
@@ -40,5 +53,53 @@ describe('loginStateForError', () => {
   it('ends the session on errors it does not know, including Object.prototype keys', () => {
     expect(loginStateForError('__proto__')).toEqual({ kind: 'failed', reason: '__proto__' })
     expect(loginStateForError('')).toEqual({ kind: 'failed', reason: '' })
+  })
+})
+
+describe('loginRequest', () => {
+  const decoding = supportedDecoding({ vp9: true, av1: false, vp8: false })
+  if (!decoding) throw new Error('vp9 is decodable')
+  const fields = (option = create(OptionMessageSchema)) => ({
+    targetId: '1',
+    myId: 'a',
+    myName: 'A',
+    sessionId: 7n,
+    decoding,
+    option,
+  })
+
+  it('adds the settings option to the audio and decoding ones it always sends', () => {
+    const option = create(OptionMessageSchema, {
+      imageQuality: ImageQuality.Best,
+      customImageQuality: 0,
+      customFps: 24,
+    })
+    const message = loginRequest(fields(option), new Uint8Array())
+    if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
+    expect(message.union.value.option).toMatchObject({
+      imageQuality: ImageQuality.Best,
+      customFps: 24,
+      disableAudio: OptionMessage_BoolOption.Yes,
+      supportedDecoding: { abilityVp9: 1, prefer: SupportedDecoding_PreferCodec.VP9 },
+    })
+    expect(message.union.value.videoAckRequired).toBe(false)
+  })
+
+  it('does not let the settings option switch off audio or decoding', () => {
+    const option = create(OptionMessageSchema, {
+      disableAudio: OptionMessage_BoolOption.No,
+      supportedDecoding: undefined,
+    })
+    const message = loginRequest(fields(option), new Uint8Array())
+    if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
+    expect(message.union.value.option?.disableAudio).toBe(OptionMessage_BoolOption.Yes)
+    expect(message.union.value.option?.supportedDecoding).toMatchObject({ abilityVp9: 1 })
+  })
+
+  it('leaves the option it was given untouched', () => {
+    const option = create(OptionMessageSchema, { customFps: 24 })
+    loginRequest(fields(option), new Uint8Array())
+    expect(option.disableAudio).toBe(OptionMessage_BoolOption.NotSet)
+    expect(option.supportedDecoding).toBeUndefined()
   })
 })

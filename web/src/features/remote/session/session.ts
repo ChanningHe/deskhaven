@@ -1,3 +1,5 @@
+import { clone } from '@bufbuild/protobuf'
+
 import { clipboardMessage, clipboardText } from '../clipboard/clipboard'
 import { CursorTracker, type CursorView } from '../cursor/cursor'
 import type { Handshake } from '../handshake/handshake'
@@ -9,6 +11,7 @@ import {
   type KeyboardMode,
   type Message,
   type Misc,
+  OptionMessageSchema,
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
@@ -21,9 +24,11 @@ import {
   ctrlAltDel,
   customFps,
   keyMessage,
+  optionMessage,
   refreshVideo,
   selectedSid,
   switchDisplay,
+  type OptionPatch,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
@@ -67,6 +72,7 @@ export interface Session {
   /** Asks the peer to stream display `index` of PeerView.displays. */
   switchDisplay(index: number): void
   ctrlAltDel(): void
+  setOptions(patch: OptionPatch): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
   input(input: RemoteInput): void
   /** Sends our clipboard text; false when not active, not allowed or too long. */
@@ -212,6 +218,17 @@ class RemoteSession implements Session {
     const peer = this.peer.get()
     if (!peer || !this.#active() || !this.permissions.get().keyboard) return
     this.#send(keyMessage(ctrlAltDel(peer.info.platform)))
+  }
+
+  setOptions(patch: OptionPatch): void {
+    if (!this.#active()) return
+    if (patch.peer) {
+      // custom_fps has one writer, the governor.
+      const option = clone(OptionMessageSchema, patch.peer)
+      option.customFps = 0
+      this.#send(optionMessage(option))
+    }
+    if (patch.maxFps !== undefined) this.#governor.setUserFps(patch.maxFps)
   }
 
   input(input: RemoteInput): void {

@@ -18,6 +18,7 @@ import {
   type Hash,
   type LoginResponse,
   type Message,
+  type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { IdPkSchema, type IdPk } from '../proto/gen/rendezvous_pb.js'
 import type { KeyedTransport, Transport } from '../transport/transport'
@@ -40,6 +41,7 @@ export interface HandshakeParams {
   myId: string
   myName: string
   decoders: DecoderSupport
+  loginOption: OptionMessage
 }
 
 /** Starts a one-shot timer and returns the function that cancels it. */
@@ -198,6 +200,7 @@ class PeerHandshake implements Handshake {
       myName: params.myName,
       sessionId: new DataView(this.#random(SESSION_ID_BYTES).buffer).getBigUint64(0, true),
       decoding,
+      option: params.loginOption,
     }
     this.#arm(IDENTITY_TIMEOUT_MS)
   }

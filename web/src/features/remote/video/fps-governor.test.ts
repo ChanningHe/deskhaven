@@ -73,6 +73,38 @@ describe('FpsGovernor fps', () => {
   })
 })
 
+describe('FpsGovernor user ceiling', () => {
+  it('brings the fps down on the next tick when the ceiling drops below it', () => {
+    const g = governor(1)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(DEFAULT_FPS)
+    g.setUserFps(12)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(12)
+    expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
+  })
+
+  it('lets the fps climb to a higher ceiling the way it climbs after a backlog', () => {
+    const g = governor(1)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(DEFAULT_FPS)
+    g.setUserFps(60)
+    const sent = Array.from({ length: 6 }, () => g.tick({ fps: 20, queued: 0 }))
+    expect(sent.filter((fps) => fps !== null)).toEqual([60])
+    expect(sent.indexOf(60)).toBeGreaterThan(0)
+  })
+
+  it('does not climb past what the decoder keeps up with', () => {
+    const g = governor(50, true)
+    expect(g.tick({ fps: 18, queued: 0 })).toBe(18)
+    g.setUserFps(60)
+    for (let i = 0; i < 10; i++) expect(g.tick({ fps: 18, queued: 0 })).toBeNull()
+  })
+
+  it('sends nothing by itself', () => {
+    const g = new FpsGovernor({ direct: false, userFps: DEFAULT_FPS })
+    g.setUserFps(12)
+    expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
+  })
+})
+
 describe('FpsGovernor refresh', () => {
   it(`allows a refresh at once, then one per ${REFRESH_INTERVAL_MS} ms`, () => {
     const g = governor(50)

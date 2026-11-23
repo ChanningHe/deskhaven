@@ -22,17 +22,22 @@ const SCREENS = {
   large: { cols: 100, rows: 58 },
 } as const
 
-type ConditionName = 'A' | 'B' | 'C'
+type ConditionName = 'A' | 'B' | 'C' | 'Cb' | 'Cs'
 interface Condition {
   shaping: Shaping
   screen: keyof typeof SCREENS
+  quality?: 'best'
 }
 // A and B change a small area, so their fps is the pipeline's rather than the bandwidth's.
+// Cb is C at Best quality, whose bitrate fills the link; Cs is a link below the default bitrate.
 const CONDITIONS: Record<ConditionName, Condition> = {
   A: { shaping: {}, screen: 'small' },
   B: { shaping: { rttMs: 80 }, screen: 'small' },
   C: { shaping: { rttMs: 80, kbps: 2000 }, screen: 'large' },
+  Cb: { shaping: { rttMs: 80, kbps: 2000 }, screen: 'large', quality: 'best' },
+  Cs: { shaping: { rttMs: 80, kbps: 500 }, screen: 'large' },
 }
+const SETTINGS_KEY = 'deskhaven.remote.settings'
 type Transport = 'Relay' | 'WebRTC'
 const CASES: [ConditionName, ClientKey, Transport][] = [
   ['A', '1.4', 'Relay'],
@@ -42,6 +47,9 @@ const CASES: [ConditionName, ClientKey, Transport][] = [
   ['B', '1.5', 'Relay'],
   ['C', '1.4', 'Relay'],
   ['C', '1.5', 'Relay'],
+  ['Cb', '1.4', 'Relay'],
+  ['Cb', '1.5', 'Relay'],
+  ['Cs', '1.5', 'Relay'],
 ]
 
 const STATS = ['fps', 'kbps', 'delayMs', 'decodeMs', 'decodeQueue', 'keyRequests', 'pointerMoves']
@@ -153,6 +161,14 @@ for (const [name, key, transport] of CASES) {
       const target = device(key)
       test.skip(target === undefined, `no ${key} client in this run`)
       if (target === undefined) return
+      if (condition.quality) {
+        await page.addInitScript(
+          ([key, quality]) => {
+            localStorage.setItem(key, JSON.stringify({ v: 1, settings: { quality } }))
+          },
+          [SETTINGS_KEY, condition.quality] as const,
+        )
+      }
       if (transport === 'Relay') {
         await page.addInitScript(() => {
           Reflect.deleteProperty(window, 'RTCPeerConnection')

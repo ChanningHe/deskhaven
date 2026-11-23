@@ -4,6 +4,7 @@ import type { WebClientCandidates, WebClientSession } from '@/api/generated/mode
 
 import { MemoryTransport } from '../__fixtures__/harness'
 import type { Session } from '../session/session'
+import { memoryStorage } from '../settings/testing'
 import { FakePeerConnection } from '../transport/fake-rtc'
 import { WebRtcTransport } from '../transport/webrtc'
 import type { ConnectDeps, WebRtcDeps } from './controller'
@@ -26,6 +27,7 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
     sessions.push(session)
     return session
   })
+  const storage = memoryStorage()
   const deps: ConnectDeps = {
     openSession,
     closeSession,
@@ -33,9 +35,11 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
     createRelay,
     startSession,
     location: { protocol: 'https:', host: 'console.example' },
+    storage,
   }
   return {
     deps,
+    storage,
     sessions,
     relays,
     openSession,

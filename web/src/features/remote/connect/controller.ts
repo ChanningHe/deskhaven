@@ -14,6 +14,14 @@ import {
   type Link,
 } from '../handshake/handshake'
 import { supportedDecoding, type DecoderSupport } from '../handshake/login'
+import { loginOption, optionPatch } from '../settings/protocol'
+import {
+  browserStorage,
+  loadSettings,
+  saveSettings,
+  withPatch,
+  type RemoteSettings,
+} from '../settings/settings'
 import { CLOSED_BY_USER, startSession, type Session } from '../session/session'
 import { ValueStore, type Store } from '../session/store'
 import { RelayTransport, type RelayOptions } from '../transport/relay'
@@ -21,6 +29,7 @@ import type { KeyedTransport } from '../transport/transport'
 import { startTrickle, type Trickle, type TrickleApi } from '../transport/trickle'
 import { WebRtcTransport, type WebRtcOfferer } from '../transport/webrtc'
 import { probeVideoDecoders } from '../video/codec'
+import { DEFAULT_FPS } from '../video/fps-governor'
 import { WEBRTC_CONNECT_TIMEOUT_MS, paired, preferWebRtc, withTimeout } from './race'
 
 export type ConnectFailure =
@@ -57,6 +66,7 @@ export interface ConnectDeps {
   location: Pick<Location, 'protocol' | 'host'>
   /** Without it, the relay only. */
   webrtc?: WebRtcDeps
+  storage?: Storage | null
 }
 
 export const browserDeps: ConnectDeps = {
@@ -71,6 +81,9 @@ export const browserDeps: ConnectDeps = {
   startSession: (link, params) => startSession(startHandshake(link, params)),
   get location() {
     return window.location
+  },
+  get storage() {
+    return browserStorage()
   },
   webrtc: {
     createOfferer: () => WebRtcTransport.create(),
@@ -103,6 +116,7 @@ interface Attempt {
   session: Session | null
   /** Closes what the attempt holds until a peer session owns the link. */
   readonly pending: Set<() => void>
+  told: RemoteSettings | null
 }
 
 /**
@@ -116,6 +130,8 @@ interface Attempt {
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
   readonly #transport = new ValueStore<TransportKind>('connecting')
+  readonly #settings: ValueStore<RemoteSettings>
+  readonly #storage: Storage | null
   readonly #deviceId: string
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
@@ -124,6 +140,19 @@ export class RemoteController {
   constructor(deviceId: string, deps: ConnectDeps = browserDeps) {
     this.#deviceId = deviceId
     this.#deps = deps
+    this.#storage = deps.storage === undefined ? browserStorage() : deps.storage
+    this.#settings = new ValueStore(loadSettings(this.#storage))
+  }
+
+  get settings(): Store<RemoteSettings> {
+    return this.#settings
+  }
+
+  updateSettings(patch: Partial<RemoteSettings>): void {
+    const next = withPatch(this.#settings.get(), patch)
+    this.#settings.set(next)
+    saveSettings(next, this.#storage)
+    if (this.#current) this.#sync(this.#current)
   }
 
   get phase(): Store<RemotePhase> {
@@ -142,6 +171,7 @@ export class RemoteController {
       released: false,
       session: null,
       pending: new Set(),
+      told: null,
     }
     this.#current = attempt
     this.#transport.set('connecting')
@@ -196,7 +226,9 @@ export class RemoteController {
     let params: HandshakeParams
     let link: Link
     try {
-      params = this.#params(opened, decoders)
+      const settings = this.#settings.get()
+      params = this.#params(opened, decoders, settings)
+      attempt.told = { ...settings, fps: Math.min(settings.fps, DEFAULT_FPS) }
       const relay = this.#deps.createRelay(this.#relayOptions(opened))
       const webrtc = this.#deps.webrtc
       if (offerer && opened.answer && webrtc) {
@@ -227,6 +259,7 @@ export class RemoteController {
         if (state.kind === 'connecting') return
         handshaken = true
         this.#relayOnly = false
+        this.#sync(attempt)
         return
       }
       stop()
@@ -249,7 +282,11 @@ export class RemoteController {
     }
   }
 
-  #params(opened: WebClientSession, decoders: DecoderSupport): HandshakeParams {
+  #params(
+    opened: WebClientSession,
+    decoders: DecoderSupport,
+    settings: RemoteSettings,
+  ): HandshakeParams {
     // The target is the device the user picked, never the id the server echoes: the
     // handshake checks both signatures against it.
     return {
@@ -259,7 +296,18 @@ export class RemoteController {
       myId: opened.my_id,
       myName: opened.my_name,
       decoders,
+      loginOption: loginOption(settings),
     }
+  }
+
+  #sync(attempt: Attempt): void {
+    const { session, told } = attempt
+    if (!session || !told || session.state.get().kind !== 'active') return
+    const settings = this.#settings.get()
+    const patch = optionPatch(told, settings)
+    if (!patch) return
+    attempt.told = settings
+    session.setOptions(patch)
   }
 
   #relayOptions(opened: WebClientSession): RelayOptions {

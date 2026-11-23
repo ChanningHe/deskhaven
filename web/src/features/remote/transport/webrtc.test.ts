@@ -6,6 +6,7 @@ import { startHandshake, type HandshakeEvent } from '../handshake/handshake'
 import {
   ClipboardSchema,
   MessageSchema,
+  OptionMessageSchema,
   SignedIdSchema,
   type Message,
 } from '../proto/gen/message_pb.js'
@@ -273,6 +274,7 @@ describe('WebRTC identity binding', () => {
         myId: 'admin',
         myName: 'Admin',
         decoders: { vp9: true, av1: false, vp8: false },
+        loginOption: create(OptionMessageSchema),
       },
       signedId,
     }

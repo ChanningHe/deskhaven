@@ -10,7 +10,7 @@ import {
   type HandshakeEvent,
   type StartTimer,
 } from '../handshake/handshake'
-import { MessageSchema, type Message } from '../proto/gen/message_pb.js'
+import { MessageSchema, OptionMessageSchema, type Message } from '../proto/gen/message_pb.js'
 import { RendezvousMessageSchema } from '../proto/gen/rendezvous_pb.js'
 import { RelayTransport } from '../transport/relay'
 import type { KeyedTransport } from '../transport/transport'
@@ -181,6 +181,7 @@ export function startFixture(version: FixtureVersion, options: ReplayOptions = {
       myId: 'console-admin',
       myName: 'Admin',
       decoders: { vp9: true, av1: true, vp8: true },
+      loginOption: create(OptionMessageSchema),
     },
     { random: fixtureRandom(version), startTimer: timers.start },
   )

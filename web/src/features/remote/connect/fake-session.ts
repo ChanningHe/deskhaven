@@ -6,6 +6,7 @@ import type { CursorView } from '../cursor/cursor'
 import type { RemoteInput } from '../input/input'
 import { DisplayInfoSchema, KeyboardMode, PeerInfoSchema } from '../proto/gen/message_pb.js'
 import { FrameQueue } from '../session/frame-queue'
+import type { OptionPatch } from '../session/messages'
 import { peerView, type PeerView } from '../session/peer-view'
 import {
   CLOSED_BY_USER,
@@ -32,6 +33,7 @@ export class FakeSession implements Session {
   readonly modes: KeyboardMode[] = []
   readonly chosenSessions: number[] = []
   readonly displays: number[] = []
+  readonly patches: OptionPatch[] = []
   ctrlAltDels = 0
   closed = 0
 
@@ -64,6 +66,10 @@ export class FakeSession implements Session {
 
   ctrlAltDel(): void {
     this.ctrlAltDels++
+  }
+
+  setOptions(patch: OptionPatch): void {
+    this.patches.push(patch)
   }
 
   input(input: RemoteInput): void {
