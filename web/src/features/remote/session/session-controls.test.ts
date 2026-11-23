@@ -5,7 +5,6 @@ import { fixtureBytes } from '../__fixtures__/fixtures'
 import { replayToKeyed } from '../__fixtures__/harness'
 import { NO_MODIFIERS } from '../input/mouse'
 import {
-  ControlKey,
   DisplayInfoSchema,
   KeyboardMode,
   PeerInfoSchema,
@@ -70,29 +69,6 @@ describe('session displays', () => {
     expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
       { union: { case: 'switchDisplay', value: { display: 1 } } },
       { union: { case: 'captureDisplays', value: { set: [1] } } },
-    ])
-  })
-})
-
-describe('session Ctrl+Alt+Del', () => {
-  it('sends Delete with Ctrl and Alt to a peer other than Windows', async () => {
-    const r = await activeSession()
-    r.session.ctrlAltDel()
-    expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
-      {
-        mode: KeyboardMode.Legacy,
-        press: true,
-        union: { case: 'controlKey', value: ControlKey.Delete },
-        modifiers: [ControlKey.Alt, ControlKey.Control],
-      },
-    ])
-  })
-
-  it('sends the CtrlAltDel key to a Windows peer', async () => {
-    const r = await activeSession(create(PeerInfoSchema, { ...PEER_INFO, platform: 'Windows' }))
-    r.session.ctrlAltDel()
-    expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
-      { down: true, union: { case: 'controlKey', value: ControlKey.CtrlAltDel } },
     ])
   })
 })

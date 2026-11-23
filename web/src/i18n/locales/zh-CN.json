@@ -1780,7 +1780,15 @@
       "monitorN": "显示器 {{n}}",
       "showRemoteCursor": "显示远端光标",
       "stats": "统计信息",
-      "ctrlAltDel": "Ctrl+Alt+Del",
+      "sendKeys": "发送按键",
+      "keys": {
+        "ctrl_alt_del": "Ctrl+Alt+Del",
+        "lock_screen": "锁屏",
+        "win": "Win 键",
+        "alt_tab": "Alt+Tab",
+        "cmd_tab": "⌘Tab",
+        "print_screen": "PrintScreen"
+      },
       "keyboardMode": "键盘模式",
       "modes": {
         "map": "映射",
@@ -1789,6 +1797,7 @@
       },
       "fullscreen": "全屏",
       "exitFullscreen": "退出全屏",
+      "noKeyboardLock": "{{label}}。此浏览器无法捕获系统快捷键，请用“输入”菜单中的“发送按键”。",
       "sendClipboard": "发送剪贴板",
       "remoteClipboard": "远端剪贴板",
       "clipboardSync": "自动同步剪贴板",

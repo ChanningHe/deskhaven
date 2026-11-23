@@ -17,7 +17,7 @@ import {
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import type { Quality } from '../settings/settings'
-import { PLATFORM_WINDOWS, atLeast } from './peer'
+import { PLATFORM_MACOS, PLATFORM_WINDOWS, atLeast } from './peer'
 
 function misc(union: Misc['union']): Message {
   return create(MessageSchema, { union: { case: 'misc', value: create(MiscSchema, { union }) } })
@@ -89,22 +89,62 @@ export function changeResolution(
     : misc({ case: 'changeResolution', value: resolution })
 }
 
-/**
- * rustdesk 1.5.0 src/keyboard.rs:433-445: a Windows peer takes the CtrlAltDel key (it raises
- * the secure attention sequence); others get Delete pressed with Ctrl and Alt.
- */
-export function ctrlAltDel(platform: string): KeyEvent {
-  if (platform === PLATFORM_WINDOWS) {
-    return create(KeyEventSchema, {
-      mode: KeyboardMode.Legacy,
-      down: true,
-      union: { case: 'controlKey', value: ControlKey.CtrlAltDel },
-    })
-  }
+export type SessionAction = 'ctrl_alt_del' | 'lock_screen' | 'win' | 'alt_tab' | 'print_screen'
+
+export const SESSION_ACTIONS: readonly SessionAction[] = [
+  'ctrl_alt_del',
+  'lock_screen',
+  'win',
+  'alt_tab',
+  'print_screen',
+]
+
+function legacyKey(
+  controlKey: ControlKey,
+  fields: { down?: boolean; press?: boolean; modifiers?: ControlKey[] },
+): KeyEvent {
   return create(KeyEventSchema, {
     mode: KeyboardMode.Legacy,
-    press: true,
-    union: { case: 'controlKey', value: ControlKey.Delete },
-    modifiers: [ControlKey.Alt, ControlKey.Control],
+    union: { case: 'controlKey', value: controlKey },
+    ...fields,
   })
+}
+
+/**
+ * Always Legacy, as the official client sends them. `press` is down then up on the peer, except
+ * for a modifier: a Linux peer reads its press as a release (rustdesk 1.5.1 src/server/connection.rs:3367).
+ */
+export function actionKeys(kind: SessionAction, platform: string): KeyEvent[] {
+  switch (kind) {
+    case 'ctrl_alt_del':
+      // rustdesk 1.5.1 src/keyboard.rs:487-500
+      return [
+        platform === PLATFORM_WINDOWS
+          ? legacyKey(ControlKey.CtrlAltDel, { down: true })
+          : legacyKey(ControlKey.Delete, {
+              press: true,
+              modifiers: [ControlKey.Alt, ControlKey.Control],
+            }),
+      ]
+    case 'lock_screen':
+      // rustdesk 1.5.1 src/keyboard.rs:473-478
+      return [legacyKey(ControlKey.LockScreen, { down: true })]
+    case 'win':
+      // no official menu entry; Meta is ControlKey.Meta at src/keyboard.rs:1149
+      return [
+        legacyKey(ControlKey.Meta, { down: true }),
+        legacyKey(ControlKey.Meta, { down: false }),
+      ]
+    case 'alt_tab':
+      // no official menu entry; press as src/keyboard.rs:487-500, Cmd is the Meta modifier (:450-454)
+      return [
+        legacyKey(ControlKey.Tab, {
+          press: true,
+          modifiers: [platform === PLATFORM_MACOS ? ControlKey.Meta : ControlKey.Alt],
+        }),
+      ]
+    case 'print_screen':
+      // no official menu entry; the peer maps Snapshot to PrintScreen at src/server/input_service.rs:2697
+      return [legacyKey(ControlKey.Snapshot, { press: true })]
+  }
 }

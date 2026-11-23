@@ -49,6 +49,30 @@ export function xterm(device: DeviceInfo, at = '+0+0', pasteClipboard = false): 
   ])
 }
 
+const KEY_NAMES = [
+  'XTerm*VT100.translations: #override \\n',
+  'Mod1 <Key>Tab: string("alt-tab\\n") \\n',
+  '<Key>Print: string("print-screen\\n") \\n',
+  '<Key>Super_L: string("win\\n")',
+].join('')
+
+export function keyProbe(device: DeviceInfo, file: string): XWindow {
+  return run(device, tool('xterm'), [
+    '-xrm',
+    KEY_NAMES,
+    '-geometry',
+    '80x24+0+0',
+    '-bg',
+    'black',
+    '-fg',
+    'white',
+    '-e',
+    '/bin/sh',
+    '-c',
+    `cat > ${file}`,
+  ])
+}
+
 // Class RdNoise keeps the probe's `--class xterm` search from matching this window.
 export function noise(device: DeviceInfo, at: string, cols: number, rows: number): XWindow {
   return run(device, tool('xterm'), [

@@ -12,10 +12,11 @@ let sent: string[]
 let session: FakeSession
 let area: HTMLTextAreaElement
 const onPaste = vi.fn<(text: string) => void>()
+const onLeave = vi.fn<() => void>()
 
 function Harness() {
   const ref = useRef<HTMLTextAreaElement>(null)
-  useScreenKeys(session, ref, () => undefined, onPaste)
+  useScreenKeys(session, ref, onLeave, onPaste)
   return <textarea ref={ref} aria-label="keys" />
 }
 
@@ -32,6 +33,7 @@ beforeEach(() => {
     sent.push(label(input))
   })
   onPaste.mockReset()
+  onLeave.mockReset()
   onPaste.mockImplementation((text) => {
     sent.push(`clip:${text}`)
   })
@@ -203,5 +205,30 @@ describe('paste shortcuts', () => {
     })
     expect(sent).toEqual(['text'])
     expect(area).toHaveValue('')
+  })
+})
+
+describe('Escape while the browser holds the keyboard (full screen with Keyboard Lock)', () => {
+  it('sends a short press to the peer, down and up, and stays on the screen', () => {
+    const down = key('keydown', { key: 'Escape', code: 'Escape' })
+    key('keyup', { key: 'Escape', code: 'Escape' })
+    expect(down.defaultPrevented).toBe(true)
+    expect(sent).toEqual(['+Escape', '-Escape'])
+    expect(onLeave).not.toHaveBeenCalled()
+  })
+
+  it('does not leave the screen on the repeats of a held Escape, which ends full screen itself', () => {
+    key('keydown', { key: 'Escape', code: 'Escape' })
+    for (let i = 0; i < 5; i++) key('keydown', { key: 'Escape', code: 'Escape', repeat: true })
+    expect(onLeave).not.toHaveBeenCalled()
+    expect(sent.every((entry) => entry === '+Escape')).toBe(true)
+    expect(sent).toHaveLength(6)
+  })
+
+  it('sends the Windows key to the peer as a key of its own', () => {
+    const down = key('keydown', { key: 'Meta', code: 'MetaLeft', metaKey: true })
+    key('keyup', { key: 'Meta', code: 'MetaLeft' })
+    expect(down.defaultPrevented).toBe(true)
+    expect(sent).toEqual(['+Meta', '-Meta'])
   })
 })

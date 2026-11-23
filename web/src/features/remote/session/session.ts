@@ -24,7 +24,7 @@ import {
   captureDisplay,
   changeResolution,
   closeReason,
-  ctrlAltDel,
+  actionKeys,
   customFps,
   keyMessage,
   optionMessage,
@@ -32,6 +32,7 @@ import {
   selectedSid,
   switchDisplay,
   type OptionPatch,
+  type SessionAction,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { offersResolution } from './resolution'
@@ -77,7 +78,7 @@ export interface Session {
   /** Asks the peer to stream display `index` of PeerView.displays. */
   switchDisplay(index: number): void
   changeResolution(width: number, height: number): void
-  ctrlAltDel(): void
+  action(kind: SessionAction): void
   setOptions(patch: OptionPatch): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
   input(input: RemoteInput): void
@@ -230,10 +231,10 @@ class RemoteSession implements Session {
     this.#send(changeResolution(peer.current, width, height, peer.info.version))
   }
 
-  ctrlAltDel(): void {
+  action(kind: SessionAction): void {
     const peer = this.peer.get()
     if (!peer || !this.#active() || !this.permissions.get().keyboard) return
-    this.#send(keyMessage(ctrlAltDel(peer.info.platform)))
+    for (const event of actionKeys(kind, peer.info.platform)) this.#send(keyMessage(event))
   }
 
   setOptions(patch: OptionPatch): void {

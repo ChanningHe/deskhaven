@@ -49,7 +49,7 @@ describe('why the session closed', () => {
     handshake.send = () => {
       throw new TransportError('relay connection is closed')
     }
-    session.ctrlAltDel()
+    session.action('lock_screen')
     expect(session.state.get()).toEqual({
       kind: 'closed',
       cause: { by: 'link', reason: 'relay connection is closed' },
@@ -62,7 +62,7 @@ describe('why the session closed', () => {
     handshake.send = () => {
       throw new Error('the session is not keyed')
     }
-    session.ctrlAltDel()
+    session.action('lock_screen')
     expect(session.state.get()).toEqual({
       kind: 'closed',
       cause: { by: 'local', reason: 'the session is not keyed' },

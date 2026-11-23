@@ -8,10 +8,15 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 
 import { supportedKeyboardModes } from '../../input/keyboard'
 import { KeyboardMode } from '../../proto/gen/message_pb.js'
+import { SESSION_ACTIONS, type SessionAction } from '../../session/messages'
+import { PLATFORM_MACOS } from '../../session/peer'
 import type { Session } from '../../session/session'
 import { ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
@@ -26,6 +31,10 @@ type ShownMode = keyof typeof MODE_KEYS
 
 function isShownMode(mode: KeyboardMode): mode is ShownMode {
   return mode in MODE_KEYS
+}
+
+function keyLabel(kind: SessionAction, platform: string | undefined): SessionAction | 'cmd_tab' {
+  return kind === 'alt_tab' && platform === PLATFORM_MACOS ? 'cmd_tab' : kind
 }
 
 export function InputMenu({ session }: { session: Session }) {
@@ -68,14 +77,24 @@ export function InputMenu({ session }: { session: Session }) {
           <DropdownMenuSeparator />
         </>
       ) : null}
-      <DropdownMenuItem
-        disabled={!keyboard}
-        onClick={() => {
-          session.ctrlAltDel()
-        }}
-      >
-        {t('remote.toolbar.ctrlAltDel')}
-      </DropdownMenuItem>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={!keyboard}>
+          {t('remote.toolbar.sendKeys')}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          {SESSION_ACTIONS.map((kind) => (
+            <DropdownMenuItem
+              key={kind}
+              disabled={!keyboard}
+              onClick={() => {
+                session.action(kind)
+              }}
+            >
+              {t(`remote.toolbar.keys.${keyLabel(kind, peer?.info.platform)}`)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
     </ToolbarMenu>
   )
 }

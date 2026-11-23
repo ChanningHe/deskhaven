@@ -237,7 +237,7 @@ describe('remote page: active session', () => {
     })
     expect(screen.getByRole('toolbar', { name: '会话控制' })).toBeInTheDocument()
     await openMenu(user, '输入')
-    expect(screen.getByRole('menuitem', { name: 'Ctrl+Alt+Del' })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: '发送按键' })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
@@ -258,20 +258,17 @@ describe('remote page: active session', () => {
     expect(screen.getByText('设备已关闭剪贴板。')).toBeInTheDocument()
   })
 
-  it('sends Ctrl+Alt+Del and keyboard mode changes from the input menu', async () => {
+  it('sends keyboard mode changes from the input menu', async () => {
     const { user, session } = await open()
     act(() => {
       session.activate(2)
     })
-    await openMenu(user, '输入')
-    await user.click(screen.getByRole('menuitem', { name: 'Ctrl+Alt+Del' }))
     await openMenu(user, '输入')
     expect(screen.getByRole('menuitemradio', { name: '映射' })).toHaveAttribute(
       'aria-checked',
       'true',
     )
     await user.click(screen.getByRole('menuitemradio', { name: '翻译' }))
-    expect(session.ctrlAltDels).toBe(1)
     expect(session.modes).toEqual([KeyboardMode.Translate])
   })
 

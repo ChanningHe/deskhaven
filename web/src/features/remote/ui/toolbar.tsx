@@ -18,6 +18,7 @@ interface ToolbarProps {
   onStats: (on: boolean) => void
   fullscreen: boolean
   onFullscreen: () => void
+  keyboardLock: boolean
   clipboardSync: ClipboardSyncSwitch
   onSendClipboard: () => void
   onShowRemoteClipboard: () => void
@@ -32,11 +33,15 @@ export function Toolbar({
   onStats,
   fullscreen,
   onFullscreen,
+  keyboardLock,
   clipboardSync,
   onSendClipboard,
   onShowRemoteClipboard,
 }: ToolbarProps) {
   const { t } = useTranslation()
+  const fullscreenLabel = t(
+    fullscreen ? 'remote.toolbar.exitFullscreen' : 'remote.toolbar.fullscreen',
+  )
   return (
     <div
       ref={ref}
@@ -59,7 +64,12 @@ export function Toolbar({
         onShowRemote={onShowRemoteClipboard}
       />
       <IconButton
-        label={t(fullscreen ? 'remote.toolbar.exitFullscreen' : 'remote.toolbar.fullscreen')}
+        label={fullscreenLabel}
+        hint={
+          keyboardLock
+            ? fullscreenLabel
+            : t('remote.toolbar.noKeyboardLock', { label: fullscreenLabel })
+        }
         onClick={onFullscreen}
       >
         {fullscreen ? <Minimize aria-hidden /> : <Maximize aria-hidden />}

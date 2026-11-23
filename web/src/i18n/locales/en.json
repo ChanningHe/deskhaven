@@ -1780,7 +1780,15 @@
       "monitorN": "Monitor {{n}}",
       "showRemoteCursor": "Show remote cursor",
       "stats": "Statistics",
-      "ctrlAltDel": "Ctrl+Alt+Del",
+      "sendKeys": "Send keys",
+      "keys": {
+        "ctrl_alt_del": "Ctrl+Alt+Del",
+        "lock_screen": "Lock screen",
+        "win": "Win key",
+        "alt_tab": "Alt+Tab",
+        "cmd_tab": "⌘Tab",
+        "print_screen": "PrintScreen"
+      },
       "keyboardMode": "Keyboard mode",
       "modes": {
         "map": "Map",
@@ -1789,6 +1797,7 @@
       },
       "fullscreen": "Full screen",
       "exitFullscreen": "Exit full screen",
+      "noKeyboardLock": "{{label}}. This browser cannot capture system shortcuts; use Send keys in the Input menu.",
       "sendClipboard": "Send clipboard",
       "remoteClipboard": "Device clipboard",
       "clipboardSync": "Sync clipboard automatically",

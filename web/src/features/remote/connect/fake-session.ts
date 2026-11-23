@@ -6,7 +6,7 @@ import type { CursorImages, CursorShape, CursorView } from '../cursor/cursor'
 import type { RemoteInput } from '../input/input'
 import { DisplayInfoSchema, KeyboardMode, PeerInfoSchema } from '../proto/gen/message_pb.js'
 import { FrameQueue } from '../session/frame-queue'
-import type { OptionPatch } from '../session/messages'
+import type { OptionPatch, SessionAction } from '../session/messages'
 import { peerView, type PeerView } from '../session/peer-view'
 import type { Size } from '../session/resolution'
 import type { CloseCause } from '../handshake/handshake'
@@ -47,7 +47,7 @@ export class FakeSession implements Session {
   readonly displays: number[] = []
   readonly resolutions: { width: number; height: number }[] = []
   readonly patches: OptionPatch[] = []
-  ctrlAltDels = 0
+  readonly actions: SessionAction[] = []
   closed = 0
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -81,8 +81,8 @@ export class FakeSession implements Session {
     this.resolutions.push({ width, height })
   }
 
-  ctrlAltDel(): void {
-    this.ctrlAltDels++
+  action(kind: SessionAction): void {
+    this.actions.push(kind)
   }
 
   setOptions(patch: OptionPatch): void {

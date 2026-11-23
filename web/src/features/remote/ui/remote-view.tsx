@@ -12,6 +12,7 @@ import { RemoteScreen } from './remote-screen'
 import { StatsOverlay } from './stats-overlay'
 import { Toolbar } from './toolbar'
 import { useClipboardSync } from './use-clipboard-sync'
+import { canLockKeyboard, useKeyboardLock } from './use-keyboard-lock'
 import { useStore } from './use-remote'
 
 type Panel = 'paste' | 'remote' | null
@@ -81,6 +82,7 @@ export function RemoteView({
   const { t } = useTranslation()
   const [notice, setNotice] = useState<Notice>(null)
   const { fullscreen, toggle } = useFullscreen()
+  useKeyboardLock(fullscreen)
   const [panel, setPanel] = useState<Panel>(null)
   const [stats, setStats] = useState(false)
   const peer = useStore(session.peer)
@@ -146,6 +148,7 @@ export function RemoteView({
             onStats={setStats}
             fullscreen={fullscreen}
             onFullscreen={toggle}
+            keyboardLock={canLockKeyboard()}
             clipboardSync={{ ...sync, enabled: settings.clipboardSync }}
             onSendClipboard={() => void sendClipboard()}
             onShowRemoteClipboard={() => {

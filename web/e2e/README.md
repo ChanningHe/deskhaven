@@ -98,6 +98,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn     |
 | `clipboard.remote.ts`  | Chromium only: text syncs both ways with no clicks; text copied before the session is not sent |
 | `paste.remote.ts`      | Chromium and Firefox: three paste shortcuts paste the local text into the device's xterm       |
+| `keys.remote.ts`       | Input > Send keys: Alt+Tab, PrintScreen and Win show up in a device xterm; 1.4 and 1.5         |
 | `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry            |
 | `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                 |
 | `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute           |
