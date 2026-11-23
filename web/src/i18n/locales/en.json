@@ -1770,7 +1770,22 @@
       "displayHint": "Switch display",
       "keyboardModeHint": "How keys are sent to the device. Press Esc twice to leave the remote screen.",
       "sendClipboardHint": "Send this computer’s clipboard to the device",
-      "remoteClipboardHint": "Show what was copied on the device"
+      "remoteClipboardHint": "Show what was copied on the device",
+      "stats": "Statistics",
+      "statsHint": "Show connection statistics over the screen"
+    },
+    "stats": {
+      "label": "Connection statistics",
+      "transport": "Link",
+      "fps": "FPS",
+      "kbps": "Video",
+      "delayMs": "Delay",
+      "decodeMs": "Decode",
+      "decodeQueue": "Queue",
+      "keyRequests": "Key frames",
+      "pointerMoves": "Pointer",
+      "size": "Size",
+      "codec": "Codec"
     },
     "clipboard": {
       "pasteTitle": "Send text to the device",

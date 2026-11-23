@@ -25,10 +25,10 @@ export default defineConfig({
     { name: 'login', testMatch: 'login.setup.remote.ts' },
     {
       name: 'chromium',
-      // `stability.remote.ts` (@slow, minutes long) runs alone and only on request.
+      // The @slow specs (minutes long) run alone and only on request.
       ...(slow
-        ? { testMatch: 'stability.remote.ts' }
-        : { testIgnore: ['login.setup.remote.ts', 'stability.remote.ts'] }),
+        ? { testMatch: ['stability.remote.ts', 'perf.remote.ts'] }
+        : { testIgnore: ['login.setup.remote.ts', 'stability.remote.ts', 'perf.remote.ts'] }),
       dependencies: ['login'],
       use: { ...devices['Desktop Chrome'], storageState: owner },
     },

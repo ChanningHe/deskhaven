@@ -40,6 +40,27 @@ export function xterm(device: DeviceInfo, at = '+0+0'): XWindow {
   ])
 }
 
+// Class RdNoise keeps the probe's `--class xterm` search from matching this window.
+export function noise(device: DeviceInfo, at: string, cols: number, rows: number): XWindow {
+  return run(device, tool('xterm'), [
+    '-geometry',
+    `${String(cols)}x${String(rows)}${at}`,
+    '-name',
+    'rd-noise',
+    '-class',
+    'RdNoise',
+    '-bg',
+    'black',
+    '-fg',
+    'white',
+    '-e',
+    'od',
+    '-An',
+    '-tx1',
+    '/dev/urandom',
+  ])
+}
+
 /** A clock that redraws every second, at the bottom left. */
 export function xclock(device: DeviceInfo): XWindow {
   return run(device, tool('xclock'), [

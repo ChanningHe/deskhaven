@@ -13,7 +13,8 @@ import {
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
 import { FakeDecoders } from '../video/fake-decoder'
-import { startSession, type Session, type SessionState } from './session'
+import { startSession, type Session, type SessionOptions, type SessionState } from './session'
+import { STATS_INTERVAL_MS, type StatsClock } from './stats'
 
 /** The 1.4.5 capture's peer as its PeerInfo would read (the real one was not kept). */
 export const PEER_INFO = create(PeerInfoSchema, {
@@ -47,11 +48,12 @@ const CAPTURED_FRAME_SEQ = 6
 export async function activeSession(
   peerInfo: PeerInfo = PEER_INFO,
   until: SessionState['kind'] = 'active',
+  options: Omit<SessionOptions, 'createDecoder'> = {},
 ): Promise<ActiveSession> {
   const s = fixtureSession('1.4.5')
   const replay = await replayToKeyed('1.4.5', { password: s.password })
   const decoders = new FakeDecoders()
-  const session = startSession(replay.handshake, { createDecoder: decoders.create })
+  const session = startSession(replay.handshake, { ...options, createDecoder: decoders.create })
   let peerSeq = 1
   replay.socket.receive(fixtureBytes('1.4.5', 'hbbr-enc-01-Hash'))
   replay.peer.seal(new Uint8Array(2)) // frame 1 was the captured Hash; keep the peer's count
@@ -87,4 +89,33 @@ export async function activeSession(
 /** Waits until the session has handled everything delivered so far. */
 export async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+export class FakeClock implements StatsClock {
+  #now = 0
+  readonly #timers = new Set<() => void>()
+
+  get timers(): number {
+    return this.#timers.size
+  }
+
+  now(): number {
+    return this.#now
+  }
+
+  every(_ms: number, onTick: () => void): () => void {
+    this.#timers.add(onTick)
+    return () => {
+      this.#timers.delete(onTick)
+    }
+  }
+
+  advance(ms: number): void {
+    this.#now += ms
+  }
+
+  tick(ms = STATS_INTERVAL_MS): void {
+    this.#now += ms
+    for (const onTick of [...this.#timers]) onTick()
+  }
 }

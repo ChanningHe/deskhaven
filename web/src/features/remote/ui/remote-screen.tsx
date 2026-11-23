@@ -1,6 +1,6 @@
 import { LoaderCircle } from 'lucide-react'
 import { useId, useLayoutEffect, useRef } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -17,7 +17,15 @@ import { useScreenKeys } from './use-screen-keys'
  * cursor is drawn instead. Keys go to an invisible text field on the screen, so that IMEs work
  * there; `onLeave` takes focus elsewhere when the user asks to leave the screen.
  */
-export function RemoteScreen({ session, onLeave }: { session: Session; onLeave: () => void }) {
+export function RemoteScreen({
+  session,
+  onLeave,
+  children,
+}: {
+  session: Session
+  onLeave: () => void
+  children?: ReactNode
+}) {
   const { t } = useTranslation()
   const hintId = useId()
   const box = useRef<HTMLDivElement>(null)
@@ -89,6 +97,7 @@ export function RemoteScreen({ session, onLeave }: { session: Session; onLeave: 
         >
           {t('remote.leaveHint')}
         </p>
+        {children}
       </div>
     </div>
   )

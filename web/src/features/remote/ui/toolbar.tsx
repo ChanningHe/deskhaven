@@ -40,7 +40,7 @@ function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
 }
 
 /** An icon-only button: its label is its accessible name, and its tooltip unless a hint is given. */
-function IconButton({
+export function IconButton({
   label,
   hint = label,
   ...props
@@ -91,6 +91,7 @@ interface ToolbarProps {
   session: Session
   fullscreen: boolean
   onFullscreen: () => void
+  children?: ReactNode
   onSendClipboard: () => void
   onShowRemoteClipboard: () => void
 }
@@ -101,6 +102,7 @@ export function Toolbar({
   session,
   fullscreen,
   onFullscreen,
+  children,
   onSendClipboard,
   onShowRemoteClipboard,
 }: ToolbarProps) {
@@ -178,6 +180,7 @@ export function Toolbar({
       >
         {fullscreen ? <Minimize aria-hidden /> : <Maximize aria-hidden />}
       </IconButton>
+      {children}
       <Divider />
       <IconButton
         label={t('remote.toolbar.sendClipboard')}

@@ -1770,7 +1770,22 @@
       "displayHint": "切换显示器",
       "keyboardModeHint": "按键发送到设备的方式。连按两次 Esc 离开远程画面。",
       "sendClipboardHint": "把本机剪贴板发送到设备",
-      "remoteClipboardHint": "查看设备上复制的内容"
+      "remoteClipboardHint": "查看设备上复制的内容",
+      "stats": "统计信息",
+      "statsHint": "在画面上显示连接统计"
+    },
+    "stats": {
+      "label": "连接统计",
+      "transport": "链路",
+      "fps": "帧率",
+      "kbps": "视频",
+      "delayMs": "延迟",
+      "decodeMs": "解码",
+      "decodeQueue": "解码队列",
+      "keyRequests": "关键帧请求",
+      "pointerMoves": "指针",
+      "size": "分辨率",
+      "codec": "编码"
     },
     "clipboard": {
       "pasteTitle": "发送文本到设备",

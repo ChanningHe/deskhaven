@@ -96,6 +96,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry       |
 | `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)            |
 | `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute      |
+| `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)      |
 
 Needed on the machine: `Xvfb`, `xterm`, `xclock`, `xdotool`, `hbbr` (rustdesk-server 1.1.16),
 the client launchers, a non-loopback IPv4 address (hbbr treats loopback TCP as its admin
@@ -111,6 +112,7 @@ export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 nix develop -c pnpm e2e:remote              # chromium (all but @slow) and firefox (relay, webrtc)
 nix develop -c pnpm e2e:remote --project=chromium relay.remote.ts
 RD_E2E_SLOW=1 nix develop -c pnpm e2e:remote            # the soak; RD_E2E_SOAK_SECONDS=300
+RD_E2E_SLOW=1 nix develop -c pnpm e2e:remote --project=chromium perf.remote.ts  # the baseline
 ```
 
 Outside nix (a Debian container): install `xvfb xterm x11-apps xdotool`, a RustDesk `.deb`
@@ -123,3 +125,22 @@ A client variable that is unset skips that version's tests. Logs of every proces
 The WebRTC fallback test replaces `RTCPeerConnection` in the page with one that is
 relay-only without TURN servers: no candidate is ever gathered, in any browser, while the
 attempt itself still happens (the test counts the connections it made).
+
+### Shaped relay link and the performance baseline
+
+`startProxy(console, relay, shaping)` (`remote/support/proxy.ts`) can slow the `/ws/relay`
+traffic down, both ways: `rttMs` adds that round trip (half on each direction, bytes kept in
+order), `kbps` caps each direction's rate behind a 64 KiB queue, past which the proxy stops
+reading so TCP pushes back to the sender. Both are off by default, and then the proxy pipes
+the sockets exactly as before. Console traffic is never shaped, and neither is WebRTC, which
+does not pass through the proxy.
+
+`perf.remote.ts` chains a shaped proxy in front of the stack's for each test that needs one
+and samples one session per case for `RD_E2E_PERF_SECONDS` (default 180): A untouched, B
+`rttMs: 80`, C `rttMs: 80, kbps: 2000`; 1.4 and 1.5 over the relay, plus 1.5 over WebRTC in A
+only. A and B keep a small xterm printing random bytes on the device screen, C a large one
+(`noise` in `remote/support/x11.ts`). It turns the page's statistics overlay on, reads its
+`data-stat`/`data-value` cells once a second (fps p50/p05, kbps, decode time, key frame
+requests) and probes the end-to-end latency every 7 s the way the soak does (p50, p95, and
+the p95 of the first and the last minute). Each test prints one `PERF {json}` line and attaches
+the same JSON as `perf.json`; it asserts only that the session stays up and samples came in.

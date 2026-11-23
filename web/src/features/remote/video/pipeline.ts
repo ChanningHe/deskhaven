@@ -12,6 +12,14 @@ export interface VideoPipelineOptions {
   requestKeyFrame(): void
   /** Decoding keeps failing; the pipeline has stopped. */
   onFatal(error: Error): void
+  // Display only: nothing the pipeline decides reads it.
+  meter?: VideoMeter
+}
+
+export interface VideoMeter {
+  now(): number
+  received(bytes: number): void
+  decoded(decodeMs: number): void
 }
 
 /**
@@ -27,6 +35,7 @@ export const MAX_FAILURES = 3
 interface Pending {
   /** Timestamp of the message's last chunk: its output means the whole message is done. */
   last: number
+  pushedAt: number
 }
 
 /**
@@ -53,6 +62,8 @@ export class VideoPipeline {
   push(message: VideoFrameMessage): void {
     if (this.#closed) return
     const encoded = encodedFrames(message)
+    const meter = this.#options.meter
+    meter?.received(encoded?.frames.reduce((sum, f) => sum + f.data.length, 0) ?? 0)
     if (!encoded || encoded.frames.length === 0) {
       this.#options.ack()
       return
@@ -74,9 +85,17 @@ export class VideoPipeline {
       this.#fail(error)
       return
     }
-    this.#pending.push({ last: this.#nextTimestamp - 1 })
+    this.#pending.push({ last: this.#nextTimestamp - 1, pushedAt: meter?.now() ?? 0 })
     this.#awaitingKey = false
     this.#keyRequested = false
+  }
+
+  get codec(): string | null {
+    return this.#codec
+  }
+
+  get decodeQueueSize(): number {
+    return this.#decoder?.decodeQueueSize ?? 0
   }
 
   /** The peer switched display: what is in flight belongs to the old one. */
@@ -92,7 +111,7 @@ export class VideoPipeline {
   }
 
   #backedUp(): boolean {
-    return (this.#decoder?.decodeQueueSize ?? 0) >= MAX_DECODE_QUEUE
+    return this.decodeQueueSize >= MAX_DECODE_QUEUE
   }
 
   #decoderFor(codec: string): FrameDecoder {
@@ -118,6 +137,9 @@ export class VideoPipeline {
     }
     this.#failures = 0
     const waiting = this.#pending.filter((p) => p.last > frame.timestamp)
+    const done = this.#pending.find((p) => p.last === frame.timestamp)
+    const meter = this.#options.meter
+    if (done && meter) meter.decoded(meter.now() - done.pushedAt)
     this.#ack(this.#pending.length - waiting.length)
     this.#pending = waiting
     this.#options.onFrame(frame)

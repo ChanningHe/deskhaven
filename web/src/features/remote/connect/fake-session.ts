@@ -13,6 +13,7 @@ import {
   type Session,
   type SessionState,
 } from '../session/session'
+import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
 
 /** A Session the test drives by hand; it records what the page asks of it. */
@@ -22,6 +23,7 @@ export class FakeSession implements Session {
   readonly cursor = new ValueStore<CursorView>({ shape: null, position: null })
   readonly permissions = new ValueStore<Permissions>({ keyboard: true, clipboard: true })
   readonly remoteClipboard = new ValueStore<string | null>(null)
+  readonly stats = new ValueStore<SessionStats>(NO_STATS)
   readonly queue = new FrameQueue()
   readonly logins: string[] = []
   readonly codes: string[] = []

@@ -8,6 +8,7 @@ import type { Session } from '../session/session'
 import { PastePanel, RemoteClipboardPanel } from './clipboard-panels'
 import { RemoteBar, type BarFrame } from './remote-bar'
 import { RemoteScreen } from './remote-screen'
+import { StatsOverlay, StatsToggle } from './stats-overlay'
 import { Toolbar } from './toolbar'
 import { useStore } from './use-remote'
 
@@ -74,6 +75,7 @@ export function RemoteView({
   const [sent, setSent] = useState(false)
   const { fullscreen, toggle } = useFullscreen()
   const [panel, setPanel] = useState<Panel>(null)
+  const [stats, setStats] = useState(false)
   const peer = useStore(session.peer)
   const remoteText = useStore(session.remoteClipboard)
   const { keyboard, clipboard } = useStore(session.permissions)
@@ -124,7 +126,14 @@ export function RemoteView({
             onShowRemoteClipboard={() => {
               show(panel === 'remote' ? null : 'remote')
             }}
-          />
+          >
+            <StatsToggle
+              on={stats}
+              onToggle={() => {
+                setStats(!stats)
+              }}
+            />
+          </Toolbar>
         }
         end={
           <Button variant="destructive" onClick={onDisconnect}>
@@ -135,7 +144,9 @@ export function RemoteView({
       />
       <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
       <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
-        <RemoteScreen session={session} onLeave={leaveScreen} />
+        <RemoteScreen session={session} onLeave={leaveScreen}>
+          {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
+        </RemoteScreen>
         {panel === 'paste' && clipboard ? (
           <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
         ) : null}

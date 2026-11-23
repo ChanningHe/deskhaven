@@ -25,6 +25,7 @@ import {
   videoReceived,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
+import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
 import { ValueStore, type Store } from './store'
 import { windowsSessionChoice, type WindowsSessionChoice } from './windows-sessions'
 
@@ -48,6 +49,7 @@ export interface Session {
   readonly permissions: Store<Permissions>
   /** The text the peer last copied; null until it copies some. */
   readonly remoteClipboard: Store<string | null>
+  readonly stats: Store<SessionStats>
   /**
    * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
    * drawImage at displayWidth × displayHeight: codedWidth carries padding and the pixel format
@@ -73,6 +75,7 @@ export interface Session {
 
 export interface SessionOptions {
   createDecoder?: CreateDecoder
+  clock?: StatsClock
 }
 
 export const CLOSED_BY_USER = 'closed'
@@ -88,7 +91,11 @@ export const WINDOWS_SESSION_SWITCH = 'windows_session_switch'
 
 /** Runs a remote control session over a handshake from `startHandshake`, from login on. */
 export function startSession(handshake: Handshake, options: SessionOptions = {}): Session {
-  const session = new RemoteSession(handshake, options.createDecoder ?? createWebCodecsDecoder)
+  const session = new RemoteSession(
+    handshake,
+    options.createDecoder ?? createWebCodecsDecoder,
+    options.clock ?? realClock,
+  )
   void session.run()
   return session
 }
@@ -102,12 +109,19 @@ class RemoteSession implements Session {
   readonly #frames = new FrameQueue()
   readonly #handshake: Handshake
   readonly #video: VideoPipeline
+  readonly #meter: SessionMeter
   readonly #cursors = new CursorTracker()
   #keyboard: KeyboardEncoder | null = null
   #switchingSession = false
 
-  constructor(handshake: Handshake, createDecoder: CreateDecoder) {
+  constructor(handshake: Handshake, createDecoder: CreateDecoder, clock: StatsClock) {
     this.#handshake = handshake
+    this.#meter = new SessionMeter(this.state, clock, () => ({
+      decodeQueue: this.#video.decodeQueueSize,
+      codec: this.#video.codec,
+      width: this.peer.get()?.display?.width ?? 0,
+      height: this.peer.get()?.display?.height ?? 0,
+    }))
     this.#video = new VideoPipeline({
       createDecoder,
       onFrame: (frame) => {
@@ -117,13 +131,19 @@ class RemoteSession implements Session {
         this.#send(videoReceived())
       },
       requestKeyFrame: () => {
+        this.#meter.keyRequested()
         const peer = this.peer.get()
         this.#send(refreshVideo(peer?.current ?? 0, peer?.info.version ?? ''))
       },
       onFatal: (error) => {
         this.#hangUp(`video decoding failed: ${error.message}`)
       },
+      meter: this.#meter,
     })
+  }
+
+  get stats(): Store<SessionStats> {
+    return this.#meter.stats
   }
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -195,6 +215,7 @@ class RemoteSession implements Session {
       platform: peer.info.platform,
     }
     for (const message of encodeInput(input, context)) this.#send(message)
+    if (input.kind === 'pointer' && input.action === 'move') this.#meter.pointerMoved()
   }
 
   clipboard(text: string): boolean {
@@ -266,6 +287,9 @@ class RemoteSession implements Session {
       }
       case 'misc':
         this.#onMisc(union.value)
+        return
+      case 'testDelay':
+        if (!union.value.fromClient) this.#meter.delay(union.value.lastDelay)
         return
       default:
         return
