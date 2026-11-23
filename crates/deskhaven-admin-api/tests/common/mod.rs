@@ -7,14 +7,14 @@
 #![allow(dead_code)]
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
-use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
-use deskhaven_admin_api::{AdminRoutes, SESSION_COOKIE, csrf_token};
+use axum::{Extension, Router};
+use deskhaven_admin_api::{AdminRoutes, DetachedAudits, SESSION_COOKIE, csrf_token};
 
 use deskhaven_config::settings::PinSet;
 use deskhaven_core::clock::{SharedClock, SystemClock};
@@ -30,6 +30,8 @@ use deskhaven_db::testing::TestDb;
 use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
 use openidconnect::HttpRequest;
 use serde_json::Value;
+use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+use tokio::task::JoinHandle;
 use tower::ServiceExt;
 
 pub mod audit_rows;
@@ -59,6 +61,8 @@ pub const PEER: SocketAddr = SocketAddr::new(
 pub struct Harness {
     pub state: Arc<AppState>,
     router: Router,
+    /// The gate's detached fallback audit writes, not yet awaited.
+    detached: Mutex<UnboundedReceiver<JoinHandle<()>>>,
 }
 
 /// A logged-in console user: the `Cookie` header value and the matching CSRF token.
@@ -142,7 +146,7 @@ async fn build_on(
         &HttpConfig::default(),
         ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
     );
-    Harness { state, router }
+    Harness::new(state, router)
 }
 
 /// `state` whose update check asks `fetch` instead of GitHub.
@@ -196,6 +200,26 @@ impl HttpFetch for FixedRelease {
 }
 
 impl Harness {
+    /// `router` on `state`, its fallback audit writes handed to the harness to await.
+    pub fn new(state: Arc<AppState>, router: Router) -> Self {
+        let (hook, detached) = unbounded_channel();
+        Self {
+            state,
+            router: router.layer(Extension(DetachedAudits(hook))),
+            detached: Mutex::new(detached),
+        }
+    }
+
+    /// Awaits the fallback audit writes of every request so far (the gate writes them in
+    /// detached tasks), so `console_audit` reads that follow see their rows.
+    pub async fn settle(&self) {
+        loop {
+            let next = self.detached.lock().unwrap().try_recv();
+            let Ok(task) = next else { return };
+            task.await.unwrap();
+        }
+    }
+
     /// The address book service over the harness state, to seed and inspect books directly.
     pub fn books(&self) -> deskhaven_core::addressbooks::AddressBookService {
         deskhaven_core::addressbooks::AddressBookService::new(
@@ -311,6 +335,7 @@ impl Harness {
     /// Every console audit row, oldest first.
     pub async fn audit_rows(&self) -> Vec<console_audit::Model> {
         use sea_orm::{EntityTrait, QueryOrder};
+        self.settle().await;
         console_audit::Entity::find()
             .order_by_asc(console_audit::Column::Id)
             .all(&self.state.db)
@@ -318,11 +343,13 @@ impl Harness {
             .unwrap()
     }
 
+    /// Sends `request`; returns once its fallback audit row, if any, is written.
     pub async fn raw(&self, request: Request<Body>) -> Reply {
         let response = self.router.clone().oneshot(request).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();
         let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        self.settle().await;
         let body = if bytes.is_empty() {
             Value::Null
         } else {

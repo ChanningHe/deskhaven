@@ -49,7 +49,7 @@ use axum::Router;
 use deskhaven_core::state::AppState;
 use utoipa_axum::routes;
 
-pub use audit::{Audit, AuditCtx, Audited};
+pub use audit::{Audit, AuditCtx, Audited, DetachedAudits};
 pub use error::{AdminApiError, BoxError, ErrorBody, ErrorCode, ErrorEnvelope};
 pub use extract::{MAX_REASON_CHARS, ValidJson, ValidPath, ValidQuery};
 pub use me::{Me, RoleView};

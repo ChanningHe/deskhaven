@@ -38,6 +38,8 @@ use deskhaven_core::users::Role;
 use deskhaven_http::X_REQUEST_ID;
 use serde::Serialize;
 use serde_json::Value;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
 use tracing::Instrument;
 
 use crate::AdminApiError;
@@ -208,11 +210,19 @@ fn entry(audit: Audit, actor: Actor, ip: IpAddr, default_action: &str) -> NewCon
     }
 }
 
+/// Test hook: a request carrying this extension hands the task of its fallback write here,
+/// so a test harness can await the row instead of racing the detached task. Production
+/// requests carry none, and the task runs on detached as usual.
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct DetachedAudits(pub UnboundedSender<JoinHandle<()>>);
+
 /// What the gate knows when it falls back to recording.
 pub(crate) struct Fallback<'a> {
     pub user_id: Option<i64>,
     pub ip: IpAddr,
     pub operation_id: &'a str,
+    pub hook: Option<DetachedAudits>,
 }
 
 /// Spawns the fallback write of `audit` (see the module docs). Synchronous on purpose: the
@@ -237,7 +247,11 @@ pub(crate) fn record_detached(state: &Arc<AppState>, ctx: Fallback<'_>, audit: A
             log_lost(&entry, &err);
         }
     };
-    drop(tokio::spawn(task.in_current_span()));
+    let task = tokio::spawn(task.in_current_span());
+    if let Some(DetachedAudits(waiter)) = ctx.hook {
+        // A receiver gone means nobody waits: the task runs on detached either way.
+        let _ = waiter.send(task);
+    }
 }
 
 fn log_lost(entry: &NewConsoleAudit, err: &impl std::fmt::Display) {

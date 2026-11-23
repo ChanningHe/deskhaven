@@ -77,19 +77,13 @@ async fn next_status(env: &Env) -> u16 {
         .as_u16()
 }
 
+/// The audit row of `action`.
 async fn audit_row(h: &Harness, action: &str) -> console_audit::Model {
-    for _ in 0..200 {
-        if let Some(row) = h
-            .audit_rows()
-            .await
-            .into_iter()
-            .find(|r| r.action == action)
-        {
-            return row;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("no {action} audit row");
+    h.audit_rows()
+        .await
+        .into_iter()
+        .find(|r| r.action == action)
+        .unwrap_or_else(|| panic!("no {action} audit row"))
 }
 
 #[tokio::test]

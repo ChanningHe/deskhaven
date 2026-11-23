@@ -10,8 +10,6 @@ mod common;
 #[path = "../../deskhaven-core/tests/common/ldap_fake.rs"]
 mod ldap_fake;
 
-use std::time::Duration;
-
 use axum::http::Method;
 use common::login::harness_with_ldap;
 use common::{Console, Harness, Reply};
@@ -73,21 +71,13 @@ async fn test_user(env: &Env, username: &str, password: Option<&str>) -> Reply {
     env.h.write(Method::POST, USER, &env.owner, body).await
 }
 
-/// The audit row of `action`: tests are recorded by the gate's detached fallback writer,
-/// which may still be running when the response arrives.
+/// The audit row of `action`.
 async fn audit_row(h: &Harness, action: &str) -> console_audit::Model {
-    for _ in 0..200 {
-        if let Some(row) = h
-            .audit_rows()
-            .await
-            .into_iter()
-            .find(|r| r.action == action)
-        {
-            return row;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("no {action} audit row");
+    h.audit_rows()
+        .await
+        .into_iter()
+        .find(|r| r.action == action)
+        .unwrap_or_else(|| panic!("no {action} audit row"))
 }
 
 /// `(step, status)` of every step.

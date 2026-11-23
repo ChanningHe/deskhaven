@@ -13,12 +13,9 @@ use deskhaven_config::REDACTED;
 use deskhaven_core::console_audit::ActorKind;
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::{console_audit, group};
-use deskhaven_db::testing::{TestDb, each_migrated_backend};
-use sea_orm::{ConnectionTrait, EntityTrait, PaginatorTrait, QueryOrder};
+use deskhaven_db::testing::{Backend, TestDb, each_migrated_backend};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryOrder};
 use serde_json::{Value, json};
-
-/// How long a detached fallback write may take to land.
-const LANDING: Duration = Duration::from_secs(5);
 
 async fn app(db: &TestDb) -> Harness {
     harness(db, probe::routes()).await
@@ -30,24 +27,6 @@ async fn rows(db: &TestDb) -> Vec<console_audit::Model> {
         .all(&db.conn)
         .await
         .unwrap()
-}
-
-/// The audit rows once `n` exist (fallback rows are written by a detached task).
-async fn rows_eventually(db: &TestDb, n: usize) -> Vec<console_audit::Model> {
-    let deadline = tokio::time::Instant::now() + LANDING;
-    loop {
-        let found = rows(db).await;
-        if found.len() >= n || tokio::time::Instant::now() > deadline {
-            return found;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-/// Lets any spawned fallback task run, then the rows.
-async fn rows_settled(db: &TestDb) -> Vec<console_audit::Model> {
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    rows(db).await
 }
 
 fn json_of(text: &Option<String>) -> Value {
@@ -77,7 +56,7 @@ async fn in_transaction_audit_commits_with_the_change() {
             reply.body
         );
         let id = reply.body["id"].as_i64().unwrap();
-        let [row] = rows_settled(db).await.try_into().unwrap();
+        let [row] = app.audit_rows().await.try_into().unwrap();
         assert_eq!(
             (row.actor_kind, row.actor_id),
             (ActorKind::User, Some(ada.user_id))
@@ -106,7 +85,7 @@ async fn rolled_back_change_leaves_no_audit_row() {
             .await;
 
         assert_eq!(reply.status, StatusCode::CONFLICT, "{}", db.backend);
-        assert!(rows_settled(db).await.is_empty());
+        assert!(app.audit_rows().await.is_empty());
         assert_eq!(group::Entity::find().count(&db.conn).await.unwrap(), 0);
     })
     .await;
@@ -134,7 +113,7 @@ async fn fallback_row_lands_when_the_request_is_dropped_after_the_handler() {
         }
         drop(call);
 
-        let found = rows_eventually(db, 1).await;
+        let found = app.audit_rows().await;
         let [row] = found
             .try_into()
             .unwrap_or_else(|f: Vec<_>| panic!("{}: {f:?}", db.backend));
@@ -161,7 +140,7 @@ async fn fallback_records_actor_target_and_masked_before_after() {
             db.backend,
             reply.body
         );
-        let [row] = rows_eventually(db, 1).await.try_into().unwrap();
+        let [row] = app.audit_rows().await.try_into().unwrap();
         assert_eq!(row.actor_kind, ActorKind::User);
         assert_eq!(row.actor_id, Some(ada.user_id));
         assert_eq!(row.action, "probe.update");
@@ -202,7 +181,7 @@ async fn write_without_audit_details_records_the_operation_id() {
             .await;
 
         assert_eq!(reply.status, StatusCode::OK);
-        let [row] = rows_eventually(db, 1).await.try_into().unwrap();
+        let [row] = app.audit_rows().await.try_into().unwrap();
         assert_eq!(row.actor_id, Some(olga.user_id));
         assert_eq!(row.action, "owner_write");
         assert_eq!((row.target_type.as_str(), row.target_id.as_str()), ("", ""));
@@ -220,7 +199,7 @@ async fn audit_attached_to_a_get_is_recorded() {
         let reply = app.get("/admin/api/v1/probe/secret", &ada).await;
 
         assert_eq!(reply.status, StatusCode::OK);
-        let [row] = rows_eventually(db, 1).await.try_into().unwrap();
+        let [row] = app.audit_rows().await.try_into().unwrap();
         assert_eq!(row.action, "probe.secret.view", "{}", db.backend);
         assert_eq!(row.actor_id, Some(ada.user_id));
     })
@@ -255,7 +234,7 @@ async fn public_route_audit_uses_the_named_actor_or_the_console_user() {
             (named.status, session.status),
             (StatusCode::OK, StatusCode::OK)
         );
-        let found = rows_eventually(db, 2).await;
+        let found = app.audit_rows().await;
         let actions: Vec<(&str, ActorKind, Option<i64>)> = found
             .iter()
             .map(|r| (r.action.as_str(), r.actor_kind, r.actor_id))
@@ -306,7 +285,7 @@ async fn reads_failed_and_denied_requests_are_not_audited() {
                 StatusCode::FORBIDDEN
             ]
         );
-        assert!(rows_settled(db).await.is_empty(), "{}", db.backend);
+        assert!(app.audit_rows().await.is_empty(), "{}", db.backend);
     })
     .await;
 }
@@ -327,8 +306,49 @@ async fn fallback_write_failure_keeps_the_success_response() {
 
         assert_eq!(reply.status, StatusCode::OK, "{}", db.backend);
         assert_eq!(reply.body, json!({ "ok": true }));
-        // Let the failing detached write finish before the database goes away.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+    })
+    .await;
+}
+
+/// How long [`block_audit_writes`] holds off the fallback write: far longer than a request.
+const HELD: Duration = Duration::from_millis(500);
+
+/// Blocks every write to `console_audit` (readers go on) until the transaction ends.
+async fn block_audit_writes(db: &TestDb) -> DatabaseTransaction {
+    let tx = deskhaven_db::begin_write(&db.conn).await.unwrap();
+    if db.backend == Backend::Postgres {
+        tx.execute_unprepared("LOCK TABLE console_audit IN EXCLUSIVE MODE")
+            .await
+            .unwrap();
+    }
+    tx
+}
+
+#[tokio::test]
+async fn harness_requests_return_after_their_fallback_row_lands() {
+    each_migrated_backend(async |db: &TestDb| {
+        let app = app(db).await;
+        let blocker = block_audit_writes(db).await;
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(HELD).await;
+            blocker.commit().await.unwrap();
+        });
+
+        let reply = app
+            .send(
+                Method::POST,
+                "/admin/api/v1/probe/public",
+                None,
+                Some("x"),
+                Some(json!({})),
+            )
+            .await;
+        let found = rows(db).await;
+        release.await.unwrap();
+
+        assert_eq!(reply.status, StatusCode::OK, "{}", db.backend);
+        let actions: Vec<&str> = found.iter().map(|r| r.action.as_str()).collect();
+        assert_eq!(actions, ["probe.public"], "{}", db.backend);
     })
     .await;
 }

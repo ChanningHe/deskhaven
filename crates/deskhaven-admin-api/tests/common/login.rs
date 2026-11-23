@@ -62,7 +62,7 @@ pub async fn harness_with(
         &deskhaven_http::HttpConfig::default(),
         deskhaven_http::ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
     );
-    Harness { state, router }
+    Harness::new(state, router)
 }
 
 /// [`super::harness`] whose LDAP service talks to `connector` (a fake directory).
@@ -111,7 +111,7 @@ pub async fn harness_with_ldap_limits(
         &deskhaven_http::HttpConfig::default(),
         deskhaven_http::ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
     );
-    Harness { state, router }
+    Harness::new(state, router)
 }
 
 impl Harness {

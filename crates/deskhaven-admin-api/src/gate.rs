@@ -21,7 +21,7 @@ use deskhaven_core::state::AppState;
 
 use crate::AdminApiError;
 use crate::account_setup::{pending_step, setup_required};
-use crate::audit::{self, Audit, Audited, Fallback};
+use crate::audit::{self, Audit, Audited, DetachedAudits, Fallback};
 use crate::origin::{TrustedOrigins, check_same_origin};
 use crate::permission::Permission;
 use crate::session::{self, ConsoleUser, SessionSlot};
@@ -100,6 +100,7 @@ async fn guarded(
         }
     };
     let method = parts.method.clone();
+    let hook = parts.extensions.get::<DetachedAudits>().cloned();
 
     let mut response = next.run(Request::from_parts(parts, body)).await;
     // No await from here on: the fallback task must exist before the gate can be dropped.
@@ -119,6 +120,7 @@ async fn guarded(
         user_id,
         ip: client.addr,
         operation_id: guard.operation_id(&method),
+        hook,
     };
     audit::record_detached(state, ctx, audit);
     Ok(response)

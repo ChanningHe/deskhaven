@@ -310,19 +310,11 @@ async fn logout_revokes_the_session_clears_the_cookies_and_is_audited() {
         );
         assert_eq!(h.get(ME, &console).await.status, 401, "{b}");
         assert_eq!(again.status, 204, "{b}: idempotent");
-        // The audit row is written by a detached task.
-        let mut rows = Vec::new();
-        for _ in 0..50 {
-            rows = console_audit::Entity::find()
-                .filter(console_audit::Column::Action.eq("session.logout"))
-                .all(&db.conn)
-                .await
-                .unwrap();
-            if !rows.is_empty() {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
+        let rows = console_audit::Entity::find()
+            .filter(console_audit::Column::Action.eq("session.logout"))
+            .all(&db.conn)
+            .await
+            .unwrap();
         assert_eq!(rows.len(), 1, "{b}");
         assert_eq!(rows[0].actor_id, Some(id), "{b}");
     })
