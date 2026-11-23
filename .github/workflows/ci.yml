@@ -3,24 +3,31 @@
 # No JavaScript actions are used, except the e2e job's failure upload (that job installs
 # node; the action is pinned by commit): the job image (rust:*-bookworm) has no node.
 # Sources are fetched with plain git (the repository is public; a private repo would need
-# a token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
+# a token passed to the checkout step).
 #
-# Runner label: every job runs on `vars.CI_RUNNER_LABEL` when it is set and the code is
-# this repository's own (a push, or a pull request from a branch of this repository), else
-# on `ubuntu-latest`. To use a self-hosted runner, set the repository variable
-# CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables). Jobs run
-# inside the `container:` image, so the runner only needs Docker access, except
-# release-scripts, which runs on the host.
+# Runners: fmt, clippy, deny and test-postgres (16) run on the self-hosted runner (label
+# `selfhosted`, one 32-core machine that takes one job at a time), the rest on
+# `ubuntu-latest`. They are the jobs that gate all tests and the longest test job: with
+# a warm cache they skip the cold build that takes most of their time on GitHub's runners,
+# while the other test jobs keep running side by side there. Set the repository variable
+# CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables) to send them
+# elsewhere, e.g. `ubuntu-latest` while the self-hosted runner is down.
 #
-# The expression only keeps unmodified fork pull requests off that runner. It protects
-# nothing: a pull request runs the workflow file from its own branch, so a fork can set
-# `runs-on` to the self-hosted label and run any code there. No change to this file can
-# close that. A self-hosted runner on this public repository therefore needs one of:
+# Cache: those jobs mount the Docker volume `deskhaven-ci-cache` at /ci-cache and keep
+# CARGO_HOME (registry, git sources, `cargo install`ed tools) and one CARGO_TARGET_DIR per
+# job there; .github/ci-setup.sh clears a build directory past CI_TARGET_MAX_GB. On a
+# GitHub runner the volume is new and empty every time. The self-hosted workspace persists
+# between runs, so every checkout forces the commit and cleans untracked files.
+#
+# Only this repository's own code (a push, or a pull request from a branch of this
+# repository) goes to the self-hosted runner; fork pull requests stay on `ubuntu-latest`.
+# That expression protects nothing: a pull request runs the workflow file from its own
+# branch, so a fork can set `runs-on` to the self-hosted label and run any code there, and
+# could also leave something in the shared cache for later builds. No change to this file
+# can close that. A self-hosted runner on this public repository therefore needs
 # "Require approval for all external contributors" (Settings -> Actions -> General ->
-# Approval for running fork pull request workflows), and a maintainer who reads every fork
-# workflow before approving it; a runner group limited to selected workflows and refs that
-# fork pull requests cannot use; or no persistent runner at all (ephemeral, rebuilt per
-# job).
+# Approval for running fork pull request workflows; set) and a maintainer who reads every
+# fork workflow before approving it.
 #
 # Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
 # + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
@@ -67,15 +74,23 @@ env:
 
 jobs:
   fmt:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
+      volumes:
+        - deskhaven-ci-cache:/ci-cache
+    env:
+      CARGO_HOME: /ci-cache/cargo
+      CARGO_TARGET_DIR: /ci-cache/target/fmt
     steps:
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       # Toolchain only (rustfmt); no apt packages needed.
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: cargo fmt --all -- --check
@@ -85,7 +100,7 @@ jobs:
   # the relay image build. Format, lint and test it here, with the same plain rustc the
   # image uses.
   relay-key-guard:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -93,7 +108,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: rustfmt --check --edition 2021 deploy/docker/relay-key-guard.rs
       - name: clippy (program and tests)
@@ -114,7 +130,7 @@ jobs:
   # file with GIT_CLIFF_VERSION); without it that test would skip itself. On a runner that is
   # not x86_64 the download is skipped and the test skips with a message.
   release-scripts:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: checkout
@@ -122,7 +138,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - name: git-cliff (pinned prebuilt binary, sha256 verified)
         if: runner.arch == 'X64'
         run: |
@@ -146,7 +163,7 @@ jobs:
   # drift and the production build. Needs nothing from the Rust jobs: the API client
   # is generated from the committed openapi.json, whose own drift test-sqlite checks.
   web:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
     # like the rust image above, a digest would also freeze out Debian security
     # rebuilds of this tag, and the tag already fixes Node itself.
@@ -162,7 +179,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       # Corepack resolves `packageManager` from the working directory, so every pnpm
       # step runs inside web/.
       - name: pnpm
@@ -197,35 +215,51 @@ jobs:
 
   clippy:
     needs: fmt
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
+      volumes:
+        - deskhaven-ci-cache:/ci-cache
+    env:
+      CARGO_HOME: /ci-cache/cargo
+      CARGO_TARGET_DIR: /ci-cache/target/clippy
     steps:
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
     needs: fmt
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
+      volumes:
+        - deskhaven-ci-cache:/ci-cache
+    env:
+      CARGO_HOME: /ci-cache/cargo
+      CARGO_TARGET_DIR: /ci-cache/target/deny
     steps:
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
   test-sqlite:
     needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -233,7 +267,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
       # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
       - run: cargo test --workspace --all-targets --no-fail-fast
@@ -249,8 +284,13 @@ jobs:
 
   test-postgres:
     needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
+    # pg 16 on the self-hosted runner, pg 17 on GitHub's: the two still run side by side.
+    runs-on: ${{ matrix.pg == '16' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
+      volumes:
+        - deskhaven-ci-cache:/ci-cache
     strategy:
       fail-fast: false
       matrix:
@@ -268,6 +308,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      CARGO_HOME: /ci-cache/cargo
+      CARGO_TARGET_DIR: /ci-cache/target/test-postgres-${{ matrix.pg }}
       # Throwaway CI-only credentials for the service container above.
       DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
       # The DB test helper panics (instead of skipping PG) if the URL is missing.
@@ -278,14 +320,15 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
       - run: cargo test --workspace --all-targets --no-fail-fast
 
   # Runs in parallel with the tests; report only.
   coverage:
     needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     services:
       postgres:
@@ -308,7 +351,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
       # Report only until the end of M2. To enforce the gate, append
       # `--fail-under-lines 80` to the command below.
@@ -320,7 +364,7 @@ jobs:
   # Playwright's Chromium with its system libraries.
   e2e:
     needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     services:
       postgres:
@@ -344,7 +388,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
       # The tarball must match the sha256 pinned here (from the release's SHASUMS256.txt);
       # bump both with NODE_VERSION.

@@ -25,11 +25,25 @@ if [ "${CI_SKIP_APT:-0}" != "1" ]; then
     pkg-config protobuf-compiler libsodium-dev libssl-dev >/dev/null
 fi
 
+# A persistent build directory (CARGO_TARGET_DIR on the self-hosted runner's cache volume,
+# see ci.yml) starts over once it outgrows its share of the disk: stale artifacts of old
+# dependency versions pile up there and cargo never removes them.
+CI_TARGET_MAX_GB="${CI_TARGET_MAX_GB:-25}"
+if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -d "$CARGO_TARGET_DIR" ]; then
+  used_mb="$(du -sm "$CARGO_TARGET_DIR" | cut -f1)"
+  echo "build cache $CARGO_TARGET_DIR: ${used_mb} MB (limit ${CI_TARGET_MAX_GB} GB)"
+  if [ "$used_mb" -ge $((CI_TARGET_MAX_GB * 1024)) ]; then
+    rm -rf "$CARGO_TARGET_DIR"
+    echo "build cache cleared"
+  fi
+fi
+
 # Installs the channel and components declared in rust-toolchain.toml.
 rustup toolchain install --profile minimal
 rustc --version
 
-# Extra tools via `cargo install --locked` (no caching until a prebuilt CI image exists).
+# Extra tools via `cargo install --locked`; with a persistent CARGO_HOME an installed version
+# is kept and the install is a no-op.
 # A spec is name@version, optionally name@version/feature,feature (cargo-about needs `cli`).
 for spec in "$@"; do
   name="${spec%%@*}"
