@@ -58,6 +58,7 @@ permissions:
 env:
   # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
+  CARGO_NEXTEST_VERSION: "0.9.136"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   # Full debuginfo for every test binary fills a hosted runner's disk; line tables keep
@@ -259,10 +260,11 @@ jobs:
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
-  # The test binaries are built once and run three times side by side: on SQLite
+  # The test binaries are built once and run three times side by side with cargo-nextest
+  # (every test binary at once; profiles in .config/nextest.toml): on SQLite
   # (DESKHAVEN_TEST_PG_URL unset, so PG-parameterised tests are skipped) and on PostgreSQL 16
   # and 17 (required: the DB test helper panics instead of skipping). Once built, concurrent
-  # `cargo test` runs share the build directory without waiting for each other.
+  # runs share the build directory without waiting for each other.
   test:
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
@@ -305,18 +307,21 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q -f FETCH_HEAD
           git clean -ffdxq
-      - run: .github/ci-setup.sh
+      - run: .github/ci-setup.sh cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
       - name: build the tests
-        run: cargo test --workspace --all-targets --no-run
+        run: cargo nextest run --workspace --all-targets --no-run
       # Throwaway CI-only credentials for the service containers above.
       - name: tests (SQLite, PostgreSQL 16 and 17)
+        shell: bash
         run: |
           set -uo pipefail
           suite() {
+            local profile=ci
             if [ -n "$2" ]; then
               export DESKHAVEN_TEST_PG_URL="$2" DESKHAVEN_TEST_REQUIRE_PG=1
+              profile=ci-pg
             fi
-            cargo test --workspace --all-targets --no-fail-fast >"$RUNNER_TEMP/test-$1.log" 2>&1
+            cargo nextest run --profile "$profile" --workspace --all-targets >"$RUNNER_TEMP/test-$1.log" 2>&1
           }
           names=(sqlite pg16 pg17)
           urls=("" postgres://deskhaven:deskhaven@pg16:5432/deskhaven_test postgres://deskhaven:deskhaven@pg17:5432/deskhaven_test)
@@ -332,7 +337,7 @@ jobs:
             echo "::group::$name: $result"
             cat "$RUNNER_TEMP/test-$name.log"
             echo "::endgroup::"
-            grep -h '^test result' "$RUNNER_TEMP/test-$name.log" | grep -v ' 0 failed' | sed "s/^/$name: /" || true
+            grep -hE '^ +Summary|^ +(FAIL|TIMEOUT|SIGSEGV|ABORT) ' "$RUNNER_TEMP/test-$name.log" | sed "s/^ */$name: /" || true
           done
           exit "$status"
       # The committed admin API OpenAPI document must match the code (the console's

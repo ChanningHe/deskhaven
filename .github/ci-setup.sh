@@ -42,7 +42,7 @@ fi
 rustup toolchain install --profile minimal
 rustc --version
 
-# Extra tools. On x86_64, cargo-deny and cargo-llvm-cov are their projects' prebuilt release
+# Extra tools. On x86_64, cargo-deny, cargo-nextest and cargo-llvm-cov are their projects' prebuilt release
 # binaries, each tarball's sha256 pinned in .github/ci-tools.sha256 (add a line when bumping
 # a version); everything else, and every tool elsewhere, is `cargo install --locked`.
 # A spec is name@version, optionally name@version/feature,feature (cargo-about needs `cli`).
@@ -54,6 +54,10 @@ prebuilt_url() { # name version -> "url local-tarball-name binary-path-in-tarbal
     cargo-deny)
       echo "https://github.com/EmbarkStudios/cargo-deny/releases/download/$2/cargo-deny-$2-$triple.tar.gz" \
         "cargo-deny-$2-$triple.tar.gz" "cargo-deny-$2-$triple/cargo-deny"
+      ;;
+    cargo-nextest)
+      echo "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$2/cargo-nextest-$2-$triple.tar.gz" \
+        "cargo-nextest-$2-$triple.tar.gz" "cargo-nextest"
       ;;
     cargo-llvm-cov)
       echo "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v$2/cargo-llvm-cov-$triple.tar.gz" \

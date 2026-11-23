@@ -1,0 +1,19 @@
+# cargo-nextest profiles for CI (.github/workflows/ci.yml, job `test`). nextest runs every
+# test in a process of its own, all binaries at once; `cargo test` remains the local default.
+
+[profile.ci]
+fail-fast = false
+
+# A PostgreSQL test holds up to 1 + 8 connections (crates/deskhaven-db/src/testing.rs) and the
+# CI service keeps the server default max_connections (100). The per-process limit in
+# testing.rs cannot cap concurrent test processes, so this group does: at most 10 tests of the
+# crates that use the test database run at once, 90 connections at most.
+[profile.ci-pg]
+fail-fast = false
+
+[test-groups]
+postgres = { max-threads = 10 }
+
+[[profile.ci-pg.overrides]]
+filter = 'rdeps(deskhaven-db)'
+test-group = 'postgres'
