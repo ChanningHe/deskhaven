@@ -5,11 +5,10 @@
 # Sources are fetched with plain git (the repository is public; a private repo would need
 # a token passed to the checkout step).
 #
-# Runners: the Rust jobs fmt, clippy, deny and test run on the self-hosted runner (label
-# `selfhosted`, one 32-core machine that takes one job at a time), the rest on
-# `ubuntu-latest`: with a warm cache they skip the cold build that takes most of a job's
-# time on GitHub's runners, and web, e2e and the release-script checks run there
-# meanwhile. Set the repository variable CI_RUNNER_LABEL (Settings -> Secrets and
+# Runners: the jobs that compile the workspace, clippy and test, run on the self-hosted
+# runners (label `selfhosted`: two 32-core machines, one job at a time each), the rest on
+# `ubuntu-latest`: with a warm cache they skip the cold build that takes most of their time
+# on GitHub's runners. fmt and deny compile nothing and take seconds anywhere. Set the repository variable CI_RUNNER_LABEL (Settings -> Secrets and
 # variables -> Actions -> Variables) to send them elsewhere, e.g. `ubuntu-latest` while
 # the self-hosted runner is down.
 #
@@ -76,16 +75,8 @@ env:
 
 jobs:
   fmt:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
-    container:
-      image: rust:1.99.1-bookworm
-      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
-      volumes:
-        - deskhaven-ci-registry:/usr/local/cargo/registry
-        - deskhaven-ci-git:/usr/local/cargo/git
-        - deskhaven-ci-target:/ci-target
-    env:
-      CARGO_TARGET_DIR: /ci-target/fmt
+    runs-on: ubuntu-latest
+    container: rust:1.99.1-bookworm
     steps:
       - name: checkout
         run: |
@@ -239,16 +230,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
-    container:
-      image: rust:1.99.1-bookworm
-      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
-      volumes:
-        - deskhaven-ci-registry:/usr/local/cargo/registry
-        - deskhaven-ci-git:/usr/local/cargo/git
-        - deskhaven-ci-target:/ci-target
-    env:
-      CARGO_TARGET_DIR: /ci-target/deny
+    runs-on: ubuntu-latest
+    container: rust:1.99.1-bookworm
     steps:
       - name: checkout
         run: |
