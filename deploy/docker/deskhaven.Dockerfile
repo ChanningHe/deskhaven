@@ -72,7 +72,7 @@ COPY --from=build /out/usr/local/bin/deskhaven /deskhaven
 FROM scratch AS notices
 
 # --- runtime: gcr.io/distroless/static-debian13:nonroot
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="deskhaven" \
       org.opencontainers.image.description="Self-hosted server for the RustDesk client" \
