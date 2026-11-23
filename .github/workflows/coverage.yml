@@ -1,12 +1,3 @@
-# Test coverage of main (report only), outside ci.yml so that neither a pull request nor
-# the release gate (a successful push run of ci.yml) waits for it. The tests themselves
-# run in ci.yml's `test` job; this instrumented run repeats them on PostgreSQL 17 for the
-# report. To enforce a gate, append `--fail-under-lines 80` to the command below.
-#
-# Like ci.yml: no third-party actions, sources fetched with plain git, the job inside the
-# rust image on a GitHub-hosted runner. Network egress needed: git host, crates.io, Debian
-# mirrors, Docker Hub, github.com (the cargo-llvm-cov release).
-
 name: coverage
 
 on:
@@ -45,7 +36,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # Throwaway CI-only credentials for the service container above.
       DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
       DESKHAVEN_TEST_REQUIRE_PG: "1"
     steps:

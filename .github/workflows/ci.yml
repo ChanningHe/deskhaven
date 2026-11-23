@@ -1,44 +1,4 @@
-# GitHub Actions CI for deskhaven.
-#
-# No JavaScript actions are used, except the e2e job's failure upload (that job installs
-# node; the action is pinned by commit): the job image (rust:*-bookworm) has no node.
-# Sources are fetched with plain git (the repository is public; a private repo would need
-# a token passed to the checkout step).
-#
-# Runners: the jobs that compile the workspace, clippy and test, run on the self-hosted
-# runners (label `selfhosted`: two 32-core machines, one job at a time each), the rest on
-# `ubuntu-latest`: with a warm cache they skip the cold build that takes most of their time
-# on GitHub's runners. fmt and deny compile nothing and take seconds anywhere. Set the repository variable CI_RUNNER_LABEL (Settings -> Secrets and
-# variables -> Actions -> Variables) to send them elsewhere, e.g. `ubuntu-latest` while
-# the self-hosted runner is down.
-#
-# Cache: those jobs mount Docker volumes for the cargo registry and git sources (over the
-# image's CARGO_HOME, which stays where rustup expects it) and for their build directories
-# (/ci-target, one CARGO_TARGET_DIR per job); .github/ci-setup.sh clears a build directory
-# past CI_TARGET_MAX_GB. On a GitHub runner the volumes are new and empty every time. The
-# self-hosted workspace persists between runs, so every checkout forces the commit and
-# cleans untracked files.
-#
-# Only this repository's own code (a push, or a pull request from a branch of this
-# repository) goes to the self-hosted runner; fork pull requests stay on `ubuntu-latest`.
-# That expression protects nothing: a pull request runs the workflow file from its own
-# branch, so a fork can set `runs-on` to the self-hosted label and run any code there, and
-# could also leave something in the shared cache for later builds. No change to this file
-# can close that. A self-hosted runner on this public repository therefore needs
-# "Require approval for all external contributors" (Settings -> Actions -> General ->
-# Approval for running fork pull request workflows; set) and a maintainer who reads every
-# fork workflow before approving it.
-#
-# Pipeline: every job starts at once, none waits for another. `test` builds the test
-# binaries once and runs them on SQLite, PostgreSQL 16 and 17 side by side; coverage is
-# coverage.yml (main only, report only), so nothing here waits for it.
-# Releases (tags) are built by release.yml.
-# The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
-# Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
-# github.com (cargo-deny fetches the RustSec advisory DB from GitHub),
-# registry.npmjs.org (web, e2e), and for e2e nodejs.org, the Playwright browser CDN
-# (cdn.playwright.dev and its mirrors).
-
+# The rust image tag in each job must match the channel in rust-toolchain.toml.
 name: ci
 
 on:
@@ -50,25 +10,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The jobs only read: no job pushes, comments or publishes.
 permissions:
   contents: read
 
 env:
-  # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
   CARGO_NEXTEST_VERSION: "0.9.136"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  # Full debuginfo for every test binary fills a hosted runner's disk; line tables keep
-  # file:line in backtraces at a fraction of the size.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
-  # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
-  # also covers test code). No global RUSTFLAGS, so `cargo install` of tools is unaffected.
-  #
-  # Checkout inputs: PRs fetch refs/pull/N/head, pushes fetch the commit (ref as fallback).
-  # The workspace belongs to the runner user while jobs run as root in their container, so
-  # git refuses it ("dubious ownership") unless it is marked safe first.
   CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
   CI_FETCH_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
   CI_FALLBACK_REF: ${{ github.ref }}
@@ -85,14 +35,9 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q -f FETCH_HEAD
           git clean -ffdxq
-      # Toolchain only (rustfmt); no apt packages needed.
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: cargo fmt --all -- --check
 
-  # The relay key guard (deploy/docker/relay-key-guard.rs) is std-only and outside the
-  # workspace, so no cargo job above compiles it, and its tests otherwise run only inside
-  # the relay image build. Format, lint and test it here, with the same plain rustc the
-  # image uses.
   relay-key-guard:
     runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
@@ -115,14 +60,6 @@ jobs:
           rustc --edition 2021 --test -o /tmp/guard-tests deploy/docker/relay-key-guard.rs
           /tmp/guard-tests
 
-  # The release scripts (.github/release/: what decides whether, what and where release.yml
-  # publishes) are shellchecked and tested here, without network: gh, docker, git ls-remote
-  # and cargo-audit are stubs (.github/release/tests/stubs). Runs on the runner itself, which
-  # needs bash, git, jq, python3 >= 3.11 and shellcheck (all preinstalled on GitHub-hosted
-  # ubuntu runners). git-cliff (for tests/test-cliff.sh) is the prebuilt release binary of the
-  # version release.yml pins, its sha256 checked against tests/git-cliff.sha256 (bump that
-  # file with GIT_CLIFF_VERSION); without it that test would skip itself. On a runner that is
-  # not x86_64 the download is skipped and the test skips with a message.
   release-scripts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -153,19 +90,10 @@ jobs:
       - name: tests
         run: .github/release/tests/run-all.sh
 
-  # Web console (web/): lint + format, types, translations, tests, generated-code
-  # drift and the production build. Needs nothing from the Rust jobs: the API client
-  # is generated from the committed openapi.json, whose own drift test-sqlite checks.
   web:
     runs-on: ubuntu-latest
-    # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
-    # like the rust image above, a digest would also freeze out Debian security
-    # rebuilds of this tag, and the tag already fixes Node itself.
-    # Keep in step with NODE_VERSION (and its pinned tarball hashes) of the e2e job.
     container: node:24.21.0-bookworm
     env:
-      # pnpm comes from web/package.json `packageManager` (version + sha512 of the
-      # tarball, verified by corepack); no interactive download prompt in CI.
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: checkout
@@ -175,22 +103,18 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q -f FETCH_HEAD
           git clean -ffdxq
-      # Corepack resolves `packageManager` from the working directory, so every pnpm
-      # step runs inside web/.
       - name: pnpm
         working-directory: web
         run: |
           corepack enable pnpm
           node --version
           pnpm --version
-      # Same as `xtask dist`: dependency install scripts never run.
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
       - run: pnpm lint
         working-directory: web
       - run: pnpm typecheck
         working-directory: web
-      # Fails on a key missing from a locale or {{placeholders}} that differ.
       - run: pnpm i18n:check
         working-directory: web
       - run: pnpm test
@@ -211,7 +135,6 @@ jobs:
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
       image: rust:1.99.1-bookworm
-      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
         - deskhaven-ci-registry:/usr/local/cargo/registry
         - deskhaven-ci-git:/usr/local/cargo/git
@@ -243,16 +166,10 @@ jobs:
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
-  # The test binaries are built once and run three times side by side with cargo-nextest
-  # (every test binary at once; profiles in .config/nextest.toml): on SQLite
-  # (DESKHAVEN_TEST_PG_URL unset, so PG-parameterised tests are skipped) and on PostgreSQL 16
-  # and 17 (required: the DB test helper panics instead of skipping). Once built, concurrent
-  # runs share the build directory without waiting for each other.
   test:
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
       image: rust:1.99.1-bookworm
-      # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
         - deskhaven-ci-registry:/usr/local/cargo/registry
         - deskhaven-ci-git:/usr/local/cargo/git
@@ -293,7 +210,6 @@ jobs:
       - run: .github/ci-setup.sh cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
       - name: build the tests
         run: cargo nextest run --workspace --all-targets --no-run
-      # Throwaway CI-only credentials for the service containers above.
       - name: tests (SQLite, PostgreSQL 16 and 17)
         shell: bash
         run: |
@@ -323,14 +239,8 @@ jobs:
             grep -hE '^ +Summary|^ +(FAIL|TIMEOUT|SIGSEGV|ABORT) ' "$RUNNER_TEMP/test-$name.log" | sed "s/^ */$name: /" || true
           done
           exit "$status"
-      # The committed admin API OpenAPI document must match the code (the console's
-      # types are generated from it). Reuses the test build; only xtask itself links.
       - run: cargo xtask gen-openapi --check
-      # The strategy option catalog must match the vendored client source and the overlay
-      # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
       - run: cargo xtask gen-strategy-catalog --check
-      # The configuration reference (docs/reference/configuration.md) must match the
-      # settings registry and the bootstrap schema.
       - run: cargo xtask docs --check
 
   e2e:
@@ -349,7 +259,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # The same Node as the web job's image and the Nix devshell.
       NODE_VERSION: "24.21.0"
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
@@ -361,8 +270,6 @@ jobs:
           git checkout -q -f FETCH_HEAD
           git clean -ffdxq
       - run: .github/ci-setup.sh
-      # The tarball must match the sha256 pinned here (from the release's SHASUMS256.txt);
-      # bump both with NODE_VERSION.
       - name: node
         run: |
           case "$(dpkg --print-architecture)" in
@@ -383,26 +290,21 @@ jobs:
           pnpm --version
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
-      # The console first: the binary embeds web/dist when it is built.
       - run: pnpm build
         working-directory: web
       - run: cargo build -p deskhaven
-      # The Chromium build of the locked @playwright/test, plus its apt dependencies.
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: web
       - name: e2e (SQLite)
         id: e2e-sqlite
         run: pnpm e2e
         working-directory: web
-      # Also after a failed SQLite run, but not when the setup before it failed.
       - name: e2e (PostgreSQL)
         if: ${{ !cancelled() && steps.e2e-sqlite.conclusion != 'skipped' }}
         run: pnpm e2e
         working-directory: web
         env:
-          # Throwaway CI-only credentials for the service container above.
           DESKHAVEN_E2E_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_e2e
-      # Reports, traces and server logs of both runs (web/e2e-results/{sqlite,postgres}).
       - name: upload Playwright results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

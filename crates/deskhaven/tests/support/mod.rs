@@ -31,8 +31,6 @@ pub fn planted_master_key() -> String {
 }
 
 pub fn workdir(name: &str) -> PathBuf {
-    // Per process: concurrent runs of this suite (CI runs it on three databases at once)
-    // share CARGO_TARGET_TMPDIR and would otherwise clear each other's directories.
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("serve")
         .join(format!("{name}-{}", std::process::id()));

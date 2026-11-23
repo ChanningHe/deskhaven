@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Shared CI bootstrap: system packages + the toolchain pinned in rust-toolchain.toml.
-# Usage: [CI_SKIP_APT=1] .github/ci-setup.sh [cargo tools as name@version ...]
+# Usage: [CI_SKIP_APT=1] .github/ci-setup.sh [name@version[/features] ...]
 set -euo pipefail
 
 APT_ATTEMPTS=3
@@ -25,9 +24,7 @@ if [ "${CI_SKIP_APT:-0}" != "1" ]; then
     pkg-config protobuf-compiler libsodium-dev libssl-dev >/dev/null
 fi
 
-# A persistent build directory (CARGO_TARGET_DIR on the self-hosted runner's cache volume,
-# see ci.yml) starts over once it outgrows its share of the disk: stale artifacts of old
-# dependency versions pile up there and cargo never removes them.
+# cargo never prunes a persistent build directory.
 CI_TARGET_MAX_GB="${CI_TARGET_MAX_GB:-25}"
 if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -d "$CARGO_TARGET_DIR" ]; then
   used_mb="$(du -sm "$CARGO_TARGET_DIR" | cut -f1)"
@@ -38,17 +35,12 @@ if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -d "$CARGO_TARGET_DIR" ]; then
   fi
 fi
 
-# Installs the channel and components declared in rust-toolchain.toml.
 rustup toolchain install --profile minimal
 rustc --version
 
-# Extra tools. On x86_64, cargo-deny, cargo-nextest and cargo-llvm-cov are their projects' prebuilt release
-# binaries, each tarball's sha256 pinned in .github/ci-tools.sha256 (add a line when bumping
-# a version); everything else, and every tool elsewhere, is `cargo install --locked`.
-# A spec is name@version, optionally name@version/feature,feature (cargo-about needs `cli`).
 TOOLS_SHA256="$(cd "$(dirname "$0")" && pwd)/ci-tools.sha256"
 
-prebuilt_url() { # name version -> "url local-tarball-name binary-path-in-tarball", or nothing
+prebuilt_url() {
   local triple=x86_64-unknown-linux-musl
   case "$1" in
     cargo-deny)
@@ -66,9 +58,8 @@ prebuilt_url() { # name version -> "url local-tarball-name binary-path-in-tarbal
   esac
 }
 
-install_prebuilt() { # name version url tarball member
+install_prebuilt() {
   local bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin" tmp
-  # As cargo subcommands: `cargo-llvm-cov --version` alone is not a valid invocation.
   if [ -x "$bin_dir/$1" ] && cargo "${1#cargo-}" --version 2>/dev/null | grep -qF " $2"; then
     echo "$1 $2 already installed"
     return
@@ -95,7 +86,7 @@ for spec in "$@"; do
   prebuilt=""
   if [ "$(uname -m)" = x86_64 ]; then prebuilt="$(prebuilt_url "$name" "$version")"; fi
   if [ -n "$prebuilt" ]; then
-    # shellcheck disable=SC2086 # three words, none with spaces
+    # shellcheck disable=SC2086
     install_prebuilt "$name" "$version" $prebuilt
   elif [ "$features" = "$version" ] || [ -z "$features" ]; then
     cargo install --locked "$name" --version "$version"
