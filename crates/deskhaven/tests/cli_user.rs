@@ -14,7 +14,7 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait};
 fn workdir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("cli_user")
-        .join(name);
+        .join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("data")).unwrap();
     std::fs::write(

@@ -1,36 +1,4 @@
-# GitHub Actions CI for deskhaven.
-#
-# No JavaScript actions are used, except the e2e job's failure upload (that job installs
-# node; the action is pinned by commit): the job image (rust:*-bookworm) has no node.
-# Sources are fetched with plain git (the repository is public; a private repo would need
-# a token passed to the checkout step). No caching until a prebuilt CI image exists (M4-06).
-#
-# Runner label: every job runs on `vars.CI_RUNNER_LABEL` when it is set and the code is
-# this repository's own (a push, or a pull request from a branch of this repository), else
-# on `ubuntu-latest`. To use a self-hosted runner, set the repository variable
-# CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables). Jobs run
-# inside the `container:` image, so the runner only needs Docker access, except
-# release-scripts, which runs on the host.
-#
-# The expression only keeps unmodified fork pull requests off that runner. It protects
-# nothing: a pull request runs the workflow file from its own branch, so a fork can set
-# `runs-on` to the self-hosted label and run any code there. No change to this file can
-# close that. A self-hosted runner on this public repository therefore needs one of:
-# "Require approval for all external contributors" (Settings -> Actions -> General ->
-# Approval for running fork pull request workflows), and a maintainer who reads every fork
-# workflow before approving it; a runner group limited to selected workflows and refs that
-# fork pull requests cannot use; or no persistent runner at all (ephemeral, rebuilt per
-# job).
-#
-# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
-# + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
-# Releases (tags) are built by release.yml.
-# The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
-# Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
-# github.com (cargo-deny fetches the RustSec advisory DB from GitHub),
-# registry.npmjs.org (web, e2e), and for e2e nodejs.org, the Playwright browser CDN
-# (cdn.playwright.dev and its mirrors).
-
+# The rust image tag in each job must match the channel in rust-toolchain.toml.
 name: ci
 
 on:
@@ -42,32 +10,22 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The jobs only read: no job pushes, comments or publishes.
 permissions:
   contents: read
 
 env:
-  # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
-  CARGO_LLVM_COV_VERSION: "0.9.1"
+  CARGO_NEXTEST_VERSION: "0.9.136"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  # Full debuginfo for every test binary fills a hosted runner's disk; line tables keep
-  # file:line in backtraces at a fraction of the size.
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-  # Warnings are denied in exactly one place: clippy `-D warnings` (with --all-targets it
-  # also covers test code). No global RUSTFLAGS, so `cargo install` of tools is unaffected.
-  #
-  # Checkout inputs: PRs fetch refs/pull/N/head, pushes fetch the commit (ref as fallback).
-  # The workspace belongs to the runner user while jobs run as root in their container, so
-  # git refuses it ("dubious ownership") unless it is marked safe first.
+  CARGO_PROFILE_DEV_DEBUG: "0"
   CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
   CI_FETCH_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
   CI_FALLBACK_REF: ${{ github.ref }}
 
 jobs:
   fmt:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -75,17 +33,13 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
-      # Toolchain only (rustfmt); no apt packages needed.
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: cargo fmt --all -- --check
 
-  # The relay key guard (deploy/docker/relay-key-guard.rs) is std-only and outside the
-  # workspace, so no cargo job above compiles it, and its tests otherwise run only inside
-  # the relay image build. Format, lint and test it here, with the same plain rustc the
-  # image uses.
   relay-key-guard:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -93,7 +47,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: CI_SKIP_APT=1 .github/ci-setup.sh
       - run: rustfmt --check --edition 2021 deploy/docker/relay-key-guard.rs
       - name: clippy (program and tests)
@@ -105,16 +60,8 @@ jobs:
           rustc --edition 2021 --test -o /tmp/guard-tests deploy/docker/relay-key-guard.rs
           /tmp/guard-tests
 
-  # The release scripts (.github/release/: what decides whether, what and where release.yml
-  # publishes) are shellchecked and tested here, without network: gh, docker, git ls-remote
-  # and cargo-audit are stubs (.github/release/tests/stubs). Runs on the runner itself, which
-  # needs bash, git, jq, python3 >= 3.11 and shellcheck (all preinstalled on GitHub-hosted
-  # ubuntu runners). git-cliff (for tests/test-cliff.sh) is the prebuilt release binary of the
-  # version release.yml pins, its sha256 checked against tests/git-cliff.sha256 (bump that
-  # file with GIT_CLIFF_VERSION); without it that test would skip itself. On a runner that is
-  # not x86_64 the download is skipped and the test skips with a message.
   release-scripts:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: checkout
@@ -122,7 +69,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - name: git-cliff (pinned prebuilt binary, sha256 verified)
         if: runner.arch == 'X64'
         run: |
@@ -142,19 +90,10 @@ jobs:
       - name: tests
         run: .github/release/tests/run-all.sh
 
-  # Web console (web/): lint + format, types, translations, tests, generated-code
-  # drift and the production build. Needs nothing from the Rust jobs: the API client
-  # is generated from the committed openapi.json, whose own drift test-sqlite checks.
   web:
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    # Exact tag, the same Node as the Nix devshell (flake.lock). Tag, not digest:
-    # like the rust image above, a digest would also freeze out Debian security
-    # rebuilds of this tag, and the tag already fixes Node itself.
-    # Keep in step with NODE_VERSION (and its pinned tarball hashes) of the e2e job.
+    runs-on: ubuntu-latest
     container: node:24.21.0-bookworm
     env:
-      # pnpm comes from web/package.json `packageManager` (version + sha512 of the
-      # tarball, verified by corepack); no interactive download prompt in CI.
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: checkout
@@ -162,23 +101,20 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
-      # Corepack resolves `packageManager` from the working directory, so every pnpm
-      # step runs inside web/.
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - name: pnpm
         working-directory: web
         run: |
           corepack enable pnpm
           node --version
           pnpm --version
-      # Same as `xtask dist`: dependency install scripts never run.
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
       - run: pnpm lint
         working-directory: web
       - run: pnpm typecheck
         working-directory: web
-      # Fails on a key missing from a locale or {{placeholders}} that differ.
       - run: pnpm i18n:check
         working-directory: web
       - run: pnpm test
@@ -196,22 +132,28 @@ jobs:
           git diff --exit-code -- src/routeTree.gen.ts
 
   clippy:
-    needs: fmt
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      volumes:
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
+    env:
+      CARGO_TARGET_DIR: /ci-target/clippy
     steps:
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
-    needs: fmt
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     steps:
       - name: checkout
@@ -219,45 +161,22 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
-  test-sqlite:
-    needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
-    steps:
-      - name: checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git init -q .
-          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
-      - run: .github/ci-setup.sh
-      # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
-      - run: cargo test --workspace --all-targets --no-fail-fast
-      # The committed admin API OpenAPI document must match the code (the console's
-      # types are generated from it). Reuses the test build; only xtask itself links.
-      - run: cargo xtask gen-openapi --check
-      # The strategy option catalog must match the vendored client source and the overlay
-      # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
-      - run: cargo xtask gen-strategy-catalog --check
-      # The configuration reference (docs/reference/configuration.md) must match the
-      # settings registry and the bootstrap schema.
-      - run: cargo xtask docs --check
-
-  test-postgres:
-    needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
-    strategy:
-      fail-fast: false
-      matrix:
-        pg: ["16", "17"]
+  test:
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+    container:
+      image: rust:1.99.1-bookworm
+      volumes:
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
     services:
-      postgres:
-        image: postgres:${{ matrix.pg }}
+      pg16:
+        image: postgres:16
         env:
           POSTGRES_USER: deskhaven
           POSTGRES_PASSWORD: deskhaven
@@ -267,28 +186,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      # Throwaway CI-only credentials for the service container above.
-      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
-      # The DB test helper panics (instead of skipping PG) if the URL is missing.
-      DESKHAVEN_TEST_REQUIRE_PG: "1"
-    steps:
-      - name: checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git init -q .
-          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
-      - run: .github/ci-setup.sh
-      - run: cargo test --workspace --all-targets --no-fail-fast
-
-  # Runs in parallel with the tests; report only.
-  coverage:
-    needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    container: rust:1.99.1-bookworm
-    services:
-      postgres:
+      pg17:
         image: postgres:17
         env:
           POSTGRES_USER: deskhaven
@@ -300,27 +198,56 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
-      DESKHAVEN_TEST_REQUIRE_PG: "1"
+      CARGO_TARGET_DIR: /ci-target/test
     steps:
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
-      - run: .github/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
-      # Report only until the end of M2. To enforce the gate, append
-      # `--fail-under-lines 80` to the command below.
-      - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only # --fail-under-lines 80
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
+      - run: .github/ci-setup.sh cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+      - name: build the tests
+        run: |
+          cargo nextest list --workspace --all-targets --list-type binaries-only --message-format json >"$RUNNER_TEMP/binaries.json"
+          cargo metadata --format-version 1 --all-features --no-deps >"$RUNNER_TEMP/cargo.json"
+      - name: tests (SQLite, PostgreSQL 16 and 17)
+        shell: bash
+        run: |
+          set -uo pipefail
+          suite() {
+            local profile=ci
+            if [ -n "$2" ]; then
+              export DESKHAVEN_TEST_PG_URL="$2" DESKHAVEN_TEST_REQUIRE_PG=1
+              profile=ci-pg
+            fi
+            # No cargo here: a missing web/dist makes every cargo call relink the binaries the other suites run.
+            cargo nextest run --profile "$profile" --binaries-metadata "$RUNNER_TEMP/binaries.json" \
+              --cargo-metadata "$RUNNER_TEMP/cargo.json" --workspace-remap . >"$RUNNER_TEMP/test-$1.log" 2>&1
+          }
+          names=(sqlite pg16 pg17)
+          urls=("" postgres://deskhaven:deskhaven@pg16:5432/deskhaven_test postgres://deskhaven:deskhaven@pg17:5432/deskhaven_test)
+          pids=()
+          for i in 0 1 2; do
+            suite "${names[$i]}" "${urls[$i]}" &
+            pids+=("$!")
+          done
+          status=0
+          for i in 0 1 2; do
+            name="${names[$i]}"
+            if wait "${pids[$i]}"; then result=passed; else result=FAILED; status=1; fi
+            echo "::group::$name: $result"
+            cat "$RUNNER_TEMP/test-$name.log"
+            echo "::endgroup::"
+          done
+          exit "$status"
+      - run: cargo xtask gen-openapi --check
+      - run: cargo xtask gen-strategy-catalog --check
+      - run: cargo xtask docs --check
 
-  # Console end-to-end flows (web/e2e, Playwright) against the real binary with the
-  # embedded console, once on SQLite and once on the service's empty PostgreSQL database.
-  # The Rust image gets the web job's Node (official tarball, sha256 pinned below) and
-  # Playwright's Chromium with its system libraries.
   e2e:
-    needs: [clippy, deny]
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     services:
       postgres:
@@ -335,7 +262,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # The same Node as the web job's image and the Nix devshell.
       NODE_VERSION: "24.21.0"
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
@@ -344,10 +270,9 @@ jobs:
           git config --global --add safe.directory "$PWD"
           git init -q .
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q FETCH_HEAD
+          git checkout -q -f FETCH_HEAD
+          git clean -ffdxq
       - run: .github/ci-setup.sh
-      # The tarball must match the sha256 pinned here (from the release's SHASUMS256.txt);
-      # bump both with NODE_VERSION.
       - name: node
         run: |
           case "$(dpkg --print-architecture)" in
@@ -368,26 +293,21 @@ jobs:
           pnpm --version
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
-      # The console first: the binary embeds web/dist when it is built.
       - run: pnpm build
         working-directory: web
       - run: cargo build -p deskhaven
-      # The Chromium build of the locked @playwright/test, plus its apt dependencies.
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: web
       - name: e2e (SQLite)
         id: e2e-sqlite
         run: pnpm e2e
         working-directory: web
-      # Also after a failed SQLite run, but not when the setup before it failed.
       - name: e2e (PostgreSQL)
         if: ${{ !cancelled() && steps.e2e-sqlite.conclusion != 'skipped' }}
         run: pnpm e2e
         working-directory: web
         env:
-          # Throwaway CI-only credentials for the service container above.
           DESKHAVEN_E2E_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_e2e
-      # Reports, traces and server logs of both runs (web/e2e-results/{sqlite,postgres}).
       - name: upload Playwright results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -33,7 +33,7 @@ pub fn planted_master_key() -> String {
 pub fn workdir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("serve")
-        .join(name);
+        .join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir

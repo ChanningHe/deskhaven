@@ -25,8 +25,8 @@ const SCHEMA_PREFIX: &str = "dh_test";
 
 /// PostgreSQL test databases one test process holds at once. libtest runs a test per core and CI's
 /// service container keeps the server default `max_connections` (100), so connections are budgeted:
-/// `PG_CONCURRENT_DBS * (1 + PG_POOL_CONNECTIONS)` = 72 stays under it. Test binaries run one at a
-/// time, so a per-process limit is enough.
+/// `PG_CONCURRENT_DBS * (1 + PG_POOL_CONNECTIONS)` = 72 stays under it. Under cargo-nextest
+/// (a process per test) the cap is the `postgres` test group instead.
 const PG_CONCURRENT_DBS: usize = 8;
 /// Pool size of a test's schema connection; concurrency tests queue on it rather than fail.
 const PG_POOL_CONNECTIONS: u32 = 8;

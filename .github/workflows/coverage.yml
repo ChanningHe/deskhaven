@@ -1,0 +1,49 @@
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_LLVM_COV_VERSION: "0.9.1"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    container: rust:1.99.1-bookworm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: deskhaven
+          POSTGRES_PASSWORD: deskhaven
+          POSTGRES_DB: deskhaven_test
+        options: >-
+          --health-cmd "pg_isready -U deskhaven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
+      DESKHAVEN_TEST_REQUIRE_PG: "1"
+    steps:
+      - name: checkout
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git init -q .
+          git fetch -q --depth=1 "$CI_REPO_URL" "$GITHUB_SHA"
+          git checkout -q -f FETCH_HEAD
+      - run: .github/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
+      - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only
