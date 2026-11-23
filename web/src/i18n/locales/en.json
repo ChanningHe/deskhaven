@@ -1731,7 +1731,8 @@
       "timeout": "The device did not finish the connection in time.",
       "link": "The connection to the relay was lost: {{reason}}",
       "other": "The session ended: {{reason}}",
-      "reconnect": "Reconnect"
+      "reconnect": "Reconnect",
+      "sessionSwitch": "The device is switching to the session you chose. Reconnect in a few seconds."
     },
     "errors": {
       "title": "Could not connect",
@@ -1794,6 +1795,14 @@
     "transport": {
       "relay": "Relay",
       "webrtc": "WebRTC"
+    },
+    "windowsSession": {
+      "title": "Choose a Windows session",
+      "description": "This device runs more than one Windows session. Pick the one to control.",
+      "label": "Session",
+      "current": "{{name}} (current)",
+      "switchNote": "The device switches to this session and ends this connection. Reconnect a few seconds later.",
+      "submit": "Continue"
     }
   }
 }

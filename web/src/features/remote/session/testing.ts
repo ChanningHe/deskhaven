@@ -13,7 +13,7 @@ import {
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
 import { FakeDecoders } from '../video/fake-decoder'
-import { startSession, type Session } from './session'
+import { startSession, type Session, type SessionState } from './session'
 
 /** The 1.4.5 capture's peer as its PeerInfo would read (the real one was not kept). */
 export const PEER_INFO = create(PeerInfoSchema, {
@@ -44,7 +44,10 @@ const CAPTURED_FRAME_SEQ = 6
  * Replays the captured 1.4.5 peer through the real relay transport and handshake, then logs in
  * with a synthetic LoginResponse: the session is active over the fixture's keys.
  */
-export async function activeSession(peerInfo: PeerInfo = PEER_INFO): Promise<ActiveSession> {
+export async function activeSession(
+  peerInfo: PeerInfo = PEER_INFO,
+  until: SessionState['kind'] = 'active',
+): Promise<ActiveSession> {
   const s = fixtureSession('1.4.5')
   const replay = await replayToKeyed('1.4.5', { password: s.password })
   const decoders = new FakeDecoders()
@@ -64,7 +67,7 @@ export async function activeSession(peerInfo: PeerInfo = PEER_INFO): Promise<Act
     }),
   )
   await vi.waitFor(() => {
-    if (session.state.get().kind !== 'active') throw new Error('session not active yet')
+    if (session.state.get().kind !== until) throw new Error(`session not ${until} yet`)
   })
   return {
     ...replay,

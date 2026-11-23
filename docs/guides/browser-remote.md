@@ -70,6 +70,9 @@ console's own address.
 
 ## Using the remote screen
 
+- A Windows device that shares its RDP sessions and has more than one session asks first which
+  one to control, its current session preselected. Choosing another session makes the device
+  restart in it and end this connection: reconnect a few seconds later.
 - Click the screen to type into it. Press **Esc twice** to leave it with the keyboard.
 - **Keyboard mode** (top bar): *Map* sends physical keys and suits most layouts; *Translate*
   and *Legacy* send characters. Input methods (Chinese, Japanese, …) work in every mode.

@@ -28,6 +28,7 @@ export class FakeSession implements Session {
   readonly inputs: RemoteInput[] = []
   readonly pasted: string[] = []
   readonly modes: KeyboardMode[] = []
+  readonly chosenSessions: number[] = []
   readonly displays: number[] = []
   ctrlAltDels = 0
   closed = 0
@@ -43,6 +44,10 @@ export class FakeSession implements Session {
 
   submit2fa(code: string): void {
     this.codes.push(code)
+  }
+
+  chooseWindowsSession(sid: number): void {
+    this.chosenSessions.push(sid)
   }
 
   setKeyboardMode(mode: KeyboardMode): void {

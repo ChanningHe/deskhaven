@@ -6,7 +6,7 @@ import type { ErrorCode } from '@/api/generated/model'
 
 import type { ConnectFailure } from '../connect/controller'
 import { TIMEOUT_REASON } from '../handshake/handshake'
-import { CLOSED_BY_USER } from '../session/session'
+import { CLOSED_BY_USER, WINDOWS_SESSION_SWITCH } from '../session/session'
 
 /** The codes POST sessions answers with that get their own, remote-specific copy. */
 const SESSION_ERRORS = [
@@ -57,6 +57,7 @@ const LINK_FAILURE = /^(relay |bad frame from relay|connection closed$)/
  */
 export function endingMessage(reason: string, t: TFunction): string {
   if (reason === CLOSED_BY_USER) return t('remote.ended.user')
+  if (reason === WINDOWS_SESSION_SWITCH) return t('remote.ended.sessionSwitch')
   if (reason === TIMEOUT_REASON) return t('remote.ended.timeout')
   if (LINK_FAILURE.test(reason)) return t('remote.ended.link', { reason })
   return t('remote.ended.other', { reason })

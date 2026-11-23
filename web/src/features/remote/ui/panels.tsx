@@ -3,9 +3,13 @@ import { useId, useState } from 'react'
 import type { ReactNode, SubmitEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { NativeSelect } from '@/components/common/native-select'
 import { SectionCard } from '@/components/common/section-card'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { TextField } from '@/features/auth/components/text-field'
+
+import type { WindowsSessionChoice } from '../session/windows-sessions'
 
 /** A card in the middle of the remote stage: the steps before the screen shows. */
 function Step({
@@ -122,6 +126,65 @@ export function SecretPanel({ kind, wrong, onSubmit, onCancel }: SecretPanelProp
               {t(`remote.${kind}.wrong`)}
             </p>
           ) : null}
+        </div>
+      </SectionCard>
+    </form>
+  )
+}
+
+/** Which of the device's Windows sessions to control; its current one is picked first. */
+export function WindowsSessionPanel({
+  choice,
+  onChoose,
+  onCancel,
+}: {
+  choice: WindowsSessionChoice
+  onChoose: (sid: number) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  const offered = choice.sessions.some((s) => s.sid === choice.current)
+  const [sid, setSid] = useState(offered ? choice.current : (choice.sessions[0]?.sid ?? 0))
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    onChoose(sid)
+  }
+  return (
+    <form onSubmit={submit}>
+      <SectionCard
+        title={t('remote.windowsSession.title')}
+        description={t('remote.windowsSession.description')}
+        footer={
+          <>
+            <Button type="submit">{t('remote.windowsSession.submit')}</Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              {t('common.cancel')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor={id}>{t('remote.windowsSession.label')}</Label>
+          <NativeSelect
+            id={id}
+            className="w-full"
+            value={sid}
+            onChange={(event) => {
+              setSid(Number(event.target.value))
+            }}
+          >
+            {choice.sessions.map((s) => (
+              <option key={s.sid} value={s.sid}>
+                {s.sid === choice.current
+                  ? t('remote.windowsSession.current', { name: s.name })
+                  : s.name}
+              </option>
+            ))}
+          </NativeSelect>
+          {sid === choice.current ? null : (
+            <p className="text-sm text-muted-foreground">{t('remote.windowsSession.switchNote')}</p>
+          )}
         </div>
       </SectionCard>
     </form>

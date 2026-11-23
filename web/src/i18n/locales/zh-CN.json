@@ -1731,7 +1731,8 @@
       "timeout": "设备未在规定时间内完成连接。",
       "link": "与中继服务器的连接已断开：{{reason}}",
       "other": "会话已结束：{{reason}}",
-      "reconnect": "重新连接"
+      "reconnect": "重新连接",
+      "sessionSwitch": "设备正在切换到你选择的会话，请几秒后重新连接。"
     },
     "errors": {
       "title": "无法连接",
@@ -1794,6 +1795,14 @@
     "transport": {
       "relay": "中继",
       "webrtc": "WebRTC"
+    },
+    "windowsSession": {
+      "title": "选择 Windows 会话",
+      "description": "这台设备上运行着多个 Windows 会话，请选择要控制的会话。",
+      "label": "会话",
+      "current": "{{name}}（当前）",
+      "switchNote": "设备会切换到这个会话，并断开本次连接。请几秒后重新连接。",
+      "submit": "继续"
     }
   }
 }

@@ -20,14 +20,18 @@ import {
   ctrlAltDel,
   keyMessage,
   refreshVideo,
+  selectedSid,
   switchDisplay,
   videoReceived,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { ValueStore, type Store } from './store'
+import { windowsSessionChoice, type WindowsSessionChoice } from './windows-sessions'
 
 export type SessionState =
   | Exclude<LoginState, { kind: 'active' } | { kind: 'failed' }>
+  /** Logged in to a peer that waits for us to pick one of its Windows sessions. */
+  | ({ kind: 'choose_session' } & WindowsSessionChoice)
   | { kind: 'active' }
   | { kind: 'closed'; reason: string }
 
@@ -53,6 +57,8 @@ export interface Session {
   login(password: string): Promise<void>
   /** Only while the state is need_2fa; ignored otherwise. */
   submit2fa(code: string): void
+  /** Only while the state is choose_session, with one of its sids; ignored otherwise. */
+  chooseWindowsSession(sid: number): void
   /** One of supportedKeyboardModes for the peer; keys held in the old mode go up first. */
   setKeyboardMode(mode: KeyboardMode): void
   /** Asks the peer to stream display `index` of PeerView.displays. */
@@ -70,6 +76,15 @@ export interface SessionOptions {
 }
 
 export const CLOSED_BY_USER = 'closed'
+/** What a peer streams only once it serves the connection. */
+const SERVED = new Set<Message['union']['case']>([
+  'videoFrame',
+  'cursorData',
+  'cursorId',
+  'cursorPosition',
+])
+/** The peer dropped the link to restart in the Windows session we picked. */
+export const WINDOWS_SESSION_SWITCH = 'windows_session_switch'
 
 /** Runs a remote control session over a handshake from `startHandshake`, from login on. */
 export function startSession(handshake: Handshake, options: SessionOptions = {}): Session {
@@ -89,6 +104,7 @@ class RemoteSession implements Session {
   readonly #video: VideoPipeline
   readonly #cursors = new CursorTracker()
   #keyboard: KeyboardEncoder | null = null
+  #switchingSession = false
 
   constructor(handshake: Handshake, createDecoder: CreateDecoder) {
     this.#handshake = handshake
@@ -133,6 +149,17 @@ class RemoteSession implements Session {
   submit2fa(code: string): void {
     if (this.state.get().kind !== 'need_2fa') return
     this.#handshake.submit2fa(code)
+  }
+
+  chooseWindowsSession(sid: number): void {
+    const state = this.state.get()
+    if (state.kind !== 'choose_session' || !state.sessions.some((s) => s.sid === sid)) return
+    this.#send(selectedSid(sid))
+    if (this.state.get().kind !== 'choose_session') return
+    // Another session: the peer restarts there and drops us, unless it no longer can (another
+    // client joined, the session went away); then it serves this connection as it is.
+    this.#switchingSession = sid !== state.current
+    this.state.set(this.#switchingSession ? { kind: 'connecting' } : { kind: 'active' })
   }
 
   setKeyboardMode(mode: KeyboardMode): void {
@@ -197,7 +224,8 @@ class RemoteSession implements Session {
       return
     }
     this.#onPeerInfo(state.peerInfo)
-    this.state.set({ kind: 'active' })
+    const choice = windowsSessionChoice(state.peerInfo)
+    this.state.set(choice ? { kind: 'choose_session', ...choice } : { kind: 'active' })
   }
 
   #onPeerInfo(info: PeerInfo): void {
@@ -208,6 +236,10 @@ class RemoteSession implements Session {
 
   #onMessage(message: Message): void {
     const { union } = message
+    if (this.#switchingSession && SERVED.has(union.case)) {
+      this.#switchingSession = false
+      this.state.set({ kind: 'active' })
+    }
     switch (union.case) {
       case 'videoFrame':
         this.#video.push(union.value)
@@ -289,7 +321,8 @@ class RemoteSession implements Session {
 
   #finish(reason: string): void {
     if (this.state.get().kind === 'closed') return
-    this.state.set({ kind: 'closed', reason })
+    const switched = this.#switchingSession && reason !== CLOSED_BY_USER
+    this.state.set({ kind: 'closed', reason: switched ? WINDOWS_SESSION_SWITCH : reason })
     this.#video.close()
     this.#frames.end()
   }

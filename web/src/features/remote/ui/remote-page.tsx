@@ -6,7 +6,13 @@ import type { RemotePhase } from '../connect/controller'
 import { CLOSED_BY_USER, type Session } from '../session/session'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
-import { ApprovalPanel, ProblemPanel, ProgressPanel, SecretPanel } from './panels'
+import {
+  ApprovalPanel,
+  ProblemPanel,
+  ProgressPanel,
+  SecretPanel,
+  WindowsSessionPanel,
+} from './panels'
 import { RemoteBar, type BarFrame, type BarStatus } from './remote-bar'
 import { RemoteView } from './remote-view'
 import { useRemote, useStore } from './use-remote'
@@ -83,6 +89,18 @@ function SessionStep({
       return (
         <Waiting frame={frame} status="connecting">
           <ApprovalPanel onCancel={onDisconnect} />
+        </Waiting>
+      )
+    case 'choose_session':
+      return (
+        <Waiting frame={frame} status="connecting">
+          <WindowsSessionPanel
+            choice={state}
+            onChoose={(sid) => {
+              session.chooseWindowsSession(sid)
+            }}
+            onCancel={onDisconnect}
+          />
         </Waiting>
       )
     case 'active':

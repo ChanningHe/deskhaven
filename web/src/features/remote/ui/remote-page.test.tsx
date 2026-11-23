@@ -92,6 +92,32 @@ describe('remote page: logging in', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('验证码错误，请重试。')
   })
 
+  it('asks which Windows session to control, the current one picked first', async () => {
+    const { user, session } = await open()
+    set(session, {
+      kind: 'choose_session',
+      sessions: [
+        { sid: 1, name: 'Console' },
+        { sid: 2, name: 'RDP: pve' },
+      ],
+      current: 2,
+    })
+    const select = screen.getByLabelText('会话')
+    expect(select).toHaveValue('2')
+    expect(within(select).getByRole('option', { name: 'RDP: pve（当前）' })).toBeInTheDocument()
+    expect(screen.queryByText(/断开本次连接/)).toBeNull()
+
+    await user.selectOptions(select, '1')
+    expect(screen.getByText(/断开本次连接/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '继续' }))
+    expect(session.chosenSessions).toEqual([1])
+
+    act(() => {
+      session.end('windows_session_switch')
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('设备正在切换到你选择的会话')
+  })
+
   it('waits for the person at the device, and gives up on cancel', async () => {
     const { user, session, f } = await open()
     set(session, { kind: 'awaiting_approval' })
