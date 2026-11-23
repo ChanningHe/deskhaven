@@ -5,19 +5,20 @@
 # Sources are fetched with plain git (the repository is public; a private repo would need
 # a token passed to the checkout step).
 #
-# Runners: fmt, clippy, deny and test-postgres (16) run on the self-hosted runner (label
+# Runners: the Rust jobs fmt, clippy, deny and test run on the self-hosted runner (label
 # `selfhosted`, one 32-core machine that takes one job at a time), the rest on
-# `ubuntu-latest`. They are the jobs that gate all tests and the longest test job: with
-# a warm cache they skip the cold build that takes most of their time on GitHub's runners,
-# while the other test jobs keep running side by side there. Set the repository variable
-# CI_RUNNER_LABEL (Settings -> Secrets and variables -> Actions -> Variables) to send them
-# elsewhere, e.g. `ubuntu-latest` while the self-hosted runner is down.
+# `ubuntu-latest`: with a warm cache they skip the cold build that takes most of a job's
+# time on GitHub's runners, and web, e2e and the release-script checks run there
+# meanwhile. Set the repository variable CI_RUNNER_LABEL (Settings -> Secrets and
+# variables -> Actions -> Variables) to send them elsewhere, e.g. `ubuntu-latest` while
+# the self-hosted runner is down.
 #
-# Cache: those jobs mount the Docker volume `deskhaven-ci-cache` at /ci-cache and keep
-# CARGO_HOME (registry, git sources, `cargo install`ed tools) and one CARGO_TARGET_DIR per
-# job there; .github/ci-setup.sh clears a build directory past CI_TARGET_MAX_GB. On a
-# GitHub runner the volume is new and empty every time. The self-hosted workspace persists
-# between runs, so every checkout forces the commit and cleans untracked files.
+# Cache: those jobs mount Docker volumes for the cargo registry and git sources (over the
+# image's CARGO_HOME, which stays where rustup expects it) and for their build directories
+# (/ci-target, one CARGO_TARGET_DIR per job); .github/ci-setup.sh clears a build directory
+# past CI_TARGET_MAX_GB. On a GitHub runner the volumes are new and empty every time. The
+# self-hosted workspace persists between runs, so every checkout forces the commit and
+# cleans untracked files.
 #
 # Only this repository's own code (a push, or a pull request from a branch of this
 # repository) goes to the self-hosted runner; fork pull requests stay on `ubuntu-latest`.
@@ -29,8 +30,9 @@
 # Approval for running fork pull request workflows; set) and a maintainer who reads every
 # fork workflow before approving it.
 #
-# Pipeline: fmt -> clippy + deny -> test {sqlite, postgres-16, postgres-17} + coverage
-# + e2e; the web console and relay-key-guard jobs run in parallel with all of it.
+# Pipeline: every job starts at once, none waits for another. `test` builds the test
+# binaries once and runs them on SQLite, PostgreSQL 16 and 17 side by side; coverage is
+# coverage.yml (main only, report only), so nothing here waits for it.
 # Releases (tags) are built by release.yml.
 # The container image tag (repeated per job) must match the channel in rust-toolchain.toml.
 # Network egress needed: git host, crates.io, Debian mirrors, Docker Hub,
@@ -56,7 +58,6 @@ permissions:
 env:
   # Tool versions, defined once.
   CARGO_DENY_VERSION: "0.20.2"
-  CARGO_LLVM_COV_VERSION: "0.9.1"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   # Full debuginfo for every test binary fills a hosted runner's disk; line tables keep
@@ -79,10 +80,11 @@ jobs:
       image: rust:1.99.1-bookworm
       # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
-        - deskhaven-ci-cache:/ci-cache
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
     env:
-      CARGO_HOME: /ci-cache/cargo
-      CARGO_TARGET_DIR: /ci-cache/target/fmt
+      CARGO_TARGET_DIR: /ci-target/fmt
     steps:
       - name: checkout
         run: |
@@ -214,16 +216,16 @@ jobs:
           git diff --exit-code -- src/routeTree.gen.ts
 
   clippy:
-    needs: fmt
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
       image: rust:1.99.1-bookworm
       # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
-        - deskhaven-ci-cache:/ci-cache
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
     env:
-      CARGO_HOME: /ci-cache/cargo
-      CARGO_TARGET_DIR: /ci-cache/target/clippy
+      CARGO_TARGET_DIR: /ci-target/clippy
     steps:
       - name: checkout
         run: |
@@ -236,16 +238,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
-    needs: fmt
     runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
       image: rust:1.99.1-bookworm
       # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
-        - deskhaven-ci-cache:/ci-cache
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
     env:
-      CARGO_HOME: /ci-cache/cargo
-      CARGO_TARGET_DIR: /ci-cache/target/deny
+      CARGO_TARGET_DIR: /ci-target/deny
     steps:
       - name: checkout
         run: |
@@ -257,47 +259,22 @@ jobs:
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-deny@${{ env.CARGO_DENY_VERSION }}
       - run: cargo deny check
 
-  test-sqlite:
-    needs: [clippy, deny]
-    runs-on: ubuntu-latest
-    container: rust:1.99.1-bookworm
-    steps:
-      - name: checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git init -q .
-          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q -f FETCH_HEAD
-          git clean -ffdxq
-      - run: .github/ci-setup.sh
-      # DESKHAVEN_TEST_PG_URL is deliberately unset: PG-parameterised tests are skipped.
-      - run: cargo test --workspace --all-targets --no-fail-fast
-      # The committed admin API OpenAPI document must match the code (the console's
-      # types are generated from it). Reuses the test build; only xtask itself links.
-      - run: cargo xtask gen-openapi --check
-      # The strategy option catalog must match the vendored client source and the overlay
-      # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
-      - run: cargo xtask gen-strategy-catalog --check
-      # The configuration reference (docs/reference/configuration.md) must match the
-      # settings registry and the bootstrap schema.
-      - run: cargo xtask docs --check
-
-  test-postgres:
-    needs: [clippy, deny]
-    # pg 16 on the self-hosted runner, pg 17 on GitHub's: the two still run side by side.
-    runs-on: ${{ matrix.pg == '16' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
+  # The test binaries are built once and run three times side by side: on SQLite
+  # (DESKHAVEN_TEST_PG_URL unset, so PG-parameterised tests are skipped) and on PostgreSQL 16
+  # and 17 (required: the DB test helper panics instead of skipping). Once built, concurrent
+  # `cargo test` runs share the build directory without waiting for each other.
+  test:
+    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_LABEL || 'selfhosted') || 'ubuntu-latest' }}
     container:
       image: rust:1.99.1-bookworm
       # The persistent cache of the self-hosted runner (see the header); empty elsewhere.
       volumes:
-        - deskhaven-ci-cache:/ci-cache
-    strategy:
-      fail-fast: false
-      matrix:
-        pg: ["16", "17"]
+        - deskhaven-ci-registry:/usr/local/cargo/registry
+        - deskhaven-ci-git:/usr/local/cargo/git
+        - deskhaven-ci-target:/ci-target
     services:
-      postgres:
-        image: postgres:${{ matrix.pg }}
+      pg16:
+        image: postgres:16
         env:
           POSTGRES_USER: deskhaven
           POSTGRES_PASSWORD: deskhaven
@@ -307,31 +284,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      CARGO_HOME: /ci-cache/cargo
-      CARGO_TARGET_DIR: /ci-cache/target/test-postgres-${{ matrix.pg }}
-      # Throwaway CI-only credentials for the service container above.
-      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
-      # The DB test helper panics (instead of skipping PG) if the URL is missing.
-      DESKHAVEN_TEST_REQUIRE_PG: "1"
-    steps:
-      - name: checkout
-        run: |
-          git config --global --add safe.directory "$PWD"
-          git init -q .
-          git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
-          git checkout -q -f FETCH_HEAD
-          git clean -ffdxq
-      - run: .github/ci-setup.sh
-      - run: cargo test --workspace --all-targets --no-fail-fast
-
-  # Runs in parallel with the tests; report only.
-  coverage:
-    needs: [clippy, deny]
-    runs-on: ubuntu-latest
-    container: rust:1.99.1-bookworm
-    services:
-      postgres:
+      pg17:
         image: postgres:17
         env:
           POSTGRES_USER: deskhaven
@@ -343,8 +296,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DESKHAVEN_TEST_PG_URL: postgres://deskhaven:deskhaven@postgres:5432/deskhaven_test
-      DESKHAVEN_TEST_REQUIRE_PG: "1"
+      CARGO_TARGET_DIR: /ci-target/test
     steps:
       - name: checkout
         run: |
@@ -353,17 +305,47 @@ jobs:
           git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FETCH_REF" || git fetch -q --depth=1 "$CI_REPO_URL" "$CI_FALLBACK_REF"
           git checkout -q -f FETCH_HEAD
           git clean -ffdxq
-      - run: .github/ci-setup.sh cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
-      # Report only until the end of M2. To enforce the gate, append
-      # `--fail-under-lines 80` to the command below.
-      - run: cargo llvm-cov --workspace --all-targets --no-fail-fast --summary-only # --fail-under-lines 80
+      - run: .github/ci-setup.sh
+      - name: build the tests
+        run: cargo test --workspace --all-targets --no-run
+      # Throwaway CI-only credentials for the service containers above.
+      - name: tests (SQLite, PostgreSQL 16 and 17)
+        run: |
+          set -uo pipefail
+          suite() {
+            if [ -n "$2" ]; then
+              export DESKHAVEN_TEST_PG_URL="$2" DESKHAVEN_TEST_REQUIRE_PG=1
+            fi
+            cargo test --workspace --all-targets --no-fail-fast >"$RUNNER_TEMP/test-$1.log" 2>&1
+          }
+          names=(sqlite pg16 pg17)
+          urls=("" postgres://deskhaven:deskhaven@pg16:5432/deskhaven_test postgres://deskhaven:deskhaven@pg17:5432/deskhaven_test)
+          pids=()
+          for i in 0 1 2; do
+            suite "${names[$i]}" "${urls[$i]}" &
+            pids+=("$!")
+          done
+          status=0
+          for i in 0 1 2; do
+            name="${names[$i]}"
+            if wait "${pids[$i]}"; then result=passed; else result=FAILED; status=1; fi
+            echo "::group::$name: $result"
+            cat "$RUNNER_TEMP/test-$name.log"
+            echo "::endgroup::"
+            grep -h '^test result' "$RUNNER_TEMP/test-$name.log" | grep -v ' 0 failed' | sed "s/^/$name: /" || true
+          done
+          exit "$status"
+      # The committed admin API OpenAPI document must match the code (the console's
+      # types are generated from it). Reuses the test build; only xtask itself links.
+      - run: cargo xtask gen-openapi --check
+      # The strategy option catalog must match the vendored client source and the overlay
+      # (xtask/vendor/strategy-catalog, crates/deskhaven-core/src/strategies/catalog).
+      - run: cargo xtask gen-strategy-catalog --check
+      # The configuration reference (docs/reference/configuration.md) must match the
+      # settings registry and the bootstrap schema.
+      - run: cargo xtask docs --check
 
-  # Console end-to-end flows (web/e2e, Playwright) against the real binary with the
-  # embedded console, once on SQLite and once on the service's empty PostgreSQL database.
-  # The Rust image gets the web job's Node (official tarball, sha256 pinned below) and
-  # Playwright's Chromium with its system libraries.
   e2e:
-    needs: [clippy, deny]
     runs-on: ubuntu-latest
     container: rust:1.99.1-bookworm
     services:

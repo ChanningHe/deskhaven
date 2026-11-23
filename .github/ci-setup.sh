@@ -42,15 +42,58 @@ fi
 rustup toolchain install --profile minimal
 rustc --version
 
-# Extra tools via `cargo install --locked`; with a persistent CARGO_HOME an installed version
-# is kept and the install is a no-op.
+# Extra tools. On x86_64, cargo-deny and cargo-llvm-cov are their projects' prebuilt release
+# binaries, each tarball's sha256 pinned in .github/ci-tools.sha256 (add a line when bumping
+# a version); everything else, and every tool elsewhere, is `cargo install --locked`.
 # A spec is name@version, optionally name@version/feature,feature (cargo-about needs `cli`).
+TOOLS_SHA256="$(cd "$(dirname "$0")" && pwd)/ci-tools.sha256"
+
+prebuilt_url() { # name version -> "url local-tarball-name binary-path-in-tarball", or nothing
+  local triple=x86_64-unknown-linux-musl
+  case "$1" in
+    cargo-deny)
+      echo "https://github.com/EmbarkStudios/cargo-deny/releases/download/$2/cargo-deny-$2-$triple.tar.gz" \
+        "cargo-deny-$2-$triple.tar.gz" "cargo-deny-$2-$triple/cargo-deny"
+      ;;
+    cargo-llvm-cov)
+      echo "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v$2/cargo-llvm-cov-$triple.tar.gz" \
+        "cargo-llvm-cov-$2-$triple.tar.gz" "cargo-llvm-cov"
+      ;;
+  esac
+}
+
+install_prebuilt() { # name version url tarball member
+  local bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin" tmp
+  # As cargo subcommands: `cargo-llvm-cov --version` alone is not a valid invocation.
+  if [ -x "$bin_dir/$1" ] && cargo "${1#cargo-}" --version 2>/dev/null | grep -qF " $2"; then
+    echo "$1 $2 already installed"
+    return
+  fi
+  grep -qF "  $4" "$TOOLS_SHA256" || {
+    echo "::error::$TOOLS_SHA256 has no entry for $4" >&2
+    exit 1
+  }
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "$tmp/$4" "$3"
+  (cd "$tmp" && grep -F "  $4" "$TOOLS_SHA256" | sha256sum -c -)
+  tar -xzf "$tmp/$4" -C "$tmp" "$5"
+  mkdir -p "$bin_dir"
+  install -m 0755 "$tmp/$5" "$bin_dir/$1"
+  rm -rf "$tmp"
+  cargo "${1#cargo-}" --version
+}
+
 for spec in "$@"; do
   name="${spec%%@*}"
   version="${spec#*@}"
   features="${version#*/}"
   version="${version%%/*}"
-  if [ "$features" = "$version" ] || [ -z "$features" ]; then
+  prebuilt=""
+  if [ "$(uname -m)" = x86_64 ]; then prebuilt="$(prebuilt_url "$name" "$version")"; fi
+  if [ -n "$prebuilt" ]; then
+    # shellcheck disable=SC2086 # three words, none with spaces
+    install_prebuilt "$name" "$version" $prebuilt
+  elif [ "$features" = "$version" ] || [ -z "$features" ]; then
     cargo install --locked "$name" --version "$version"
   else
     cargo install --locked "$name" --version "$version" --features "$features"
