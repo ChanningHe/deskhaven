@@ -54,8 +54,18 @@ describe('loginOption', () => {
     expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 30 })
   })
 
+  it('always asks for the remote cursor: without it the peer sends no CursorPosition', () => {
+    for (const showRemoteCursor of [true, false]) {
+      expect(loginOption(with_({ showRemoteCursor })).showRemoteCursor).toBe(
+        OptionMessage_BoolOption.Yes,
+      )
+    }
+  })
+
   it('sets nothing else', () => {
-    const { imageQuality, customImageQuality, customFps, ...rest } = loginOption(DEFAULT_SETTINGS)
+    const { imageQuality, customImageQuality, customFps, showRemoteCursor, ...rest } =
+      loginOption(DEFAULT_SETTINGS)
+    expect(showRemoteCursor).toBe(OptionMessage_BoolOption.Yes)
     expect({ imageQuality, customImageQuality, customFps }).toEqual({
       imageQuality: ImageQuality.NotSet,
       customImageQuality: START_LEVEL << 8,
@@ -63,7 +73,6 @@ describe('loginOption', () => {
     })
     expect(rest).toMatchObject({
       lockAfterSessionEnd: 0,
-      showRemoteCursor: 0,
       disableAudio: 0,
       disableClipboard: 0,
       disableKeyboard: 0,

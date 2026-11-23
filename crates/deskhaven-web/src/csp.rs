@@ -12,14 +12,14 @@
 ///   sets CSS variables through the CSSOM, which CSP allows. A style *element*
 ///   or `style=""` attribute would be blocked.
 /// - `font-src 'self'`: the Geist woff2 files are served from `/assets/`.
-/// - `img-src 'self'`: only `/favicon.svg`; no `data:` URL anywhere in the build.
+/// - `img-src 'self' blob:`: `/favicon.svg` and the remote page's own cursor images; no `data:`.
 /// - `connect-src 'self'`: the SPA talks to `/admin/api` and the web client's relay
 ///   (`/ws/relay`) on its own origin.
 /// - `object-src 'none'`, `base-uri 'none'`: no plugins, no `<base>` hijack.
 /// - `form-action 'self'`: forms can only post back to this origin.
 /// - `frame-ancestors 'none'`: cannot be framed (clickjacking).
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
-font-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; \
+font-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; \
 base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 const CONNECT_SRC: &str = "connect-src 'self'";
@@ -61,6 +61,21 @@ mod tests {
                 "connect-src 'self' ws://[2001:db8::1]:21114;"
             )
         );
+    }
+
+    #[test]
+    fn images_admit_blob_urls_besides_self_and_nothing_else() {
+        let img_src = |csp: &str| {
+            csp.split(';')
+                .map(str::trim)
+                .find(|d| d.starts_with("img-src"))
+                .map(str::to_owned)
+        };
+        let relayed = csp_connecting_to("wss://relay.example.com:8443").unwrap();
+
+        assert_eq!(img_src(CSP).as_deref(), Some("img-src 'self' blob:"));
+        assert_eq!(img_src(&relayed).as_deref(), Some("img-src 'self' blob:"));
+        assert!(!CSP.contains("data:"));
     }
 
     #[test]

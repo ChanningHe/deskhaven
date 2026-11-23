@@ -47,10 +47,21 @@ export function decodeCursor(data: CursorData): CursorShape | null {
   }
 }
 
+export interface CursorImages {
+  image(shape: CursorShape, scale: number): string | null
+  attach(shape: CursorShape, scale: number, url: string): boolean
+}
+
+interface Cached {
+  shape: CursorShape
+  image: { scale: number; url: string } | null
+}
+
 /** Follows CursorData, CursorId and CursorPosition from the peer. */
-export class CursorTracker {
-  readonly #shapes = new Map<string, CursorShape>()
+export class CursorTracker implements CursorImages {
+  readonly #shapes = new Map<string, Cached>()
   #view: CursorView = { shape: null, position: null }
+  #closed = false
 
   get view(): CursorView {
     return this.#view
@@ -58,16 +69,16 @@ export class CursorTracker {
 
   /** A shape that does not decode shows nothing, and its id names nothing from then on. */
   onData(data: CursorData): CursorView {
-    this.#shapes.delete(data.id)
+    this.#drop(data.id)
     const shape = decodeCursor(data)
-    if (shape) this.#keep(shape)
+    if (shape) this.#keep({ shape, image: null })
     return this.#show(shape)
   }
 
   onId(id: string): CursorView {
-    const shape = this.#shapes.get(id) ?? null
-    if (shape) this.#keep(shape)
-    return this.#show(shape)
+    const cached = this.#shapes.get(id)
+    if (cached) this.#keep(cached)
+    return this.#show(cached?.shape ?? null)
   }
 
   onPosition(x: number, y: number): CursorView {
@@ -75,12 +86,40 @@ export class CursorTracker {
     return this.#view
   }
 
-  #keep(shape: CursorShape): void {
-    this.#shapes.delete(shape.id)
-    this.#shapes.set(shape.id, shape)
+  image(shape: CursorShape, scale: number): string | null {
+    const cached = this.#shapes.get(shape.id)
+    if (cached?.shape !== shape || cached.image?.scale !== scale) return null
+    return cached.image.url
+  }
+
+  attach(shape: CursorShape, scale: number, url: string): boolean {
+    const cached = this.#shapes.get(shape.id)
+    if (this.#closed || cached?.shape !== shape) {
+      URL.revokeObjectURL(url)
+      return false
+    }
+    if (cached.image) URL.revokeObjectURL(cached.image.url)
+    cached.image = { scale, url }
+    return true
+  }
+
+  close(): void {
+    this.#closed = true
+    for (const id of [...this.#shapes.keys()]) this.#drop(id)
+  }
+
+  #keep(cached: Cached): void {
+    this.#shapes.delete(cached.shape.id)
+    this.#shapes.set(cached.shape.id, cached)
     if (this.#shapes.size <= MAX_CACHED_SHAPES) return
     const [oldest] = this.#shapes.keys()
-    if (oldest !== undefined) this.#shapes.delete(oldest)
+    if (oldest !== undefined) this.#drop(oldest)
+  }
+
+  #drop(id: string): void {
+    const image = this.#shapes.get(id)?.image
+    this.#shapes.delete(id)
+    if (image) URL.revokeObjectURL(image.url)
   }
 
   #show(shape: CursorShape | null): CursorView {

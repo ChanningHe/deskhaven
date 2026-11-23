@@ -1,5 +1,5 @@
 import { clipboardMessage, clipboardText } from '../clipboard/clipboard'
-import { CursorTracker, type CursorView } from '../cursor/cursor'
+import { CursorTracker, type CursorImages, type CursorView } from '../cursor/cursor'
 import type { Handshake } from '../handshake/handshake'
 import type { LoginState } from '../handshake/login'
 import { encodeInput, type RemoteInput } from '../input/input'
@@ -55,6 +55,7 @@ export interface Session {
   readonly state: Store<SessionState>
   readonly peer: Store<PeerView | null>
   readonly cursor: Store<CursorView>
+  readonly cursorImages: CursorImages
   readonly permissions: Store<Permissions>
   /** The text the peer last copied; null until it copies some. */
   readonly remoteClipboard: Store<string | null>
@@ -168,6 +169,10 @@ class RemoteSession implements Session {
 
   get frames(): AsyncIterable<VideoFrame> {
     return this.#frames
+  }
+
+  get cursorImages(): CursorImages {
+    return this.#cursors
   }
 
   async run(): Promise<void> {
@@ -393,5 +398,6 @@ class RemoteSession implements Session {
     this.state.set({ kind: 'closed', reason: switched ? WINDOWS_SESSION_SWITCH : reason })
     this.#video.close()
     this.#frames.end()
+    this.#cursors.close()
   }
 }

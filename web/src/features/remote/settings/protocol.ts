@@ -1,6 +1,11 @@
 import { clone, create } from '@bufbuild/protobuf'
 
-import { ImageQuality, OptionMessageSchema, type OptionMessage } from '../proto/gen/message_pb.js'
+import {
+  ImageQuality,
+  OptionMessage_BoolOption,
+  OptionMessageSchema,
+  type OptionMessage,
+} from '../proto/gen/message_pb.js'
 import type { OptionPatch } from '../session/messages'
 import { DEFAULT_FPS } from '../video/fps-governor'
 import { sameQuality, START_QUALITY } from '../video/quality-governor'
@@ -31,9 +36,14 @@ export function loginSettings(settings: RemoteSettings): RemoteSettings {
   return { ...settings, quality: START_QUALITY, fps: Math.min(settings.fps, DEFAULT_FPS) }
 }
 
+// Without it the peer sends no CursorPosition (rustdesk 1.5.1 src/server/connection.rs:4968-4990).
 export function loginOption(settings: RemoteSettings): OptionMessage {
   const told = loginSettings(settings)
-  return create(OptionMessageSchema, { ...qualityFields(told.quality), customFps: told.fps })
+  return create(OptionMessageSchema, {
+    ...qualityFields(told.quality),
+    customFps: told.fps,
+    showRemoteCursor: OptionMessage_BoolOption.Yes,
+  })
 }
 
 /** custom_fps and the image quality have one writer each during a session: their governors. */

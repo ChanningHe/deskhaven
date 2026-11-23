@@ -134,6 +134,15 @@ export function DisplayMenu({
       <MonitorGroup session={session} />
       <ResolutionSubmenu session={session} />
       <DropdownMenuSeparator />
+      <DropdownMenuCheckboxItem
+        checked={settings.showRemoteCursor}
+        onCheckedChange={(showRemoteCursor: boolean) => {
+          onSettings({ showRemoteCursor })
+        }}
+        closeOnClick
+      >
+        {t('remote.toolbar.showRemoteCursor')}
+      </DropdownMenuCheckboxItem>
       <DropdownMenuCheckboxItem checked={stats} onCheckedChange={onStats} closeOnClick>
         {t('remote.toolbar.stats')}
       </DropdownMenuCheckboxItem>

@@ -1,9 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { RefObject } from 'react'
 
+import { CssCursors } from '../cursor/css-cursor'
+import type { CursorShape } from '../cursor/cursor'
+import { localCursor, paintedCursor, type CursorScene } from '../cursor/plan'
 import { pointerInput, wheelInput } from '../input/dom'
 import type { Session } from '../session/session'
-import { canvasPoint, drawCursor, drawFrame, type Size } from './draw'
+import { canvasPoint, drawCursor, drawFrame, type Rect, type Size } from './draw'
+import { useStore } from './use-remote'
 
 /** Draws the session's frames on `canvas`; returns the frame size once the first one is drawn. */
 export function useVideo(session: Session, canvas: RefObject<HTMLCanvasElement | null>) {
@@ -50,26 +63,82 @@ export function useElementSize(element: RefObject<HTMLElement | null>): Size | n
   return size
 }
 
-/**
- * Paints the peer's cursor on the overlay: where the local pointer is while it moves over
- * the screen, and where the peer reports it when it moves there (someone else moved it).
- * Returns the function the pointer handler calls with canvas pixels.
- */
-export function useCursor(session: Session, canvas: RefObject<HTMLCanvasElement | null>) {
-  const at = useRef<{ x: number; y: number } | null>(null)
+function useCssCursor(session: Session, shape: CursorShape | null, scale: number | null) {
+  const [, ready] = useReducer((n: number) => n + 1, 0)
+  const cursors = useMemo(() => new CssCursors(session.cursorImages, ready), [session])
+  useEffect(() => {
+    if (shape && scale !== null) cursors.prepare(shape, scale)
+  }, [cursors, shape, scale])
+  return shape && scale !== null ? cursors.cursor(shape, scale) : null
+}
+
+interface PaintState {
+  scene: CursorScene
+  local: { x: number; y: number } | null
+  remoteMoved: boolean
+  drawn: Rect | null
+}
+
+function paintCursor(
+  canvas: RefObject<HTMLCanvasElement | null>,
+  session: Session,
+  stateRef: RefObject<PaintState>,
+) {
+  const ctx = canvas.current?.getContext('2d')
+  const state = stateRef.current
+  if (!ctx) return
+  const { shape, position } = session.cursor.get()
+  const display = session.peer.get()?.display
+  const where = paintedCursor(state.scene, state.remoteMoved)
+  let at = where === 'local' ? state.local : null
+  if (where === 'remote' && position && display) {
+    at = { x: position.x - display.x, y: position.y - display.y }
+  }
+  state.drawn = drawCursor(ctx, shape, at, state.drawn)
+}
+
+export interface CursorOptions {
+  showRemote: boolean
+  viewOnly: boolean
+  scale: number | null
+}
+
+export function useCursor(
+  session: Session,
+  canvas: RefObject<HTMLCanvasElement | null>,
+  { showRemote, viewOnly, scale }: CursorOptions,
+) {
+  const subscribe = useCallback(
+    (listener: () => void) => session.cursor.subscribe(listener),
+    [session],
+  )
+  const shape = useSyncExternalStore(subscribe, () => session.cursor.get().shape)
+  const peer = useStore(session.peer)
+  const permissions = useStore(session.permissions)
+  const css = useCssCursor(session, shape, scale)
+  const scene: CursorScene = {
+    embedded: peer?.cursorEmbedded ?? false,
+    control: permissions.keyboard && !viewOnly,
+    showRemote,
+    hasShape: shape !== null,
+    css,
+  }
+
+  const state = useRef<PaintState>({ scene, local: null, remoteMoved: false, drawn: null })
   const paint = useCallback(() => {
-    const ctx = canvas.current?.getContext('2d')
-    if (ctx) drawCursor(ctx, session.cursor.get().shape, at.current)
+    paintCursor(canvas, session, state)
   }, [session, canvas])
+
+  useLayoutEffect(() => {
+    state.current.scene = scene
+    paint()
+  })
 
   useEffect(() => {
     let position = session.cursor.get().position
     return session.cursor.subscribe(() => {
       const view = session.cursor.get()
-      const display = session.peer.get()?.display
-      if (view.position && view.position !== position && display) {
-        at.current = { x: view.position.x - display.x, y: view.position.y - display.y }
-      }
+      if (view.position && view.position !== position) state.current.remoteMoved = true
       position = view.position
       paint()
     })
@@ -77,12 +146,13 @@ export function useCursor(session: Session, canvas: RefObject<HTMLCanvasElement 
 
   const moveTo = useCallback(
     (point: { x: number; y: number }) => {
-      at.current = point
+      state.current.local = point
+      state.current.remoteMoved = false
       paint()
     },
     [paint],
   )
-  return { paint, moveTo }
+  return { cursor: localCursor(scene), moveTo }
 }
 
 /**

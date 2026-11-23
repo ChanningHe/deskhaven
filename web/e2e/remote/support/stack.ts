@@ -123,6 +123,7 @@ async function startClient(
       env: {
         ...x,
         PATH: withToolDir(x.PATH, 'xrandr'),
+        ...xdoLibrary(),
         RUSTDESK_FORCED_DISPLAY_SERVER: 'x11',
         XDG_SESSION_TYPE: 'x11',
       },
@@ -130,6 +131,14 @@ async function startClient(
     }),
   )
   return { id, display, scratchDir: ctx.root }
+}
+
+// nixpkgs' 1.5 cannot dlopen libxdo, and without it sends no CursorPosition.
+function xdoLibrary(): { LD_LIBRARY_PATH?: string } {
+  const file = tool('xdotool')
+  if (!isAbsolute(file)) return {}
+  const lib = join(dirname(dirname(file)), 'lib')
+  return existsSync(lib) ? { LD_LIBRARY_PATH: lib } : {}
 }
 
 /** The client lists and changes resolutions by running `xrandr`, which it looks up on PATH. */

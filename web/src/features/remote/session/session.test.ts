@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { msg, startFixture } from '../__fixtures__/harness'
 import { decodeBase64 } from '../bytes'
@@ -182,5 +182,21 @@ describe('session cursor', () => {
     r.peerSends(msg({ case: 'cursorId', value: '6' }))
     await settle()
     expect(r.session.cursor.get().shape).toBeNull()
+  })
+
+  it('keeps cursor images with its shapes and revokes them all on close', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const r = await activeSession()
+    const colors = decodeBase64('KLUv/SQQgQAA/wAA/wD/AP8AAP//AAAAAPgWgAQ=')
+    const data = create(CursorDataSchema, { id: '5', width: 2, height: 2, colors })
+    r.peerSends(msg({ case: 'cursorData', value: data }))
+    await settle()
+    const shape = r.session.cursor.get().shape
+    if (!shape) throw new Error('no shape')
+    expect(r.session.cursorImages.attach(shape, 1, 'blob:a')).toBe(true)
+    expect(r.session.cursorImages.image(shape, 1)).toBe('blob:a')
+    r.session.close()
+    expect(revoke).toHaveBeenCalledWith('blob:a')
+    expect(r.session.cursorImages.image(shape, 1)).toBeNull()
   })
 })

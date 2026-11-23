@@ -1777,6 +1777,7 @@
       },
       "monitor": "Monitor",
       "monitorN": "Monitor {{n}}",
+      "showRemoteCursor": "Show remote cursor",
       "stats": "Statistics",
       "ctrlAltDel": "Ctrl+Alt+Del",
       "keyboardMode": "Keyboard mode",

@@ -29,6 +29,13 @@ export function canvasPoint(
   }
 }
 
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /**
  * Paints the peer's cursor with its hotspot at `at` (canvas pixels) on a cleared overlay.
  * putImageData copies alpha as is, which is right on an otherwise transparent layer.
@@ -37,11 +44,14 @@ export function drawCursor(
   ctx: CanvasRenderingContext2D,
   shape: CursorShape | null,
   at: { x: number; y: number } | null,
-): void {
-  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-  if (!shape || !at) return
-  const image = new ImageData(shape.rgba, shape.width, shape.height)
-  ctx.putImageData(image, Math.round(at.x - shape.hotX), Math.round(at.y - shape.hotY))
+  drawn: Rect | null,
+): Rect | null {
+  if (drawn) ctx.clearRect(drawn.x, drawn.y, drawn.width, drawn.height)
+  if (!shape || !at) return null
+  const x = Math.round(at.x - shape.hotX)
+  const y = Math.round(at.y - shape.hotY)
+  ctx.putImageData(new ImageData(shape.rgba, shape.width, shape.height), x, y)
+  return { x, y, width: shape.width, height: shape.height }
 }
 
 /** Draws one decoded frame at its display size, resizing the canvas when that changes. */

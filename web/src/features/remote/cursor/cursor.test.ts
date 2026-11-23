@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { decodeBase64 } from '../bytes'
 import { CursorDataSchema, type CursorData } from '../proto/gen/message_pb.js'
@@ -76,5 +76,71 @@ describe('CursorTracker', () => {
     }
     expect(tracker.onId('0').shape?.id).toBe('0')
     expect(tracker.onId('1').shape).toBeNull()
+  })
+})
+
+describe('CursorTracker images', () => {
+  function tracked() {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const tracker = new CursorTracker()
+    const shape = tracker.onData(cursor()).shape
+    if (!shape) throw new Error('no shape')
+    return { tracker, shape, revoke }
+  }
+
+  it('keeps one image per shape, at the scale it was made for', () => {
+    const { tracker, shape, revoke } = tracked()
+    expect(tracker.image(shape, 1)).toBeNull()
+    expect(tracker.attach(shape, 1, 'blob:a')).toBe(true)
+    expect(tracker.image(shape, 1)).toBe('blob:a')
+    expect(tracker.image(shape, 0.5)).toBeNull()
+    expect(tracker.attach(shape, 0.5, 'blob:b')).toBe(true)
+    expect(revoke).toHaveBeenCalledWith('blob:a')
+    expect(tracker.image(shape, 0.5)).toBe('blob:b')
+    expect(tracker.image(shape, 1)).toBeNull()
+  })
+
+  it('keeps the image when CursorId shows the shape again', () => {
+    const { tracker, shape, revoke } = tracked()
+    tracker.attach(shape, 1, 'blob:a')
+    tracker.onData(cursor({ id: '8', hotx: 0 }))
+    expect(tracker.onId('7').shape).toBe(shape)
+    expect(tracker.image(shape, 1)).toBe('blob:a')
+    expect(revoke).not.toHaveBeenCalled()
+  })
+
+  it('revokes the image of a shape that new CursorData for its id replaces', () => {
+    const { tracker, shape, revoke } = tracked()
+    tracker.attach(shape, 1, 'blob:a')
+    const next = tracker.onData(cursor()).shape
+    expect(revoke).toHaveBeenCalledWith('blob:a')
+    expect(next && tracker.image(next, 1)).toBeNull()
+  })
+
+  it('refuses and revokes an image for a shape it no longer keeps', () => {
+    const { tracker, shape, revoke } = tracked()
+    tracker.onData(cursor())
+    expect(tracker.attach(shape, 1, 'blob:late')).toBe(false)
+    expect(revoke).toHaveBeenCalledWith('blob:late')
+  })
+
+  it('revokes the image of the shape it drops for the cache limit', () => {
+    const { tracker, shape, revoke } = tracked()
+    tracker.attach(shape, 1, 'blob:first')
+    for (let i = 0; i < MAX_CACHED_SHAPES; i++) tracker.onData(cursor({ id: `n${String(i)}` }))
+    expect(revoke).toHaveBeenCalledWith('blob:first')
+    expect(tracker.onId('7').shape).toBeNull()
+  })
+
+  it('revokes every image on close and refuses new ones', () => {
+    const { tracker, shape, revoke } = tracked()
+    const other = tracker.onData(cursor({ id: '8', hotx: 0 })).shape
+    if (!other) throw new Error('no shape')
+    tracker.attach(shape, 1, 'blob:a')
+    tracker.attach(other, 1, 'blob:b')
+    tracker.close()
+    expect(revoke.mock.calls.map(([url]) => url).sort()).toEqual(['blob:a', 'blob:b'])
+    expect(tracker.attach(shape, 1, 'blob:c')).toBe(false)
+    expect(revoke).toHaveBeenLastCalledWith('blob:c')
   })
 })

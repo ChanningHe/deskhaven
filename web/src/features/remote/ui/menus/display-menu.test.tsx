@@ -254,6 +254,21 @@ describe('display menu', () => {
     expect(session.resolutions).toEqual([{ width: 1920, height: 1080 }])
   })
 
+  it('turns drawing the remote cursor off and on, without telling the peer', async () => {
+    const { user, session, updates } = await activePage()
+    await openMenu(user, '显示')
+    const item = screen.getByRole('menuitemcheckbox', { name: '显示远端光标' })
+    expect(item).toHaveAttribute('aria-checked', 'true')
+    await user.click(item)
+    expect(updates).toHaveBeenLastCalledWith({ showRemoteCursor: false })
+    await openMenu(user, '显示')
+    const off = screen.getByRole('menuitemcheckbox', { name: '显示远端光标' })
+    expect(off).toHaveAttribute('aria-checked', 'false')
+    await user.click(off)
+    expect(updates).toHaveBeenLastCalledWith({ showRemoteCursor: true })
+    expect(session.patches).toEqual([])
+  })
+
   it('shows the saved settings again after a reconnect', async () => {
     const { user, f, session } = await activePage()
     await openMenu(user, '显示')

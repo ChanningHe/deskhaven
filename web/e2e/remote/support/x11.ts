@@ -92,6 +92,13 @@ export function focus(device: DeviceInfo, windowClass: string) {
   )
 }
 
+export function movePointer(device: DeviceInfo, x: number, y: number) {
+  execFileSync(tool('xdotool'), ['mousemove', String(x), String(y)], {
+    env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },
+    timeout: 10_000,
+  })
+}
+
 function xrandr(device: DeviceInfo, args: string[]): string {
   return execFileSync(tool('xrandr'), args, {
     env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },

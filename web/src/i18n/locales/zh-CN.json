@@ -1777,6 +1777,7 @@
       },
       "monitor": "显示器",
       "monitorN": "显示器 {{n}}",
+      "showRemoteCursor": "显示远端光标",
       "stats": "统计信息",
       "ctrlAltDel": "Ctrl+Alt+Del",
       "keyboardMode": "键盘模式",

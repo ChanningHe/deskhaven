@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
+import { cursorScale } from '../cursor/css-cursor'
 import type { Session } from '../session/session'
 import type { RemoteSettings } from '../settings/settings'
 import { fitSize } from './draw'
@@ -15,18 +16,21 @@ import { useScreenKeys } from './use-screen-keys'
 /**
  * The peer's screen, scaled to fit with its aspect ratio kept, or one peer pixel to a CSS pixel
  * with scroll bars when that is larger: the wheel goes to the peer. The video canvas, and over it
- * the cursor canvas, which takes the pointer. The local pointer is hidden over it; the peer's
- * cursor is drawn instead. Keys go to an invisible text field on the screen, so that IMEs work
- * there; `onLeave` takes focus elsewhere when the user asks to leave the screen.
+ * the cursor canvas, which takes the pointer. Keys go to an invisible text field on the screen,
+ * so that IMEs work there; `onLeave` takes focus elsewhere when the user asks to leave the screen.
  */
 export function RemoteScreen({
   session,
   scale,
+  showRemoteCursor,
+  viewOnly = false,
   onLeave,
   children,
 }: {
   session: Session
   scale: RemoteSettings['scale']
+  showRemoteCursor: boolean
+  viewOnly?: boolean
   onLeave: () => void
   children?: ReactNode
 }) {
@@ -39,15 +43,17 @@ export function RemoteScreen({
   const peer = useStore(session.peer)
   const frame = useVideo(session, video)
   const boxSize = useElementSize(box)
-  const { paint, moveTo } = useCursor(session, overlay)
-  useScreenInput(session, overlay, keys, moveTo)
-  const hint = useScreenKeys(session, keys, onLeave)
-
   const display = peer?.display ?? null
   const cursorWidth = display?.width ?? frame?.width ?? 1
   const cursorHeight = display?.height ?? frame?.height ?? 1
-  // A canvas clears whenever its size is set, so the cursor is painted again after.
-  useLayoutEffect(paint, [paint, cursorWidth, cursorHeight])
+  const size = !frame ? null : scale === 'original' ? frame : boxSize && fitSize(frame, boxSize)
+  const { cursor, moveTo } = useCursor(session, overlay, {
+    showRemote: showRemoteCursor,
+    viewOnly,
+    scale: size ? cursorScale(size.width, cursorWidth) : null,
+  })
+  useScreenInput(session, overlay, keys, moveTo)
+  const hint = useScreenKeys(session, keys, onLeave)
 
   useLayoutEffect(() => {
     const target = box.current
@@ -56,7 +62,6 @@ export function RemoteScreen({
     target.scrollLeft = 0
   }, [scale])
 
-  const size = !frame ? null : scale === 'original' ? frame : boxSize && fitSize(frame, boxSize)
   const sizeStyle = {
     '--screen-w': `${size?.width ?? 0}px`,
     '--screen-h': `${size?.height ?? 0}px`,
@@ -94,7 +99,8 @@ export function RemoteScreen({
           height={cursorHeight}
           aria-hidden
           data-testid="remote-screen"
-          className="absolute inset-0 size-full cursor-none touch-none"
+          className="absolute inset-0 size-full cursor-(--remote-cursor) touch-none"
+          style={{ '--remote-cursor': cursor } as CSSProperties}
         />
         <textarea
           ref={keys}

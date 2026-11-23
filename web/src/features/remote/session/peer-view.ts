@@ -13,6 +13,7 @@ export interface PeerView {
   keyboardMode: KeyboardMode
   resolutions: readonly Size[]
   originalResolution: Size | null
+  cursorEmbedded: boolean
 }
 
 function rectOf(d: { x: number; y: number; width: number; height: number } | undefined) {
@@ -30,6 +31,7 @@ export function peerView(info: PeerInfo, keyboardMode: KeyboardMode): PeerView {
     keyboardMode,
     resolutions: parseResolutions(info.resolutions?.resolutions),
     originalResolution: parseSize(info.displays[info.currentDisplay]?.originalResolution),
+    cursorEmbedded: info.displays[info.currentDisplay]?.cursorEmbedded ?? false,
   }
 }
 
@@ -48,6 +50,7 @@ export function withDisplays(view: PeerView, update: PeerInfo): PeerView {
       : view.resolutions,
     originalResolution:
       parseSize(update.displays[view.current]?.originalResolution) ?? view.originalResolution,
+    cursorEmbedded: update.displays[view.current]?.cursorEmbedded ?? view.cursorEmbedded,
   }
 }
 
@@ -60,5 +63,6 @@ export function withSwitch(view: PeerView, s: SwitchDisplay): PeerView {
     resolutions: parseResolutions(s.resolutions?.resolutions),
     originalResolution:
       parseSize(s.originalResolution) ?? parseSize(view.displays[s.display]?.originalResolution),
+    cursorEmbedded: s.cursorEmbedded,
   }
 }

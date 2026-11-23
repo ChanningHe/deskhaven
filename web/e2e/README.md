@@ -94,6 +94,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | `webrtc.remote.ts`     | (b) 1.5 over WebRTC; (c) UDP closed (relay-only ICE, no TURN): falls back to the relay         |
 | `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map       |
 | `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture |
+| `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn     |
 | `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry            |
 | `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                 |
 | `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute           |

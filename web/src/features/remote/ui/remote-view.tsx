@@ -146,7 +146,12 @@ export function RemoteView({
       />
       <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
       <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
-        <RemoteScreen session={session} scale={settings.scale} onLeave={leaveScreen}>
+        <RemoteScreen
+          session={session}
+          scale={settings.scale}
+          showRemoteCursor={settings.showRemoteCursor}
+          onLeave={leaveScreen}
+        >
           {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         </RemoteScreen>
         {panel === 'paste' && clipboard ? (

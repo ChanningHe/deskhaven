@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf'
 
 import type { WebClientSession } from '@/api/generated/model'
 
-import type { CursorView } from '../cursor/cursor'
+import type { CursorImages, CursorShape, CursorView } from '../cursor/cursor'
 import type { RemoteInput } from '../input/input'
 import { DisplayInfoSchema, KeyboardMode, PeerInfoSchema } from '../proto/gen/message_pb.js'
 import { FrameQueue } from '../session/frame-queue'
@@ -18,11 +18,26 @@ import {
 import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
 
+class KeptCursorImages implements CursorImages {
+  readonly #kept = new WeakMap<CursorShape, { scale: number; url: string }>()
+
+  image(shape: CursorShape, scale: number): string | null {
+    const kept = this.#kept.get(shape)
+    return kept?.scale === scale ? kept.url : null
+  }
+
+  attach(shape: CursorShape, scale: number, url: string): boolean {
+    this.#kept.set(shape, { scale, url })
+    return true
+  }
+}
+
 /** A Session the test drives by hand; it records what the page asks of it. */
 export class FakeSession implements Session {
   readonly state = new ValueStore<SessionState>({ kind: 'connecting' })
   readonly peer = new ValueStore<PeerView | null>(null)
   readonly cursor = new ValueStore<CursorView>({ shape: null, position: null })
+  readonly cursorImages: CursorImages = new KeptCursorImages()
   readonly permissions = new ValueStore<Permissions>({ keyboard: true, clipboard: true })
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly stats = new ValueStore<SessionStats>(NO_STATS)
