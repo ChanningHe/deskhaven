@@ -6,6 +6,7 @@ import { renderWithProviders } from '@/test/render-with-providers'
 import { fakeDeps } from '../connect/fake-deps'
 import { NO_STATS } from '../session/stats'
 import { RemoteDepsContext } from './deps-context'
+import { openMenu } from './menus/testing'
 import { RemotePage } from './remote-page'
 
 beforeEach(() => {
@@ -30,24 +31,31 @@ async function activePage() {
   return { ...view, session }
 }
 
+async function showStats(user: Awaited<ReturnType<typeof activePage>>['user']) {
+  await openMenu(user, '显示')
+  await user.click(screen.getByRole('menuitemcheckbox', { name: '统计信息' }))
+}
+
 describe('stats overlay', () => {
-  it('is off until the toolbar switch turns it on, and off again', async () => {
+  it('is off until the display menu turns it on, and off again', async () => {
     const { user } = await activePage()
-    const toggle = screen.getByRole('button', { name: '统计信息' })
-    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    const item = () => screen.getByRole('menuitemcheckbox', { name: '统计信息' })
+    await openMenu(user, '显示')
+    expect(item()).toHaveAttribute('aria-checked', 'false')
     expect(screen.queryByLabelText('连接统计')).toBeNull()
 
-    await user.click(toggle)
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await user.click(item())
     expect(screen.getByLabelText('连接统计')).toBeInTheDocument()
+    await openMenu(user, '显示')
+    expect(item()).toHaveAttribute('aria-checked', 'true')
 
-    await user.click(toggle)
+    await user.click(item())
     expect(screen.queryByLabelText('连接统计')).toBeNull()
   })
 
   it("shows the session's figures and the controller's transport, raw values readable", async () => {
     const { user, session } = await activePage()
-    await user.click(screen.getByRole('button', { name: '统计信息' }))
+    await showStats(user)
     act(() => {
       session.stats.set({
         ...NO_STATS,
@@ -78,7 +86,7 @@ describe('stats overlay', () => {
     [{ custom: 18 }, '18', '自定义 18'],
   ] as const)('shows the quality the session asks for: %o', async (quality, value, text) => {
     const { user, session } = await activePage()
-    await user.click(screen.getByRole('button', { name: '统计信息' }))
+    await showStats(user)
     act(() => {
       session.stats.set({ ...NO_STATS, quality })
     })

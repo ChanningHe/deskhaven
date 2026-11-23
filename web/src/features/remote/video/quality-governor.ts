@@ -23,7 +23,7 @@ export function sameQuality(a: Quality, b: Quality): boolean {
   return a.custom === b.custom
 }
 
-function levelOf(quality: Quality): number {
+export function levelOf(quality: Quality): number {
   return typeof quality === 'string' ? PRESET_LEVEL[quality] : quality.custom
 }
 

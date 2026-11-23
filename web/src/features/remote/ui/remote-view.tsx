@@ -5,10 +5,11 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 import type { Session } from '../session/session'
+import type { RemoteSettings } from '../settings/settings'
 import { PastePanel, RemoteClipboardPanel } from './clipboard-panels'
 import { RemoteBar, type BarFrame } from './remote-bar'
 import { RemoteScreen } from './remote-screen'
-import { StatsOverlay, StatsToggle } from './stats-overlay'
+import { StatsOverlay } from './stats-overlay'
 import { Toolbar } from './toolbar'
 import { useStore } from './use-remote'
 
@@ -65,10 +66,14 @@ function PermissionNotice({ keyboard, clipboard }: { keyboard: boolean; clipboar
 export function RemoteView({
   session,
   frame,
+  settings,
+  onSettings,
   onDisconnect,
 }: {
   session: Session
   frame: BarFrame
+  settings: RemoteSettings
+  onSettings: (patch: Partial<RemoteSettings>) => void
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
@@ -120,20 +125,17 @@ export function RemoteView({
           <Toolbar
             ref={toolbar}
             session={session}
+            settings={settings}
+            onSettings={onSettings}
+            stats={stats}
+            onStats={setStats}
             fullscreen={fullscreen}
             onFullscreen={toggle}
             onSendClipboard={() => void sendClipboard()}
             onShowRemoteClipboard={() => {
               show(panel === 'remote' ? null : 'remote')
             }}
-          >
-            <StatsToggle
-              on={stats}
-              onToggle={() => {
-                setStats(!stats)
-              }}
-            />
-          </Toolbar>
+          />
         }
         end={
           <Button variant="destructive" onClick={onDisconnect}>
@@ -144,7 +146,7 @@ export function RemoteView({
       />
       <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
       <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
-        <RemoteScreen session={session} onLeave={leaveScreen}>
+        <RemoteScreen session={session} scale={settings.scale} onLeave={leaveScreen}>
           {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         </RemoteScreen>
         {panel === 'paste' && clipboard ? (

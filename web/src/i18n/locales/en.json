@@ -1752,6 +1752,30 @@
     "toolbar": {
       "label": "Session controls",
       "disconnect": "Disconnect",
+      "displayMenu": "Display",
+      "displayMenuHint": "Display: quality, frame rate, scaling",
+      "inputMenu": "Input",
+      "inputMenuHint": "Input: keyboard mode and key combinations. Press Esc twice to leave the remote screen.",
+      "clipboardMenu": "Clipboard",
+      "clipboardMenuHint": "Clipboard: pass text between this computer and the device",
+      "quality": "Quality",
+      "qualities": {
+        "low": "Low",
+        "balanced": "Balanced",
+        "best": "Best",
+        "custom": "Custom"
+      },
+      "customQuality": "Custom quality",
+      "fps": "Frame rate",
+      "fpsValue": "{{fps}} fps",
+      "scale": "Scaling",
+      "scales": {
+        "fit": "Fit to window",
+        "original": "Original size"
+      },
+      "monitor": "Monitor",
+      "monitorN": "Monitor {{n}}",
+      "stats": "Statistics",
       "ctrlAltDel": "Ctrl+Alt+Del",
       "keyboardMode": "Keyboard mode",
       "modes": {
@@ -1759,20 +1783,12 @@
         "translate": "Translate",
         "legacy": "Legacy"
       },
-      "display": "Display",
       "fullscreen": "Full screen",
       "exitFullscreen": "Exit full screen",
       "sendClipboard": "Send clipboard",
       "remoteClipboard": "Device clipboard",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
-      "clipboardOff": "The device has turned off the clipboard.",
-      "ctrlAltDelHint": "Send Ctrl+Alt+Del to the device",
-      "displayHint": "Switch display",
-      "keyboardModeHint": "How keys are sent to the device. Press Esc twice to leave the remote screen.",
-      "sendClipboardHint": "Send this computer’s clipboard to the device",
-      "remoteClipboardHint": "Show what was copied on the device",
-      "stats": "Statistics",
-      "statsHint": "Show connection statistics over the screen"
+      "clipboardOff": "The device has turned off the clipboard."
     },
     "stats": {
       "label": "Connection statistics",

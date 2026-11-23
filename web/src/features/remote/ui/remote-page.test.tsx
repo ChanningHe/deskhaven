@@ -8,6 +8,7 @@ import { fakeDeps } from '../connect/fake-deps'
 import { OPENED, type FakeSession } from '../connect/fake-session'
 import { KeyboardMode } from '../proto/gen/message_pb.js'
 import { RemoteDepsContext } from './deps-context'
+import { openMenu } from './menus/testing'
 import { RemotePage } from './remote-page'
 
 const DEVICE = '123456789'
@@ -197,31 +198,72 @@ describe('remote page: active session', () => {
   })
 
   it('greys out the controls the device turned off', async () => {
-    const { session } = await open()
+    const { user, session } = await open()
     act(() => {
       session.activate()
       session.permissions.set({ keyboard: false, clipboard: false })
     })
-    const bar = screen.getByRole('toolbar', { name: '会话控制' })
-    expect(within(bar).getByRole('button', { name: 'Ctrl+Alt+Del' })).toBeDisabled()
-    expect(within(bar).getByLabelText('键盘模式')).toBeDisabled()
-    expect(within(bar).getByRole('button', { name: '发送剪贴板' })).toBeDisabled()
-    expect(within(bar).getByRole('button', { name: '远端剪贴板' })).toBeDisabled()
+    expect(screen.getByRole('toolbar', { name: '会话控制' })).toBeInTheDocument()
+    await openMenu(user, '输入')
+    expect(screen.getByRole('menuitem', { name: 'Ctrl+Alt+Del' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    for (const mode of screen.getAllByRole('menuitemradio')) {
+      expect(mode).toHaveAttribute('aria-disabled', 'true')
+    }
+    await user.keyboard('{Escape}')
+    await openMenu(user, '剪贴板')
+    expect(screen.getByRole('menuitem', { name: '发送剪贴板' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByRole('menuitem', { name: '远端剪贴板' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     expect(screen.getByText('设备已关闭键盘和鼠标控制。')).toBeInTheDocument()
     expect(screen.getByText('设备已关闭剪贴板。')).toBeInTheDocument()
   })
 
-  it('sends Ctrl+Alt+Del, keyboard mode and display changes', async () => {
+  it('sends Ctrl+Alt+Del and keyboard mode changes from the input menu', async () => {
     const { user, session } = await open()
     act(() => {
       session.activate(2)
     })
-    await user.click(screen.getByRole('button', { name: 'Ctrl+Alt+Del' }))
-    await user.selectOptions(screen.getByLabelText('键盘模式'), '翻译')
-    await user.selectOptions(screen.getByLabelText('显示器'), '2')
+    await openMenu(user, '输入')
+    await user.click(screen.getByRole('menuitem', { name: 'Ctrl+Alt+Del' }))
+    await openMenu(user, '输入')
+    expect(screen.getByRole('menuitemradio', { name: '映射' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(screen.getByRole('menuitemradio', { name: '翻译' }))
     expect(session.ctrlAltDels).toBe(1)
     expect(session.modes).toEqual([KeyboardMode.Translate])
-    expect(session.displays).toEqual([1])
+  })
+
+  it('goes full screen and back', async () => {
+    const requestFullscreen = vi.fn(() => Promise.resolve())
+    const exitFullscreen = vi.fn(() => Promise.resolve())
+    document.documentElement.requestFullscreen = requestFullscreen
+    document.exitFullscreen = exitFullscreen
+    const { user, session } = await open()
+    act(() => {
+      session.activate()
+    })
+    await user.click(screen.getByRole('button', { name: '全屏' }))
+    expect(requestFullscreen).toHaveBeenCalledTimes(1)
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    })
+    fireEvent(document, new Event('fullscreenchange'))
+    await user.click(screen.getByRole('button', { name: '退出全屏' }))
+    expect(exitFullscreen).toHaveBeenCalledTimes(1)
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    fireEvent(document, new Event('fullscreenchange'))
+    expect(screen.getByRole('button', { name: '全屏' })).toBeInTheDocument()
   })
 
   it('takes keys while the screen has focus and lets them all go on blur', async () => {
@@ -253,7 +295,8 @@ describe('remote page: active session', () => {
       session.remoteClipboard.set('copied over there')
     })
     expect(writeText).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: '远端剪贴板' }))
+    await openMenu(user, '剪贴板')
+    await user.click(screen.getByRole('menuitem', { name: '远端剪贴板' }))
     expect(screen.getByRole('textbox', { name: '设备上复制的内容' })).toHaveValue(
       'copied over there',
     )
@@ -271,11 +314,13 @@ describe('remote page: active session', () => {
     act(() => {
       session.activate()
     })
-    await user.click(screen.getByRole('button', { name: '发送剪贴板' }))
+    await openMenu(user, '剪贴板')
+    await user.click(screen.getByRole('menuitem', { name: '发送剪贴板' }))
     expect(session.pasted).toEqual(['from here'])
     expect(await screen.findByText('已发送到设备剪贴板。')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '发送剪贴板' }))
+    await openMenu(user, '剪贴板')
+    await user.click(screen.getByRole('menuitem', { name: '发送剪贴板' }))
     await user.type(await screen.findByLabelText('要发送的文本'), 'typed')
     await user.click(screen.getByRole('button', { name: '发送' }))
     expect(session.pasted).toEqual(['from here', 'typed'])
@@ -322,7 +367,7 @@ describe('remote page: active session', () => {
 
     expect(second.defaultPrevented).toBe(true)
     expect(third.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ctrl+Alt+Del' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '显示' }))
     expect(session.inputs.map((i) => (i.kind === 'key' ? `${i.key} ${i.down}` : i.kind))).toEqual([
       'Tab true',
       'Escape true',

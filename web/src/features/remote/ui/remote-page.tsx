@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { RemotePhase } from '../connect/controller'
 import { CLOSED_BY_USER, type Session } from '../session/session'
+import type { RemoteSettings } from '../settings/settings'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
 import {
@@ -19,6 +20,8 @@ import { useRemote, useStore } from './use-remote'
 
 interface Actions {
   frame: BarFrame
+  settings: RemoteSettings
+  onSettings: (patch: Partial<RemoteSettings>) => void
   onReconnect: () => void
   onDisconnect: () => void
 }
@@ -46,6 +49,8 @@ function Waiting({
 function SessionStep({
   session,
   frame,
+  settings,
+  onSettings,
   onReconnect,
   onDisconnect,
 }: { session: Session } & Actions) {
@@ -104,7 +109,15 @@ function SessionStep({
         </Waiting>
       )
     case 'active':
-      return <RemoteView session={session} frame={frame} onDisconnect={onDisconnect} />
+      return (
+        <RemoteView
+          session={session}
+          frame={frame}
+          settings={settings}
+          onSettings={onSettings}
+          onDisconnect={onDisconnect}
+        />
+      )
     case 'closed':
       return (
         <Waiting frame={frame} status="ended">
@@ -119,7 +132,8 @@ function SessionStep({
   }
 }
 
-function PhaseStep({ phase, frame, onReconnect, onDisconnect }: { phase: RemotePhase } & Actions) {
+function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
+  const { frame, onReconnect, onDisconnect } = actions
   const { t } = useTranslation()
   switch (phase.kind) {
     case 'idle':
@@ -151,14 +165,7 @@ function PhaseStep({ phase, frame, onReconnect, onDisconnect }: { phase: RemoteP
         </Waiting>
       )
     case 'session':
-      return (
-        <SessionStep
-          session={phase.session}
-          frame={frame}
-          onReconnect={onReconnect}
-          onDisconnect={onDisconnect}
-        />
-      )
+      return <SessionStep session={phase.session} {...actions} />
   }
 }
 
@@ -167,7 +174,7 @@ function PhaseStep({ phase, frame, onReconnect, onDisconnect }: { phase: RemoteP
  * with one thin bar, outside the console's sidebar and top bar.
  */
 export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactNode }) {
-  const { phase, transport, reconnect, disconnect } = useRemote(
+  const { phase, transport, settings, updateSettings, reconnect, disconnect } = useRemote(
     deviceId,
     useContext(RemoteDepsContext),
   )
@@ -176,6 +183,8 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
       <PhaseStep
         phase={phase}
         frame={{ deviceId, back, transport: transport === 'connecting' ? undefined : transport }}
+        settings={settings}
+        onSettings={updateSettings}
         onReconnect={reconnect}
         onDisconnect={disconnect}
       />

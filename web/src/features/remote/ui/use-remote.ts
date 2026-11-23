@@ -7,6 +7,7 @@ import {
   type TransportKind,
 } from '../connect/controller'
 import type { Store } from '../session/store'
+import type { RemoteSettings } from '../settings/settings'
 
 export function useStore<T>(store: Store<T>): T {
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store])
@@ -17,6 +18,8 @@ export function useStore<T>(store: Store<T>): T {
 export interface Remote {
   phase: RemotePhase
   transport: TransportKind
+  settings: RemoteSettings
+  updateSettings: (patch: Partial<RemoteSettings>) => void
   reconnect: () => void
   disconnect: () => void
 }
@@ -43,6 +46,10 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
   return {
     phase: useStore(controller.phase),
     transport: useStore(controller.transport),
+    settings: useStore(controller.settings),
+    updateSettings: (patch) => {
+      controller.updateSettings(patch)
+    },
     reconnect: () => {
       controller.connect()
     },

@@ -1752,6 +1752,30 @@
     "toolbar": {
       "label": "会话控制",
       "disconnect": "断开",
+      "displayMenu": "显示",
+      "displayMenuHint": "显示：画质、帧率、缩放",
+      "inputMenu": "输入",
+      "inputMenuHint": "输入：键盘模式和组合键。连按两次 Esc 离开远程画面。",
+      "clipboardMenu": "剪贴板",
+      "clipboardMenuHint": "剪贴板：在本机和设备之间传递文本",
+      "quality": "画质",
+      "qualities": {
+        "low": "低",
+        "balanced": "均衡",
+        "best": "最佳",
+        "custom": "自定义"
+      },
+      "customQuality": "自定义画质",
+      "fps": "帧率",
+      "fpsValue": "{{fps}} fps",
+      "scale": "缩放",
+      "scales": {
+        "fit": "适应窗口",
+        "original": "原始大小"
+      },
+      "monitor": "显示器",
+      "monitorN": "显示器 {{n}}",
+      "stats": "统计信息",
       "ctrlAltDel": "Ctrl+Alt+Del",
       "keyboardMode": "键盘模式",
       "modes": {
@@ -1759,20 +1783,12 @@
         "translate": "翻译",
         "legacy": "传统"
       },
-      "display": "显示器",
       "fullscreen": "全屏",
       "exitFullscreen": "退出全屏",
       "sendClipboard": "发送剪贴板",
       "remoteClipboard": "远端剪贴板",
       "keyboardOff": "设备已关闭键盘和鼠标控制。",
-      "clipboardOff": "设备已关闭剪贴板。",
-      "ctrlAltDelHint": "向设备发送 Ctrl+Alt+Del",
-      "displayHint": "切换显示器",
-      "keyboardModeHint": "按键发送到设备的方式。连按两次 Esc 离开远程画面。",
-      "sendClipboardHint": "把本机剪贴板发送到设备",
-      "remoteClipboardHint": "查看设备上复制的内容",
-      "stats": "统计信息",
-      "statsHint": "在画面上显示连接统计"
+      "clipboardOff": "设备已关闭剪贴板。"
     },
     "stats": {
       "label": "连接统计",

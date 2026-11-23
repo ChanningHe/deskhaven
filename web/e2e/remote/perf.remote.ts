@@ -214,7 +214,8 @@ for (const [name, key, transport] of CASES) {
       await submitPassword(page)
       const connected = page.locator('header span.rounded-full', { hasText: 'Connected' })
       await expect(connected).toContainText(transport)
-      await page.getByRole('button', { name: 'Statistics' }).click()
+      await page.getByRole('button', { name: 'Display' }).click()
+      await page.getByRole('menuitemcheckbox', { name: 'Statistics' }).click()
       await expectDesktop(page, transport)
 
       const size = SCREENS[condition.screen]

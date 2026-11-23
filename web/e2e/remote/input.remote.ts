@@ -47,7 +47,8 @@ for (const key of VERSIONS) {
       await openFromDeviceList(page, target.id)
       await submitPassword(page)
       await expectDesktop(page, key === '1.4' ? 'Relay' : 'WebRTC')
-      await page.getByRole('combobox', { name: 'Keyboard mode' }).selectOption({ label: mode })
+      await page.getByRole('button', { name: 'Input' }).click()
+      await page.getByRole('menuitemradio', { name: mode }).click()
 
       const term = xterm(target)
       try {
