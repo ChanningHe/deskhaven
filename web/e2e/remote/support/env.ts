@@ -15,6 +15,7 @@ export const TOOL_ENV = {
   xterm: ['RD_E2E_XTERM', 'xterm'],
   xclock: ['RD_E2E_XCLOCK', 'xclock'],
   xdotool: ['RD_E2E_XDOTOOL', 'xdotool'],
+  xrandr: ['RD_E2E_XRANDR', 'xrandr'],
 } as const
 
 /** JSON of `StackInfo`, set by the global setup. */

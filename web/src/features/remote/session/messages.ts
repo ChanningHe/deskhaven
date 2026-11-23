@@ -3,11 +3,13 @@ import { create } from '@bufbuild/protobuf'
 import {
   CaptureDisplaysSchema,
   ControlKey,
+  DisplayResolutionSchema,
   KeyboardMode,
   KeyEventSchema,
   MessageSchema,
   MiscSchema,
   OptionMessageSchema,
+  ResolutionSchema,
   SwitchDisplaySchema,
   type KeyEvent,
   type Message,
@@ -67,6 +69,24 @@ export function switchDisplay(display: number): Message {
 
 export function captureDisplay(display: number): Message {
   return misc({ case: 'captureDisplays', value: create(CaptureDisplaysSchema, { set: [display] }) })
+}
+
+// message.proto:847-861: change_resolution is deprecated since 1.2.4 for change_display_resolution.
+const MIN_VERSION_DISPLAY_RESOLUTION = '1.2.4'
+
+export function changeResolution(
+  display: number,
+  width: number,
+  height: number,
+  peerVersion: string,
+): Message {
+  const resolution = create(ResolutionSchema, { width, height })
+  return atLeast(peerVersion, MIN_VERSION_DISPLAY_RESOLUTION)
+    ? misc({
+        case: 'changeDisplayResolution',
+        value: create(DisplayResolutionSchema, { display, resolution }),
+      })
+    : misc({ case: 'changeResolution', value: resolution })
 }
 
 /**

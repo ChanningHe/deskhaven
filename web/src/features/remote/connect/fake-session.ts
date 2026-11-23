@@ -8,6 +8,7 @@ import { DisplayInfoSchema, KeyboardMode, PeerInfoSchema } from '../proto/gen/me
 import { FrameQueue } from '../session/frame-queue'
 import type { OptionPatch } from '../session/messages'
 import { peerView, type PeerView } from '../session/peer-view'
+import type { Size } from '../session/resolution'
 import {
   CLOSED_BY_USER,
   type Permissions,
@@ -33,6 +34,7 @@ export class FakeSession implements Session {
   readonly modes: KeyboardMode[] = []
   readonly chosenSessions: number[] = []
   readonly displays: number[] = []
+  readonly resolutions: { width: number; height: number }[] = []
   readonly patches: OptionPatch[] = []
   ctrlAltDels = 0
   closed = 0
@@ -64,6 +66,10 @@ export class FakeSession implements Session {
     this.displays.push(index)
   }
 
+  changeResolution(width: number, height: number): void {
+    this.resolutions.push({ width, height })
+  }
+
   ctrlAltDel(): void {
     this.ctrlAltDels++
   }
@@ -90,6 +96,16 @@ export class FakeSession implements Session {
     if (this.state.get().kind === 'closed') return
     this.state.set({ kind: 'closed', reason })
     this.queue.end()
+  }
+
+  offerResolutions(sizes: readonly Size[], original: Size | null): void {
+    const peer = this.peer.get()
+    if (peer) this.peer.set({ ...peer, resolutions: sizes, originalResolution: original })
+  }
+
+  resize(width: number, height: number): void {
+    const peer = this.peer.get()
+    if (peer?.display) this.peer.set({ ...peer, display: { ...peer.display, width, height } })
   }
 
   /** Logs in: the peer is a 1.5.0 with `displays` screens of 1280×800. */

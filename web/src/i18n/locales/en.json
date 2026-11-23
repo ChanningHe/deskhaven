@@ -1768,6 +1768,8 @@
       "customQuality": "Custom quality",
       "fps": "Frame rate",
       "fpsValue": "{{fps}} fps",
+      "resolution": "Resolution",
+      "resolutionOriginal": "Original ({{size}})",
       "scale": "Scaling",
       "scales": {
         "fit": "Fit to window",

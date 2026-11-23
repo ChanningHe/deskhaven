@@ -1,5 +1,6 @@
 import type { DisplayRect } from '../input/mouse'
 import type { DisplayInfo, KeyboardMode, PeerInfo, SwitchDisplay } from '../proto/gen/message_pb.js'
+import { parseResolutions, parseSize, type Size } from './resolution'
 
 /** What we know of the peer: its PeerInfo and the display we are looking at. */
 export interface PeerView {
@@ -10,6 +11,8 @@ export interface PeerView {
   /** That display's rectangle in the peer's virtual screen, null while unknown. */
   display: DisplayRect | null
   keyboardMode: KeyboardMode
+  resolutions: readonly Size[]
+  originalResolution: Size | null
 }
 
 function rectOf(d: { x: number; y: number; width: number; height: number } | undefined) {
@@ -25,6 +28,8 @@ export function peerView(info: PeerInfo, keyboardMode: KeyboardMode): PeerView {
     current: info.currentDisplay,
     display: rectOf(info.displays[info.currentDisplay]),
     keyboardMode,
+    resolutions: parseResolutions(info.resolutions?.resolutions),
+    originalResolution: parseSize(info.displays[info.currentDisplay]?.originalResolution),
   }
 }
 
@@ -38,6 +43,11 @@ export function withDisplays(view: PeerView, update: PeerInfo): PeerView {
     info: { ...view.info, displays: update.displays, platformAdditions: update.platformAdditions },
     displays: update.displays,
     display: rectOf(update.displays[view.current]) ?? view.display,
+    resolutions: update.resolutions
+      ? parseResolutions(update.resolutions.resolutions)
+      : view.resolutions,
+    originalResolution:
+      parseSize(update.displays[view.current]?.originalResolution) ?? view.originalResolution,
   }
 }
 
@@ -47,5 +57,8 @@ export function withSwitch(view: PeerView, s: SwitchDisplay): PeerView {
     ...view,
     current: s.display,
     display: rectOf(s) ?? rectOf(view.displays[s.display]),
+    resolutions: parseResolutions(s.resolutions?.resolutions),
+    originalResolution:
+      parseSize(s.originalResolution) ?? parseSize(view.displays[s.display]?.originalResolution),
   }
 }

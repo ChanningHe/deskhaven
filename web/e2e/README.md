@@ -88,17 +88,18 @@ WebSocket port, the rest to the console: the shape of `deploy/compose/Caddyfile`
 The owner is created through the setup API, then `login.setup.remote.ts` signs in, turns
 `web_client.enabled` on and waits for the devices.
 
-| spec                   | covers                                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------------------- |
-| `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5 |
-| `webrtc.remote.ts`     | (b) 1.5 over WebRTC; (c) UDP closed (relay-only ICE, no TURN): falls back to the relay    |
-| `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map  |
-| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry       |
-| `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)            |
-| `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute      |
-| `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)      |
+| spec                   | covers                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5      |
+| `webrtc.remote.ts`     | (b) 1.5 over WebRTC; (c) UDP closed (relay-only ICE, no TURN): falls back to the relay         |
+| `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map       |
+| `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture |
+| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry            |
+| `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                 |
+| `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute           |
+| `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)           |
 
-Needed on the machine: `Xvfb`, `xterm`, `xclock`, `xdotool`, `hbbr` (rustdesk-server 1.1.16),
+Needed on the machine: `Xvfb`, `xterm`, `xclock`, `xdotool`, `xrandr`, `hbbr` (rustdesk-server 1.1.16),
 the client launchers, a non-loopback IPv4 address (hbbr treats loopback TCP as its admin
 console; override with `RD_E2E_HOST`), Playwright's browsers. On NixOS
 `remote/nix-env.sh` fetches pinned ones and prints the exports plus each launcher's store path
@@ -115,7 +116,7 @@ RD_E2E_SLOW=1 nix develop -c pnpm e2e:remote            # the soak; RD_E2E_SOAK_
 RD_E2E_SLOW=1 nix develop -c pnpm e2e:remote --project=chromium perf.remote.ts  # the baseline
 ```
 
-Outside nix (a Debian container): install `xvfb xterm x11-apps xdotool`, a RustDesk `.deb`
+Outside nix (a Debian container): install `xvfb xterm x11-apps xdotool x11-xserver-utils`, a RustDesk `.deb`
 (`RD_E2E_CLIENT_15=/usr/bin/rustdesk`; only one version can be installed at a time, so run
 once per version with the other variable unset), `hbbr` from the rustdesk-server release, and
 export `RD_E2E_HBBR`; the client needs `RUSTDESK_FORCED_DISPLAY_SERVER=x11`, which the stack sets.

@@ -10,6 +10,9 @@ import { RemoteDepsContext } from '../deps-context'
 import { RemotePage } from '../remote-page'
 import { openMenu } from './testing'
 
+const SIZE_1920 = { width: 1920, height: 1080 }
+const SIZE_1280 = { width: 1280, height: 800 }
+const SIZE_1024 = { width: 1024, height: 768 }
 const BOX = { width: 800, height: 600 }
 
 class FixedResizeObserver {
@@ -176,6 +179,79 @@ describe('display menu', () => {
     )
     await user.click(screen.getByRole('menuitemradio', { name: '显示器 2' }))
     expect(session.displays).toEqual([1])
+  })
+
+  it('offers the peer resolutions only with input rights and a choice', async () => {
+    const { user, session } = await activePage()
+    await openMenu(user, '显示')
+    expect(screen.queryByRole('menuitem', { name: /分辨率/ })).toBeNull()
+    await user.keyboard('{Escape}')
+
+    act(() => {
+      session.offerResolutions([SIZE_1280], SIZE_1920)
+    })
+    await openMenu(user, '显示')
+    expect(screen.queryByRole('menuitem', { name: /分辨率/ })).toBeNull()
+    await user.keyboard('{Escape}')
+
+    act(() => {
+      session.offerResolutions([SIZE_1920, SIZE_1280, SIZE_1024], SIZE_1920)
+      session.permissions.set({ keyboard: false, clipboard: true })
+    })
+    await openMenu(user, '显示')
+    expect(screen.queryByRole('menuitem', { name: /分辨率/ })).toBeNull()
+    await user.keyboard('{Escape}')
+
+    act(() => {
+      session.permissions.set({ keyboard: true, clipboard: true })
+    })
+    await openMenu(user, '显示')
+    expect(screen.getByRole('menuitem', { name: /分辨率/ })).toBeInTheDocument()
+  })
+
+  it('lists original first, marks the current size, and waits for the peer to switch', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      session.offerResolutions([SIZE_1920, SIZE_1280, SIZE_1024], SIZE_1920)
+    })
+    await openMenu(user, '显示')
+    screen.getByRole('menuitem', { name: /分辨率/ }).focus()
+    await user.keyboard('{ArrowRight}')
+    const items = await screen.findAllByRole('menuitemradio', { name: /×/ })
+    expect(items.map((i) => i.textContent)).toEqual(['原始（1920×1080）', '1280×800', '1024×768'])
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
+
+    await user.click(screen.getByRole('menuitemradio', { name: '1024×768' }))
+    expect(session.resolutions).toEqual([{ width: 1024, height: 768 }])
+    expect(screen.queryByRole('menuitemradio', { name: /×/ })).toBeNull()
+
+    await openMenu(user, '显示')
+    screen.getByRole('menuitem', { name: /分辨率/ }).focus()
+    await user.keyboard('{ArrowRight}')
+    const unchanged = await screen.findAllByRole('menuitemradio', { name: /×/ })
+    expect(unchanged.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
+    await user.keyboard('{Escape}{Escape}')
+
+    act(() => {
+      session.resize(1024, 768)
+    })
+    await openMenu(user, '显示')
+    screen.getByRole('menuitem', { name: /分辨率/ }).focus()
+    await user.keyboard('{ArrowRight}')
+    const after = await screen.findAllByRole('menuitemradio', { name: /×/ })
+    expect(after.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true'])
+  })
+
+  it('asks for the original resolution', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      session.offerResolutions([SIZE_1920, SIZE_1280], SIZE_1920)
+    })
+    await openMenu(user, '显示')
+    screen.getByRole('menuitem', { name: /分辨率/ }).focus()
+    await user.keyboard('{ArrowRight}')
+    await user.click(await screen.findByRole('menuitemradio', { name: '原始（1920×1080）' }))
+    expect(session.resolutions).toEqual([{ width: 1920, height: 1080 }])
   })
 
   it('shows the saved settings again after a reconnect', async () => {

@@ -1768,6 +1768,8 @@
       "customQuality": "自定义画质",
       "fps": "帧率",
       "fpsValue": "{{fps}} fps",
+      "resolution": "分辨率",
+      "resolutionOriginal": "原始（{{size}}）",
       "scale": "缩放",
       "scales": {
         "fit": "适应窗口",

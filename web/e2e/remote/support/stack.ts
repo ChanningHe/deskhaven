@@ -6,14 +6,14 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 
 import { BINARY_ENV, DEFAULT_BINARY, NO_UPDATE_CHECK } from '../../support/env.ts'
 import { freeSignalPort } from '../../support/ports.ts'
 import { registerDevice } from '../../support/rendezvous.ts'
 import { startServer } from '../../support/server.ts'
 import { CLIENT_ENV, DEVICE_PASSWORD, OWNER, relayHost, tool } from './env.ts'
-import type { ClientKey, DeviceInfo, StackInfo } from './env.ts'
+import type { ClientKey, DeviceInfo, StackInfo, TOOL_ENV } from './env.ts'
 import { spawnManaged, waitFor } from './procs.ts'
 import type { Managed } from './procs.ts'
 import { startProxy } from './proxy.ts'
@@ -120,11 +120,22 @@ async function startClient(
   // Without a logind seat the client reports "tty" and refuses logins.
   ctx.managed.push(
     spawnManaged('rustdesk-' + name, launcher, ['--server'], {
-      env: { ...x, RUSTDESK_FORCED_DISPLAY_SERVER: 'x11', XDG_SESSION_TYPE: 'x11' },
+      env: {
+        ...x,
+        PATH: withToolDir(x.PATH, 'xrandr'),
+        RUSTDESK_FORCED_DISPLAY_SERVER: 'x11',
+        XDG_SESSION_TYPE: 'x11',
+      },
       logFile: join(ctx.logs, `rustdesk-${name}.log`),
     }),
   )
   return { id, display, scratchDir: ctx.root }
+}
+
+/** The client lists and changes resolutions by running `xrandr`, which it looks up on PATH. */
+function withToolDir(path: string, name: keyof typeof TOOL_ENV): string {
+  const file = tool(name)
+  return isAbsolute(file) ? `${dirname(file)}:${path}` : path
 }
 
 /** The owner, through the one-time setup link (the wizard's API; the UI steps are decoration). */

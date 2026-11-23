@@ -91,3 +91,46 @@ export function focus(device: DeviceInfo, windowClass: string) {
     },
   )
 }
+
+function xrandr(device: DeviceInfo, args: string[]): string {
+  return execFileSync(tool('xrandr'), args, {
+    env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+}
+
+function outputOf(device: DeviceInfo): string {
+  const line = xrandr(device, ['-q'])
+    .split('\n')
+    .find((l) => l.includes(' connected'))
+  const output = line?.split(' ')[0]
+  if (output === undefined) throw new Error('the display has no output')
+  return output
+}
+
+/**
+ * Xvfb has one mode, so its client lists one resolution. This gives the output another one,
+ * smaller than the screen. The client finds `xrandr` through its PATH (see stack.ts).
+ */
+export function addMode(device: DeviceInfo, width: number, height: number): void {
+  const name = `${width}x${height}`
+  const output = outputOf(device)
+  if (xrandr(device, ['-q']).includes(` ${name} `)) return
+  const timing = [
+    width,
+    width + 8,
+    width + 16,
+    width + 24,
+    height,
+    height + 2,
+    height + 4,
+    height + 6,
+  ]
+  xrandr(device, ['--newmode', name, '60.00', ...timing.map(String)])
+  xrandr(device, ['--output', output, '--addmode', output, name])
+}
+
+export function setMode(device: DeviceInfo, width: number, height: number): void {
+  xrandr(device, ['--output', outputOf(device), '--mode', `${width}x${height}`])
+}

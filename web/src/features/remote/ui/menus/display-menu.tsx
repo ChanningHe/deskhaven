@@ -18,6 +18,7 @@ import type { RemoteSettings } from '../../settings/settings'
 import { ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
 import { QualityGroup } from './quality-group'
+import { ResolutionSubmenu } from './resolution-submenu'
 
 const FPS_STEPS = [5, 10, 15, 24, 30, 45, 60]
 const SCALES: readonly RemoteSettings['scale'][] = ['fit', 'original']
@@ -131,6 +132,7 @@ export function DisplayMenu({
         </DropdownMenuRadioGroup>
       </DropdownMenuGroup>
       <MonitorGroup session={session} />
+      <ResolutionSubmenu session={session} />
       <DropdownMenuSeparator />
       <DropdownMenuCheckboxItem checked={stats} onCheckedChange={onStats} closeOnClick>
         {t('remote.toolbar.stats')}

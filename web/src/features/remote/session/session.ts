@@ -15,11 +15,13 @@ import { qualityOption, ungoverned } from '../settings/protocol'
 import type { Quality } from '../settings/settings'
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
-import { VideoPipeline, type VideoMeter } from '../video/pipeline'
+import { VideoPipeline } from '../video/pipeline'
 import { QualityGovernor } from '../video/quality-governor'
 import { FrameQueue } from './frame-queue'
+import { governed } from './governed'
 import {
   captureDisplay,
+  changeResolution,
   closeReason,
   ctrlAltDel,
   customFps,
@@ -31,6 +33,7 @@ import {
   type OptionPatch,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
+import { offersResolution } from './resolution'
 import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
 import { ValueStore, type Store } from './store'
 import { windowsSessionChoice, type WindowsSessionChoice } from './windows-sessions'
@@ -71,6 +74,7 @@ export interface Session {
   setKeyboardMode(mode: KeyboardMode): void
   /** Asks the peer to stream display `index` of PeerView.displays. */
   switchDisplay(index: number): void
+  changeResolution(width: number, height: number): void
   ctrlAltDel(): void
   setOptions(patch: OptionPatch): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
@@ -214,6 +218,13 @@ class RemoteSession implements Session {
     if (index < 0 || index >= peer.displays.length || index === peer.current) return
     this.#send(switchDisplay(index))
     this.#send(captureDisplay(index))
+  }
+
+  changeResolution(width: number, height: number): void {
+    const peer = this.peer.get()
+    if (!peer || !this.#active() || !this.permissions.get().keyboard) return
+    if (!offersResolution(peer, width, height)) return
+    this.#send(changeResolution(peer.current, width, height, peer.info.version))
   }
 
   ctrlAltDel(): void {
@@ -382,18 +393,5 @@ class RemoteSession implements Session {
     this.state.set({ kind: 'closed', reason: switched ? WINDOWS_SESSION_SWITCH : reason })
     this.#video.close()
     this.#frames.end()
-  }
-}
-
-function governed(meter: VideoMeter, governor: FpsGovernor): VideoMeter {
-  return {
-    now: () => meter.now(),
-    received: (bytes) => {
-      meter.received(bytes)
-    },
-    decoded: (latencyMs, serviceMs) => {
-      meter.decoded(latencyMs, serviceMs)
-      governor.decoded(serviceMs)
-    },
   }
 }
