@@ -18,7 +18,7 @@ env:
   CARGO_NEXTEST_VERSION: "0.9.136"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_DEV_DEBUG: "0"
   CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
   CI_FETCH_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
   CI_FALLBACK_REF: ${{ github.ref }}

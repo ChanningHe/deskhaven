@@ -25,7 +25,7 @@ if [ "${CI_SKIP_APT:-0}" != "1" ]; then
 fi
 
 # cargo never prunes a persistent build directory.
-CI_TARGET_MAX_GB="${CI_TARGET_MAX_GB:-25}"
+CI_TARGET_MAX_GB="${CI_TARGET_MAX_GB:-50}"
 if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -d "$CARGO_TARGET_DIR" ]; then
   used_mb="$(du -sm "$CARGO_TARGET_DIR" | cut -f1)"
   echo "build cache $CARGO_TARGET_DIR: ${used_mb} MB (limit ${CI_TARGET_MAX_GB} GB)"
