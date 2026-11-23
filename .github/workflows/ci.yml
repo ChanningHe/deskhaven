@@ -236,7 +236,6 @@ jobs:
             echo "::group::$name: $result"
             cat "$RUNNER_TEMP/test-$name.log"
             echo "::endgroup::"
-            grep -hE '^ +Summary|^ +(FAIL|TIMEOUT|SIGSEGV|ABORT) ' "$RUNNER_TEMP/test-$name.log" | sed "s/^ */$name: /" || true
           done
           exit "$status"
       - run: cargo xtask gen-openapi --check
