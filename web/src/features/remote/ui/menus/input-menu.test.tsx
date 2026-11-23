@@ -81,7 +81,7 @@ describe('send keys menu', () => {
   it('is disabled while the device has the keyboard off, and enabled again with it', async () => {
     const { user, session } = await activePage()
     act(() => {
-      session.permissions.set({ keyboard: false, clipboard: true })
+      session.permissions.set({ keyboard: false, clipboard: true, restart: true })
     })
     await openMenu(user, '输入')
     expect(screen.getByRole('menuitem', { name: '发送按键' })).toHaveAttribute(
@@ -90,7 +90,7 @@ describe('send keys menu', () => {
     )
     await user.keyboard('{Escape}')
     act(() => {
-      session.permissions.set({ keyboard: true, clipboard: true })
+      session.permissions.set({ keyboard: true, clipboard: true, restart: true })
     })
     await openMenu(user, '输入')
     expect(screen.getByRole('menuitem', { name: '发送按键' })).not.toHaveAttribute(

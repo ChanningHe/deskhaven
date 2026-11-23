@@ -233,7 +233,7 @@ describe('remote page: active session', () => {
     const { user, session } = await open()
     act(() => {
       session.activate()
-      session.permissions.set({ keyboard: false, clipboard: false })
+      session.permissions.set({ keyboard: false, clipboard: false, restart: true })
     })
     expect(screen.getByRole('toolbar', { name: '会话控制' })).toBeInTheDocument()
     await openMenu(user, '输入')

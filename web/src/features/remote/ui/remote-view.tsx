@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 import type { Session } from '../session/session'
+import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
 import { PastePanel, RemoteClipboardPanel } from './clipboard-panels'
 import { RemoteBar, type BarFrame } from './remote-bar'
@@ -71,12 +72,16 @@ export function RemoteView({
   frame,
   settings,
   onSettings,
+  intent,
+  onIntent,
   onDisconnect,
 }: {
   session: Session
   frame: BarFrame
   settings: RemoteSettings
   onSettings: (patch: Partial<RemoteSettings>) => void
+  intent: SessionIntent
+  onIntent: (patch: Partial<SessionIntent>) => void
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
@@ -95,6 +100,7 @@ export function RemoteView({
   const sync = useClipboardSync({
     session,
     enabled: settings.clipboardSync,
+    viewOnly: intent.viewOnly,
     onEnabled: (clipboardSync) => {
       onSettings({ clipboardSync })
     },
@@ -137,6 +143,7 @@ export function RemoteView({
       <RemoteBar
         {...frame}
         status="active"
+        viewOnly={intent.viewOnly}
         hostname={peer?.info.hostname === '' ? undefined : peer?.info.hostname}
         tools={
           <Toolbar
@@ -144,6 +151,8 @@ export function RemoteView({
             session={session}
             settings={settings}
             onSettings={onSettings}
+            intent={intent}
+            onIntent={onIntent}
             stats={stats}
             onStats={setStats}
             fullscreen={fullscreen}
@@ -169,6 +178,7 @@ export function RemoteView({
           session={session}
           scale={settings.scale}
           showRemoteCursor={settings.showRemoteCursor}
+          viewOnly={intent.viewOnly}
           onLeave={leaveScreen}
           onPointerEnter={sync.onPointerEnter}
           onGesture={sync.onGesture}

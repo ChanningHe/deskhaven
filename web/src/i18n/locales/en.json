@@ -1733,7 +1733,13 @@
       "link": "The connection to the relay was lost: {{reason}}",
       "other": "The session ended: {{reason}}",
       "reconnect": "Reconnect",
-      "sessionSwitch": "The device is switching to the session you chose. Reconnect in a few seconds."
+      "sessionSwitch": "The device is switching to the session you chose. Reconnect in a few seconds.",
+      "restarting": "The device is restarting. Connect again once it is back online."
+    },
+    "restart": {
+      "title": "Restart the device?",
+      "description": "The device restarts and drops this connection. You cannot control it meanwhile, and unsaved work may be lost.",
+      "confirm": "Restart"
     },
     "errors": {
       "title": "Could not connect",
@@ -1759,6 +1765,11 @@
       "inputMenuHint": "Input: keyboard mode and key combinations. Press Esc twice to leave the remote screen.",
       "clipboardMenu": "Clipboard",
       "clipboardMenuHint": "Clipboard: pass text between this computer and the device",
+      "actionsMenu": "Actions",
+      "actionsMenuHint": "Actions: view only, lock after the session, restart the device",
+      "viewOnly": "View only",
+      "lockAfterEnd": "Lock the device after the session",
+      "restart": "Restart device",
       "quality": "Quality",
       "qualities": {
         "low": "Low",
@@ -1845,6 +1856,7 @@
     "status": {
       "connecting": "Connecting",
       "active": "Connected",
+      "viewOnly": "View only",
       "ended": "Not connected"
     },
     "transport": {

@@ -3,14 +3,9 @@ import { CursorTracker, type CursorImages, type CursorView } from '../cursor/cur
 import type { CloseBy, CloseCause, Handshake } from '../handshake/handshake'
 import type { LoginState } from '../handshake/login'
 import { encodeInput, type RemoteInput } from '../input/input'
+import type { MouseButton } from '../input/mouse'
 import { KeyboardEncoder, keyboardModeFor, supportedKeyboardModes } from '../input/keyboard'
-import {
-  PermissionInfo_Permission,
-  type KeyboardMode,
-  type Message,
-  type Misc,
-  type PeerInfo,
-} from '../proto/gen/message_pb.js'
+import type { KeyboardMode, Message, Misc, PeerInfo } from '../proto/gen/message_pb.js'
 import { qualityOption, ungoverned } from '../settings/protocol'
 import type { Quality } from '../settings/settings'
 import { TransportError } from '../transport/transport'
@@ -29,68 +24,25 @@ import {
   keyMessage,
   optionMessage,
   refreshVideo,
+  restartRemote,
+  RESTART_REASON,
   selectedSid,
   switchDisplay,
   type OptionPatch,
   type SessionAction,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
+import { ALL_ALLOWED, withPermission, type Permissions } from './permissions'
 import { offersResolution } from './resolution'
 import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
 import { ValueStore, type Store } from './store'
-import { windowsSessionChoice, type WindowsSessionChoice } from './windows-sessions'
+import type { Session, SessionOptions, SessionState } from './types'
+import { windowsSessionChoice } from './windows-sessions'
 
-export type SessionState =
-  | Exclude<LoginState, { kind: 'active' } | { kind: 'failed' }>
-  /** Logged in to a peer that waits for us to pick one of its Windows sessions. */
-  | ({ kind: 'choose_session' } & WindowsSessionChoice)
-  | { kind: 'active' }
-  | { kind: 'closed'; cause: CloseCause }
+export type { Session, SessionOptions, SessionState } from './types'
 
-/** What the peer's user lets us do; the peer reports only changes, so both start allowed. */
-export interface Permissions {
-  keyboard: boolean
-  clipboard: boolean
-}
-
-export interface Session {
-  readonly state: Store<SessionState>
-  readonly peer: Store<PeerView | null>
-  readonly cursor: Store<CursorView>
-  readonly cursorImages: CursorImages
-  readonly permissions: Store<Permissions>
-  /** The text the peer last copied; null until it copies some. */
-  readonly remoteClipboard: Store<string | null>
-  readonly stats: Store<SessionStats>
-  /**
-   * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
-   * drawImage at displayWidth × displayHeight: codedWidth carries padding and the pixel format
-   * differs between browsers.
-   */
-  readonly frames: AsyncIterable<VideoFrame>
-  login(password: string): Promise<void>
-  /** Only while the state is need_2fa; ignored otherwise. */
-  submit2fa(code: string): void
-  /** Only while the state is choose_session, with one of its sids; ignored otherwise. */
-  chooseWindowsSession(sid: number): void
-  /** One of supportedKeyboardModes for the peer; keys held in the old mode go up first. */
-  setKeyboardMode(mode: KeyboardMode): void
-  /** Asks the peer to stream display `index` of PeerView.displays. */
-  switchDisplay(index: number): void
-  changeResolution(width: number, height: number): void
-  action(kind: SessionAction): void
-  setOptions(patch: OptionPatch): void
-  /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
-  input(input: RemoteInput): void
-  /** Sends our clipboard text; false when not active, not allowed or too long. */
-  clipboard(text: string): boolean
-  close(): void
-}
-
-export interface SessionOptions {
-  createDecoder?: CreateDecoder
-  clock?: StatsClock
-}
+// rustdesk 1.5.0 src/client.rs:110 RESTART_REMOTE_DEVICE_GRACE
+export const RESTART_GRACE_MS = 5 * 60_000
 
 /** What a peer streams only once it serves the connection. */
 const SERVED = new Set<Message['union']['case']>([
@@ -106,6 +58,7 @@ export function startSession(handshake: Handshake, options: SessionOptions = {})
     handshake,
     options.createDecoder ?? createWebCodecsDecoder,
     options.clock ?? realClock,
+    options.viewOnly ?? false,
   )
   void session.run()
   return session
@@ -115,7 +68,7 @@ class RemoteSession implements Session {
   readonly state = new ValueStore<SessionState>({ kind: 'connecting' })
   readonly peer = new ValueStore<PeerView | null>(null)
   readonly cursor = new ValueStore<CursorView>({ shape: null, position: null })
-  readonly permissions = new ValueStore<Permissions>({ keyboard: true, clipboard: true })
+  readonly permissions = new ValueStore<Permissions>(ALL_ALLOWED)
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly #frames = new FrameQueue()
   readonly #handshake: Handshake
@@ -124,11 +77,23 @@ class RemoteSession implements Session {
   readonly #governor: FpsGovernor
   readonly #quality = new QualityGovernor()
   readonly #cursors = new CursorTracker()
+  readonly #clock: StatsClock
   #keyboard: KeyboardEncoder | null = null
   #switchingSession = false
+  #viewOnly: boolean
+  readonly #held = new Set<MouseButton>()
+  #pointer: Extract<RemoteInput, { kind: 'pointer' }> | null = null
+  #restartedAt: number | null = null
 
-  constructor(handshake: Handshake, createDecoder: CreateDecoder, clock: StatsClock) {
+  constructor(
+    handshake: Handshake,
+    createDecoder: CreateDecoder,
+    clock: StatsClock,
+    viewOnly: boolean,
+  ) {
     this.#handshake = handshake
+    this.#clock = clock
+    this.#viewOnly = viewOnly
     this.#meter = new SessionMeter(this.state, clock, () => ({
       decodeQueue: this.#video.decodeQueueSize,
       codec: this.#video.codec,
@@ -226,38 +191,43 @@ class RemoteSession implements Session {
 
   changeResolution(width: number, height: number): void {
     const peer = this.peer.get()
-    if (!peer || !this.#active() || !this.permissions.get().keyboard) return
+    if (!peer || !this.#inputAllowed()) return
     if (!offersResolution(peer, width, height)) return
     this.#send(changeResolution(peer.current, width, height, peer.info.version))
   }
 
   action(kind: SessionAction): void {
     const peer = this.peer.get()
-    if (!peer || !this.#active() || !this.permissions.get().keyboard) return
+    if (!peer || !this.#inputAllowed()) return
     for (const event of actionKeys(kind, peer.info.platform)) this.#send(keyMessage(event))
+  }
+
+  restart(): void {
+    if (!this.#active() || !this.permissions.get().restart) return
+    this.#restartedAt = this.#clock.now()
+    this.#send(restartRemote())
   }
 
   setOptions(patch: OptionPatch): void {
     if (!this.#active()) return
+    if (patch.viewOnly !== undefined) this.#setViewOnly(patch.viewOnly)
     if (patch.peer) this.#send(optionMessage(ungoverned(patch.peer)))
     if (patch.maxFps !== undefined) this.#governor.setUserFps(patch.maxFps)
     if (patch.quality) this.#sendQuality(this.#quality.setCap(patch.quality))
   }
 
   input(input: RemoteInput): void {
-    const peer = this.peer.get()
-    if (!this.#keyboard || !peer || !this.#active() || !this.permissions.get().keyboard) return
-    const context = {
-      keyboard: this.#keyboard,
-      display: peer.display,
-      platform: peer.info.platform,
-    }
-    for (const message of encodeInput(input, context)) this.#send(message)
-    if (input.kind === 'pointer' && input.action === 'move') this.#meter.pointerMoved()
+    if (!this.#inputAllowed()) return
+    this.#encode(input)
+    if (input.kind !== 'pointer') return
+    this.#pointer = input
+    if (input.action === 'move') this.#meter.pointerMoved()
+    else if (input.action === 'down' && input.button) this.#held.add(input.button)
+    else if (input.button) this.#held.delete(input.button)
   }
 
   clipboard(text: string): boolean {
-    if (!this.#active() || !this.permissions.get().clipboard) return false
+    if (!this.#active() || this.#viewOnly || !this.permissions.get().clipboard) return false
     const message = clipboardMessage(text)
     if (!message) return false
     this.#send(message)
@@ -271,6 +241,32 @@ class RemoteSession implements Session {
 
   #active(): boolean {
     return this.state.get().kind === 'active'
+  }
+
+  #inputAllowed(): boolean {
+    return this.#active() && !this.#viewOnly && this.permissions.get().keyboard
+  }
+
+  #encode(input: RemoteInput): void {
+    const peer = this.peer.get()
+    if (!this.#keyboard || !peer) return
+    const context = {
+      keyboard: this.#keyboard,
+      display: peer.display,
+      platform: peer.info.platform,
+    }
+    for (const message of encodeInput(input, context)) this.#send(message)
+  }
+
+  #setViewOnly(on: boolean): void {
+    if (on && !this.#viewOnly) {
+      this.#encode({ kind: 'release' })
+      if (this.#pointer) {
+        for (const button of this.#held) this.#encode({ ...this.#pointer, action: 'up', button })
+      }
+      this.#held.clear()
+    }
+    this.#viewOnly = on
   }
 
   #steer(): void {
@@ -351,24 +347,15 @@ class RemoteSession implements Session {
         return
       }
       case 'permissionInfo':
-        this.#onPermission(union.value.permission, union.value.enabled)
+        this.permissions.set(
+          withPermission(this.permissions.get(), union.value.permission, union.value.enabled),
+        )
         return
       case 'closeReason':
         this.#hangUp('peer', union.value)
         return
       default:
         return
-    }
-  }
-
-  // rustdesk 1.5.0 src/client/io_loop.rs:2042-2062. The keyboard permission is the peer's
-  // switch for all input: its server drops mouse events too while it is off.
-  #onPermission(permission: PermissionInfo_Permission, enabled: boolean): void {
-    const current = this.permissions.get()
-    if (permission === PermissionInfo_Permission.Keyboard) {
-      this.permissions.set({ ...current, keyboard: enabled })
-    } else if (permission === PermissionInfo_Permission.Clipboard) {
-      this.permissions.set({ ...current, clipboard: enabled })
     }
   }
 
@@ -389,10 +376,19 @@ class RemoteSession implements Session {
     this.#handshake.close(cause)
   }
 
+  #restarting({ by }: CloseCause): CloseCause | null {
+    const asked =
+      this.#restartedAt !== null && this.#clock.now() - this.#restartedAt < RESTART_GRACE_MS
+    return asked && (by === 'link' || by === 'peer') ? { by: 'peer', reason: RESTART_REASON } : null
+  }
+
   #finish(cause: CloseCause): void {
     if (this.state.get().kind === 'closed') return
     const by = this.#switchingSession && cause.by !== 'user' ? 'session_switch' : cause.by
-    this.state.set({ kind: 'closed', cause: { by, reason: cause.reason } })
+    this.state.set({
+      kind: 'closed',
+      cause: this.#restarting(cause) ?? { by, reason: cause.reason },
+    })
     this.#video.close()
     this.#frames.end()
     this.#cursors.close()

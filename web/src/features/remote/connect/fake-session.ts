@@ -10,7 +10,8 @@ import type { OptionPatch, SessionAction } from '../session/messages'
 import { peerView, type PeerView } from '../session/peer-view'
 import type { Size } from '../session/resolution'
 import type { CloseCause } from '../handshake/handshake'
-import type { Permissions, Session, SessionState } from '../session/session'
+import { ALL_ALLOWED, type Permissions } from '../session/permissions'
+import type { Session, SessionState } from '../session/session'
 import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
 
@@ -34,7 +35,7 @@ export class FakeSession implements Session {
   readonly peer = new ValueStore<PeerView | null>(null)
   readonly cursor = new ValueStore<CursorView>({ shape: null, position: null })
   readonly cursorImages: CursorImages = new KeptCursorImages()
-  readonly permissions = new ValueStore<Permissions>({ keyboard: true, clipboard: true })
+  readonly permissions = new ValueStore<Permissions>(ALL_ALLOWED)
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly stats = new ValueStore<SessionStats>(NO_STATS)
   readonly queue = new FrameQueue()
@@ -48,6 +49,7 @@ export class FakeSession implements Session {
   readonly resolutions: { width: number; height: number }[] = []
   readonly patches: OptionPatch[] = []
   readonly actions: SessionAction[] = []
+  restarts = 0
   closed = 0
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -83,6 +85,10 @@ export class FakeSession implements Session {
 
   action(kind: SessionAction): void {
     this.actions.push(kind)
+  }
+
+  restart(): void {
+    this.restarts++
   }
 
   setOptions(patch: OptionPatch): void {

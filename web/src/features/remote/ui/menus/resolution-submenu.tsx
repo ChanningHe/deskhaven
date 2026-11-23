@@ -17,11 +17,11 @@ const ORIGINAL = 'original'
 
 const label = (size: Size) => `${size.width}×${size.height}`
 
-export function ResolutionSubmenu({ session }: { session: Session }) {
+export function ResolutionSubmenu({ session, viewOnly }: { session: Session; viewOnly: boolean }) {
   const { t } = useTranslation()
   const peer = useStore(session.peer)
   const { keyboard } = useStore(session.permissions)
-  if (!peer || !keyboard || peer.resolutions.length < 2) return null
+  if (!peer || !keyboard || viewOnly || peer.resolutions.length < 2) return null
   const { display, originalResolution: original } = peer
   const current = display && original && sameSize(display, original) ? ORIGINAL : null
   const sizes = peer.resolutions.filter((r) => !original || !sameSize(r, original))

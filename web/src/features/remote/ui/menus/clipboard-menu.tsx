@@ -20,11 +20,13 @@ export type ClipboardSyncSwitch = Pick<
 
 export function ClipboardMenu({
   session,
+  viewOnly,
   sync,
   onSend,
   onShowRemote,
 }: {
   session: Session
+  viewOnly: boolean
   sync: ClipboardSyncSwitch
   onSend: () => void
   onShowRemote: () => void
@@ -32,6 +34,7 @@ export function ClipboardMenu({
   const { t } = useTranslation()
   const deniedId = useId()
   const { clipboard } = useStore(session.permissions)
+  const sending = clipboard && !viewOnly
   const remoteText = useStore(session.remoteClipboard)
   const denied = sync.enabled && sync.access === 'denied'
 
@@ -41,7 +44,7 @@ export function ClipboardMenu({
       hint={t('remote.toolbar.clipboardMenuHint')}
       icon={<Clipboard aria-hidden />}
     >
-      <DropdownMenuItem disabled={!clipboard} onClick={onSend}>
+      <DropdownMenuItem disabled={!sending} onClick={onSend}>
         <ClipboardPaste aria-hidden />
         {t('remote.toolbar.sendClipboard')}
       </DropdownMenuItem>
@@ -52,7 +55,7 @@ export function ClipboardMenu({
       <DropdownMenuSeparator />
       <DropdownMenuCheckboxItem
         checked={sync.enabled}
-        disabled={!clipboard}
+        disabled={!sending}
         onCheckedChange={(on: boolean) => {
           sync.setEnabled(on)
         }}
@@ -62,7 +65,7 @@ export function ClipboardMenu({
         {t('remote.toolbar.clipboardSync')}
       </DropdownMenuCheckboxItem>
       {sync.enabled && sync.access === 'prompt' ? (
-        <DropdownMenuItem disabled={!clipboard} onClick={sync.requestAccess}>
+        <DropdownMenuItem disabled={!sending} onClick={sync.requestAccess}>
           {t('remote.toolbar.clipboardAllow')}
         </DropdownMenuItem>
       ) : null}

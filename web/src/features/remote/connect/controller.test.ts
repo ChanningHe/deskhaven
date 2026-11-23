@@ -68,6 +68,7 @@ describe('RemoteController', () => {
         serverPk: Uint8Array.from('k'.repeat(32), (c) => c.charCodeAt(0)),
         decoders: { vp9: true, av1: false, vp8: true },
       }),
+      { viewOnly: false, lockAfterEnd: false },
     )
     expect(controller.phase.get()).toEqual({ kind: 'session', session: deps.sessions[0] })
   })
@@ -79,6 +80,7 @@ describe('RemoteController', () => {
     expect(deps.startSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ targetId: DEVICE }),
+      expect.anything(),
     )
   })
 

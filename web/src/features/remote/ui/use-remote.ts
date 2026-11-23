@@ -7,6 +7,7 @@ import {
   type TransportKind,
 } from '../connect/controller'
 import type { Store } from '../session/store'
+import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
 
 export function useStore<T>(store: Store<T>): T {
@@ -20,6 +21,8 @@ export interface Remote {
   transport: TransportKind
   settings: RemoteSettings
   updateSettings: (patch: Partial<RemoteSettings>) => void
+  intent: SessionIntent
+  updateIntent: (patch: Partial<SessionIntent>) => void
   reconnect: () => void
   disconnect: () => void
 }
@@ -49,6 +52,10 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
     settings: useStore(controller.settings),
     updateSettings: (patch) => {
       controller.updateSettings(patch)
+    },
+    intent: useStore(controller.intent),
+    updateIntent: (patch) => {
+      controller.updateIntent(patch)
     },
     reconnect: () => {
       controller.connect()

@@ -1,3 +1,5 @@
+import { Eye } from 'lucide-react'
+
 import { cn } from '@/lib/utils'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
@@ -23,6 +25,7 @@ export interface BarFrame {
 
 interface RemoteBarProps extends BarFrame {
   status: BarStatus
+  viewOnly?: boolean
   /** The peer's own name, once it has said it. */
   hostname?: string | undefined
   /** The session's controls; they drop to a second row on narrow screens. */
@@ -36,6 +39,7 @@ export function RemoteBar({
   deviceId,
   back,
   status,
+  viewOnly = false,
   hostname,
   transport,
   tools,
@@ -70,6 +74,12 @@ export function RemoteBar({
             </>
           )}
         </span>
+        {viewOnly ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/30 px-2 py-0.5 text-xs text-warning">
+            <Eye aria-hidden className="size-3" />
+            {t('remote.status.viewOnly')}
+          </span>
+        ) : null}
       </div>
       {tools ? (
         <div className="order-last flex w-full min-w-0 lg:order-none lg:w-auto">{tools}</div>

@@ -37,10 +37,10 @@ function keyLabel(kind: SessionAction, platform: string | undefined): SessionAct
   return kind === 'alt_tab' && platform === PLATFORM_MACOS ? 'cmd_tab' : kind
 }
 
-export function InputMenu({ session }: { session: Session }) {
+export function InputMenu({ session, viewOnly }: { session: Session; viewOnly: boolean }) {
   const { t } = useTranslation()
   const peer = useStore(session.peer)
-  const { keyboard } = useStore(session.permissions)
+  const keyboard = useStore(session.permissions).keyboard && !viewOnly
   const modes = peer
     ? supportedKeyboardModes(peer.info.platform, peer.info.version).filter(isShownMode)
     : []

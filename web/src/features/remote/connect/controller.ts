@@ -17,7 +17,14 @@ import {
   type Link,
 } from '../handshake/handshake'
 import { supportedDecoding, type DecoderSupport } from '../handshake/login'
-import { loginOption, loginSettings, optionPatch } from '../settings/protocol'
+import {
+  NO_INTENT,
+  intentPatch,
+  loginOption,
+  loginSettings,
+  optionPatch,
+  type SessionIntent,
+} from '../settings/protocol'
 import {
   browserStorage,
   loadSettings,
@@ -78,7 +85,7 @@ export interface ConnectDeps {
   closeSession(sessionId: string): Promise<void>
   probeDecoders(): Promise<DecoderSupport>
   createRelay(options: RelayOptions): KeyedTransport
-  startSession(link: Link, params: HandshakeParams): Session
+  startSession(link: Link, params: HandshakeParams, intent: SessionIntent): Session
   location: Pick<Location, 'protocol' | 'host'>
   /** Without it, the relay only. */
   webrtc?: WebRtcDeps
@@ -111,7 +118,8 @@ export const browserDeps: ConnectDeps = {
   closeSession: (sessionId) => closeWebClientSession(sessionId, { keepalive: true }),
   probeDecoders: probeVideoDecoders,
   createRelay: (options) => new RelayTransport(options),
-  startSession: (link, params) => startSession(startHandshake(link, params)),
+  startSession: (link, params, intent) =>
+    startSession(startHandshake(link, params), { viewOnly: intent.viewOnly }),
   get location() {
     return window.location
   },
@@ -151,6 +159,7 @@ interface Attempt {
   /** Closes what the attempt holds until a peer session owns the link. */
   readonly pending: Set<() => void>
   told: RemoteSettings | null
+  toldIntent: SessionIntent | null
   readonly retry: number
   heardAt: number | null
 }
@@ -167,6 +176,7 @@ export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
   readonly #transport = new ValueStore<TransportKind>('connecting')
   readonly #settings: ValueStore<RemoteSettings>
+  readonly #intent = new ValueStore<SessionIntent>(NO_INTENT)
   readonly #storage: Storage | null
   readonly #deviceId: string
   readonly #deps: ConnectDeps
@@ -195,6 +205,15 @@ export class RemoteController {
     const next = withPatch(this.#settings.get(), patch)
     this.#settings.set(next)
     saveSettings(next, this.#storage)
+    if (this.#current) this.#sync(this.#current)
+  }
+
+  get intent(): Store<SessionIntent> {
+    return this.#intent
+  }
+
+  updateIntent(patch: Partial<SessionIntent>): void {
+    this.#intent.set({ ...this.#intent.get(), ...patch })
     if (this.#current) this.#sync(this.#current)
   }
 
@@ -239,6 +258,7 @@ export class RemoteController {
       session: null,
       pending: new Set(),
       told: null,
+      toldIntent: null,
       heardAt: null,
       retry,
     }
@@ -286,6 +306,7 @@ export class RemoteController {
       const settings = this.#settings.get()
       params = this.#params(attempt, opened, decoders, settings)
       attempt.told = loginSettings(settings)
+      attempt.toldIntent = this.#intent.get()
       const relay = this.#deps.createRelay(this.#relayOptions(opened))
       const webrtc = this.#deps.webrtc
       if (offerer && opened.answer && webrtc) {
@@ -307,7 +328,7 @@ export class RemoteController {
       return
     }
     this.#transport.set(link.kind)
-    const session = this.#deps.startSession(link, params)
+    const session = this.#deps.startSession(link, params, attempt.toldIntent)
     attempt.session = session
     let handshaken = false
     const stop = session.state.subscribe(() => {
@@ -446,7 +467,7 @@ export class RemoteController {
       myName: opened.my_name,
       sessionId: this.#sessionId,
       decoders,
-      loginOption: loginOption(settings),
+      loginOption: loginOption(settings, this.#intent.get()),
       credentials: this.#credentials(attempt),
       onHeard: (at) => {
         attempt.heardAt = at
@@ -455,13 +476,14 @@ export class RemoteController {
   }
 
   #sync(attempt: Attempt): void {
-    const { session, told } = attempt
-    if (!session || !told || session.state.get().kind !== 'active') return
+    const { session, told, toldIntent } = attempt
+    if (!session || !told || !toldIntent || session.state.get().kind !== 'active') return
     const settings = this.#settings.get()
-    const patch = optionPatch(told, settings)
-    if (!patch) return
+    const intent = this.#intent.get()
+    const patches = [optionPatch(told, settings), intentPatch(toldIntent, intent)]
     attempt.told = settings
-    session.setOptions(patch)
+    attempt.toldIntent = intent
+    for (const patch of patches) if (patch) session.setOptions(patch)
   }
 
   #relayOptions(opened: WebClientSession): RelayOptions {

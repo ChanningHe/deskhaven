@@ -144,6 +144,12 @@ describe('session changeResolution', () => {
     expect(r.sentAfterLogin()).toEqual([])
   })
 
+  it('sends nothing while viewing only', async () => {
+    const r = await activeSession(resolutionPeer('1.5.1'), 'active', { viewOnly: true })
+    r.session.changeResolution(1024, 768)
+    expect(r.sentAfterLogin()).toEqual([])
+  })
+
   it('sends nothing without keyboard permission', async () => {
     const r = await activeSession(resolutionPeer('1.5.1'))
     r.peerSends(

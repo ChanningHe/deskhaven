@@ -3,7 +3,9 @@ import type { Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { Session } from '../session/session'
+import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
+import { ActionsMenu } from './menus/actions-menu'
 import { ClipboardMenu, type ClipboardSyncSwitch } from './menus/clipboard-menu'
 import { DisplayMenu } from './menus/display-menu'
 import { InputMenu } from './menus/input-menu'
@@ -14,6 +16,8 @@ interface ToolbarProps {
   session: Session
   settings: RemoteSettings
   onSettings: (patch: Partial<RemoteSettings>) => void
+  intent: SessionIntent
+  onIntent: (patch: Partial<SessionIntent>) => void
   stats: boolean
   onStats: (on: boolean) => void
   fullscreen: boolean
@@ -29,6 +33,8 @@ export function Toolbar({
   session,
   settings,
   onSettings,
+  intent,
+  onIntent,
   stats,
   onStats,
   fullscreen,
@@ -51,18 +57,21 @@ export function Toolbar({
     >
       <DisplayMenu
         session={session}
+        viewOnly={intent.viewOnly}
         settings={settings}
         onSettings={onSettings}
         stats={stats}
         onStats={onStats}
       />
-      <InputMenu session={session} />
+      <InputMenu session={session} viewOnly={intent.viewOnly} />
       <ClipboardMenu
         session={session}
+        viewOnly={intent.viewOnly}
         sync={clipboardSync}
         onSend={onSendClipboard}
         onShowRemote={onShowRemoteClipboard}
       />
+      <ActionsMenu session={session} intent={intent} onIntent={onIntent} />
       <IconButton
         label={fullscreenLabel}
         hint={

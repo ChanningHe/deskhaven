@@ -196,14 +196,14 @@ describe('display menu', () => {
 
     act(() => {
       session.offerResolutions([SIZE_1920, SIZE_1280, SIZE_1024], SIZE_1920)
-      session.permissions.set({ keyboard: false, clipboard: true })
+      session.permissions.set({ keyboard: false, clipboard: true, restart: true })
     })
     await openMenu(user, '显示')
     expect(screen.queryByRole('menuitem', { name: /分辨率/ })).toBeNull()
     await user.keyboard('{Escape}')
 
     act(() => {
-      session.permissions.set({ keyboard: true, clipboard: true })
+      session.permissions.set({ keyboard: true, clipboard: true, restart: true })
     })
     await openMenu(user, '显示')
     expect(screen.getByRole('menuitem', { name: /分辨率/ })).toBeInTheDocument()

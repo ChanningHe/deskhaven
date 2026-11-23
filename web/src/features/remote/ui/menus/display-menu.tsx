@@ -88,12 +88,14 @@ function MonitorGroup({ session }: { session: Session }) {
  */
 export function DisplayMenu({
   session,
+  viewOnly,
   settings,
   onSettings,
   stats,
   onStats,
 }: {
   session: Session
+  viewOnly: boolean
   settings: RemoteSettings
   onSettings: OnSettings
   stats: boolean
@@ -132,7 +134,7 @@ export function DisplayMenu({
         </DropdownMenuRadioGroup>
       </DropdownMenuGroup>
       <MonitorGroup session={session} />
-      <ResolutionSubmenu session={session} />
+      <ResolutionSubmenu session={session} viewOnly={viewOnly} />
       <DropdownMenuSeparator />
       <DropdownMenuCheckboxItem
         checked={settings.showRemoteCursor}

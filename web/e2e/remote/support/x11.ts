@@ -132,6 +132,17 @@ export function movePointer(device: DeviceInfo, x: number, y: number) {
   })
 }
 
+/** Where the device's X pointer is: only input the device received moves it. */
+export function pointerAt(device: DeviceInfo): { x: number; y: number } {
+  const out = execFileSync(tool('xdotool'), ['getmouselocation', '--shell'], {
+    env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+  const read = (name: string) => Number(new RegExp(`^${name}=(\\d+)$`, 'm').exec(out)?.[1])
+  return { x: read('X'), y: read('Y') }
+}
+
 function xrandr(device: DeviceInfo, args: string[]): string {
   return execFileSync(tool('xrandr'), args, {
     env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },

@@ -81,7 +81,7 @@ describe('session input', () => {
     const r = await activeSession()
     r.peerSends(permission(PermissionInfo_Permission.Keyboard, false))
     await settle()
-    expect(r.session.permissions.get()).toEqual({ keyboard: false, clipboard: true })
+    expect(r.session.permissions.get()).toEqual({ keyboard: false, clipboard: true, restart: true })
     r.session.input(KEY_A)
     r.session.input(CLICK)
     r.session.input({ kind: 'wheel', deltaX: 0, deltaY: 10, modifiers: NO_MODIFIERS })

@@ -8,7 +8,15 @@ import {
 } from '../proto/gen/message_pb.js'
 import { DEFAULT_FPS } from '../video/fps-governor'
 import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
-import { loginOption, loginSettings, optionPatch, qualityFields, ungoverned } from './protocol'
+import {
+  NO_INTENT,
+  intentPatch,
+  loginOption,
+  loginSettings,
+  optionPatch,
+  qualityFields,
+  ungoverned,
+} from './protocol'
 import { DEFAULT_SETTINGS, type Quality, type RemoteSettings } from './settings'
 
 const with_ = (patch: Partial<RemoteSettings>): RemoteSettings => ({
@@ -127,5 +135,85 @@ describe('optionPatch', () => {
   it('carries both when both changed', () => {
     const patch = optionPatch(DEFAULT_SETTINGS, with_({ quality: 'low', fps: 20 }))
     expect(patch).toEqual({ quality: 'low', maxFps: 20 })
+  })
+})
+
+const { Yes, No } = OptionMessage_BoolOption
+const VIEW_ONLY = { ...NO_INTENT, viewOnly: true }
+const LOCK = { ...NO_INTENT, lockAfterEnd: true }
+
+describe('loginOption with the session intent', () => {
+  it('asks for nothing extra by default', () => {
+    expect(loginOption(DEFAULT_SETTINGS, NO_INTENT)).toMatchObject({
+      disableKeyboard: 0,
+      disableClipboard: 0,
+      lockAfterSessionEnd: 0,
+    })
+  })
+
+  it('view only: no keyboard, no clipboard, as the official client logs in', () => {
+    expect(loginOption(DEFAULT_SETTINGS, VIEW_ONLY)).toMatchObject({
+      disableKeyboard: Yes,
+      disableClipboard: Yes,
+      lockAfterSessionEnd: 0,
+      showRemoteCursor: Yes,
+    })
+  })
+
+  it('lock after the session ends', () => {
+    expect(loginOption(DEFAULT_SETTINGS, LOCK).lockAfterSessionEnd).toBe(Yes)
+  })
+
+  it('sends no lock when viewing only: the peer would lock the screen of someone who never touched it', () => {
+    const option = loginOption(DEFAULT_SETTINGS, { viewOnly: true, lockAfterEnd: true })
+    expect(option.lockAfterSessionEnd).toBe(0)
+  })
+})
+
+describe('intentPatch', () => {
+  it('is null when nothing changed', () => {
+    expect(intentPatch(NO_INTENT, NO_INTENT)).toBeNull()
+    expect(intentPatch(VIEW_ONLY, VIEW_ONLY)).toBeNull()
+  })
+
+  it('turns view only on with the three fields the official client sets, and the local flag', () => {
+    expect(intentPatch(NO_INTENT, VIEW_ONLY)).toMatchObject({
+      viewOnly: true,
+      peer: { disableKeyboard: Yes, disableClipboard: Yes, lockAfterSessionEnd: 0 },
+    })
+  })
+
+  it('turns view only off again', () => {
+    expect(intentPatch(VIEW_ONLY, NO_INTENT)).toMatchObject({
+      viewOnly: false,
+      peer: { disableKeyboard: No, disableClipboard: No, lockAfterSessionEnd: 0 },
+    })
+  })
+
+  it('sends only the lock field when only the lock changed', () => {
+    const on = intentPatch(NO_INTENT, LOCK)
+    expect(on).not.toHaveProperty('viewOnly')
+    expect(on?.peer).toMatchObject({
+      lockAfterSessionEnd: Yes,
+      disableKeyboard: 0,
+      disableClipboard: 0,
+    })
+    expect(intentPatch(LOCK, NO_INTENT)?.peer).toMatchObject({ lockAfterSessionEnd: No })
+  })
+
+  it('turns the lock off while view only goes on, and back on after it', () => {
+    const both = { viewOnly: true, lockAfterEnd: true }
+    expect(intentPatch(LOCK, both)?.peer).toMatchObject({
+      disableKeyboard: Yes,
+      lockAfterSessionEnd: No,
+    })
+    expect(intentPatch(both, LOCK)?.peer).toMatchObject({
+      disableKeyboard: No,
+      lockAfterSessionEnd: Yes,
+    })
+  })
+
+  it('tells the peer nothing about a lock that view only keeps from being sent', () => {
+    expect(intentPatch(VIEW_ONLY, { viewOnly: true, lockAfterEnd: true })).toBeNull()
   })
 })

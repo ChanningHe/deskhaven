@@ -154,7 +154,7 @@ describe('remote screen cursor', () => {
   ])('%s: a plain local pointer, the peer cursor always drawn', (_, { viewOnly, keyboard }) => {
     const { session, overlay } = shown({ viewOnly, showRemoteCursor: false })
     act(() => {
-      session.permissions.set({ keyboard, clipboard: true })
+      session.permissions.set({ keyboard, clipboard: true, restart: true })
     })
     expect(localCursor(overlay)).toBe('default')
     peerMovesTo(session, 640, 400)

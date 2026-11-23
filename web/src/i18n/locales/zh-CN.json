@@ -1733,7 +1733,13 @@
       "link": "与中继服务器的连接已断开：{{reason}}",
       "other": "会话已结束：{{reason}}",
       "reconnect": "重新连接",
-      "sessionSwitch": "设备正在切换到你选择的会话，请几秒后重新连接。"
+      "sessionSwitch": "设备正在切换到你选择的会话，请几秒后重新连接。",
+      "restarting": "远端正在重启。等设备重新上线后再连接。"
+    },
+    "restart": {
+      "title": "重启远端设备？",
+      "description": "设备会重启并断开本次连接；重启期间无法控制，未保存的内容可能丢失。",
+      "confirm": "重启"
     },
     "errors": {
       "title": "无法连接",
@@ -1759,6 +1765,11 @@
       "inputMenuHint": "输入：键盘模式和组合键。连按两次 Esc 离开远程画面。",
       "clipboardMenu": "剪贴板",
       "clipboardMenuHint": "剪贴板：在本机和设备之间传递文本",
+      "actionsMenu": "操作",
+      "actionsMenuHint": "操作：仅查看、会话结束后锁定、重启远端",
+      "viewOnly": "仅查看",
+      "lockAfterEnd": "会话结束后锁定",
+      "restart": "重启远端",
       "quality": "画质",
       "qualities": {
         "low": "低",
@@ -1845,6 +1856,7 @@
     "status": {
       "connecting": "连接中",
       "active": "已连接",
+      "viewOnly": "仅查看",
       "ended": "未连接"
     },
     "transport": {

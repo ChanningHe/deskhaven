@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { RemotePhase } from '../connect/controller'
 import type { Session } from '../session/session'
+import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
@@ -14,36 +15,19 @@ import {
   SecretPanel,
   WindowsSessionPanel,
 } from './panels'
-import { RemoteBar, type BarFrame, type BarStatus } from './remote-bar'
+import type { BarFrame } from './remote-bar'
 import { RemoteView } from './remote-view'
 import { useRemote, useStore } from './use-remote'
+import { Waiting } from './waiting'
 
 interface Actions {
   frame: BarFrame
   settings: RemoteSettings
   onSettings: (patch: Partial<RemoteSettings>) => void
+  intent: SessionIntent
+  onIntent: (patch: Partial<SessionIntent>) => void
   onReconnect: () => void
   onDisconnect: () => void
-}
-
-/** A step before (or after) the screen: the bar, and one panel in the middle of the stage. */
-function Waiting({
-  frame,
-  status,
-  children,
-}: {
-  frame: BarFrame
-  status: BarStatus
-  children: ReactNode
-}) {
-  return (
-    <>
-      <RemoteBar {...frame} status={status} />
-      <div className="flex min-h-0 flex-1 overflow-y-auto bg-muted/40 px-4 py-8 sm:pb-[12vh] dark:bg-background">
-        <div className="m-auto w-full max-w-md">{children}</div>
-      </div>
-    </>
-  )
 }
 
 function SessionStep({
@@ -51,6 +35,8 @@ function SessionStep({
   frame,
   settings,
   onSettings,
+  intent,
+  onIntent,
   onReconnect,
   onDisconnect,
 }: { session: Session } & Actions) {
@@ -115,6 +101,8 @@ function SessionStep({
           frame={frame}
           settings={settings}
           onSettings={onSettings}
+          intent={intent}
+          onIntent={onIntent}
           onDisconnect={onDisconnect}
         />
       )
@@ -183,10 +171,16 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
  * with one thin bar, outside the console's sidebar and top bar.
  */
 export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactNode }) {
-  const { phase, transport, settings, updateSettings, reconnect, disconnect } = useRemote(
-    deviceId,
-    useContext(RemoteDepsContext),
-  )
+  const {
+    phase,
+    transport,
+    settings,
+    updateSettings,
+    intent,
+    updateIntent,
+    reconnect,
+    disconnect,
+  } = useRemote(deviceId, useContext(RemoteDepsContext))
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
@@ -194,6 +188,8 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
         frame={{ deviceId, back, transport: transport === 'connecting' ? undefined : transport }}
         settings={settings}
         onSettings={updateSettings}
+        intent={intent}
+        onIntent={updateIntent}
         onReconnect={reconnect}
         onDisconnect={disconnect}
       />

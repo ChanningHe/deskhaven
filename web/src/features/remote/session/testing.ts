@@ -155,10 +155,14 @@ export class FakeHandshake implements Handshake {
   }
 }
 
-export async function fakeLinkSession(link: LinkKind, clock: StatsClock) {
+export async function fakeLinkSession(
+  link: LinkKind,
+  clock: StatsClock,
+  options: Omit<SessionOptions, 'createDecoder' | 'clock'> = {},
+) {
   const handshake = new FakeHandshake(link)
   const decoders = new FakeDecoders()
-  const session = startSession(handshake, { createDecoder: decoders.create, clock })
+  const session = startSession(handshake, { ...options, createDecoder: decoders.create, clock })
   handshake.events.push({ kind: 'state', state: { kind: 'active', peerInfo: PEER_INFO } })
   await vi.waitFor(() => {
     if (session.state.get().kind !== 'active') throw new Error('session not active yet')

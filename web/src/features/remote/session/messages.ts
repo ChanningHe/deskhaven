@@ -28,6 +28,7 @@ export interface OptionPatch {
   peer?: OptionMessage
   maxFps?: number
   quality?: Quality
+  viewOnly?: boolean
 }
 
 export function optionMessage(option: OptionMessage): Message {
@@ -53,6 +54,12 @@ export function refreshVideo(display: number, peerVersion: string): Message {
 export function closeReason(reason = ''): Message {
   return misc({ case: 'closeReason', value: reason })
 }
+
+export function restartRemote(): Message {
+  return misc({ case: 'restartRemoteDevice', value: true })
+}
+
+export const RESTART_REASON = 'the device is restarting'
 
 /** Answers PeerInfo.windows_sessions (rustdesk 1.5.1 src/ui_session_interface.rs:1629-1636). */
 export function selectedSid(sid: number): Message {
