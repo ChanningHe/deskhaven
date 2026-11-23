@@ -5,9 +5,15 @@ export interface Permissions {
   keyboard: boolean
   clipboard: boolean
   restart: boolean
+  audio: boolean
 }
 
-export const ALL_ALLOWED: Permissions = { keyboard: true, clipboard: true, restart: true }
+export const ALL_ALLOWED: Permissions = {
+  keyboard: true,
+  clipboard: true,
+  restart: true,
+  audio: true,
+}
 
 // rustdesk 1.5.0 src/client/io_loop.rs:2042-2062. The keyboard permission is the peer's
 // switch for all input: its server drops mouse events too while it is off.
@@ -23,6 +29,8 @@ export function withPermission(
       return { ...current, clipboard: enabled }
     case PermissionInfo_Permission.Restart:
       return { ...current, restart: enabled }
+    case PermissionInfo_Permission.Audio:
+      return { ...current, audio: enabled }
     default:
       return current
   }

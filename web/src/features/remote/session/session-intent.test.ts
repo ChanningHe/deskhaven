@@ -132,7 +132,12 @@ describe('view only', () => {
 describe('restart permission', () => {
   it('starts allowed: the peer reports only a no (rustdesk 1.5.0 connection.rs:687-689)', async () => {
     const { session } = await start()
-    expect(session.permissions.get()).toEqual({ keyboard: true, clipboard: true, restart: true })
+    expect(session.permissions.get()).toEqual({
+      keyboard: true,
+      clipboard: true,
+      restart: true,
+      audio: true,
+    })
   })
 
   it('follows what the peer reports', async () => {

@@ -274,7 +274,7 @@ describe('useClipboardSync: paste', () => {
 
   it('sends nothing when the device turned the clipboard off', async () => {
     const session = new FakeSession()
-    session.permissions.set({ keyboard: true, clipboard: false, restart: true })
+    session.permissions.set({ keyboard: true, clipboard: false, restart: true, audio: true })
     await mount('granted', { session })
     press('paste')
     expect(session.pasted).toEqual([])
@@ -377,7 +377,7 @@ describe('useClipboardSync: off', () => {
 
   it('neither reads nor writes when the device turned the clipboard off', async () => {
     const session = new FakeSession()
-    session.permissions.set({ keyboard: true, clipboard: false, restart: true })
+    session.permissions.set({ keyboard: true, clipboard: false, restart: true, audio: true })
     await mount('granted', { session })
     peerCopies(session, 'from the device')
     await focusWindow()

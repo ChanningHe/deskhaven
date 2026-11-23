@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 
+import { Speaker } from '../audio/speaker'
 import {
   RemoteController,
   type ConnectDeps,
@@ -23,6 +24,7 @@ export interface Remote {
   updateSettings: (patch: Partial<RemoteSettings>) => void
   intent: SessionIntent
   updateIntent: (patch: Partial<SessionIntent>) => void
+  speaker: Speaker
   reconnect: () => void
   disconnect: () => void
 }
@@ -46,10 +48,27 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
     }
   }, [controller])
 
+  const speaker = useMemo(() => new Speaker(deps.audio), [deps])
+  const settings = useStore(controller.settings)
+  const { supported, running } = useStore(speaker.view)
+  useEffect(() => {
+    void speaker.probe()
+    return () => {
+      speaker.stop()
+    }
+  }, [speaker])
+  useEffect(() => {
+    if (settings.audio && supported) speaker.prepare()
+    else speaker.stop()
+  }, [speaker, settings.audio, supported])
+  useEffect(() => {
+    controller.setAudioRunning(running)
+  }, [controller, running])
+
   return {
     phase: useStore(controller.phase),
     transport: useStore(controller.transport),
-    settings: useStore(controller.settings),
+    settings,
     updateSettings: (patch) => {
       controller.updateSettings(patch)
     },
@@ -57,6 +76,7 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
     updateIntent: (patch) => {
       controller.updateIntent(patch)
     },
+    speaker,
     reconnect: () => {
       controller.connect()
     },

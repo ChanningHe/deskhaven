@@ -62,6 +62,12 @@ describe('loginOption', () => {
     expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 30 })
   })
 
+  it('never asks for audio at login: no AudioContext runs before a click', () => {
+    const settings = with_({ audio: true })
+    expect(loginOption(settings).disableAudio).toBe(OptionMessage_BoolOption.NotSet)
+    expect(loginSettings(settings).audio).toBe(false)
+  })
+
   it('always asks for the remote cursor: without it the peer sends no CursorPosition', () => {
     for (const showRemoteCursor of [true, false]) {
       expect(loginOption(with_({ showRemoteCursor })).showRemoteCursor).toBe(
@@ -113,9 +119,25 @@ describe('optionPatch', () => {
     expect(
       optionPatch(
         DEFAULT_SETTINGS,
-        with_({ scale: 'original', showRemoteCursor: false, clipboardSync: false, audio: true }),
+        with_({ scale: 'original', showRemoteCursor: false, clipboardSync: false }),
       ),
     ).toBeNull()
+  })
+
+  it.each([
+    [false, true, OptionMessage_BoolOption.No],
+    [true, false, OptionMessage_BoolOption.Yes],
+  ])('turns sound from %s to %s with disable_audio %i alone', (before, after, disableAudio) => {
+    const patch = optionPatch(with_({ audio: before }), with_({ audio: after }))
+    expect(patch).toEqual({ peer: create(OptionMessageSchema, { disableAudio }) })
+  })
+
+  it('sends the sound beside a quality change', () => {
+    const patch = optionPatch(DEFAULT_SETTINGS, with_({ audio: true, quality: 'best' }))
+    expect(patch).toEqual({
+      quality: 'best',
+      peer: create(OptionMessageSchema, { disableAudio: OptionMessage_BoolOption.No }),
+    })
   })
 
   it.each<[Quality, Quality]>([

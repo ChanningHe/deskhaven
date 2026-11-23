@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import type { Speaker } from '../audio/speaker'
 import type { Session } from '../session/session'
 import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
@@ -74,6 +75,7 @@ export function RemoteView({
   onSettings,
   intent,
   onIntent,
+  speaker,
   onDisconnect,
 }: {
   session: Session
@@ -82,6 +84,7 @@ export function RemoteView({
   onSettings: (patch: Partial<RemoteSettings>) => void
   intent: SessionIntent
   onIntent: (patch: Partial<SessionIntent>) => void
+  speaker: Speaker
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
@@ -153,6 +156,7 @@ export function RemoteView({
             onSettings={onSettings}
             intent={intent}
             onIntent={onIntent}
+            speaker={speaker}
             stats={stats}
             onStats={setStats}
             fullscreen={fullscreen}

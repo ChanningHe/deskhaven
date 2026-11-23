@@ -6,6 +6,7 @@ import {
   pollWebClientCandidates,
 } from '@/api/generated/web-client/web-client'
 
+import { browserAudio, type AudioDeps } from '../audio/speaker'
 import { decodeBase64 } from '../bytes'
 import {
   IDENTITY_TIMEOUT_MS,
@@ -92,6 +93,7 @@ export interface ConnectDeps {
   storage?: Storage | null
   random?: () => number
   page?: PageVisibility
+  audio?: AudioDeps
 }
 
 const documentPage: PageVisibility = {
@@ -133,6 +135,7 @@ export const browserDeps: ConnectDeps = {
       pollWebClientCandidates(sessionId, { after }, { signal }),
   },
   page: documentPage,
+  audio: browserAudio,
 }
 
 /**
@@ -189,6 +192,7 @@ export class RemoteController {
   #lostAt: number | null = null
   #cancelRetry: (() => void) | null = null
   #cancelSteady: (() => void) | null = null
+  #audioRunning = false
 
   constructor(deviceId: string, deps: ConnectDeps = browserDeps) {
     this.#deviceId = deviceId
@@ -214,6 +218,12 @@ export class RemoteController {
 
   updateIntent(patch: Partial<SessionIntent>): void {
     this.#intent.set({ ...this.#intent.get(), ...patch })
+    if (this.#current) this.#sync(this.#current)
+  }
+
+  setAudioRunning(running: boolean): void {
+    if (running === this.#audioRunning) return
+    this.#audioRunning = running
     if (this.#current) this.#sync(this.#current)
   }
 
@@ -331,6 +341,11 @@ export class RemoteController {
     const session = this.#deps.startSession(link, params, attempt.toldIntent)
     attempt.session = session
     let handshaken = false
+    const unwatch = [session.permissions, session.audio.state].map((store) =>
+      store.subscribe(() => {
+        this.#sync(attempt)
+      }),
+    )
     const stop = session.state.subscribe(() => {
       const state = session.state.get()
       if (state.kind !== 'closed') {
@@ -341,6 +356,7 @@ export class RemoteController {
         return
       }
       stop()
+      for (const off of unwatch) off()
       if (!handshaken && link.kind === 'webrtc' && state.cause.by !== 'user') {
         this.#relayOnly = true
       }
@@ -478,7 +494,11 @@ export class RemoteController {
   #sync(attempt: Attempt): void {
     const { session, told, toldIntent } = attempt
     if (!session || !told || !toldIntent || session.state.get().kind !== 'active') return
-    const settings = this.#settings.get()
+    const chosen = this.#settings.get()
+    // Before a click the AudioContext is suspended: a peer asked for audio would stream it unheard.
+    const playable = session.permissions.get().audio && session.audio.state.get() === 'ok'
+    const audio = chosen.audio && this.#audioRunning && playable
+    const settings = { ...chosen, audio }
     const intent = this.#intent.get()
     const patches = [optionPatch(told, settings), intentPatch(toldIntent, intent)]
     attempt.told = settings

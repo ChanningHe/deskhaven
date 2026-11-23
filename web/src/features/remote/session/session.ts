@@ -1,3 +1,5 @@
+import { webCodecsAudio } from '../audio/decoder'
+import { AudioPipeline } from '../audio/pipeline'
 import { clipboardMessage, clipboardText } from '../clipboard/clipboard'
 import { CursorTracker, type CursorImages, type CursorView } from '../cursor/cursor'
 import type { CloseBy, CloseCause, Handshake } from '../handshake/handshake'
@@ -9,7 +11,7 @@ import type { KeyboardMode, Message, Misc, PeerInfo } from '../proto/gen/message
 import { qualityOption, ungoverned } from '../settings/protocol'
 import type { Quality } from '../settings/settings'
 import { TransportError } from '../transport/transport'
-import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
+import { createWebCodecsDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
 import { VideoPipeline } from '../video/pipeline'
 import { QualityGovernor } from '../video/quality-governor'
@@ -54,12 +56,7 @@ const SERVED = new Set<Message['union']['case']>([
 
 /** Runs a remote control session over a handshake from `startHandshake`, from login on. */
 export function startSession(handshake: Handshake, options: SessionOptions = {}): Session {
-  const session = new RemoteSession(
-    handshake,
-    options.createDecoder ?? createWebCodecsDecoder,
-    options.clock ?? realClock,
-    options.viewOnly ?? false,
-  )
+  const session = new RemoteSession(handshake, options)
   void session.run()
   return session
 }
@@ -70,6 +67,7 @@ class RemoteSession implements Session {
   readonly cursor = new ValueStore<CursorView>({ shape: null, position: null })
   readonly permissions = new ValueStore<Permissions>(ALL_ALLOWED)
   readonly remoteClipboard = new ValueStore<string | null>(null)
+  readonly audio: AudioPipeline
   readonly #frames = new FrameQueue()
   readonly #handshake: Handshake
   readonly #video: VideoPipeline
@@ -85,15 +83,12 @@ class RemoteSession implements Session {
   #pointer: Extract<RemoteInput, { kind: 'pointer' }> | null = null
   #restartedAt: number | null = null
 
-  constructor(
-    handshake: Handshake,
-    createDecoder: CreateDecoder,
-    clock: StatsClock,
-    viewOnly: boolean,
-  ) {
+  constructor(handshake: Handshake, options: SessionOptions) {
+    const clock = options.clock ?? realClock
     this.#handshake = handshake
     this.#clock = clock
-    this.#viewOnly = viewOnly
+    this.#viewOnly = options.viewOnly ?? false
+    this.audio = new AudioPipeline(options.audioDecoders ?? webCodecsAudio, () => clock.now())
     this.#meter = new SessionMeter(this.state, clock, () => ({
       decodeQueue: this.#video.decodeQueueSize,
       codec: this.#video.codec,
@@ -107,7 +102,7 @@ class RemoteSession implements Session {
     })
     this.#governor = governor
     this.#video = new VideoPipeline({
-      createDecoder,
+      createDecoder: options.createDecoder ?? createWebCodecsDecoder,
       onFrame: (frame) => {
         this.#frames.push(frame)
       },
@@ -302,6 +297,7 @@ class RemoteSession implements Session {
       this.#switchingSession = false
       this.state.set({ kind: 'active' })
     }
+    if (this.audio.receive(message)) return
     switch (union.case) {
       case 'videoFrame':
         this.#video.push(union.value)
@@ -390,6 +386,7 @@ class RemoteSession implements Session {
       cause: this.#restarting(cause) ?? { by, reason: cause.reason },
     })
     this.#video.close()
+    this.audio.close()
     this.#frames.end()
     this.#cursors.close()
   }

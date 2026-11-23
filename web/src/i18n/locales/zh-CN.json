@@ -1837,6 +1837,22 @@
         "custom": "自定义 {{level}}"
       }
     },
+    "sound": {
+      "probing": "声音",
+      "probingHint": "正在检查浏览器能否播放声音",
+      "unsupported": "此浏览器无法播放设备声音",
+      "unsupportedHint": "此浏览器无法解码设备的声音（Opus），请换用 Chrome、Edge 或 Firefox 130 以上版本。",
+      "denied": "设备不允许传输声音",
+      "deniedHint": "设备不允许传输声音。",
+      "off": "开启声音",
+      "offHint": "开启声音",
+      "suspended": "点击开启声音",
+      "suspendedHint": "浏览器需要点击一次才能播放声音",
+      "on": "关闭声音",
+      "onHint": "关闭声音",
+      "failed": "声音解码失败，点击关闭",
+      "failedHint": "声音解码多次失败，已停止播放。点击关闭声音，再开启可重试。"
+    },
     "clipboard": {
       "pasteTitle": "发送文本到设备",
       "pasteHint": "浏览器不允许此页面读取剪贴板。请把文本粘贴到这里。",

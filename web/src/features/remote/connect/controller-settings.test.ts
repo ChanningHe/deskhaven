@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ImageQuality } from '../proto/gen/message_pb.js'
+import { ImageQuality, OptionMessage_BoolOption } from '../proto/gen/message_pb.js'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type RemoteSettings } from '../settings/settings'
 import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
 import { RemoteController } from './controller'
@@ -127,7 +127,6 @@ describe('RemoteController settings in a session', () => {
     { scale: 'original' },
     { clipboardSync: false },
     { showRemoteCursor: false },
-    { audio: true },
   ] satisfies Partial<RemoteSettings>[])('tells the session nothing about %o', async (patch) => {
     const f = await connected()
     f.session.activate()
@@ -182,5 +181,70 @@ describe('RemoteController settings in a session', () => {
     f.sessions[1]?.activate()
     expect(f.sessions[1]?.patches).toEqual([{ quality: 'low' }])
     expect(f.session.patches).toEqual([])
+  })
+})
+
+describe('RemoteController sound', () => {
+  const { Yes, No } = OptionMessage_BoolOption
+  const sent = (f: Awaited<ReturnType<typeof connected>>, session = f.session) =>
+    session.patches.flatMap((p) => (p.peer?.disableAudio ? [p.peer.disableAudio] : []))
+
+  it('logs in without audio even when the setting is on', async () => {
+    const f = await connected({ audio: true })
+    f.controller.setAudioRunning(true)
+    expect(loginOptionOf(f)?.disableAudio).not.toBe(No)
+  })
+
+  it('asks for audio only once the setting is on and the AudioContext runs', async () => {
+    const f = await connected({ audio: true })
+    f.session.activate()
+    expect(sent(f)).toEqual([])
+    f.controller.setAudioRunning(true)
+    expect(sent(f)).toEqual([No])
+  })
+
+  it('turns audio off when the context is suspended or closed, and on again when it runs', async () => {
+    const f = await connected()
+    f.session.activate()
+    f.session.patches.length = 0
+    f.controller.setAudioRunning(true)
+    f.controller.updateSettings({ audio: true })
+    f.controller.setAudioRunning(false)
+    f.controller.setAudioRunning(true)
+    f.controller.updateSettings({ audio: false })
+    expect(sent(f)).toEqual([No, Yes, No, Yes])
+  })
+
+  it('follows the peer taking the audio permission away and back', async () => {
+    const f = await connected({ audio: true })
+    f.session.activate()
+    f.controller.setAudioRunning(true)
+    f.session.permissions.set({ ...f.session.permissions.get(), audio: false })
+    f.session.permissions.set({ ...f.session.permissions.get(), audio: true })
+    expect(sent(f)).toEqual([No, Yes, No])
+  })
+
+  it('stops asking while the session cannot play the audio, and asks again once it can', async () => {
+    const f = await connected({ audio: true })
+    f.session.activate()
+    f.controller.setAudioRunning(true)
+    f.session.audio.state.set('failed')
+    f.session.audio.state.set('ok')
+    f.session.audio.state.set('unsupported')
+    expect(sent(f)).toEqual([No, Yes, No, Yes])
+  })
+
+  it('asks the next session for audio once it is active', async () => {
+    const f = await connected({ audio: true })
+    f.controller.setAudioRunning(true)
+    f.session.activate()
+    f.controller.connect()
+    await settle()
+    expect(loginOptionOf(f, 1)?.disableAudio).not.toBe(No)
+    const next = f.sessions[1]
+    if (!next) throw new Error('no second session')
+    expect(sent(f, next)).toEqual([])
+    next.activate()
+    expect(sent(f, next)).toEqual([No])
   })
 })

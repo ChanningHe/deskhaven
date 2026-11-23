@@ -1,3 +1,5 @@
+import type { AudioDecoders } from '../audio/decoder'
+import type { AudioPlayback } from '../audio/pipeline'
 import type { CursorImages, CursorView } from '../cursor/cursor'
 import type { CloseCause } from '../handshake/handshake'
 import type { LoginState } from '../handshake/login'
@@ -27,6 +29,7 @@ export interface Session {
   /** The text the peer last copied; null until it copies some. */
   readonly remoteClipboard: Store<string | null>
   readonly stats: Store<SessionStats>
+  readonly audio: AudioPlayback
   /**
    * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
    * drawImage at displayWidth × displayHeight: codedWidth carries padding and the pixel format
@@ -55,6 +58,7 @@ export interface Session {
 
 export interface SessionOptions {
   createDecoder?: CreateDecoder
+  audioDecoders?: AudioDecoders
   clock?: StatsClock
   viewOnly?: boolean
 }

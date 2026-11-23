@@ -2,6 +2,7 @@ import { useContext } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { Speaker } from '../audio/speaker'
 import type { RemotePhase } from '../connect/controller'
 import type { Session } from '../session/session'
 import type { SessionIntent } from '../settings/protocol'
@@ -26,6 +27,7 @@ interface Actions {
   onSettings: (patch: Partial<RemoteSettings>) => void
   intent: SessionIntent
   onIntent: (patch: Partial<SessionIntent>) => void
+  speaker: Speaker
   onReconnect: () => void
   onDisconnect: () => void
 }
@@ -37,6 +39,7 @@ function SessionStep({
   onSettings,
   intent,
   onIntent,
+  speaker,
   onReconnect,
   onDisconnect,
 }: { session: Session } & Actions) {
@@ -103,6 +106,7 @@ function SessionStep({
           onSettings={onSettings}
           intent={intent}
           onIntent={onIntent}
+          speaker={speaker}
           onDisconnect={onDisconnect}
         />
       )
@@ -178,6 +182,7 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
     updateSettings,
     intent,
     updateIntent,
+    speaker,
     reconnect,
     disconnect,
   } = useRemote(deviceId, useContext(RemoteDepsContext))
@@ -190,6 +195,7 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
         onSettings={updateSettings}
         intent={intent}
         onIntent={updateIntent}
+        speaker={speaker}
         onReconnect={reconnect}
         onDisconnect={disconnect}
       />

@@ -33,7 +33,12 @@ export function qualityOption(quality: Quality): OptionMessage {
 }
 
 export function loginSettings(settings: RemoteSettings): RemoteSettings {
-  return { ...settings, quality: START_QUALITY, fps: Math.min(settings.fps, DEFAULT_FPS) }
+  return {
+    ...settings,
+    quality: START_QUALITY,
+    fps: Math.min(settings.fps, DEFAULT_FPS),
+    audio: false,
+  }
 }
 
 export interface SessionIntent {
@@ -44,6 +49,10 @@ export interface SessionIntent {
 export const NO_INTENT: SessionIntent = { viewOnly: false, lockAfterEnd: false }
 
 const { Yes, No, NotSet } = OptionMessage_BoolOption
+
+function disableAudio(settings: RemoteSettings): OptionMessage_BoolOption {
+  return settings.audio ? No : Yes
+}
 
 // rustdesk 1.5.0 src/client.rs:3304-3324,3422-3449: view only disables keyboard and clipboard, no lock
 function intentFields(intent: SessionIntent) {
@@ -100,5 +109,8 @@ export function optionPatch(prev: RemoteSettings, next: RemoteSettings): OptionP
   const patch: OptionPatch = {}
   if (!sameQuality(prev.quality, next.quality)) patch.quality = next.quality
   if (prev.fps !== next.fps) patch.maxFps = next.fps
-  return patch.quality !== undefined || patch.maxFps !== undefined ? patch : null
+  if (prev.audio !== next.audio) {
+    patch.peer = create(OptionMessageSchema, { disableAudio: disableAudio(next) })
+  }
+  return patch.quality !== undefined || patch.maxFps !== undefined || patch.peer ? patch : null
 }

@@ -1837,6 +1837,22 @@
         "custom": "Custom {{level}}"
       }
     },
+    "sound": {
+      "probing": "Sound",
+      "probingHint": "Checking whether this browser can play sound",
+      "unsupported": "This browser cannot play the device's sound",
+      "unsupportedHint": "This browser cannot decode the device's sound (Opus). Use Chrome, Edge, or Firefox 130 or later.",
+      "denied": "The device does not share its sound",
+      "deniedHint": "The device does not share its sound.",
+      "off": "Turn sound on",
+      "offHint": "Turn sound on",
+      "suspended": "Click to turn sound on",
+      "suspendedHint": "The browser needs one click before it plays sound",
+      "on": "Turn sound off",
+      "onHint": "Turn sound off",
+      "failed": "Sound decoding failed, click to turn off",
+      "failedHint": "Sound failed to decode several times and stopped. Turn it off, then on again to retry."
+    },
     "clipboard": {
       "pasteTitle": "Send text to the device",
       "pasteHint": "The browser did not let this page read the clipboard. Paste the text here.",

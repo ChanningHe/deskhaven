@@ -2,6 +2,7 @@ import { Maximize, Minimize } from 'lucide-react'
 import type { Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { Speaker } from '../audio/speaker'
 import type { Session } from '../session/session'
 import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
@@ -9,6 +10,7 @@ import { ActionsMenu } from './menus/actions-menu'
 import { ClipboardMenu, type ClipboardSyncSwitch } from './menus/clipboard-menu'
 import { DisplayMenu } from './menus/display-menu'
 import { InputMenu } from './menus/input-menu'
+import { SoundButton } from './sound-button'
 import { IconButton } from './toolbar-controls'
 
 interface ToolbarProps {
@@ -18,6 +20,7 @@ interface ToolbarProps {
   onSettings: (patch: Partial<RemoteSettings>) => void
   intent: SessionIntent
   onIntent: (patch: Partial<SessionIntent>) => void
+  speaker: Speaker
   stats: boolean
   onStats: (on: boolean) => void
   fullscreen: boolean
@@ -35,6 +38,7 @@ export function Toolbar({
   onSettings,
   intent,
   onIntent,
+  speaker,
   stats,
   onStats,
   fullscreen,
@@ -72,6 +76,14 @@ export function Toolbar({
         onShowRemote={onShowRemoteClipboard}
       />
       <ActionsMenu session={session} intent={intent} onIntent={onIntent} />
+      <SoundButton
+        session={session}
+        speaker={speaker}
+        enabled={settings.audio}
+        onEnabled={(audio) => {
+          onSettings({ audio })
+        }}
+      />
       <IconButton
         label={fullscreenLabel}
         hint={

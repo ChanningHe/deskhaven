@@ -63,7 +63,9 @@ uploads that directory when a run fails.
 `codec/` holds browser checks of the remote client's media path that need no server, under
 their own config. `vp9-decode.codec.ts` bundles `src/features/remote/video/decode-check.ts`
 with Vite, loads it into Chromium on an https page (WebCodecs needs a secure context) and
-decodes the relay fixture's captured VP9 key frame through the video pipeline:
+decodes the relay fixture's captured VP9 key frame through the video pipeline.
+`opus-decode.codec.ts` encodes a tone into 10 ms Opus packets the way the peer does, clicks to
+let the page start an AudioContext, and plays them through the audio pipeline (`audio/`):
 
 ```sh
 cd web

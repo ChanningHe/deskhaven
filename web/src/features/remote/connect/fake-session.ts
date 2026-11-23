@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf'
 
 import type { WebClientSession } from '@/api/generated/model'
 
+import type { AudioOutput, AudioPlayback, AudioState } from '../audio/pipeline'
 import type { CursorImages, CursorShape, CursorView } from '../cursor/cursor'
 import type { RemoteInput } from '../input/input'
 import { DisplayInfoSchema, KeyboardMode, PeerInfoSchema } from '../proto/gen/message_pb.js'
@@ -29,6 +30,19 @@ class KeptCursorImages implements CursorImages {
   }
 }
 
+export class FakeAudio implements AudioPlayback {
+  readonly state = new ValueStore<AudioState>('ok')
+  readonly outputs: (AudioOutput | null)[] = []
+
+  get output(): AudioOutput | null {
+    return this.outputs.at(-1) ?? null
+  }
+
+  play(output: AudioOutput | null): void {
+    if (output !== this.output) this.outputs.push(output)
+  }
+}
+
 /** A Session the test drives by hand; it records what the page asks of it. */
 export class FakeSession implements Session {
   readonly state = new ValueStore<SessionState>({ kind: 'connecting' })
@@ -38,6 +52,7 @@ export class FakeSession implements Session {
   readonly permissions = new ValueStore<Permissions>(ALL_ALLOWED)
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly stats = new ValueStore<SessionStats>(NO_STATS)
+  readonly audio = new FakeAudio()
   readonly queue = new FrameQueue()
   readonly logins: string[] = []
   readonly codes: string[] = []
