@@ -79,7 +79,6 @@ export function loginRequest(fields: LoginFields, password: Uint8Array): Message
         myPlatform: CLIENT_PLATFORM,
         version: CLIENT_VERSION,
         sessionId: fields.sessionId,
-        videoAckRequired: true,
         option: create(OptionMessageSchema, {
           disableAudio: OptionMessage_BoolOption.Yes,
           supportedDecoding: fields.decoding,

@@ -69,12 +69,15 @@ export type Link =
   | { kind: 'relay'; transport: KeyedTransport }
   | { kind: 'webrtc'; transport: Transport; remoteFingerprint: string }
 
+export type LinkKind = Link['kind']
+
 export type HandshakeEvent =
   | { kind: 'state'; state: LoginState }
   | { kind: 'message'; message: Message }
   | { kind: 'closed'; reason: string }
 
 export interface Handshake {
+  readonly link: LinkKind
   /** State changes and every peer message the handshake does not consume; ends with `closed`. */
   readonly events: AsyncIterable<HandshakeEvent>
   /** Before the peer's Hash arrives, the password is kept for it; afterwards it is sent. */
@@ -132,6 +135,10 @@ class PeerHandshake implements Handshake {
     this.#params = params
     this.#random = random
     this.#startTimer = startTimer
+  }
+
+  get link(): LinkKind {
+    return this.#link.kind
   }
 
   get events(): AsyncIterable<HandshakeEvent> {

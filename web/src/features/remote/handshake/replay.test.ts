@@ -83,7 +83,7 @@ describe('relay replay against the captured 1.4.5 peer (key exchange v0)', () =>
       myPlatform: 'Web',
       version: CLIENT_VERSION,
       sessionId: SESSION_ID,
-      videoAckRequired: true,
+      videoAckRequired: false,
       option: {
         disableAudio: OptionMessage_BoolOption.Yes,
         supportedDecoding: {

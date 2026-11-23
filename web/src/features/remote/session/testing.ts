@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf'
 import { vi } from 'vitest'
 
+import { AsyncQueue } from '../async-queue'
 import { fixtureBytes, fixtureSession } from '../__fixtures__/fixtures'
 import { msg, replayToKeyed, sealed, type Replay } from '../__fixtures__/harness'
 import {
@@ -12,6 +13,7 @@ import {
   type Misc,
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
+import type { Handshake, HandshakeEvent, LinkKind } from '../handshake/handshake'
 import { FakeDecoders } from '../video/fake-decoder'
 import { startSession, type Session, type SessionOptions, type SessionState } from './session'
 import { STATS_INTERVAL_MS, type StatsClock } from './stats'
@@ -118,4 +120,46 @@ export class FakeClock implements StatsClock {
     this.#now += ms
     for (const onTick of [...this.#timers]) onTick()
   }
+}
+
+export class FakeHandshake implements Handshake {
+  readonly events = new AsyncQueue<HandshakeEvent>()
+  readonly sent: Message[] = []
+  readonly link: LinkKind
+
+  constructor(link: LinkKind) {
+    this.link = link
+  }
+
+  login(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  submit2fa(): void {
+    return
+  }
+
+  send(message: Message): void {
+    this.sent.push(message)
+  }
+
+  close(reason: string): void {
+    this.events.push({ kind: 'closed', reason })
+    this.events.end()
+  }
+
+  peerSends(message: Message): void {
+    this.events.push({ kind: 'message', message })
+  }
+}
+
+export async function fakeLinkSession(link: LinkKind, clock: StatsClock) {
+  const handshake = new FakeHandshake(link)
+  const decoders = new FakeDecoders()
+  const session = startSession(handshake, { createDecoder: decoders.create, clock })
+  handshake.events.push({ kind: 'state', state: { kind: 'active', peerInfo: PEER_INFO } })
+  await vi.waitFor(() => {
+    if (session.state.get().kind !== 'active') throw new Error('session not active yet')
+  })
+  return { handshake, decoders, session }
 }

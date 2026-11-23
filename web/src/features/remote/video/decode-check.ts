@@ -11,7 +11,6 @@ export interface DecodeCheckResult {
   displayWidth: number
   displayHeight: number
   visibleWidth: number
-  acks: number
   keyRequests: number
 }
 
@@ -20,7 +19,7 @@ const DECODE_TIMEOUT_MS = 10_000
 /** Pushes the captured VP9 key frame through the pipeline on WebCodecs and reports the frame. */
 export async function decodeCapturedKeyFrame(): Promise<DecodeCheckResult> {
   const supported = await isCodecSupported('vp09.00.10.08')
-  const counts = { acks: 0, keyRequests: 0 }
+  const counts = { keyRequests: 0 }
   const frame = await new Promise<VideoFrame>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error('no frame decoded'))
@@ -32,8 +31,8 @@ export async function decodeCapturedKeyFrame(): Promise<DecodeCheckResult> {
         pipeline.close()
         resolve(decoded)
       },
-      ack: () => counts.acks++,
       requestKeyFrame: () => counts.keyRequests++,
+      mayRefresh: () => true,
       onFatal: (error) => {
         clearTimeout(timer)
         reject(error)

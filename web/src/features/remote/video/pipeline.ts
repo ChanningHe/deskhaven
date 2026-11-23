@@ -6,24 +6,23 @@ export interface VideoPipelineOptions {
   createDecoder: CreateDecoder
   /** A decoded frame; the receiver owns it and must close it. */
   onFrame(frame: VideoFrame): void
-  /** Tell the peer one VideoFrame message is consumed (Misc.video_received). */
-  ack(): void
   /** Ask the peer for a key frame (Misc.refresh_video). */
   requestKeyFrame(): void
+  mayRefresh(): boolean
   /** Decoding keeps failing; the pipeline has stopped. */
   onFatal(error: Error): void
-  // Display only: nothing the pipeline decides reads it.
+  // Reports only: nothing the pipeline decides reads it.
   meter?: VideoMeter
 }
 
 export interface VideoMeter {
   now(): number
   received(bytes: number): void
-  decoded(decodeMs: number): void
+  decoded(latencyMs: number, serviceMs: number): void
 }
 
 /**
- * Delta frames are dropped once this many chunks wait in the decoder: it is not keeping up,
+ * Delta frames may be dropped once this many chunks wait in the decoder: it is not keeping up,
  * and queued frames only add delay. Dropping breaks the reference chain, so decoding resumes
  * at the next key frame.
  */
@@ -38,11 +37,6 @@ interface Pending {
   pushedAt: number
 }
 
-/**
- * Feeds VideoFrame messages to a decoder. The peer is told `video_received` once per message,
- * when its frame is decoded or the message is dropped, since it waits for that before sending
- * more (rustdesk 1.5.0 src/server/connection.rs:1074-1084, video_service.rs:205-245).
- */
 export class VideoPipeline {
   readonly #options: VideoPipelineOptions
   #decoder: FrameDecoder | null = null
@@ -54,6 +48,7 @@ export class VideoPipeline {
   #pending: Pending[] = []
   #failures = 0
   #closed = false
+  #lastOutputAt = 0
 
   constructor(options: VideoPipelineOptions) {
     this.#options = options
@@ -64,14 +59,11 @@ export class VideoPipeline {
     const encoded = encodedFrames(message)
     const meter = this.#options.meter
     meter?.received(encoded?.frames.reduce((sum, f) => sum + f.data.length, 0) ?? 0)
-    if (!encoded || encoded.frames.length === 0) {
-      this.#options.ack()
-      return
-    }
+    if (!encoded || encoded.frames.length === 0) return
     const firstKey = encoded.frames.findIndex((f) => f.key)
     const needsKey = this.#awaitingKey || encoded.codec !== this.#codec
     if (firstKey < 0 && (needsKey || this.#backedUp())) {
-      this.#drop()
+      this.#awaitKey()
       return
     }
     const decoder = this.#decoderFor(encoded.codec)
@@ -81,7 +73,6 @@ export class VideoPipeline {
         decoder.decode({ key: frame.key, timestamp: this.#nextTimestamp++, data: frame.data })
       }
     } catch (error) {
-      this.#options.ack()
       this.#fail(error)
       return
     }
@@ -98,6 +89,10 @@ export class VideoPipeline {
     return this.#decoder?.decodeQueueSize ?? 0
   }
 
+  get queued(): number {
+    return Math.max(0, this.#pending.length - 1)
+  }
+
   /** The peer switched display: what is in flight belongs to the old one. */
   reset(): void {
     this.#closeDecoder()
@@ -111,7 +106,7 @@ export class VideoPipeline {
   }
 
   #backedUp(): boolean {
-    return this.decodeQueueSize >= MAX_DECODE_QUEUE
+    return this.decodeQueueSize >= MAX_DECODE_QUEUE && this.#options.mayRefresh()
   }
 
   #decoderFor(codec: string): FrameDecoder {
@@ -136,18 +131,15 @@ export class VideoPipeline {
       return
     }
     this.#failures = 0
-    const waiting = this.#pending.filter((p) => p.last > frame.timestamp)
     const done = this.#pending.find((p) => p.last === frame.timestamp)
     const meter = this.#options.meter
-    if (done && meter) meter.decoded(meter.now() - done.pushedAt)
-    this.#ack(this.#pending.length - waiting.length)
-    this.#pending = waiting
+    if (done && meter) {
+      const now = meter.now()
+      meter.decoded(now - done.pushedAt, now - Math.max(done.pushedAt, this.#lastOutputAt))
+      this.#lastOutputAt = now
+    }
+    this.#pending = this.#pending.filter((p) => p.last > frame.timestamp)
     this.#options.onFrame(frame)
-  }
-
-  #drop(): void {
-    this.#options.ack()
-    this.#awaitKey()
   }
 
   #awaitKey(): void {
@@ -168,17 +160,11 @@ export class VideoPipeline {
     this.#awaitKey()
   }
 
-  /** In-flight messages will never be decoded now; ack them so the peer is not left waiting. */
   #closeDecoder(): void {
     this.#generation++
     this.#decoder?.close()
     this.#decoder = null
     this.#codec = null
-    this.#ack(this.#pending.length)
     this.#pending = []
-  }
-
-  #ack(messages: number): void {
-    for (let i = 0; i < messages; i++) this.#options.ack()
   }
 }

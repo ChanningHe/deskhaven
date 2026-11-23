@@ -7,6 +7,7 @@ import {
   KeyEventSchema,
   MessageSchema,
   MiscSchema,
+  OptionMessageSchema,
   SwitchDisplaySchema,
   type KeyEvent,
   type Message,
@@ -18,9 +19,8 @@ function misc(union: Misc['union']): Message {
   return create(MessageSchema, { union: { case: 'misc', value: create(MiscSchema, { union }) } })
 }
 
-/** One VideoFrame message consumed (Misc.video_received; we log in with video_ack_required). */
-export function videoReceived(): Message {
-  return misc({ case: 'videoReceived', value: true })
+export function customFps(fps: number): Message {
+  return misc({ case: 'option', value: create(OptionMessageSchema, { customFps: fps }) })
 }
 
 // Peers from 1.2.4 refresh one display (rustdesk 1.5.0 src/ui_session_interface.rs:442-450,

@@ -9,13 +9,13 @@ import { MAX_DECODE_QUEUE, MAX_FAILURES, VideoPipeline } from './pipeline'
 function setup() {
   const decoders = new FakeDecoders()
   const frames: VideoFrame[] = []
-  const calls = { acks: 0, keyRequests: 0 }
+  const calls = { keyRequests: 0 }
   const onFatal = vi.fn()
   const pipeline = new VideoPipeline({
     createDecoder: decoders.create,
     onFrame: (frame) => frames.push(frame),
-    ack: () => calls.acks++,
     requestKeyFrame: () => calls.keyRequests++,
+    mayRefresh: () => true,
     onFatal,
   })
   return { decoders, frames, calls, onFatal, pipeline }
@@ -45,7 +45,7 @@ describe('VideoPipeline', () => {
     pipeline.push(vp9Frame(false))
     pipeline.push(vp9Frame(false))
     expect(decoders.created.flatMap((d) => d.decoded)).toEqual([])
-    expect(calls).toEqual({ acks: 2, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
 
     const key = fixtureKeyFrame()
     pipeline.push(key)
@@ -55,31 +55,29 @@ describe('VideoPipeline', () => {
     expect(decoders.last.decoded[0]?.data).toHaveLength(544)
   })
 
-  it('acks each frame once it is decoded, and hands the frame on', () => {
+  it('hands each decoded frame on', () => {
     const { decoders, frames, calls, pipeline } = setup()
     pipeline.push(fixtureKeyFrame())
     pipeline.push(vp9Frame(false))
     pipeline.push(vp9Frame(false))
-    expect(calls.acks).toBe(0)
     const decoder = decoders.last
     decoder.output(0)
     decoder.output(1)
-    expect(calls.acks).toBe(2)
     decoder.output(2)
-    expect(calls).toEqual({ acks: 3, keyRequests: 0 })
+    expect(calls).toEqual({ keyRequests: 0 })
     expect(frames.map((f) => f.timestamp)).toEqual(decoder.decoded.map((c) => c.timestamp))
   })
 
-  it('on a decode error asks for a key frame, acks what was in flight and waits for the key', () => {
+  it('on a decode error asks for a key frame and waits for it', () => {
     const { decoders, calls, pipeline } = setup()
     pipeline.push(fixtureKeyFrame())
     pipeline.push(vp9Frame(false))
     const failed = decoders.last
     failed.fail()
-    expect(calls).toEqual({ acks: 2, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
 
     pipeline.push(vp9Frame(false))
-    expect(calls).toEqual({ acks: 3, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
     expect(failed.decoded).toHaveLength(2)
 
     pipeline.push(fixtureKeyFrame())
@@ -93,7 +91,7 @@ describe('VideoPipeline', () => {
     decoders.last.throwOnDecode = new Error('DataError')
     pipeline.push(vp9Frame(false))
     expect(decoders.last.closed).toBe(true)
-    expect(calls).toEqual({ acks: 2, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
   })
 
   it('under decoder backpressure drops delta frames until the next key frame', () => {
@@ -103,7 +101,7 @@ describe('VideoPipeline', () => {
     decoder.decodeQueueSize = MAX_DECODE_QUEUE
     pipeline.push(vp9Frame(false))
     expect(decoder.decoded).toHaveLength(1)
-    expect(calls).toEqual({ acks: 1, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
 
     decoder.decodeQueueSize = 0
     pipeline.push(vp9Frame(false))
@@ -112,7 +110,76 @@ describe('VideoPipeline', () => {
     decoder.decodeQueueSize = MAX_DECODE_QUEUE
     pipeline.push(fixtureKeyFrame())
     expect(decoder.decoded).toHaveLength(2)
-    expect(calls).toEqual({ acks: 2, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
+  })
+
+  it('keeps decoding a backlog while a refresh is not allowed', () => {
+    const decoders = new FakeDecoders()
+    const calls = { keyRequests: 0, asked: 0 }
+    let allow = false
+    const pipeline = new VideoPipeline({
+      createDecoder: decoders.create,
+      onFrame: (frame) => {
+        frame.close()
+      },
+      requestKeyFrame: () => calls.keyRequests++,
+      mayRefresh: () => {
+        calls.asked++
+        return allow
+      },
+      onFatal: () => undefined,
+    })
+    pipeline.push(fixtureKeyFrame())
+    const decoder = decoders.last
+    pipeline.push(vp9Frame(false))
+    expect(calls).toEqual({ keyRequests: 0, asked: 0 })
+
+    decoder.decodeQueueSize = MAX_DECODE_QUEUE
+    pipeline.push(vp9Frame(false))
+    expect(decoder.decoded).toHaveLength(3)
+    expect(calls).toEqual({ keyRequests: 0, asked: 1 })
+
+    allow = true
+    pipeline.push(vp9Frame(false))
+    pipeline.push(vp9Frame(false))
+    expect(decoder.decoded).toHaveLength(3)
+    expect(calls).toEqual({ keyRequests: 1, asked: 2 })
+  })
+
+  it('reports how long the decoder spent on each frame, queued time left out', () => {
+    const decoders = new FakeDecoders()
+    let now = 0
+    const decoded: [number, number][] = []
+    const pipeline = new VideoPipeline({
+      createDecoder: decoders.create,
+      onFrame: (frame) => {
+        frame.close()
+      },
+      requestKeyFrame: () => undefined,
+      mayRefresh: () => true,
+      onFatal: () => undefined,
+      meter: {
+        now: () => now,
+        received: () => undefined,
+        decoded: (latencyMs, serviceMs) => decoded.push([latencyMs, serviceMs]),
+      },
+    })
+    pipeline.push(fixtureKeyFrame())
+    now = 2
+    pipeline.push(vp9Frame(false))
+    now = 10
+    decoders.last.output(0)
+    now = 16
+    decoders.last.output(1)
+    now = 100
+    pipeline.push(vp9Frame(false))
+    now = 103
+    decoders.last.output(2)
+    expect(decoded).toEqual([
+      [10, 10],
+      [14, 6],
+      [3, 3],
+    ])
   })
 
   it('starts over at the next key frame after a reset, without asking for one', () => {
@@ -121,7 +188,7 @@ describe('VideoPipeline', () => {
     pipeline.push(vp9Frame(false))
     pipeline.reset()
     expect(decoders.last.closed).toBe(true)
-    expect(calls).toEqual({ acks: 2, keyRequests: 0 })
+    expect(calls).toEqual({ keyRequests: 0 })
     pipeline.push(vp9Frame(true))
     expect(decoders.created).toHaveLength(2)
     expect(calls.keyRequests).toBe(0)
@@ -158,14 +225,14 @@ describe('VideoPipeline', () => {
     })
     pipeline.push(av1Delta)
     expect(decoders.created).toHaveLength(1)
-    expect(calls).toEqual({ acks: 1, keyRequests: 1 })
+    expect(calls).toEqual({ keyRequests: 1 })
   })
 
-  it('acks and skips encodings it cannot decode', () => {
+  it('skips encodings it cannot decode', () => {
     const { decoders, calls, pipeline } = setup()
     pipeline.push(create(VideoFrameSchema, { union: { case: 'rgb', value: {} } }))
     expect(decoders.created).toEqual([])
-    expect(calls.acks).toBe(1)
+    expect(calls).toEqual({ keyRequests: 0 })
   })
 
   it(`gives up after ${MAX_FAILURES} failures in a row without a decoded frame`, () => {

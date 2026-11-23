@@ -19,7 +19,6 @@ interface DecodeCheckResult {
   displayWidth: number
   displayHeight: number
   visibleWidth: number
-  acks: number
   keyRequests: number
 }
 
@@ -68,7 +67,6 @@ test('decodes the captured VP9 key frame through the pipeline', async ({ page })
     displayWidth: 1280,
     displayHeight: 800,
     visibleWidth: 1280,
-    acks: 1,
     keyRequests: 0,
   })
   expect(result.codedWidth).toBeGreaterThanOrEqual(1280)

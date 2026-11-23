@@ -12,17 +12,18 @@ import {
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
-import { VideoPipeline } from '../video/pipeline'
+import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
+import { VideoPipeline, type VideoMeter } from '../video/pipeline'
 import { FrameQueue } from './frame-queue'
 import {
   captureDisplay,
   closeReason,
   ctrlAltDel,
+  customFps,
   keyMessage,
   refreshVideo,
   selectedSid,
   switchDisplay,
-  videoReceived,
 } from './messages'
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
@@ -110,6 +111,7 @@ class RemoteSession implements Session {
   readonly #handshake: Handshake
   readonly #video: VideoPipeline
   readonly #meter: SessionMeter
+  readonly #governor: FpsGovernor
   readonly #cursors = new CursorTracker()
   #keyboard: KeyboardEncoder | null = null
   #switchingSession = false
@@ -122,23 +124,29 @@ class RemoteSession implements Session {
       width: this.peer.get()?.display?.width ?? 0,
       height: this.peer.get()?.display?.height ?? 0,
     }))
+    const governor = new FpsGovernor({
+      direct: handshake.link === 'webrtc',
+      userFps: DEFAULT_FPS,
+    })
+    this.#governor = governor
     this.#video = new VideoPipeline({
       createDecoder,
       onFrame: (frame) => {
         this.#frames.push(frame)
-      },
-      ack: () => {
-        this.#send(videoReceived())
       },
       requestKeyFrame: () => {
         this.#meter.keyRequested()
         const peer = this.peer.get()
         this.#send(refreshVideo(peer?.current ?? 0, peer?.info.version ?? ''))
       },
+      mayRefresh: () => governor.mayRefresh(clock.now()),
       onFatal: (error) => {
         this.#hangUp(`video decoding failed: ${error.message}`)
       },
-      meter: this.#meter,
+      meter: governed(this.#meter, governor),
+    })
+    this.#meter.stats.subscribe(() => {
+      this.#steer()
     })
   }
 
@@ -233,6 +241,11 @@ class RemoteSession implements Session {
 
   #active(): boolean {
     return this.state.get().kind === 'active'
+  }
+
+  #steer(): void {
+    const fps = this.#governor.tick({ fps: this.stats.get().fps, queued: this.#video.queued })
+    if (fps !== null) this.#send(customFps(fps))
   }
 
   #onLoginState(state: LoginState): void {
@@ -349,5 +362,18 @@ class RemoteSession implements Session {
     this.state.set({ kind: 'closed', reason: switched ? WINDOWS_SESSION_SWITCH : reason })
     this.#video.close()
     this.#frames.end()
+  }
+}
+
+function governed(meter: VideoMeter, governor: FpsGovernor): VideoMeter {
+  return {
+    now: () => meter.now(),
+    received: (bytes) => {
+      meter.received(bytes)
+    },
+    decoded: (latencyMs, serviceMs) => {
+      meter.decoded(latencyMs, serviceMs)
+      governor.decoded(serviceMs)
+    },
   }
 }

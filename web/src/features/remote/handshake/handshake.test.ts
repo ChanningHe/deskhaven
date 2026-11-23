@@ -304,7 +304,12 @@ describe('identity binding', () => {
 
   it('WebRTC: keys with version 0 and no stream cipher when the signed fingerprint matches', async () => {
     const transport = new MemoryTransport()
-    start({ kind: 'webrtc', transport, remoteFingerprint: FP }, transport, syntheticPeer(FP, 1))
+    const handshake = start(
+      { kind: 'webrtc', transport, remoteFingerprint: FP },
+      transport,
+      syntheticPeer(FP, 1),
+    )
+    expect(handshake.link).toBe('webrtc')
     await vi.waitFor(() => {
       expect(transport.sent).toHaveLength(1)
     })
@@ -314,7 +319,8 @@ describe('identity binding', () => {
 
   it('relay: keys with version 1 and a stream cipher when the peer advertises 1', async () => {
     const transport = new MemoryTransport()
-    start({ kind: 'relay', transport }, transport, syntheticPeer('', 1))
+    const handshake = start({ kind: 'relay', transport }, transport, syntheticPeer('', 1))
+    expect(handshake.link).toBe('relay')
     await vi.waitFor(() => {
       expect(transport.sent).toHaveLength(1)
     })

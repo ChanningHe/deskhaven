@@ -51,7 +51,7 @@ describe('session login', () => {
 })
 
 describe('session video', () => {
-  it('decodes the captured VP9 key frame and acks it once decoded', async () => {
+  it('decodes the captured VP9 key frame and hands it on', async () => {
     const r = await activeSession()
     r.peerSendsCapturedFrame()
     await settle()
@@ -63,9 +63,6 @@ describe('session video', () => {
     const out = decoder.output()
     const frames = r.session.frames[Symbol.asyncIterator]()
     expect((await frames.next()).value).toBe(out)
-    expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
-      { union: { case: 'videoReceived', value: true } },
-    ])
   })
 
   it('asks the peer for a key frame when the stream starts without one', async () => {
@@ -73,7 +70,6 @@ describe('session video', () => {
     r.peerSends(msg({ case: 'videoFrame', value: vp9Frame(false) }))
     await settle()
     expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
-      { union: { case: 'videoReceived' } },
       { union: { case: 'refreshVideoDisplay', value: 0 } },
     ])
   })

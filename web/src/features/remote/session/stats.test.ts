@@ -22,10 +22,10 @@ function setup() {
     onFrame: (frame) => {
       frame.close()
     },
-    ack: () => undefined,
     requestKeyFrame: () => {
       meter.keyRequested()
     },
+    mayRefresh: () => true,
     onFatal: () => undefined,
     meter,
   })
