@@ -1,9 +1,15 @@
+import { create } from '@bufbuild/protobuf'
 import { describe, expect, it } from 'vitest'
 
-import { ImageQuality } from '../proto/gen/message_pb.js'
+import {
+  ImageQuality,
+  OptionMessage_BoolOption,
+  OptionMessageSchema,
+} from '../proto/gen/message_pb.js'
 import { DEFAULT_FPS } from '../video/fps-governor'
-import { loginOption, optionPatch, qualityFields } from './protocol'
-import { DEFAULT_SETTINGS, type RemoteSettings } from './settings'
+import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
+import { loginOption, loginSettings, optionPatch, qualityFields, ungoverned } from './protocol'
+import { DEFAULT_SETTINGS, type Quality, type RemoteSettings } from './settings'
 
 const with_ = (patch: Partial<RemoteSettings>): RemoteSettings => ({
   ...DEFAULT_SETTINGS,
@@ -28,16 +34,14 @@ describe('qualityFields', () => {
 })
 
 describe('loginOption', () => {
-  it('carries the quality and the starting fps', () => {
-    expect(loginOption(with_({ quality: 'best' }))).toMatchObject({
-      imageQuality: ImageQuality.Best,
-      customImageQuality: 0,
-      customFps: DEFAULT_FPS,
-    })
-    expect(loginOption(with_({ quality: { custom: 80 } }))).toMatchObject({
-      imageQuality: ImageQuality.NotSet,
-      customImageQuality: 80 << 8,
-    })
+  it("carries the quality governor's start, whatever the user's quality", () => {
+    for (const quality of ['low', 'best', { custom: 80 }] as const) {
+      expect(loginOption(with_({ quality }))).toMatchObject({
+        imageQuality: ImageQuality.NotSet,
+        customImageQuality: START_LEVEL << 8,
+        customFps: DEFAULT_FPS,
+      })
+    }
   })
 
   it('starts no faster than the governor does, and takes a lower user fps', () => {
@@ -45,11 +49,16 @@ describe('loginOption', () => {
     expect(loginOption(with_({ fps: 12 })).customFps).toBe(12)
   })
 
+  it('tells what loginSettings says the peer was told', () => {
+    const settings = with_({ quality: 'best', fps: 60 })
+    expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 30 })
+  })
+
   it('sets nothing else', () => {
     const { imageQuality, customImageQuality, customFps, ...rest } = loginOption(DEFAULT_SETTINGS)
     expect({ imageQuality, customImageQuality, customFps }).toEqual({
-      imageQuality: ImageQuality.Balanced,
-      customImageQuality: 0,
+      imageQuality: ImageQuality.NotSet,
+      customImageQuality: START_LEVEL << 8,
       customFps: DEFAULT_FPS,
     })
     expect(rest).toMatchObject({
@@ -60,6 +69,24 @@ describe('loginOption', () => {
       disableKeyboard: 0,
     })
     expect(rest.supportedDecoding).toBeUndefined()
+  })
+})
+
+describe('ungoverned', () => {
+  it('clears custom_fps and the image quality and keeps the rest', () => {
+    const option = create(OptionMessageSchema, {
+      imageQuality: ImageQuality.Best,
+      customImageQuality: 70 << 8,
+      customFps: 60,
+      disableAudio: OptionMessage_BoolOption.Yes,
+    })
+    expect(ungoverned(option)).toMatchObject({
+      imageQuality: ImageQuality.NotSet,
+      customImageQuality: 0,
+      customFps: 0,
+      disableAudio: OptionMessage_BoolOption.Yes,
+    })
+    expect(option.customFps).toBe(60)
   })
 })
 
@@ -74,26 +101,13 @@ describe('optionPatch', () => {
     ).toBeNull()
   })
 
-  it('carries a changed quality and nothing else', () => {
-    const patch = optionPatch(DEFAULT_SETTINGS, with_({ quality: 'best' }))
-    expect(patch?.maxFps).toBeUndefined()
-    expect(patch?.peer).toMatchObject({ imageQuality: ImageQuality.Best, customImageQuality: 0 })
-    expect(patch?.peer?.customFps).toBe(0)
-  })
-
-  it('moves between a preset and a custom quality both ways', () => {
-    const custom = optionPatch(DEFAULT_SETTINGS, with_({ quality: { custom: 60 } }))
-    expect(custom?.peer).toMatchObject({
-      imageQuality: ImageQuality.NotSet,
-      customImageQuality: 60 << 8,
-    })
-    const back = optionPatch(with_({ quality: { custom: 60 } }), DEFAULT_SETTINGS)
-    expect(back?.peer).toMatchObject({ imageQuality: ImageQuality.Balanced, customImageQuality: 0 })
-    const other = optionPatch(
-      with_({ quality: { custom: 60 } }),
-      with_({ quality: { custom: 61 } }),
-    )
-    expect(other?.peer?.customImageQuality).toBe(61 << 8)
+  it.each<[Quality, Quality]>([
+    ['balanced', 'best'],
+    ['balanced', { custom: 60 }],
+    [{ custom: 60 }, 'balanced'],
+    [{ custom: 60 }, { custom: 61 }],
+  ])('hands a quality change %o → %o over as the cap alone', (from, to) => {
+    expect(optionPatch(with_({ quality: from }), with_({ quality: to }))).toEqual({ quality: to })
   })
 
   it('hands a changed fps over as a ceiling, never as custom_fps', () => {
@@ -103,7 +117,6 @@ describe('optionPatch', () => {
 
   it('carries both when both changed', () => {
     const patch = optionPatch(DEFAULT_SETTINGS, with_({ quality: 'low', fps: 20 }))
-    expect(patch?.maxFps).toBe(20)
-    expect(patch?.peer?.imageQuality).toBe(ImageQuality.Low)
+    expect(patch).toEqual({ quality: 'low', maxFps: 20 })
   })
 })

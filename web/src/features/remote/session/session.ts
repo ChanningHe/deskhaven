@@ -1,5 +1,3 @@
-import { clone } from '@bufbuild/protobuf'
-
 import { clipboardMessage, clipboardText } from '../clipboard/clipboard'
 import { CursorTracker, type CursorView } from '../cursor/cursor'
 import type { Handshake } from '../handshake/handshake'
@@ -11,12 +9,14 @@ import {
   type KeyboardMode,
   type Message,
   type Misc,
-  OptionMessageSchema,
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
+import { qualityOption, ungoverned } from '../settings/protocol'
+import type { Quality } from '../settings/settings'
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
 import { VideoPipeline, type VideoMeter } from '../video/pipeline'
+import { QualityGovernor } from '../video/quality-governor'
 import { FrameQueue } from './frame-queue'
 import {
   captureDisplay,
@@ -118,6 +118,7 @@ class RemoteSession implements Session {
   readonly #video: VideoPipeline
   readonly #meter: SessionMeter
   readonly #governor: FpsGovernor
+  readonly #quality = new QualityGovernor()
   readonly #cursors = new CursorTracker()
   #keyboard: KeyboardEncoder | null = null
   #switchingSession = false
@@ -129,6 +130,7 @@ class RemoteSession implements Session {
       codec: this.#video.codec,
       width: this.peer.get()?.display?.width ?? 0,
       height: this.peer.get()?.display?.height ?? 0,
+      quality: this.#quality.current,
     }))
     const governor = new FpsGovernor({
       direct: handshake.link === 'webrtc',
@@ -222,13 +224,9 @@ class RemoteSession implements Session {
 
   setOptions(patch: OptionPatch): void {
     if (!this.#active()) return
-    if (patch.peer) {
-      // custom_fps has one writer, the governor.
-      const option = clone(OptionMessageSchema, patch.peer)
-      option.customFps = 0
-      this.#send(optionMessage(option))
-    }
+    if (patch.peer) this.#send(optionMessage(ungoverned(patch.peer)))
     if (patch.maxFps !== undefined) this.#governor.setUserFps(patch.maxFps)
+    if (patch.quality) this.#sendQuality(this.#quality.setCap(patch.quality))
   }
 
   input(input: RemoteInput): void {
@@ -263,6 +261,11 @@ class RemoteSession implements Session {
   #steer(): void {
     const fps = this.#governor.tick({ fps: this.stats.get().fps, queued: this.#video.queued })
     if (fps !== null) this.#send(customFps(fps))
+    this.#sendQuality(this.#quality.tick(this.#meter.takeDelay()))
+  }
+
+  #sendQuality(quality: Quality | null): void {
+    if (quality) this.#send(optionMessage(qualityOption(quality)))
   }
 
   #onLoginState(state: LoginState): void {

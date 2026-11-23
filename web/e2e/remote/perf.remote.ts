@@ -52,8 +52,13 @@ const CASES: [ConditionName, ClientKey, Transport][] = [
   ['Cs', '1.5', 'Relay'],
 ]
 
+const DEFAULT_QUALITY = 'balanced'
 const STATS = ['fps', 'kbps', 'delayMs', 'decodeMs', 'decodeQueue', 'keyRequests', 'pointerMoves']
 type Sample = Record<string, number | null>
+interface QualityTrace {
+  activeAt: number | null
+  changes: { atMs: number; value: string }[]
+}
 
 const test = base.extend<{ shaping: Shaping }>({
   shaping: [{}, { option: true }],
@@ -135,6 +140,34 @@ async function startSampling(page: Page) {
   }, STATS)
 }
 
+function traceQuality(page: Page) {
+  return page.addInitScript(() => {
+    const trace: QualityTrace = { activeAt: null, changes: [] }
+    Reflect.set(window, '__qualityTrace', trace)
+    setInterval(() => {
+      const pills = [...document.querySelectorAll('header span.rounded-full')]
+      if (trace.activeAt === null && pills.some((p) => p.textContent.includes('Connected'))) {
+        trace.activeAt = Date.now()
+      }
+      const value = document.querySelector('[data-stat="quality"]')?.getAttribute('data-value')
+      if (value && trace.changes.at(-1)?.value !== value) {
+        trace.changes.push({ atMs: Date.now(), value })
+      }
+    }, 100)
+  })
+}
+
+async function qualityReport(page: Page, want: string) {
+  const trace = await page.evaluate(() => Reflect.get(window, '__qualityTrace') as QualityTrace)
+  const since = trace.activeAt ?? 0
+  const reached = trace.changes.find((c) => c.value === want)
+  return {
+    want,
+    reachedMs: reached && trace.activeAt !== null ? reached.atMs - since : null,
+    changes: trace.changes.map((c) => ({ atMs: c.atMs - since, value: c.value })),
+  }
+}
+
 function samplesOf(page: Page): Promise<Sample[]> {
   return page.evaluate(
     () => Reflect.get(window, '__perfSamples') as Record<string, number | null>[],
@@ -175,8 +208,13 @@ for (const [name, key, transport] of CASES) {
         })
       }
 
+      await traceQuality(page)
+
       await openFromDeviceList(page, target.id)
       await submitPassword(page)
+      const connected = page.locator('header span.rounded-full', { hasText: 'Connected' })
+      await expect(connected).toContainText(transport)
+      await page.getByRole('button', { name: 'Statistics' }).click()
       await expectDesktop(page, transport)
 
       const size = SCREENS[condition.screen]
@@ -186,9 +224,7 @@ for (const [name, key, transport] of CASES) {
       ]
       try {
         await pixelIs(page, true, 30_000)
-        await page.getByRole('button', { name: 'Statistics' }).click()
         await startSampling(page)
-        const connected = page.locator('header span.rounded-full', { hasText: 'Connected' })
         const probes: { atMs: number; ms: number | null }[] = []
         const begin = Date.now()
         while (Date.now() - begin < SAMPLE_MS) {
@@ -227,6 +263,7 @@ for (const [name, key, transport] of CASES) {
           decodeMsP50: percentile(column('decodeMs'), 50),
           delayMsP50: percentile(column('delayMs'), 50),
           pointerMovesP50: percentile(column('pointerMoves'), 50),
+          quality: await qualityReport(page, condition.quality ?? DEFAULT_QUALITY),
           probes,
           samples,
         }

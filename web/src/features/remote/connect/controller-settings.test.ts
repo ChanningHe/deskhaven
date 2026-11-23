@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ImageQuality } from '../proto/gen/message_pb.js'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type RemoteSettings } from '../settings/settings'
+import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
 import { RemoteController } from './controller'
 import { fakeDeps } from './fake-deps'
 
@@ -68,11 +69,11 @@ describe('RemoteController settings', () => {
     expect(controller.settings.get().fps).toBe(20)
   })
 
-  it('logs in with the quality and the starting fps of the settings', async () => {
+  it("logs in at the governor's starting quality and the starting fps of the settings", async () => {
     const f = await connected({ quality: 'best', fps: 60 })
     expect(loginOptionOf(f)).toMatchObject({
-      imageQuality: ImageQuality.Best,
-      customImageQuality: 0,
+      imageQuality: ImageQuality.NotSet,
+      customImageQuality: START_LEVEL << 8,
       customFps: 30,
     })
   })
@@ -84,26 +85,31 @@ describe('RemoteController settings', () => {
     await settle()
     expect(loginOptionOf(f, 1)).toMatchObject({
       imageQuality: ImageQuality.NotSet,
-      customImageQuality: 70 << 8,
+      customImageQuality: START_LEVEL << 8,
       customFps: 20,
     })
   })
 })
 
 describe('RemoteController settings in a session', () => {
-  it('sends a quality change as one patch with the peer option and no fps', async () => {
+  it("tells an activated session the user's quality as the governor's cap", async () => {
+    const f = await connected({ quality: 'best' })
+    f.session.activate()
+    expect(f.session.patches).toEqual([{ quality: 'best' }])
+  })
+
+  it('hands a quality change over as a cap, never as a peer option', async () => {
     const f = await connected()
     f.session.activate()
+    f.session.patches.length = 0
     f.controller.updateSettings({ quality: 'best' })
-    expect(f.session.patches).toHaveLength(1)
-    const [patch] = f.session.patches
-    expect(patch?.maxFps).toBeUndefined()
-    expect(patch?.peer).toMatchObject({ imageQuality: ImageQuality.Best, customImageQuality: 0 })
+    expect(f.session.patches).toEqual([{ quality: 'best' }])
   })
 
   it('hands an fps change over as a ceiling, which is all the session may be told', async () => {
     const f = await connected()
     f.session.activate()
+    f.session.patches.length = 0
     f.controller.updateSettings({ fps: 45 })
     expect(f.session.patches).toEqual([{ maxFps: 45 }])
   })
@@ -114,9 +120,7 @@ describe('RemoteController settings in a session', () => {
     f.session.patches.length = 0
     f.controller.updateSettings({ quality: 'low' })
     expect(f.controller.settings.get()).toMatchObject({ quality: 'low', fps: 30 })
-    expect(f.session.patches).toMatchObject([
-      { maxFps: 30, peer: { imageQuality: ImageQuality.Low } },
-    ])
+    expect(f.session.patches).toEqual([{ maxFps: 30, quality: 'low' }])
   })
 
   it.each([
@@ -139,15 +143,15 @@ describe('RemoteController settings in a session', () => {
     expect(f.session.patches).toEqual([])
 
     f.session.activate()
-    expect(f.session.patches).toMatchObject([{ maxFps: 60, peer: { customImageQuality: 70 << 8 } }])
+    expect(f.session.patches).toEqual([{ maxFps: 60, quality: { custom: 70 } }])
     f.session.state.set({ kind: 'active' })
     expect(f.session.patches).toHaveLength(1)
   })
 
   it('sends nothing once the login already carried the setting', async () => {
-    const f = await connected()
-    f.controller.updateSettings({ quality: 'best' })
-    f.controller.updateSettings({ quality: 'balanced' })
+    const f = await connected({ quality: START_QUALITY })
+    f.controller.updateSettings({ fps: 45 })
+    f.controller.updateSettings({ fps: 30 })
     f.session.activate()
     expect(f.session.patches).toEqual([])
   })
@@ -160,6 +164,7 @@ describe('RemoteController settings in a session', () => {
 
     const f = await connected()
     f.session.activate()
+    f.session.patches.length = 0
     f.session.end('gone')
     f.controller.updateSettings({ quality: 'low' })
     expect(f.session.patches).toEqual([])
@@ -168,13 +173,14 @@ describe('RemoteController settings in a session', () => {
   it('only reaches the session of the current connect', async () => {
     const f = await connected()
     f.session.activate()
+    f.session.patches.length = 0
     f.controller.connect()
     await settle()
     f.controller.updateSettings({ quality: 'low' })
     expect(f.session.patches).toEqual([])
     expect(f.sessions[1]?.patches).toEqual([])
     f.sessions[1]?.activate()
-    expect(f.sessions[1]?.patches).toMatchObject([{ peer: { imageQuality: ImageQuality.Low } }])
+    expect(f.sessions[1]?.patches).toEqual([{ quality: 'low' }])
     expect(f.session.patches).toEqual([])
   })
 })

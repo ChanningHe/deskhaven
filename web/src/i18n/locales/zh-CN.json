@@ -1785,7 +1785,14 @@
       "keyRequests": "关键帧请求",
       "pointerMoves": "指针",
       "size": "分辨率",
-      "codec": "编码"
+      "codec": "编码",
+      "quality": "画质",
+      "qualities": {
+        "low": "低",
+        "balanced": "均衡",
+        "best": "最佳",
+        "custom": "自定义 {{level}}"
+      }
     },
     "clipboard": {
       "pasteTitle": "发送文本到设备",

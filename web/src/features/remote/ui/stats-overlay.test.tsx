@@ -70,5 +70,20 @@ describe('stats overlay', () => {
     expect(stat('size')).toHaveTextContent('1280×800')
     expect(stat('codec')).toHaveTextContent('vp09.00.10.08')
     expect(within(overlay).getByText('中继')).toBe(stat('transport'))
+    expect(stat('quality')).toHaveAttribute('data-value', '')
+  })
+
+  it.each([
+    ['balanced', 'balanced', '均衡'],
+    [{ custom: 18 }, '18', '自定义 18'],
+  ] as const)('shows the quality the session asks for: %o', async (quality, value, text) => {
+    const { user, session } = await activePage()
+    await user.click(screen.getByRole('button', { name: '统计信息' }))
+    act(() => {
+      session.stats.set({ ...NO_STATS, quality })
+    })
+    const stat = screen.getByLabelText('连接统计').querySelector('[data-stat="quality"]')
+    expect(stat).toHaveAttribute('data-value', value)
+    expect(stat).toHaveTextContent(text)
   })
 })

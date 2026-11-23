@@ -1,3 +1,4 @@
+import type { Quality } from '../settings/settings'
 import type { VideoMeter } from '../video/pipeline'
 import { ValueStore, type Store } from './store'
 
@@ -12,6 +13,7 @@ export interface SessionStats {
   width: number
   height: number
   codec: string | null
+  quality: Quality | null
 }
 
 export interface StatsProbe {
@@ -19,6 +21,7 @@ export interface StatsProbe {
   codec: string | null
   width: number
   height: number
+  quality: Quality
 }
 
 export interface StatsClock {
@@ -49,6 +52,7 @@ export const NO_STATS: SessionStats = {
   width: 0,
   height: 0,
   codec: null,
+  quality: null,
 }
 
 function oneDecimal(n: number): number {
@@ -68,6 +72,8 @@ export class SessionMeter implements VideoMeter {
   #moves = 0
   #keyRequests = 0
   #delayMs: number | null = null
+  #fresh: number | null = null
+  #probes = 0
 
   constructor(state: Store<{ kind: string }>, clock: StatsClock, probe: () => StatsProbe) {
     this.#clock = clock
@@ -107,8 +113,18 @@ export class SessionMeter implements VideoMeter {
     this.#moves++
   }
 
+  // rustdesk 1.5.0 src/server/connection.rs:601,1184: the first TestDelay carries the
+  // network_delay the peer starts with, 0, before it measured any.
   delay(ms: number): void {
+    if (this.#probes++ === 0) return
     this.#delayMs = ms
+    this.#fresh = ms
+  }
+
+  takeDelay(): number | null {
+    const fresh = this.#fresh
+    this.#fresh = null
+    return fresh
   }
 
   #start(): void {
@@ -142,6 +158,7 @@ export class SessionMeter implements VideoMeter {
       width: probe.width,
       height: probe.height,
       codec: probe.codec,
+      quality: probe.quality,
     })
     this.#since = now
     this.#frames = 0

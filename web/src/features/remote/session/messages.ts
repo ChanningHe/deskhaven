@@ -14,6 +14,7 @@ import {
   type Misc,
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
+import type { Quality } from '../settings/settings'
 import { PLATFORM_WINDOWS, atLeast } from './peer'
 
 function misc(union: Misc['union']): Message {
@@ -21,8 +22,10 @@ function misc(union: Misc['union']): Message {
 }
 
 export interface OptionPatch {
+  /** Peer options other than custom_fps and the image quality, which the governors own. */
   peer?: OptionMessage
   maxFps?: number
+  quality?: Quality
 }
 
 export function optionMessage(option: OptionMessage): Message {

@@ -16,6 +16,7 @@ function setup() {
     codec: pipeline?.codec ?? null,
     width: 1280,
     height: 800,
+    quality: 'balanced' as const,
   }))
   pipeline = new VideoPipeline({
     createDecoder: decoders.create,
@@ -66,6 +67,7 @@ describe('SessionMeter', () => {
       width: 1280,
       height: 800,
       codec: 'vp09.00.10.08',
+      quality: 'balanced',
     })
 
     decoders.last.decodeQueueSize = 3
@@ -93,11 +95,32 @@ describe('SessionMeter', () => {
     state.set({ kind: 'active' })
     clock.tick()
     expect(meter.stats.get().delayMs).toBeNull()
+    meter.delay(0)
     meter.delay(42)
     meter.delay(37)
     clock.tick()
     clock.tick()
     expect(meter.stats.get().delayMs).toBe(37)
+  })
+
+  it("skips the peer's first TestDelay, which it sends before it measured any", () => {
+    const { clock, state, meter } = setup()
+    state.set({ kind: 'active' })
+    meter.delay(0)
+    clock.tick()
+    expect(meter.stats.get().delayMs).toBeNull()
+    expect(meter.takeDelay()).toBeNull()
+  })
+
+  it('hands each delay over once, as the latest since the last take', () => {
+    const { meter } = setup()
+    meter.delay(0)
+    meter.delay(42)
+    meter.delay(37)
+    expect(meter.takeDelay()).toBe(37)
+    expect(meter.takeDelay()).toBeNull()
+    meter.delay(0)
+    expect(meter.takeDelay()).toBe(0)
   })
 
   it('counts key frame requests over the whole session', () => {

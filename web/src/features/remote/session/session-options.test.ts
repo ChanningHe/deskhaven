@@ -4,12 +4,15 @@ import { describe, expect, it } from 'vitest'
 import { msg } from '../__fixtures__/harness'
 import {
   ImageQuality,
+  OptionMessage_BoolOption,
   OptionMessageSchema,
+  TestDelaySchema,
   type Message,
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
 import { DEFAULT_FPS } from '../video/fps-governor'
+import { START_QUALITY } from '../video/quality-governor'
 import { startSession } from './session'
 import { FakeClock, FakeHandshake, activeSession, fakeLinkSession, settle } from './testing'
 
@@ -38,17 +41,13 @@ async function decoding() {
   return { ...s, clock, sent: () => options(s.handshake.sent) }
 }
 
-describe('Session.setOptions quality', () => {
-  it('sends one Misc.option with the quality fields', async () => {
+describe('Session.setOptions peer', () => {
+  it('sends one Misc.option with the other fields', async () => {
     const r = await activeSession()
-    r.session.setOptions({
-      peer: option({ imageQuality: ImageQuality.Best, customImageQuality: 0 }),
-    })
+    r.session.setOptions({ peer: option({ disableClipboard: OptionMessage_BoolOption.Yes }) })
     const sent = r.sentAfterLogin()
     expect(sent).toHaveLength(1)
-    expect(options(sent)).toMatchObject([
-      { imageQuality: ImageQuality.Best, customImageQuality: 0 },
-    ])
+    expect(options(sent)).toMatchObject([{ disableClipboard: OptionMessage_BoolOption.Yes }])
   })
 
   it('sends nothing for an empty patch', async () => {
@@ -57,12 +56,66 @@ describe('Session.setOptions quality', () => {
     expect(r.sentAfterLogin()).toEqual([])
   })
 
-  it('never lets a patch carry custom_fps to the peer', async () => {
+  it('never lets a patch carry custom_fps or the image quality to the peer', async () => {
     const r = await activeSession()
-    r.session.setOptions({ peer: option({ imageQuality: ImageQuality.Low, customFps: 99 }) })
+    r.session.setOptions({
+      peer: option({ imageQuality: ImageQuality.Best, customImageQuality: 70 << 8, customFps: 99 }),
+    })
     expect(options(r.sentAfterLogin())).toMatchObject([
-      { imageQuality: ImageQuality.Low, customFps: 0 },
+      { imageQuality: ImageQuality.NotSet, customImageQuality: 0, customFps: 0 },
     ])
+  })
+})
+
+describe('Session.setOptions quality', () => {
+  async function delayed() {
+    const clock = new FakeClock()
+    const s = await fakeLinkSession('relay', clock)
+    const delay = async (lastDelay: number) => {
+      s.handshake.peerSends(
+        msg({ case: 'testDelay', value: create(TestDelaySchema, { time: 1n, lastDelay }) }),
+      )
+      await settle()
+      clock.tick()
+    }
+    s.handshake.peerSends(msg({ case: 'testDelay', value: create(TestDelaySchema, { time: 1n }) }))
+    return { ...s, clock, delay, sent: () => options(s.handshake.sent) }
+  }
+
+  it('takes the quality as a cap and sends nothing while below it', async () => {
+    const s = await delayed()
+    s.session.setOptions({ quality: 'best' })
+    s.clock.tick()
+    expect(s.sent()).toEqual([])
+  })
+
+  it('climbs to the cap on calm TestDelay ticks, sending the preset at the top', async () => {
+    const s = await delayed()
+    s.session.setOptions({ quality: 'balanced' })
+    for (let i = 0; i < 4; i++) await s.delay(80)
+    expect(s.sent()).toMatchObject([
+      { imageQuality: ImageQuality.NotSet, customImageQuality: 18 << 8, customFps: 0 },
+      { imageQuality: ImageQuality.NotSet, customImageQuality: 27 << 8 },
+      { imageQuality: ImageQuality.Balanced, customImageQuality: 0 },
+    ])
+  })
+
+  it('lowers at once to a cap below the current quality', async () => {
+    const s = await delayed()
+    s.session.setOptions({ quality: { custom: 10 } })
+    expect(s.sent()).toMatchObject([
+      { imageQuality: ImageQuality.NotSet, customImageQuality: 10 << 8 },
+    ])
+  })
+
+  it('reports the quality it last asked for in its stats', async () => {
+    const s = await delayed()
+    s.session.setOptions({ quality: 'best' })
+    s.clock.tick()
+    expect(s.session.stats.get().quality).toEqual(START_QUALITY)
+    await s.delay(80)
+    await s.delay(80)
+    expect(s.session.stats.get().quality).toEqual({ custom: 18 })
   })
 })
 
@@ -84,14 +137,18 @@ describe('Session.setOptions maxFps', () => {
     s.clock.tick()
     s.session.setOptions({ peer: option({ imageQuality: ImageQuality.Low }), maxFps: 20 })
     const [, quality] = s.sent()
-    expect(quality).toMatchObject({ imageQuality: ImageQuality.Low, customFps: 0 })
+    expect(quality).toMatchObject({ imageQuality: ImageQuality.NotSet, customFps: 0 })
     s.clock.tick()
     expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 0, 20])
   })
 })
 
 describe('Session.setOptions outside an active session', () => {
-  const patch = { peer: option({ imageQuality: ImageQuality.Best }), maxFps: 20 }
+  const patch = {
+    peer: option({ disableAudio: OptionMessage_BoolOption.Yes }),
+    maxFps: 20,
+    quality: 'low' as const,
+  }
 
   it('is ignored while connecting', () => {
     const handshake = new FakeHandshake('relay')

@@ -35,11 +35,13 @@ describe('session stats', () => {
     })
   })
 
-  it("takes the delay from the peer's TestDelay", async () => {
+  it("takes the delay from the peer's TestDelay after its first", async () => {
     const s = await meteredSession()
-    s.peerSends(
-      msg({ case: 'testDelay', value: create(TestDelaySchema, { time: 5n, lastDelay: 83 }) }),
-    )
+    for (const lastDelay of [0, 83]) {
+      s.peerSends(
+        msg({ case: 'testDelay', value: create(TestDelaySchema, { time: 5n, lastDelay }) }),
+      )
+    }
     await settle()
     s.clock.tick()
     expect(s.session.stats.get().delayMs).toBe(83)

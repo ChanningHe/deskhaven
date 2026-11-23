@@ -1,8 +1,9 @@
-import { create } from '@bufbuild/protobuf'
+import { clone, create } from '@bufbuild/protobuf'
 
 import { ImageQuality, OptionMessageSchema, type OptionMessage } from '../proto/gen/message_pb.js'
 import type { OptionPatch } from '../session/messages'
 import { DEFAULT_FPS } from '../video/fps-governor'
+import { sameQuality, START_QUALITY } from '../video/quality-governor'
 import type { Quality, RemoteSettings } from './settings'
 
 const PRESETS = {
@@ -22,23 +23,31 @@ export function qualityFields(
   return { imageQuality: ImageQuality.NotSet, customImageQuality: quality.custom << 8 }
 }
 
-function sameQuality(a: Quality, b: Quality): boolean {
-  if (typeof a === 'string' || typeof b === 'string') return a === b
-  return a.custom === b.custom
+export function qualityOption(quality: Quality): OptionMessage {
+  return create(OptionMessageSchema, qualityFields(quality))
+}
+
+export function loginSettings(settings: RemoteSettings): RemoteSettings {
+  return { ...settings, quality: START_QUALITY, fps: Math.min(settings.fps, DEFAULT_FPS) }
 }
 
 export function loginOption(settings: RemoteSettings): OptionMessage {
-  return create(OptionMessageSchema, {
-    ...qualityFields(settings.quality),
-    customFps: Math.min(settings.fps, DEFAULT_FPS),
-  })
+  const told = loginSettings(settings)
+  return create(OptionMessageSchema, { ...qualityFields(told.quality), customFps: told.fps })
+}
+
+/** custom_fps and the image quality have one writer each during a session: their governors. */
+export function ungoverned(option: OptionMessage): OptionMessage {
+  const copy = clone(OptionMessageSchema, option)
+  copy.customFps = 0
+  copy.imageQuality = ImageQuality.NotSet
+  copy.customImageQuality = 0
+  return copy
 }
 
 export function optionPatch(prev: RemoteSettings, next: RemoteSettings): OptionPatch | null {
   const patch: OptionPatch = {}
-  if (!sameQuality(prev.quality, next.quality)) {
-    patch.peer = create(OptionMessageSchema, qualityFields(next.quality))
-  }
+  if (!sameQuality(prev.quality, next.quality)) patch.quality = next.quality
   if (prev.fps !== next.fps) patch.maxFps = next.fps
-  return patch.peer || patch.maxFps !== undefined ? patch : null
+  return patch.quality !== undefined || patch.maxFps !== undefined ? patch : null
 }

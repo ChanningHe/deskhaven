@@ -14,7 +14,7 @@ import {
   type Link,
 } from '../handshake/handshake'
 import { supportedDecoding, type DecoderSupport } from '../handshake/login'
-import { loginOption, optionPatch } from '../settings/protocol'
+import { loginOption, loginSettings, optionPatch } from '../settings/protocol'
 import {
   browserStorage,
   loadSettings,
@@ -29,7 +29,6 @@ import type { KeyedTransport } from '../transport/transport'
 import { startTrickle, type Trickle, type TrickleApi } from '../transport/trickle'
 import { WebRtcTransport, type WebRtcOfferer } from '../transport/webrtc'
 import { probeVideoDecoders } from '../video/codec'
-import { DEFAULT_FPS } from '../video/fps-governor'
 import { WEBRTC_CONNECT_TIMEOUT_MS, paired, preferWebRtc, withTimeout } from './race'
 
 export type ConnectFailure =
@@ -228,7 +227,7 @@ export class RemoteController {
     try {
       const settings = this.#settings.get()
       params = this.#params(opened, decoders, settings)
-      attempt.told = { ...settings, fps: Math.min(settings.fps, DEFAULT_FPS) }
+      attempt.told = loginSettings(settings)
       const relay = this.#deps.createRelay(this.#relayOptions(opened))
       const webrtc = this.#deps.webrtc
       if (offerer && opened.answer && webrtc) {

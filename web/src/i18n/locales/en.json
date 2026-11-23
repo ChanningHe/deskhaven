@@ -1785,7 +1785,14 @@
       "keyRequests": "Key frames",
       "pointerMoves": "Pointer",
       "size": "Size",
-      "codec": "Codec"
+      "codec": "Codec",
+      "quality": "Quality",
+      "qualities": {
+        "low": "Low",
+        "balanced": "Balanced",
+        "best": "Best",
+        "custom": "Custom {{level}}"
+      }
     },
     "clipboard": {
       "pasteTitle": "Send text to the device",
