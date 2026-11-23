@@ -34,7 +34,9 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      testMatch: slow ? 'stability.remote.ts' : ['relay.remote.ts', 'webrtc.remote.ts'],
+      testMatch: slow
+        ? 'stability.remote.ts'
+        : ['relay.remote.ts', 'webrtc.remote.ts', 'paste.remote.ts'],
       dependencies: ['login'],
       use: { ...devices['Desktop Firefox'], storageState: owner },
     },

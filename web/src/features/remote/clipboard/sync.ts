@@ -56,6 +56,16 @@ export class ClipboardSync {
     return text
   }
 
+  /** The user chose to paste this text, so the baseline does not hold it back. */
+  pasted(text: string): string | null {
+    const seen = normalized(text)
+    this.#local = seen
+    this.#pending = null
+    if (seen === '' || seen === this.#peer || !fits(text)) return null
+    this.#peer = seen
+    return text
+  }
+
   remote(text: string): string | null {
     const seen = normalized(text)
     this.#peer = seen

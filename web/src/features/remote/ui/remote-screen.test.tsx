@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSession } from '../connect/fake-session'
 import type { CursorShape } from '../cursor/cursor'
 import { RemoteScreen } from './remote-screen'
+import { useClipboardSync } from './use-clipboard-sync'
 
 const BOX = { width: 800, height: 600 }
 const SHAPE: CursorShape = {
@@ -189,5 +190,68 @@ describe('remote screen cursor', () => {
     expect(localCursor(overlay)).toBe('none')
     fireEvent.pointerMove(overlay, { clientX: 100, clientY: 50 })
     expect(drawnAt()).toEqual([158, 77])
+  })
+})
+
+function Synced({ session }: { session: FakeSession }) {
+  const sync = useClipboardSync({
+    session,
+    enabled: true,
+    onEnabled: () => undefined,
+    onSent: () => undefined,
+    onCopied: () => undefined,
+  })
+  return (
+    <RemoteScreen
+      session={session}
+      scale="fit"
+      showRemoteCursor
+      onLeave={() => undefined}
+      onGesture={sync.onGesture}
+      onPaste={sync.onPaste}
+    />
+  )
+}
+
+describe('remote screen paste with a device text waiting', () => {
+  it('pastes the local text, and leaves the waiting text for another key', async () => {
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockRejectedValueOnce(new DOMException('no gesture', 'NotAllowedError'))
+      .mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { readText: vi.fn(), writeText },
+      configurable: true,
+    })
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const session = new FakeSession()
+    session.activate()
+    render(<Synced session={session} />)
+    await act(async () => {
+      session.remoteClipboard.set('from the device')
+      await Promise.resolve()
+    })
+    expect(writeText).toHaveBeenCalledTimes(1)
+
+    const keys = screen.getByRole('textbox')
+    keys.focus()
+    act(() => {
+      keys.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true }),
+      )
+    })
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'typed here' } })
+    act(() => {
+      keys.dispatchEvent(paste)
+    })
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(session.pasted).toEqual(['typed here'])
+
+    act(() => {
+      keys.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', bubbles: true }))
+    })
+    expect(writeText).toHaveBeenLastCalledWith('from the device')
+    Reflect.deleteProperty(navigator, 'clipboard')
   })
 })

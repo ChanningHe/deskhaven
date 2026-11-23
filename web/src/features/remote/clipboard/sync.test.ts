@@ -5,6 +5,7 @@ import { AUTO_LIMIT_BYTES, ClipboardSync, syncAllowed } from './sync'
 type Step =
   | { baseline: string | null }
   | { local: string; sends: string | null; started?: true }
+  | { pasted: string; sends: string | null }
   | { remote: string; writes: string | null }
   | { wrote: string }
   | { take: string | null }
@@ -23,7 +24,8 @@ function run(steps: Step[]) {
     else if ('local' in step) {
       const stamp = step.started ? read : sync.readStarts()
       expect(sync.local(step.local, stamp), step.local).toBe(step.sends)
-    } else if ('remote' in step) expect(sync.remote(step.remote), step.remote).toBe(step.writes)
+    } else if ('pasted' in step) expect(sync.pasted(step.pasted), step.pasted).toBe(step.sends)
+    else if ('remote' in step) expect(sync.remote(step.remote), step.remote).toBe(step.writes)
     else if ('wrote' in step) sync.wrote(step.wrote)
     else expect(sync.takePending()).toBe(step.take)
   }
@@ -176,6 +178,62 @@ describe('ClipboardSync, remote to local', () => {
     [
       'an unchanged local read keeps the pending write',
       [{ baseline: 'B' }, { remote: 'R', writes: 'R' }, { local: 'B', sends: null }, { take: 'R' }],
+    ],
+  ])('%s', (_, steps) => {
+    run(steps)
+  })
+})
+
+describe('ClipboardSync, pasted', () => {
+  it.each<[string, Step[]]>([
+    [
+      'sends the text although it is the baseline',
+      [{ baseline: 'B' }, { pasted: 'B', sends: 'B' }],
+    ],
+    ['sends with no baseline taken', [{ pasted: 'X', sends: 'X' }]],
+    [
+      'sends a text once while the peer has it',
+      [
+        { pasted: 'X', sends: 'X' },
+        { pasted: 'X', sends: null },
+      ],
+    ],
+    [
+      'sends a text again once the peer has another',
+      [
+        { pasted: 'X', sends: 'X' },
+        { remote: 'R', writes: 'R' },
+        { pasted: 'X', sends: 'X' },
+      ],
+    ],
+    [
+      'does not send what the automatic path sent',
+      [{ baseline: 'B' }, { local: 'X', sends: 'X' }, { pasted: 'X', sends: null }],
+    ],
+    [
+      'is not sent again by the automatic path',
+      [{ baseline: 'B' }, { pasted: 'X', sends: 'X' }, { local: 'X', sends: null }],
+    ],
+    [
+      'compares with CRLF as LF',
+      [
+        { remote: 'a\nb', writes: 'a\nb' },
+        { pasted: 'a\r\nb', sends: null },
+      ],
+    ],
+    ['never sends an empty text', [{ pasted: '', sends: null }]],
+    [
+      `never sends more than ${AUTO_LIMIT_BYTES} UTF-8 bytes`,
+      [{ pasted: OVER_LIMIT, sends: null }],
+    ],
+    [
+      'drops the pending write',
+      [
+        { baseline: 'B' },
+        { remote: 'R', writes: 'R' },
+        { pasted: 'X', sends: 'X' },
+        { take: null },
+      ],
     ],
   ])('%s', (_, steps) => {
     run(steps)

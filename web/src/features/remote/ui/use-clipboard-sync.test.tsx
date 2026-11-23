@@ -26,6 +26,7 @@ const writeText = vi.fn((text: string) => {
 const onSent = vi.fn()
 const onCopied = vi.fn()
 const onEnabled = vi.fn()
+let pasting = 'pasted here'
 
 function stubPermissions(query: (descriptor: { name: string }) => Promise<FakeStatus>) {
   Object.defineProperty(navigator, 'permissions', { value: { query }, configurable: true })
@@ -34,6 +35,7 @@ function stubPermissions(query: (descriptor: { name: string }) => Promise<FakeSt
 beforeEach(() => {
   local = 'before the session'
   focused = true
+  pasting = 'pasted here'
   readText.mockClear()
   writeText.mockClear()
   onSent.mockClear()
@@ -76,6 +78,14 @@ function Harness({ session, enabled = true, viewOnly = false }: Props) {
         }}
       >
         switch
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          sync.onPaste(pasting)
+        }}
+      >
+        paste
       </button>
     </div>
   )
@@ -204,6 +214,70 @@ describe('useClipboardSync: local to remote', () => {
     await focusWindow()
     expect(first.session.pasted).toEqual([])
     expect(next.pasted).toEqual([])
+  })
+})
+
+function press(name: string) {
+  fireEvent.click(screen.getByRole('button', { name }))
+}
+
+describe('useClipboardSync: paste', () => {
+  it.each<[string, PermissionState | 'throws']>([
+    ['in a browser that cannot read the clipboard', 'throws'],
+    ['before it may read the clipboard', 'prompt'],
+    ['with the permission', 'granted'],
+  ])('sends the pasted text, %s', async (_, access) => {
+    const { session } = await mount(access)
+    press('paste')
+    expect(session.pasted).toEqual(['pasted here'])
+    expect(onSent).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the pasted text once, whether the automatic read or the paste comes first', async () => {
+    const { session } = await mount('granted')
+    local = 'pasted here'
+    await focusWindow()
+    press('paste')
+    await focusWindow()
+    expect(session.pasted).toEqual(['pasted here'])
+
+    pasting = 'next'
+    press('paste')
+    local = 'next'
+    await focusWindow()
+    expect(session.pasted).toEqual(['pasted here', 'next'])
+  })
+
+  it('sends a text copied before the session when it is pasted', async () => {
+    const { session } = await mount('granted')
+    pasting = 'before the session'
+    press('paste')
+    expect(session.pasted).toEqual(['before the session'])
+  })
+
+  it('sends nothing for an empty text', async () => {
+    const { session } = await mount('granted')
+    pasting = ''
+    press('paste')
+    expect(session.pasted).toEqual([])
+  })
+
+  it.each<[string, Partial<Props>]>([
+    ['switched off', { enabled: false }],
+    ['view only', { viewOnly: true }],
+  ])('sends nothing when %s', async (_, props) => {
+    const { session } = await mount('granted', props)
+    press('paste')
+    expect(session.pasted).toEqual([])
+    expect(onSent).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing when the device turned the clipboard off', async () => {
+    const session = new FakeSession()
+    session.permissions.set({ keyboard: true, clipboard: false })
+    await mount('granted', { session })
+    press('paste')
+    expect(session.pasted).toEqual([])
   })
 })
 

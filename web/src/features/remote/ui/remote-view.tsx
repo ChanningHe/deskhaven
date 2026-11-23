@@ -169,6 +169,7 @@ export function RemoteView({
           onLeave={leaveScreen}
           onPointerEnter={sync.onPointerEnter}
           onGesture={sync.onGesture}
+          onPaste={sync.onPaste}
         >
           {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         </RemoteScreen>

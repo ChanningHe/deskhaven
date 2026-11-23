@@ -26,9 +26,18 @@ function run(device: DeviceInfo, command: string, args: string[]): XWindow {
   }
 }
 
+// Plain xterm pastes PRIMARY on Shift+Insert and nothing on Ctrl+V; the client writes CLIPBOARD.
+const CLIPBOARD_PASTE = [
+  'XTerm*VT100.translations: #override \\n',
+  'Ctrl <Key>V: insert-selection(CLIPBOARD) \\n',
+  'Ctrl Shift <Key>V: insert-selection(CLIPBOARD) \\n',
+  'Shift <Key>Insert: insert-selection(CLIPBOARD)',
+].join('')
+
 /** A black xterm (at `at`, default the top left) running `sh`, in the run's temp dir. */
-export function xterm(device: DeviceInfo, at = '+0+0'): XWindow {
+export function xterm(device: DeviceInfo, at = '+0+0', pasteClipboard = false): XWindow {
   return run(device, tool('xterm'), [
+    ...(pasteClipboard ? ['-xrm', CLIPBOARD_PASTE] : []),
     '-geometry',
     `80x24${at}`,
     '-bg',

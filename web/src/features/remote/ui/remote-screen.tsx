@@ -11,7 +11,9 @@ import type { RemoteSettings } from '../settings/settings'
 import { fitSize } from './draw'
 import { useStore } from './use-remote'
 import { useCursor, useElementSize, useScreenInput, useVideo } from './use-screen'
-import { useScreenKeys } from './use-screen-keys'
+import { pasteKey, useScreenKeys } from './use-screen-keys'
+
+const noPaste = () => undefined
 
 /**
  * The peer's screen, scaled to fit with its aspect ratio kept, or one peer pixel to a CSS pixel
@@ -27,6 +29,7 @@ export function RemoteScreen({
   onLeave,
   onPointerEnter,
   onGesture,
+  onPaste,
   children,
 }: {
   session: Session
@@ -36,6 +39,7 @@ export function RemoteScreen({
   onLeave: () => void
   onPointerEnter?: () => void
   onGesture?: () => void
+  onPaste?: (text: string) => void
   children?: ReactNode
 }) {
   const { t } = useTranslation()
@@ -57,7 +61,7 @@ export function RemoteScreen({
     scale: size ? cursorScale(size.width, cursorWidth) : null,
   })
   useScreenInput(session, overlay, keys, moveTo)
-  const hint = useScreenKeys(session, keys, onLeave)
+  const hint = useScreenKeys(session, keys, onLeave, onPaste ?? noPaste)
 
   useLayoutEffect(() => {
     const target = box.current
@@ -97,7 +101,9 @@ export function RemoteScreen({
         style={sizeStyle}
         onPointerEnter={onPointerEnter}
         onPointerDownCapture={onGesture}
-        onKeyDownCapture={onGesture}
+        onKeyDownCapture={(e) => {
+          if (!pasteKey(e.nativeEvent)) onGesture?.()
+        }}
       >
         <canvas ref={video} aria-hidden className="absolute inset-0 size-full" />
         <canvas
