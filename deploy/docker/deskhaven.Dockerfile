@@ -33,7 +33,7 @@ COPY --from=web /src/web/dist /
 # rust:1.99.1-alpine3.22; keep in step with rust-toolchain.toml (excluded from
 # the build context, so rustup uses the image's toolchain instead of
 # installing the dev components).
-FROM rust:1.99.1-alpine3.22@sha256:7a54a528456cc1cae43aab7a23e346198a68fdde39134e207110d91273ea3cea AS build
+FROM rust:1.99.1-alpine3.22@sha256:9a744dc47d1ac2a7d17fc3cedfc8b4928b1696dfcba3274ab25bfb40988a9ff0 AS build
 # make + file: the bundled libsodium build (its configure script needs both).
 # OpenSSL: hbb_common's native-tls (tungstenite) links it on Linux; statically here.
 RUN apk add --no-cache musl-dev make file pkgconf openssl-dev openssl-libs-static
