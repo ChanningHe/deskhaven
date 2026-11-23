@@ -1,6 +1,6 @@
 import { LoaderCircle } from 'lucide-react'
 import { useId, useLayoutEffect, useRef } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -30,7 +30,6 @@ export function RemoteScreen({
   onPointerEnter,
   onGesture,
   onPaste,
-  children,
 }: {
   session: Session
   scale: RemoteSettings['scale']
@@ -40,7 +39,6 @@ export function RemoteScreen({
   onPointerEnter?: () => void
   onGesture?: () => void
   onPaste?: (text: string) => void
-  children?: ReactNode
 }) {
   const { t } = useTranslation()
   const hintId = useId()
@@ -133,7 +131,6 @@ export function RemoteScreen({
         >
           {t('remote.leaveHint')}
         </p>
-        {children}
       </div>
     </div>
   )

@@ -57,7 +57,7 @@ export function Toolbar({
       ref={ref}
       role="toolbar"
       aria-label={t('remote.toolbar.label')}
-      className="flex min-w-0 flex-wrap items-stretch gap-0.5"
+      className="flex min-w-0 flex-wrap items-stretch gap-0.5 max-lg:gap-1"
     >
       <DisplayMenu
         session={session}
@@ -76,6 +76,7 @@ export function Toolbar({
         onShowRemote={onShowRemoteClipboard}
       />
       <ActionsMenu session={session} intent={intent} onIntent={onIntent} />
+      <span aria-hidden className="mx-1 my-2 w-px bg-border" />
       <SoundButton
         session={session}
         speaker={speaker}

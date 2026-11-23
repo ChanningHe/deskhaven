@@ -2,6 +2,8 @@ import { Volume2, VolumeX } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { cn } from '@/lib/utils'
+
 import { soundSwitch, type Speaker } from '../audio/speaker'
 import type { Session } from '../session/session'
 import { IconButton } from './toolbar-controls'
@@ -44,10 +46,22 @@ export function SoundButton({
       hint={t(`remote.sound.${state}Hint`)}
       disabled={disabled}
       focusableWhenDisabled
-      className="aria-disabled:opacity-50"
+      className={cn(
+        'relative aria-disabled:opacity-50',
+        state === 'failed' && 'text-destructive hover:text-destructive',
+      )}
       onClick={onClick}
     >
-      {state === 'on' ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+      {state === 'on' || state === 'suspended' ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+      {state === 'suspended' || state === 'failed' ? (
+        <span
+          aria-hidden
+          className={cn(
+            'absolute top-1 right-1 size-2 rounded-full ring-2 ring-background max-lg:top-1.5 max-lg:right-1.5',
+            state === 'suspended' ? 'bg-warning motion-safe:animate-pulse' : 'bg-destructive',
+          )}
+        />
+      ) : null}
     </IconButton>
   )
 }

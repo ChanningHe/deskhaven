@@ -187,9 +187,8 @@ export function RemoteView({
           onPointerEnter={sync.onPointerEnter}
           onGesture={sync.onGesture}
           onPaste={sync.onPaste}
-        >
-          {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
-        </RemoteScreen>
+        />
+        {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         {panel === 'paste' && clipboard ? (
           <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
         ) : null}

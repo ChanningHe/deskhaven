@@ -66,16 +66,16 @@ export function RemoteBar({
           <span aria-hidden className={cn('size-1.5 rounded-full', DOT[status])} />
           {t(`remote.status.${status}`)}
           {transport === undefined ? null : (
-            <>
+            <span className="contents max-sm:hidden">
               <span aria-hidden className="text-border">
                 |
               </span>
               {t(`remote.transport.${transport}`)}
-            </>
+            </span>
           )}
         </span>
         {viewOnly ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/30 px-2 py-0.5 text-xs text-warning">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
             <Eye aria-hidden className="size-3" />
             {t('remote.status.viewOnly')}
           </span>

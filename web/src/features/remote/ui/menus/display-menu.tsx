@@ -2,7 +2,6 @@ import { Monitor } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
-  DropdownMenuCheckboxItem,
   DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -15,7 +14,7 @@ import {
 
 import type { Session } from '../../session/session'
 import type { RemoteSettings } from '../../settings/settings'
-import { ToolbarMenu } from '../toolbar-controls'
+import { MenuSwitch, ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
 import { QualityGroup } from './quality-group'
 import { ResolutionSubmenu } from './resolution-submenu'
@@ -136,7 +135,7 @@ export function DisplayMenu({
       <MonitorGroup session={session} />
       <ResolutionSubmenu session={session} viewOnly={viewOnly} />
       <DropdownMenuSeparator />
-      <DropdownMenuCheckboxItem
+      <MenuSwitch
         checked={settings.showRemoteCursor}
         onCheckedChange={(showRemoteCursor: boolean) => {
           onSettings({ showRemoteCursor })
@@ -144,10 +143,10 @@ export function DisplayMenu({
         closeOnClick
       >
         {t('remote.toolbar.showRemoteCursor')}
-      </DropdownMenuCheckboxItem>
-      <DropdownMenuCheckboxItem checked={stats} onCheckedChange={onStats} closeOnClick>
+      </MenuSwitch>
+      <MenuSwitch checked={stats} onCheckedChange={onStats} closeOnClick>
         {t('remote.toolbar.stats')}
-      </DropdownMenuCheckboxItem>
+      </MenuSwitch>
     </ToolbarMenu>
   )
 }

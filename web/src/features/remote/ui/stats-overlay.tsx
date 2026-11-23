@@ -61,12 +61,12 @@ export function StatsOverlay({
   return (
     <dl
       aria-label={t('remote.stats.label')}
-      className="pointer-events-none absolute top-2 left-2 grid grid-cols-[auto_auto] gap-x-3 rounded-md bg-black/70 px-2 py-1.5 font-mono text-[11px] leading-4 text-white tabular-nums"
+      className="pointer-events-none absolute top-3 left-3 grid grid-cols-[auto_auto] gap-x-4 rounded-lg bg-black/75 px-3 py-2 font-mono text-[11px] leading-[18px] text-white tabular-nums shadow-lg ring-1 ring-white/10 backdrop-blur-sm"
     >
       {rows.map(([stat, value, text]) => (
         <Fragment key={stat}>
-          <dt className="text-white/60">{t(`remote.stats.${stat}`)}</dt>
-          <dd data-stat={stat} data-value={value ?? ''}>
+          <dt className="text-white/65">{t(`remote.stats.${stat}`)}</dt>
+          <dd data-stat={stat} data-value={value ?? ''} className="text-right">
             {text}
           </dd>
         </Fragment>

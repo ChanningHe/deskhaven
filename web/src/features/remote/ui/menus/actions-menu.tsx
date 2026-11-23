@@ -1,17 +1,13 @@
-import { Zap } from 'lucide-react'
+import { Power, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import {
-  DropdownMenuCheckboxItem,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 
 import type { Session } from '../../session/session'
 import type { SessionIntent } from '../../settings/protocol'
-import { ToolbarMenu } from '../toolbar-controls'
+import { MenuSwitch, ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
 
 export function ActionsMenu({
@@ -34,7 +30,7 @@ export function ActionsMenu({
         hint={t('remote.toolbar.actionsMenuHint')}
         icon={<Zap aria-hidden />}
       >
-        <DropdownMenuCheckboxItem
+        <MenuSwitch
           checked={intent.viewOnly}
           onCheckedChange={(viewOnly: boolean) => {
             onIntent({ viewOnly })
@@ -42,8 +38,8 @@ export function ActionsMenu({
           closeOnClick
         >
           {t('remote.toolbar.viewOnly')}
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
+        </MenuSwitch>
+        <MenuSwitch
           checked={intent.lockAfterEnd}
           disabled={intent.viewOnly}
           onCheckedChange={(lockAfterEnd: boolean) => {
@@ -52,14 +48,16 @@ export function ActionsMenu({
           closeOnClick
         >
           {t('remote.toolbar.lockAfterEnd')}
-        </DropdownMenuCheckboxItem>
+        </MenuSwitch>
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          variant="destructive"
           disabled={!restart}
           onClick={() => {
             setConfirming(true)
           }}
         >
+          <Power aria-hidden />
           {t('remote.toolbar.restart')}
         </DropdownMenuItem>
       </ToolbarMenu>

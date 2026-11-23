@@ -11,6 +11,7 @@ import { ApiError, isErrorCode } from '@/api/api-error'
 import { createApp } from '@/app/create-app'
 import { AppProviders } from '@/app/providers'
 
+import type { AudioDeps, SpeakerContext } from '../../audio/speaker'
 import type { ConnectDeps } from '../../connect/controller'
 import { FakeSession, OPENED } from '../../connect/fake-session'
 import { RemoteDepsContext } from '../deps-context'
@@ -28,6 +29,8 @@ interface Shots {
   /** Logs the session in and shows a synthetic 1280×800 frame with the peer's cursor. */
   activate(displays: number): void
   navigate(href: string): Promise<void>
+  /** Whether a click lets the fake AudioContext run; false keeps the sound switch suspended. */
+  audioResumes: boolean
 }
 
 declare global {
@@ -99,8 +102,33 @@ const shots: Shots = {
     session.queue.push(fixtureFrame())
   },
   navigate: (href) => router.navigate({ href }),
+  audioResumes: true,
 }
 window.__remoteShots = shots
+
+// localStorage `shots.audio` = `unsupported` makes the probe fail; it runs before any script can.
+const audio: AudioDeps = {
+  decodesOpus: () => Promise.resolve(localStorage.getItem('shots.audio') !== 'unsupported'),
+  createContext: () => {
+    const context = {
+      state: 'suspended' as AudioContextState,
+      currentTime: 0,
+      onstatechange: null as ((this: BaseAudioContext, ev: Event) => unknown) | null,
+      resume() {
+        if (shots.audioResumes) {
+          context.state = 'running'
+          context.onstatechange?.call(
+            context as unknown as BaseAudioContext,
+            new Event('statechange'),
+          )
+        }
+        return Promise.resolve()
+      },
+      close: () => Promise.resolve(),
+    }
+    return context as unknown as SpeakerContext
+  },
+}
 
 const deps: ConnectDeps = {
   openSession: () => {
@@ -122,6 +150,7 @@ const deps: ConnectDeps = {
     return shots.session
   },
   location: window.location,
+  audio,
 }
 
 const rootElement = document.getElementById('root')

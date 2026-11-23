@@ -1,15 +1,11 @@
-import { Clipboard, ClipboardCopy, ClipboardPaste } from 'lucide-react'
+import { CircleAlert, Clipboard, ClipboardCopy, ClipboardPaste, KeyRound } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  DropdownMenuCheckboxItem,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 
 import type { Session } from '../../session/session'
-import { ToolbarMenu } from '../toolbar-controls'
+import { MenuSwitch, ToolbarMenu } from '../toolbar-controls'
 import type { ClipboardSyncControl } from '../use-clipboard-sync'
 import { useStore } from '../use-remote'
 
@@ -53,7 +49,7 @@ export function ClipboardMenu({
         {t('remote.toolbar.remoteClipboard')}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuCheckboxItem
+      <MenuSwitch
         checked={sync.enabled}
         disabled={!sending}
         onCheckedChange={(on: boolean) => {
@@ -63,15 +59,24 @@ export function ClipboardMenu({
         closeOnClick
       >
         {t('remote.toolbar.clipboardSync')}
-      </DropdownMenuCheckboxItem>
+      </MenuSwitch>
       {sync.enabled && sync.access === 'prompt' ? (
-        <DropdownMenuItem disabled={!sending} onClick={sync.requestAccess}>
+        <DropdownMenuItem
+          disabled={!sending}
+          onClick={sync.requestAccess}
+          className="mt-0.5 bg-warning/10 py-1.5"
+        >
+          <KeyRound aria-hidden className="text-warning" />
           {t('remote.toolbar.clipboardAllow')}
         </DropdownMenuItem>
       ) : null}
       {denied ? (
-        <p id={deniedId} className="px-2 py-1.5 text-xs text-muted-foreground">
-          {t('remote.toolbar.clipboardDenied')}
+        <p
+          id={deniedId}
+          className="mt-0.5 flex gap-1.5 rounded-md bg-warning/10 px-1.5 py-1.5 text-xs leading-relaxed text-muted-foreground"
+        >
+          <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          <span>{t('remote.toolbar.clipboardDenied')}</span>
         </p>
       ) : null}
     </ToolbarMenu>
