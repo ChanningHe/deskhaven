@@ -165,7 +165,7 @@ describe('RemoteController settings in a session', () => {
     const f = await connected()
     f.session.activate()
     f.session.patches.length = 0
-    f.session.end('gone')
+    f.session.end({ by: 'peer', reason: 'gone' })
     f.controller.updateSettings({ quality: 'low' })
     expect(f.session.patches).toEqual([])
   })

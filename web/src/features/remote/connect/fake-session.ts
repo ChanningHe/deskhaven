@@ -9,12 +9,8 @@ import { FrameQueue } from '../session/frame-queue'
 import type { OptionPatch } from '../session/messages'
 import { peerView, type PeerView } from '../session/peer-view'
 import type { Size } from '../session/resolution'
-import {
-  CLOSED_BY_USER,
-  type Permissions,
-  type Session,
-  type SessionState,
-} from '../session/session'
+import type { CloseCause } from '../handshake/handshake'
+import type { Permissions, Session, SessionState } from '../session/session'
 import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
 
@@ -104,12 +100,12 @@ export class FakeSession implements Session {
 
   close(): void {
     this.closed++
-    this.end(CLOSED_BY_USER)
+    this.end({ by: 'user', reason: '' })
   }
 
-  end(reason: string): void {
+  end(cause: CloseCause): void {
     if (this.state.get().kind === 'closed') return
-    this.state.set({ kind: 'closed', reason })
+    this.state.set({ kind: 'closed', cause })
     this.queue.end()
   }
 

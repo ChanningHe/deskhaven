@@ -1707,6 +1707,7 @@
     "disabled": "设备已停用；启用后才能从浏览器连接。",
     "opening": "正在向设备请求会话…",
     "connecting": "正在连接设备…",
+    "reconnecting": "连接已中断，正在重连（第 {{attempt}} 次）…",
     "password": {
       "title": "设备密码",
       "description": "输入设备上设置的访问密码。没有密码时，也可以由设备前的人接受连接。",

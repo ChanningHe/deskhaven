@@ -7,8 +7,24 @@ import type { Session } from '../session/session'
 import { memoryStorage } from '../settings/testing'
 import { FakePeerConnection } from '../transport/fake-rtc'
 import { WebRtcTransport } from '../transport/webrtc'
-import type { ConnectDeps, WebRtcDeps } from './controller'
+import type { HandshakeParams } from '../handshake/handshake'
+import type { ConnectDeps, PageVisibility, WebRtcDeps } from './controller'
 import { FakeSession, OPENED } from './fake-session'
+
+export class FakePage implements PageVisibility {
+  hidden = false
+  readonly #listeners = new Set<() => void>()
+
+  onVisible(listener: () => void): () => void {
+    this.#listeners.add(listener)
+    return () => this.#listeners.delete(listener)
+  }
+
+  show(): void {
+    this.hidden = false
+    for (const listener of [...this.#listeners]) listener()
+  }
+}
 
 /** Deps that open OPENED (or `open`'s result) and start FakeSessions; the mocks are exposed. */
 export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.resolve(OPENED)) {
@@ -28,6 +44,7 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
     return session
   })
   const storage = memoryStorage()
+  const page = new FakePage()
   const deps: ConnectDeps = {
     openSession,
     closeSession,
@@ -36,10 +53,19 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
     startSession,
     location: { protocol: 'https:', host: 'console.example' },
     storage,
+    page,
+    random: () => 0.5,
+  }
+  const params = (index: number): HandshakeParams => {
+    const call = startSession.mock.calls[index]
+    if (!call) throw new Error(`no session ${String(index)}`)
+    return call[1]
   }
   return {
     deps,
     storage,
+    page,
+    params,
     sessions,
     relays,
     openSession,

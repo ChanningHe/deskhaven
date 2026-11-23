@@ -15,7 +15,7 @@ import {
   type KxTranscript,
 } from './frame-cipher'
 import { boxKeyPairFromSecret, openSigned, sealKey } from './nacl'
-import { passwordHash } from './password'
+import { passwordHash, proof, salted } from './password'
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
@@ -224,6 +224,16 @@ describe('passwordHash', () => {
   it('matches a fixed vector', async () => {
     // Python: sha256(sha256(b'pwsalt').digest() + b'chal').hexdigest()
     expect(hex(await passwordHash('pw', 'salt', 'chal'))).toBe(
+      '6b4858ead261a75c0d1cb54a609d649c19fcfee7e4f7e26cf339099c3f0657a4',
+    )
+  })
+
+  it('is the proof over the salted password, so a reconnect needs no plain password', async () => {
+    const kept = await salted('pw', 'salt')
+    expect(hex(kept)).toBe(
+      hex(new Uint8Array(await crypto.subtle.digest('SHA-256', ascii('pwsalt')))),
+    )
+    expect(hex(await proof(kept, 'chal'))).toBe(
       '6b4858ead261a75c0d1cb54a609d649c19fcfee7e4f7e26cf339099c3f0657a4',
     )
   })

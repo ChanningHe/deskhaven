@@ -273,6 +273,7 @@ describe('WebRTC identity binding', () => {
         signedPeerPk: nacl.sign(idPk(device.publicKey), server.secretKey),
         myId: 'admin',
         myName: 'Admin',
+        sessionId: 1n,
         decoders: { vp9: true, av1: false, vp8: false },
         loginOption: create(OptionMessageSchema),
       },

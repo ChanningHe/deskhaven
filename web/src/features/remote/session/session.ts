@@ -1,6 +1,6 @@
 import { clipboardMessage, clipboardText } from '../clipboard/clipboard'
 import { CursorTracker, type CursorImages, type CursorView } from '../cursor/cursor'
-import type { Handshake } from '../handshake/handshake'
+import type { CloseBy, CloseCause, Handshake } from '../handshake/handshake'
 import type { LoginState } from '../handshake/login'
 import { encodeInput, type RemoteInput } from '../input/input'
 import { KeyboardEncoder, keyboardModeFor, supportedKeyboardModes } from '../input/keyboard'
@@ -13,6 +13,7 @@ import {
 } from '../proto/gen/message_pb.js'
 import { qualityOption, ungoverned } from '../settings/protocol'
 import type { Quality } from '../settings/settings'
+import { TransportError } from '../transport/transport'
 import { createWebCodecsDecoder, type CreateDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
 import { VideoPipeline } from '../video/pipeline'
@@ -43,7 +44,7 @@ export type SessionState =
   /** Logged in to a peer that waits for us to pick one of its Windows sessions. */
   | ({ kind: 'choose_session' } & WindowsSessionChoice)
   | { kind: 'active' }
-  | { kind: 'closed'; reason: string }
+  | { kind: 'closed'; cause: CloseCause }
 
 /** What the peer's user lets us do; the peer reports only changes, so both start allowed. */
 export interface Permissions {
@@ -90,7 +91,6 @@ export interface SessionOptions {
   clock?: StatsClock
 }
 
-export const CLOSED_BY_USER = 'closed'
 /** What a peer streams only once it serves the connection. */
 const SERVED = new Set<Message['union']['case']>([
   'videoFrame',
@@ -98,8 +98,6 @@ const SERVED = new Set<Message['union']['case']>([
   'cursorId',
   'cursorPosition',
 ])
-/** The peer dropped the link to restart in the Windows session we picked. */
-export const WINDOWS_SESSION_SWITCH = 'windows_session_switch'
 
 /** Runs a remote control session over a handshake from `startHandshake`, from login on. */
 export function startSession(handshake: Handshake, options: SessionOptions = {}): Session {
@@ -154,7 +152,7 @@ class RemoteSession implements Session {
       },
       mayRefresh: () => governor.mayRefresh(clock.now()),
       onFatal: (error) => {
-        this.#hangUp(`video decoding failed: ${error.message}`)
+        this.#hangUp('local', `video decoding failed: ${error.message}`)
       },
       meter: governed(this.#meter, governor),
     })
@@ -180,9 +178,9 @@ class RemoteSession implements Session {
       try {
         if (event.kind === 'state') this.#onLoginState(event.state)
         else if (event.kind === 'message') this.#onMessage(event.message)
-        else this.#finish(event.reason)
+        else this.#finish(event.cause)
       } catch (error) {
-        this.#hangUp(error instanceof Error ? error.message : String(error))
+        this.#hangUp('local', error)
       }
     }
   }
@@ -267,7 +265,7 @@ class RemoteSession implements Session {
 
   close(): void {
     if (this.#active()) this.#send(closeReason())
-    this.#hangUp(CLOSED_BY_USER)
+    this.#hangUp('user', '')
   }
 
   #active(): boolean {
@@ -285,12 +283,9 @@ class RemoteSession implements Session {
   }
 
   #onLoginState(state: LoginState): void {
-    if (state.kind === 'failed') {
-      this.#finish(state.reason)
-      return
-    }
+    // The handshake's `closed` event, right behind it, says who failed.
     if (state.kind !== 'active') {
-      this.state.set(state)
+      if (state.kind !== 'failed') this.state.set(state)
       return
     }
     this.#onPeerInfo(state.peerInfo)
@@ -358,7 +353,7 @@ class RemoteSession implements Session {
         this.#onPermission(union.value.permission, union.value.enabled)
         return
       case 'closeReason':
-        this.#hangUp(union.value)
+        this.#hangUp('peer', union.value)
         return
       default:
         return
@@ -382,20 +377,21 @@ class RemoteSession implements Session {
     try {
       this.#handshake.send(message)
     } catch (error) {
-      this.#hangUp(error instanceof Error ? error.message : String(error))
+      this.#hangUp(error instanceof TransportError ? 'link' : 'local', error)
     }
   }
 
   /** Ends the session from our side and drops the link. */
-  #hangUp(reason: string): void {
-    this.#finish(reason)
-    this.#handshake.close(reason)
+  #hangUp(by: CloseBy, error: unknown): void {
+    const cause = { by, reason: error instanceof Error ? error.message : String(error) }
+    this.#finish(cause)
+    this.#handshake.close(cause)
   }
 
-  #finish(reason: string): void {
+  #finish(cause: CloseCause): void {
     if (this.state.get().kind === 'closed') return
-    const switched = this.#switchingSession && reason !== CLOSED_BY_USER
-    this.state.set({ kind: 'closed', reason: switched ? WINDOWS_SESSION_SWITCH : reason })
+    const by = this.#switchingSession && cause.by !== 'user' ? 'session_switch' : cause.by
+    this.state.set({ kind: 'closed', cause: { by, reason: cause.reason } })
     this.#video.close()
     this.#frames.end()
     this.#cursors.close()

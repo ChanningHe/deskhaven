@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { RemotePhase } from '../connect/controller'
-import { CLOSED_BY_USER, type Session } from '../session/session'
+import type { Session } from '../session/session'
 import type { RemoteSettings } from '../settings/settings'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
@@ -123,7 +123,7 @@ function SessionStep({
         <Waiting frame={frame} status="ended">
           <ProblemPanel
             title={t('remote.ended.title')}
-            message={endingMessage(state.reason, t)}
+            message={endingMessage(state.cause, t)}
             onRetry={onReconnect}
             retryLabel={t('remote.ended.reconnect')}
           />
@@ -141,7 +141,7 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
         <Waiting frame={frame} status="ended">
           <ProblemPanel
             title={t('remote.ended.title')}
-            message={endingMessage(CLOSED_BY_USER, t)}
+            message={endingMessage({ by: 'user', reason: '' }, t)}
             onRetry={onReconnect}
             retryLabel={t('remote.ended.reconnect')}
           />
@@ -151,6 +151,15 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
       return (
         <Waiting frame={frame} status="connecting">
           <ProgressPanel text={t('remote.opening')} onCancel={onDisconnect} />
+        </Waiting>
+      )
+    case 'reconnecting':
+      return (
+        <Waiting frame={frame} status="connecting">
+          <ProgressPanel
+            text={t('remote.reconnecting', { attempt: phase.attempt })}
+            onCancel={onDisconnect}
+          />
         </Waiting>
       )
     case 'failed':

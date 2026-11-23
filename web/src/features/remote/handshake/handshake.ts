@@ -10,7 +10,7 @@ import {
   randomBytes,
   sealKey,
 } from '../crypto/nacl'
-import { passwordHash } from '../crypto/password'
+import { proof, salted } from '../crypto/password'
 import {
   Auth2FASchema,
   MessageSchema,
@@ -21,7 +21,7 @@ import {
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { IdPkSchema, type IdPk } from '../proto/gen/rendezvous_pb.js'
-import type { KeyedTransport, Transport } from '../transport/transport'
+import { TransportError, type KeyedTransport, type Transport } from '../transport/transport'
 import {
   loginRequest,
   loginStateForError,
@@ -30,6 +30,23 @@ import {
   type LoginFields,
   type LoginState,
 } from './login'
+
+export interface Credential {
+  readonly salt: string
+  readonly salted: Uint8Array
+}
+
+export interface CredentialSlot {
+  take(): Credential | null
+  keep(credential: Credential): void
+}
+
+export type CloseBy = 'user' | 'peer' | 'link' | 'local' | 'session_switch'
+
+export interface CloseCause {
+  by: CloseBy
+  reason: string
+}
 
 export interface HandshakeParams {
   targetId: string
@@ -40,8 +57,12 @@ export interface HandshakeParams {
   /** Who we are to the peer's user; issued by the console server, never typed by the user. */
   myId: string
   myName: string
+  /** Reused across reconnects: the peer's recent-session key (client.rs:2961-2974). */
+  sessionId: bigint
   decoders: DecoderSupport
   loginOption: OptionMessage
+  credentials?: CredentialSlot
+  onHeard?: (at: number) => void
 }
 
 /** Starts a one-shot timer and returns the function that cancels it. */
@@ -59,6 +80,9 @@ export const READ_TIMEOUT_MS = 18_000
 /** Opening the relay link (connect), then pairing and the SignedId (one read). */
 export const IDENTITY_TIMEOUT_MS = CONNECT_TIMEOUT_MS + READ_TIMEOUT_MS
 export const TIMEOUT_REASON = 'timeout'
+// The peer sends TestDelay every second (connection.rs:504,703): silence this long is a dead link.
+export const SILENCE_MS = 8000
+export const SILENCE_REASON = 'no message from the device for 8 s'
 
 const realTimer: StartTimer = (ms, onExpire) => {
   const id = setTimeout(onExpire, ms)
@@ -76,7 +100,7 @@ export type LinkKind = Link['kind']
 export type HandshakeEvent =
   | { kind: 'state'; state: LoginState }
   | { kind: 'message'; message: Message }
-  | { kind: 'closed'; reason: string }
+  | { kind: 'closed'; cause: CloseCause }
 
 export interface Handshake {
   readonly link: LinkKind
@@ -87,10 +111,8 @@ export interface Handshake {
   submit2fa(code: string): void
   /** Only once the stream is keyed, never in plaintext. */
   send(message: Message): void
-  close(reason: string): void
+  close(cause: CloseCause): void
 }
-
-const SESSION_ID_BYTES = 8
 
 type Phase = 'identity' | 'auth' | 'active' | 'closed'
 
@@ -122,6 +144,7 @@ class PeerHandshake implements Handshake {
   #phase: Phase = 'identity'
   #state: LoginState = { kind: 'connecting' }
   #password: string | null = null
+  #proven: Credential | null = null
   #hash: Hash | null = null
   #fields: LoginFields | null = null
   #devicePk: Uint8Array | null = null
@@ -152,11 +175,17 @@ class PeerHandshake implements Handshake {
       this.#start()
       for await (const message of this.#link.transport.messages) {
         if (this.#phase === 'closed') return
+        // Wall-clock time, so that a sleeping machine counts against the peer's window too.
+        this.#params.onHeard?.(Date.now())
+        if (this.#phase === 'active') this.#arm(SILENCE_MS, SILENCE_REASON)
         await this.#onMessage(message)
       }
-      this.#close('connection closed')
+      this.#close({ by: 'link', reason: 'connection closed' })
     } catch (error) {
-      this.#close(error instanceof Error ? error.message : String(error))
+      this.#close({
+        by: error instanceof TransportError ? 'link' : 'local',
+        reason: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
@@ -184,8 +213,8 @@ class PeerHandshake implements Handshake {
     this.#link.transport.send(message)
   }
 
-  close(reason: string): void {
-    this.#close(reason)
+  close(cause: CloseCause): void {
+    this.#close(cause)
   }
 
   #start(): void {
@@ -198,7 +227,7 @@ class PeerHandshake implements Handshake {
       targetId: params.targetId,
       myId: params.myId,
       myName: params.myName,
-      sessionId: new DataView(this.#random(SESSION_ID_BYTES).buffer).getBigUint64(0, true),
+      sessionId: params.sessionId,
       decoding,
       option: params.loginOption,
     }
@@ -280,14 +309,24 @@ class PeerHandshake implements Handshake {
       await this.#sendPassword(this.#password, hash)
       return
     }
+    const kept = this.#params.credentials?.take() ?? null
+    if (kept?.salt === hash.salt) {
+      await this.#sendProof(kept, hash)
+      return
+    }
     this.#link.transport.send(loginRequest(this.#loginFields(), new Uint8Array()))
     this.#awaitUser({ kind: 'need_password' })
   }
 
   async #sendPassword(password: string, hash: Hash): Promise<void> {
-    const proof = await passwordHash(password, hash.salt, hash.challenge)
+    await this.#sendProof({ salt: hash.salt, salted: await salted(password, hash.salt) }, hash)
+  }
+
+  async #sendProof(credential: Credential, hash: Hash): Promise<void> {
+    const login = await proof(credential.salted, hash.challenge)
     if (this.#phase !== 'auth') return
-    this.#link.transport.send(loginRequest(this.#loginFields(), proof))
+    this.#proven = credential
+    this.#link.transport.send(loginRequest(this.#loginFields(), login))
     this.#setState({ kind: 'connecting' })
     this.#arm(READ_TIMEOUT_MS)
   }
@@ -295,16 +334,21 @@ class PeerHandshake implements Handshake {
   #onLoginResponse(response: LoginResponse): boolean {
     const { union } = response
     if (union.case === 'peerInfo') {
+      const proven = this.#proven
       this.#phase = 'active'
-      this.#disarm()
+      this.#arm(SILENCE_MS, SILENCE_REASON)
       this.#password = null
+      this.#proven = null
+      if (proven) this.#params.credentials?.keep(proven)
       this.#setState({ kind: 'active', peerInfo: union.value })
       return true
     }
     if (union.case === 'error') {
       const state = loginStateForError(union.value)
       if (state.kind === 'wrong_password') this.#password = null
-      if (state.kind === 'failed') this.#close(state.reason)
+      // The peer asks for a 2FA code only past the password (connection.rs:1860-1876).
+      if (state.kind !== 'need_2fa') this.#proven = null
+      if (state.kind === 'failed') this.#close({ by: 'peer', reason: state.reason })
       else this.#awaitUser(state)
       return true
     }
@@ -322,10 +366,10 @@ class PeerHandshake implements Handshake {
     this.#setState(state)
   }
 
-  #arm(ms: number): void {
+  #arm(ms: number, reason = TIMEOUT_REASON): void {
     this.#disarm()
     this.#cancelTimer = this.#startTimer(ms, () => {
-      this.#close(TIMEOUT_REASON)
+      this.#close({ by: 'link', reason })
     })
   }
 
@@ -339,15 +383,18 @@ class PeerHandshake implements Handshake {
     this.#events.push({ kind: 'state', state })
   }
 
-  #close(reason: string): void {
+  #close(cause: CloseCause): void {
     if (this.#phase === 'closed') return
     const wasActive = this.#phase === 'active'
     this.#phase = 'closed'
     this.#disarm()
     this.#password = null
+    this.#proven = null
     this.#link.transport.close()
-    if (!wasActive && this.#state.kind !== 'failed') this.#setState({ kind: 'failed', reason })
-    this.#events.push({ kind: 'closed', reason })
+    if (!wasActive && this.#state.kind !== 'failed') {
+      this.#setState({ kind: 'failed', reason: cause.reason })
+    }
+    this.#events.push({ kind: 'closed', cause })
     this.#events.end()
   }
 }

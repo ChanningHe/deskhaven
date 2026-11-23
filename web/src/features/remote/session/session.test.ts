@@ -14,7 +14,7 @@ import {
 import { vp9Frame } from '../video/fake-decoder'
 import { MAX_WAITING_FRAMES } from './frame-queue'
 import { versionNumber } from './peer'
-import { CLOSED_BY_USER, startSession } from './session'
+import { startSession } from './session'
 import { PEER_INFO, activeSession, misc, settle } from './testing'
 
 describe('versionNumber (hbb_common get_version_number)', () => {
@@ -132,7 +132,10 @@ describe('session end', () => {
     const r = await activeSession()
     r.peerSends(misc({ case: 'closeReason', value: 'Closed manually by the peer' }))
     await settle()
-    expect(r.session.state.get()).toEqual({ kind: 'closed', reason: 'Closed manually by the peer' })
+    expect(r.session.state.get()).toEqual({
+      kind: 'closed',
+      cause: { by: 'peer', reason: 'Closed manually by the peer' },
+    })
     expect(r.socket.closedWith).toBe(1000)
   })
 
@@ -143,7 +146,7 @@ describe('session end', () => {
     expect(r.sentAfterLogin().map((m) => m.union.value)).toMatchObject([
       { union: { case: 'closeReason', value: '' } },
     ])
-    expect(r.session.state.get()).toEqual({ kind: 'closed', reason: CLOSED_BY_USER })
+    expect(r.session.state.get()).toEqual({ kind: 'closed', cause: { by: 'user', reason: '' } })
     expect(await frames.next()).toEqual({ done: true, value: undefined })
     r.session.input({ kind: 'text', text: 'late' })
     expect(r.sentAfterLogin()).toHaveLength(1)
@@ -154,7 +157,8 @@ describe('session end', () => {
     r.socket.drop(1006)
     await settle()
     const state = r.session.state.get()
-    expect(state.kind === 'closed' && state.reason).toContain('1006')
+    expect(state).toMatchObject({ kind: 'closed', cause: { by: 'link' } })
+    expect(state.kind === 'closed' && state.cause.reason).toContain('1006')
   })
 })
 

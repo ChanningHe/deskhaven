@@ -49,17 +49,31 @@ describe('failureMessage', () => {
 
 describe('endingMessage', () => {
   it.each([
-    ['closed', '你已结束会话。'],
-    ['timeout', '设备未在规定时间内完成连接。'],
+    [{ by: 'user', reason: '' }, '你已结束会话。'],
+    [{ by: 'link', reason: 'timeout' }, '设备未在规定时间内完成连接。'],
     [
-      'relay connection closed (code 1006)',
+      { by: 'link', reason: 'relay connection closed (code 1006)' },
       '与中继服务器的连接已断开：relay connection closed (code 1006)',
     ],
-    ['relay connection failed', '与中继服务器的连接已断开：relay connection failed'],
-    ['connection closed', '与中继服务器的连接已断开：connection closed'],
-    ['Closed manually by the peer', '会话已结束：Closed manually by the peer'],
-    ['Offline', '会话已结束：Offline'],
-  ])('explains %s', (reason, text) => {
-    expect(endingMessage(reason, t)).toBe(text)
+    [{ by: 'link', reason: 'connection closed' }, '与中继服务器的连接已断开：connection closed'],
+    [
+      { by: 'session_switch', reason: 'connection closed' },
+      '设备正在切换到你选择的会话，请几秒后重新连接。',
+    ],
+    [
+      { by: 'peer', reason: 'Closed manually by the peer' },
+      '会话已结束：Closed manually by the peer',
+    ],
+    [{ by: 'peer', reason: 'Offline' }, '会话已结束：Offline'],
+    [{ by: 'local', reason: 'video decoding failed: x' }, '会话已结束：video decoding failed: x'],
+  ] as const)('explains %o', (cause, text) => {
+    expect(endingMessage(cause, t)).toBe(text)
   })
+
+  it.each(['closed', 'timeout', 'connection closed', 'relay connection failed'])(
+    'shows the peer\'s "%s" as its own words, never as ours',
+    (reason) => {
+      expect(endingMessage({ by: 'peer', reason }, t)).toBe(`会话已结束：${reason}`)
+    },
+  )
 })

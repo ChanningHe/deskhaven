@@ -5,8 +5,7 @@ import { isApiError } from '@/api/api-error'
 import type { ErrorCode } from '@/api/generated/model'
 
 import type { ConnectFailure } from '../connect/controller'
-import { TIMEOUT_REASON } from '../handshake/handshake'
-import { CLOSED_BY_USER, WINDOWS_SESSION_SWITCH } from '../session/session'
+import { TIMEOUT_REASON, type CloseCause } from '../handshake/handshake'
 
 /** The codes POST sessions answers with that get their own, remote-specific copy. */
 const SESSION_ERRORS = [
@@ -48,17 +47,21 @@ export function failureMessage(failure: ConnectFailure, t: TFunction): string {
   }
 }
 
-// The relay transport's own failures (transport/relay.ts) and the handshake's end of stream.
-const LINK_FAILURE = /^(relay |bad frame from relay|connection closed$)/
-
 /**
  * Why the peer session ended. Reasons are the session's: ours (closed, timeout, the link)
  * or the peer's own words (close_reason, a login error), shown as given.
  */
-export function endingMessage(reason: string, t: TFunction): string {
-  if (reason === CLOSED_BY_USER) return t('remote.ended.user')
-  if (reason === WINDOWS_SESSION_SWITCH) return t('remote.ended.sessionSwitch')
-  if (reason === TIMEOUT_REASON) return t('remote.ended.timeout')
-  if (LINK_FAILURE.test(reason)) return t('remote.ended.link', { reason })
-  return t('remote.ended.other', { reason })
+export function endingMessage(cause: CloseCause, t: TFunction): string {
+  switch (cause.by) {
+    case 'user':
+      return t('remote.ended.user')
+    case 'session_switch':
+      return t('remote.ended.sessionSwitch')
+    case 'link':
+      if (cause.reason === TIMEOUT_REASON) return t('remote.ended.timeout')
+      return t('remote.ended.link', { reason: cause.reason })
+    case 'peer':
+    case 'local':
+      return t('remote.ended.other', { reason: cause.reason })
+  }
 }

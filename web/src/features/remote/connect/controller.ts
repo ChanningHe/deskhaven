@@ -10,6 +10,9 @@ import { decodeBase64 } from '../bytes'
 import {
   IDENTITY_TIMEOUT_MS,
   startHandshake,
+  type CloseCause,
+  type Credential,
+  type CredentialSlot,
   type HandshakeParams,
   type Link,
 } from '../handshake/handshake'
@@ -22,7 +25,7 @@ import {
   withPatch,
   type RemoteSettings,
 } from '../settings/settings'
-import { CLOSED_BY_USER, startSession, type Session } from '../session/session'
+import { startSession, type Session, type SessionState } from '../session/session'
 import { ValueStore, type Store } from '../session/store'
 import { RelayTransport, type RelayOptions } from '../transport/relay'
 import type { KeyedTransport } from '../transport/transport'
@@ -30,6 +33,14 @@ import { startTrickle, type Trickle, type TrickleApi } from '../transport/trickl
 import { WebRtcTransport, type WebRtcOfferer } from '../transport/webrtc'
 import { probeVideoDecoders } from '../video/codec'
 import { WEBRTC_CONNECT_TIMEOUT_MS, paired, preferWebRtc, withTimeout } from './race'
+import {
+  RECENT_MARGIN_MS,
+  RECENT_MS,
+  STEADY_MS,
+  reconnects,
+  retriesFailure,
+  retryDelay,
+} from './reconnect'
 
 export type ConnectFailure =
   /** POST sessions failed; the error carries the API error code. */
@@ -43,6 +54,7 @@ export type RemotePhase =
   /** Not connecting: before the first connect, or after a disconnect while opening. */
   | { kind: 'idle' }
   | { kind: 'opening' }
+  | { kind: 'reconnecting'; attempt: number; at: number }
   /** The session carries its own state from here on, closed included. */
   | { kind: 'session'; session: Session }
   | { kind: 'failed'; failure: ConnectFailure }
@@ -53,6 +65,11 @@ export type TransportKind = 'connecting' | 'relay' | 'webrtc'
 export interface WebRtcDeps extends TrickleApi {
   /** Rejects where WebRTC is unavailable or the offer cannot be sent: the relay goes alone. */
   createOfferer(): Promise<WebRtcOfferer>
+}
+
+export interface PageVisibility {
+  readonly hidden: boolean
+  onVisible(listener: () => void): () => void
 }
 
 export interface ConnectDeps {
@@ -66,6 +83,23 @@ export interface ConnectDeps {
   /** Without it, the relay only. */
   webrtc?: WebRtcDeps
   storage?: Storage | null
+  random?: () => number
+  page?: PageVisibility
+}
+
+const documentPage: PageVisibility = {
+  get hidden() {
+    return document.hidden
+  },
+  onVisible(listener) {
+    const onChange = () => {
+      if (!document.hidden) listener()
+    }
+    document.addEventListener('visibilitychange', onChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onChange)
+    }
+  },
 }
 
 export const browserDeps: ConnectDeps = {
@@ -90,6 +124,7 @@ export const browserDeps: ConnectDeps = {
     pollCandidates: (sessionId, after, signal) =>
       pollWebClientCandidates(sessionId, { after }, { signal }),
   },
+  page: documentPage,
 }
 
 /**
@@ -116,6 +151,8 @@ interface Attempt {
   /** Closes what the attempt holds until a peer session owns the link. */
   readonly pending: Set<() => void>
   told: RemoteSettings | null
+  readonly retry: number
+  heardAt: number | null
 }
 
 /**
@@ -135,6 +172,13 @@ export class RemoteController {
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
   #relayOnly = false
+  #sessionId = randomSessionId()
+  #credential: Credential | null = null
+  #armed = false
+  #attempts = 0
+  #lostAt: number | null = null
+  #cancelRetry: (() => void) | null = null
+  #cancelSteady: (() => void) | null = null
 
   constructor(deviceId: string, deps: ConnectDeps = browserDeps) {
     this.#deviceId = deviceId
@@ -163,31 +207,45 @@ export class RemoteController {
     return this.#transport
   }
 
+  hasCredential(): boolean {
+    return this.#credential !== null
+  }
+
   connect(): void {
     this.disconnect()
+    this.#sessionId = randomSessionId()
+    this.#start(0)
+  }
+
+  /** Ends the current attempt: hangs up on the peer and closes the server session. */
+  disconnect(): void {
+    this.#manual()
+    const attempt = this.#current
+    this.#current = null
+    if (attempt) {
+      for (const close of attempt.pending) close()
+      attempt.pending.clear()
+      attempt.session?.close()
+      this.#release(attempt)
+    }
+    const { kind } = this.#phase.get()
+    if (kind === 'opening' || kind === 'reconnecting') this.#phase.set({ kind: 'idle' })
+  }
+
+  #start(retry: number): void {
     const attempt: Attempt = {
       serverSession: null,
       released: false,
       session: null,
       pending: new Set(),
       told: null,
+      heardAt: null,
+      retry,
     }
     this.#current = attempt
     this.#transport.set('connecting')
-    this.#phase.set({ kind: 'opening' })
+    if (retry === 0) this.#phase.set({ kind: 'opening' })
     void this.#run(attempt)
-  }
-
-  /** Ends the current attempt: hangs up on the peer and closes the server session. */
-  disconnect(): void {
-    const attempt = this.#current
-    if (!attempt) return
-    this.#current = null
-    for (const close of attempt.pending) close()
-    attempt.pending.clear()
-    attempt.session?.close()
-    this.#release(attempt)
-    if (this.#phase.get().kind === 'opening') this.#phase.set({ kind: 'idle' })
   }
 
   async #run(attempt: Attempt): Promise<void> {
@@ -226,7 +284,7 @@ export class RemoteController {
     let link: Link
     try {
       const settings = this.#settings.get()
-      params = this.#params(opened, decoders, settings)
+      params = this.#params(attempt, opened, decoders, settings)
       attempt.told = loginSettings(settings)
       const relay = this.#deps.createRelay(this.#relayOptions(opened))
       const webrtc = this.#deps.webrtc
@@ -258,16 +316,107 @@ export class RemoteController {
         if (state.kind === 'connecting') return
         handshaken = true
         this.#relayOnly = false
-        this.#sync(attempt)
+        this.#loggedIn(attempt, session, state)
         return
       }
       stop()
-      if (!handshaken && link.kind === 'webrtc' && state.reason !== CLOSED_BY_USER) {
+      if (!handshaken && link.kind === 'webrtc' && state.cause.by !== 'user') {
         this.#relayOnly = true
       }
       this.#release(attempt)
+      this.#ended(attempt, session, state.cause)
     })
-    this.#phase.set({ kind: 'session', session })
+    if (attempt.retry === 0) this.#phase.set({ kind: 'session', session })
+  }
+
+  #loggedIn(attempt: Attempt, session: Session, state: SessionState): void {
+    if (this.#stale(attempt)) return
+    if (state.kind === 'active' || state.kind === 'choose_session') {
+      this.#armed = true
+      this.#lostAt = null
+      if (state.kind === 'active') this.#steady()
+    } else {
+      this.#manual()
+    }
+    if (this.#phase.get().kind === 'reconnecting') this.#phase.set({ kind: 'session', session })
+    this.#sync(attempt)
+  }
+
+  #ended(attempt: Attempt, session: Session, cause: CloseCause): void {
+    if (this.#stale(attempt)) return
+    this.#cancelSteady?.()
+    this.#cancelSteady = null
+    if (this.#armed && reconnects(cause.by)) {
+      this.#lostAt ??= attempt.heardAt
+      if (this.#retry()) return
+    }
+    this.#manual()
+    if (this.#phase.get().kind === 'reconnecting') this.#phase.set({ kind: 'session', session })
+  }
+
+  #retry(): boolean {
+    const attempt = this.#attempts + 1
+    const delay = retryDelay(attempt, this.#deps.random ?? Math.random)
+    if (delay === null) return false
+    this.#attempts = attempt
+    this.#phase.set({ kind: 'reconnecting', attempt, at: Date.now() + delay })
+    this.#cancelRetry = after(delay, () => {
+      this.#cancelRetry = null
+      this.#whenShown(() => {
+        this.#start(attempt)
+      })
+    })
+    return true
+  }
+
+  // Nobody watches a hidden page: retaking control of the device waits until it is shown.
+  #whenShown(run: () => void): void {
+    const page = this.#deps.page
+    if (!page?.hidden) {
+      run()
+      return
+    }
+    const stop = page.onVisible(() => {
+      stop()
+      this.#cancelRetry = null
+      run()
+    })
+    this.#cancelRetry = stop
+  }
+
+  #steady(): void {
+    if (this.#cancelSteady) return
+    this.#cancelSteady = after(STEADY_MS, () => {
+      this.#cancelSteady = null
+      this.#attempts = 0
+    })
+  }
+
+  #manual(): void {
+    this.#armed = false
+    this.#attempts = 0
+    this.#lostAt = null
+    this.#credential = null
+    this.#cancelRetry?.()
+    this.#cancelRetry = null
+    this.#cancelSteady?.()
+    this.#cancelSteady = null
+  }
+
+  // Once, within 30 s: a stale proof counts toward lockout (connection.rs:1914-1917,4571-4583).
+  #credentials(attempt: Attempt): CredentialSlot {
+    return {
+      take: () => {
+        const credential = this.#credential
+        this.#credential = null
+        const recent =
+          this.#lostAt !== null && Date.now() - this.#lostAt < RECENT_MS - RECENT_MARGIN_MS
+        return recent && !this.#stale(attempt) ? credential : null
+      },
+      keep: (credential) => {
+        if (!this.#stale(attempt)) this.#credential = credential
+      },
+    }
   }
 
   /** Null where the browser cannot offer: the relay goes alone. */
@@ -282,6 +431,7 @@ export class RemoteController {
   }
 
   #params(
+    attempt: Attempt,
     opened: WebClientSession,
     decoders: DecoderSupport,
     settings: RemoteSettings,
@@ -294,8 +444,13 @@ export class RemoteController {
       signedPeerPk: decodeBase64(opened.signed_peer_pk),
       myId: opened.my_id,
       myName: opened.my_name,
+      sessionId: this.#sessionId,
       decoders,
       loginOption: loginOption(settings),
+      credentials: this.#credentials(attempt),
+      onHeard: (at) => {
+        attempt.heardAt = at
+      },
     }
   }
 
@@ -371,6 +526,8 @@ export class RemoteController {
 
   #fail(attempt: Attempt, failure: ConnectFailure): void {
     if (this.#stale(attempt)) return
+    if (this.#armed && retriesFailure(failure) && this.#retry()) return
+    this.#manual()
     this.#phase.set({ kind: 'failed', failure })
   }
 
@@ -390,6 +547,20 @@ function iceServers(views: IceServerView[]): RTCIceServer[] {
     ...(username == null ? {} : { username }),
     ...(credential == null ? {} : { credential }),
   }))
+}
+
+const SESSION_ID_BYTES = 8
+
+function randomSessionId(): bigint {
+  const bytes = crypto.getRandomValues(new Uint8Array(SESSION_ID_BYTES))
+  return new DataView(bytes.buffer).getBigUint64(0, true)
+}
+
+function after(ms: number, run: () => void): () => void {
+  const id = setTimeout(run, ms)
+  return () => {
+    clearTimeout(id)
+  }
 }
 
 function errorText(error: unknown): string {

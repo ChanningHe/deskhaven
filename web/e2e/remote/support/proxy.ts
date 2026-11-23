@@ -24,6 +24,8 @@ export const BUFFER_BYTES = 64 * 1024
 export interface Proxy {
   /** `http://127.0.0.1:<port>`. */
   origin: string
+  dropRelay: () => void
+  refuseRelay: (on: boolean) => void
   stop: () => Promise<void>
 }
 
@@ -85,6 +87,8 @@ export async function startProxy(
 ): Promise<Proxy> {
   if (shaping.kbps !== undefined && !(shaping.kbps > 0)) throw new Error('kbps must be > 0')
   const sockets = new Set<Socket>()
+  const relays = new Set<() => void>()
+  let refusing = false
   const server: Server = createServer((req, res) => {
     const upstream = request(
       {
@@ -107,6 +111,10 @@ export async function startProxy(
   })
   server.on('upgrade', (req: IncomingMessage, client: Socket, head: Buffer) => {
     const relay = req.url?.startsWith(RELAY_PATH) === true
+    if (relay && refusing) {
+      client.destroy()
+      return
+    }
     const target = relay ? relayWs : consoleUp
     const upstream = connect(target.port, target.host, () => {
       upstream.write(upgradeHead(req))
@@ -125,7 +133,9 @@ export async function startProxy(
     const drop = () => {
       client.destroy()
       upstream.destroy()
+      relays.delete(drop)
     }
+    if (relay) relays.add(drop)
     client.on('error', drop)
     upstream.on('error', drop)
     client.on('close', drop)
@@ -136,6 +146,12 @@ export async function startProxy(
   if (address === null || typeof address === 'string') throw new Error('proxy has no port')
   return {
     origin: `http://127.0.0.1:${String(address.port)}`,
+    dropRelay: () => {
+      for (const drop of [...relays]) drop()
+    },
+    refuseRelay: (on) => {
+      refusing = on
+    },
     stop: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy()

@@ -13,7 +13,7 @@ import {
   type Misc,
   type PeerInfo,
 } from '../proto/gen/message_pb.js'
-import type { Handshake, HandshakeEvent, LinkKind } from '../handshake/handshake'
+import type { CloseCause, Handshake, HandshakeEvent, LinkKind } from '../handshake/handshake'
 import { FakeDecoders } from '../video/fake-decoder'
 import { startSession, type Session, type SessionOptions, type SessionState } from './session'
 import { STATS_INTERVAL_MS, type StatsClock } from './stats'
@@ -126,6 +126,7 @@ export class FakeHandshake implements Handshake {
   readonly events = new AsyncQueue<HandshakeEvent>()
   readonly sent: Message[] = []
   readonly link: LinkKind
+  closedWith: CloseCause | null = null
 
   constructor(link: LinkKind) {
     this.link = link
@@ -143,8 +144,9 @@ export class FakeHandshake implements Handshake {
     this.sent.push(message)
   }
 
-  close(reason: string): void {
-    this.events.push({ kind: 'closed', reason })
+  close(cause: CloseCause): void {
+    this.closedWith = cause
+    this.events.push({ kind: 'closed', cause })
     this.events.end()
   }
 

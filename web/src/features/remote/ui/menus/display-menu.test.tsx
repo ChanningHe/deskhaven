@@ -275,7 +275,7 @@ describe('display menu', () => {
     await user.click(screen.getByRole('menuitemradio', { name: '低' }))
     await user.keyboard('{Escape}')
     act(() => {
-      session.end('timeout')
+      session.end({ by: 'peer', reason: 'Offline' })
     })
     await user.click(screen.getByRole('button', { name: '重新连接' }))
     await waitFor(() => {

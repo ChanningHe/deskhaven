@@ -6,6 +6,7 @@ import { decodeBase64 } from '../bytes'
 import { FrameCipher, kxVersionFor } from '../crypto/frame-cipher'
 import {
   startHandshake,
+  type CredentialSlot,
   type Handshake,
   type HandshakeEvent,
   type StartTimer,
@@ -112,12 +113,11 @@ export function signedPeerPk(version: FixtureVersion): Uint8Array {
 }
 
 export const SESSION_ID = 0x0102030405060708n
-const SESSION_ID_LE = Uint8Array.of(8, 7, 6, 5, 4, 3, 2, 1)
 
-/** Replays the fixture's random draws: session id, then our box secret, then the stream key. */
+/** Replays the fixture's random draws: our box secret, then the stream key. */
 export function fixtureRandom(version: FixtureVersion): (length: number) => Uint8Array {
   const s = fixtureSession(version)
-  const draws = [SESSION_ID_LE, s.controllerBoxSk, s.symmetricKey]
+  const draws = [s.controllerBoxSk, s.symmetricKey]
   return (length) => {
     const next = draws.shift()
     if (next?.length !== length) throw new Error(`unexpected random draw of ${length} bytes`)
@@ -165,6 +165,7 @@ export interface Replay extends Started {
 export interface ReplayOptions {
   password?: string
   signedPeerPk?: Uint8Array
+  credentials?: CredentialSlot
 }
 
 /** Starts a handshake with the fixture's identity over an open fake relay socket. */
@@ -180,8 +181,10 @@ export function startFixture(version: FixtureVersion, options: ReplayOptions = {
       signedPeerPk: options.signedPeerPk ?? signedPeerPk(version),
       myId: 'console-admin',
       myName: 'Admin',
+      sessionId: SESSION_ID,
       decoders: { vp9: true, av1: true, vp8: true },
       loginOption: create(OptionMessageSchema),
+      ...(options.credentials ? { credentials: options.credentials } : {}),
     },
     { random: fixtureRandom(version), startTimer: timers.start },
   )

@@ -115,9 +115,9 @@ describe('remote page: logging in', () => {
     expect(session.chosenSessions).toEqual([1])
 
     act(() => {
-      session.end('windows_session_switch')
+      session.end({ by: 'session_switch', reason: 'relay connection closed (code 1006)' })
     })
-    expect(screen.getByRole('alert')).toHaveTextContent('设备正在切换到你选择的会话')
+    expect(screen.getByRole('status')).toHaveTextContent('连接已中断，正在重连（第 1 次）…')
   })
 
   it('waits for the person at the device, and gives up on cancel', async () => {
@@ -158,7 +158,7 @@ describe('remote page: failures', () => {
   it('says why the session ended and reconnects with a new server session', async () => {
     const { user, session, f } = await open()
     act(() => {
-      session.end('timeout')
+      session.end({ by: 'link', reason: 'timeout' })
     })
     expect(screen.getByRole('heading', { name: '已断开' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('设备未在规定时间内完成连接。')
@@ -168,6 +168,37 @@ describe('remote page: failures', () => {
       expect(f.sessions).toHaveLength(2)
     })
     expect(f.openSession).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('remote page: reconnecting', () => {
+  it('reconnects by itself after the link drops, and goes manual on cancel', async () => {
+    const { user, session, f } = await open()
+    act(() => {
+      session.activate()
+    })
+    act(() => {
+      session.end({ by: 'link', reason: 'relay connection closed (code 1006)' })
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('连接已中断，正在重连（第 1 次）…')
+    expect(screen.queryByLabelText('密码')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('你已结束会话。')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(f.openSession).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows the peer closing the session as the peer's, and does not reconnect", async () => {
+    const { session } = await open()
+    act(() => {
+      session.activate()
+    })
+    act(() => {
+      session.end({ by: 'peer', reason: 'closed' })
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('会话已结束：closed')
+    expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument()
   })
 })
 

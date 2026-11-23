@@ -7,7 +7,6 @@ import {
   WindowsSessionSchema,
   WindowsSessionsSchema,
 } from '../proto/gen/message_pb.js'
-import { CLOSED_BY_USER, WINDOWS_SESSION_SWITCH } from './session'
 import { msg } from '../__fixtures__/harness'
 import { PEER_INFO, activeSession, settle } from './testing'
 import { MAX_WINDOWS_SESSIONS } from './windows-sessions'
@@ -70,7 +69,10 @@ describe('session on a peer that shares Windows sessions', () => {
     expect(r.session.state.get()).toEqual({ kind: 'connecting' })
     r.socket.drop(1006)
     await settle()
-    expect(r.session.state.get()).toEqual({ kind: 'closed', reason: WINDOWS_SESSION_SWITCH })
+    expect(r.session.state.get()).toEqual({
+      kind: 'closed',
+      cause: { by: 'session_switch', reason: 'relay connection closed (code 1006)' },
+    })
   })
 
   it('goes active and forgets the switch when the peer serves this connection after all', async () => {
@@ -83,7 +85,7 @@ describe('session on a peer that shares Windows sessions', () => {
     r.socket.drop(1006)
     await settle()
     const state = r.session.state.get()
-    expect(state.kind === 'closed' && state.reason).not.toBe(WINDOWS_SESSION_SWITCH)
+    expect(state).toMatchObject({ kind: 'closed', cause: { by: 'link' } })
   })
 
   it('keeps our own close as ours after another session was chosen', async () => {
@@ -91,7 +93,7 @@ describe('session on a peer that shares Windows sessions', () => {
     r.session.chooseWindowsSession(1)
     r.session.close()
     await settle()
-    expect(r.session.state.get()).toEqual({ kind: 'closed', reason: CLOSED_BY_USER })
+    expect(r.session.state.get()).toEqual({ kind: 'closed', cause: { by: 'user', reason: '' } })
   })
 
   it('takes at most MAX_WINDOWS_SESSIONS of an untrusted list', async () => {

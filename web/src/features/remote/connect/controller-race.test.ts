@@ -199,7 +199,10 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     await vi.advanceTimersByTimeAsync(0)
     r.pc().channel?.open()
     await vi.advanceTimersByTimeAsync(0)
-    r.sessions[0]?.end('DTLS fingerprint does not match the signed one')
+    r.sessions[0]?.end({
+      by: 'local',
+      reason: 'peer DTLS fingerprint is not the one of this channel',
+    })
 
     r.controller.connect()
     await vi.advanceTimersByTimeAsync(0)
@@ -208,7 +211,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     expect(r.startSession.mock.calls[1]?.[0].kind).toBe('relay')
     expect(r.controller.transport.get()).toBe('relay')
 
-    r.sessions[1]?.end('relay connection closed')
+    r.sessions[1]?.end({ by: 'link', reason: 'relay connection closed' })
     r.controller.connect()
     await vi.advanceTimersByTimeAsync(0)
     expect(r.openSession.mock.calls[2]).toEqual([DEVICE])
@@ -225,7 +228,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     r.pc().channel?.open()
     await vi.advanceTimersByTimeAsync(0)
     r.sessions[0]?.state.set({ kind: 'need_password' })
-    r.sessions[0]?.end('connection closed')
+    r.sessions[0]?.end({ by: 'link', reason: 'connection closed' })
     r.controller.connect()
     await vi.advanceTimersByTimeAsync(0)
     expect(r.openSession.mock.calls[1]?.[1]).toMatch(/^webrtc:\/\//)
