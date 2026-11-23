@@ -11,11 +11,13 @@ import { RemoteBar, type BarFrame } from './remote-bar'
 import { RemoteScreen } from './remote-screen'
 import { StatsOverlay } from './stats-overlay'
 import { Toolbar } from './toolbar'
+import { useClipboardSync } from './use-clipboard-sync'
 import { useStore } from './use-remote'
 
 type Panel = 'paste' | 'remote' | null
+type Notice = 'sent' | 'copiedFromDevice' | null
 
-const SENT_NOTICE_MS = 3000
+const NOTICE_MS = 3000
 
 /** Reads the local clipboard; null when the browser does not let the page (no gesture, denied). */
 async function readClipboard(): Promise<string | null> {
@@ -77,7 +79,7 @@ export function RemoteView({
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
-  const [sent, setSent] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
   const { fullscreen, toggle } = useFullscreen()
   const [panel, setPanel] = useState<Panel>(null)
   const [stats, setStats] = useState(false)
@@ -88,20 +90,33 @@ export function RemoteView({
   const leaveScreen = useCallback(() => {
     toolbar.current?.querySelector<HTMLElement>('button:enabled, select:enabled')?.focus()
   }, [])
+  const sync = useClipboardSync({
+    session,
+    enabled: settings.clipboardSync,
+    onEnabled: (clipboardSync) => {
+      onSettings({ clipboardSync })
+    },
+    onSent: () => {
+      setNotice('sent')
+    },
+    onCopied: () => {
+      setNotice('copiedFromDevice')
+    },
+  })
   useEffect(() => {
-    if (!sent) return
+    if (notice === null) return
     const timer = setTimeout(() => {
-      setSent(false)
-    }, SENT_NOTICE_MS)
+      setNotice(null)
+    }, NOTICE_MS)
     return () => {
       clearTimeout(timer)
     }
-  }, [sent])
+  }, [notice])
   const close = () => {
     setPanel(null)
   }
   const show = (next: Panel) => {
-    setSent(false)
+    setNotice(null)
     setPanel(next)
   }
 
@@ -109,7 +124,7 @@ export function RemoteView({
     const text = await readClipboard()
     if (text !== null && session.clipboard(text)) {
       show(null)
-      setSent(true)
+      setNotice('sent')
     } else {
       show('paste')
     }
@@ -131,6 +146,7 @@ export function RemoteView({
             onStats={setStats}
             fullscreen={fullscreen}
             onFullscreen={toggle}
+            clipboardSync={{ ...sync, enabled: settings.clipboardSync }}
             onSendClipboard={() => void sendClipboard()}
             onShowRemoteClipboard={() => {
               show(panel === 'remote' ? null : 'remote')
@@ -151,6 +167,8 @@ export function RemoteView({
           scale={settings.scale}
           showRemoteCursor={settings.showRemoteCursor}
           onLeave={leaveScreen}
+          onPointerEnter={sync.onPointerEnter}
+          onGesture={sync.onGesture}
         >
           {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         </RemoteScreen>
@@ -164,7 +182,7 @@ export function RemoteView({
           role="status"
           className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background shadow-md empty:hidden"
         >
-          {sent ? t('remote.clipboard.sent') : null}
+          {notice === null ? null : t(`remote.clipboard.${notice}`)}
         </p>
       </div>
     </>

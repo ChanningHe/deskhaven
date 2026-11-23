@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { Session } from '../session/session'
 import type { RemoteSettings } from '../settings/settings'
-import { ClipboardMenu } from './menus/clipboard-menu'
+import { ClipboardMenu, type ClipboardSyncSwitch } from './menus/clipboard-menu'
 import { DisplayMenu } from './menus/display-menu'
 import { InputMenu } from './menus/input-menu'
 import { IconButton } from './toolbar-controls'
@@ -18,6 +18,7 @@ interface ToolbarProps {
   onStats: (on: boolean) => void
   fullscreen: boolean
   onFullscreen: () => void
+  clipboardSync: ClipboardSyncSwitch
   onSendClipboard: () => void
   onShowRemoteClipboard: () => void
 }
@@ -31,6 +32,7 @@ export function Toolbar({
   onStats,
   fullscreen,
   onFullscreen,
+  clipboardSync,
   onSendClipboard,
   onShowRemoteClipboard,
 }: ToolbarProps) {
@@ -52,6 +54,7 @@ export function Toolbar({
       <InputMenu session={session} />
       <ClipboardMenu
         session={session}
+        sync={clipboardSync}
         onSend={onSendClipboard}
         onShowRemote={onShowRemoteClipboard}
       />

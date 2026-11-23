@@ -1790,6 +1790,9 @@
       "exitFullscreen": "退出全屏",
       "sendClipboard": "发送剪贴板",
       "remoteClipboard": "远端剪贴板",
+      "clipboardSync": "自动同步剪贴板",
+      "clipboardAllow": "允许读取剪贴板",
+      "clipboardDenied": "浏览器禁止此页面读取剪贴板，只会同步设备上复制的文本。可在网站设置中允许。",
       "keyboardOff": "设备已关闭键盘和鼠标控制。",
       "clipboardOff": "设备已关闭剪贴板。"
     },
@@ -1819,6 +1822,7 @@
       "pasteLabel": "要发送的文本",
       "send": "发送",
       "sent": "已发送到设备剪贴板。",
+      "copiedFromDevice": "已复制设备剪贴板的内容。",
       "tooLong": "文本太长，无法发送。",
       "remoteTitle": "设备上复制的内容",
       "copy": "复制",

@@ -1790,6 +1790,9 @@
       "exitFullscreen": "Exit full screen",
       "sendClipboard": "Send clipboard",
       "remoteClipboard": "Device clipboard",
+      "clipboardSync": "Sync clipboard automatically",
+      "clipboardAllow": "Allow reading the clipboard",
+      "clipboardDenied": "The browser blocks this page from reading the clipboard, so only text copied on the device comes over. Allow it in the site settings.",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
       "clipboardOff": "The device has turned off the clipboard."
     },
@@ -1819,6 +1822,7 @@
       "pasteLabel": "Text to send",
       "send": "Send",
       "sent": "Sent to the device clipboard.",
+      "copiedFromDevice": "Copied from the device clipboard.",
       "tooLong": "The text is too long to send.",
       "remoteTitle": "Copied on the device",
       "copy": "Copy",

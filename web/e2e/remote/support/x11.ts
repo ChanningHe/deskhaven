@@ -1,6 +1,6 @@
 // Windows a test puts on a device's X display. Started after the session is up, so they
 // are on top of whatever the client itself has put on screen (its connection window).
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 
 import { tool } from './env.ts'
@@ -140,4 +140,25 @@ export function addMode(device: DeviceInfo, width: number, height: number): void
 
 export function setMode(device: DeviceInfo, width: number, height: number): void {
   xrandr(device, ['--output', outputOf(device), '--mode', `${width}x${height}`])
+}
+
+const CLIPBOARD = ['-selection', 'clipboard']
+
+export function setClipboard(device: DeviceInfo, text: string): void {
+  execFileSync(tool('xclip'), [...CLIPBOARD, '-in'], {
+    env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },
+    input: text,
+    stdio: ['pipe', 'ignore', 'ignore'],
+    timeout: 10_000,
+  })
+}
+
+export function clipboardOf(device: DeviceInfo): string | null {
+  const read = spawnSync(tool('xclip'), [...CLIPBOARD, '-out'], {
+    env: { PATH: process.env.PATH ?? '', DISPLAY: device.display },
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+  if (read.error) throw read.error
+  return read.status === 0 ? read.stdout : null
 }

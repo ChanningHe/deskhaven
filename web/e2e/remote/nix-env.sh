@@ -6,7 +6,7 @@
 #   1.5.x  the nixpkgs of the repository's flake.lock (rustdesk 1.5.0)
 #   1.4.x  nixos-25.11 at b6018f87da91d19d0ab4cf979885689b469cdd41 (rustdesk 1.4.3)
 # Playwright's browsers are not here: their version must match @playwright/test (e2e/README.md).
-# The tools (hbbr, Xvfb, xterm, xclock, xdotool, xrandr) come from the same nixpkgs as
+# The tools (hbbr, Xvfb, xterm, xclock, xdotool, xrandr, xclip) come from the same nixpkgs as
 # the flake.lock. Only these are fetched: no other download.
 set -euo pipefail
 
@@ -25,6 +25,7 @@ xterm=$(out "$pkgs#xterm")
 xclock=$(out "$pkgs#xclock")
 xdotool=$(out "$pkgs#xdotool")
 xrandr=$(out "$pkgs#xrandr")
+xclip=$(out "$pkgs#xclip")
 
 {
   echo "# rustdesk 1.5.x $c15 sha256 $(sha256sum "$c15/bin/rustdesk" | cut -d' ' -f1)"
@@ -39,4 +40,5 @@ echo "export RD_E2E_XTERM=$xterm/bin/xterm"
 echo "export RD_E2E_XCLOCK=$xclock/bin/xclock"
 echo "export RD_E2E_XDOTOOL=$xdotool/bin/xdotool"
 echo "export RD_E2E_XRANDR=$xrandr/bin/xrandr"
+echo "export RD_E2E_XCLIP=$xclip/bin/xclip"
 echo "export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true"

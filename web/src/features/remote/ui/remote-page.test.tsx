@@ -7,6 +7,7 @@ import { renderWithProviders } from '@/test/render-with-providers'
 import { fakeDeps } from '../connect/fake-deps'
 import { OPENED, type FakeSession } from '../connect/fake-session'
 import { KeyboardMode } from '../proto/gen/message_pb.js'
+import { SETTINGS_KEY } from '../settings/settings'
 import { RemoteDepsContext } from './deps-context'
 import { openMenu } from './menus/testing'
 import { RemotePage } from './remote-page'
@@ -286,12 +287,17 @@ describe('remote page: active session', () => {
     ])
   })
 
-  it('shows what the device copied without writing the local clipboard', async () => {
+  it('shows what the device copied, without writing the local clipboard when sync is off', async () => {
     const writeText = vi.fn(() => Promise.resolve())
-    const { user, session } = await open()
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const f = fakeDeps()
+    f.storage.setItem(SETTINGS_KEY, JSON.stringify({ v: 1, settings: { clipboardSync: false } }))
+    const { user, session } = await open(f)
     stubClipboard({ writeText, readText: vi.fn() })
     act(() => {
       session.activate()
+    })
+    act(() => {
       session.remoteClipboard.set('copied over there')
     })
     expect(writeText).not.toHaveBeenCalled()

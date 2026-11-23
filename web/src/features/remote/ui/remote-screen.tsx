@@ -25,6 +25,8 @@ export function RemoteScreen({
   showRemoteCursor,
   viewOnly = false,
   onLeave,
+  onPointerEnter,
+  onGesture,
   children,
 }: {
   session: Session
@@ -32,6 +34,8 @@ export function RemoteScreen({
   showRemoteCursor: boolean
   viewOnly?: boolean
   onLeave: () => void
+  onPointerEnter?: () => void
+  onGesture?: () => void
   children?: ReactNode
 }) {
   const { t } = useTranslation()
@@ -91,6 +95,9 @@ export function RemoteScreen({
           'has-[textarea:focus]:ring-2 has-[textarea:focus]:ring-ring',
         )}
         style={sizeStyle}
+        onPointerEnter={onPointerEnter}
+        onPointerDownCapture={onGesture}
+        onKeyDownCapture={onGesture}
       >
         <canvas ref={video} aria-hidden className="absolute inset-0 size-full" />
         <canvas
