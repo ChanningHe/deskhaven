@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Quality } from '../settings/settings'
-import { HOLD_TICKS, QualityGovernor, START_QUALITY } from './quality-governor'
+import { HOLD_TICKS, levelOf, QualityGovernor, START_QUALITY } from './quality-governor'
 
 const RTT = 80
 const calm = (n: number) => Array<number>(n).fill(RTT)
@@ -176,5 +176,46 @@ describe('QualityGovernor', () => {
       null,
       { custom: 22 },
     ])
+  })
+
+  describe('above level 100', () => {
+    const climb = [18, 27, 41, 62, 93, 118, 143, 168, 193, 218, 243, 268, 293, 318, 343, 368]
+    const high = [393, 418, 443, 468, 493]
+
+    it('climbs at most 25 levels a tick, up to the cap', () => {
+      const g = governor({ custom: 500 })
+      const sent = run(g, calm(climb.length + high.length + 2))
+      expect(sent).toEqual([...[...climb, ...high, 500].map((custom) => ({ custom })), null])
+    })
+
+    it('stops at a custom cap between 100 and 500', () => {
+      const g = governor({ custom: 200 }, calm(8))
+      expect(g.current).toEqual({ custom: 168 })
+      expect(run(g, calm(3))).toEqual([{ custom: 193 }, { custom: 200 }, null])
+    })
+
+    it('halves on a backlog, then recovers 25 levels a tick to the threshold', () => {
+      const g = governor({ custom: 500 }, calm(30))
+      expect(g.current).toEqual({ custom: 500 })
+      expect(g.tick(RTT + 250)).toEqual({ custom: 250 })
+      expect(run(g, calm(HOLD_TICKS - 1))).toEqual([null, null])
+      expect(run(g, calm(7)).map((q) => q && levelOf(q))).toEqual([
+        275, 300, 325, 350, 375, 400, 425,
+      ])
+    })
+
+    it('recovers past the threshold in steps scaled to the level', () => {
+      const g = governor({ custom: 500 }, calm(30))
+      g.tick(RTT + 250)
+      run(g, calm(HOLD_TICKS - 1 + 7))
+      expect(g.current).toEqual({ custom: 425 })
+      expect(run(g, calm(6))).toEqual([null, null, { custom: 429 }, null, null, { custom: 433 }])
+    })
+
+    it('lowers to a cap below the level at once', () => {
+      const g = governor({ custom: 500 }, calm(30))
+      expect(g.setCap({ custom: 150 })).toEqual({ custom: 150 })
+      expect(g.setCap('best')).toBe('best')
+    })
   })
 })

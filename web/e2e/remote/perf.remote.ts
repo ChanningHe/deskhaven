@@ -391,3 +391,76 @@ for (const transport of ['Relay', 'WebRTC'] as const) {
     }
   })
 }
+
+// Q500: custom quality 500 over an unshaped link with the whole screen changing, so the bitrate
+// is the quality's. 4300 kbps is twice the old ceiling here, custom 100 at 1280×800 (2148 kbps).
+const Q500 = {
+  quality: { custom: 500 },
+  warmUpMs: 30_000,
+  sampleMs: 60_000,
+  minKbps: 4300,
+  screen: { cols: 214, rows: 62 },
+} as const
+
+for (const transport of ['Relay', 'WebRTC'] as const) {
+  test(`@slow perf Q500: 1.5 over ${transport}`, async ({ page }) => {
+    test.setTimeout(Q500.warmUpMs + Q500.sampleMs + 2 * MINUTE_MS)
+    const target = device('1.5')
+    test.skip(target === undefined, 'no 1.5 client in this run')
+    if (target === undefined) return
+    await page.addInitScript(
+      ([key, settings]) => {
+        localStorage.setItem(key, JSON.stringify({ v: 1, settings }))
+      },
+      [SETTINGS_KEY, { quality: Q500.quality }] as const,
+    )
+    if (transport === 'Relay') {
+      await page.addInitScript(() => {
+        Reflect.deleteProperty(window, 'RTCPeerConnection')
+      })
+    }
+    await traceQuality(page)
+
+    await openFromDeviceList(page, target.id)
+    await submitPassword(page)
+    const connected = page.locator('header span.rounded-full', { hasText: 'Connected' })
+    await expect(connected).toContainText(transport)
+    await page.getByRole('button', { name: 'Display' }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Statistics' }).click()
+    await expectDesktop(page, transport)
+
+    const screen = noise(target, '+0+0', Q500.screen.cols, Q500.screen.rows)
+    try {
+      await startSampling(page)
+      await page.waitForTimeout(Q500.warmUpMs + Q500.sampleMs)
+      await expect(connected).toContainText(transport)
+      const samples = await samplesOf(page)
+      const from = (samples[0]?.atMs ?? 0) + Q500.warmUpMs
+      const kept = samples.filter((s) => (s.atMs ?? 0) >= from)
+      const column = (stat: string) => numbers(kept.map((s) => s[stat]))
+      const kbps = percentile(column('kbps'), 50)
+      const report = {
+        condition: 'Q500',
+        key: '1.5',
+        transport,
+        warmUpSeconds: Q500.warmUpMs / 1000,
+        seconds: Q500.sampleMs / 1000,
+        kbpsP50: kbps,
+        kbpsP05: percentile(column('kbps'), 5),
+        fps: { p50: percentile(column('fps'), 50), p05: percentile(column('fps'), 5) },
+        delayMsP50: percentile(column('delayMs'), 50),
+        decodeMsP50: percentile(column('decodeMs'), 50),
+        quality: await qualityReport(page, String(Q500.quality.custom)),
+        samples,
+      }
+      process.stdout.write(`PERF ${JSON.stringify(report)}\n`)
+      await test
+        .info()
+        .attach('perf.json', { body: JSON.stringify(report), contentType: 'application/json' })
+      expect(kept.length).toBeGreaterThan(0)
+      expect(kbps ?? 0).toBeGreaterThanOrEqual(Q500.minKbps)
+    } finally {
+      screen.stop()
+    }
+  })
+}

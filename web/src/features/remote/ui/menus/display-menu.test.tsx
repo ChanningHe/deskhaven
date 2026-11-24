@@ -70,16 +70,16 @@ describe('display menu', () => {
   it('hands a picked quality to the controller, and the session gets it as a cap', async () => {
     const { user, f, session, updates } = await activePage()
     await openMenu(user, '显示')
-    expect(screen.getByRole('menuitemradio', { name: '均衡' })).toHaveAttribute(
+    expect(screen.getByRole('menuitemradio', { name: /^均衡/ })).toHaveAttribute(
       'aria-checked',
       'true',
     )
-    await user.click(screen.getByRole('menuitemradio', { name: '最佳' }))
+    await user.click(screen.getByRole('menuitemradio', { name: /^最佳/ }))
     expect(updates).toHaveBeenCalledTimes(1)
     expect(updates).toHaveBeenCalledWith({ quality: 'best' })
     expect(session.patches).toEqual([{ quality: 'best' }])
     expect(f.sessions).toHaveLength(1)
-    expect(screen.getByRole('menuitemradio', { name: '最佳' })).toHaveAttribute(
+    expect(screen.getByRole('menuitemradio', { name: /^最佳/ })).toHaveAttribute(
       'aria-checked',
       'true',
     )
@@ -93,15 +93,91 @@ describe('display menu', () => {
     expect(updates).toHaveBeenLastCalledWith({ quality: { custom: 75 } })
 
     const slider = screen.getByRole('slider', { name: '自定义画质' })
-    expect(slider).toHaveValue('75')
-    fireEvent.change(slider, { target: { value: '40' } })
-    fireEvent.change(slider, { target: { value: '60' } })
+    expect(slider).toHaveAttribute('aria-valuetext', '75（~1.6 Mbps）')
+    fireEvent.change(slider, { target: { value: '6' } })
+    fireEvent.change(slider, { target: { value: '10' } })
     expect(updates).toHaveBeenCalledTimes(1)
     fireEvent.pointerUp(slider)
     expect(updates).toHaveBeenCalledTimes(2)
     expect(updates).toHaveBeenLastCalledWith({ quality: { custom: 60 } })
     fireEvent.keyUp(slider, { key: 'ArrowRight' })
     expect(updates).toHaveBeenCalledTimes(2)
+  })
+
+  it('steps the slider by 5 up to 100, then by 25 up to 500', async () => {
+    const { user, updates } = await activePage({ quality: { custom: 10 } })
+    await openMenu(user, '显示')
+    const slider = screen.getByRole('slider', { name: '自定义画质' })
+    expect(slider).toHaveAttribute('min', '0')
+    expect(slider).toHaveAttribute('max', '34')
+    expect(slider).toHaveAttribute('step', '1')
+    expect(slider).toHaveValue('0')
+    for (const [position, level, rate] of [
+      ['18', 100, '~2.1 Mbps'],
+      ['19', 125, '~2.7 Mbps'],
+      ['34', 500, '~10.7 Mbps'],
+    ] as const) {
+      fireEvent.change(slider, { target: { value: position } })
+      expect(slider).toHaveAttribute('aria-valuetext', `${String(level)}（${rate}）`)
+      expect(screen.getByText(rate)).toBeInTheDocument()
+      fireEvent.keyUp(slider, { key: 'ArrowRight' })
+      expect(updates).toHaveBeenLastCalledWith({ quality: { custom: level } })
+    }
+  })
+
+  it('puts an off-grid stored level on the nearest step, and keeps it until moved', async () => {
+    const { user, updates } = await activePage({ quality: { custom: 33 } })
+    await openMenu(user, '显示')
+    const slider = screen.getByRole('slider', { name: '自定义画质' })
+    expect(slider).toHaveValue('5')
+    expect(slider).toHaveAttribute('aria-valuetext', '33（~710 kbps）')
+    fireEvent.blur(slider)
+    expect(updates).not.toHaveBeenCalled()
+  })
+
+  it('marks each preset with its bitrate at the peer resolution, and calls it a ceiling', async () => {
+    const { user } = await activePage()
+    await openMenu(user, '显示')
+    for (const name of ['低（~540 kbps）', '均衡（~720 kbps）', '最佳（~1.6 Mbps）', '自定义']) {
+      expect(screen.getByRole('menuitemradio', { name })).toBeInTheDocument()
+    }
+    expect(screen.getByText('码率为上限，画面静止或简单时用不满。')).toBeInTheDocument()
+  })
+
+  it('follows a resolution change', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      session.resize(1920, 1080)
+    })
+    await openMenu(user, '显示')
+    expect(screen.getByRole('menuitemradio', { name: '最佳（~3.1 Mbps）' })).toBeInTheDocument()
+  })
+
+  it('shows the bitrate ratio while the peer resolution is unknown', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      const peer = session.peer.get()
+      if (peer) session.peer.set({ ...peer, display: null })
+    })
+    await openMenu(user, '显示')
+    for (const name of ['低（0.5×）', '均衡（0.67×）', '最佳（1.5×）']) {
+      expect(screen.getByRole('menuitemradio', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('leaves the numbers out for a codec whose bitrate we do not model', async () => {
+    const { user, session } = await activePage({ quality: { custom: 200 } })
+    act(() => {
+      session.stats.set({ ...session.stats.get(), codec: 'avc1.64002A' })
+    })
+    await openMenu(user, '显示')
+    expect(screen.getByRole('menuitemradio', { name: '最佳' })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: '自定义画质' })).toHaveAttribute(
+      'aria-valuetext',
+      '200',
+    )
+    expect(screen.queryByText(/Mbps|kbps/)).toBeNull()
+    expect(screen.queryByText('码率为上限，画面静止或简单时用不满。')).toBeNull()
   })
 
   it('caps the frame rate at a picked step', async () => {
@@ -296,7 +372,7 @@ describe('display menu', () => {
   it('shows the saved settings again after a reconnect', async () => {
     const { user, f, session } = await activePage()
     await openMenu(user, '显示')
-    await user.click(screen.getByRole('menuitemradio', { name: '低' }))
+    await user.click(screen.getByRole('menuitemradio', { name: /^低/ }))
     await user.keyboard('{Escape}')
     act(() => {
       session.end({ by: 'peer', reason: 'Offline' })
@@ -309,7 +385,7 @@ describe('display menu', () => {
       f.sessions[1]?.activate()
     })
     await openMenu(user, '显示')
-    expect(screen.getByRole('menuitemradio', { name: '低' })).toHaveAttribute(
+    expect(screen.getByRole('menuitemradio', { name: /^低/ })).toHaveAttribute(
       'aria-checked',
       'true',
     )

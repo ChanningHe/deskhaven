@@ -56,6 +56,29 @@ function FpsSubmenu({ fps, onSettings }: { fps: number; onSettings: OnSettings }
   )
 }
 
+function SessionQualityGroup({
+  session,
+  quality,
+  onSettings,
+}: {
+  session: Session
+  quality: RemoteSettings['quality']
+  onSettings: OnSettings
+}) {
+  const display = useStore(session.peer)?.display ?? null
+  const { codec } = useStore(session.stats)
+  return (
+    <QualityGroup
+      quality={quality}
+      size={display}
+      codec={codec}
+      onChange={(next) => {
+        onSettings({ quality: next })
+      }}
+    />
+  )
+}
+
 function MonitorGroup({ session }: { session: Session }) {
   const { t } = useTranslation()
   const peer = useStore(session.peer)
@@ -107,12 +130,7 @@ export function DisplayMenu({
       hint={t('remote.toolbar.displayMenuHint')}
       icon={<Monitor aria-hidden />}
     >
-      <QualityGroup
-        quality={settings.quality}
-        onChange={(quality) => {
-          onSettings({ quality })
-        }}
-      />
+      <SessionQualityGroup session={session} quality={settings.quality} onSettings={onSettings} />
       <DropdownMenuSeparator />
       <FpsSubmenu fps={settings.fps} onSettings={onSettings} />
       <DropdownMenuSeparator />

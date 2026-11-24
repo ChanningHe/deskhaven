@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 
 import {
   DropdownMenuGroup,
@@ -9,17 +9,39 @@ import {
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu'
 
+import type { Size } from '../../session/resolution'
 import {
   MAX_CUSTOM_QUALITY,
   MIN_CUSTOM_QUALITY,
   type Preset,
   type Quality,
 } from '../../settings/settings'
+import { bitrateModeled, formatKbps, formatRatio, ratioOf, targetKbps } from '../../video/bitrate'
 import { levelOf } from '../../video/quality-governor'
 
 type Choice = Preset | 'custom'
+type Rate = (quality: Quality) => string | null
 
 const CHOICES: readonly Choice[] = ['low', 'balanced', 'best', 'custom']
+
+const FINE_UP_TO = 100
+const FINE_STEP = 5
+const COARSE_STEP = 25
+
+function levels(from: number, to: number, step: number): number[] {
+  return Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step)
+}
+
+/** Slider positions: fine steps where the presets sit, coarse ones above. */
+const CUSTOM_STEPS: readonly number[] = [
+  ...levels(MIN_CUSTOM_QUALITY, FINE_UP_TO, FINE_STEP),
+  ...levels(FINE_UP_TO + COARSE_STEP, MAX_CUSTOM_QUALITY, COARSE_STEP),
+]
+
+function positionOf(level: number): number {
+  const off = (i: number) => Math.abs((CUSTOM_STEPS[i] ?? level) - level)
+  return CUSTOM_STEPS.reduce((nearest, _, i) => (off(i) < off(nearest) ? i : nearest), 0)
+}
 
 const SLIDER_KEYS = new Set([
   'ArrowLeft',
@@ -36,10 +58,20 @@ const SLIDER_KEYS = new Set([
  * The custom level, set when the slider is let go: each change reaches the peer, so a drag
  * must not send one per step.
  */
-function CustomLevel({ level, onCommit }: { level: number; onCommit: (level: number) => void }) {
+function CustomLevel({
+  level,
+  rate,
+  onCommit,
+}: {
+  level: number
+  rate: Rate
+  onCommit: (level: number) => void
+}) {
   const { t } = useTranslation()
   const id = useId()
   const [draft, setDraft] = useState<number | null>(null)
+  const shown = draft ?? level
+  const shownRate = rate({ custom: shown })
   const commit = () => {
     if (draft !== null && draft !== level) onCommit(draft)
     setDraft(null)
@@ -49,13 +81,19 @@ function CustomLevel({ level, onCommit }: { level: number; onCommit: (level: num
       <input
         id={id}
         type="range"
-        min={MIN_CUSTOM_QUALITY}
-        max={MAX_CUSTOM_QUALITY}
-        value={draft ?? level}
+        min={0}
+        max={CUSTOM_STEPS.length - 1}
+        step={1}
+        value={positionOf(shown)}
         aria-label={t('remote.toolbar.customQuality')}
+        aria-valuetext={
+          shownRate === null
+            ? String(shown)
+            : t('remote.toolbar.customQualityValue', { level: shown, rate: shownRate })
+        }
         className="min-w-0 flex-1 accent-primary"
         onChange={(event) => {
-          setDraft(Number(event.target.value))
+          setDraft(CUSTOM_STEPS[Number(event.target.value)] ?? level)
         }}
         onPointerUp={commit}
         onKeyUp={commit}
@@ -64,22 +102,40 @@ function CustomLevel({ level, onCommit }: { level: number; onCommit: (level: num
           if (SLIDER_KEYS.has(event.key)) event.stopPropagation()
         }}
       />
-      <output htmlFor={id} className="w-7 text-right text-xs text-muted-foreground tabular-nums">
-        {draft ?? level}
+      <output htmlFor={id} className="w-7 text-right text-xs tabular-nums">
+        {shown}
       </output>
+      {shownRate === null ? null : (
+        <span className="w-[4.5rem] text-right text-xs text-muted-foreground tabular-nums">
+          {shownRate}
+        </span>
+      )}
     </div>
   )
 }
 
+/**
+ * Each choice with the bitrate the peer aims at for it: kbps at the streamed size, or the ratio
+ * to the base bitrate while the size is unknown; nothing for a codec that bitrate does not model.
+ */
 export function QualityGroup({
   quality,
+  size,
+  codec,
   onChange,
 }: {
   quality: Quality
+  size: Size | null
+  codec: string | null
   onChange: (quality: Quality) => void
 }) {
   const { t } = useTranslation()
   const choice: Choice = typeof quality === 'string' ? quality : 'custom'
+  const modeled = bitrateModeled(codec)
+  const rate: Rate = (q) => {
+    if (!modeled) return null
+    return size ? formatKbps(targetKbps(q, size.width, size.height)) : formatRatio(ratioOf(q))
+  }
   return (
     <DropdownMenuGroup>
       <DropdownMenuLabel>{t('remote.toolbar.quality')}</DropdownMenuLabel>
@@ -91,20 +147,40 @@ export function QualityGroup({
           onChange(picked === 'custom' ? { custom: levelOf(quality) } : picked)
         }}
       >
-        {CHOICES.map((option) => (
-          <DropdownMenuRadioItem key={option} value={option}>
-            {t(`remote.toolbar.qualities.${option}`)}
-          </DropdownMenuRadioItem>
-        ))}
+        {CHOICES.map((option) => {
+          const name = t(`remote.toolbar.qualities.${option}`)
+          const optionRate = option === 'custom' ? null : rate(option)
+          return (
+            <DropdownMenuRadioItem key={option} value={option}>
+              {optionRate === null ? (
+                name
+              ) : (
+                <span>
+                  <Trans
+                    i18nKey="remote.toolbar.qualityOption"
+                    values={{ name, rate: optionRate }}
+                    components={{ rate: <span className="text-muted-foreground" /> }}
+                  />
+                </span>
+              )}
+            </DropdownMenuRadioItem>
+          )
+        })}
       </DropdownMenuRadioGroup>
       {typeof quality === 'string' ? null : (
         <CustomLevel
           level={quality.custom}
+          rate={rate}
           onCommit={(level) => {
             onChange({ custom: level })
           }}
         />
       )}
+      {modeled ? (
+        <p className="px-1.5 pt-0.5 pb-1 text-xs text-muted-foreground">
+          {t('remote.toolbar.qualityHint')}
+        </p>
+      ) : null}
     </DropdownMenuGroup>
   )
 }

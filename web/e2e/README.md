@@ -160,3 +160,7 @@ the `custom_fps` sent reaches 60 within 20 s and stays there, and, when the devi
 target, that the fps received is at least 0.9 × the device's `qos_trace` target. The device
 logs it with `RD_E2E_PEER_RUST_LOG='debug,librustdesk::server::video_qos=trace'` (passed to
 each client as `RUST_LOG`).
+
+Q500 (1.5 over the relay and over WebRTC) sets custom quality 500 with no shaping and the whole
+screen printing random bytes, drops the first 30 s and samples 60 s. It asserts a kbps p50 of at
+least 4300, twice what the old ceiling (custom 100) asks for at 1280×800.

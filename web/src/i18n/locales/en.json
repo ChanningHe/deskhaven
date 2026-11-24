@@ -1778,6 +1778,9 @@
         "custom": "Custom"
       },
       "customQuality": "Custom quality",
+      "qualityOption": "{{name}} <rate>({{rate}})</rate>",
+      "qualityHint": "Bitrates are ceilings: still or simple screens use less.",
+      "customQualityValue": "{{level}} ({{rate}})",
       "fps": "Frame rate",
       "fpsValue": "{{fps}} fps",
       "resolution": "Resolution",

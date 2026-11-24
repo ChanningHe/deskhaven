@@ -1,4 +1,5 @@
 import type { Preset, Quality } from '../settings/settings'
+import { PRESET_RATIO } from './bitrate'
 
 export const START_LEVEL = 12
 export const START_QUALITY: Quality = { custom: START_LEVEL }
@@ -13,10 +14,17 @@ const COOL_TICKS = 3
 // rustdesk 1.5.0 src/server/connection.rs:1180-1187 sends the next TestDelay only once the last
 // came back, so one missing this long sits in a queue.
 const OVERDUE_TICKS = 3
+// The peer takes a quality at once (rustdesk 1.5.1 src/server/video_qos.rs:452-453): above
+// LINEAR_FROM a geometric step would add megabits in one tick, so it grows by at most MAX_STEP.
+const LINEAR_FROM = 100
+const MAX_STEP = 25
 
-// A preset as a custom level q (bitrate ratio q·2/100): rustdesk 1.5.0
-// libs/scrap/src/common/codec.rs:893-895.
-const PRESET_LEVEL: Readonly<Record<Preset, number>> = { low: 25, balanced: 33, best: 75 }
+const levelFor = (ratio: number) => Math.floor((ratio * 100) / 2)
+const PRESET_LEVEL: Readonly<Record<Preset, number>> = {
+  low: levelFor(PRESET_RATIO.low),
+  balanced: levelFor(PRESET_RATIO.balanced),
+  best: levelFor(PRESET_RATIO.best),
+}
 
 export function sameQuality(a: Quality, b: Quality): boolean {
   if (typeof a === 'string' || typeof b === 'string') return a === b
@@ -30,8 +38,9 @@ export function levelOf(quality: Quality): number {
 /**
  * The image quality the peer is asked for during a session, as a ceiling under the user's
  * choice: it starts low, grows while TestDelay stays near the lowest delay seen, and halves
- * when the delay climbs or the next one is overdue. Growth is geometric up to a recovery
- * threshold, then one level per HOLD_TICKS calm delays. The peer's own ABR works below it.
+ * when the delay climbs or the next one is overdue. Growth is geometric (at most MAX_STEP a tick
+ * above LINEAR_FROM) up to a recovery threshold, then a level per LINEAR_FROM levels every
+ * HOLD_TICKS calm delays. The peer's own ABR works below it.
  */
 export class QualityGovernor {
   #cap: Quality = START_QUALITY
@@ -79,10 +88,12 @@ export class QualityGovernor {
 
   #grow(): Quality | null {
     const level = this.#level
+    const cap = levelOf(this.#cap)
     if (level < this.#threshold) {
-      this.#level = Math.min(Math.ceil(level * GROWTH), this.#threshold, levelOf(this.#cap))
+      const bounded = Math.max(LINEAR_FROM, level + MAX_STEP)
+      this.#level = Math.min(Math.ceil(level * GROWTH), bounded, this.#threshold, cap)
     } else if (this.#calm % HOLD_TICKS === 0) {
-      this.#level = Math.min(level + 1, levelOf(this.#cap))
+      this.#level = Math.min(level + Math.max(1, Math.floor(level / LINEAR_FROM)), cap)
     }
     return this.#emit()
   }

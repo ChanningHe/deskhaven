@@ -19,7 +19,7 @@ export const SETTINGS_VERSION = 1
 export const MIN_FPS = 5
 export const MAX_FPS = 60
 export const MIN_CUSTOM_QUALITY = 10
-export const MAX_CUSTOM_QUALITY = 100
+export const MAX_CUSTOM_QUALITY = 500
 
 export const DEFAULT_SETTINGS: RemoteSettings = {
   quality: 'balanced',

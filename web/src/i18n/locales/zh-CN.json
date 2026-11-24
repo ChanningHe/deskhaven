@@ -1778,6 +1778,9 @@
         "custom": "自定义"
       },
       "customQuality": "自定义画质",
+      "qualityOption": "{{name}}<rate>（{{rate}}）</rate>",
+      "qualityHint": "码率为上限，画面静止或简单时用不满。",
+      "customQualityValue": "{{level}}（{{rate}}）",
       "fps": "帧率",
       "fpsValue": "{{fps}} fps",
       "resolution": "分辨率",
