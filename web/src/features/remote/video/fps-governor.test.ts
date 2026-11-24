@@ -45,13 +45,25 @@ describe('FpsGovernor fps', () => {
     expect(g.decodeFps).toBe(20)
   })
 
-  it('halves the fps on every tick the decodes back up, down to a floor', () => {
+  it('halves the fps while the decodes back up, down to a floor', () => {
+    const g = new FpsGovernor({ userFps: 60 })
+    expect(settle(g, BACKED_UP)).toEqual([30, 15, 7, MIN_AUTO_FPS])
+  })
+
+  it('halves once over three backed-up ticks, and again if the backlog outlasts the cut', () => {
     const g = new FpsGovernor({ userFps: 60 })
     expect(g.tick(BACKED_UP)).toBe(30)
-    expect(g.tick(BACKED_UP)).toBe(15)
-    expect(g.tick(BACKED_UP)).toBe(7)
-    expect(g.tick(BACKED_UP)).toBe(MIN_AUTO_FPS)
     expect(g.tick(BACKED_UP)).toBeNull()
+    expect(g.tick(BACKED_UP)).toBeNull()
+    expect(g.tick(BACKED_UP)).toBe(15)
+  })
+
+  it('ignores the backlog of a decoder that has just started, then halves on it', () => {
+    const g = new FpsGovernor({ userFps: 60 })
+    g.decoderStarted()
+    expect(g.tick({ fps: 60, backlog: 4 })).toBeNull()
+    expect(g.tick({ fps: 60, backlog: 4 })).toBeNull()
+    expect(g.tick({ fps: 60, backlog: 4 })).toBe(30)
   })
 
   it('climbs back to the user fps once the backlog has stayed away for a while', () => {

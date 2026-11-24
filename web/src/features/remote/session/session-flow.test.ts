@@ -5,7 +5,7 @@ import { msg } from '../__fixtures__/harness'
 import type { LinkKind } from '../handshake/handshake'
 import { SwitchDisplaySchema, VideoFrameSchema, type Message } from '../proto/gen/message_pb.js'
 import { vp9Frame } from '../video/fake-decoder'
-import { BACKLOG, DEFAULT_FPS } from '../video/fps-governor'
+import { BACKLOG, DEFAULT_FPS, SETTLE_TICKS } from '../video/fps-governor'
 import { activeSession, FakeClock, fakeLinkSession, misc, settle } from './testing'
 
 function miscCases(sent: Message[]): (string | undefined)[] {
@@ -80,7 +80,7 @@ describe.each(['relay', 'webrtc'] as const)('video flow over %s', (link) => {
   it('halves the fps only once decodes back up, however long each one takes', async () => {
     const s = await sessionOver(link)
     await decodeEach(s, 50)
-    s.clock.tick()
+    for (let i = 0; i < SETTLE_TICKS; i++) s.clock.tick()
     expect(fpsSent(s.sent())).toEqual([])
 
     s.decoders.last.decodeQueueSize = BACKLOG

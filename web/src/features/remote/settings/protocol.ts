@@ -8,7 +8,7 @@ import {
 } from '../proto/gen/message_pb.js'
 import type { OptionPatch } from '../session/messages'
 import { sameQuality, START_QUALITY } from '../video/quality-governor'
-import { MAX_FPS, type Quality, type RemoteSettings } from './settings'
+import type { Quality, RemoteSettings } from './settings'
 
 const PRESETS = {
   low: ImageQuality.Low,
@@ -35,7 +35,6 @@ export function loginSettings(settings: RemoteSettings): RemoteSettings {
   return {
     ...settings,
     quality: START_QUALITY,
-    fps: Math.min(settings.fps, MAX_FPS),
     audio: false,
     codec: 'vp9',
   }

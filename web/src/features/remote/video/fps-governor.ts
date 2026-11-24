@@ -11,6 +11,10 @@ const RATE_EVERY = 10
 const RATE_WINDOW = 30
 const IDLE_TICKS = 3
 const STEP_UP = 3
+// A decoder's configure is asynchronous: chunks queue behind it and a cut takes a round trip to
+// show, so for this many ticks the backlog says nothing new.
+export const SETTLE_TICKS = 2
+const COOL_TICKS = 2
 
 export interface FpsGovernorOptions {
   userFps: number
@@ -33,6 +37,7 @@ export class FpsGovernor {
   #totalMs = 0
   #decodeFps: number | null = null
   #idle = 0
+  #hold = 0
   #inactive = 0
   #refreshes = 0
   #lastRefreshAt = 0
@@ -60,6 +65,7 @@ export class FpsGovernor {
   /** A new decoder's first frames take its setup too: they are skipped as the first one's are. */
   decoderStarted(): void {
     this.#warmUp = 0
+    this.#hold = Math.max(this.#hold, SETTLE_TICKS)
   }
 
   decoded(serviceMs: number): void {
@@ -87,6 +93,8 @@ export class FpsGovernor {
   }
 
   #next(backlog: number): number {
+    const held = this.#hold > 0
+    if (held) this.#hold--
     if (this.#userChanged) {
       this.#userChanged = false
       this.#idle = 0
@@ -95,6 +103,8 @@ export class FpsGovernor {
     // A screen that stopped changing sends nothing, so what still waits says nothing new.
     if (backlog >= BACKLOG && this.#inactive < INACTIVE_TICKS) {
       this.#idle = 0
+      if (held) return this.#fps
+      this.#hold = COOL_TICKS
       return Math.min(this.#fps, Math.max(MIN_AUTO_FPS, Math.floor(this.#fps / 2)))
     }
     this.#idle++

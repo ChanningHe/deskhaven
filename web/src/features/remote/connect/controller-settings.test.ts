@@ -5,7 +5,7 @@ import { ImageQuality, OptionMessage_BoolOption } from '../proto/gen/message_pb.
 import { startSession, type Session } from '../session/session'
 import { FakeClock, FakeHandshake, PEER_INFO } from '../session/testing'
 import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
-import { BACKLOG } from '../video/fps-governor'
+import { BACKLOG, SETTLE_TICKS } from '../video/fps-governor'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type RemoteSettings } from '../settings/settings'
 import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
 import { RemoteController } from './controller'
@@ -289,6 +289,7 @@ describe('RemoteController fps below the login one', () => {
       clock.advance(1)
       link.decoders.last.output()
     }
+    for (let i = 0; i < SETTLE_TICKS; i++) clock.tick()
     link.decoders.last.decodeQueueSize = BACKLOG
     clock.tick()
     link.decoders.last.decodeQueueSize = 0

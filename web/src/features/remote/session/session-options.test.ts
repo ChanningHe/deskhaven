@@ -11,7 +11,7 @@ import {
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
-import { BACKLOG } from '../video/fps-governor'
+import { BACKLOG, SETTLE_TICKS } from '../video/fps-governor'
 import { START_QUALITY } from '../video/quality-governor'
 import { startSession } from './session'
 import { FakeClock, FakeHandshake, activeSession, fakeLinkSession, settle } from './testing'
@@ -154,6 +154,7 @@ describe('Session.setOptions maxFps', () => {
 describe('Session maxFps option', () => {
   it('keeps the governor at or under the fps the session was started with', async () => {
     const s = await decoding({ maxFps: 10 })
+    for (let i = 0; i < SETTLE_TICKS; i++) s.clock.tick()
     s.decoders.last.decodeQueueSize = BACKLOG
     s.clock.tick()
     s.decoders.last.decodeQueueSize = 0

@@ -5,7 +5,7 @@ import { msg } from '../__fixtures__/harness'
 import { NO_MODIFIERS } from '../input/mouse'
 import { TestDelaySchema } from '../proto/gen/message_pb.js'
 import { vp9Frame } from '../video/fake-decoder'
-import { BACKLOG } from '../video/fps-governor'
+import { BACKLOG, SETTLE_TICKS } from '../video/fps-governor'
 import { customFps } from './messages'
 import { activeSession, FakeClock, fakeLinkSession, settle } from './testing'
 
@@ -87,6 +87,7 @@ describe('session stats', () => {
       clock.advance(1)
       s.decoders.last.output()
     }
+    for (let i = 0; i < SETTLE_TICKS; i++) clock.tick()
     s.decoders.last.decodeQueueSize = BACKLOG
     clock.tick()
     expect(s.handshake.sent).toEqual([customFps(60), customFps(30)])
