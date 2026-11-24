@@ -17,7 +17,7 @@ import {
   type HandshakeParams,
   type Link,
 } from '../handshake/handshake'
-import { supportedDecoding, type DecoderSupport } from '../handshake/login'
+import { VIDEO_CODECS, supportedDecoding, type DecoderSupport } from '../handshake/login'
 import {
   NO_INTENT,
   intentPatch,
@@ -121,7 +121,11 @@ export const browserDeps: ConnectDeps = {
   probeDecoders: probeVideoDecoders,
   createRelay: (options) => new RelayTransport(options),
   startSession: (link, params, intent, maxFps) =>
-    startSession(startHandshake(link, params), { viewOnly: intent.viewOnly, maxFps }),
+    startSession(startHandshake(link, params), {
+      viewOnly: intent.viewOnly,
+      maxFps,
+      decoders: params.decoders,
+    }),
   get location() {
     return window.location
   },
@@ -310,7 +314,7 @@ export class RemoteController {
   async #run(attempt: Attempt): Promise<void> {
     const decoders = await this.#deps.probeDecoders()
     if (this.#stale(attempt)) return
-    if (!supportedDecoding(decoders)) {
+    if (!supportedDecoding(decoders, VIDEO_CODECS)) {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }
@@ -376,6 +380,11 @@ export class RemoteController {
         this.#sync(attempt)
       }),
     )
+    unwatch.push(
+      session.codecs.subscribe(() => {
+        this.#codecFailed(attempt, session)
+      }),
+    )
     const stop = session.state.subscribe(() => {
       const state = session.state.get()
       if (state.kind !== 'closed') {
@@ -407,6 +416,13 @@ export class RemoteController {
     }
     if (this.#phase.get().kind === 'reconnecting') this.#phase.set({ kind: 'session', session })
     this.#sync(attempt)
+  }
+
+  /** The session gave the picked codec up for VP9: so does the setting. */
+  #codecFailed(attempt: Attempt, session: Session): void {
+    const { failed } = session.codecs.get()
+    if (this.#stale(attempt) || failed === undefined) return
+    if (this.#settings.get().codec === failed) this.updateSettings({ codec: 'vp9' })
   }
 
   #ended(attempt: Attempt, session: Session, cause: CloseCause): void {

@@ -11,6 +11,7 @@ import type { KeyboardMode, Message, Misc, PeerInfo } from '../proto/gen/message
 import { qualityOption, ungoverned } from '../settings/protocol'
 import type { Quality } from '../settings/settings'
 import { TransportError } from '../transport/transport'
+import { CodecSwitch, type CodecView } from '../video/codec'
 import { createWebCodecsDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
 import { VideoPipeline } from '../video/pipeline'
@@ -23,6 +24,7 @@ import {
   closeReason,
   actionKeys,
   customFps,
+  decodingOption,
   keyMessage,
   optionMessage,
   refreshVideo,
@@ -41,6 +43,8 @@ import type { Session, SessionOptions, SessionState } from './types'
 import { windowsSessionChoice } from './windows-sessions'
 
 export type { Session, SessionOptions, SessionState } from './types'
+
+const VP9_ONLY = { vp9: true, av1: false, vp8: false }
 
 // rustdesk 1.5.0 src/client.rs:110 RESTART_REMOTE_DEVICE_GRACE
 export const RESTART_GRACE_MS = 5 * 60_000
@@ -73,6 +77,8 @@ class RemoteSession implements Session {
   readonly #meter: SessionMeter
   readonly #stats = new ValueStore<SessionStats>(NO_STATS)
   readonly #governor: FpsGovernor
+  readonly #codecs: CodecSwitch
+  readonly #codecView: ValueStore<CodecView>
   #sentFps: number
   readonly #quality = new QualityGovernor()
   readonly #cursors = new CursorTracker()
@@ -101,23 +107,41 @@ class RemoteSession implements Session {
     const governor = new FpsGovernor({ userFps: loginFps })
     this.#governor = governor
     this.#sentFps = loginFps
+    const codecs = new CodecSwitch({
+      support: options.decoders ?? VP9_ONLY,
+      now: () => clock.now(),
+      send: (decoding) => {
+        this.#send(decodingOption(decoding))
+      },
+      refresh: () => {
+        this.#refresh()
+      },
+      onChange: (view) => {
+        this.#codecView.set(view)
+      },
+    })
+    this.#codecs = codecs
+    this.#codecView = new ValueStore(codecs.view)
     this.#video = new VideoPipeline({
       createDecoder: options.createDecoder ?? createWebCodecsDecoder,
       onFrame: (frame) => {
         this.#frames.push(frame)
       },
       requestKeyFrame: () => {
-        this.#meter.keyRequested()
-        const peer = this.peer.get()
-        this.#send(refreshVideo(peer?.current ?? 0, peer?.info.version ?? ''))
+        this.#refresh()
       },
       mayRefresh: () => governor.mayRefresh(clock.now()),
       onFatal: (error) => {
         this.#hangUp('local', `video decoding failed: ${error.message}`)
       },
       meter: governed(this.#meter, governor),
+      codecs,
+      onNewDecoder: () => {
+        governor.decoderStarted()
+      },
     })
     this.#meter.stats.subscribe(() => {
+      codecs.tick()
       this.#steer()
       this.#stats.set({
         ...this.#meter.stats.get(),
@@ -130,6 +154,10 @@ class RemoteSession implements Session {
 
   get stats(): Store<SessionStats> {
     return this.#stats
+  }
+
+  get codecs(): Store<CodecView> {
+    return this.#codecView
   }
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -215,6 +243,7 @@ class RemoteSession implements Session {
     if (patch.peer) this.#send(optionMessage(ungoverned(patch.peer)))
     if (patch.maxFps !== undefined) this.#governor.setUserFps(patch.maxFps)
     if (patch.quality) this.#sendQuality(this.#quality.setCap(patch.quality))
+    if (patch.decoding) this.#codecs.want(patch.decoding)
   }
 
   input(input: RemoteInput): void {
@@ -282,6 +311,12 @@ class RemoteSession implements Session {
     this.#sendQuality(this.#quality.tick(this.#meter.takeDelay()))
   }
 
+  #refresh(): void {
+    this.#meter.keyRequested()
+    const peer = this.peer.get()
+    this.#send(refreshVideo(peer?.current ?? 0, peer?.info.version ?? ''))
+  }
+
   #sendQuality(quality: Quality | null): void {
     if (quality) this.#send(optionMessage(qualityOption(quality)))
   }
@@ -301,6 +336,7 @@ class RemoteSession implements Session {
     const mode = keyboardModeFor(info.platform, info.version)
     this.#keyboard = new KeyboardEncoder(mode, info.platform)
     this.peer.set(peerView(info, mode))
+    this.#codecs.peerEncodes(info.encoding)
   }
 
   #onMessage(message: Message): void {
@@ -332,6 +368,7 @@ class RemoteSession implements Session {
       case 'peerInfo': {
         const peer = this.peer.get()
         if (peer) this.peer.set(withDisplays(peer, union.value))
+        if (union.value.encoding) this.#codecs.peerEncodes(union.value.encoding)
         return
       }
       case 'misc':
@@ -361,6 +398,9 @@ class RemoteSession implements Session {
         return
       case 'closeReason':
         this.#hangUp('peer', union.value)
+        return
+      case 'supportedEncoding':
+        this.#codecs.peerEncodes(union.value)
         return
       default:
         return

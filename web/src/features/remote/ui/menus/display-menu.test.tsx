@@ -135,13 +135,13 @@ describe('display menu', () => {
     expect(updates).not.toHaveBeenCalled()
   })
 
-  it('marks each preset with its bitrate at the peer resolution, and calls it a ceiling', async () => {
+  it('marks each preset with its bitrate at the peer resolution, with no hint line under it', async () => {
     const { user } = await activePage()
     await openMenu(user, '显示')
     for (const name of ['低（~540 kbps）', '均衡（~720 kbps）', '最佳（~1.6 Mbps）', '自定义']) {
       expect(screen.getByRole('menuitemradio', { name })).toBeInTheDocument()
     }
-    expect(screen.getByText('码率为上限，画面静止或简单时用不满。')).toBeInTheDocument()
+    expect(screen.queryByText(/码率为上限/)).toBeNull()
   })
 
   it('follows a resolution change', async () => {
@@ -177,7 +177,6 @@ describe('display menu', () => {
       '200',
     )
     expect(screen.queryByText(/Mbps|kbps/)).toBeNull()
-    expect(screen.queryByText('码率为上限，画面静止或简单时用不满。')).toBeNull()
   })
 
   it('caps the frame rate at a picked step', async () => {
@@ -192,6 +191,86 @@ describe('display menu', () => {
     await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
     expect(updates).toHaveBeenCalledWith({ fps: 15 })
     expect(session.patches).toEqual([{ maxFps: 15 }])
+  })
+
+  async function openCodecs(user: Awaited<ReturnType<typeof activePage>>['user']) {
+    await openMenu(user, '显示')
+    screen.getByRole('menuitem', { name: /^编码/ }).focus()
+    await user.keyboard('{ArrowRight}')
+    return screen.findByRole('menuitemradio', { name: /^VP9/ })
+  }
+
+  it('picks a codec the browser and the device both support', async () => {
+    const { user, session, updates } = await activePage()
+    expect(await openCodecs(user)).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('menuitemradio', { name: 'VP9（默认）' })).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitemradio', { name: 'VP8' }))
+    expect(updates).toHaveBeenCalledWith({ codec: 'vp8' })
+    expect(session.patches).toEqual([{ decoding: 'vp8' }])
+  })
+
+  it('greys out a codec with the reason it cannot be picked', async () => {
+    const { user, session, updates } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'browser', vp8: 'peer' },
+      })
+    })
+    await openCodecs(user)
+    const av1 = screen.getByRole('menuitemradio', { name: /^AV1/ })
+    const vp8 = screen.getByRole('menuitemradio', { name: /^VP8/ })
+    expect(av1).toHaveAccessibleName('AV1（浏览器不支持）')
+    expect(vp8).toHaveAccessibleName('VP8（设备不支持）')
+    expect(av1).toHaveAttribute('aria-disabled', 'true')
+    expect(vp8).toHaveAttribute('aria-disabled', 'true')
+    await user.click(vp8)
+    expect(updates).not.toHaveBeenCalled()
+  })
+
+  it('names a codec that failed in this session', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+      })
+    })
+    await openCodecs(user)
+    expect(screen.getByRole('menuitemradio', { name: /^AV1/ })).toHaveAccessibleName(
+      'AV1（本次连接中解码失败）',
+    )
+  })
+
+  it('names a codec the device did not switch to in this session', async () => {
+    const { user, session } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'ignored', vp8: 'ok' },
+      })
+    })
+    await openCodecs(user)
+    expect(screen.getByRole('menuitemradio', { name: /^AV1/ })).toHaveAccessibleName(
+      'AV1（本次连接中设备未切换）',
+    )
+  })
+
+  it('shows the codec it receives when that is not the one picked', async () => {
+    const { user, session } = await activePage({ codec: 'av1' })
+    act(() => {
+      session.codecs.set({ ...session.codecs.get(), requested: 'av1', receiving: 'vp8' })
+    })
+    await openCodecs(user)
+    expect(screen.getByRole('menuitemradio', { name: /^AV1/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(screen.getByText('当前：VP8')).toBeInTheDocument()
+    act(() => {
+      session.codecs.set({ ...session.codecs.get(), receiving: 'av1' })
+    })
+    expect(screen.queryByText(/^当前：/)).toBeNull()
   })
 
   it('switches between fit and original size, scrolls only at original size', async () => {

@@ -1760,7 +1760,7 @@
       "label": "会话控制",
       "disconnect": "断开",
       "displayMenu": "显示",
-      "displayMenuHint": "显示：画质、帧率、缩放、连接方式",
+      "displayMenuHint": "显示：画质、帧率、缩放、编码、连接方式",
       "inputMenu": "输入",
       "inputMenuHint": "输入：键盘模式和组合键。连按两次 Esc 离开远程画面。",
       "clipboardMenu": "剪贴板",
@@ -1779,7 +1779,6 @@
       },
       "customQuality": "自定义画质",
       "qualityOption": "{{name}}<rate>（{{rate}}）</rate>",
-      "qualityHint": "码率为上限，画面静止或简单时用不满。",
       "customQualityValue": "{{level}}（{{rate}}）",
       "fps": "帧率",
       "fpsValue": "{{fps}} fps",
@@ -1795,6 +1794,20 @@
         "auto": "自动（WebRTC 优先）",
         "relay": "仅中继"
       },
+      "codec": "编码",
+      "codecs": {
+        "vp9": "VP9（默认）",
+        "av1": "AV1",
+        "vp8": "VP8"
+      },
+      "codecOption": "{{name}}<reason>（{{reason}}）</reason>",
+      "codecBlocked": {
+        "browser": "浏览器不支持",
+        "peer": "设备不支持",
+        "failed": "本次连接中解码失败",
+        "ignored": "本次连接中设备未切换"
+      },
+      "codecReceiving": "当前：{{name}}",
       "monitor": "显示器",
       "monitorN": "显示器 {{n}}",
       "showRemoteCursor": "显示远端光标",
@@ -1887,6 +1900,10 @@
       "copied": "已复制。",
       "copyFailed": "复制失败。请选中文本手动复制。",
       "close": "关闭"
+    },
+    "codecFallback": {
+      "failed": "{{name}} 画面无法解码，已切回 {{back}}。",
+      "ignored": "设备没有切换到 {{name}}，已切回 {{back}}。"
     },
     "screen": "远程屏幕。点击后即可控制设备；获得焦点时按键会发送到设备。",
     "leaveHint": "连按两次 Esc 离开远程画面。",

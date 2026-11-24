@@ -1,8 +1,9 @@
 import { create } from '@bufbuild/protobuf'
+import type { VideoCodec } from '../handshake/login'
 import { describe, expect, it, vi } from 'vitest'
 
 import { EncodedVideoFramesSchema, VideoFrameSchema } from '../proto/gen/message_pb.js'
-import { encodedFrames } from './codec'
+import { encodedFrames, webCodecsString, type CodecEvents } from './codec'
 import { FakeDecoders, fixtureKeyFrame, vp9Frame } from './fake-decoder'
 import { MAX_DECODE_QUEUE, MAX_FAILURES, VideoPipeline } from './pipeline'
 
@@ -24,18 +25,30 @@ function setup() {
 describe('codec selection', () => {
   it('decodes the fixture key frame as VP9 profile 0', () => {
     const encoded = encodedFrames(fixtureKeyFrame())
-    expect(encoded?.codec).toBe('vp09.00.10.08')
+    expect(encoded?.codec).toBe('vp9')
+    expect(webCodecsString('vp9')).toBe('vp09.00.10.08')
     expect(encoded?.frames[0]?.key).toBe(true)
   })
 
   it.each([
-    ['av1s', 'av01.0.04M.08'],
-    ['vp8s', 'vp8'],
-  ] as const)('maps %s to %s', (union, codec) => {
+    ['av1s', 'av1', 'av01.0.04M.08'],
+    ['vp8s', 'vp8', 'vp8'],
+  ] as const)('maps %s to %s (%s)', (union, codec, string) => {
     const frame = create(VideoFrameSchema, {
       union: { case: union, value: create(EncodedVideoFramesSchema) },
     })
     expect(encodedFrames(frame)?.codec).toBe(codec)
+    expect(webCodecsString(codec)).toBe(string)
+  })
+
+  it.each([
+    ['h264s', create(VideoFrameSchema, { union: { case: 'h264s', value: {} } })],
+    ['h265s', create(VideoFrameSchema, { union: { case: 'h265s', value: {} } })],
+    ['rgb', create(VideoFrameSchema, { union: { case: 'rgb', value: {} } })],
+    ['yuv', create(VideoFrameSchema, { union: { case: 'yuv', value: {} } })],
+    ['nothing', create(VideoFrameSchema)],
+  ])('decodes no %s', (_, frame) => {
+    expect(encodedFrames(frame)).toBeNull()
   })
 })
 
@@ -245,6 +258,19 @@ describe('VideoPipeline', () => {
     expect(onFatal.mock.calls[0]?.[0]).toMatchObject({ message: `failure ${MAX_FAILURES - 1}` })
   })
 
+  it('counts failures afresh for a new codec', () => {
+    const { decoders, onFatal, pipeline } = setup()
+    for (let i = 0; i < MAX_FAILURES - 1; i++) {
+      pipeline.push(frameOf('av1s', true))
+      decoders.last.fail()
+    }
+    for (let i = 0; i < MAX_FAILURES - 1; i++) {
+      pipeline.push(fixtureKeyFrame())
+      decoders.last.fail()
+    }
+    expect(onFatal).not.toHaveBeenCalled()
+  })
+
   it('counts failures only in a row', () => {
     const { decoders, onFatal, pipeline } = setup()
     for (let i = 0; i < MAX_FAILURES; i++) {
@@ -265,5 +291,141 @@ describe('VideoPipeline', () => {
     expect(frames).toEqual([])
     pipeline.push(fixtureKeyFrame())
     expect(decoders.created).toHaveLength(1)
+  })
+})
+
+function frameOf(codec: 'av1s' | 'vp8s', key: boolean) {
+  return create(VideoFrameSchema, {
+    union: {
+      case: codec,
+      value: create(EncodedVideoFramesSchema, { frames: [{ key, data: Uint8Array.of(1) }] }),
+    },
+  })
+}
+
+class RecordedCodecs implements CodecEvents {
+  readonly events: string[] = []
+  refused = new Set<VideoCodec>()
+
+  accepts(codec: VideoCodec): boolean {
+    return !this.refused.has(codec)
+  }
+
+  received(codec: VideoCodec): void {
+    this.events.push(`received ${codec}`)
+  }
+
+  decoded(codec: VideoCodec): void {
+    this.events.push(`decoded ${codec}`)
+  }
+
+  failed(codec: VideoCodec): void {
+    this.events.push(`failed ${codec}`)
+  }
+}
+
+function watched() {
+  const decoders = new FakeDecoders()
+  const codecs = new RecordedCodecs()
+  const calls = { keyRequests: 0, newDecoders: 0 }
+  const onFatal = vi.fn()
+  const pipeline = new VideoPipeline({
+    createDecoder: decoders.create,
+    onFrame: (frame) => {
+      frame.close()
+    },
+    requestKeyFrame: () => calls.keyRequests++,
+    mayRefresh: () => true,
+    onFatal,
+    codecs,
+    onNewDecoder: () => calls.newDecoders++,
+  })
+  return { decoders, codecs, calls, onFatal, pipeline }
+}
+
+describe('VideoPipeline codecs', () => {
+  it('reports the codec of what it receives, decodes and fails on', () => {
+    const { decoders, codecs, pipeline } = watched()
+    pipeline.push(fixtureKeyFrame())
+    decoders.last.output()
+    pipeline.push(frameOf('av1s', true))
+    decoders.last.fail()
+    pipeline.push(create(VideoFrameSchema, { union: { case: 'rgb', value: {} } }))
+    expect(codecs.events).toEqual(['received vp9', 'decoded vp9', 'received av1', 'failed av1'])
+  })
+
+  it('reports a decode() that throws as a failure of its codec', () => {
+    const { decoders, codecs, pipeline } = watched()
+    pipeline.push(frameOf('vp8s', true))
+    decoders.last.throwOnDecode = new Error('refused')
+    pipeline.push(frameOf('vp8s', false))
+    expect(codecs.events).toEqual(['received vp8', 'received vp8', 'failed vp8'])
+  })
+
+  it('takes a decoder that cannot be created as a failure, not an exception', () => {
+    const { codecs, calls, onFatal, pipeline } = watched()
+    const throwing = new VideoPipeline({
+      createDecoder: () => {
+        throw new TypeError('bad config')
+      },
+      onFrame: () => undefined,
+      requestKeyFrame: () => calls.keyRequests++,
+      mayRefresh: () => true,
+      onFatal,
+      codecs,
+    })
+    expect(() => {
+      throwing.push(frameOf('av1s', true))
+    }).not.toThrow()
+    expect(codecs.events).toEqual(['received av1', 'failed av1'])
+    expect(calls.keyRequests).toBe(1)
+    expect(onFatal).not.toHaveBeenCalled()
+    pipeline.close()
+  })
+
+  it('drops frames of a codec it is told not to decode, and asks for nothing', () => {
+    const { decoders, codecs, calls, pipeline } = watched()
+    codecs.refused.add('av1')
+    pipeline.push(fixtureKeyFrame())
+    pipeline.push(frameOf('av1s', true))
+    pipeline.push(frameOf('av1s', false))
+    expect(decoders.created.map((d) => d.codec)).toEqual(['vp09.00.10.08'])
+    expect(decoders.last.closed).toBe(false)
+    expect(calls.keyRequests).toBe(0)
+    expect(pipeline.codec).toBe('av01.0.04M.08')
+  })
+
+  it('names the codec of the last frame received, decodable yet or not', () => {
+    const { pipeline } = watched()
+    expect(pipeline.codec).toBeNull()
+    pipeline.push(fixtureKeyFrame())
+    expect(pipeline.codec).toBe('vp09.00.10.08')
+    pipeline.push(frameOf('vp8s', false))
+    expect(pipeline.codec).toBe('vp8')
+  })
+
+  it('reconfigures at the key frame of a new codec, asking for one when a delta comes first', () => {
+    const { decoders, calls, pipeline } = watched()
+    pipeline.push(fixtureKeyFrame())
+    pipeline.push(frameOf('vp8s', false))
+    expect(calls).toEqual({ keyRequests: 1, newDecoders: 1 })
+    pipeline.push(frameOf('vp8s', false))
+    pipeline.push(frameOf('vp8s', true))
+    pipeline.push(frameOf('vp8s', false))
+    expect(calls).toEqual({ keyRequests: 1, newDecoders: 2 })
+    expect(decoders.created.map((d) => [d.codec, d.closed])).toEqual([
+      ['vp09.00.10.08', true],
+      ['vp8', false],
+    ])
+    expect(decoders.last.decoded.map((c) => c.key)).toEqual([true, false])
+  })
+
+  it('tells of every new decoder, the one after a failure included', () => {
+    const { decoders, calls, pipeline } = watched()
+    pipeline.push(fixtureKeyFrame())
+    pipeline.push(vp9Frame(false))
+    decoders.last.fail()
+    pipeline.push(fixtureKeyFrame())
+    expect(calls.newDecoders).toBe(2)
   })
 })

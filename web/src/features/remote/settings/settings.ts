@@ -1,3 +1,4 @@
+import { VIDEO_CODECS, type VideoCodec } from '../handshake/login'
 import { DEFAULT_FPS } from '../video/fps-governor'
 
 export type Preset = 'low' | 'balanced' | 'best'
@@ -12,6 +13,8 @@ export interface RemoteSettings {
   clipboardSync: boolean
   audio: boolean
   transport: TransportSetting
+  /** What to ask the peer for once logged in; the login itself always asks for VP9. */
+  codec: VideoCodec
 }
 
 export const SETTINGS_KEY = 'deskhaven.remote.settings'
@@ -29,6 +32,7 @@ export const DEFAULT_SETTINGS: RemoteSettings = {
   clipboardSync: true,
   audio: false,
   transport: 'auto',
+  codec: 'vp9',
 }
 
 const PRESETS: readonly Preset[] = ['low', 'balanced', 'best']
@@ -77,6 +81,7 @@ export function settingsFrom(
     clipboardSync: flag(field(raw, 'clipboardSync'), fallback.clipboardSync),
     audio: flag(field(raw, 'audio'), fallback.audio),
     transport: oneOf(field(raw, 'transport'), TRANSPORTS, fallback.transport),
+    codec: oneOf(field(raw, 'codec'), VIDEO_CODECS, fallback.codec),
   }
 }
 

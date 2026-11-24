@@ -35,6 +35,16 @@ describe('FpsGovernor fps', () => {
     expect(settle(g, { fps: 60, backlog: BACKLOG - 1 })).toEqual([])
   })
 
+  it('skips the first decodes of a new decoder, as it does those of the first one', () => {
+    const g = new FpsGovernor({ userFps: 60 })
+    for (let i = 0; i < 13; i++) g.decoded(50)
+    expect(g.decodeFps).toBe(20)
+    g.decoderStarted()
+    for (let i = 0; i < 3; i++) g.decoded(1000)
+    for (let i = 0; i < 10; i++) g.decoded(50)
+    expect(g.decodeFps).toBe(20)
+  })
+
   it('halves the fps on every tick the decodes back up, down to a floor', () => {
     const g = new FpsGovernor({ userFps: 60 })
     expect(g.tick(BACKED_UP)).toBe(30)

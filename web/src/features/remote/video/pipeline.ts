@@ -1,5 +1,6 @@
+import type { VideoCodec } from '../handshake/login'
 import type { VideoFrame as VideoFrameMessage } from '../proto/gen/message_pb.js'
-import { encodedFrames } from './codec'
+import { encodedFrames, webCodecsString, type CodecEvents } from './codec'
 import type { CreateDecoder, FrameDecoder } from './decoder'
 
 export interface VideoPipelineOptions {
@@ -12,6 +13,9 @@ export interface VideoPipelineOptions {
   /** Decoding keeps failing; the pipeline has stopped. */
   onFatal(error: Error): void
   meter?: VideoMeter
+  codecs?: CodecEvents
+  /** A decoder was opened: its first frames are slow, as the first decoder's are. */
+  onNewDecoder?(): void
 }
 
 export interface VideoMeter {
@@ -39,7 +43,10 @@ interface Pending {
 export class VideoPipeline {
   readonly #options: VideoPipelineOptions
   #decoder: FrameDecoder | null = null
-  #codec: string | null = null
+  #codec: VideoCodec | null = null
+  #received: VideoCodec | null = null
+  /** The codec of the last decoder opened, kept after it is closed. */
+  #lastCodec: VideoCodec | null = null
   #generation = 0
   #awaitingKey = true
   #keyRequested = false
@@ -58,21 +65,26 @@ export class VideoPipeline {
     const encoded = encodedFrames(message)
     const meter = this.#options.meter
     meter?.received(encoded?.frames.reduce((sum, f) => sum + f.data.length, 0) ?? 0)
-    if (!encoded || encoded.frames.length === 0) return
+    if (!encoded) return
+    const { codec } = encoded
+    this.#received = codec
+    const codecs = this.#options.codecs
+    codecs?.received(codec)
+    if (encoded.frames.length === 0 || codecs?.accepts(codec) === false) return
     const firstKey = encoded.frames.findIndex((f) => f.key)
-    const needsKey = this.#awaitingKey || encoded.codec !== this.#codec
+    const needsKey = this.#awaitingKey || codec !== this.#codec
     if (firstKey < 0 && (needsKey || this.#backedUp())) {
       this.#awaitKey()
       return
     }
-    const decoder = this.#decoderFor(encoded.codec)
     const frames = encoded.frames.slice(needsKey ? firstKey : 0)
     try {
+      const decoder = this.#decoderFor(codec)
       for (const frame of frames) {
         decoder.decode({ key: frame.key, timestamp: this.#nextTimestamp++, data: frame.data })
       }
     } catch (error) {
-      this.#fail(error)
+      this.#fail(codec, error)
       return
     }
     this.#pending.push({ last: this.#nextTimestamp - 1, pushedAt: meter?.now() ?? 0 })
@@ -80,8 +92,9 @@ export class VideoPipeline {
     this.#keyRequested = false
   }
 
+  /** The WebCodecs string of the last frame received. */
   get codec(): string | null {
-    return this.#codec
+    return this.#received && webCodecsString(this.#received)
   }
 
   get decodeQueueSize(): number {
@@ -104,19 +117,22 @@ export class VideoPipeline {
     return this.decodeQueueSize >= MAX_DECODE_QUEUE && this.#options.mayRefresh()
   }
 
-  #decoderFor(codec: string): FrameDecoder {
+  #decoderFor(codec: VideoCodec): FrameDecoder {
     if (this.#decoder && this.#codec === codec) return this.#decoder
     this.#closeDecoder()
+    if (codec !== this.#lastCodec) this.#failures = 0
+    this.#lastCodec = codec
     const generation = ++this.#generation
-    this.#codec = codec
-    this.#decoder = this.#options.createDecoder(codec, {
+    this.#decoder = this.#options.createDecoder(webCodecsString(codec), {
       output: (frame) => {
         this.#onOutput(generation, frame)
       },
       error: (error) => {
-        if (generation === this.#generation) this.#fail(error)
+        if (generation === this.#generation) this.#fail(codec, error)
       },
     })
+    this.#codec = codec
+    this.#options.onNewDecoder?.()
     return this.#decoder
   }
 
@@ -126,6 +142,7 @@ export class VideoPipeline {
       return
     }
     this.#failures = 0
+    if (this.#codec) this.#options.codecs?.decoded(this.#codec)
     const done = this.#pending.find((p) => p.last === frame.timestamp)
     const meter = this.#options.meter
     if (done && meter) {
@@ -144,9 +161,11 @@ export class VideoPipeline {
     this.#options.requestKeyFrame()
   }
 
-  #fail(cause: unknown): void {
+  #fail(codec: VideoCodec, cause: unknown): void {
     const error = cause instanceof Error ? cause : new Error(String(cause))
     this.#closeDecoder()
+    this.#options.codecs?.failed(codec)
+    if (this.#closed) return
     if (++this.#failures >= MAX_FAILURES) {
       this.close()
       this.#options.onFatal(error)

@@ -16,6 +16,7 @@ import type { Session } from '../../session/session'
 import { TRANSPORTS, type RemoteSettings } from '../../settings/settings'
 import { MenuSwitch, ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
+import { CodecSubmenu } from './codec-submenu'
 import { QualityGroup } from './quality-group'
 import { ResolutionSubmenu } from './resolution-submenu'
 
@@ -133,6 +134,13 @@ export function DisplayMenu({
       <SessionQualityGroup session={session} quality={settings.quality} onSettings={onSettings} />
       <DropdownMenuSeparator />
       <FpsSubmenu fps={settings.fps} onSettings={onSettings} />
+      <CodecSubmenu
+        session={session}
+        codec={settings.codec}
+        onChange={(codec) => {
+          onSettings({ codec })
+        }}
+      />
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         <DropdownMenuLabel>{t('remote.toolbar.scale')}</DropdownMenuLabel>

@@ -15,7 +15,9 @@ import {
   type Message,
   type Misc,
   type OptionMessage,
+  type SupportedDecoding,
 } from '../proto/gen/message_pb.js'
+import type { VideoCodec } from '../handshake/login'
 import type { Quality } from '../settings/settings'
 import { PLATFORM_MACOS, PLATFORM_WINDOWS, atLeast } from './peer'
 
@@ -29,10 +31,17 @@ export interface OptionPatch {
   maxFps?: number
   quality?: Quality
   viewOnly?: boolean
+  /** The codec to ask the peer for; the session sends it once the peer can encode it. */
+  decoding?: VideoCodec
 }
 
 export function optionMessage(option: OptionMessage): Message {
   return misc({ case: 'option', value: option })
+}
+
+/** Asks for another codec mid-session (rustdesk 1.5.1 src/client.rs:3889-3903). */
+export function decodingOption(supportedDecoding: SupportedDecoding): Message {
+  return optionMessage(create(OptionMessageSchema, { supportedDecoding }))
 }
 
 export function customFps(fps: number): Message {

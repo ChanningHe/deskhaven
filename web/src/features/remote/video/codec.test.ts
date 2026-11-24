@@ -1,0 +1,316 @@
+import { create } from '@bufbuild/protobuf'
+import { describe, expect, it } from 'vitest'
+
+import {
+  SupportedDecoding_PreferCodec,
+  SupportedEncodingSchema,
+  type SupportedDecoding,
+} from '../proto/gen/message_pb.js'
+import type { DecoderSupport } from '../handshake/login'
+import { CodecSwitch, SWITCH_ERRORS, SWITCH_TIMEOUT_MS, type CodecView } from './codec'
+
+const ALL: DecoderSupport = { vp9: true, av1: true, vp8: true }
+const { VP9, AV1, VP8 } = SupportedDecoding_PreferCodec
+
+function setup(
+  support: DecoderSupport = ALL,
+  encoding = { av1: true, vp8: true },
+  onChange: (codecs: CodecSwitch) => void = () => undefined,
+) {
+  let now = 0
+  const sent: SupportedDecoding[] = []
+  const views: CodecView[] = []
+  const calls = { refreshes: 0 }
+  const codecs: CodecSwitch = new CodecSwitch({
+    support,
+    now: () => now,
+    send: (decoding) => sent.push(decoding),
+    refresh: () => calls.refreshes++,
+    onChange: (view) => {
+      views.push(view)
+      onChange(codecs)
+    },
+  })
+  codecs.peerEncodes(create(SupportedEncodingSchema, encoding))
+  return {
+    codecs,
+    sent,
+    views,
+    calls,
+    advance: (ms: number) => {
+      now += ms
+      codecs.tick()
+    },
+  }
+}
+
+describe('CodecSwitch support', () => {
+  it('starts out on VP9 with only VP9 to pick until the peer says what it encodes', () => {
+    const codecs = new CodecSwitch({
+      support: ALL,
+      now: () => 0,
+      send: () => undefined,
+      refresh: () => undefined,
+      onChange: () => undefined,
+    })
+    expect(codecs.view).toEqual({
+      support: { vp9: 'ok', av1: 'peer', vp8: 'peer' },
+      requested: 'vp9',
+      receiving: null,
+    })
+  })
+
+  it('offers what both this browser decodes and the peer encodes', () => {
+    const { codecs } = setup({ vp9: true, av1: false, vp8: true }, { av1: true, vp8: false })
+    expect(codecs.view.support).toEqual({ vp9: 'ok', av1: 'browser', vp8: 'peer' })
+  })
+
+  it('takes VP9 as encodable whatever the peer says, and a missing encoding as VP9 only', () => {
+    const { codecs } = setup(ALL, { av1: false, vp8: false })
+    expect(codecs.view.support).toEqual({ vp9: 'ok', av1: 'peer', vp8: 'peer' })
+    codecs.peerEncodes(undefined)
+    expect(codecs.view.support).toEqual({ vp9: 'ok', av1: 'peer', vp8: 'peer' })
+  })
+
+  it('follows each update of what the peer encodes', () => {
+    const { codecs, views } = setup(ALL, { av1: false, vp8: false })
+    codecs.peerEncodes(create(SupportedEncodingSchema, { av1: true, vp8: false, h264: true }))
+    expect(codecs.view.support).toEqual({ vp9: 'ok', av1: 'ok', vp8: 'peer' })
+    const seen = views.length
+    codecs.peerEncodes(create(SupportedEncodingSchema, { av1: true, vp8: false }))
+    expect(views).toHaveLength(seen)
+  })
+})
+
+describe('CodecSwitch.want', () => {
+  it('asks for the codec with the abilities it logged in with', () => {
+    const { codecs, sent } = setup()
+    codecs.want('av1')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ abilityVp9: 1, abilityAv1: 1, abilityVp8: 1, prefer: AV1 })
+    expect(codecs.view.requested).toBe('av1')
+  })
+
+  it('asks for nothing the peer cannot encode, and asks once it can', () => {
+    const { codecs, sent } = setup(ALL, { av1: false, vp8: true })
+    codecs.want('av1')
+    expect(sent).toEqual([])
+    expect(codecs.view.requested).toBe('vp9')
+    codecs.peerEncodes(create(SupportedEncodingSchema, { av1: true, vp8: true }))
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+  })
+
+  it('asks for nothing this browser cannot decode', () => {
+    const { codecs, sent } = setup({ vp9: true, av1: false, vp8: true })
+    codecs.want('av1')
+    expect(sent).toEqual([])
+  })
+
+  it('asks again only for a change', () => {
+    const { codecs, sent } = setup()
+    codecs.want('vp9')
+    codecs.want('vp8')
+    codecs.want('vp8')
+    codecs.want('vp9')
+    expect(sent.map((d) => d.prefer)).toEqual([VP8, VP9])
+  })
+})
+
+describe('CodecSwitch fallback', () => {
+  it('keeps a codec whose frames come out of the decoder', () => {
+    const { codecs, sent, advance } = setup()
+    codecs.want('av1')
+    codecs.received('av1')
+    codecs.decoded('av1')
+    advance(SWITCH_TIMEOUT_MS * 3)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+    expect(codecs.view).toMatchObject({ requested: 'av1', receiving: 'av1' })
+    expect(codecs.view.failedAt).toBeUndefined()
+  })
+
+  it(`goes back to VP9 when no frame of the codec comes out within ${SWITCH_TIMEOUT_MS} ms`, () => {
+    const { codecs, sent, advance } = setup()
+    codecs.received('vp9')
+    codecs.want('av1')
+    codecs.received('av1')
+    advance(SWITCH_TIMEOUT_MS - 1)
+    expect(sent).toHaveLength(1)
+    advance(1)
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toMatchObject({ abilityVp9: 1, abilityAv1: 0, abilityVp8: 1, prefer: VP9 })
+    expect(codecs.view).toEqual({
+      support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+      requested: 'vp9',
+      receiving: 'av1',
+      failed: 'av1',
+      failedAt: SWITCH_TIMEOUT_MS,
+    })
+  })
+
+  it('goes back to VP9 when the peer never switches', () => {
+    const { codecs, sent, advance } = setup()
+    codecs.received('vp9')
+    codecs.want('vp8')
+    for (let t = 0; t < SWITCH_TIMEOUT_MS; t += 1000) {
+      codecs.received('vp9')
+      codecs.decoded('vp9')
+      advance(1000)
+    }
+    expect(sent.map((d) => d.prefer)).toEqual([VP8, VP9])
+    expect(codecs.view.failed).toBe('vp8')
+    expect(codecs.view.support.vp8).toBe('ignored')
+  })
+
+  it('takes old frames that land only early in the wait as in flight, not as a refusal', () => {
+    const { codecs, sent, calls, advance } = setup()
+    codecs.received('vp9')
+    codecs.want('av1')
+    codecs.received('vp9')
+    codecs.decoded('vp9')
+    for (let i = 0; i < 3; i++) advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+    expect(calls.refreshes).toBe(3)
+    expect(codecs.view.failedAt).toBeUndefined()
+  })
+
+  it('takes an old frame in the second half of the wait as the peer going on with it', () => {
+    const { codecs, sent, calls, advance } = setup()
+    codecs.want('av1')
+    advance(SWITCH_TIMEOUT_MS / 2)
+    codecs.received('vp9')
+    advance(SWITCH_TIMEOUT_MS / 2)
+    expect(calls.refreshes).toBe(0)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+    expect(codecs.view.support.av1).toBe('ignored')
+  })
+
+  it('takes a silent peer as a still screen: asks for a refresh and waits again', () => {
+    const { codecs, sent, calls, advance } = setup()
+    codecs.want('av1')
+    for (let i = 0; i < 3; i++) advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+    expect(calls.refreshes).toBe(3)
+    expect(codecs.view.failedAt).toBeUndefined()
+    expect(codecs.view.requested).toBe('av1')
+  })
+
+  it('judges the codec once frames come after a silence', () => {
+    const { codecs, sent, calls, advance } = setup()
+    codecs.want('av1')
+    advance(SWITCH_TIMEOUT_MS)
+    codecs.received('av1')
+    advance(SWITCH_TIMEOUT_MS - 1)
+    expect(sent).toHaveLength(1)
+    advance(1)
+    expect(calls.refreshes).toBe(1)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+    expect(codecs.view.support.av1).toBe('failed')
+  })
+
+  it('asks for VP9 once when its own listener reacts to the fallback', () => {
+    const { codecs, sent, advance } = setup(ALL, { av1: true, vp8: true }, (c) => {
+      if (c.view.failed !== undefined) c.want('vp9')
+    })
+    codecs.want('av1')
+    codecs.received('av1')
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+  })
+
+  it('falls back to the codec it logged in with where VP9 is not decodable', () => {
+    const { codecs, sent, advance } = setup({ vp9: false, av1: true, vp8: true })
+    expect(codecs.view.requested).toBe('av1')
+    for (let i = 0; i < SWITCH_ERRORS; i++) codecs.failed('av1')
+    expect(sent).toEqual([])
+    codecs.want('vp8')
+    codecs.received('vp8')
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([VP8, AV1])
+    expect(sent[1]).toMatchObject({ abilityVp9: 0, abilityAv1: 1, abilityVp8: 0 })
+    expect(codecs.view).toMatchObject({ requested: 'av1', failed: 'vp8' })
+  })
+
+  it(`goes back to VP9 after ${SWITCH_ERRORS} decode errors in a row`, () => {
+    const { codecs, sent } = setup()
+    codecs.want('av1')
+    codecs.received('av1')
+    for (let i = 0; i < SWITCH_ERRORS - 1; i++) codecs.failed('av1')
+    expect(sent).toHaveLength(1)
+    codecs.failed('av1')
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+    expect(codecs.view.support.av1).toBe('failed')
+  })
+
+  it('counts decode errors only in a row, and also once the codec has worked', () => {
+    const { codecs, sent, advance } = setup()
+    const failures = () => {
+      for (let i = 0; i < SWITCH_ERRORS - 1; i++) codecs.failed('av1')
+    }
+    codecs.want('av1')
+    failures()
+    codecs.decoded('av1')
+    failures()
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent).toHaveLength(1)
+    codecs.failed('av1')
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+  })
+
+  it('never falls back from VP9', () => {
+    const { codecs, sent, advance } = setup()
+    for (let i = 0; i < SWITCH_ERRORS * 2; i++) codecs.failed('vp9')
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent).toEqual([])
+    expect(codecs.view.failedAt).toBeUndefined()
+  })
+
+  it('shows another codec the peer picked instead, without falling back', () => {
+    const { codecs, sent, advance } = setup()
+    codecs.received('vp9')
+    codecs.want('av1')
+    codecs.received('vp8')
+    codecs.decoded('vp8')
+    advance(SWITCH_TIMEOUT_MS * 2)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+    expect(codecs.view).toMatchObject({ requested: 'av1', receiving: 'vp8' })
+    expect(codecs.view.failedAt).toBeUndefined()
+  })
+
+  it('stops watching a codec the peer stops offering', () => {
+    const { codecs, sent, advance } = setup()
+    codecs.want('av1')
+    codecs.peerEncodes(create(SupportedEncodingSchema, { av1: false, vp8: true }))
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1])
+    expect(codecs.view.support.av1).toBe('peer')
+  })
+
+  it('stops watching when the user goes back to VP9', () => {
+    const { codecs, sent, advance } = setup()
+    codecs.want('av1')
+    codecs.want('vp9')
+    advance(SWITCH_TIMEOUT_MS)
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+    expect(codecs.view.failedAt).toBeUndefined()
+  })
+
+  it('drops frames of a failed codec and never asks for it again in this session', () => {
+    const { codecs, sent, advance } = setup()
+    expect(codecs.accepts('av1')).toBe(true)
+    codecs.want('av1')
+    codecs.received('av1')
+    advance(SWITCH_TIMEOUT_MS)
+    expect(codecs.accepts('av1')).toBe(false)
+    expect(codecs.accepts('vp9')).toBe(true)
+    codecs.want('av1')
+    codecs.peerEncodes(create(SupportedEncodingSchema, { av1: true, vp8: true }))
+    expect(sent.map((d) => d.prefer)).toEqual([AV1, VP9])
+    codecs.want('vp8')
+    expect(sent.at(-1)).toMatchObject({ abilityAv1: 0, prefer: VP8 })
+  })
+
+  it('drops frames this browser cannot decode', () => {
+    const { codecs } = setup({ vp9: true, av1: false, vp8: true })
+    expect(codecs.accepts('av1')).toBe(false)
+  })
+})

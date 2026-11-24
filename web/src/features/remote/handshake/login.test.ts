@@ -8,21 +8,27 @@ import {
   OptionMessageSchema,
   SupportedDecoding_PreferCodec,
 } from '../proto/gen/message_pb.js'
+import { loginOption } from '../settings/protocol'
+import { DEFAULT_SETTINGS } from '../settings/settings'
 import {
   DECODER_PROBES,
   loginRequest,
   loginStateForError,
+  VIDEO_CODECS,
+  preferring,
   probeDecoders,
   supportedDecoding,
 } from './login'
 
 describe('supportedDecoding', () => {
+  const ALL = { vp9: true, av1: true, vp8: true }
+
   it.each([
-    [{ vp9: true, av1: true, vp8: true }, SupportedDecoding_PreferCodec.VP9],
+    [ALL, SupportedDecoding_PreferCodec.VP9],
     [{ vp9: false, av1: true, vp8: true }, SupportedDecoding_PreferCodec.AV1],
     [{ vp9: false, av1: false, vp8: true }, SupportedDecoding_PreferCodec.VP8],
   ])('declares each decodable codec and prefers VP9 > AV1 > VP8 (%o)', (support, prefer) => {
-    expect(supportedDecoding(support)).toMatchObject({
+    expect(supportedDecoding(support, VIDEO_CODECS)).toMatchObject({
       abilityVp9: support.vp9 ? 1 : 0,
       abilityAv1: support.av1 ? 1 : 0,
       abilityVp8: support.vp8 ? 1 : 0,
@@ -32,8 +38,36 @@ describe('supportedDecoding', () => {
     })
   })
 
+  it('declares only the codecs in `declared`', () => {
+    expect(supportedDecoding(ALL, ['vp9', 'vp8'])).toMatchObject({
+      abilityVp9: 1,
+      abilityAv1: 0,
+      abilityVp8: 1,
+      prefer: SupportedDecoding_PreferCodec.VP9,
+    })
+  })
+
   it('is null when nothing is decodable', () => {
-    expect(supportedDecoding({ vp9: false, av1: false, vp8: false })).toBeNull()
+    expect(supportedDecoding({ vp9: false, av1: false, vp8: false }, VIDEO_CODECS)).toBeNull()
+    expect(supportedDecoding(ALL, [])).toBeNull()
+  })
+})
+
+describe('preferring', () => {
+  it.each([
+    ['vp9', SupportedDecoding_PreferCodec.VP9],
+    ['av1', SupportedDecoding_PreferCodec.AV1],
+    ['vp8', SupportedDecoding_PreferCodec.VP8],
+  ] as const)('asks for %s and keeps the abilities', (codec, prefer) => {
+    const decoding = supportedDecoding({ vp9: true, av1: true, vp8: false }, VIDEO_CODECS)
+    if (!decoding) throw new Error('decodable')
+    expect(preferring(decoding, codec)).toMatchObject({
+      abilityVp9: 1,
+      abilityAv1: 1,
+      abilityVp8: 0,
+      prefer,
+    })
+    expect(decoding.prefer).toBe(SupportedDecoding_PreferCodec.VP9)
   })
 })
 
@@ -57,7 +91,7 @@ describe('loginStateForError', () => {
 })
 
 describe('loginRequest', () => {
-  const decoding = supportedDecoding({ vp9: true, av1: false, vp8: false })
+  const decoding = supportedDecoding({ vp9: true, av1: false, vp8: false }, VIDEO_CODECS)
   if (!decoding) throw new Error('vp9 is decodable')
   const fields = (option = create(OptionMessageSchema)) => ({
     targetId: '1',
@@ -95,6 +129,20 @@ describe('loginRequest', () => {
     if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
     expect(message.union.value.option?.disableAudio).toBe(OptionMessage_BoolOption.No)
     expect(message.union.value.option?.supportedDecoding).toMatchObject({ abilityVp9: 1 })
+  })
+
+  it('prefers VP9 at login whatever codec the settings ask for', () => {
+    const decoding = supportedDecoding({ vp9: true, av1: true, vp8: true }, VIDEO_CODECS)
+    if (!decoding) throw new Error('decodable')
+    const option = loginOption({ ...DEFAULT_SETTINGS, codec: 'av1' })
+    const message = loginRequest({ ...fields(option), decoding }, new Uint8Array())
+    if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
+    expect(message.union.value.option?.supportedDecoding).toMatchObject({
+      abilityVp9: 1,
+      abilityAv1: 1,
+      abilityVp8: 1,
+      prefer: SupportedDecoding_PreferCodec.VP9,
+    })
   })
 
   it('leaves the option it was given untouched', () => {

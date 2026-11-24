@@ -97,6 +97,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | `webrtc.remote.ts`     | (b) 1.5 over WebRTC, then Display > Relay only moves it to the relay; (c) UDP closed: relay      |
 | `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map         |
 | `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture   |
+| `codec.remote.ts`      | Display > Codec on a 1.5 client: VP8, then AV1, mid-session; the overlay names it, frames go on  |
 | `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn       |
 | `clipboard.remote.ts`  | Chromium only: text syncs both ways with no clicks; text copied before the session is not sent   |
 | `paste.remote.ts`      | Chromium and Firefox: three paste shortcuts paste the local text into the device's xterm         |

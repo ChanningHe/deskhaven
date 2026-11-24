@@ -15,6 +15,7 @@ import { ALL_ALLOWED, type Permissions } from '../session/permissions'
 import type { Session, SessionState } from '../session/session'
 import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
+import type { CodecView } from '../video/codec'
 
 class KeptCursorImages implements CursorImages {
   readonly #kept = new WeakMap<CursorShape, { scale: number; url: string }>()
@@ -52,6 +53,11 @@ export class FakeSession implements Session {
   readonly permissions = new ValueStore<Permissions>(ALL_ALLOWED)
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly stats = new ValueStore<SessionStats>(NO_STATS)
+  readonly codecs = new ValueStore<CodecView>({
+    support: { vp9: 'ok', av1: 'ok', vp8: 'ok' },
+    requested: 'vp9',
+    receiving: null,
+  })
   readonly audio = new FakeAudio()
   readonly queue = new FrameQueue()
   readonly logins: string[] = []

@@ -1,5 +1,19 @@
-import { DECODER_PROBES, probeDecoders, type DecoderSupport } from '../handshake/login'
-import type { EncodedVideoFrame, VideoFrame as VideoFrameMessage } from '../proto/gen/message_pb.js'
+import {
+  DECODER_PROBES,
+  VIDEO_CODECS,
+  decodable,
+  preferring,
+  probeDecoders,
+  supportedDecoding,
+  type DecoderSupport,
+  type VideoCodec,
+} from '../handshake/login'
+import type {
+  EncodedVideoFrame,
+  SupportedDecoding,
+  SupportedEncoding,
+  VideoFrame as VideoFrameMessage,
+} from '../proto/gen/message_pb.js'
 
 /**
  * WebCodecs codec strings (WebCodecs Codec Registry), the same ones probed before login, so we
@@ -9,14 +23,20 @@ import type { EncodedVideoFrame, VideoFrame as VideoFrameMessage } from '../prot
  * - AV1 `av01.0.04M.08`: Main profile, level 3.0, Main tier, 8 bits (AV1 ISO-BMFF binding).
  * - VP8 `vp8`: the registry's only VP8 string.
  */
-const CODECS = {
-  vp9s: DECODER_PROBES.vp9,
-  av1s: DECODER_PROBES.av1,
-  vp8s: DECODER_PROBES.vp8,
-} as const
+export function webCodecsString(codec: VideoCodec): string {
+  return DECODER_PROBES[codec]
+}
+
+export const CODEC_NAMES: Readonly<Record<VideoCodec, string>> = {
+  vp9: 'VP9',
+  av1: 'AV1',
+  vp8: 'VP8',
+}
+
+const UNION_CODECS = { vp9s: 'vp9', av1s: 'av1', vp8s: 'vp8' } as const
 
 export interface EncodedFrames {
-  codec: string
+  codec: VideoCodec
   frames: readonly EncodedVideoFrame[]
 }
 
@@ -27,7 +47,7 @@ export function encodedFrames(message: VideoFrameMessage): EncodedFrames | null 
     case 'vp9s':
     case 'av1s':
     case 'vp8s':
-      return { codec: CODECS[union.case], frames: union.value.frames }
+      return { codec: UNION_CODECS[union.case], frames: union.value.frames }
     default:
       return null
   }
@@ -47,4 +67,210 @@ export async function isCodecSupported(codec: string): Promise<boolean> {
 /** What to declare in LoginRequest.option.supported_decoding. */
 export function probeVideoDecoders(): Promise<DecoderSupport> {
   return probeDecoders(isCodecSupported)
+}
+
+/** What the video pipeline tells about each codec, and asks before decoding one. */
+export interface CodecEvents {
+  accepts(codec: VideoCodec): boolean
+  received(codec: VideoCodec): void
+  decoded(codec: VideoCodec): void
+  failed(codec: VideoCodec): void
+}
+
+/**
+ * Why a codec cannot be picked: this browser, the peer, or it was given up in this session,
+ * because its frames did not decode (`failed`) or the peer went on sending another (`ignored`).
+ */
+export type CodecSupport = 'ok' | 'browser' | 'peer' | 'failed' | 'ignored'
+
+export interface CodecView {
+  support: Readonly<Record<VideoCodec, CodecSupport>>
+  /** What we last asked the peer to encode: the login's codec (VP9) until a switch. */
+  requested: VideoCodec
+  /** The codec of the last video frame received. */
+  receiving: VideoCodec | null
+  /** The codec last given up for the login's, and when; `support` says why. */
+  failed?: VideoCodec
+  failedAt?: number
+}
+
+/**
+ * The peer restarts its video service on a codec change and waits up to 1 s after it
+ * (rustdesk 1.5.1 src/server/video_service.rs:772-778, src/server/service.rs:45,309-317), then
+ * encodes a key frame (AV1 must manage one at 1080p within 90 ms, libs/scrap/src/common/codec.rs
+ * test_av1). Five times that leaves room for a slow link and a key frame request.
+ */
+export const SWITCH_TIMEOUT_MS = 5000
+
+/**
+ * Decode errors in a row before giving a codec up: below the pipeline's MAX_FAILURES, which ends
+ * the session. The official client marks a decoder unsupported after 3 (src/client.rs:113,4093-4108).
+ */
+export const SWITCH_ERRORS = 2
+
+export interface CodecSwitchOptions {
+  support: DecoderSupport
+  now(): number
+  /** Sends Misc.option with only supported_decoding set (src/client.rs:3889-3903). */
+  send(decoding: SupportedDecoding): void
+  /** Asks the peer to send its screen again, unchanged or not. */
+  refresh(): void
+  onChange(view: CodecView): void
+}
+
+interface Watch {
+  codec: VideoCodec
+  /** What arrived before the request: its frames say nothing about the new codec. */
+  from: VideoCodec
+  since: number
+  /**
+   * Another codec still came in the second half of the wait: the peer goes on with it. Earlier
+   * frames may have been in flight, and a still screen after the encoder restart sends none.
+   */
+  late: boolean
+  /** Frames of `codec` itself came. */
+  arrived: boolean
+}
+
+const NO_PEER_CODECS: Readonly<Record<VideoCodec, boolean>> = { vp9: true, av1: false, vp8: false }
+
+/**
+ * Moves the peer to the codec the user picked, once both sides can, and back to the login's
+ * codec (VP9) when its frames do not come out of the decoder while the peer is sending: then the
+ * codec is withdrawn from the abilities for the rest of the session, as the official client marks
+ * a failed decoder unsupported. A peer that sends nothing is asked for a refresh, not judged.
+ */
+export class CodecSwitch implements CodecEvents {
+  readonly #options: CodecSwitchOptions
+  #peer = NO_PEER_CODECS
+  readonly #given = new Map<VideoCodec, 'failed' | 'ignored'>()
+  readonly #login: VideoCodec
+  #wanted: VideoCodec = 'vp9'
+  #watch: Watch | null = null
+  #errors = 0
+  #view: CodecView
+
+  constructor(options: CodecSwitchOptions) {
+    this.#options = options
+    this.#login = decodable(options.support, VIDEO_CODECS)[0] ?? 'vp9'
+    this.#view = { support: this.#support(), requested: this.#login, receiving: null }
+  }
+
+  get view(): CodecView {
+    return this.#view
+  }
+
+  /** PeerInfo.encoding, then each Misc.supported_encoding: what the peer can encode for us. */
+  peerEncodes(encoding: SupportedEncoding | undefined): void {
+    this.#peer = { vp9: true, av1: encoding?.av1 === true, vp8: encoding?.vp8 === true }
+    if (this.#watch && !this.#peer[this.#watch.codec]) this.#watch = null
+    this.#update({ support: this.#support() })
+    this.#apply()
+  }
+
+  want(codec: VideoCodec): void {
+    this.#wanted = codec
+    this.#apply()
+  }
+
+  accepts(codec: VideoCodec): boolean {
+    return this.#options.support[codec] && !this.#given.has(codec)
+  }
+
+  received(codec: VideoCodec): void {
+    const watch = this.#watch
+    if (watch) {
+      if (codec === watch.codec) watch.arrived = true
+      else this.#sawOther(watch)
+    }
+    if (codec !== this.#view.receiving) this.#update({ receiving: codec })
+  }
+
+  decoded(codec: VideoCodec): void {
+    if (codec === this.#view.requested) this.#errors = 0
+    const watch = this.#watch
+    if (!watch) return
+    if (codec === watch.codec || codec !== watch.from) this.#watch = null
+    else this.#sawOther(watch)
+  }
+
+  failed(codec: VideoCodec): void {
+    if (codec !== this.#view.requested || codec === this.#login) return
+    if (++this.#errors >= SWITCH_ERRORS) this.#fallBack(codec, 'failed')
+  }
+
+  /** Called about once a second. */
+  tick(): void {
+    const watch = this.#watch
+    const now = this.#options.now()
+    if (!watch || now - watch.since < SWITCH_TIMEOUT_MS) return
+    if (watch.arrived || watch.late) {
+      this.#fallBack(watch.codec, watch.arrived ? 'failed' : 'ignored')
+      return
+    }
+    watch.since = now
+    this.#options.refresh()
+  }
+
+  #sawOther(watch: Watch): void {
+    if (this.#options.now() - watch.since >= SWITCH_TIMEOUT_MS / 2) watch.late = true
+  }
+
+  #support(): Record<VideoCodec, CodecSupport> {
+    const of = (codec: VideoCodec): CodecSupport => {
+      if (!this.#options.support[codec]) return 'browser'
+      const given = this.#given.get(codec)
+      if (given) return given
+      return this.#peer[codec] ? 'ok' : 'peer'
+    }
+    return { vp9: of('vp9'), av1: of('av1'), vp8: of('vp8') }
+  }
+
+  #apply(): void {
+    const codec = this.#wanted
+    if (codec === this.#view.requested || this.#view.support[codec] !== 'ok') return
+    this.#request(codec)
+  }
+
+  /** Sends first and tells after: a listener that asks again then finds it already asked. */
+  #request(codec: VideoCodec, patch: Partial<CodecView> = {}): void {
+    const decoding = supportedDecoding(
+      this.#options.support,
+      VIDEO_CODECS.filter((c) => !this.#given.has(c)),
+    )
+    if (!decoding) return
+    const from = this.#view.receiving ?? this.#view.requested
+    const since = this.#options.now()
+    this.#errors = 0
+    this.#watch = codec === this.#login ? null : { codec, from, since, late: false, arrived: false }
+    this.#options.send(preferring(decoding, codec))
+    this.#update({ ...patch, requested: codec })
+  }
+
+  #fallBack(codec: VideoCodec, why: 'failed' | 'ignored'): void {
+    this.#given.set(codec, why)
+    this.#wanted = this.#login
+    this.#request(this.#login, {
+      support: this.#support(),
+      failed: codec,
+      failedAt: this.#options.now(),
+    })
+  }
+
+  #update(patch: Partial<CodecView>): void {
+    const next = { ...this.#view, ...patch }
+    if (sameView(next, this.#view)) return
+    this.#view = next
+    this.#options.onChange(next)
+  }
+}
+
+function sameView(a: CodecView, b: CodecView): boolean {
+  return (
+    a.requested === b.requested &&
+    a.receiving === b.receiving &&
+    a.failed === b.failed &&
+    a.failedAt === b.failedAt &&
+    VIDEO_CODECS.every((codec) => a.support[codec] === b.support[codec])
+  )
 }

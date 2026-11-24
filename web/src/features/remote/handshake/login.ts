@@ -16,14 +16,15 @@ import {
 export const CLIENT_VERSION = '1.5.0'
 export const CLIENT_PLATFORM = 'Web'
 
-export interface DecoderSupport {
-  vp9: boolean
-  av1: boolean
-  vp8: boolean
-}
+export type VideoCodec = 'vp9' | 'av1' | 'vp8'
+
+/** In the order we prefer them at login. */
+export const VIDEO_CODECS: readonly VideoCodec[] = ['vp9', 'av1', 'vp8']
+
+export type DecoderSupport = Record<VideoCodec, boolean>
 
 /** Codec strings probed with VideoDecoder.isConfigSupported, one per codec we can declare. */
-export const DECODER_PROBES: Readonly<Record<keyof DecoderSupport, string>> = {
+export const DECODER_PROBES: Readonly<Record<VideoCodec, string>> = {
   vp9: 'vp09.00.10.08',
   av1: 'av01.0.04M.08',
   vp8: 'vp8',
@@ -40,22 +41,41 @@ export async function probeDecoders(
   return { vp9, av1, vp8 }
 }
 
-const PREFERENCE: readonly [keyof DecoderSupport, SupportedDecoding_PreferCodec][] = [
-  ['vp9', SupportedDecoding_PreferCodec.VP9],
-  ['av1', SupportedDecoding_PreferCodec.AV1],
-  ['vp8', SupportedDecoding_PreferCodec.VP8],
-]
+const PREFER: Readonly<Record<VideoCodec, SupportedDecoding_PreferCodec>> = {
+  vp9: SupportedDecoding_PreferCodec.VP9,
+  av1: SupportedDecoding_PreferCodec.AV1,
+  vp8: SupportedDecoding_PreferCodec.VP8,
+}
 
-/** What we can decode, preferring VP9 > AV1 > VP8; null when nothing is decodable. */
-export function supportedDecoding(support: DecoderSupport): SupportedDecoding | null {
-  const prefer = PREFERENCE.find(([codec]) => support[codec])
-  if (!prefer) return null
+/** The codecs of `declared` this browser decodes, in VIDEO_CODECS order. */
+export function decodable(support: DecoderSupport, declared: readonly VideoCodec[]): VideoCodec[] {
+  return VIDEO_CODECS.filter((codec) => support[codec] && declared.includes(codec))
+}
+
+/**
+ * The abilities to declare: the decodable codecs of `declared`, preferring VP9 (AV1, then VP8,
+ * where VP9 is not decodable). Null when none is decodable.
+ */
+export function supportedDecoding(
+  support: DecoderSupport,
+  declared: readonly VideoCodec[],
+): SupportedDecoding | null {
+  const able = decodable(support, declared)
+  const prefer = able[0]
+  if (prefer === undefined) return null
   return create(SupportedDecodingSchema, {
-    abilityVp9: support.vp9 ? 1 : 0,
-    abilityAv1: support.av1 ? 1 : 0,
-    abilityVp8: support.vp8 ? 1 : 0,
-    prefer: prefer[1],
+    abilityVp9: able.includes('vp9') ? 1 : 0,
+    abilityAv1: able.includes('av1') ? 1 : 0,
+    abilityVp8: able.includes('vp8') ? 1 : 0,
+    prefer: PREFER[prefer],
   })
+}
+
+/** `decoding` asking the peer to encode `codec`. */
+export function preferring(decoding: SupportedDecoding, codec: VideoCodec): SupportedDecoding {
+  const copy = clone(SupportedDecodingSchema, decoding)
+  copy.prefer = PREFER[codec]
+  return copy
 }
 
 export interface LoginFields {

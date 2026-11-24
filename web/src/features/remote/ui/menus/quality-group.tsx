@@ -176,11 +176,6 @@ export function QualityGroup({
           }}
         />
       )}
-      {modeled ? (
-        <p className="px-1.5 pt-0.5 pb-1 text-xs text-muted-foreground">
-          {t('remote.toolbar.qualityHint')}
-        </p>
-      ) : null}
     </DropdownMenuGroup>
   )
 }

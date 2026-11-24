@@ -29,6 +29,7 @@ describe('defaults', () => {
       clipboardSync: true,
       audio: false,
       transport: 'auto',
+      codec: 'vp9',
     })
   })
 })
@@ -44,6 +45,7 @@ describe('loadSettings', () => {
       clipboardSync: false,
       audio: true,
       transport: 'relay',
+      codec: 'av1',
     }
     expect(saveSettings(settings, storage)).toBe(true)
     expect(JSON.parse(storage.getItem(SETTINGS_KEY) ?? '')).toEqual({ v: 1, settings })
@@ -164,6 +166,13 @@ describe('settingsFrom', () => {
     ['transport', 'Relay', 'auto'],
     ['transport', true, 'auto'],
     ['transport', null, 'auto'],
+    ['codec', 'av1', 'av1'],
+    ['codec', 'vp8', 'vp8'],
+    ['codec', 'vp9', 'vp9'],
+    ['codec', 'h264', 'vp9'],
+    ['codec', 'AV1', 'vp9'],
+    ['codec', 1, 'vp9'],
+    ['codec', null, 'vp9'],
   ])('%s %o -> %o', (name, value, expected) => {
     expect(field(name, value)).toHaveProperty(name, expected)
   })
@@ -172,6 +181,12 @@ describe('settingsFrom', () => {
     const storage = storageWith(stored({ fps: 45, scale: 'original' }))
     expect(loadSettings(storage)).toEqual({ ...DEFAULT_SETTINGS, fps: 45, scale: 'original' })
     expect(loadSettings(storage).transport).toBe('auto')
+  })
+
+  it('takes VP9 for settings stored before the codec existed', () => {
+    const storage = storageWith(stored({ fps: 45, transport: 'relay' }))
+    expect(loadSettings(storage)).toEqual({ ...DEFAULT_SETTINGS, fps: 45, transport: 'relay' })
+    expect(loadSettings(storage).codec).toBe('vp9')
   })
 
   it('drops unknown fields, and the settings we do not persist', () => {

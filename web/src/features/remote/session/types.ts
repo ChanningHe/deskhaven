@@ -2,9 +2,10 @@ import type { AudioDecoders } from '../audio/decoder'
 import type { AudioPlayback } from '../audio/pipeline'
 import type { CursorImages, CursorView } from '../cursor/cursor'
 import type { CloseCause } from '../handshake/handshake'
-import type { LoginState } from '../handshake/login'
+import type { DecoderSupport, LoginState } from '../handshake/login'
 import type { RemoteInput } from '../input/input'
 import type { KeyboardMode } from '../proto/gen/message_pb.js'
+import type { CodecView } from '../video/codec'
 import type { CreateDecoder } from '../video/decoder'
 import type { OptionPatch, SessionAction } from './messages'
 import type { PeerView } from './peer-view'
@@ -29,6 +30,8 @@ export interface Session {
   /** The text the peer last copied; null until it copies some. */
   readonly remoteClipboard: Store<string | null>
   readonly stats: Store<SessionStats>
+  /** Which codecs can be asked for, which was, and which arrives. */
+  readonly codecs: Store<CodecView>
   readonly audio: AudioPlayback
   /**
    * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
@@ -63,4 +66,6 @@ export interface SessionOptions {
   viewOnly?: boolean
   /** The fps the login asked for: the governor's ceiling until setOptions moves it. */
   maxFps?: number
+  /** What the login declared this browser decodes; VP9 alone by default. */
+  decoders?: DecoderSupport
 }

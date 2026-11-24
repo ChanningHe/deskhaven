@@ -343,3 +343,43 @@ describe('RemoteController fps below the login one', () => {
     controller.disconnect()
   })
 })
+
+describe('RemoteController codec', () => {
+  it('asks an activated session for the stored codec: the login asked for VP9', async () => {
+    const f = await connected({ codec: 'av1', quality: START_QUALITY })
+    f.session.activate()
+    expect(f.session.patches).toEqual([{ decoding: 'av1' }])
+  })
+
+  it('hands a codec change over to the session', async () => {
+    const f = await connected()
+    f.session.activate()
+    f.session.patches.length = 0
+    f.controller.updateSettings({ codec: 'vp8' })
+    expect(f.session.patches).toEqual([{ decoding: 'vp8' }])
+  })
+
+  it('puts the setting back to VP9 when the session gave up the codec', async () => {
+    const f = await connected({ codec: 'av1', quality: START_QUALITY })
+    f.session.activate()
+    f.session.patches.length = 0
+    f.session.codecs.set({
+      ...f.session.codecs.get(),
+      support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+      requested: 'vp9',
+      failed: 'av1',
+      failedAt: 5000,
+    })
+    expect(f.controller.settings.get().codec).toBe('vp9')
+    expect(new RemoteController(DEVICE, f.deps).settings.get().codec).toBe('vp9')
+    expect(f.session.patches).toEqual([{ decoding: 'vp9' }])
+  })
+
+  it('keeps a codec the user picked after the one that failed', async () => {
+    const f = await connected({ codec: 'av1', quality: START_QUALITY })
+    f.session.activate()
+    f.controller.updateSettings({ codec: 'vp8' })
+    f.session.codecs.set({ ...f.session.codecs.get(), failed: 'av1', failedAt: 5000 })
+    expect(f.controller.settings.get().codec).toBe('vp8')
+  })
+})

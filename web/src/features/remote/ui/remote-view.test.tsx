@@ -226,3 +226,32 @@ describe('remote view: view only', () => {
     )
   })
 })
+
+describe('remote view: codec fallback', () => {
+  it('says so when the session gives up a codec and goes back to VP9', async () => {
+    const { session } = await activePage()
+    expect(screen.queryByText(/已切回 VP9/)).toBeNull()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+        failed: 'av1',
+        failedAt: 5000,
+      })
+    })
+    expect(screen.getByText('AV1 画面无法解码，已切回 VP9。')).toHaveAttribute('role', 'status')
+  })
+
+  it('says the device did not switch when it kept sending another codec', async () => {
+    const { session } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'ok', vp8: 'ignored' },
+        failed: 'vp8',
+        failedAt: 5000,
+      })
+    })
+    expect(screen.getByText('设备没有切换到 VP8，已切回 VP9。')).toHaveAttribute('role', 'status')
+  })
+})

@@ -14,6 +14,7 @@ import { RemoteScreen } from './remote-screen'
 import { StatsOverlay } from './stats-overlay'
 import { Toolbar } from './toolbar'
 import { useClipboardSync } from './use-clipboard-sync'
+import { useCodecFallback } from './use-codec-fallback'
 import { canLockKeyboard, useKeyboardLock } from './use-keyboard-lock'
 import { useStore } from './use-remote'
 
@@ -103,6 +104,7 @@ export function RemoteView({
   const peer = useStore(session.peer)
   const remoteText = useStore(session.remoteClipboard)
   const { keyboard, clipboard } = useStore(session.permissions)
+  const codecNotice = useCodecFallback(session, NOTICE_MS)
   const toolbar = useRef<HTMLDivElement>(null)
   const leaveScreen = useCallback(() => {
     toolbar.current?.querySelector<HTMLElement>('button:enabled, select:enabled')?.focus()
@@ -204,7 +206,7 @@ export function RemoteView({
           role="status"
           className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background shadow-md empty:hidden"
         >
-          {notice === null ? null : t(`remote.clipboard.${notice}`)}
+          {notice === null ? codecNotice : t(`remote.clipboard.${notice}`)}
         </p>
       </div>
     </>

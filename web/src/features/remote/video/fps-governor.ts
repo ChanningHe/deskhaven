@@ -57,6 +57,11 @@ export class FpsGovernor {
     this.#userChanged = true
   }
 
+  /** A new decoder's first frames take its setup too: they are skipped as the first one's are. */
+  decoderStarted(): void {
+    this.#warmUp = 0
+  }
+
   decoded(serviceMs: number): void {
     if (this.#warmUp < WARM_UP_FRAMES) {
       this.#warmUp++

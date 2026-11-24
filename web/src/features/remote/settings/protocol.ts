@@ -37,6 +37,7 @@ export function loginSettings(settings: RemoteSettings): RemoteSettings {
     quality: START_QUALITY,
     fps: Math.min(settings.fps, MAX_FPS),
     audio: false,
+    codec: 'vp9',
   }
 }
 
@@ -109,8 +110,9 @@ export function optionPatch(prev: RemoteSettings, next: RemoteSettings): OptionP
   const patch: OptionPatch = {}
   if (!sameQuality(prev.quality, next.quality)) patch.quality = next.quality
   if (prev.fps !== next.fps) patch.maxFps = next.fps
+  if (prev.codec !== next.codec) patch.decoding = next.codec
   if (prev.audio !== next.audio) {
     patch.peer = create(OptionMessageSchema, { disableAudio: disableAudio(next) })
   }
-  return patch.quality !== undefined || patch.maxFps !== undefined || patch.peer ? patch : null
+  return Object.keys(patch).length > 0 ? patch : null
 }

@@ -1760,7 +1760,7 @@
       "label": "Session controls",
       "disconnect": "Disconnect",
       "displayMenu": "Display",
-      "displayMenuHint": "Display: quality, frame rate, scaling, connection",
+      "displayMenuHint": "Display: quality, frame rate, scaling, codec, connection",
       "inputMenu": "Input",
       "inputMenuHint": "Input: keyboard mode and key combinations. Press Esc twice to leave the remote screen.",
       "clipboardMenu": "Clipboard",
@@ -1779,7 +1779,6 @@
       },
       "customQuality": "Custom quality",
       "qualityOption": "{{name}} <rate>({{rate}})</rate>",
-      "qualityHint": "Bitrates are ceilings: still or simple screens use less.",
       "customQualityValue": "{{level}} ({{rate}})",
       "fps": "Frame rate",
       "fpsValue": "{{fps}} fps",
@@ -1795,6 +1794,20 @@
         "auto": "Auto (WebRTC first)",
         "relay": "Relay only"
       },
+      "codec": "Codec",
+      "codecs": {
+        "vp9": "VP9 (default)",
+        "av1": "AV1",
+        "vp8": "VP8"
+      },
+      "codecOption": "{{name}} <reason>({{reason}})</reason>",
+      "codecBlocked": {
+        "browser": "not supported by this browser",
+        "peer": "not supported by the device",
+        "failed": "failed to decode in this session",
+        "ignored": "the device did not switch in this session"
+      },
+      "codecReceiving": "Current: {{name}}",
       "monitor": "Monitor",
       "monitorN": "Monitor {{n}}",
       "showRemoteCursor": "Show remote cursor",
@@ -1887,6 +1900,10 @@
       "copied": "Copied.",
       "copyFailed": "Could not copy. Select the text and copy it by hand.",
       "close": "Close"
+    },
+    "codecFallback": {
+      "failed": "Could not decode {{name}}; switched back to {{back}}.",
+      "ignored": "The device did not switch to {{name}}; switched back to {{back}}."
     },
     "screen": "Remote screen. Click it to control the device; keys go to the device while it has focus.",
     "leaveHint": "Press Esc twice to leave the remote screen.",

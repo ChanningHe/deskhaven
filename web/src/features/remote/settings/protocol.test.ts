@@ -63,6 +63,11 @@ describe('loginOption', () => {
     expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 60 })
   })
 
+  it('tells the peer VP9 at login, whatever codec the settings ask for', () => {
+    expect(loginSettings(with_({ codec: 'av1' })).codec).toBe('vp9')
+    expect(loginOption(with_({ codec: 'av1' })).supportedDecoding).toBeUndefined()
+  })
+
   it('never asks for audio at login: no AudioContext runs before a click', () => {
     const settings = with_({ audio: true })
     expect(loginOption(settings).disableAudio).toBe(OptionMessage_BoolOption.Yes)
@@ -153,6 +158,20 @@ describe('optionPatch', () => {
   it('hands a changed fps over as a ceiling, never as custom_fps', () => {
     const patch = optionPatch(DEFAULT_SETTINGS, with_({ fps: 45 }))
     expect(patch).toEqual({ maxFps: 45 })
+  })
+
+  it.each([
+    ['vp9', 'av1'],
+    ['av1', 'vp8'],
+    ['vp8', 'vp9'],
+  ] as const)('hands a codec change %s → %s over as the codec to ask for', (from, to) => {
+    expect(optionPatch(with_({ codec: from }), with_({ codec: to }))).toEqual({ decoding: to })
+  })
+
+  it('asks for the stored codec once logged in with VP9', () => {
+    const settings = with_({ codec: 'vp8' })
+    expect(optionPatch(loginSettings(settings), settings)).toMatchObject({ decoding: 'vp8' })
+    expect(optionPatch(loginSettings(DEFAULT_SETTINGS), DEFAULT_SETTINGS)?.decoding).toBeUndefined()
   })
 
   it('carries both when both changed', () => {

@@ -121,12 +121,12 @@ export function xclock(device: DeviceInfo): XWindow {
     '-digital',
     '-update',
     '1',
+    '-strftime',
+    '%H:%M:%S',
     '-geometry',
     '600x200+0+500',
-    '-fa',
-    'monospace',
-    '-fs',
-    '48',
+    '-face',
+    'monospace:size=48',
   ])
 }
 
