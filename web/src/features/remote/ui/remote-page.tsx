@@ -9,13 +9,8 @@ import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
-import {
-  ApprovalPanel,
-  ProblemPanel,
-  ProgressPanel,
-  SecretPanel,
-  WindowsSessionPanel,
-} from './panels'
+import { ApprovalPanel, ProgressPanel, SecretPanel, WindowsSessionPanel } from './panels'
+import { ProblemPanel } from './problem-panel'
 import type { BarFrame } from './remote-bar'
 import { RemoteView } from './remote-view'
 import { useRemote, useStore } from './use-remote'
@@ -32,10 +27,11 @@ interface Actions {
   onStats: (on: boolean) => void
   onReconnect: () => void
   onDisconnect: () => void
+  leave: ReactNode
 }
 
 function SessionStep({ session, ...actions }: { session: Session } & Actions) {
-  const { frame, onReconnect, onDisconnect } = actions
+  const { frame, onReconnect, onDisconnect, leave } = actions
   const { t } = useTranslation()
   const state = useStore(session.state)
   switch (state.kind) {
@@ -100,6 +96,7 @@ function SessionStep({ session, ...actions }: { session: Session } & Actions) {
             message={endingMessage(state.cause, t)}
             onRetry={onReconnect}
             retryLabel={t('remote.ended.reconnect')}
+            leave={leave}
           />
         </Waiting>
       )
@@ -107,7 +104,7 @@ function SessionStep({ session, ...actions }: { session: Session } & Actions) {
 }
 
 function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
-  const { frame, onReconnect, onDisconnect } = actions
+  const { frame, onReconnect, onDisconnect, leave } = actions
   const { t } = useTranslation()
   switch (phase.kind) {
     case 'idle':
@@ -118,6 +115,7 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
             message={endingMessage({ by: 'user', reason: '' }, t)}
             onRetry={onReconnect}
             retryLabel={t('remote.ended.reconnect')}
+            leave={leave}
           />
         </Waiting>
       )
@@ -144,6 +142,7 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
             message={failureMessage(phase.failure, t)}
             onRetry={onReconnect}
             retryLabel={t('remote.errors.retry')}
+            leave={leave}
           />
         </Waiting>
       )
@@ -156,7 +155,15 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
  * Remote control of one device from the browser, over WebRTC or the relay: a full-viewport workspace
  * with one thin bar, outside the console's sidebar and top bar.
  */
-export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactNode }) {
+export function RemotePage({
+  deviceId,
+  back,
+  leave,
+}: {
+  deviceId: string
+  back?: ReactNode
+  leave?: ReactNode
+}) {
   const {
     phase,
     transport,
@@ -184,6 +191,7 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
         onStats={setStats}
         onReconnect={reconnect}
         onDisconnect={disconnect}
+        leave={leave}
       />
     </div>
   )

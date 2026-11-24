@@ -1710,7 +1710,7 @@
     "reconnecting": "连接已中断，正在重连（第 {{attempt}} 次）…",
     "password": {
       "title": "设备密码",
-      "description": "输入设备上设置的访问密码。没有密码时，也可以由设备前的人接受连接。",
+      "description": "输入设备上设置的访问密码，或请设备前的人在被控端接受此连接。",
       "label": "密码",
       "submit": "连接",
       "wrong": "密码错误，请重试。"
@@ -1816,6 +1816,16 @@
       "clipboardDenied": "浏览器禁止此页面读取剪贴板，只会同步设备上复制的文本。可在网站设置中允许。",
       "keyboardOff": "设备已关闭键盘和鼠标控制。",
       "clipboardOff": "设备已关闭剪贴板。"
+    },
+    "limits": {
+      "label": "使用限制",
+      "shortcutsFullscreen": "全屏时，Win、Alt+Tab、Ctrl+W 等系统快捷键会发往设备；不在全屏时仍由本机处理。",
+      "shortcutsMenu": "此浏览器无法捕获 Win、Alt+Tab、Ctrl+W 等系统快捷键，请用“输入”菜单中的“发送按键”。",
+      "escape": "全屏时 Esc 也会发往设备：按住 Esc 退出全屏，连按两次 Esc 离开远程画面。",
+      "clipboardBoth": "开启“自动同步剪贴板”后，本机和设备上复制的文本会双向同步。",
+      "clipboardAsk": "开启“自动同步剪贴板”时浏览器会请求读取剪贴板，允许后本机复制的文本才会同步到设备。",
+      "clipboardDenied": "浏览器禁止此页面读取剪贴板：只会同步设备上复制的文本，本机的文本请用“剪贴板”菜单中的“发送剪贴板”。",
+      "clipboardUnsupported": "此浏览器不支持自动读取剪贴板：只会同步设备上复制的文本，本机的文本请用“剪贴板”菜单中的“发送剪贴板”。"
     },
     "stats": {
       "label": "连接统计",

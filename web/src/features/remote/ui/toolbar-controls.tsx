@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 const TOOL = 'max-lg:size-10'
 
 /** A control with its hint below it; the hint repeats or extends the control's name. */
-function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
+function Hinted({ hint, render }: { hint: ReactNode; render: ReactElement }) {
   return (
     <Tooltip>
       <TooltipTrigger render={render} />
@@ -29,7 +29,7 @@ export function IconButton({
   hint = label,
   className,
   ...props
-}: { label: string; hint?: string } & ComponentProps<typeof Button>) {
+}: { label: string; hint?: ReactNode } & ComponentProps<typeof Button>) {
   return (
     <Hinted
       hint={hint}

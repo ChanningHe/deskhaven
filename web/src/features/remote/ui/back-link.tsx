@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { buttonVariants } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 /** Back to the console; leaving the page ends the session. */
 export function BackLink() {
@@ -24,5 +25,15 @@ export function BackLink() {
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/** The same way back, spelled out for the panels where the session is over. */
+export function LeaveLink() {
+  const { t } = useTranslation()
+  return (
+    <Link to="/" className={cn(buttonVariants({ variant: 'outline' }))}>
+      {t('remote.back')}
+    </Link>
   )
 }

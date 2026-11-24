@@ -1710,7 +1710,7 @@
     "reconnecting": "The connection dropped. Reconnecting (attempt {{attempt}})…",
     "password": {
       "title": "Device password",
-      "description": "Enter the access password set on the device. Without one, the person at the device can accept the connection instead.",
+      "description": "Enter the access password set on the device, or ask someone at the device to accept this connection.",
       "label": "Password",
       "submit": "Connect",
       "wrong": "Wrong password. Try again."
@@ -1808,7 +1808,7 @@
       },
       "fullscreen": "Full screen",
       "exitFullscreen": "Exit full screen",
-      "noKeyboardLock": "{{label}}. This browser cannot capture system shortcuts; use Send keys in the Input menu.",
+      "noKeyboardLock": "{{label}}. This browser cannot capture system shortcuts; use “Send keys” in the “Input” menu.",
       "sendClipboard": "Send clipboard",
       "remoteClipboard": "Device clipboard",
       "clipboardSync": "Sync clipboard automatically",
@@ -1816,6 +1816,16 @@
       "clipboardDenied": "The browser blocks this page from reading the clipboard, so only text copied on the device comes over. Allow it in the site settings.",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
       "clipboardOff": "The device has turned off the clipboard."
+    },
+    "limits": {
+      "label": "Limitations",
+      "shortcutsFullscreen": "In full screen, system shortcuts such as Win, Alt+Tab and Ctrl+W go to the device; outside full screen this computer keeps them.",
+      "shortcutsMenu": "This browser cannot capture system shortcuts such as Win, Alt+Tab and Ctrl+W; use Send keys in the Input menu.",
+      "escape": "In full screen Esc goes to the device too: hold Esc to leave full screen, press it twice to leave the remote screen.",
+      "clipboardBoth": "When clipboard sync is on, text copied here or on the device is synced both ways.",
+      "clipboardAsk": "Turning on clipboard sync asks the browser for clipboard access; text copied here syncs to the device only once you allow it.",
+      "clipboardDenied": "The browser blocks this page from reading the clipboard: only text copied on the device is synced; send text from here with Send clipboard in the Clipboard menu.",
+      "clipboardUnsupported": "This browser cannot read the clipboard by itself: only text copied on the device is synced; send text from here with Send clipboard in the Clipboard menu."
     },
     "stats": {
       "label": "Connection statistics",

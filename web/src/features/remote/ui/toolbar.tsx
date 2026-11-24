@@ -10,6 +10,7 @@ import { ActionsMenu } from './menus/actions-menu'
 import { ClipboardMenu, type ClipboardSyncSwitch } from './menus/clipboard-menu'
 import { DisplayMenu } from './menus/display-menu'
 import { InputMenu } from './menus/input-menu'
+import { LimitsHint } from './limits-hint'
 import { SoundButton } from './sound-button'
 import { IconButton } from './toolbar-controls'
 
@@ -96,6 +97,7 @@ export function Toolbar({
       >
         {fullscreen ? <Minimize aria-hidden /> : <Maximize aria-hidden />}
       </IconButton>
+      <LimitsHint keyboardLock={keyboardLock} clipboard={clipboardSync.access} />
     </div>
   )
 }

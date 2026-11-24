@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { requireSession } from '@/features/auth/session'
-import { BackLink } from '@/features/remote/ui/back-link'
+import { BackLink, LeaveLink } from '@/features/remote/ui/back-link'
 import { RemotePage } from '@/features/remote/ui/remote-page'
 
 function RemoteRoute() {
   const { deviceId } = Route.useParams()
-  return <RemotePage deviceId={deviceId} back={<BackLink />} />
+  return <RemotePage deviceId={deviceId} back={<BackLink />} leave={<LeaveLink />} />
 }
 
 // Outside the `_app` layout on purpose: the remote screen is a full-viewport workspace with

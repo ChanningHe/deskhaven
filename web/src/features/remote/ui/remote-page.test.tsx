@@ -19,10 +19,12 @@ beforeEach(() => {
   HTMLElement.prototype.setPointerCapture = vi.fn()
 })
 
+const LEAVE = <a href="/">返回控制台</a>
+
 function page(f: ReturnType<typeof fakeDeps>) {
   return (
     <RemoteDepsContext.Provider value={f.deps}>
-      <RemotePage deviceId={DEVICE} />
+      <RemotePage deviceId={DEVICE} leave={LEAVE} />
     </RemoteDepsContext.Provider>
   )
 }
@@ -202,7 +204,41 @@ describe('remote page: reconnecting', () => {
   })
 })
 
+function expectLeaveLink() {
+  expect(screen.getByRole('link', { name: '返回控制台' })).toHaveAttribute('href', '/')
+}
+
 describe('remote page: leaving', () => {
+  it('offers the way back to the console when connecting fails', async () => {
+    const f = fakeDeps(() => Promise.reject(new ApiError(409, { code: 'device_offline' })))
+    renderWithProviders(page(f))
+    expect(await screen.findByRole('heading', { name: '无法连接' })).toBeInTheDocument()
+    expectLeaveLink()
+  })
+
+  it('offers the way back to the console when the session ends', async () => {
+    const { session } = await open()
+    expect(screen.queryByRole('link', { name: '返回控制台' })).toBeNull()
+    act(() => {
+      session.end({ by: 'peer', reason: 'closed' })
+    })
+    expect(screen.getByRole('heading', { name: '已断开' })).toBeInTheDocument()
+    expectLeaveLink()
+  })
+
+  it('offers the way back to the console after the user stops reconnecting', async () => {
+    const { user, session } = await open()
+    act(() => {
+      session.activate()
+    })
+    act(() => {
+      session.end({ by: 'link', reason: 'relay connection closed (code 1006)' })
+    })
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('你已结束会话。')
+    expectLeaveLink()
+  })
+
   it('hangs up and closes the server session when the page unmounts', async () => {
     const { unmount, session, f } = await open()
     unmount()
