@@ -1760,7 +1760,7 @@
       "label": "会话控制",
       "disconnect": "断开",
       "displayMenu": "显示",
-      "displayMenuHint": "显示：画质、帧率、缩放",
+      "displayMenuHint": "显示：画质、帧率、缩放、连接方式",
       "inputMenu": "输入",
       "inputMenuHint": "输入：键盘模式和组合键。连按两次 Esc 离开远程画面。",
       "clipboardMenu": "剪贴板",
@@ -1786,6 +1786,11 @@
       "scales": {
         "fit": "适应窗口",
         "original": "原始大小"
+      },
+      "transport": "连接方式",
+      "transports": {
+        "auto": "自动（WebRTC 优先）",
+        "relay": "仅中继"
       },
       "monitor": "显示器",
       "monitorN": "显示器 {{n}}",

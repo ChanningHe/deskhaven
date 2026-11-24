@@ -1,7 +1,8 @@
-// (b) WebRTC with a 1.5.x client, and (c) the fallback: with every UDP path closed the
-// session still comes up, over the relay.
+// (b) WebRTC with a 1.5.x client, switched to "Relay only" mid-session, and (c) the fallback:
+// with every UDP path closed the session still comes up, over the relay.
 import { device, expectDesktop, openFromDeviceList, submitPassword } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
+import { xclock } from './support/x11.ts'
 
 test('webrtc: a 1.5 client is reached over WebRTC', async ({ page }) => {
   const target = device('1.5')
@@ -11,6 +12,34 @@ test('webrtc: a 1.5 client is reached over WebRTC', async ({ page }) => {
   await openFromDeviceList(page, target.id)
   await submitPassword(page)
   await expectDesktop(page, 'WebRTC')
+})
+
+test('relay only: switching mid-session moves a 1.5 client to the relay', async ({ page }) => {
+  const target = device('1.5')
+  test.skip(target === undefined, 'no 1.5 client in this run')
+  if (target === undefined) return
+
+  await openFromDeviceList(page, target.id)
+  await submitPassword(page)
+  await expectDesktop(page, 'WebRTC')
+  await page.getByRole('button', { name: 'Display' }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Statistics' }).click()
+  const stat = (name: string) => page.locator(`[data-stat="${name}"]`)
+  await expect(stat('transport')).toHaveAttribute('data-value', 'webrtc')
+
+  const clock = xclock(target)
+  try {
+    await page.getByRole('button', { name: 'Display' }).click()
+    await page.getByRole('menuitemradio', { name: 'Relay only' }).click()
+    await expect(stat('transport')).toHaveAttribute('data-value', 'relay')
+    await expectDesktop(page, 'Relay')
+    await expect(page.getByRole('textbox', { name: 'Password' })).toHaveCount(0)
+    await expect
+      .poll(async () => Number(await stat('fps').getAttribute('data-value')))
+      .toBeGreaterThan(0)
+  } finally {
+    clock.stop()
+  }
 })
 
 test('fallback: without UDP the 1.5 client is reached over the relay', async ({ page }) => {

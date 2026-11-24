@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 import type { Session } from '../../session/session'
-import type { RemoteSettings } from '../../settings/settings'
+import { TRANSPORTS, type RemoteSettings } from '../../settings/settings'
 import { MenuSwitch, ToolbarMenu } from '../toolbar-controls'
 import { useStore } from '../use-remote'
 import { QualityGroup } from './quality-group'
@@ -134,6 +134,23 @@ export function DisplayMenu({
       </DropdownMenuGroup>
       <MonitorGroup session={session} />
       <ResolutionSubmenu session={session} viewOnly={viewOnly} />
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>{t('remote.toolbar.transport')}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={settings.transport}
+          onValueChange={(value: unknown) => {
+            const transport = TRANSPORTS.find((option) => option === value)
+            if (transport !== undefined) onSettings({ transport })
+          }}
+        >
+          {TRANSPORTS.map((transport) => (
+            <DropdownMenuRadioItem key={transport} value={transport} closeOnClick>
+              {t(`remote.toolbar.transports.${transport}`)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <MenuSwitch
         checked={settings.showRemoteCursor}

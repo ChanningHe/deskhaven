@@ -254,6 +254,30 @@ describe('display menu', () => {
     expect(session.resolutions).toEqual([{ width: 1920, height: 1080 }])
   })
 
+  it('picks the connection, auto by default, and a change reconnects', async () => {
+    const { user, f, updates } = await activePage()
+    await openMenu(user, '显示')
+    expect(screen.getByRole('group', { name: '连接方式' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: '自动（WebRTC 优先）' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(screen.getByRole('menuitemradio', { name: '仅中继' }))
+    expect(updates).toHaveBeenCalledTimes(1)
+    expect(updates).toHaveBeenCalledWith({ transport: 'relay' })
+    await waitFor(() => {
+      expect(f.sessions).toHaveLength(2)
+    })
+    act(() => {
+      f.sessions[1]?.activate()
+    })
+    await openMenu(user, '显示')
+    expect(screen.getByRole('menuitemradio', { name: '仅中继' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
   it('turns drawing the remote cursor off and on, without telling the peer', async () => {
     const { user, session, updates } = await activePage()
     await openMenu(user, '显示')

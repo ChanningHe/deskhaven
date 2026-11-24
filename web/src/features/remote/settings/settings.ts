@@ -2,6 +2,7 @@ import { DEFAULT_FPS } from '../video/fps-governor'
 
 export type Preset = 'low' | 'balanced' | 'best'
 export type Quality = Preset | { custom: number }
+export type TransportSetting = 'auto' | 'relay'
 
 export interface RemoteSettings {
   quality: Quality
@@ -10,6 +11,7 @@ export interface RemoteSettings {
   showRemoteCursor: boolean
   clipboardSync: boolean
   audio: boolean
+  transport: TransportSetting
 }
 
 export const SETTINGS_KEY = 'deskhaven.remote.settings'
@@ -26,9 +28,11 @@ export const DEFAULT_SETTINGS: RemoteSettings = {
   showRemoteCursor: true,
   clipboardSync: true,
   audio: false,
+  transport: 'auto',
 }
 
 const PRESETS: readonly Preset[] = ['low', 'balanced', 'best']
+export const TRANSPORTS: readonly TransportSetting[] = ['auto', 'relay']
 
 /** Own data properties only: a stored `constructor` or `__proto__` key must not be read as a field. */
 function field(source: unknown, name: string): unknown {
@@ -72,6 +76,7 @@ export function settingsFrom(
     showRemoteCursor: flag(field(raw, 'showRemoteCursor'), fallback.showRemoteCursor),
     clipboardSync: flag(field(raw, 'clipboardSync'), fallback.clipboardSync),
     audio: flag(field(raw, 'audio'), fallback.audio),
+    transport: oneOf(field(raw, 'transport'), TRANSPORTS, fallback.transport),
   }
 }
 

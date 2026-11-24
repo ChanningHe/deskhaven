@@ -1760,7 +1760,7 @@
       "label": "Session controls",
       "disconnect": "Disconnect",
       "displayMenu": "Display",
-      "displayMenuHint": "Display: quality, frame rate, scaling",
+      "displayMenuHint": "Display: quality, frame rate, scaling, connection",
       "inputMenu": "Input",
       "inputMenuHint": "Input: keyboard mode and key combinations. Press Esc twice to leave the remote screen.",
       "clipboardMenu": "Clipboard",
@@ -1786,6 +1786,11 @@
       "scales": {
         "fit": "Fit to window",
         "original": "Original size"
+      },
+      "transport": "Connection",
+      "transports": {
+        "auto": "Auto (WebRTC first)",
+        "relay": "Relay only"
       },
       "monitor": "Monitor",
       "monitorN": "Monitor {{n}}",

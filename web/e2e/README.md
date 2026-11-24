@@ -94,7 +94,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | ---------------------- | ------------------------------------------------------------------------------------------------ |
 | `reconnect.remote.ts`  | relay WebSocket cut under a session: back without the password; past the budget, asked once      |
 | `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5        |
-| `webrtc.remote.ts`     | (b) 1.5 over WebRTC; (c) UDP closed (relay-only ICE, no TURN): falls back to the relay           |
+| `webrtc.remote.ts`     | (b) 1.5 over WebRTC, then Display > Relay only moves it to the relay; (c) UDP closed: relay      |
 | `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map         |
 | `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture   |
 | `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn       |

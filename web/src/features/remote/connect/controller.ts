@@ -169,11 +169,12 @@ interface Attempt {
 
 /**
  * Connects the browser to one device: opens the server session (with a WebRTC offer where the
- * browser can make one), takes the data channel or the relay, starts the handshake and the
- * peer session on it, and closes the server session again once the peer session ends or the
- * page leaves. Each connect replaces the previous attempt. After a handshake fails over WebRTC,
- * connects go by the relay alone until a handshake over it succeeds: such a failure (a
- * fingerprint mismatch, a peer that drops the channel) tends to repeat.
+ * browser can make one and the settings do not ask for the relay), takes the data channel or the
+ * relay, starts the handshake and the peer session on it, and closes the server session again
+ * once the peer session ends or the page leaves. Each connect replaces the previous attempt.
+ * After a handshake fails over WebRTC, connects go by the relay alone until a handshake over it
+ * succeeds: such a failure (a fingerprint mismatch, a peer that drops the channel) tends to
+ * repeat.
  */
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
@@ -206,10 +207,12 @@ export class RemoteController {
   }
 
   updateSettings(patch: Partial<RemoteSettings>): void {
-    const next = withPatch(this.#settings.get(), patch)
+    const prev = this.#settings.get()
+    const next = withPatch(prev, patch)
     this.#settings.set(next)
     saveSettings(next, this.#storage)
-    if (this.#current) this.#sync(this.#current)
+    if (next.transport !== prev.transport && this.#live()) this.#relink()
+    else if (this.#current) this.#sync(this.#current)
   }
 
   get intent(): Store<SessionIntent> {
@@ -248,16 +251,43 @@ export class RemoteController {
 
   disconnect(): void {
     this.#manual()
-    const attempt = this.#current
-    this.#current = null
-    if (attempt) {
-      for (const close of attempt.pending) close()
-      attempt.pending.clear()
-      attempt.session?.close()
-      this.#release(attempt)
-    }
+    this.#drop()
     const { kind } = this.#phase.get()
     if (kind === 'opening' || kind === 'reconnecting') this.#phase.set({ kind: 'idle' })
+  }
+
+  #drop(): void {
+    const attempt = this.#current
+    this.#current = null
+    if (!attempt) return
+    for (const close of attempt.pending) close()
+    attempt.pending.clear()
+    attempt.session?.close()
+    this.#release(attempt)
+  }
+
+  /** Connecting, reconnecting, or in a session that has not ended. */
+  #live(): boolean {
+    const phase = this.#phase.get()
+    if (phase.kind === 'session') return phase.session.state.get().kind !== 'closed'
+    return phase.kind === 'opening' || phase.kind === 'reconnecting'
+  }
+
+  /**
+   * Starts over on the link the settings now ask for. Once logged in, it goes on like a
+   * reconnect (same peer session, the kept credential within its window) but at once: the user
+   * asked for it, so it neither waits nor counts as an attempt.
+   */
+  #relink(): void {
+    if (!this.#armed) {
+      this.connect()
+      return
+    }
+    this.#lostAt ??= this.#current?.heardAt ?? null
+    this.#cancelRetry?.()
+    this.#cancelRetry = null
+    this.#drop()
+    this.#start(0)
   }
 
   #start(retry: number): void {
@@ -284,7 +314,8 @@ export class RemoteController {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }
-    const offerer = this.#relayOnly ? null : await this.#offerer()
+    const relayOnly = this.#relayOnly || this.#settings.get().transport === 'relay'
+    const offerer = relayOnly ? null : await this.#offerer()
     if (this.#stale(attempt)) {
       offerer?.close()
       return

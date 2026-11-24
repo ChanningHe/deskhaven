@@ -28,6 +28,7 @@ describe('defaults', () => {
       showRemoteCursor: true,
       clipboardSync: true,
       audio: false,
+      transport: 'auto',
     })
   })
 })
@@ -42,6 +43,7 @@ describe('loadSettings', () => {
       showRemoteCursor: false,
       clipboardSync: false,
       audio: true,
+      transport: 'relay',
     }
     expect(saveSettings(settings, storage)).toBe(true)
     expect(JSON.parse(storage.getItem(SETTINGS_KEY) ?? '')).toEqual({ v: 1, settings })
@@ -154,8 +156,20 @@ describe('settingsFrom', () => {
     ['audio', true, true],
     ['audio', 1, false],
     ['audio', 'true', false],
+    ['transport', 'relay', 'relay'],
+    ['transport', 'auto', 'auto'],
+    ['transport', 'webrtc', 'auto'],
+    ['transport', 'Relay', 'auto'],
+    ['transport', true, 'auto'],
+    ['transport', null, 'auto'],
   ])('%s %o -> %o', (name, value, expected) => {
     expect(field(name, value)).toHaveProperty(name, expected)
+  })
+
+  it('takes the default transport for settings stored before it existed', () => {
+    const storage = storageWith(stored({ fps: 45, scale: 'original' }))
+    expect(loadSettings(storage)).toEqual({ ...DEFAULT_SETTINGS, fps: 45, scale: 'original' })
+    expect(loadSettings(storage).transport).toBe('auto')
   })
 
   it('drops unknown fields, and the settings we do not persist', () => {
