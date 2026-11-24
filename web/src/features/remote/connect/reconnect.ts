@@ -20,6 +20,7 @@ const RECONNECTS: Readonly<Record<CloseBy, boolean>> = {
   link: true,
   local: false,
   session_switch: true,
+  restart: false,
 }
 
 export function reconnects(by: CloseBy): boolean {

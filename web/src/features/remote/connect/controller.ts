@@ -86,7 +86,7 @@ export interface ConnectDeps {
   closeSession(sessionId: string): Promise<void>
   probeDecoders(): Promise<DecoderSupport>
   createRelay(options: RelayOptions): KeyedTransport
-  startSession(link: Link, params: HandshakeParams, intent: SessionIntent): Session
+  startSession(link: Link, params: HandshakeParams, intent: SessionIntent, maxFps: number): Session
   location: Pick<Location, 'protocol' | 'host'>
   /** Without it, the relay only. */
   webrtc?: WebRtcDeps
@@ -120,8 +120,8 @@ export const browserDeps: ConnectDeps = {
   closeSession: (sessionId) => closeWebClientSession(sessionId, { keepalive: true }),
   probeDecoders: probeVideoDecoders,
   createRelay: (options) => new RelayTransport(options),
-  startSession: (link, params, intent) =>
-    startSession(startHandshake(link, params), { viewOnly: intent.viewOnly }),
+  startSession: (link, params, intent, maxFps) =>
+    startSession(startHandshake(link, params), { viewOnly: intent.viewOnly, maxFps }),
   get location() {
     return window.location
   },
@@ -246,7 +246,6 @@ export class RemoteController {
     this.#start(0)
   }
 
-  /** Ends the current attempt: hangs up on the peer and closes the server session. */
   disconnect(): void {
     this.#manual()
     const attempt = this.#current
@@ -338,7 +337,7 @@ export class RemoteController {
       return
     }
     this.#transport.set(link.kind)
-    const session = this.#deps.startSession(link, params, attempt.toldIntent)
+    const session = this.#deps.startSession(link, params, attempt.toldIntent, attempt.told.fps)
     attempt.session = session
     let handshaken = false
     const unwatch = [session.permissions, session.audio.state].map((store) =>

@@ -73,6 +73,7 @@ export function loginOption(
   return create(OptionMessageSchema, {
     ...qualityFields(told.quality),
     customFps: told.fps,
+    disableAudio: disableAudio(told),
     showRemoteCursor: Yes,
     disableKeyboard: disableKeyboard ? Yes : NotSet,
     disableClipboard: disableClipboard ? Yes : NotSet,

@@ -87,6 +87,14 @@ function Harness({ session, enabled = true, viewOnly = false }: Props) {
       >
         paste
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          sync.send(pasting)
+        }}
+      >
+        send
+      </button>
     </div>
   )
 }
@@ -278,6 +286,24 @@ describe('useClipboardSync: paste', () => {
     await mount('granted', { session })
     press('paste')
     expect(session.pasted).toEqual([])
+  })
+})
+
+describe('useClipboardSync: send by hand', () => {
+  it('sends the text, and the automatic read does not send it again', async () => {
+    const { session } = await mount('granted')
+    local = 'pasted here'
+    press('send')
+    expect(session.pasted).toEqual(['pasted here'])
+    await focusWindow()
+    expect(session.pasted).toEqual(['pasted here'])
+  })
+
+  it('sends even with the automatic sync off, or a text the device already has', async () => {
+    const { session } = await mount('granted', { enabled: false })
+    press('send')
+    press('send')
+    expect(session.pasted).toEqual(['pasted here', 'pasted here'])
   })
 })
 

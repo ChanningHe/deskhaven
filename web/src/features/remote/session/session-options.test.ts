@@ -29,9 +29,9 @@ function options(sent: Message[]): OptionMessage[] {
 
 const frame = (key: boolean) => msg({ case: 'videoFrame', value: vp9Frame(key) })
 
-async function decoding() {
+async function decoding(sessionOptions: { maxFps?: number } = {}) {
   const clock = new FakeClock()
-  const s = await fakeLinkSession('webrtc', clock)
+  const s = await fakeLinkSession('webrtc', clock, sessionOptions)
   for (let i = 0; i < 13; i++) {
     s.handshake.peerSends(frame(i === 0))
     await settle()
@@ -132,6 +132,14 @@ describe('Session.setOptions maxFps', () => {
     expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 12])
   })
 
+  it('raises the fps on the next tick', async () => {
+    const s = await decoding()
+    s.clock.tick()
+    s.session.setOptions({ maxFps: 60 })
+    s.clock.tick()
+    expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 60])
+  })
+
   it('keeps custom_fps out of the quality message when both change', async () => {
     const s = await decoding()
     s.clock.tick()
@@ -140,6 +148,16 @@ describe('Session.setOptions maxFps', () => {
     expect(quality).toMatchObject({ imageQuality: ImageQuality.NotSet, customFps: 0 })
     s.clock.tick()
     expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 0, 20])
+  })
+})
+
+describe('Session maxFps option', () => {
+  it('keeps the governor at or under the fps the session was started with', async () => {
+    const s = await decoding({ maxFps: 10 })
+    for (let i = 0; i < 8; i++) s.clock.tick()
+    const fps = s.sent().map((o) => o.customFps)
+    expect(fps).not.toEqual([])
+    expect(Math.max(...fps)).toBeLessThanOrEqual(10)
   })
 })
 

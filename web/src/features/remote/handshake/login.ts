@@ -3,7 +3,6 @@ import { clone, create } from '@bufbuild/protobuf'
 import {
   LoginRequestSchema,
   MessageSchema,
-  OptionMessage_BoolOption,
   OptionMessageSchema,
   SupportedDecoding_PreferCodec,
   SupportedDecodingSchema,
@@ -71,7 +70,6 @@ export interface LoginFields {
 /** `password` is the login proof, or empty to ask the peer's user to accept the session. */
 export function loginRequest(fields: LoginFields, password: Uint8Array): Message {
   const option = clone(OptionMessageSchema, fields.option)
-  option.disableAudio = OptionMessage_BoolOption.Yes
   option.supportedDecoding = fields.decoding
   return create(MessageSchema, {
     union: {

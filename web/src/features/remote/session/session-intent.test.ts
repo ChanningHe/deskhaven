@@ -9,7 +9,7 @@ import {
   PermissionInfoSchema,
   type Message,
 } from '../proto/gen/message_pb.js'
-import { RESTART_REASON, SESSION_ACTIONS } from './messages'
+import { SESSION_ACTIONS } from './messages'
 import { RESTART_GRACE_MS } from './session'
 import { FakeClock, fakeLinkSession, misc, settle } from './testing'
 
@@ -193,7 +193,7 @@ describe('a link that drops after a restart', () => {
     await settle()
     expect(session.state.get()).toEqual({
       kind: 'closed',
-      cause: { by: 'peer', reason: RESTART_REASON },
+      cause: { by: 'restart', reason: LINK.reason },
     })
   })
 
@@ -203,7 +203,7 @@ describe('a link that drops after a restart', () => {
     handshake.peerSends(misc({ case: 'closeReason', value: 'Closed manually by the peer' }))
     await settle()
     expect(session.state.get()).toMatchObject({
-      cause: { by: 'peer', reason: RESTART_REASON },
+      cause: { by: 'restart', reason: 'Closed manually by the peer' },
     })
   })
 

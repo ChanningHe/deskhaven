@@ -152,7 +152,7 @@ describe('actions menu: restart', () => {
   it('says why the session ended when the device went down for it', async () => {
     const { session } = await activePage()
     act(() => {
-      session.end({ by: 'peer', reason: 'the device is restarting' })
+      session.end({ by: 'restart', reason: 'connection closed' })
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('远端正在重启')
   })

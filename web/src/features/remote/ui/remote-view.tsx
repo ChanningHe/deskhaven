@@ -32,13 +32,17 @@ async function readClipboard(): Promise<string | null> {
   }
 }
 
+function isFullscreen(): boolean {
+  return Boolean(document.fullscreenElement)
+}
+
 // The whole document goes full screen, not the remote area: the page is already only the
 // remote area, and portalled tooltips and selects stay visible this way.
 function useFullscreen() {
-  const [fullscreen, setFullscreen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(isFullscreen)
   useEffect(() => {
     const onChange = () => {
-      setFullscreen(document.fullscreenElement !== null)
+      setFullscreen(isFullscreen())
     }
     document.addEventListener('fullscreenchange', onChange)
     return () => {
@@ -76,6 +80,8 @@ export function RemoteView({
   intent,
   onIntent,
   speaker,
+  stats,
+  onStats,
   onDisconnect,
 }: {
   session: Session
@@ -85,6 +91,8 @@ export function RemoteView({
   intent: SessionIntent
   onIntent: (patch: Partial<SessionIntent>) => void
   speaker: Speaker
+  stats: boolean
+  onStats: (on: boolean) => void
   onDisconnect: () => void
 }) {
   const { t } = useTranslation()
@@ -92,7 +100,6 @@ export function RemoteView({
   const { fullscreen, toggle } = useFullscreen()
   useKeyboardLock(fullscreen)
   const [panel, setPanel] = useState<Panel>(null)
-  const [stats, setStats] = useState(false)
   const peer = useStore(session.peer)
   const remoteText = useStore(session.remoteClipboard)
   const { keyboard, clipboard } = useStore(session.permissions)
@@ -133,7 +140,7 @@ export function RemoteView({
 
   const sendClipboard = async () => {
     const text = await readClipboard()
-    if (text !== null && session.clipboard(text)) {
+    if (text !== null && sync.send(text)) {
       show(null)
       setNotice('sent')
     } else {
@@ -158,7 +165,7 @@ export function RemoteView({
             onIntent={onIntent}
             speaker={speaker}
             stats={stats}
-            onStats={setStats}
+            onStats={onStats}
             fullscreen={fullscreen}
             onFullscreen={toggle}
             keyboardLock={canLockKeyboard()}
@@ -189,9 +196,7 @@ export function RemoteView({
           onPaste={sync.onPaste}
         />
         {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
-        {panel === 'paste' && clipboard ? (
-          <PastePanel onSend={(text) => session.clipboard(text)} onClose={close} />
-        ) : null}
+        {panel === 'paste' && clipboard ? <PastePanel onSend={sync.send} onClose={close} /> : null}
         {panel === 'remote' && clipboard && remoteText !== null ? (
           <RemoteClipboardPanel text={remoteText} onClose={close} />
         ) : null}

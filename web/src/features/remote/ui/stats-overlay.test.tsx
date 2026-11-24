@@ -28,7 +28,7 @@ async function activePage() {
   act(() => {
     session.activate()
   })
-  return { ...view, session }
+  return { ...view, session, f }
 }
 
 async function showStats(user: Awaited<ReturnType<typeof activePage>>['user']) {
@@ -37,6 +37,25 @@ async function showStats(user: Awaited<ReturnType<typeof activePage>>['user']) {
 }
 
 describe('stats overlay', () => {
+  it('stays on after a reconnect', async () => {
+    const { user, session, f } = await activePage()
+    await showStats(user)
+    act(() => {
+      session.end({ by: 'link', reason: 'relay connection closed (code 1006)' })
+    })
+    expect(screen.queryByLabelText('连接统计')).toBeNull()
+    await waitFor(
+      () => {
+        expect(f.sessions).toHaveLength(2)
+      },
+      { timeout: 3000 },
+    )
+    act(() => {
+      f.sessions[1]?.activate()
+    })
+    expect(screen.getByLabelText('连接统计')).toBeInTheDocument()
+  })
+
   it('is off until the display menu turns it on, and off again', async () => {
     const { user } = await activePage()
     const item = () => screen.getByRole('menuitemcheckbox', { name: '统计信息' })

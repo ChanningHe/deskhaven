@@ -59,8 +59,6 @@ export function restartRemote(): Message {
   return misc({ case: 'restartRemoteDevice', value: true })
 }
 
-export const RESTART_REASON = 'the device is restarting'
-
 /** Answers PeerInfo.windows_sessions (rustdesk 1.5.1 src/ui_session_interface.rs:1629-1636). */
 export function selectedSid(sid: number): Message {
   return misc({ case: 'selectedSid', value: sid })

@@ -12,7 +12,7 @@ import {
   signedPeerPk,
   startFixture,
 } from '../__fixtures__/harness'
-import { passwordHash } from '../crypto/password'
+import { proof, salted } from '../crypto/password'
 import {
   CursorDataSchema,
   DisplayInfoSchema,
@@ -77,7 +77,7 @@ describe('relay replay against the captured 1.4.5 peer (key exchange v0)', () =>
     if (login?.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
     expect(login.union.value).toMatchObject({
       username: s.peerId,
-      password: await passwordHash(s.password, s.salt, s.challenge),
+      password: await proof(await salted(s.password, s.salt), s.challenge),
       myId: 'console-admin',
       myName: 'Admin',
       myPlatform: 'Web',
@@ -183,7 +183,7 @@ describe('relay replay against the captured 1.5.0 peer (key exchange v1)', () =>
     await r.socket.waitForSent(3)
     const login = r.peerReceived()[0]
     expect(login?.union.case === 'loginRequest' && login.union.value.password).toEqual(
-      await passwordHash(s.password, s.salt, s.challenge),
+      await proof(await salted(s.password, s.salt), s.challenge),
     )
   })
 })

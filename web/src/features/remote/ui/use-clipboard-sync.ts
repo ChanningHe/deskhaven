@@ -14,6 +14,8 @@ export interface ClipboardSyncControl {
   /** Writing needs a gesture: call inside a pointerdown or keydown handler. */
   onGesture: () => void
   onPaste: (text: string) => void
+  /** Sends a text the user picked, sync on or off; false when the session refuses it. */
+  send: (text: string) => boolean
 }
 
 const POLL_MS = 1000
@@ -215,6 +217,11 @@ export function useClipboardSync({
       if (!allowed) return
       const out = sync.pasted(text)
       if (out !== null && session.clipboard(out)) onSent()
+    },
+    send: (text) => {
+      const sent = session.clipboard(text)
+      if (sent) sync.pasted(text)
+      return sent
     },
     onGesture: () => {
       const clipboard = clipboardApi()

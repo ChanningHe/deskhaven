@@ -68,11 +68,12 @@ describe('loginRequest', () => {
     option,
   })
 
-  it('adds the settings option to the audio and decoding ones it always sends', () => {
+  it('adds the decoding option it always sends to the settings option, audio included', () => {
     const option = create(OptionMessageSchema, {
       imageQuality: ImageQuality.Best,
       customImageQuality: 0,
       customFps: 24,
+      disableAudio: OptionMessage_BoolOption.Yes,
     })
     const message = loginRequest(fields(option), new Uint8Array())
     if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
@@ -85,14 +86,14 @@ describe('loginRequest', () => {
     expect(message.union.value.videoAckRequired).toBe(false)
   })
 
-  it('does not let the settings option switch off audio or decoding', () => {
+  it('leaves audio to the settings option and does not let it switch off decoding', () => {
     const option = create(OptionMessageSchema, {
       disableAudio: OptionMessage_BoolOption.No,
       supportedDecoding: undefined,
     })
     const message = loginRequest(fields(option), new Uint8Array())
     if (message.union.case !== 'loginRequest') throw new Error('not a LoginRequest')
-    expect(message.union.value.option?.disableAudio).toBe(OptionMessage_BoolOption.Yes)
+    expect(message.union.value.option?.disableAudio).toBe(OptionMessage_BoolOption.No)
     expect(message.union.value.option?.supportedDecoding).toMatchObject({ abilityVp9: 1 })
   })
 

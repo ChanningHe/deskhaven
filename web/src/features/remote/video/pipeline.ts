@@ -11,7 +11,6 @@ export interface VideoPipelineOptions {
   mayRefresh(): boolean
   /** Decoding keeps failing; the pipeline has stopped. */
   onFatal(error: Error): void
-  // Reports only: nothing the pipeline decides reads it.
   meter?: VideoMeter
 }
 

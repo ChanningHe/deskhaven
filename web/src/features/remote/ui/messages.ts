@@ -6,7 +6,6 @@ import type { ErrorCode } from '@/api/generated/model'
 
 import type { ConnectFailure } from '../connect/controller'
 import { TIMEOUT_REASON, type CloseCause } from '../handshake/handshake'
-import { RESTART_REASON } from '../session/messages'
 
 /** The codes POST sessions answers with that get their own, remote-specific copy. */
 const SESSION_ERRORS = [
@@ -62,8 +61,9 @@ export function endingMessage(cause: CloseCause, t: TFunction): string {
       if (cause.reason === TIMEOUT_REASON) return t('remote.ended.timeout')
       return t('remote.ended.link', { reason: cause.reason })
     case 'peer':
-      if (cause.reason === RESTART_REASON) return t('remote.ended.restarting')
       return t('remote.ended.other', { reason: cause.reason })
+    case 'restart':
+      return t('remote.ended.restarting')
     case 'local':
       return t('remote.ended.other', { reason: cause.reason })
   }

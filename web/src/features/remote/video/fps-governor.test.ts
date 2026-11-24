@@ -82,13 +82,20 @@ describe('FpsGovernor user ceiling', () => {
     expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
   })
 
-  it('lets the fps climb to a higher ceiling the way it climbs after a backlog', () => {
+  it('climbs to a higher ceiling on the next tick', () => {
     const g = governor(1)
     expect(g.tick({ fps: 20, queued: 0 })).toBe(DEFAULT_FPS)
     g.setUserFps(60)
-    const sent = Array.from({ length: 6 }, () => g.tick({ fps: 20, queued: 0 }))
-    expect(sent.filter((fps) => fps !== null)).toEqual([60])
-    expect(sent.indexOf(60)).toBeGreaterThan(0)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(60)
+    expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
+  })
+
+  it('climbs on the next tick even while it was waiting out a backlog', () => {
+    const g = governor(50)
+    g.tick({ fps: 16, queued: 0 })
+    expect(g.tick({ fps: 16, queued: 17 })).toBe(8)
+    g.setUserFps(60)
+    expect(g.tick({ fps: 8, queued: 0 })).toBe(16)
   })
 
   it('does not climb past what the decoder keeps up with', () => {
@@ -98,10 +105,40 @@ describe('FpsGovernor user ceiling', () => {
     for (let i = 0; i < 10; i++) expect(g.tick({ fps: 18, queued: 0 })).toBeNull()
   })
 
-  it('sends nothing by itself', () => {
+  it('sends nothing for a ceiling that did not change', () => {
+    const g = new FpsGovernor({ direct: false, userFps: DEFAULT_FPS })
+    g.setUserFps(DEFAULT_FPS)
+    expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
+  })
+
+  it('before it knows the decode rate, lowers at once and climbs only once frames decode', () => {
     const g = new FpsGovernor({ direct: false, userFps: DEFAULT_FPS })
     g.setUserFps(12)
-    expect(g.tick({ fps: 20, queued: 0 })).toBeNull()
+    expect(g.tick({ fps: 0, queued: 0 })).toBe(12)
+    expect(g.tick({ fps: 0, queued: 0 })).toBeNull()
+    g.setUserFps(60)
+    expect(g.tick({ fps: 0, queued: 0 })).toBeNull()
+    for (let i = 0; i < 13; i++) g.decoded(1)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(60)
+  })
+
+  it('on a screen that stopped changing, lowers at once and climbs once it changes again', () => {
+    const g = governor(1)
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(DEFAULT_FPS)
+    for (let i = 0; i < INACTIVE_TICKS; i++) g.tick({ fps: 0, queued: 0 })
+    g.setUserFps(10)
+    expect(g.tick({ fps: 0, queued: 0 })).toBe(10)
+    g.setUserFps(60)
+    expect(g.tick({ fps: 0, queued: 0 })).toBeNull()
+    expect(g.tick({ fps: 20, queued: 0 })).toBe(60)
+  })
+
+  it('starts from the ceiling it was made with', () => {
+    const g = new FpsGovernor({ direct: false, userFps: 10 })
+    g.setUserFps(20)
+    expect(g.tick({ fps: 0, queued: 0 })).toBeNull()
+    g.setUserFps(8)
+    expect(g.tick({ fps: 0, queued: 0 })).toBe(8)
   })
 })
 

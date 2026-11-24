@@ -136,6 +136,30 @@ async function pointerEnters(session: FakeSession, text: string) {
   return session.pasted
 }
 
+describe('remote view: sending the clipboard by hand', () => {
+  it('does not send the same text again when the automatic sync reads it next', async () => {
+    const { user, session } = await activePage()
+    await settle()
+    local = 'sent by hand'
+    await openMenu(user, '剪贴板')
+    await user.click(screen.getByRole('menuitem', { name: '发送剪贴板' }))
+    expect(session.pasted).toEqual(['sent by hand'])
+    expect(await pointerEnters(session, 'sent by hand')).toEqual(['sent by hand'])
+  })
+
+  it('does not send a text pasted into the box again either', async () => {
+    const { user, session } = await activePage()
+    await settle()
+    readText.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'))
+    await openMenu(user, '剪贴板')
+    await user.click(screen.getByRole('menuitem', { name: '发送剪贴板' }))
+    await user.type(await screen.findByLabelText('要发送的文本'), 'typed')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    expect(session.pasted).toEqual(['typed'])
+    expect(await pointerEnters(session, 'typed')).toEqual(['typed'])
+  })
+})
+
 describe('remote view: view only', () => {
   it('shows the peer cursor as the local pointer, then a plain arrow while viewing only', async () => {
     const { user } = await activePage()

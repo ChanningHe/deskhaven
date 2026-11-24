@@ -108,6 +108,7 @@ describe('RemoteController: reconnecting after the link drops', () => {
     ['link', true],
     ['session_switch', true],
     ['peer', false],
+    ['restart', false],
     ['local', false],
     ['user', false],
   ])('a session closed by %s reconnects: %s', async (by, again) => {

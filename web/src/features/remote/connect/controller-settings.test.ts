@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { msg } from '../__fixtures__/harness'
 import { ImageQuality, OptionMessage_BoolOption } from '../proto/gen/message_pb.js'
+import { startSession, type Session } from '../session/session'
+import { FakeClock, FakeHandshake, PEER_INFO } from '../session/testing'
+import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type RemoteSettings } from '../settings/settings'
 import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
 import { RemoteController } from './controller'
@@ -246,5 +250,80 @@ describe('RemoteController sound', () => {
     expect(sent(f, next)).toEqual([])
     next.activate()
     expect(sent(f, next)).toEqual([No])
+  })
+})
+
+describe('RemoteController fps below the login one', () => {
+  const DECODED_FRAMES = 13
+  const TICKS = 8
+
+  function sentFps(handshake: FakeHandshake): number[] {
+    return handshake.sent.flatMap((m) =>
+      m.union.case === 'misc' && m.union.value.union.case === 'option'
+        ? [m.union.value.union.value.customFps].filter((fps) => fps !== 0)
+        : [],
+    )
+  }
+
+  async function streamed(clock: FakeClock, session: Session, link: Link) {
+    link.handshake.events.push({ kind: 'state', state: { kind: 'active', peerInfo: PEER_INFO } })
+    await vi.waitFor(() => {
+      expect(session.state.get().kind).toBe('active')
+    })
+    for (let i = 0; i < DECODED_FRAMES; i++) {
+      link.handshake.peerSends(msg({ case: 'videoFrame', value: vp9Frame(i === 0) }))
+      await settle()
+      clock.advance(1)
+      link.decoders.last.output()
+    }
+    for (let i = 0; i < TICKS; i++) clock.tick()
+  }
+
+  interface Link {
+    handshake: FakeHandshake
+    decoders: FakeDecoders
+  }
+
+  it('is never raised by the session, before or after a reconnect', async () => {
+    const f = fakeDeps()
+    f.storage.setItem(SETTINGS_KEY, JSON.stringify({ v: 1, settings: { fps: 10 } }))
+    const clock = new FakeClock()
+    const links: Link[] = []
+    const sessions: Session[] = []
+    f.startSession.mockImplementation((_link, _params, _intent, maxFps) => {
+      const link = { handshake: new FakeHandshake('relay'), decoders: new FakeDecoders() }
+      links.push(link)
+      const session = startSession(link.handshake, {
+        maxFps,
+        clock,
+        createDecoder: link.decoders.create,
+      })
+      sessions.push(session)
+      return session
+    })
+    const controller = new RemoteController(DEVICE, f.deps)
+    controller.connect()
+    await vi.waitFor(() => {
+      expect(sessions).toHaveLength(1)
+    })
+    const [first, firstLink] = [sessions[0], links[0]]
+    if (!first || !firstLink) throw new Error('no session started')
+    await streamed(clock, first, firstLink)
+    expect(sentFps(firstLink.handshake)).not.toEqual([])
+    expect(Math.max(...sentFps(firstLink.handshake))).toBeLessThanOrEqual(10)
+
+    firstLink.handshake.close({ by: 'link', reason: 'relay connection closed (code 1006)' })
+    await vi.waitFor(
+      () => {
+        expect(sessions).toHaveLength(2)
+      },
+      { timeout: 3000 },
+    )
+    const [second, secondLink] = [sessions[1], links[1]]
+    if (!second || !secondLink) throw new Error('no session restarted')
+    await streamed(clock, second, secondLink)
+    expect(sentFps(secondLink.handshake)).not.toEqual([])
+    expect(Math.max(...sentFps(secondLink.handshake))).toBeLessThanOrEqual(10)
+    controller.disconnect()
   })
 })

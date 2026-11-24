@@ -15,7 +15,7 @@ import {
   type KxTranscript,
 } from './frame-cipher'
 import { boxKeyPairFromSecret, openSigned, sealKey } from './nacl'
-import { passwordHash, proof, salted } from './password'
+import { proof, salted } from './password'
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
@@ -209,23 +209,16 @@ describe('key exchange version 1', () => {
   })
 })
 
-describe('passwordHash', () => {
+describe('login proof', () => {
   it('is SHA256(SHA256(password ‖ salt) ‖ challenge)', async () => {
     const s = fixtureSession('1.5.0')
-    const salted = new Uint8Array(await crypto.subtle.digest('SHA-256', ascii(s.password + s.salt)))
+    const once = new Uint8Array(await crypto.subtle.digest('SHA-256', ascii(s.password + s.salt)))
     const expected = new Uint8Array(
-      await crypto.subtle.digest('SHA-256', new Uint8Array([...salted, ...ascii(s.challenge)])),
+      await crypto.subtle.digest('SHA-256', new Uint8Array([...once, ...ascii(s.challenge)])),
     )
-    const got = await passwordHash(s.password, s.salt, s.challenge)
+    const got = await proof(await salted(s.password, s.salt), s.challenge)
     expect(got).toHaveLength(32)
     expect(got).toEqual(expected)
-  })
-
-  it('matches a fixed vector', async () => {
-    // Python: sha256(sha256(b'pwsalt').digest() + b'chal').hexdigest()
-    expect(hex(await passwordHash('pw', 'salt', 'chal'))).toBe(
-      '6b4858ead261a75c0d1cb54a609d649c19fcfee7e4f7e26cf339099c3f0657a4',
-    )
   })
 
   it('is the proof over the salted password, so a reconnect needs no plain password', async () => {

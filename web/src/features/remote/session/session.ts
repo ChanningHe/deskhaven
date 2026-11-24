@@ -27,7 +27,6 @@ import {
   optionMessage,
   refreshVideo,
   restartRemote,
-  RESTART_REASON,
   selectedSid,
   switchDisplay,
   type OptionPatch,
@@ -98,7 +97,7 @@ class RemoteSession implements Session {
     }))
     const governor = new FpsGovernor({
       direct: handshake.link === 'webrtc',
-      userFps: DEFAULT_FPS,
+      userFps: options.maxFps ?? DEFAULT_FPS,
     })
     this.#governor = governor
     this.#video = new VideoPipeline({
@@ -372,10 +371,10 @@ class RemoteSession implements Session {
     this.#handshake.close(cause)
   }
 
-  #restarting({ by }: CloseCause): CloseCause | null {
+  #restarting({ by, reason }: CloseCause): CloseCause | null {
     const asked =
       this.#restartedAt !== null && this.#clock.now() - this.#restartedAt < RESTART_GRACE_MS
-    return asked && (by === 'link' || by === 'peer') ? { by: 'peer', reason: RESTART_REASON } : null
+    return asked && (by === 'link' || by === 'peer') ? { by: 'restart', reason } : null
   }
 
   #finish(cause: CloseCause): void {

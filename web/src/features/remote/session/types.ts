@@ -61,4 +61,6 @@ export interface SessionOptions {
   audioDecoders?: AudioDecoders
   clock?: StatsClock
   viewOnly?: boolean
+  /** The fps the login asked for: the governor's ceiling until setOptions moves it. */
+  maxFps?: number
 }

@@ -64,7 +64,7 @@ describe('loginOption', () => {
 
   it('never asks for audio at login: no AudioContext runs before a click', () => {
     const settings = with_({ audio: true })
-    expect(loginOption(settings).disableAudio).toBe(OptionMessage_BoolOption.NotSet)
+    expect(loginOption(settings).disableAudio).toBe(OptionMessage_BoolOption.Yes)
     expect(loginSettings(settings).audio).toBe(false)
   })
 
@@ -77,9 +77,10 @@ describe('loginOption', () => {
   })
 
   it('sets nothing else', () => {
-    const { imageQuality, customImageQuality, customFps, showRemoteCursor, ...rest } =
+    const { imageQuality, customImageQuality, customFps, showRemoteCursor, disableAudio, ...rest } =
       loginOption(DEFAULT_SETTINGS)
     expect(showRemoteCursor).toBe(OptionMessage_BoolOption.Yes)
+    expect(disableAudio).toBe(OptionMessage_BoolOption.Yes)
     expect({ imageQuality, customImageQuality, customFps }).toEqual({
       imageQuality: ImageQuality.NotSet,
       customImageQuality: START_LEVEL << 8,
@@ -87,7 +88,6 @@ describe('loginOption', () => {
     })
     expect(rest).toMatchObject({
       lockAfterSessionEnd: 0,
-      disableAudio: 0,
       disableClipboard: 0,
       disableKeyboard: 0,
     })

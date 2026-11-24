@@ -41,7 +41,7 @@ export interface CredentialSlot {
   keep(credential: Credential): void
 }
 
-export type CloseBy = 'user' | 'peer' | 'link' | 'local' | 'session_switch'
+export type CloseBy = 'user' | 'peer' | 'link' | 'local' | 'session_switch' | 'restart'
 
 export interface CloseCause {
   by: CloseBy

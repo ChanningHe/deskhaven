@@ -4,7 +4,7 @@ import type { AudioDecoders, DecodedAudio, OpusDecoder } from './decoder'
 import { acceptsFrame, audioFormat, type AudioFormat } from './format'
 
 export const MAX_DECODE_FAILURES = 5
-// Design ruling 「音频」: past 200 ms queued, sound lags the picture; drop rather than drift.
+// Past 200 ms queued, sound audibly lags the picture: drop packets rather than drift behind.
 export const MAX_BACKLOG_S = 0.2
 // Packets come every 10 ms with network jitter; starting right at `now` would run dry at once.
 export const START_LEAD_S = 0.05

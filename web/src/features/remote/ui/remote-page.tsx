@@ -1,4 +1,4 @@
-import { useContext } from 'react'
+import { useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -28,21 +28,14 @@ interface Actions {
   intent: SessionIntent
   onIntent: (patch: Partial<SessionIntent>) => void
   speaker: Speaker
+  stats: boolean
+  onStats: (on: boolean) => void
   onReconnect: () => void
   onDisconnect: () => void
 }
 
-function SessionStep({
-  session,
-  frame,
-  settings,
-  onSettings,
-  intent,
-  onIntent,
-  speaker,
-  onReconnect,
-  onDisconnect,
-}: { session: Session } & Actions) {
+function SessionStep({ session, ...actions }: { session: Session } & Actions) {
+  const { frame, onReconnect, onDisconnect } = actions
   const { t } = useTranslation()
   const state = useStore(session.state)
   switch (state.kind) {
@@ -98,18 +91,7 @@ function SessionStep({
         </Waiting>
       )
     case 'active':
-      return (
-        <RemoteView
-          session={session}
-          frame={frame}
-          settings={settings}
-          onSettings={onSettings}
-          intent={intent}
-          onIntent={onIntent}
-          speaker={speaker}
-          onDisconnect={onDisconnect}
-        />
-      )
+      return <RemoteView session={session} {...actions} />
     case 'closed':
       return (
         <Waiting frame={frame} status="ended">
@@ -186,6 +168,8 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
     reconnect,
     disconnect,
   } = useRemote(deviceId, useContext(RemoteDepsContext))
+  // Here, not in RemoteView: a reconnect remounts the view and must not turn the overlay off.
+  const [stats, setStats] = useState(false)
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
@@ -196,6 +180,8 @@ export function RemotePage({ deviceId, back }: { deviceId: string; back?: ReactN
         intent={intent}
         onIntent={updateIntent}
         speaker={speaker}
+        stats={stats}
+        onStats={setStats}
         onReconnect={reconnect}
         onDisconnect={disconnect}
       />

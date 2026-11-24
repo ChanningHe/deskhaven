@@ -13,7 +13,7 @@ import {
   startFixture,
   type Replay,
 } from '../__fixtures__/harness'
-import { passwordHash, salted } from '../crypto/password'
+import { proof, salted } from '../crypto/password'
 import {
   HashSchema,
   LoginResponseSchema,
@@ -89,7 +89,7 @@ describe('login verdicts (rustdesk 1.5.0 src/client.rs:114-118, handle_login_err
     expect(await r.nextEvent()).toEqual({ kind: 'state', state: { kind: 'connecting' } })
     const retry = lastSent(r)
     expect(retry.union.case === 'loginRequest' && retry.union.value.password).toEqual(
-      await passwordHash(s.password, s.salt, s.challenge),
+      await proof(await salted(s.password, s.salt), s.challenge),
     )
   })
 
@@ -151,9 +151,9 @@ describe('login verdicts (rustdesk 1.5.0 src/client.rs:114-118, handle_login_err
       new Uint8Array(),
     )
     await r.handshake.login(s.password)
-    const proof = lastSent(r)
-    expect(proof.union.case === 'loginRequest' && proof.union.value.password).toEqual(
-      await passwordHash(s.password, s.salt, s.challenge),
+    const login = lastSent(r)
+    expect(login.union.case === 'loginRequest' && login.union.value.password).toEqual(
+      await proof(await salted(s.password, s.salt), s.challenge),
     )
   })
 })
@@ -228,7 +228,7 @@ describe('password lifetime', () => {
     await r.socket.waitForSent(3)
     const login = lastSent(r)
     expect(login.union.case === 'loginRequest' && login.union.value.password).toEqual(
-      await passwordHash(s.password, s.salt, s.challenge),
+      await proof(await salted(s.password, s.salt), s.challenge),
     )
   })
 })
@@ -275,7 +275,7 @@ describe('logging in again without the password (client.rs:2961-2974)', () => {
     const r = await hashed(k.credentials)
     expect(await r.nextEvent()).toEqual({ kind: 'state', state: { kind: 'connecting' } })
     await r.socket.waitForSent(3)
-    expect(sentPassword(r)).toEqual(await passwordHash(s.password, s.salt, s.challenge))
+    expect(sentPassword(r)).toEqual(await proof(await salted(s.password, s.salt), s.challenge))
     const login = lastSent(r)
     expect(login.union.case === 'loginRequest' && login.union.value.sessionId).toBe(SESSION_ID)
     loginOk(r)

@@ -119,6 +119,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
       { kind: 'relay', transport: r.relays[0] },
       expect.anything(),
       expect.anything(),
+      expect.anything(),
     )
     expect(r.pc().closed).toBe(true)
     expect(r.controller.transport.get()).toBe('relay')

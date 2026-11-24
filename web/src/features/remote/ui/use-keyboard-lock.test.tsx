@@ -47,7 +47,7 @@ async function activePage() {
   act(() => {
     session.activate()
   })
-  return { ...view, session }
+  return { ...view, session, f }
 }
 
 function tooltip() {
@@ -66,6 +66,26 @@ describe('keyboard lock', () => {
     setFullscreen(false)
     expect(unlock).toHaveBeenCalledTimes(1)
     expect(lock).toHaveBeenCalledTimes(1)
+  })
+
+  it('locks again, and stays full screen, after a reconnect', async () => {
+    Object.defineProperty(navigator, 'keyboard', { value: { lock, unlock }, configurable: true })
+    const { session, f } = await activePage()
+    setFullscreen(true)
+    act(() => {
+      session.end({ by: 'link', reason: 'relay connection closed (code 1006)' })
+    })
+    await waitFor(
+      () => {
+        expect(f.sessions).toHaveLength(2)
+      },
+      { timeout: 3000 },
+    )
+    act(() => {
+      f.sessions[1]?.activate()
+    })
+    expect(lock).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
   })
 
   it('unlocks when the page goes away while full screen', async () => {

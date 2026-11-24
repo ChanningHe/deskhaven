@@ -66,14 +66,18 @@ describe('endingMessage', () => {
     ],
     [{ by: 'peer', reason: 'Offline' }, '会话已结束：Offline'],
     [{ by: 'local', reason: 'video decoding failed: x' }, '会话已结束：video decoding failed: x'],
+    [{ by: 'restart', reason: 'connection closed' }, '远端正在重启。等设备重新上线后再连接。'],
   ] as const)('explains %o', (cause, text) => {
     expect(endingMessage(cause, t)).toBe(text)
   })
 
-  it.each(['closed', 'timeout', 'connection closed', 'relay connection failed'])(
-    'shows the peer\'s "%s" as its own words, never as ours',
-    (reason) => {
-      expect(endingMessage({ by: 'peer', reason }, t)).toBe(`会话已结束：${reason}`)
-    },
-  )
+  it.each([
+    'closed',
+    'timeout',
+    'connection closed',
+    'relay connection failed',
+    'the device is restarting',
+  ])('shows the peer\'s "%s" as its own words, never as ours', (reason) => {
+    expect(endingMessage({ by: 'peer', reason }, t)).toBe(`会话已结束：${reason}`)
+  })
 })
