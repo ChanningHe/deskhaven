@@ -11,7 +11,7 @@ import {
   type OptionMessage,
 } from '../proto/gen/message_pb.js'
 import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
-import { DEFAULT_FPS } from '../video/fps-governor'
+import { BACKLOG } from '../video/fps-governor'
 import { START_QUALITY } from '../video/quality-governor'
 import { startSession } from './session'
 import { FakeClock, FakeHandshake, activeSession, fakeLinkSession, settle } from './testing'
@@ -123,13 +123,13 @@ describe('Session.setOptions maxFps', () => {
   it('moves the governor ceiling and sends nothing itself', async () => {
     const s = await decoding()
     s.clock.tick()
-    expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS])
+    expect(s.sent()).toEqual([])
 
     s.session.setOptions({ maxFps: 12 })
-    expect(s.sent()).toHaveLength(1)
+    expect(s.sent()).toEqual([])
 
     s.clock.tick()
-    expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 12])
+    expect(s.sent().map((o) => o.customFps)).toEqual([12])
   })
 
   it('raises the fps on the next tick', async () => {
@@ -137,27 +137,29 @@ describe('Session.setOptions maxFps', () => {
     s.clock.tick()
     s.session.setOptions({ maxFps: 60 })
     s.clock.tick()
-    expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 60])
+    expect(s.sent().map((o) => o.customFps)).toEqual([60])
   })
 
   it('keeps custom_fps out of the quality message when both change', async () => {
     const s = await decoding()
     s.clock.tick()
     s.session.setOptions({ peer: option({ imageQuality: ImageQuality.Low }), maxFps: 20 })
-    const [, quality] = s.sent()
+    const [quality] = s.sent()
     expect(quality).toMatchObject({ imageQuality: ImageQuality.NotSet, customFps: 0 })
     s.clock.tick()
-    expect(s.sent().map((o) => o.customFps)).toEqual([DEFAULT_FPS, 0, 20])
+    expect(s.sent().map((o) => o.customFps)).toEqual([0, 20])
   })
 })
 
 describe('Session maxFps option', () => {
   it('keeps the governor at or under the fps the session was started with', async () => {
     const s = await decoding({ maxFps: 10 })
+    s.decoders.last.decodeQueueSize = BACKLOG
+    s.clock.tick()
+    s.decoders.last.decodeQueueSize = 0
     for (let i = 0; i < 8; i++) s.clock.tick()
     const fps = s.sent().map((o) => o.customFps)
-    expect(fps).not.toEqual([])
-    expect(Math.max(...fps)).toBeLessThanOrEqual(10)
+    expect(fps).toEqual([5, 8, 10])
   })
 })
 

@@ -5,7 +5,7 @@ import { msg } from '../__fixtures__/harness'
 import type { LinkKind } from '../handshake/handshake'
 import { SwitchDisplaySchema, VideoFrameSchema, type Message } from '../proto/gen/message_pb.js'
 import { vp9Frame } from '../video/fake-decoder'
-import { DEFAULT_FPS } from '../video/fps-governor'
+import { BACKLOG, DEFAULT_FPS } from '../video/fps-governor'
 import { activeSession, FakeClock, fakeLinkSession, misc, settle } from './testing'
 
 function miscCases(sent: Message[]): (string | undefined)[] {
@@ -70,31 +70,21 @@ describe.each(['relay', 'webrtc'] as const)('video flow over %s', (link) => {
     expect(sent).toContain('closeReason')
   })
 
-  it(`asks for no more than ${DEFAULT_FPS} fps`, async () => {
+  it('sends no custom_fps while the decoder keeps up: the login carried it', async () => {
     const s = await sessionOver(link)
     await decodeEach(s, 1)
     s.clock.tick()
-    expect(fpsSent(s.sent())).toEqual([DEFAULT_FPS])
+    expect(fpsSent(s.sent())).toEqual([])
   })
-})
 
-describe('video flow fps margin', () => {
-  it.each([
-    ['relay', 16, 8],
-    ['webrtc', 18, 9],
-  ] as const)(
-    'over %s asks for %i fps at 20 decoded, and halves it while frames pile up',
-    async (link, fps, halved) => {
-      const s = await sessionOver(link)
-      await decodeEach(s, 50)
-      s.clock.tick()
-      expect(fpsSent(s.sent())).toEqual([fps])
+  it('halves the fps only once decodes back up, however long each one takes', async () => {
+    const s = await sessionOver(link)
+    await decodeEach(s, 50)
+    s.clock.tick()
+    expect(fpsSent(s.sent())).toEqual([])
 
-      for (let i = 0; i < 20; i++) s.peerSends(frame(false))
-      await settle()
-      s.clock.tick()
-      s.clock.tick()
-      expect(fpsSent(s.sent())).toEqual([fps, halved])
-    },
-  )
+    s.decoders.last.decodeQueueSize = BACKLOG
+    s.clock.tick()
+    expect(fpsSent(s.sent())).toEqual([DEFAULT_FPS / 2])
+  })
 })

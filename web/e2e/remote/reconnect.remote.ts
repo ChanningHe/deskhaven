@@ -1,12 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import type { Page } from '@playwright/test'
 
 import { device, expectDesktop, submitPassword } from './support/console.ts'
 import { stackInfo } from './support/env.ts'
 import type { ClientKey, DeviceInfo } from './support/env.ts'
 import { test as base, expect } from './support/fixtures.ts'
+import { deviceLog } from './support/peer-log.ts'
 import { startProxy } from './support/proxy.ts'
 import type { Proxy } from './support/proxy.ts'
 
@@ -57,21 +55,6 @@ async function prepare(page: Page) {
 
 function passwordPrompts(page: Page): Promise<number> {
   return page.evaluate(() => (window as unknown as { passwordPrompts: number }).passwordPrompts)
-}
-
-function deviceLog(key: ClientKey, info: DeviceInfo): string | null {
-  const logs = join(info.scratchDir, `home-${key.replace('.', '')}`, '.local', 'share', 'logs')
-  let files: string[]
-  try {
-    files = readdirSync(logs, { recursive: true, encoding: 'utf8' })
-  } catch {
-    return null
-  }
-  const text = files
-    .filter((file) => file.endsWith('.log'))
-    .map((file) => readFileSync(join(logs, file), 'utf8'))
-    .join('\n')
-  return text === '' ? null : text
 }
 
 function deviceLogins(key: ClientKey, info: DeviceInfo): { opened: number; in: number } | null {

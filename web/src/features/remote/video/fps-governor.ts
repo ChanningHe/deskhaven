@@ -2,6 +2,9 @@ export const DEFAULT_FPS = 30
 export const INACTIVE_TICKS = 15
 export const REFRESH_INTERVAL_MS = 10_000
 export const MAX_REFRESHES = 20
+/** Chunks waiting for the decoder to take them: it is no longer keeping up. */
+export const BACKLOG = 2
+export const MIN_AUTO_FPS = 5
 
 const WARM_UP_FRAMES = 3
 const RATE_EVERY = 10
@@ -10,41 +13,40 @@ const IDLE_TICKS = 3
 const STEP_UP = 3
 
 export interface FpsGovernorOptions {
-  direct: boolean
   userFps: number
 }
 
 export interface FpsTick {
   fps: number
-  queued: number
+  backlog: number
 }
 
-// rustdesk 1.5.1 src/client/io_loop.rs:1557-1655, decode rate src/client.rs:4164-4193.
+// rustdesk 1.5.1 src/client/io_loop.rs:1557-1655, decode rate src/client.rs:4164-4193. Unlike
+// there, the decode rate does not cap the fps: a WebCodecs decoder pipelines frames, so the time
+// one frame spends in it is latency, not throughput. Only a backlog says it is falling behind.
 export class FpsGovernor {
-  readonly #tenths: number
-  readonly #startFps: number
   #userFps: number
   #userChanged = false
+  #fps: number
   #warmUp = 0
   #count = 0
   #totalMs = 0
   #decodeFps: number | null = null
-  #lastFps: number | null = null
   #idle = 0
   #inactive = 0
   #refreshes = 0
   #lastRefreshAt = 0
 
   constructor(options: FpsGovernorOptions) {
-    this.#tenths = options.direct ? 9 : 8
-    this.#startFps = options.userFps
     this.#userFps = options.userFps
+    this.#fps = options.userFps
   }
 
   get userFps(): number {
     return this.#userFps
   }
 
+  /** Diagnostics only. */
   get decodeFps(): number | null {
     return this.#decodeFps
   }
@@ -53,7 +55,6 @@ export class FpsGovernor {
     if (fps === this.#userFps) return
     this.#userFps = fps
     this.#userChanged = true
-    this.#idle = 0
   }
 
   decoded(serviceMs: number): void {
@@ -72,29 +73,28 @@ export class FpsGovernor {
     }
   }
 
-  tick({ fps, queued }: FpsTick): number | null {
+  tick({ fps, backlog }: FpsTick): number | null {
     this.#inactive = fps === 0 ? this.#inactive + 1 : 0
-    const decodeFps = this.#decodeFps
-    if (decodeFps === null || this.#inactive >= INACTIVE_TICKS) return this.#lowered()
-    const limited = Math.min(Math.floor((decodeFps * this.#tenths) / 10), this.#userFps)
-    const trend = this.#trend(queued, decodeFps, limited)
-    const changed = this.#userChanged
-    this.#userChanged = false
-    if (this.#lastFps !== null && trend === null && !changed) return null
-    let next = limited
-    if (trend === 'down' && limited < queued) next = Math.floor(limited / 2)
-    next = Math.max(1, next)
-    if (next === this.#lastFps) return null
-    this.#lastFps = next
+    const next = this.#next(backlog)
+    if (next === this.#fps) return null
+    this.#fps = next
     return next
   }
 
-  // Without a decode rate the decoder's headroom is unknown, so only a lower ceiling goes out now.
-  #lowered(): number | null {
-    if (!this.#userChanged || this.#userFps >= (this.#lastFps ?? this.#startFps)) return null
-    this.#userChanged = false
-    this.#lastFps = this.#userFps
-    return this.#userFps
+  #next(backlog: number): number {
+    if (this.#userChanged) {
+      this.#userChanged = false
+      this.#idle = 0
+      return this.#userFps
+    }
+    // A screen that stopped changing sends nothing, so what still waits says nothing new.
+    if (backlog >= BACKLOG && this.#inactive < INACTIVE_TICKS) {
+      this.#idle = 0
+      return Math.min(this.#fps, Math.max(MIN_AUTO_FPS, Math.floor(this.#fps / 2)))
+    }
+    this.#idle++
+    if (this.#idle <= IDLE_TICKS) return this.#fps
+    return Math.min(this.#userFps, this.#fps + STEP_UP)
   }
 
   mayRefresh(now: number): boolean {
@@ -103,23 +103,5 @@ export class FpsGovernor {
     this.#refreshes++
     this.#lastRefreshAt = now
     return true
-  }
-
-  #trend(queued: number, decodeFps: number, limited: number): 'up' | 'down' | null {
-    const last = this.#lastFps ?? this.#userFps
-    if (last > this.#userFps) {
-      this.#idle = 0
-      return 'down'
-    }
-    if ((queued > 1 && last > limited) || queued > Math.max(1, Math.floor(decodeFps / 2))) {
-      this.#idle = 0
-      return 'down'
-    }
-    if (queued > 1) {
-      this.#idle = 0
-      return null
-    }
-    this.#idle++
-    return this.#idle > IDLE_TICKS && last + STEP_UP <= limited ? 'up' : null
   }
 }

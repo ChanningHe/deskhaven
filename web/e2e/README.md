@@ -153,3 +153,10 @@ only. A and B keep a small xterm printing random bytes on the device screen, C a
 requests) and probes the end-to-end latency every 7 s the way the soak does (p50, p95, and
 the p95 of the first and the last minute). Each test prints one `PERF {json}` line and attaches
 the same JSON as `perf.json`; it asserts only that the session stays up and samples came in.
+
+F60 (1.5 over the relay and over WebRTC) asks for 60 fps with a small xterm that changes color
+more than 60 times a second (`flicker`), drops the first 30 s and samples 60 s. It asserts that
+the `custom_fps` sent reaches 60 within 20 s and stays there, and, when the device logs its
+target, that the fps received is at least 0.9 × the device's `qos_trace` target. The device
+logs it with `RD_E2E_PEER_RUST_LOG='debug,librustdesk::server::video_qos=trace'` (passed to
+each client as `RUST_LOG`).

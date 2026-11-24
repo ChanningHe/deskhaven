@@ -98,7 +98,7 @@ class RemoteSession implements Session {
       quality: this.#quality.current,
     }))
     const loginFps = options.maxFps ?? DEFAULT_FPS
-    const governor = new FpsGovernor({ direct: handshake.link === 'webrtc', userFps: loginFps })
+    const governor = new FpsGovernor({ userFps: loginFps })
     this.#governor = governor
     this.#sentFps = loginFps
     this.#video = new VideoPipeline({
@@ -273,7 +273,7 @@ class RemoteSession implements Session {
   #steer(): void {
     const fps = this.#governor.tick({
       fps: this.#meter.stats.get().fps,
-      queued: this.#video.queued,
+      backlog: this.#video.decodeQueueSize,
     })
     if (fps !== null) {
       this.#send(customFps(fps))

@@ -5,6 +5,7 @@ import { ImageQuality, OptionMessage_BoolOption } from '../proto/gen/message_pb.
 import { startSession, type Session } from '../session/session'
 import { FakeClock, FakeHandshake, PEER_INFO } from '../session/testing'
 import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
+import { BACKLOG } from '../video/fps-governor'
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type RemoteSettings } from '../settings/settings'
 import { START_LEVEL, START_QUALITY } from '../video/quality-governor'
 import { RemoteController } from './controller'
@@ -73,13 +74,25 @@ describe('RemoteController settings', () => {
     expect(controller.settings.get().fps).toBe(20)
   })
 
-  it("logs in at the governor's starting quality and the starting fps of the settings", async () => {
+  it("logs in at the governor's starting quality and the fps of the settings", async () => {
     const f = await connected({ quality: 'best', fps: 60 })
     expect(loginOptionOf(f)).toMatchObject({
       imageQuality: ImageQuality.NotSet,
       customImageQuality: START_LEVEL << 8,
-      customFps: 30,
+      customFps: 60,
     })
+    expect(f.startSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      60,
+    )
+  })
+
+  it('tells an activated session no fps: it logged in with the one of the settings', async () => {
+    const f = await connected({ fps: 60 })
+    f.session.activate()
+    expect(f.session.patches).toEqual([{ quality: DEFAULT_SETTINGS.quality }])
   })
 
   it('logs in again with the settings as they are by then', async () => {
@@ -118,13 +131,13 @@ describe('RemoteController settings in a session', () => {
     expect(f.session.patches).toEqual([{ maxFps: 45 }])
   })
 
-  it('puts the fps back to 30 with a preset quality', async () => {
+  it('keeps the fps with a preset quality', async () => {
     const f = await connected({ quality: { custom: 60 }, fps: 50 })
     f.session.activate()
     f.session.patches.length = 0
     f.controller.updateSettings({ quality: 'low' })
-    expect(f.controller.settings.get()).toMatchObject({ quality: 'low', fps: 30 })
-    expect(f.session.patches).toEqual([{ maxFps: 30, quality: 'low' }])
+    expect(f.controller.settings.get()).toMatchObject({ quality: 'low', fps: 50 })
+    expect(f.session.patches).toEqual([{ quality: 'low' }])
   })
 
   it.each([
@@ -146,7 +159,7 @@ describe('RemoteController settings in a session', () => {
     expect(f.session.patches).toEqual([])
 
     f.session.activate()
-    expect(f.session.patches).toEqual([{ maxFps: 60, quality: { custom: 70 } }])
+    expect(f.session.patches).toEqual([{ quality: { custom: 70 } }])
     f.session.state.set({ kind: 'active' })
     expect(f.session.patches).toHaveLength(1)
   })
@@ -276,6 +289,9 @@ describe('RemoteController fps below the login one', () => {
       clock.advance(1)
       link.decoders.last.output()
     }
+    link.decoders.last.decodeQueueSize = BACKLOG
+    clock.tick()
+    link.decoders.last.decodeQueueSize = 0
     for (let i = 0; i < TICKS; i++) clock.tick()
   }
 

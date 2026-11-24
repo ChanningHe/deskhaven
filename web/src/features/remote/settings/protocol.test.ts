@@ -17,7 +17,7 @@ import {
   qualityFields,
   ungoverned,
 } from './protocol'
-import { DEFAULT_SETTINGS, type Quality, type RemoteSettings } from './settings'
+import { DEFAULT_SETTINGS, MAX_FPS, type Quality, type RemoteSettings } from './settings'
 
 const with_ = (patch: Partial<RemoteSettings>): RemoteSettings => ({
   ...DEFAULT_SETTINGS,
@@ -52,14 +52,15 @@ describe('loginOption', () => {
     }
   })
 
-  it('starts no faster than the governor does, and takes a lower user fps', () => {
-    expect(loginOption(with_({ fps: 60 })).customFps).toBe(DEFAULT_FPS)
+  it("asks for the user's fps at once, never above MAX_FPS", () => {
+    expect(loginOption(with_({ fps: 60 })).customFps).toBe(60)
     expect(loginOption(with_({ fps: 12 })).customFps).toBe(12)
+    expect(loginOption(with_({ fps: MAX_FPS + 30 })).customFps).toBe(MAX_FPS)
   })
 
   it('tells what loginSettings says the peer was told', () => {
     const settings = with_({ quality: 'best', fps: 60 })
-    expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 30 })
+    expect(loginSettings(settings)).toEqual({ ...settings, quality: START_QUALITY, fps: 60 })
   })
 
   it('never asks for audio at login: no AudioContext runs before a click', () => {

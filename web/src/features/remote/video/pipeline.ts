@@ -88,10 +88,6 @@ export class VideoPipeline {
     return this.#decoder?.decodeQueueSize ?? 0
   }
 
-  get queued(): number {
-    return Math.max(0, this.#pending.length - 1)
-  }
-
   /** The peer switched display: what is in flight belongs to the old one. */
   reset(): void {
     this.#closeDecoder()

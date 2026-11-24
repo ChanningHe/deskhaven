@@ -94,6 +94,27 @@ export function noise(device: DeviceInfo, at: string, cols: number, rows: number
   ])
 }
 
+// Clears to the next of six colors well over 60 times a second, so the device always has a new
+// frame to send (a 1.5 X11 capture equal to the last one sends nothing), and cheap to encode, so
+// the bitrate never caps the frame rate. With `sleep 0.008` a 60 fps target got ~52.
+const FLICKER =
+  'i=0; while :; do printf "\\033[4%dm\\033[2J" $((i % 6 + 1)); i=$((i + 1)); sleep 0.004; done'
+
+export function flicker(device: DeviceInfo, at: string, cols: number, rows: number): XWindow {
+  return run(device, tool('xterm'), [
+    '-geometry',
+    `${String(cols)}x${String(rows)}${at}`,
+    '-name',
+    'rd-flicker',
+    '-class',
+    'RdFlicker',
+    '-e',
+    '/bin/sh',
+    '-c',
+    FLICKER,
+  ])
+}
+
 /** A clock that redraws every second, at the bottom left. */
 export function xclock(device: DeviceInfo): XWindow {
   return run(device, tool('xclock'), [

@@ -126,11 +126,18 @@ async function startClient(
         ...xdoLibrary(),
         RUSTDESK_FORCED_DISPLAY_SERVER: 'x11',
         XDG_SESSION_TYPE: 'x11',
+        ...peerLogFilter(),
       },
       logFile: join(ctx.logs, `rustdesk-${name}.log`),
     }),
   )
   return { id, display, scratchDir: ctx.root }
+}
+
+/** The client's RUST_LOG, e.g. `debug,librustdesk::server::video_qos=trace` for perf.remote.ts. */
+function peerLogFilter(): { RUST_LOG?: string } {
+  const filter = process.env.RD_E2E_PEER_RUST_LOG
+  return filter === undefined || filter === '' ? {} : { RUST_LOG: filter }
 }
 
 // nixpkgs' 1.5 cannot dlopen libxdo, and without it sends no CursorPosition.

@@ -114,9 +114,7 @@ export function saveSettings(
   }
 }
 
-/** Fields to change; an invalid one keeps its old value. Picking a preset resets fps. */
+/** Fields to change; an invalid one keeps its old value. */
 export function withPatch(prev: RemoteSettings, patch: Partial<RemoteSettings>): RemoteSettings {
-  const presetPicked = typeof patch.quality === 'string'
-  const merged = { ...prev, ...(presetPicked ? { fps: DEFAULT_FPS } : {}), ...patch }
-  return settingsFrom(merged, prev)
+  return settingsFrom({ ...prev, ...patch }, prev)
 }

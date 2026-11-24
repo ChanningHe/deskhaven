@@ -6,9 +6,10 @@ import { device, expectDesktop, openFromDeviceList, submitPassword } from './sup
 import { tool } from './support/env.ts'
 import type { ClientKey, DeviceInfo } from './support/env.ts'
 import { test as base, expect } from './support/fixtures.ts'
+import { deviceLog, qosTargets } from './support/peer-log.ts'
 import { startProxy } from './support/proxy.ts'
 import type { Shaping } from './support/proxy.ts'
-import { noise, xterm } from './support/x11.ts'
+import { flicker, noise, xterm } from './support/x11.ts'
 import type { XWindow } from './support/x11.ts'
 
 const SAMPLE_MS = Number(process.env.RD_E2E_PERF_SECONDS ?? '180') * 1000
@@ -53,7 +54,17 @@ const CASES: [ConditionName, ClientKey, Transport][] = [
 ]
 
 const DEFAULT_QUALITY = 'balanced'
-const STATS = ['fps', 'kbps', 'delayMs', 'decodeMs', 'decodeQueue', 'keyRequests', 'pointerMoves']
+const STATS = [
+  'fps',
+  'kbps',
+  'delayMs',
+  'decodeMs',
+  'decodeQueue',
+  'keyRequests',
+  'pointerMoves',
+  'sentFps',
+  'decodeFps',
+]
 type Sample = Record<string, number | null>
 interface QualityTrace {
   activeAt: number | null
@@ -130,7 +141,7 @@ async function startSampling(page: Page) {
     const samples: Record<string, number | null>[] = []
     Reflect.set(window, '__perfSamples', samples)
     setInterval(() => {
-      const sample: Record<string, number | null> = {}
+      const sample: Record<string, number | null> = { atMs: Date.now() }
       for (const stat of stats) {
         const raw = document.querySelector(`[data-stat="${stat}"]`)?.getAttribute('data-value')
         sample[stat] = raw === undefined || raw === null || raw === '' ? null : Number(raw)
@@ -278,5 +289,105 @@ for (const [name, key, transport] of CASES) {
         for (const win of windows) win.stop()
       }
     })
+  })
+}
+
+// F60: the user asks for 60 fps and the device always has a new, cheap frame. Shows whether the
+// requested fps reaches the device and whether what arrives keeps up with the device's target.
+const F60 = {
+  userFps: 60,
+  quality: 'balanced',
+  warmUpMs: 30_000,
+  sampleMs: 60_000,
+  sentWithinMs: 20_000,
+  keepsUpWith: 0.9,
+  screen: { cols: 60, rows: 20 },
+} as const
+
+for (const transport of ['Relay', 'WebRTC'] as const) {
+  test(`@slow perf F60: 1.5 over ${transport}`, async ({ page }) => {
+    test.setTimeout(F60.warmUpMs + F60.sampleMs + 2 * MINUTE_MS)
+    const target = device('1.5')
+    test.skip(target === undefined, 'no 1.5 client in this run')
+    if (target === undefined) return
+    await page.addInitScript(
+      ([key, settings]) => {
+        localStorage.setItem(key, JSON.stringify({ v: 1, settings }))
+      },
+      [SETTINGS_KEY, { quality: F60.quality, fps: F60.userFps }] as const,
+    )
+    if (transport === 'Relay') {
+      await page.addInitScript(() => {
+        Reflect.deleteProperty(window, 'RTCPeerConnection')
+      })
+    }
+    await traceQuality(page)
+
+    await openFromDeviceList(page, target.id)
+    await submitPassword(page)
+    const connected = page.locator('header span.rounded-full', { hasText: 'Connected' })
+    await expect(connected).toContainText(transport)
+    await page.getByRole('button', { name: 'Display' }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Statistics' }).click()
+    await expectDesktop(page, transport)
+
+    const colors = flicker(target, '+0+0', F60.screen.cols, F60.screen.rows)
+    try {
+      await startSampling(page)
+      await page.waitForTimeout(F60.warmUpMs + F60.sampleMs)
+      await expect(connected).toContainText(transport)
+      const samples = await samplesOf(page)
+      const trace = await page.evaluate(() => Reflect.get(window, '__qualityTrace') as QualityTrace)
+      const activeAt = trace.activeAt ?? samples[0]?.atMs ?? 0
+      const from = (samples[0]?.atMs ?? activeAt) + F60.warmUpMs
+      const kept = samples.filter((s) => (s.atMs ?? 0) >= from)
+      const column = (stat: string) => numbers(kept.map((s) => s[stat]))
+      const fps = column('fps')
+      const reached = samples.find((s) => s.sentFps === F60.userFps)
+      const sentAtMs = reached ? (reached.atMs ?? activeAt) - activeAt : null
+      const sentHeld =
+        reached !== undefined &&
+        samples.slice(samples.indexOf(reached)).every((s) => s.sentFps === F60.userFps)
+      const log = deviceLog('1.5', target)
+      const qos = log === null ? [] : qosTargets(log).filter((q) => q.atMs >= activeAt)
+      const targets = qos.filter((q) => q.atMs >= from)
+      const peerTarget = percentile(
+        targets.map((q) => q.fps),
+        50,
+      )
+      const report = {
+        condition: 'F60',
+        key: '1.5',
+        transport,
+        warmUpSeconds: F60.warmUpMs / 1000,
+        seconds: F60.sampleMs / 1000,
+        fps: { p50: percentile(fps, 50), p05: percentile(fps, 5), n: fps.length },
+        sentFps: { reachedMs: sentAtMs, held: sentHeld, last: samples.at(-1)?.sentFps ?? null },
+        decodeFpsP50: percentile(column('decodeFps'), 50),
+        decodeMsP50: percentile(column('decodeMs'), 50),
+        kbpsP50: percentile(column('kbps'), 50),
+        peerTargetFps: {
+          p50: peerTarget,
+          min: targets.length === 0 ? null : Math.min(...targets.map((q) => q.fps)),
+          n: targets.length,
+          logged: log !== null,
+        },
+        samples,
+        peerTrace: qos.map((q) => ({ ...q, atMs: q.atMs - activeAt })),
+      }
+      process.stdout.write(`PERF ${JSON.stringify(report)}\n`)
+      await test
+        .info()
+        .attach('perf.json', { body: JSON.stringify(report), contentType: 'application/json' })
+      expect(fps.length).toBeGreaterThan(0)
+      expect(sentAtMs).not.toBeNull()
+      expect(sentAtMs ?? Infinity).toBeLessThanOrEqual(F60.sentWithinMs)
+      expect(sentHeld).toBe(true)
+      if (peerTarget !== null) {
+        expect(percentile(fps, 50) ?? 0).toBeGreaterThanOrEqual(F60.keepsUpWith * peerTarget)
+      }
+    } finally {
+      colors.stop()
+    }
   })
 }

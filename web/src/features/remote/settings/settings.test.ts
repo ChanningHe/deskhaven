@@ -185,12 +185,12 @@ describe('settingsFrom', () => {
 })
 
 describe('withPatch', () => {
-  it('goes back to 30 fps when a preset quality is picked', () => {
+  it('keeps the fps when a preset quality is picked', () => {
     const fast: RemoteSettings = { ...DEFAULT_SETTINGS, quality: { custom: 40 }, fps: 60 }
-    expect(withPatch(fast, { quality: 'best' })).toEqual({ ...fast, quality: 'best', fps: 30 })
+    expect(withPatch(fast, { quality: 'best' })).toEqual({ ...fast, quality: 'best' })
   })
 
-  it('keeps the fps for a custom quality, and an fps that comes with the preset', () => {
+  it('keeps the fps for a custom quality, and takes an fps that comes with the preset', () => {
     const fast: RemoteSettings = { ...DEFAULT_SETTINGS, fps: 60 }
     expect(withPatch(fast, { quality: { custom: 40 } }).fps).toBe(60)
     expect(withPatch(fast, { quality: 'low', fps: 45 }).fps).toBe(45)
