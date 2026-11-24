@@ -418,6 +418,27 @@ describe('remote page: active session', () => {
     ])
   })
 
+  it('sends Esc on to the device once the limits popover has closed', async () => {
+    const { user, session } = await open()
+    act(() => {
+      session.activate()
+    })
+    await user.click(screen.getByRole('button', { name: '使用限制' }))
+    expect(await screen.findByRole('dialog', { name: '使用限制' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+    const keys = focusScreen()
+    key(keys, 'keydown', { key: 'Escape', code: 'Escape' }, 100)
+    key(keys, 'keyup', { key: 'Escape', code: 'Escape' }, 150)
+    expect(document.activeElement).toBe(keys)
+    expect(session.inputs.map((i) => (i.kind === 'key' ? `${i.key} ${i.down}` : i.kind))).toEqual([
+      'Escape true',
+      'Escape false',
+    ])
+  })
+
   it('leaves the screen for the toolbar on Esc twice, letting go of held keys', async () => {
     const { session } = await open()
     act(() => {

@@ -1,3 +1,4 @@
+import { Popover } from '@base-ui/react/popover'
 import type { ComponentProps, ReactElement, ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -14,7 +15,7 @@ import { cn } from '@/lib/utils'
 const TOOL = 'max-lg:size-10'
 
 /** A control with its hint below it; the hint repeats or extends the control's name. */
-function Hinted({ hint, render }: { hint: ReactNode; render: ReactElement }) {
+function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
   return (
     <Tooltip>
       <TooltipTrigger render={render} />
@@ -29,7 +30,7 @@ export function IconButton({
   hint = label,
   className,
   ...props
-}: { label: string; hint?: ReactNode } & ComponentProps<typeof Button>) {
+}: { label: string; hint?: string } & ComponentProps<typeof Button>) {
   return (
     <Hinted
       hint={hint}
@@ -73,6 +74,36 @@ export function ToolbarMenu({
       />
       <DropdownMenuContent className={cn('w-60', className)}>{children}</DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** Opens on hover, click or tap; titled by its label so screen readers announce it. */
+export function ToolbarPopover({
+  label,
+  icon,
+  children,
+}: {
+  label: string
+  icon: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        openOnHover
+        render={<Button variant="ghost" size="icon" aria-label={label} className={TOOL} />}
+      >
+        {icon}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="end" sideOffset={4} className="isolate z-50">
+          <Popover.Popup className="w-80 max-w-(--available-width) origin-(--transform-origin) space-y-2 rounded-lg bg-popover p-3 text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+            <Popover.Title className="text-sm font-medium">{label}</Popover.Title>
+            {children}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 
