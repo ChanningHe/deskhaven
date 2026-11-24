@@ -66,7 +66,7 @@ describe('RemoteController', () => {
         myId: 'alice',
         myName: 'Alice',
         serverPk: Uint8Array.from('k'.repeat(32), (c) => c.charCodeAt(0)),
-        decoders: { vp9: true, av1: false, vp8: true },
+        decoders: { vp9: true, av1: false, vp8: true, h264: false, h265: false },
       }),
       { viewOnly: false, lockAfterEnd: false },
       30,
@@ -88,7 +88,13 @@ describe('RemoteController', () => {
 
   it('fails without opening a session when the browser decodes nothing', async () => {
     const deps = fakeDeps()
-    deps.probeDecoders.mockResolvedValue({ vp9: false, av1: false, vp8: false })
+    deps.probeDecoders.mockResolvedValue({
+      vp9: false,
+      av1: false,
+      vp8: false,
+      h264: true,
+      h265: true,
+    })
     const controller = new RemoteController(DEVICE, deps.deps)
     controller.connect()
     await settle()

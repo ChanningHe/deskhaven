@@ -17,8 +17,9 @@ import { FakeDecoders, vp9Frame } from '../video/fake-decoder'
 import { startSession } from './session'
 import { FakeClock, FakeHandshake, PEER_INFO, misc, settle } from './testing'
 
-const ALL: DecoderSupport = { vp9: true, av1: true, vp8: true }
-const { VP9, AV1 } = SupportedDecoding_PreferCodec
+const ALL: DecoderSupport = { vp9: true, av1: true, vp8: true, h264: true, h265: true }
+const { VP9, AV1, H264 } = SupportedDecoding_PreferCodec
+const NO_H26X = { h264: 'peer', h265: 'peer' } as const
 
 function decodings(sent: Message[]): SupportedDecoding[] {
   return sent.flatMap((m) =>
@@ -30,7 +31,7 @@ function decodings(sent: Message[]): SupportedDecoding[] {
   )
 }
 
-function videoFrame(codec: 'av1s' | 'vp8s', key: boolean): Message {
+function videoFrame(codec: 'av1s' | 'vp8s' | 'h264s', key: boolean): Message {
   return msg({
     case: 'videoFrame',
     value: create(VideoFrameSchema, {
@@ -43,7 +44,7 @@ function videoFrame(codec: 'av1s' | 'vp8s', key: boolean): Message {
 }
 
 async function codecSession(
-  encoding: { av1: boolean; vp8: boolean } | null = { av1: true, vp8: true },
+  encoding: { av1: boolean; vp8: boolean; h264?: boolean } | null = { av1: true, vp8: true },
   decoders: DecoderSupport = ALL,
 ) {
   const clock = new FakeClock()
@@ -66,9 +67,9 @@ async function codecSession(
 
 describe('session codecs', () => {
   it("offers what the browser decodes and the peer's PeerInfo says it encodes", async () => {
-    const s = await codecSession({ av1: false, vp8: true }, { vp9: true, av1: true, vp8: false })
+    const s = await codecSession({ av1: false, vp8: true }, { ...ALL, vp8: false })
     expect(s.session.codecs.get()).toEqual({
-      support: { vp9: 'ok', av1: 'peer', vp8: 'browser' },
+      support: { vp9: 'ok', av1: 'peer', vp8: 'browser', ...NO_H26X },
       requested: 'vp9',
       receiving: null,
     })
@@ -76,7 +77,12 @@ describe('session codecs', () => {
 
   it('takes a peer without an encoding in its PeerInfo as VP9 only', async () => {
     const s = await codecSession(null)
-    expect(s.session.codecs.get().support).toEqual({ vp9: 'ok', av1: 'peer', vp8: 'peer' })
+    expect(s.session.codecs.get().support).toEqual({
+      vp9: 'ok',
+      av1: 'peer',
+      vp8: 'peer',
+      ...NO_H26X,
+    })
   })
 
   it('follows Misc.supported_encoding', async () => {
@@ -87,7 +93,42 @@ describe('session codecs', () => {
         value: create(SupportedEncodingSchema, { av1: true, vp8: false, h265: true }),
       }),
     )
-    expect(s.session.codecs.get().support).toEqual({ vp9: 'ok', av1: 'ok', vp8: 'peer' })
+    expect(s.session.codecs.get().support).toEqual({
+      vp9: 'ok',
+      av1: 'ok',
+      vp8: 'peer',
+      ...NO_H26X,
+    })
+  })
+
+  it('keeps H264 offered by PeerInfo when Misc.supported_encoding, our usable set, leaves it out', async () => {
+    const s = await codecSession({ av1: true, vp8: true, h264: true })
+    expect(s.session.codecs.get().support.h264).toBe('ok')
+    await s.peerSends(
+      misc({
+        case: 'supportedEncoding',
+        value: create(SupportedEncodingSchema, { av1: true, vp8: true, h264: false }),
+      }),
+    )
+    expect(s.session.codecs.get().support.h264).toBe('ok')
+  })
+
+  it('asks for H264 declaring it, and decodes its Annex B frames', async () => {
+    const s = await codecSession({ av1: true, vp8: true, h264: true })
+    s.session.setOptions({ decoding: 'h264' })
+    expect(s.sent()).toHaveLength(1)
+    expect(s.sent()[0]).toMatchObject({
+      abilityVp9: 1,
+      abilityH264: 1,
+      abilityH265: 0,
+      prefer: H264,
+    })
+    await s.peerSends(videoFrame('h264s', true))
+    s.created.last.output()
+    s.clock.tick()
+    expect(s.created.last.codec).toBe('avc1.640033')
+    expect(s.session.stats.get().codec).toBe('avc1.640033')
+    expect(s.session.codecs.get()).toMatchObject({ requested: 'h264', receiving: 'h264' })
   })
 
   it('switches from VP9 to AV1 with one Misc.option, abilities as at login', async () => {

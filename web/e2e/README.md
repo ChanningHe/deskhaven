@@ -90,23 +90,23 @@ WebSocket port, the rest to the console: the shape of `deploy/compose/Caddyfile`
 The owner is created through the setup API, then `login.setup.remote.ts` signs in, turns
 `web_client.enabled` on and waits for the devices.
 
-| spec                   | covers                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| `reconnect.remote.ts`  | relay WebSocket cut under a session: back without the password; past the budget, asked once      |
-| `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5        |
-| `webrtc.remote.ts`     | (b) 1.5 over WebRTC, then Display > Relay only moves it to the relay; (c) UDP closed: relay      |
-| `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map         |
-| `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture   |
-| `codec.remote.ts`      | Display > Codec on a 1.5 client: VP8, then AV1, mid-session; the overlay names it, frames go on  |
-| `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn       |
-| `clipboard.remote.ts`  | Chromium only: text syncs both ways with no clicks; text copied before the session is not sent   |
-| `paste.remote.ts`      | Chromium and Firefox: three paste shortcuts paste the local text into the device's xterm         |
-| `keys.remote.ts`       | Input > Send keys: Alt+Tab, PrintScreen and Win show up in a device xterm; 1.4 and 1.5           |
-| `viewonly.remote.ts`   | Actions > View only: mouse and keys reach no device (X pointer, xterm) until it is off; 1.4, 1.5 |
-| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry              |
-| `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                   |
-| `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute             |
-| `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)             |
+| spec                   | covers                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `reconnect.remote.ts`  | relay WebSocket cut under a session: back without the password; past the budget, asked once        |
+| `relay.remote.ts`      | (a) device list, "Connect in browser", password, decoded frame, pill "Relay"; 1.4 and 1.5          |
+| `webrtc.remote.ts`     | (b) 1.5 over WebRTC, then Display > Relay only moves it to the relay; (c) UDP closed: relay        |
+| `input.remote.ts`      | (d) click into an xterm, type a random line into `tee`, read the file; Translate and Map           |
+| `resolution.remote.ts` | a second Xvfb mode is listed in the Display menu; picking it and "Original" resize the picture     |
+| `codec.remote.ts`      | Display > Codec on a 1.5 client: VP8, then AV1, mid-session; H264/H265 greyed out; 30-frame sample |
+| `cursor.remote.ts`     | the peer's shape is the `blob:` CSS cursor under the real CSP; a device-side move is drawn         |
+| `clipboard.remote.ts`  | Chromium only: text syncs both ways with no clicks; text copied before the session is not sent     |
+| `paste.remote.ts`      | Chromium and Firefox: three paste shortcuts paste the local text into the device's xterm           |
+| `keys.remote.ts`       | Input > Send keys: Alt+Tab, PrintScreen and Win show up in a device xterm; 1.4 and 1.5             |
+| `viewonly.remote.ts`   | Actions > View only: mouse and keys reach no device (X pointer, xterm) until it is off; 1.4, 1.5   |
+| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry                |
+| `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                     |
+| `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute               |
+| `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)               |
 
 Needed on the machine: `Xvfb`, `xterm`, `xclock`, `xdotool`, `xrandr`, `xclip`, `hbbr` (rustdesk-server 1.1.16),
 the client launchers, a non-loopback IPv4 address (hbbr treats loopback TCP as its admin

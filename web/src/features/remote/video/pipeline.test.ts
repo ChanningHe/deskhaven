@@ -33,6 +33,8 @@ describe('codec selection', () => {
   it.each([
     ['av1s', 'av1', 'av01.0.04M.08'],
     ['vp8s', 'vp8', 'vp8'],
+    ['h264s', 'h264', 'avc1.640033'],
+    ['h265s', 'h265', 'hvc1.1.6.L153.B0'],
   ] as const)('maps %s to %s (%s)', (union, codec, string) => {
     const frame = create(VideoFrameSchema, {
       union: { case: union, value: create(EncodedVideoFramesSchema) },
@@ -42,8 +44,6 @@ describe('codec selection', () => {
   })
 
   it.each([
-    ['h264s', create(VideoFrameSchema, { union: { case: 'h264s', value: {} } })],
-    ['h265s', create(VideoFrameSchema, { union: { case: 'h265s', value: {} } })],
     ['rgb', create(VideoFrameSchema, { union: { case: 'rgb', value: {} } })],
     ['yuv', create(VideoFrameSchema, { union: { case: 'yuv', value: {} } })],
     ['nothing', create(VideoFrameSchema)],
@@ -53,6 +53,34 @@ describe('codec selection', () => {
 })
 
 describe('VideoPipeline', () => {
+  it.each([
+    ['h264s', 'avc1.640033'],
+    ['h265s', 'hvc1.1.6.L153.B0'],
+  ] as const)(
+    'decodes %s from its key frame on, with the key flags of the message',
+    (union, string) => {
+      const { decoders, calls, pipeline } = setup()
+      const frames = (...keys: boolean[]) =>
+        create(VideoFrameSchema, {
+          union: {
+            case: union,
+            value: create(EncodedVideoFramesSchema, {
+              frames: keys.map((key, i) => ({ key, data: Uint8Array.of(0, 0, 0, 1, i) })),
+            }),
+          },
+        })
+      pipeline.push(frames(false))
+      expect(decoders.created).toHaveLength(0)
+      expect(calls).toEqual({ keyRequests: 1 })
+      pipeline.push(frames(false, true, false))
+      expect(decoders.last.codec).toBe(string)
+      expect(decoders.last.decoded.map((c) => [c.key, [...c.data]])).toEqual([
+        [true, [0, 0, 0, 1, 1]],
+        [false, [0, 0, 0, 1, 2]],
+      ])
+    },
+  )
+
   it('decodes nothing before a key frame and asks for one once', () => {
     const { decoders, calls, pipeline } = setup()
     pipeline.push(vp9Frame(false))

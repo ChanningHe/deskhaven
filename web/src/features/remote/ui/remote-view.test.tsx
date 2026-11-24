@@ -234,7 +234,7 @@ describe('remote view: codec fallback', () => {
     act(() => {
       session.codecs.set({
         ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+        support: { vp9: 'ok', av1: 'failed', vp8: 'ok', h264: 'peer', h265: 'peer' },
         failed: 'av1',
         failedAt: 5000,
       })
@@ -247,7 +247,7 @@ describe('remote view: codec fallback', () => {
     act(() => {
       session.codecs.set({
         ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'ok', vp8: 'ignored' },
+        support: { vp9: 'ok', av1: 'ok', vp8: 'ignored', h264: 'peer', h265: 'peer' },
         failed: 'vp8',
         failedAt: 5000,
       })

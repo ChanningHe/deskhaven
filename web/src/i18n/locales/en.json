@@ -1798,7 +1798,9 @@
       "codecs": {
         "vp9": "VP9 (default)",
         "av1": "AV1",
-        "vp8": "VP8"
+        "vp8": "VP8",
+        "h264": "H264",
+        "h265": "H265"
       },
       "codecOption": "{{name}} <reason>({{reason}})</reason>",
       "codecBlocked": {
@@ -1808,6 +1810,7 @@
         "ignored": "the device did not switch in this session"
       },
       "codecReceiving": "Current: {{name}}",
+      "codecExperimental": "Experimental",
       "monitor": "Monitor",
       "monitorN": "Monitor {{n}}",
       "showRemoteCursor": "Show remote cursor",
@@ -1869,7 +1872,12 @@
         "balanced": "Balanced",
         "best": "Best",
         "custom": "Custom {{level}}"
-      }
+      },
+      "sampleExport": "Export video sample",
+      "sampleWaiting": "Waiting for a key frame…",
+      "sampleRecording": "Recorded {{frames}}/{{total}} frames",
+      "sampleCancel": "Cancel",
+      "sampleHint": "Records {{total}} raw video frames from the next key frame into a JSON file on this computer. Nothing is uploaded."
     },
     "sound": {
       "probing": "Sound",

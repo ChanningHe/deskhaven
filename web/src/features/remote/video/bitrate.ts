@@ -1,7 +1,7 @@
 // Ported from RustDesk (AGPL-3.0), tag 1.5.1: libs/scrap/src/common/codec.rs:893-895 (BR_*),
 // codec.rs:929-959 (base_bitrate), libs/scrap/src/common/vpxcodec.rs:325-327 (bitrate) and
 // src/server/video_qos.rs:443 (a custom level q is the ratio q·2/100).
-import { DECODER_PROBES } from '../handshake/login'
+import { DECODER_PROBES, LOGIN_CODECS } from '../handshake/login'
 import type { Preset, Quality } from '../settings/settings'
 
 export const PRESET_RATIO: Readonly<Record<Preset, number>> = {
@@ -45,7 +45,7 @@ export function targetKbps(quality: Quality, width: number, height: number): num
   return Math.trunc(baseBitrate(width, height) * ratioOf(quality))
 }
 
-const MODELED_CODECS: readonly string[] = Object.values(DECODER_PROBES)
+const MODELED_CODECS: readonly string[] = LOGIN_CODECS.map((codec) => DECODER_PROBES[codec])
 
 /** Whether targetKbps describes a stream of this WebCodecs codec; null is the VP9 we ask for. */
 export function bitrateModeled(codec: string | null): boolean {

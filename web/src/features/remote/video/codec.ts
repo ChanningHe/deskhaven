@@ -1,5 +1,7 @@
 import {
   DECODER_PROBES,
+  EXPERIMENTAL_CODECS,
+  LOGIN_CODECS,
   VIDEO_CODECS,
   decodable,
   preferring,
@@ -22,6 +24,8 @@ import type {
  *   Decoders do not hold a stream to the level; the 1280×800 capture decodes under it.
  * - AV1 `av01.0.04M.08`: Main profile, level 3.0, Main tier, 8 bits (AV1 ISO-BMFF binding).
  * - VP8 `vp8`: the registry's only VP8 string.
+ * - H264 `avc1.640033` and H265 `hvc1.1.6.L153.B0`: High and Main profile at level 5.1, configured
+ *   with no description, so chunks are Annex B with in-band parameter sets.
  */
 export function webCodecsString(codec: VideoCodec): string {
   return DECODER_PROBES[codec]
@@ -31,9 +35,17 @@ export const CODEC_NAMES: Readonly<Record<VideoCodec, string>> = {
   vp9: 'VP9',
   av1: 'AV1',
   vp8: 'VP8',
+  h264: 'H264',
+  h265: 'H265',
 }
 
-const UNION_CODECS = { vp9s: 'vp9', av1s: 'av1', vp8s: 'vp8' } as const
+const UNION_CODECS = {
+  vp9s: 'vp9',
+  av1s: 'av1',
+  vp8s: 'vp8',
+  h264s: 'h264',
+  h265s: 'h265',
+} as const
 
 export interface EncodedFrames {
   codec: VideoCodec
@@ -47,6 +59,8 @@ export function encodedFrames(message: VideoFrameMessage): EncodedFrames | null 
     case 'vp9s':
     case 'av1s':
     case 'vp8s':
+    case 'h264s':
+    case 'h265s':
       return { codec: UNION_CODECS[union.case], frames: union.value.frames }
     default:
       return null
@@ -132,7 +146,13 @@ interface Watch {
   arrived: boolean
 }
 
-const NO_PEER_CODECS: Readonly<Record<VideoCodec, boolean>> = { vp9: true, av1: false, vp8: false }
+const NO_PEER_CODECS: Readonly<Record<VideoCodec, boolean>> = {
+  vp9: true,
+  av1: false,
+  vp8: false,
+  h264: false,
+  h265: false,
+}
 
 /**
  * Moves the peer to the codec the user picked, once both sides can, and back to the login's
@@ -152,7 +172,7 @@ export class CodecSwitch implements CodecEvents {
 
   constructor(options: CodecSwitchOptions) {
     this.#options = options
-    this.#login = decodable(options.support, VIDEO_CODECS)[0] ?? 'vp9'
+    this.#login = decodable(options.support, LOGIN_CODECS)[0] ?? 'vp9'
     this.#view = { support: this.#support(), requested: this.#login, receiving: null }
   }
 
@@ -160,12 +180,24 @@ export class CodecSwitch implements CodecEvents {
     return this.#view
   }
 
-  /** PeerInfo.encoding, then each Misc.supported_encoding: what the peer can encode for us. */
+  /** PeerInfo.encoding: what the peer can encode (rustdesk 1.5.1 codec.rs:331-355). */
   peerEncodes(encoding: SupportedEncoding | undefined): void {
-    this.#peer = { vp9: true, av1: encoding?.av1 === true, vp8: encoding?.vp8 === true }
-    if (this.#watch && !this.#peer[this.#watch.codec]) this.#watch = null
-    this.#update({ support: this.#support() })
-    this.#apply()
+    this.#peerCan({
+      vp9: true,
+      av1: encoding?.av1 === true,
+      vp8: encoding?.vp8 === true,
+      h264: encoding?.h264 === true,
+      h265: encoding?.h265 === true,
+    })
+  }
+
+  /**
+   * Misc.supported_encoding: what the peer can encode that every connection declared
+   * (codec.rs:192-253). H264 and H265 stay as PeerInfo said: we declare them only once asked for,
+   * so this says nothing about them before.
+   */
+  peerUsable(encoding: SupportedEncoding): void {
+    this.#peerCan({ ...this.#peer, av1: encoding.av1, vp8: encoding.vp8 })
   }
 
   want(codec: VideoCodec): void {
@@ -190,7 +222,10 @@ export class CodecSwitch implements CodecEvents {
     if (codec === this.#view.requested) this.#errors = 0
     const watch = this.#watch
     if (!watch) return
-    if (codec === watch.codec || codec !== watch.from) this.#watch = null
+    // Asked for H264/H265, a third codec is the peer's Auto pick for a codec not every
+    // connection declared (rustdesk 1.5.1 codec.rs:272-302): a refusal, like the old codec.
+    const elsewhere = codec !== watch.from && !EXPERIMENTAL_CODECS.includes(watch.codec)
+    if (codec === watch.codec || elsewhere) this.#watch = null
     else this.#sawOther(watch)
   }
 
@@ -212,18 +247,30 @@ export class CodecSwitch implements CodecEvents {
     this.#options.refresh()
   }
 
+  #peerCan(peer: Record<VideoCodec, boolean>): void {
+    this.#peer = peer
+    if (this.#watch && !this.#peer[this.#watch.codec]) this.#watch = null
+    this.#update({ support: this.#support() })
+    this.#apply()
+  }
+
   #sawOther(watch: Watch): void {
     if (this.#options.now() - watch.since >= SWITCH_TIMEOUT_MS / 2) watch.late = true
   }
 
   #support(): Record<VideoCodec, CodecSupport> {
     const of = (codec: VideoCodec): CodecSupport => {
+      if (!this.#peer[codec]) return 'peer'
       if (!this.#options.support[codec]) return 'browser'
-      const given = this.#given.get(codec)
-      if (given) return given
-      return this.#peer[codec] ? 'ok' : 'peer'
+      return this.#given.get(codec) ?? 'ok'
     }
-    return { vp9: of('vp9'), av1: of('av1'), vp8: of('vp8') }
+    return {
+      vp9: of('vp9'),
+      av1: of('av1'),
+      vp8: of('vp8'),
+      h264: of('h264'),
+      h265: of('h265'),
+    }
   }
 
   #apply(): void {
@@ -234,10 +281,10 @@ export class CodecSwitch implements CodecEvents {
 
   /** Sends first and tells after: a listener that asks again then finds it already asked. */
   #request(codec: VideoCodec, patch: Partial<CodecView> = {}): void {
-    const decoding = supportedDecoding(
-      this.#options.support,
-      VIDEO_CODECS.filter((c) => !this.#given.has(c)),
+    const declared = VIDEO_CODECS.filter(
+      (c) => !this.#given.has(c) && (c === codec || LOGIN_CODECS.includes(c)),
     )
+    const decoding = supportedDecoding(this.#options.support, declared)
     if (!decoding) return
     const from = this.#view.receiving ?? this.#view.requested
     const since = this.#options.now()

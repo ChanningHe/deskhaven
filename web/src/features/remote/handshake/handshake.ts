@@ -23,10 +23,10 @@ import {
 import { IdPkSchema, type IdPk } from '../proto/gen/rendezvous_pb.js'
 import { TransportError, type KeyedTransport, type Transport } from '../transport/transport'
 import {
+  LOGIN_CODECS,
   loginRequest,
   loginStateForError,
   supportedDecoding,
-  VIDEO_CODECS,
   type DecoderSupport,
   type LoginFields,
   type LoginState,
@@ -220,7 +220,7 @@ class PeerHandshake implements Handshake {
 
   #start(): void {
     const params = this.#params
-    const decoding = supportedDecoding(params.decoders, VIDEO_CODECS)
+    const decoding = supportedDecoding(params.decoders, LOGIN_CODECS)
     if (!decoding) throw new Error('no supported video decoder')
     const peer = verifyIdPk(params.signedPeerPk, params.serverPk, params.targetId, 'server')
     this.#devicePk = peer.pk

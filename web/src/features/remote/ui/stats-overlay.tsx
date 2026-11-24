@@ -1,9 +1,11 @@
 import type { TFunction } from 'i18next'
-import { Fragment } from 'react'
+import { Download, X } from 'lucide-react'
+import { Fragment, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { Session } from '../session/session'
 import type { Quality } from '../settings/settings'
+import { downloadSample, SAMPLE_FRAMES } from '../video/sample-export'
 import type { Transport } from './remote-bar'
 import { useStore } from './use-remote'
 
@@ -69,18 +71,68 @@ export function StatsOverlay({
     ['quality', qualityValue(s.quality), qualityText(s.quality, t)],
   ]
   return (
-    <dl
+    <div
+      role="group"
       aria-label={t('remote.stats.label')}
-      className="pointer-events-none absolute top-3 left-3 grid grid-cols-[auto_auto] gap-x-4 rounded-lg bg-black/75 px-3 py-2 font-mono text-[11px] leading-[18px] text-white tabular-nums shadow-lg ring-1 ring-white/10 backdrop-blur-sm"
+      className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2"
     >
-      {rows.map(([stat, value, text]) => (
-        <Fragment key={stat}>
-          <dt className="text-white/65">{t(`remote.stats.${stat}`)}</dt>
-          <dd data-stat={stat} data-value={value ?? ''} className="text-right">
-            {text}
-          </dd>
-        </Fragment>
-      ))}
-    </dl>
+      <dl className="grid grid-cols-[auto_auto] gap-x-4 rounded-lg bg-black/75 px-3 py-2 font-mono text-[11px] leading-[18px] text-white tabular-nums shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+        {rows.map(([stat, value, text]) => (
+          <Fragment key={stat}>
+            <dt className="text-white/65">{t(`remote.stats.${stat}`)}</dt>
+            <dd data-stat={stat} data-value={value ?? ''} className="text-right">
+              {text}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+      <SampleButton session={session} />
+    </div>
+  )
+}
+
+/** Records raw frames for a test fixture and saves them as a local file; nothing is uploaded. */
+function SampleButton({ session }: { session: Session }) {
+  const { t } = useTranslation()
+  const sampling = useStore(session.sampling)
+  const frames = sampling.kind === 'recording' ? sampling.frames : null
+  const total = SAMPLE_FRAMES
+  return (
+    <button
+      type="button"
+      title={t('remote.stats.sampleHint', { total })}
+      onClick={() => {
+        if (frames !== null) {
+          session.cancelSample()
+          return
+        }
+        void session.recordSample().then((sample) => {
+          if (sample) downloadSample(sample)
+        })
+      }}
+      className="pointer-events-auto relative flex items-center gap-1.5 overflow-hidden rounded-lg bg-black/75 px-2.5 py-1 text-[11px] leading-[18px] font-medium text-white tabular-nums shadow-lg ring-1 ring-white/10 backdrop-blur-sm transition-colors hover:bg-black/85 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+    >
+      {frames === null ? (
+        <>
+          <Download aria-hidden className="size-3.5" />
+          {t('remote.stats.sampleExport')}
+        </>
+      ) : (
+        <>
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 w-(--sampled) bg-white/15 transition-[width]"
+            style={{ '--sampled': `${String((frames / total) * 100)}%` } as CSSProperties}
+          />
+          <X aria-hidden className="relative size-3.5" />
+          <span className="relative">
+            {frames === 0
+              ? t('remote.stats.sampleWaiting')
+              : t('remote.stats.sampleRecording', { frames, total })}
+            <span className="text-white/65"> · {t('remote.stats.sampleCancel')}</span>
+          </span>
+        </>
+      )}
+    </button>
   )
 }

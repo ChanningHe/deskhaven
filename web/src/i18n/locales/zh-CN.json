@@ -1798,7 +1798,9 @@
       "codecs": {
         "vp9": "VP9（默认）",
         "av1": "AV1",
-        "vp8": "VP8"
+        "vp8": "VP8",
+        "h264": "H264",
+        "h265": "H265"
       },
       "codecOption": "{{name}}<reason>（{{reason}}）</reason>",
       "codecBlocked": {
@@ -1808,6 +1810,7 @@
         "ignored": "本次连接中设备未切换"
       },
       "codecReceiving": "当前：{{name}}",
+      "codecExperimental": "实验性",
       "monitor": "显示器",
       "monitorN": "显示器 {{n}}",
       "showRemoteCursor": "显示远端光标",
@@ -1869,7 +1872,12 @@
         "balanced": "均衡",
         "best": "最佳",
         "custom": "自定义 {{level}}"
-      }
+      },
+      "sampleExport": "导出视频样本",
+      "sampleWaiting": "等待关键帧…",
+      "sampleRecording": "已录 {{frames}}/{{total}} 帧",
+      "sampleCancel": "取消",
+      "sampleHint": "从下一个关键帧起录制 {{total}} 帧原始视频，保存为本机的 JSON 文件，不会上传。"
     },
     "sound": {
       "probing": "声音",

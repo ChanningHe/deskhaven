@@ -17,7 +17,7 @@ import {
   type HandshakeParams,
   type Link,
 } from '../handshake/handshake'
-import { VIDEO_CODECS, supportedDecoding, type DecoderSupport } from '../handshake/login'
+import { LOGIN_CODECS, supportedDecoding, type DecoderSupport } from '../handshake/login'
 import {
   NO_INTENT,
   intentPatch,
@@ -314,7 +314,7 @@ export class RemoteController {
   async #run(attempt: Attempt): Promise<void> {
     const decoders = await this.#deps.probeDecoders()
     if (this.#stale(attempt)) return
-    if (!supportedDecoding(decoders, VIDEO_CODECS)) {
+    if (!supportedDecoding(decoders, LOGIN_CODECS)) {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }

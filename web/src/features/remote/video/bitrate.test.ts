@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Quality } from '../settings/settings'
-import { baseBitrate, formatKbps, formatRatio, ratioOf, targetKbps } from './bitrate'
+import {
+  baseBitrate,
+  bitrateModeled,
+  formatKbps,
+  formatRatio,
+  ratioOf,
+  targetKbps,
+} from './bitrate'
 
 describe('baseBitrate', () => {
   // Expected values worked by hand from rustdesk 1.5.1 libs/scrap/src/common/codec.rs:929-959:
@@ -73,5 +80,18 @@ describe('formatRatio', () => {
     [10, '10×'],
   ])('%o -> %o', (ratio, text) => {
     expect(formatRatio(ratio)).toBe(text)
+  })
+})
+
+describe('bitrateModeled', () => {
+  it.each([
+    [null, true],
+    ['vp09.00.10.08', true],
+    ['av01.0.04M.08', true],
+    ['vp8', true],
+    ['avc1.640033', false],
+    ['hvc1.1.6.L153.B0', false],
+  ])('%o -> %o', (codec, modeled) => {
+    expect(bitrateModeled(codec)).toBe(modeled)
   })
 })

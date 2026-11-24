@@ -5,6 +5,7 @@ import { renderWithProviders } from '@/test/render-with-providers'
 
 import { fakeDeps } from '../connect/fake-deps'
 import { NO_STATS } from '../session/stats'
+import { SAMPLE_VERSION, type VideoSample } from '../video/sample-export'
 import { RemoteDepsContext } from './deps-context'
 import { openMenu } from './menus/testing'
 import { RemotePage } from './remote-page'
@@ -148,3 +149,87 @@ describe('stats overlay', () => {
     expect(stat('decodeFps')).toHaveTextContent('48')
   })
 })
+
+const SAMPLE: VideoSample = {
+  version: SAMPLE_VERSION,
+  clientVersion: '1.5.0',
+  codec: 'vp9s',
+  complete: true,
+  peer: { platform: 'Linux', version: '1.5.0' },
+  display: { width: 1280, height: 800 },
+  frames: [{ key: true, pts: 16, data: 'AAAAAQ==' }],
+}
+
+describe('video sample export', () => {
+  it('records on click, shows how far it got, and cancels on a second click', async () => {
+    const { user, session } = await activePage()
+    await showStats(user)
+    const overlay = screen.getByLabelText('连接统计')
+    await user.click(within(overlay).getByRole('button', { name: '导出视频样本' }))
+    expect(session.sampleRequests).toBe(1)
+    expect(within(overlay).getByRole('button', { name: /等待关键帧/ })).toBeInTheDocument()
+
+    act(() => {
+      session.sampling.set({ kind: 'recording', frames: 12 })
+    })
+    const recording = within(overlay).getByRole('button', { name: /12\/30/ })
+    await user.click(recording)
+    expect(session.sampling.get()).toEqual({ kind: 'idle' })
+    expect(within(overlay).getByRole('button', { name: '导出视频样本' })).toBeInTheDocument()
+  })
+
+  it('saves the recorded sample as a JSON file named after the codec', async () => {
+    const urls: Blob[] = []
+    const revoke = vi.fn()
+    Object.assign(URL, {
+      createObjectURL: (blob: Blob) => {
+        urls.push(blob)
+        return 'blob:sample'
+      },
+      revokeObjectURL: revoke,
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      const { user, session } = await activePage()
+      await showStats(user)
+      await user.click(screen.getByRole('button', { name: '导出视频样本' }))
+      act(() => {
+        session.finishSample(SAMPLE)
+      })
+      await waitFor(() => {
+        expect(click).toHaveBeenCalledTimes(1)
+      })
+      const anchor = click.mock.contexts[0] as HTMLAnchorElement
+      expect(anchor.download).toMatch(/^video-sample-vp9s-\d{8}-\d{6}\.json$/)
+      expect(anchor.href).toBe('blob:sample')
+      const [blob] = urls
+      if (!blob) throw new Error('no blob')
+      expect(JSON.parse(await blob.text())).toEqual(SAMPLE)
+      expect(revoke).not.toHaveBeenCalled()
+    } finally {
+      click.mockRestore()
+    }
+  })
+
+  it('saves nothing when cancelled', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      const { user, session } = await activePage()
+      await showStats(user)
+      await user.click(screen.getByRole('button', { name: '导出视频样本' }))
+      act(() => {
+        session.finishSample(null)
+      })
+      await settleUi()
+      expect(click).not.toHaveBeenCalled()
+    } finally {
+      click.mockRestore()
+    }
+  })
+})
+
+async function settleUi() {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}

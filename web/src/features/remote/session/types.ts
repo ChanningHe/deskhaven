@@ -7,6 +7,7 @@ import type { RemoteInput } from '../input/input'
 import type { KeyboardMode } from '../proto/gen/message_pb.js'
 import type { CodecView } from '../video/codec'
 import type { CreateDecoder } from '../video/decoder'
+import type { SampleProgress, VideoSample } from '../video/sample-export'
 import type { OptionPatch, SessionAction } from './messages'
 import type { PeerView } from './peer-view'
 import type { Permissions } from './permissions'
@@ -32,6 +33,8 @@ export interface Session {
   readonly stats: Store<SessionStats>
   /** Which codecs can be asked for, which was, and which arrives. */
   readonly codecs: Store<CodecView>
+  /** How far recordSample has got. */
+  readonly sampling: Store<SampleProgress>
   readonly audio: AudioPlayback
   /**
    * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
@@ -54,6 +57,12 @@ export interface Session {
   setOptions(patch: OptionPatch): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
   input(input: RemoteInput): void
+  /**
+   * Asks for a key frame and records the peer's encoded frames from it on, before decoding, for
+   * a test fixture. Null when not active, cancelled, started again or closed first.
+   */
+  recordSample(): Promise<VideoSample | null>
+  cancelSample(): void
   /** Sends our clipboard text; false when not active, not allowed or too long. */
   clipboard(text: string): boolean
   close(): void

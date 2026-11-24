@@ -8,7 +8,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 
-import { VIDEO_CODECS, type VideoCodec } from '../../handshake/login'
+import { EXPERIMENTAL_CODECS, VIDEO_CODECS, type VideoCodec } from '../../handshake/login'
 import type { Session } from '../../session/session'
 import { CODEC_NAMES } from '../../video/codec'
 import { useStore } from '../use-remote'
@@ -64,6 +64,14 @@ export function CodecSubmenu({
                     />
                   </span>
                 )}
+                {EXPERIMENTAL_CODECS.includes(option) ? (
+                  <>
+                    {' '}
+                    <span className="ml-auto rounded-sm bg-muted px-1.5 py-px text-[10px] leading-4 font-medium text-muted-foreground">
+                      {t('remote.toolbar.codecExperimental')}
+                    </span>
+                  </>
+                ) : null}
               </DropdownMenuRadioItem>
             )
           })}

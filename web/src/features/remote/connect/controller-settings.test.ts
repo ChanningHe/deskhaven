@@ -365,7 +365,7 @@ describe('RemoteController codec', () => {
     f.session.patches.length = 0
     f.session.codecs.set({
       ...f.session.codecs.get(),
-      support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+      support: { vp9: 'ok', av1: 'failed', vp8: 'ok', h264: 'peer', h265: 'peer' },
       requested: 'vp9',
       failed: 'av1',
       failedAt: 5000,

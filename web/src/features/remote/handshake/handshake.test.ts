@@ -447,7 +447,7 @@ function syntheticPeer(dtlsFingerprint: string, kxVersion: number) {
       myId: 'admin',
       myName: 'Admin',
       sessionId: 7n,
-      decoders: { vp9: false, av1: false, vp8: true },
+      decoders: { vp9: false, av1: false, vp8: true, h264: false, h265: false },
       loginOption: create(OptionMessageSchema),
     },
     signedId: msg({
@@ -545,7 +545,23 @@ describe('identity binding', () => {
     const peer = syntheticPeer('', 1)
     const handshake = startHandshake(
       { kind: 'relay', transport },
-      { ...peer.params, decoders: { vp9: false, av1: false, vp8: false } },
+      {
+        ...peer.params,
+        decoders: { vp9: false, av1: false, vp8: false, h264: false, h265: false },
+      },
+    )
+    expect(await firstEvent(handshake)).toEqual({
+      kind: 'state',
+      state: { kind: 'failed', reason: 'no supported video decoder' },
+    })
+  })
+
+  it('does not log in on H264 or H265 alone: the login never declares them', async () => {
+    const transport = new MemoryTransport()
+    const peer = syntheticPeer('', 1)
+    const handshake = startHandshake(
+      { kind: 'relay', transport },
+      { ...peer.params, decoders: { vp9: false, av1: false, vp8: false, h264: true, h265: true } },
     )
     expect(await firstEvent(handshake)).toEqual({
       kind: 'state',

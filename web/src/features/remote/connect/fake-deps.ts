@@ -32,7 +32,9 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
   const relays: MemoryTransport[] = []
   const openSession = vi.fn<ConnectDeps['openSession']>(open)
   const closeSession = vi.fn<ConnectDeps['closeSession']>(() => Promise.resolve())
-  const probeDecoders = vi.fn(() => Promise.resolve({ vp9: true, av1: false, vp8: true }))
+  const probeDecoders = vi.fn(() =>
+    Promise.resolve({ vp9: true, av1: false, vp8: true, h264: false, h265: false }),
+  )
   const createRelay = vi.fn<ConnectDeps['createRelay']>(() => {
     const relay = new MemoryTransport()
     relays.push(relay)

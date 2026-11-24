@@ -214,7 +214,7 @@ describe('display menu', () => {
     act(() => {
       session.codecs.set({
         ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'browser', vp8: 'peer' },
+        support: { vp9: 'ok', av1: 'browser', vp8: 'peer', h264: 'peer', h265: 'peer' },
       })
     })
     await openCodecs(user)
@@ -228,12 +228,45 @@ describe('display menu', () => {
     expect(updates).not.toHaveBeenCalled()
   })
 
+  it('lists H264 and H265 as experimental, greyed out where the device cannot encode them', async () => {
+    const { user, session, updates } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'ok', vp8: 'ok', h264: 'peer', h265: 'browser' },
+      })
+    })
+    await openCodecs(user)
+    const h264 = screen.getByRole('menuitemradio', { name: /^H264/ })
+    const h265 = screen.getByRole('menuitemradio', { name: /^H265/ })
+    expect(h264).toHaveAccessibleName('H264（设备不支持） 实验性')
+    expect(h265).toHaveAccessibleName('H265（浏览器不支持） 实验性')
+    expect(h264).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitemradio', { name: 'AV1' })).toBeInTheDocument()
+    await user.click(h264)
+    expect(updates).not.toHaveBeenCalled()
+  })
+
+  it('picks H264 where both sides can', async () => {
+    const { user, session, updates } = await activePage()
+    act(() => {
+      session.codecs.set({
+        ...session.codecs.get(),
+        support: { vp9: 'ok', av1: 'ok', vp8: 'ok', h264: 'ok', h265: 'peer' },
+      })
+    })
+    await openCodecs(user)
+    await user.click(screen.getByRole('menuitemradio', { name: 'H264 实验性' }))
+    expect(updates).toHaveBeenCalledWith({ codec: 'h264' })
+    expect(session.patches).toEqual([{ decoding: 'h264' }])
+  })
+
   it('names a codec that failed in this session', async () => {
     const { user, session } = await activePage()
     act(() => {
       session.codecs.set({
         ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'failed', vp8: 'ok' },
+        support: { vp9: 'ok', av1: 'failed', vp8: 'ok', h264: 'peer', h265: 'peer' },
       })
     })
     await openCodecs(user)
@@ -247,7 +280,7 @@ describe('display menu', () => {
     act(() => {
       session.codecs.set({
         ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'ignored', vp8: 'ok' },
+        support: { vp9: 'ok', av1: 'ignored', vp8: 'ok', h264: 'peer', h265: 'peer' },
       })
     })
     await openCodecs(user)

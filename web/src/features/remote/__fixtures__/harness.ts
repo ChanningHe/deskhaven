@@ -184,7 +184,7 @@ export function startFixture(version: FixtureVersion, options: ReplayOptions = {
       myId: 'console-admin',
       myName: 'Admin',
       sessionId: SESSION_ID,
-      decoders: { vp9: true, av1: true, vp8: true },
+      decoders: { vp9: true, av1: true, vp8: true, h264: true, h265: true },
       loginOption: loginOption(DEFAULT_SETTINGS),
       ...(options.credentials ? { credentials: options.credentials } : {}),
     },

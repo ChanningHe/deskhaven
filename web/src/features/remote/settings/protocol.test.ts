@@ -64,8 +64,10 @@ describe('loginOption', () => {
   })
 
   it('tells the peer VP9 at login, whatever codec the settings ask for', () => {
-    expect(loginSettings(with_({ codec: 'av1' })).codec).toBe('vp9')
-    expect(loginOption(with_({ codec: 'av1' })).supportedDecoding).toBeUndefined()
+    for (const codec of ['av1', 'h264', 'h265'] as const) {
+      expect(loginSettings(with_({ codec })).codec).toBe('vp9')
+      expect(loginOption(with_({ codec })).supportedDecoding).toBeUndefined()
+    }
   })
 
   it('never asks for audio at login: no AudioContext runs before a click', () => {
@@ -164,6 +166,9 @@ describe('optionPatch', () => {
     ['vp9', 'av1'],
     ['av1', 'vp8'],
     ['vp8', 'vp9'],
+    ['vp9', 'h264'],
+    ['h264', 'h265'],
+    ['h265', 'vp9'],
   ] as const)('hands a codec change %s → %s over as the codec to ask for', (from, to) => {
     expect(optionPatch(with_({ codec: from }), with_({ codec: to }))).toEqual({ decoding: to })
   })

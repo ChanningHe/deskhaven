@@ -16,35 +16,54 @@ import {
 export const CLIENT_VERSION = '1.5.0'
 export const CLIENT_PLATFORM = 'Web'
 
-export type VideoCodec = 'vp9' | 'av1' | 'vp8'
+export type VideoCodec = 'vp9' | 'av1' | 'vp8' | 'h264' | 'h265'
 
-/** In the order we prefer them at login. */
-export const VIDEO_CODECS: readonly VideoCodec[] = ['vp9', 'av1', 'vp8']
+/** Declared at login, in the order we prefer them. */
+export const LOGIN_CODECS: readonly VideoCodec[] = ['vp9', 'av1', 'vp8']
+
+/**
+ * Declared only while picked: a peer encodes them in hardware alone, and once every connection
+ * declares one, its Auto choice takes H265 > H264 over the rest for all of them (rustdesk 1.5.1
+ * libs/scrap/src/common/codec.rs:194-309).
+ */
+export const EXPERIMENTAL_CODECS: readonly VideoCodec[] = ['h264', 'h265']
+
+export const VIDEO_CODECS: readonly VideoCodec[] = [...LOGIN_CODECS, ...EXPERIMENTAL_CODECS]
 
 export type DecoderSupport = Record<VideoCodec, boolean>
 
-/** Codec strings probed with VideoDecoder.isConfigSupported, one per codec we can declare. */
+/**
+ * Codec strings probed with VideoDecoder.isConfigSupported, one per codec we can declare. H264
+ * High 5.1 and H265 Main 5.1 cover a 4K screen; with no description the decoder takes Annex B
+ * (WebCodecs AVC and HEVC codec registrations §3).
+ */
 export const DECODER_PROBES: Readonly<Record<VideoCodec, string>> = {
   vp9: 'vp09.00.10.08',
   av1: 'av01.0.04M.08',
   vp8: 'vp8',
+  h264: 'avc1.640033',
+  h265: 'hvc1.1.6.L153.B0',
 }
 
 export async function probeDecoders(
   isSupported: (codec: string) => Promise<boolean>,
 ): Promise<DecoderSupport> {
-  const [vp9, av1, vp8] = await Promise.all([
-    isSupported(DECODER_PROBES.vp9),
-    isSupported(DECODER_PROBES.av1),
-    isSupported(DECODER_PROBES.vp8),
-  ])
-  return { vp9, av1, vp8 }
+  const supported = await Promise.all(
+    VIDEO_CODECS.map((codec) => isSupported(DECODER_PROBES[codec])),
+  )
+  const support: DecoderSupport = { vp9: false, av1: false, vp8: false, h264: false, h265: false }
+  VIDEO_CODECS.forEach((codec, i) => {
+    support[codec] = supported[i] === true
+  })
+  return support
 }
 
 const PREFER: Readonly<Record<VideoCodec, SupportedDecoding_PreferCodec>> = {
   vp9: SupportedDecoding_PreferCodec.VP9,
   av1: SupportedDecoding_PreferCodec.AV1,
   vp8: SupportedDecoding_PreferCodec.VP8,
+  h264: SupportedDecoding_PreferCodec.H264,
+  h265: SupportedDecoding_PreferCodec.H265,
 }
 
 /** The codecs of `declared` this browser decodes, in VIDEO_CODECS order. */
@@ -63,10 +82,13 @@ export function supportedDecoding(
   const able = decodable(support, declared)
   const prefer = able[0]
   if (prefer === undefined) return null
+  const ability = (codec: VideoCodec) => (able.includes(codec) ? 1 : 0)
   return create(SupportedDecodingSchema, {
-    abilityVp9: able.includes('vp9') ? 1 : 0,
-    abilityAv1: able.includes('av1') ? 1 : 0,
-    abilityVp8: able.includes('vp8') ? 1 : 0,
+    abilityVp9: ability('vp9'),
+    abilityAv1: ability('av1'),
+    abilityVp8: ability('vp8'),
+    abilityH264: ability('h264'),
+    abilityH265: ability('h265'),
     prefer: PREFER[prefer],
   })
 }

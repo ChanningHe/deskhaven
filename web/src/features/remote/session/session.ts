@@ -16,6 +16,12 @@ import { createWebCodecsDecoder } from '../video/decoder'
 import { DEFAULT_FPS, FpsGovernor } from '../video/fps-governor'
 import { VideoPipeline } from '../video/pipeline'
 import { QualityGovernor } from '../video/quality-governor'
+import {
+  SampleRecorder,
+  sampleCodecOf,
+  type SampleProgress,
+  type VideoSample,
+} from '../video/sample-export'
 import { FrameQueue } from './frame-queue'
 import { governed } from './governed'
 import {
@@ -44,7 +50,7 @@ import { windowsSessionChoice } from './windows-sessions'
 
 export type { Session, SessionOptions, SessionState } from './types'
 
-const VP9_ONLY = { vp9: true, av1: false, vp8: false }
+const VP9_ONLY = { vp9: true, av1: false, vp8: false, h264: false, h265: false }
 
 // rustdesk 1.5.0 src/client.rs:110 RESTART_REMOTE_DEVICE_GRACE
 export const RESTART_GRACE_MS = 5 * 60_000
@@ -79,6 +85,16 @@ class RemoteSession implements Session {
   readonly #governor: FpsGovernor
   readonly #codecs: CodecSwitch
   readonly #codecView: ValueStore<CodecView>
+  readonly #sampler = new SampleRecorder(
+    () => {
+      const peer = this.peer.get()
+      return {
+        peer: { platform: peer?.info.platform ?? '', version: peer?.info.version ?? '' },
+        display: { width: peer?.display?.width ?? 0, height: peer?.display?.height ?? 0 },
+      }
+    },
+    () => sampleCodecOf(this.#codecView.get().requested),
+  )
   #sentFps: number
   readonly #quality = new QualityGovernor()
   readonly #cursors = new CursorTracker()
@@ -118,6 +134,7 @@ class RemoteSession implements Session {
       },
       onChange: (view) => {
         this.#codecView.set(view)
+        this.#sampler.retarget()
       },
     })
     this.#codecs = codecs
@@ -158,6 +175,21 @@ class RemoteSession implements Session {
 
   get codecs(): Store<CodecView> {
     return this.#codecView
+  }
+
+  get sampling(): Store<SampleProgress> {
+    return this.#sampler.progress
+  }
+
+  recordSample(): Promise<VideoSample | null> {
+    if (!this.#active()) return Promise.resolve(null)
+    const sample = this.#sampler.start()
+    this.#refresh()
+    return sample
+  }
+
+  cancelSample(): void {
+    this.#sampler.cancel()
   }
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -348,6 +380,7 @@ class RemoteSession implements Session {
     if (this.audio.receive(message)) return
     switch (union.case) {
       case 'videoFrame':
+        this.#sampler.push(union.value)
         this.#video.push(union.value)
         return
       case 'cursorData':
@@ -388,6 +421,7 @@ class RemoteSession implements Session {
       case 'switchDisplay': {
         const peer = this.peer.get()
         if (peer) this.peer.set(withSwitch(peer, union.value))
+        this.#sampler.cancel()
         this.#video.reset()
         return
       }
@@ -400,7 +434,7 @@ class RemoteSession implements Session {
         this.#hangUp('peer', union.value)
         return
       case 'supportedEncoding':
-        this.#codecs.peerEncodes(union.value)
+        this.#codecs.peerUsable(union.value)
         return
       default:
         return
@@ -437,6 +471,7 @@ class RemoteSession implements Session {
       kind: 'closed',
       cause: this.#restarting(cause) ?? { by, reason: cause.reason },
     })
+    this.#sampler.cancel()
     this.#video.close()
     this.audio.close()
     this.#frames.end()

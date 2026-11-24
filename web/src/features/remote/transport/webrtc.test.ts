@@ -274,7 +274,7 @@ describe('WebRTC identity binding', () => {
         myId: 'admin',
         myName: 'Admin',
         sessionId: 1n,
-        decoders: { vp9: true, av1: false, vp8: false },
+        decoders: { vp9: true, av1: false, vp8: false, h264: false, h265: false },
         loginOption: create(OptionMessageSchema),
       },
       signedId,

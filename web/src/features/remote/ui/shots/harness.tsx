@@ -138,7 +138,7 @@ const deps: ConnectDeps = {
     return Promise.reject(new ApiError(failure.status, { code, details: failure.details }))
   },
   closeSession: () => Promise.resolve(),
-  probeDecoders: () => Promise.resolve({ vp9: true, av1: true, vp8: true }),
+  probeDecoders: () => Promise.resolve({ vp9: true, av1: true, vp8: true, h264: true, h265: true }),
   createRelay: () => ({
     send: () => undefined,
     messages: { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => undefined) }) },

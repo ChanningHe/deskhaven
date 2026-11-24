@@ -16,6 +16,7 @@ import type { Session, SessionState } from '../session/session'
 import { NO_STATS, type SessionStats } from '../session/stats'
 import { ValueStore } from '../session/store'
 import type { CodecView } from '../video/codec'
+import type { SampleProgress, VideoSample } from '../video/sample-export'
 
 class KeptCursorImages implements CursorImages {
   readonly #kept = new WeakMap<CursorShape, { scale: number; url: string }>()
@@ -54,10 +55,13 @@ export class FakeSession implements Session {
   readonly remoteClipboard = new ValueStore<string | null>(null)
   readonly stats = new ValueStore<SessionStats>(NO_STATS)
   readonly codecs = new ValueStore<CodecView>({
-    support: { vp9: 'ok', av1: 'ok', vp8: 'ok' },
+    support: { vp9: 'ok', av1: 'ok', vp8: 'ok', h264: 'peer', h265: 'peer' },
     requested: 'vp9',
     receiving: null,
   })
+  readonly sampling = new ValueStore<SampleProgress>({ kind: 'idle' })
+  sampleRequests = 0
+  #sample: ((sample: VideoSample | null) => void) | null = null
   readonly audio = new FakeAudio()
   readonly queue = new FrameQueue()
   readonly logins: string[] = []
@@ -114,6 +118,26 @@ export class FakeSession implements Session {
 
   setOptions(patch: OptionPatch): void {
     this.patches.push(patch)
+  }
+
+  recordSample(): Promise<VideoSample | null> {
+    this.#sample?.(null)
+    this.sampleRequests++
+    this.sampling.set({ kind: 'recording', frames: 0 })
+    return new Promise((resolve) => {
+      this.#sample = resolve
+    })
+  }
+
+  cancelSample(): void {
+    this.finishSample(null)
+  }
+
+  /** Ends the recording recordSample started with `sample`. */
+  finishSample(sample: VideoSample | null): void {
+    this.#sample?.(sample)
+    this.#sample = null
+    this.sampling.set({ kind: 'idle' })
   }
 
   input(input: RemoteInput): void {
