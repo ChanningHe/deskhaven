@@ -119,6 +119,7 @@ describe('My account: sessions', () => {
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/login')
+      expect(router.state.status).toBe('idle')
     })
   })
 })
