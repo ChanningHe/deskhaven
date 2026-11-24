@@ -2,7 +2,7 @@ import type { Quality } from '../settings/settings'
 import type { VideoMeter } from '../video/pipeline'
 import { ValueStore, type Store } from './store'
 
-export interface SessionStats {
+export interface MeterStats {
   fps: number
   kbps: number
   delayMs: number | null
@@ -15,6 +15,14 @@ export interface SessionStats {
   codec: string | null
   quality: Quality | null
 }
+
+export interface FpsReadings {
+  userFps: number
+  sentFps: number | null
+  decodeFps: number | null
+}
+
+export type SessionStats = MeterStats & FpsReadings
 
 export interface StatsProbe {
   decodeQueue: number
@@ -53,6 +61,9 @@ export const NO_STATS: SessionStats = {
   height: 0,
   codec: null,
   quality: null,
+  userFps: 0,
+  sentFps: null,
+  decodeFps: null,
 }
 
 function oneDecimal(n: number): number {
@@ -60,7 +71,7 @@ function oneDecimal(n: number): number {
 }
 
 export class SessionMeter implements VideoMeter {
-  readonly #stats = new ValueStore<SessionStats>(NO_STATS)
+  readonly #stats = new ValueStore<MeterStats>(NO_STATS)
   readonly #clock: StatsClock
   readonly #probe: () => StatsProbe
   #stopTimer: (() => void) | null = null
@@ -88,7 +99,7 @@ export class SessionMeter implements VideoMeter {
     })
   }
 
-  get stats(): Store<SessionStats> {
+  get stats(): Store<MeterStats> {
     return this.#stats
   }
 

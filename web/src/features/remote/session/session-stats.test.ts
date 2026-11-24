@@ -5,7 +5,8 @@ import { msg } from '../__fixtures__/harness'
 import { NO_MODIFIERS } from '../input/mouse'
 import { TestDelaySchema } from '../proto/gen/message_pb.js'
 import { vp9Frame } from '../video/fake-decoder'
-import { activeSession, FakeClock, settle } from './testing'
+import { customFps } from './messages'
+import { activeSession, FakeClock, fakeLinkSession, settle } from './testing'
 
 const MOVE = {
   kind: 'pointer' as const,
@@ -67,5 +68,24 @@ describe('session stats', () => {
     session.input(MOVE)
     clock.tick()
     expect(session.stats.get()).toBe(last)
+  })
+
+  it('reports the fps ceiling, the custom_fps last sent and the decode estimate', async () => {
+    const clock = new FakeClock()
+    const s = await fakeLinkSession('relay', clock, { maxFps: 30 })
+    s.session.setOptions({ maxFps: 60 })
+    clock.tick()
+    expect(s.session.stats.get()).toMatchObject({ userFps: 60, sentFps: 30, decodeFps: null })
+    expect(s.handshake.sent).toEqual([])
+
+    for (let i = 0; i < 13; i++) {
+      s.handshake.peerSends(msg({ case: 'videoFrame', value: vp9Frame(i === 0) }))
+      await settle()
+      clock.advance(1)
+      s.decoders.last.output()
+    }
+    clock.tick()
+    expect(s.handshake.sent).toEqual([customFps(60)])
+    expect(s.session.stats.get()).toMatchObject({ userFps: 60, sentFps: 60, decodeFps: 1000 })
   })
 })

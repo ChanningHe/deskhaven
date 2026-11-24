@@ -41,6 +41,14 @@ export class FpsGovernor {
     this.#userFps = options.userFps
   }
 
+  get userFps(): number {
+    return this.#userFps
+  }
+
+  get decodeFps(): number | null {
+    return this.#decodeFps
+  }
+
   setUserFps(fps: number): void {
     if (fps === this.#userFps) return
     this.#userFps = fps

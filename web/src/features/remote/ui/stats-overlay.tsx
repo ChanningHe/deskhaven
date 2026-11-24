@@ -12,6 +12,9 @@ const NONE = '–'
 type StatName =
   | 'transport'
   | 'fps'
+  | 'userFps'
+  | 'sentFps'
+  | 'decodeFps'
   | 'kbps'
   | 'delayMs'
   | 'decodeMs'
@@ -24,6 +27,10 @@ type StatName =
 
 function ms(value: number | null): string {
   return value === null ? NONE : `${String(value)} ms`
+}
+
+function plain(value: number | null): string {
+  return value === null ? NONE : String(value)
 }
 
 function qualityValue(quality: Quality | null): string | number | null {
@@ -48,6 +55,9 @@ export function StatsOverlay({
   const rows: [stat: StatName, value: string | number | null, text: string][] = [
     ['transport', transport ?? null, transport ? t(`remote.transport.${transport}`) : NONE],
     ['fps', s.fps, String(s.fps)],
+    ['userFps', s.userFps, String(s.userFps)],
+    ['sentFps', s.sentFps, plain(s.sentFps)],
+    ['decodeFps', s.decodeFps, plain(s.decodeFps)],
     ['kbps', s.kbps, `${String(s.kbps)} kbps`],
     ['delayMs', s.delayMs, ms(s.delayMs)],
     ['decodeMs', s.decodeMs, ms(s.decodeMs)],

@@ -35,7 +35,7 @@ import {
 import { peerView, withDisplays, withSwitch, type PeerView } from './peer-view'
 import { ALL_ALLOWED, withPermission, type Permissions } from './permissions'
 import { offersResolution } from './resolution'
-import { realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
+import { NO_STATS, realClock, SessionMeter, type SessionStats, type StatsClock } from './stats'
 import { ValueStore, type Store } from './store'
 import type { Session, SessionOptions, SessionState } from './types'
 import { windowsSessionChoice } from './windows-sessions'
@@ -71,7 +71,9 @@ class RemoteSession implements Session {
   readonly #handshake: Handshake
   readonly #video: VideoPipeline
   readonly #meter: SessionMeter
+  readonly #stats = new ValueStore<SessionStats>(NO_STATS)
   readonly #governor: FpsGovernor
+  #sentFps: number
   readonly #quality = new QualityGovernor()
   readonly #cursors = new CursorTracker()
   readonly #clock: StatsClock
@@ -95,11 +97,10 @@ class RemoteSession implements Session {
       height: this.peer.get()?.display?.height ?? 0,
       quality: this.#quality.current,
     }))
-    const governor = new FpsGovernor({
-      direct: handshake.link === 'webrtc',
-      userFps: options.maxFps ?? DEFAULT_FPS,
-    })
+    const loginFps = options.maxFps ?? DEFAULT_FPS
+    const governor = new FpsGovernor({ direct: handshake.link === 'webrtc', userFps: loginFps })
     this.#governor = governor
+    this.#sentFps = loginFps
     this.#video = new VideoPipeline({
       createDecoder: options.createDecoder ?? createWebCodecsDecoder,
       onFrame: (frame) => {
@@ -118,11 +119,17 @@ class RemoteSession implements Session {
     })
     this.#meter.stats.subscribe(() => {
       this.#steer()
+      this.#stats.set({
+        ...this.#meter.stats.get(),
+        userFps: governor.userFps,
+        sentFps: this.#sentFps,
+        decodeFps: governor.decodeFps,
+      })
     })
   }
 
   get stats(): Store<SessionStats> {
-    return this.#meter.stats
+    return this.#stats
   }
 
   get frames(): AsyncIterable<VideoFrame> {
@@ -264,8 +271,14 @@ class RemoteSession implements Session {
   }
 
   #steer(): void {
-    const fps = this.#governor.tick({ fps: this.stats.get().fps, queued: this.#video.queued })
-    if (fps !== null) this.#send(customFps(fps))
+    const fps = this.#governor.tick({
+      fps: this.#meter.stats.get().fps,
+      queued: this.#video.queued,
+    })
+    if (fps !== null) {
+      this.#send(customFps(fps))
+      this.#sentFps = fps
+    }
     this.#sendQuality(this.#quality.tick(this.#meter.takeDelay()))
   }
 
