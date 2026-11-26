@@ -87,6 +87,16 @@ fn chain_of_only_trusted_hops_yields_leftmost_as_fallback() {
 }
 
 #[test]
+fn spoofed_leftmost_entries_are_ignored() {
+    let proxies = trusted(&["10.0.0.0/8"]);
+    let headers = xff(&["1.1.1.1, 10.9.9.9, 203.0.113.50"]);
+    assert_eq!(
+        proxies.resolve(ip("10.0.0.1"), &headers),
+        client("203.0.113.50")
+    );
+}
+
+#[test]
 fn garbage_entry_stops_at_last_validated_address() {
     let proxies = trusted(&["10.0.0.0/8"]);
     for bad in [
