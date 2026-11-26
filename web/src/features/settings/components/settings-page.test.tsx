@@ -91,6 +91,26 @@ describe('settings page', () => {
     expect(screen.getByLabelText(MIN_LENGTH)).toHaveValue('12')
   })
 
+  it('keeps a relay list typed line by line and saves every line', async () => {
+    const RELAYS = 'signal.relay_servers'
+    const initial = withSetting(sampleSettings(), RELAYS, { value: ['a:1'] })
+    const { user, state } = await openPage(initial)
+
+    const input = screen.getByLabelText(RELAYS)
+    await user.type(input, '{Enter}')
+    expect(input).toHaveValue('a:1\n')
+    expect(screen.getByText('没有未保存的更改。')).toBeInTheDocument()
+    await user.type(input, 'b:2')
+    expect(input).toHaveValue('a:1\nb:2')
+    await user.click(screen.getByRole('button', { name: '保存更改' }))
+
+    await waitFor(() => {
+      expect(state.patches).toEqual([
+        { changes: [{ key: RELAYS, version: 0, value: ['a:1', 'b:2'] }] },
+      ])
+    })
+  })
+
   it('shows pinned settings read-only with the variable or file that fixes them', async () => {
     const pinned = withSetting(
       withSetting(sampleSettings(), TTL, {

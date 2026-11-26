@@ -17,9 +17,17 @@ import {
   toChanges,
 } from './drafts'
 import type { Drafts } from './drafts'
+import { sameEditor, toEditor } from './editor'
 import type { Editor } from './editor'
 
 type Problems = Readonly<Record<string, readonly string[]>>
+type Typed = Readonly<Record<string, Editor>>
+
+const NOTHING_TYPED: Typed = {}
+
+function forget(typed: Typed, keys: readonly string[]): Typed {
+  return Object.fromEntries(Object.entries(typed).filter(([key]) => !keys.includes(key)))
+}
 
 // `me` carries `web_client_enabled`, which the console uses to offer the browser remote.
 const ME_SETTINGS_PREFIX = 'web_client.'
@@ -30,6 +38,7 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
   // The secrets in the request are dropped from the mutation cache as soon as it settles.
   const mutation = useUpdateSettings(SECRET_MUTATION)
   const [staged, setDrafts] = useState<Drafts>(NO_DRAFTS)
+  const [typedState, setTyped] = useState<Typed>(NOTHING_TYPED)
   const [problems, setProblems] = useState<Problems>({})
   const [conflicts, setConflicts] = useState<SettingView[]>([])
   const [failure, setFailure] = useState<unknown>(undefined)
@@ -41,6 +50,14 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
     settings.some((setting) => setting.key === key && setting.pinned),
   )
   const drafts = droppedPinned.length === 0 ? staged : discardDrafts(staged, droppedPinned)
+  // Text with no draft behind it stays only while it still means the server's value.
+  const typed = Object.fromEntries(
+    Object.entries(typedState).filter(([key, editor]) => {
+      const setting = settings.find((s) => s.key === key)
+      if (setting === undefined || setting.pinned) return false
+      return drafts[key]?.change.kind === 'set' || sameEditor(setting, editor, toEditor(setting))
+    }),
+  )
 
   /** Saves `batch` (the drafts, possibly rebased); the outcome lands in the state below. */
   const run = async (batch: Drafts) => {
@@ -52,6 +69,7 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
       const updated = await mutation.mutateAsync({ data: { changes } })
       queryClient.setQueryData(getListSettingsQueryKey(), updated)
       setDrafts(NO_DRAFTS)
+      setTyped(NOTHING_TYPED)
       setSavedCount(changes.length)
       if (changes.some(({ key }) => key.startsWith(ME_SETTINGS_PREFIX))) {
         void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY })
@@ -70,6 +88,7 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
 
   return {
     drafts,
+    typed,
     droppedPinned,
     problems,
     conflicts,
@@ -79,16 +98,24 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
     edit: (setting: SettingView, editor: Editor) => {
       setSavedCount(undefined)
       setDrafts((current) => editSetting(current, setting, editor))
+      setTyped((current) =>
+        editor === toEditor(setting)
+          ? forget(current, [setting.key])
+          : { ...current, [setting.key]: editor },
+      )
     },
     stageReset: (setting: SettingView) => {
       setSavedCount(undefined)
       setDrafts((current) => stageReset(current, setting))
+      setTyped((current) => forget(current, [setting.key]))
     },
     discard: (key: string) => {
       setDrafts((current) => discardDraft(current, key))
+      setTyped((current) => forget(current, [key]))
     },
     discardAll: () => {
       setDrafts(NO_DRAFTS)
+      setTyped(NOTHING_TYPED)
       setProblems({})
       setFailure(undefined)
     },
@@ -101,12 +128,9 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
     },
     /** Take the server's values: drop my edits of the conflicting keys and reload. */
     reload: () => {
-      setDrafts((current) =>
-        discardDrafts(
-          current,
-          conflicts.map((c) => c.key),
-        ),
-      )
+      const keys = conflicts.map((c) => c.key)
+      setDrafts((current) => discardDrafts(current, keys))
+      setTyped((current) => forget(current, keys))
       setConflicts([])
       setFailure(undefined)
       return refresh()

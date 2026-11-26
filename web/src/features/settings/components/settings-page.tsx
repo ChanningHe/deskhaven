@@ -110,6 +110,7 @@ function CategoryCard({ category, editor, titleRef, onHistory }: CategoryCardPro
             key={setting.key}
             setting={setting}
             draft={editor.drafts[setting.key]}
+            typed={editor.typed[setting.key]}
             serverProblems={editor.problems[setting.key] ?? []}
             disabled={editor.saving}
             onEdit={(value) => {

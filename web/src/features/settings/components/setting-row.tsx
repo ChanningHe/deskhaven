@@ -18,6 +18,8 @@ import { SettingControl } from './setting-control'
 interface SettingRowProps {
   setting: SettingView
   draft: Draft | undefined
+  /** The text as typed, which the draft may have normalised away. */
+  typed: Editor | undefined
   /** The server's reasons for refusing this key's draft. */
   serverProblems: readonly string[]
   disabled: boolean
@@ -27,10 +29,15 @@ interface SettingRowProps {
   onHistory: () => void
 }
 
-/** The editor value to show: the draft, else the default for a staged reset, else the setting. */
-function shownEditor(setting: SettingView, draft: Draft | undefined): Editor {
-  if (draft?.change.kind === 'set') return draft.change.editor
+/** The editor value to show: the default for a staged reset, else what was typed, else the setting. */
+function shownEditor(
+  setting: SettingView,
+  draft: Draft | undefined,
+  typed: Editor | undefined,
+): Editor {
   if (draft?.change.kind === 'reset') return toEditor({ ...setting, value: setting.default })
+  if (typed !== undefined) return typed
+  if (draft?.change.kind === 'set') return draft.change.editor
   return toEditor(setting)
 }
 
@@ -38,6 +45,7 @@ function shownEditor(setting: SettingView, draft: Draft | undefined): Editor {
 export function SettingRow({
   setting,
   draft,
+  typed,
   serverProblems,
   disabled,
   onEdit,
@@ -49,7 +57,7 @@ export function SettingRow({
   const id = useId()
   const helpId = `${id}-help`
   const problemId = `${id}-problem`
-  const editor = shownEditor(setting, draft)
+  const editor = shownEditor(setting, draft, typed)
   const staged = draft?.change.kind === 'reset'
   const problem = draft?.change.kind === 'set' ? problemOf(setting, editor) : undefined
   const invalid = problem !== undefined || serverProblems.length > 0
