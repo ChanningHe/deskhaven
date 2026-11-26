@@ -61,14 +61,6 @@ pub async fn open(
     client: ClientIp,
     ValidJson(body): ValidJson<OpenWebClientSession>,
 ) -> Result<(StatusCode, Audited, Json<WebClientSession>), AdminApiError> {
-    // The device's IP allow-list judges this address: a trusted hop's own, or an
-    // `X-Forwarded-For` entry only trusted hops vouch for, is not the browser's.
-    if client.is_proxy_fallback {
-        return Err(AdminApiError::new(
-            ErrorCode::ClientIpUnknown,
-            "the request came from a trusted proxy without the browser's address",
-        ));
-    }
     let user = state.users.get(principal.user_id).await?;
     let by = Opener {
         user_id: principal.user_id,
@@ -77,13 +69,14 @@ pub async fn open(
     let req = OpenRequest {
         device_id: body.device_id.clone(),
         offer: body.offer,
-        client: ctx.ip,
+        client: client.addr,
     };
     // The punch and its audit row run in their own task: a request dropped mid-punch (client
     // gone, deadline) still leaves its row, and the session it would have got is closed.
     let (request_alive, alive) = oneshot::channel::<()>();
-    let task =
-        tokio::spawn(open_audited(Arc::clone(&state), ctx, by, req, alive).in_current_span());
+    let task = tokio::spawn(
+        open_audited(Arc::clone(&state), ctx, by, client, req, alive).in_current_span(),
+    );
     let opened = task.await.map_err(AdminApiError::internal)??;
     drop(request_alive);
     let my_name = match user.display_name.trim() {
@@ -99,16 +92,26 @@ async fn open_audited(
     state: Arc<AppState>,
     ctx: AuditCtx,
     by: Opener,
+    client: ClientIp,
     req: OpenRequest,
     mut requester: oneshot::Receiver<()>,
 ) -> Result<Opened, AdminApiError> {
     let device_id = req.device_id.clone();
     let offer = req.offer.is_some();
-    let mut result = state
-        .web_client
-        .open(by, req)
-        .await
-        .map_err(AdminApiError::from);
+    // The device's IP allow-list judges this address: a trusted hop's own, or an
+    // `X-Forwarded-For` entry only trusted hops vouch for, is not the browser's.
+    let mut result = if client.is_proxy_fallback {
+        Err(AdminApiError::new(
+            ErrorCode::ClientIpUnknown,
+            "the request came from a trusted proxy without the browser's address",
+        ))
+    } else {
+        state
+            .web_client
+            .open(by, req)
+            .await
+            .map_err(AdminApiError::from)
+    };
     let cancelled = matches!(requester.try_recv(), Err(TryRecvError::Closed));
     if let (true, Ok(opened)) = (cancelled, &result) {
         state.web_client.close(by.user_id, &opened.id);

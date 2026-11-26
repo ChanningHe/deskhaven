@@ -175,6 +175,12 @@ async fn a_session_needs_the_browser_address_not_the_proxy_one() {
             "{b}: the proxy's own address reaches no device"
         );
         assert_eq!(routes[0].request.client.to_string(), "198.51.100.7", "{b}");
+        let results: Vec<_> = web_rows(&h)
+            .await
+            .iter()
+            .map(|r| after(r)["result"].clone())
+            .collect();
+        assert_eq!(results, [json!("client_ip_unknown"), json!("ok")], "{b}");
     })
     .await;
 }

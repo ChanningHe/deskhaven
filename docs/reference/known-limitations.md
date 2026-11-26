@@ -62,6 +62,9 @@ Everything deskhaven does not do, or does differently than you might expect, in 
 - **The device sees the console user name as the caller's ID**, but the browser builds that
   login message itself; the audit log, not the ID on the device, is the record of who
   connected.
+- **A device's IP allow-list is only as good as `security.trusted_proxies`.** The device
+  checks the browser's address as the server resolved it; a client inside a trusted range
+  can name any address in `X-Forwarded-For`. Trust only your proxy's own address.
 - **The relay refuses devices that reach it over loopback** (hbbr treats loopback TCP as its
   console): a device on the same host as the relay must use the host's network address.
 - **Not supported**: file transfer, chat, several displays at once. H.264 / H.265 are
