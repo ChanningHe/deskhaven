@@ -1,13 +1,6 @@
-//! Where the browser reaches the relay server: `/ws/relay` on the `public_url` host, which
-//! the reverse proxy forwards to hbbr's WebSocket port (`deploy/`).
-
-/// The relay's WebSocket path on the public host.
 pub const RELAY_PATH: &str = "/ws/relay";
 
-/// The WebSocket origin of `url` (`https` -> `wss`, `http` -> `ws`, scheme and host
-/// lowercased); `None` for a blank or non-http(s) URL, or one whose authority has
-/// characters other than letters, digits, `-`, `.`, `:` and brackets: the CSP host-source
-/// set, which `deskhaven_web::csp_connecting_to` accepts too.
+/// Only the CSP host-source characters, which `deskhaven_web::csp_connecting_to` accepts too.
 pub fn ws_origin(url: &str) -> Option<String> {
     let (scheme, rest) = url.trim().split_once("://")?;
     let ws = match scheme.to_ascii_lowercase().as_str() {
@@ -23,8 +16,6 @@ pub fn ws_origin(url: &str) -> Option<String> {
     valid.then(|| format!("{ws}://{}", authority.to_ascii_lowercase()))
 }
 
-/// The relay URL the browser connects to: absolute on `public_url`'s host, or the bare
-/// path (the console's own origin) when `public_url` is unset.
 pub fn relay_url(public_url: &str) -> String {
     match ws_origin(public_url) {
         Some(origin) => format!("{origin}{RELAY_PATH}"),

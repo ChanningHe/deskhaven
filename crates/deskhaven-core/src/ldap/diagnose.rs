@@ -1,9 +1,4 @@
-//! "Test connection" and "test user" (the console's LDAP page, M3-09): the login steps one
-//! by one, each with its own result, so an admin sees where a configuration breaks. A
-//! failed step skips the ones after it. Messages name URLs, DNs and the directory's own
-//! diagnostics, never a password; the typed test username is shown back only inside the
-//! result. Nothing is written: no account is provisioned or synchronized. A diagnostic
-//! holds one of the directory slots logins use and ends after a total timeout.
+//! Messages name URLs, DNs and the directory's diagnostics, never a password. Nothing is written.
 
 use std::collections::BTreeSet;
 
@@ -21,7 +16,6 @@ use super::settings::DirectorySettings;
 use crate::users::Password;
 
 impl LdapService {
-    /// Connect and service bind, within the limits (see [`Self::test_user`]).
     pub async fn test_connection(&self, settings: &DirectorySettings) -> Diagnostic {
         let mut recorder = Recorder::new(CONNECTION_STEPS);
         let Some(_slot) = self.diagnostic_slot(settings, &mut recorder).await else {
@@ -37,12 +31,7 @@ impl LdapService {
         recorder.finish()
     }
 
-    /// Every login step for `username`; the user bind only with a `password`. Writes
-    /// nothing. Holds one of the directory slots logins use (a saturated directory fails the
-    /// connect step as busy) and ends after [`DirectoryLimits::diagnostic_timeout`] in
-    /// total, the steps not finished by then failed as timed out.
-    ///
-    /// [`DirectoryLimits::diagnostic_timeout`]: super::DirectoryLimits::diagnostic_timeout
+    /// Holds one of the directory slots logins use and ends after a total timeout.
     pub async fn test_user(
         &self,
         settings: &DirectorySettings,
@@ -63,7 +52,6 @@ impl LdapService {
         recorder.finish()
     }
 
-    /// A directory slot, or the connect step failed as busy.
     async fn diagnostic_slot(
         &self,
         settings: &DirectorySettings,
@@ -190,7 +178,6 @@ impl LdapService {
         recorder.record(Step::GroupMapping, StepStatus::Passed, message);
     }
 
-    /// Names of the console-managed groups in `names` (lowercased), ordered by name.
     async fn mapped_groups(&self, names: &BTreeSet<String>) -> Result<Vec<String>, String> {
         let all = self.inner.groups.list().await.map_err(|err| {
             tracing::error!(error = %err, "cannot list groups for an LDAP diagnostic");
@@ -204,7 +191,6 @@ impl LdapService {
     }
 }
 
-/// `true` when the next steps may run.
 async fn probe_service_bind(
     session: &mut dyn Session,
     settings: &DirectorySettings,
@@ -242,7 +228,6 @@ async fn probe_service_bind(
     }
 }
 
-/// The tested name, and whether a password came with it (a login would count it).
 struct Probe<'a> {
     username: &'a str,
     counted: bool,
@@ -280,7 +265,6 @@ fn no_entry(settings: &DirectorySettings) -> String {
     )
 }
 
-/// `true` when the group step may run.
 async fn probe_user_bind(
     session: &mut dyn Session,
     user: &DirectoryUser,

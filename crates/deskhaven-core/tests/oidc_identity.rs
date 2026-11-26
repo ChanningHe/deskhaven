@@ -1,8 +1,3 @@
-//! Which account an OIDC login reaches (06 §3.4): the `(provider, sub)` identity, email
-//! linking by `email_verified` true / false / missing and `auth.oidc.link_email_max_role`,
-//! auto-provisioning (username rules, collisions, email, group mapping, admin group) and
-//! inactive accounts. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -61,7 +56,6 @@ async fn verified_email_links_the_existing_account_once_then_the_identity_is_use
         assert_eq!(linked[0].subject, "sub-a");
         assert_eq!(linked[0].email.as_deref(), Some("ALICE@example.com"));
         assert!(linked[0].email_verified);
-        // Still the local account it was.
         let row = env.users.get(alice.id).await.unwrap();
         assert_eq!(row.auth_source, AuthSource::Local);
     })
@@ -343,7 +337,7 @@ async fn a_linked_account_disabled_later_is_refused() {
     .await;
 }
 
-/// H1: an IdP that lets users set any (unverified) address cannot squat it.
+/// An IdP that lets users set any (unverified) address cannot squat it.
 #[tokio::test]
 async fn an_unverified_email_is_never_stored_so_it_cannot_be_squatted() {
     each_migrated_backend(async |db: &TestDb| {
@@ -379,7 +373,7 @@ async fn an_unverified_email_is_never_stored_so_it_cannot_be_squatted() {
     .await;
 }
 
-/// H1: an account whose own address is unverified is never an auto-link target.
+/// An account whose own address is unverified is never an auto-link target.
 #[tokio::test]
 async fn verified_email_does_not_link_into_an_account_with_an_unverified_address() {
     each_migrated_backend(async |db: &TestDb| {
@@ -409,8 +403,8 @@ async fn verified_email_does_not_link_into_an_account_with_an_unverified_address
     .await;
 }
 
-/// M2: an OIDC login must not bypass a local second factor, nor reach a privileged account
-/// by email alone.
+/// An OIDC login must not bypass a local second factor, nor reach a privileged account by email
+/// alone.
 #[tokio::test]
 async fn verified_email_never_links_into_two_factor_admin_or_owner_accounts() {
     each_migrated_backend(async |db: &TestDb| {

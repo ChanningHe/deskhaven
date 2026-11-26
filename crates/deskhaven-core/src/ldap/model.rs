@@ -1,5 +1,3 @@
-//! Directory types and input validation (04 §3 `ldap_directories`, 06 §3.5).
-
 use std::fmt;
 
 use deskhaven_db::entity::ldap_directory;
@@ -9,22 +7,17 @@ use deskhaven_db::time::TimestampMs;
 use super::error::DirectoryError;
 use super::validate;
 
-/// Default `user_filter`.
 pub const DEFAULT_USER_FILTER: &str = "(objectClass=person)";
-/// Default `username_attr`.
 pub const DEFAULT_USERNAME_ATTR: &str = "uid";
 
-/// A directory as seen outside the service: never the bind password, only whether one is
-/// set.
+/// Never the bind password, only whether one is set.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Directory {
     pub id: i64,
     pub name: String,
     pub url: String,
     pub start_tls: bool,
-    /// `false` only when set explicitly (the console shows a warning).
     pub tls_verify: bool,
-    /// `None`: searches run anonymously.
     pub bind_dn: Option<String>,
     pub has_bind_password: bool,
     pub user_base_dn: String,
@@ -32,12 +25,10 @@ pub struct Directory {
     pub username_attr: String,
     pub email_attr: Option<String>,
     pub display_name_attr: Option<String>,
-    /// Set: group mapping is on, for groups below this DN.
     pub group_base_dn: Option<String>,
-    /// Set: groups come from this search (placeholders `{user_dn}`, `{username}`); else
-    /// from the user entry's `memberOf`.
+    /// Placeholders `{user_dn}`, `{username}`; unset: the user entry's `memberOf`.
     pub group_filter: Option<String>,
-    /// Members of this group are admins (owners stay owners).
+    /// Owners stay owners.
     pub admin_group_dn: Option<String>,
     pub enabled: bool,
     pub managed_by: ManagedBy,
@@ -71,22 +62,18 @@ impl From<ldap_directory::Model> for Directory {
     }
 }
 
-/// Input of [`LdapService::create_directory`](super::LdapService::create_directory).
 /// `Debug` never shows the bind password.
 #[derive(Clone)]
 pub struct NewDirectory {
     pub name: String,
-    /// `ldaps://host[:port]`, or `ldap://` with `start_tls` (plain only on loopback).
+    /// Plain `ldap://` only on loopback.
     pub url: String,
     pub start_tls: bool,
     pub tls_verify: bool,
     pub bind_dn: Option<String>,
-    /// Required with `bind_dn`.
     pub bind_password: Option<String>,
     pub user_base_dn: String,
-    /// Blank: [`DEFAULT_USER_FILTER`].
     pub user_filter: String,
-    /// Blank: [`DEFAULT_USERNAME_ATTR`].
     pub username_attr: String,
     pub email_attr: Option<String>,
     pub display_name_attr: Option<String>,
@@ -97,8 +84,6 @@ pub struct NewDirectory {
 }
 
 impl NewDirectory {
-    /// An enabled, anonymous, certificate-verifying directory with the default filter and
-    /// username attribute, no group mapping.
     pub fn new(
         name: impl Into<String>,
         url: impl Into<String>,
@@ -136,8 +121,7 @@ impl fmt::Debug for NewDirectory {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is, `Some(None)` clears an optional one.
-/// `Debug` never shows the bind password.
+/// `Some(None)` clears an optional field. `Debug` never shows the bind password.
 #[derive(Clone, Default)]
 pub struct DirectoryUpdate {
     pub name: Option<String>,
@@ -168,7 +152,6 @@ impl fmt::Debug for DirectoryUpdate {
     }
 }
 
-/// The validated, non-secret columns of a directory.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Fields {
     pub(crate) name: String,
@@ -212,7 +195,6 @@ impl Fields {
         Ok(fields)
     }
 
-    /// `current` with `update` applied (the bind password is the caller's).
     pub(crate) fn updated(
         current: &ldap_directory::Model,
         update: &DirectoryUpdate,
@@ -267,7 +249,6 @@ impl Fields {
         Ok(fields)
     }
 
-    /// Rules across fields (the bind password's are the caller's).
     fn check(&self) -> Result<(), DirectoryError> {
         validate::url(&self.url, self.start_tls)?;
         if self.group_filter.is_some() && self.group_base_dn.is_none() {

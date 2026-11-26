@@ -1,8 +1,6 @@
-//! Log output of the login throttle (M2-06): lock start and proxy-fallback warnings.
-//!
-//! Kept in its own test binary where every test installs a capturing subscriber: `tracing`
-//! caches callsite interest process-wide, so a callsite first hit by a parallel test thread
-//! without a subscriber can miss events in a scoped one.
+//! Its own test binary, where every test installs a capturing subscriber: `tracing` caches
+//! callsite interest process-wide, so a callsite first hit by a parallel thread without a subscriber
+//! can miss events.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 

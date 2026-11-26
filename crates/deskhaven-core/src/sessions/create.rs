@@ -1,7 +1,3 @@
-//! Session creation: one write transaction that re-checks the login's credential stamp and
-//! inserts the hashed token (revoking the user's sessions beyond the cap, `list`); and the
-//! rotation of a console session on a privilege change.
-
 use std::net::IpAddr;
 
 use deskhaven_db::begin_write;
@@ -18,7 +14,6 @@ use super::{
 };
 use crate::users::{CredentialStamp, UserService};
 
-/// A session row before insertion.
 struct NewSession {
     user_id: i64,
     kind: SessionKind,
@@ -28,9 +23,8 @@ struct NewSession {
 }
 
 impl SessionService {
-    /// Issues a client session bound to `device` for the user a local login verified.
-    /// [`SessionError::StaleCredential`] when the password, status or existence of the user
-    /// changed since `stamp` was taken.
+    /// [`SessionError::StaleCredential`] when the user's password, status or existence changed since
+    /// `stamp`.
     pub async fn create_client(
         &self,
         user_id: i64,
@@ -49,7 +43,6 @@ impl SessionService {
         self.create(new, stamp).await
     }
 
-    /// Issues a console session (06 §3.2; the cookie is the admin API's business).
     pub async fn create_console(
         &self,
         user_id: i64,
@@ -67,12 +60,8 @@ impl SessionService {
         self.create(new, stamp).await
     }
 
-    /// Replaces a console session after a privilege change (a second factor was just
-    /// enrolled through it): in one write transaction, checks that `session_id` is still a
-    /// usable console session of an active user, revokes **every** console session of that
-    /// user (this one included: no session that never passed the new factor keeps its
-    /// standing) and issues a fresh one. Fails as [`SessionError::is_unauthenticated`] when
-    /// the session no longer stands. Client sessions are left alone.
+    /// Revokes every console session of the user, this one included: no session that never passed the
+    /// new factor keeps its standing.
     pub async fn rotate_console(
         &self,
         session_id: i64,
@@ -117,8 +106,6 @@ impl SessionService {
 }
 
 impl Core {
-    /// Inserts the session and revokes the user's sessions beyond the cap, in one write
-    /// transaction; the new session and the ids of the revoked ones.
     async fn insert(
         &self,
         users: &UserService,
@@ -196,7 +183,6 @@ impl Core {
         Ok(created.into())
     }
 
-    /// The row of a new session created `now`, expiring after the current session TTL.
     fn new_row(
         &self,
         new: NewSession,

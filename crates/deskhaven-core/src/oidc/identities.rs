@@ -1,7 +1,5 @@
-//! A user's OIDC identities (`user_identities`, M4-09): listing, and removal by the account
-//! holder or an administrator. Who may remove what is the caller's [`TxGuard`]; this
-//! module keeps one rule of its own: an `oidc` account keeps its last identity (it has no
-//! password, so without one nobody could sign in to it).
+//! An `oidc` account keeps its last identity: it has no password, so without one nobody could
+//! sign in.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
@@ -18,7 +16,6 @@ use super::error::IdentityError;
 use crate::console_audit::TxGuard;
 use crate::users::{AuthSource, User};
 
-/// One identity of an account, with its provider's names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
     pub id: i64,
@@ -26,9 +23,7 @@ pub struct Identity {
     pub provider_id: i64,
     pub provider_name: String,
     pub provider_display_name: String,
-    /// The provider's `sub`.
     pub subject: String,
-    /// The last address the IdP asserted verified, if any.
     pub email: Option<String>,
     pub linked_via: LinkedVia,
     pub created_at: TimestampMs,
@@ -50,8 +45,6 @@ impl Identity {
     }
 }
 
-/// What a guard of an identity change sees: the account and the identity (`before` of a
-/// removal, `after` of a link).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdentityChange {
     pub user: User,
@@ -59,7 +52,6 @@ pub struct IdentityChange {
 }
 
 impl OidcService {
-    /// The identities of account `user_id`, oldest first.
     pub async fn identities_of(&self, user_id: i64) -> Result<Vec<Identity>, IdentityError> {
         let rows = user_identity::Entity::find()
             .filter(user_identity::Column::UserId.eq(user_id))
@@ -73,9 +65,6 @@ impl OidcService {
             .collect())
     }
 
-    /// Removes identity `id`; with `of_user`, only when it is that account's (the
-    /// self-service path: another account's identity is [`IdentityError::NotFound`]).
-    /// `guard` sees the account and the identity as `before` and records the audit row.
     pub async fn unlink_identity(
         &self,
         id: i64,
@@ -124,12 +113,8 @@ impl OidcService {
         Ok(())
     }
 
-    /// A removed identity, whatever its source, would be linked again by email at its next
-    /// login while the email conditions hold (an account recovered after a compromise has
-    /// just lost its TOTP blocker too): removing one also marks the account's address
-    /// unverified. Other `email` identities of the account then stop at their next login.
-    /// An administrator can mark the address verified again; the holder can link
-    /// explicitly.
+    /// A removed identity would be linked again by email at its next login while the email conditions
+    /// hold, so removing one marks the account's address unverified.
     async fn unverify_email<C: ConnectionTrait>(
         &self,
         conn: &C,
@@ -143,8 +128,7 @@ impl OidcService {
     }
 }
 
-/// The account row, write-locked until the transaction ends (PostgreSQL; SQLite's write
-/// transaction already excludes other writers).
+/// PostgreSQL; SQLite's write transaction already excludes other writers.
 pub(crate) async fn locked_account<C: ConnectionTrait>(
     conn: &C,
     user_id: i64,

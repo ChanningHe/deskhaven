@@ -1,16 +1,6 @@
-//! [`DeviceService`]: what the device endpoints and the console need of the registry beyond
-//! the signal server's registrations ([`DeviceRepository`](super::DeviceRepository)).
-//!
-//! **Identity** (06 §2): device endpoints carry no credential, only `id` and `uuid` (base64 of
-//! the raw uuid the device sent in RegisterPk). The id must be a registered device, and with
-//! `devices.verify_uuid` (default) the uuid must equal the stored one (constant-time
-//! comparison). Both failures look the same to the caller.
-//!
-//! **Strategy cache**: deleting a device or device group removes its strategy assignment in
-//! the same transaction ([`strategies::forget_device`] / [`strategies::forget_device_group`])
-//! and invalidates the cache after commit; so does any change of a device's owner or device
-//! group made here (presets). Writes run in their own task, so a dropped request can neither
-//! interrupt a commit nor lose the invalidation that follows it.
+//! Device endpoints carry no credential, only `id` and `uuid`; an unknown id and a uuid mismatch
+//! look the same to the caller. Writes run in their own task, so a dropped request can neither
+//! interrupt a commit nor lose the strategy-cache invalidation that follows it.
 
 use std::future::Future;
 use std::sync::{Arc, PoisonError, RwLock};
@@ -67,39 +57,27 @@ use base64_022::Engine as _;
 use registry::SignalRegistry;
 use std::time::Duration;
 
-/// Longest device group name, in characters.
 pub const DEVICE_GROUP_NAME_MAX_LEN: usize = 64;
 
-/// A `POST /api/sysinfo` body, parsed.
 #[derive(Clone, Debug, Default)]
 pub struct SysinfoReport {
     pub rustdesk_id: String,
-    /// As sent: base64 of the device uuid.
     pub uuid: String,
     pub sysinfo: Sysinfo,
     pub presets: Presets,
 }
 
-/// Result of [`DeviceService::report_sysinfo`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SysinfoOutcome {
-    /// Written (first report, or the content changed).
     Stored,
-    /// Same content as stored: nothing written.
     Unchanged,
-    /// Unknown id, or a uuid that does not match.
     NotFound,
-    /// Changed content, but the device wrote within
-    /// [`SYSINFO_WRITE_INTERVAL`](super::SYSINFO_WRITE_INTERVAL): nothing
-    /// written (see [`limits`](super::limits)).
     TooFrequent,
 }
 
-/// Called with the RustDesk id of each deleted device, after the commit (see
-/// [`DeviceService::on_device_deleted`]). Must be cheap and must not panic.
+/// Must be cheap and must not panic.
 pub type DeletedHook = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Device registry operations. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct DeviceService {
     inner: Arc<Inner>,
@@ -117,14 +95,12 @@ struct Inner {
     heartbeat_ips: IpLimiter,
     sysinfo_writes: WriteLimit,
     deleted_hooks: RwLock<Vec<DeletedHook>>,
-    /// `--deploy` / `--assign` (M2-19): audit timestamps, new-id quota, signal registry.
     clock: SharedClock,
     new_ids: NewIdQuota,
     registry: SignalRegistry,
 }
 
 impl DeviceService {
-    /// `presence` and the rate limits run on `clock` (share it with the other services).
     pub fn new(
         db: DatabaseConnection,
         settings: SettingsService,
@@ -156,14 +132,12 @@ impl DeviceService {
         &self.inner.presence
     }
 
-    /// Disconnect requests, handed to the devices by their next heartbeat.
     pub fn disconnects(&self) -> &DisconnectQueue {
         &self.inner.disconnects
     }
 
-    /// Runs `hook` after every committed device deletion. `serve` uses it to make the signal
-    /// server forget the id (`SignalHandle::reload_peer`), so the device re-registers as new
-    /// at once instead of being answered `ID_NOT_FOUND` until a restart.
+    /// Makes the signal server forget the id, so the device re-registers at once instead of being
+    /// answered `ID_NOT_FOUND` until a restart.
     pub fn on_device_deleted(&self, hook: DeletedHook) {
         let mut hooks = self
             .inner
@@ -173,28 +147,19 @@ impl DeviceService {
         hooks.push(hook);
     }
 
-    /// Takes a token of `client`'s sysinfo bucket, or returns how long until one is free
-    /// ([`SYSINFO_PER_IP_PER_MINUTE`]).
     pub fn admit_sysinfo(&self, client: ClientAddr) -> Result<(), Duration> {
         self.inner.sysinfo_ips.check(client)
     }
 
-    /// Takes a token of `client`'s heartbeat bucket, or returns how long until one is free
-    /// ([`HEARTBEAT_PER_IP_PER_MINUTE`](super::HEARTBEAT_PER_IP_PER_MINUTE)).
     pub fn admit_heartbeat(&self, client: ClientAddr) -> Result<(), Duration> {
         self.inner.heartbeat_ips.check(client)
     }
 
-    /// The `devices.id` of `rustdesk_id` if `uuid` (base64) identifies it (see the module
-    /// documentation). The identity of a known device is cached in [`Presence`], so this
-    /// queries the database only for a device not seen since it was evicted, or an unknown id.
     pub async fn verify(&self, rustdesk_id: &str, uuid: &str) -> Result<Option<i64>, DeviceError> {
         let identity = self.identify(rustdesk_id, uuid).await?;
         Ok(identity.map(|identity| identity.device_id))
     }
 
-    /// Whether `rustdesk_id` is a registered device, without a uuid (the controller's audit
-    /// note carries none). Served from the same identity cache as [`verify`](Self::verify).
     pub async fn is_registered(&self, rustdesk_id: &str) -> Result<bool, DeviceError> {
         if self.inner.presence.identity(rustdesk_id).is_some() {
             return Ok(true);
@@ -202,7 +167,6 @@ impl DeviceService {
         Ok(self.load_identity(rustdesk_id).await?.is_some())
     }
 
-    /// [`verify`](Self::verify) with the whole cached identity.
     async fn identify(
         &self,
         rustdesk_id: &str,
@@ -215,7 +179,6 @@ impl DeviceService {
         Ok(identity.filter(|identity| self.inner.uuid_matches(&identity.uuid, uuid)))
     }
 
-    /// The identity of `rustdesk_id` read from the database (`None`: unknown id) and cached.
     async fn load_identity(&self, rustdesk_id: &str) -> Result<Option<Identity>, DeviceError> {
         let presence = &self.inner.presence;
         let epoch = presence.identity_epoch();
@@ -231,8 +194,6 @@ impl DeviceService {
         Ok(Some(identity))
     }
 
-    /// Stores a device's sysinfo unless it is unchanged (same content hash: no write at all),
-    /// applying its presets with the first one stored (see `presets`).
     pub async fn report_sysinfo(
         &self,
         report: SysinfoReport,
@@ -268,13 +229,10 @@ impl DeviceService {
             .await
     }
 
-    /// Deletes device `device_id` (`devices.id`) and its strategy assignment; `false` if it
-    /// did not exist. Then runs the [`on_device_deleted`](Self::on_device_deleted) hooks.
     pub async fn delete(&self, device_id: i64) -> Result<bool, DeviceError> {
         self.delete_guarded(device_id, TxGuard::none()).await
     }
 
-    /// Creates a device group; returns its id. Names are unique (exact match).
     pub async fn create_group(&self, name: &str, note: &str) -> Result<i64, DeviceError> {
         let group = self
             .create_group_guarded(name, note, TxGuard::none())
@@ -282,9 +240,6 @@ impl DeviceService {
         Ok(group.id)
     }
 
-    /// Deletes device group `id` and its strategy assignment; its devices become ungrouped
-    /// (foreign key `SET NULL`). `false` if it did not exist; a group defined in the
-    /// configuration file is not deleted ([`DeviceError::ManagedByConfig`]).
     pub async fn delete_group(&self, id: i64) -> Result<bool, DeviceError> {
         match self.delete_group_guarded(id, TxGuard::none()).await {
             Ok(()) => Ok(true),
@@ -293,7 +248,6 @@ impl DeviceService {
         }
     }
 
-    /// Runs `op` to completion in its own task (see the module documentation).
     async fn detached<T, F, Fut>(&self, op: F) -> Result<T, DeviceError>
     where
         F: FnOnce(Arc<Inner>) -> Fut,
@@ -324,7 +278,6 @@ impl Inner {
             .await
     }
 
-    /// `given` (base64) is the stored uuid, or uuid verification is switched off.
     fn uuid_matches(&self, stored: &[u8], given: &str) -> bool {
         if !self.settings.snapshot().get(&DEVICES_VERIFY_UUID) {
             return true;
@@ -335,7 +288,6 @@ impl Inner {
         stored.ct_eq(&given).into()
     }
 
-    /// The write half of [`DeviceService::report_sysinfo`], re-checked under the row lock.
     async fn store_sysinfo(
         self: Arc<Self>,
         report: SysinfoReport,
@@ -373,8 +325,6 @@ impl Inner {
         Ok(SysinfoOutcome::Stored)
     }
 
-    /// The presets applied after the sysinfo commit: the strategy, and with
-    /// [`AcceptPresets::All`] the address book entry.
     async fn apply_late_presets(&self, device: &device::Model, p: &Presets, scope: AcceptPresets) {
         if let Some(name) = &p.strategy_name {
             presets::apply_strategy(&self.strategies, device, name).await;
@@ -394,7 +344,6 @@ impl Inner {
     }
 }
 
-/// Writes the sysinfo columns, the hash and the row presets of `row`.
 async fn write_row(
     tx: &DatabaseTransaction,
     row: device::Model,

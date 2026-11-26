@@ -1,7 +1,3 @@
-//! What this build is and where its source lives: served by `GET /api/version` (client
-//! API) and used by the update check ([`crate::update`]).
-
-/// The workspace version (every crate shares it).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Where the corresponding source of this build is offered. A constant on
 /// purpose: a deployment must not be able to point its users elsewhere by

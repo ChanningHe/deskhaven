@@ -1,8 +1,3 @@
-//! AddressBookService, whole-book operations (`contents`, `replace_contents`): what legacy
-//! `/api/ab` clients read and push. Replacement is one transaction; fields the pushed peers
-//! do not carry survive; the caps of the per-item API apply. Every test runs on SQLite and
-//! PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -16,7 +11,6 @@ use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::{EntityTrait, PaginatorTrait};
 use serde_json::json;
 
-/// Colour of a tag whose colour nobody gave (the client's accent blue).
 const DEFAULT_COLOR: i64 = 0xFF00_71FF;
 
 fn tag(name: &str, color: Option<i64>) -> ReplacementTag {
@@ -120,7 +114,6 @@ async fn replacing_keeps_fields_the_pushed_peers_do_not_carry() {
             .add_peer(me, &book.guid, peer(json!({ "id": "gone" })))
             .await
             .unwrap();
-        // What a legacy client pushes: its seven fields, plus a new unknown one.
         let pushed = json!({
             "id": "111", "alias": "new", "hash": "h-new", "tags": ["a", "b"],
             "username": "u", "hostname": "", "platform": "", "replaced": 2

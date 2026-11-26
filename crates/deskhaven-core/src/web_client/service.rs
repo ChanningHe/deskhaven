@@ -1,6 +1,3 @@
-//! [`WebClientService`]: who may open a web client session to which device, and the open
-//! sessions' trickle ICE.
-
 use std::net::IpAddr;
 use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
@@ -24,32 +21,24 @@ use crate::devices::{DeviceRepository, DeviceStatus};
 use crate::settings::SettingsService;
 use crate::users::Role;
 
-/// Random bytes of a session id (base64url, 22 characters).
 const SESSION_ID_BYTES: usize = 16;
 
-/// Why a web client request failed.
 #[derive(Debug, thiserror::Error)]
 pub enum WebClientError {
-    /// `web_client.enabled` is off.
     #[error("the web client is disabled")]
     Disabled,
-    /// No signal server runs in this process, or it stopped.
     #[error("the signal server is not available")]
     Unavailable,
-    /// No such device the user may control, or no such session of the user.
     #[error("not found")]
     NotFound,
-    /// Over the per-user or per-device rate; retry after the duration.
     #[error("too many web client sessions, try again later")]
     RateLimited(Duration),
-    /// The user holds the most sessions at once.
     #[error("too many open web client sessions")]
     TooManySessions,
     #[error(transparent)]
     Punch(PunchError),
     #[error(transparent)]
     Candidate(CandidateRejected),
-    /// The session's route is closed and every device candidate was read.
     #[error("the web client session is closed")]
     Closed,
     #[error(transparent)]
@@ -67,23 +56,19 @@ impl From<PunchError> for WebClientError {
     }
 }
 
-/// Who opens a session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Opener {
     pub user_id: i64,
     pub role: Role,
 }
 
-/// A session request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpenRequest {
     pub device_id: String,
     pub offer: Option<String>,
-    /// The browser's IP (trusted proxies applied).
     pub client: IpAddr,
 }
 
-/// An opened session: its id and what the device answered.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Opened {
     pub id: String,
@@ -102,7 +87,6 @@ impl std::fmt::Debug for Opened {
     }
 }
 
-/// One ICE server for the browser's `RTCPeerConnection`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct IceServer {
     pub urls: Vec<String>,
@@ -119,7 +103,6 @@ impl std::fmt::Debug for IceServer {
     }
 }
 
-/// Web client sessions. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct WebClientService {
     inner: Arc<Inner>,
@@ -150,8 +133,7 @@ impl WebClientService {
         }
     }
 
-    /// The signal server sessions are punched through. Without one (none in this process)
-    /// every open is [`WebClientError::Unavailable`].
+    /// Without one every open is [`WebClientError::Unavailable`].
     pub fn set_punches(&self, punches: Arc<dyn WebPunches>) {
         *self
             .inner
@@ -165,9 +147,7 @@ impl WebClientService {
         punches.unwrap_or_else(PoisonError::into_inner).clone()
     }
 
-    /// Opens a session to `req.device_id` for `by`: the device must be active and owned by
-    /// the user, or the user an admin or owner. A device that does not exist and one the
-    /// user may not control are the same [`WebClientError::NotFound`].
+    /// A device that does not exist and one the user may not control are the same `NotFound`.
     pub async fn open(&self, by: Opener, req: OpenRequest) -> Result<Opened, WebClientError> {
         let inner = &self.inner;
         if !inner.settings.snapshot().get(&WEB_CLIENT_ENABLED) {
@@ -227,7 +207,6 @@ impl WebClientService {
         Ok(device.status == DeviceStatus::Active && (privileged || owned))
     }
 
-    /// Passes one of the browser's ICE candidates of session `id` to the device.
     pub fn send_candidate(
         &self,
         user_id: i64,
@@ -243,8 +222,6 @@ impl WebClientService {
         session.send(candidate).map_err(WebClientError::Candidate)
     }
 
-    /// The device's ICE candidates of session `id` from index `after` on, waiting up to
-    /// `wait` for one when there are none.
     pub async fn candidates(
         &self,
         user_id: i64,
@@ -264,16 +241,13 @@ impl WebClientService {
             .map_err(|_| WebClientError::Closed)
     }
 
-    /// Closes session `id` of `user_id` and revokes its route; the device id it was for, or
-    /// `None` when the user has no such session.
     pub fn close(&self, user_id: i64, id: &str) -> Option<String> {
         let now = self.inner.clock.elapsed();
         let session = self.inner.table.remove(user_id, id, now)?;
         Some(session.device_id.clone())
     }
 
-    /// The ICE servers of the current settings; the TURN credentials go with `turn:` and
-    /// `turns:` URLs only, and only when a user name is set.
+    /// TURN credentials go with `turn:` and `turns:` URLs only, and only when a user name is set.
     pub fn ice_servers(&self) -> Vec<IceServer> {
         let snapshot = self.inner.settings.snapshot();
         let urls = snapshot.get(&WEB_CLIENT_ICE_SERVERS);

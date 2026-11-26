@@ -1,6 +1,3 @@
-//! Console reads: the paged strategy list with assignment counts, one strategy's summary,
-//! and the targets a strategy is assigned to, with their names.
-
 use std::collections::HashMap;
 
 use deskhaven_db::entity::{device, device_group, group, strategy, strategy_assignment, user};
@@ -15,8 +12,7 @@ use super::{StrategyError, StrategyService};
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 
-/// Filters of [`StrategyService::page`]: `q` matches a substring of the name,
-/// case-insensitively (ASCII on SQLite) and literally.
+/// `q`: case-insensitive literal substring of the name, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct StrategyQuery {
     pub q: Option<String>,
@@ -36,15 +32,12 @@ pub struct StrategySort {
     pub descending: bool,
 }
 
-/// A strategy with the number of targets it is assigned to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StrategySummary {
     pub strategy: Strategy,
     pub assignment_count: u64,
 }
 
-/// A target a strategy is assigned to. `name` is the user name, group or device group name,
-/// or the device's RustDesk id; `None` for the global target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssignedTarget {
     pub target: Target,
@@ -52,7 +45,6 @@ pub struct AssignedTarget {
 }
 
 impl StrategyService {
-    /// One page of strategies (ordered by `sort`, default name, then id the same way).
     pub async fn page(
         &self,
         query: &StrategyQuery,
@@ -109,7 +101,6 @@ impl StrategyService {
         })
     }
 
-    /// The targets of strategy `id`, ordered like [`Target`] (global first, devices last).
     pub async fn assigned_targets(&self, id: i64) -> Result<Vec<AssignedTarget>, StrategyError> {
         let db = &self.inner.db;
         let exists = strategy::Entity::find_by_id(id).one(db).await?.is_some();
@@ -159,7 +150,6 @@ async fn assignment_counts(
         .collect())
 }
 
-/// Names of the targets, one query per kind present.
 #[derive(Default)]
 struct Names {
     users: HashMap<i64, String>,
@@ -211,7 +201,6 @@ impl Names {
     }
 }
 
-/// `id -> name` of the rows of `E` with the given ids.
 async fn named<E: EntityTrait>(
     db: &impl ConnectionTrait,
     id_col: E::Column,

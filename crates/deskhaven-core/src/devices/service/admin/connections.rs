@@ -1,5 +1,4 @@
-//! A device's recent connections, read from `connection_sessions` (written by the audit
-//! ingest). The table has no foreign key to `devices`: the history outlives the device.
+//! No foreign key to `devices`: the history outlives the device.
 
 use deskhaven_db::entity::connection_session;
 use deskhaven_db::time::TimestampMs;
@@ -8,13 +7,11 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use crate::devices::DeviceError;
 use crate::devices::service::DeviceService;
 
-/// One connection to a device, as the device reported it. Everything but the identity is
-/// optional: the messages of a connection arrive in any order.
+/// Everything but the identity is optional: a connection's messages arrive in any order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionRecord {
     pub guid: String,
     pub conn_id: i64,
-    /// The controlling device and the name it gave.
     pub peer_rustdesk_id: Option<String>,
     pub peer_name: Option<String>,
     pub controller_user_id: Option<i64>,
@@ -46,7 +43,6 @@ impl From<connection_session::Model> for ConnectionRecord {
 }
 
 impl DeviceService {
-    /// The latest `limit` connections to `rustdesk_id`, newest first.
     pub async fn recent_connections(
         &self,
         rustdesk_id: &str,

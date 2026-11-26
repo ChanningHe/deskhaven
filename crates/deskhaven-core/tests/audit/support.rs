@@ -1,5 +1,3 @@
-//! Shared setup: an audit service over a device registry on one manual clock, registered
-//! devices, and builders of the messages the client sends.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test module uses a subset.
@@ -28,7 +26,6 @@ use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder};
 
 pub const T0_MS: i64 = 1_700_000_000_123;
 pub const ID: &str = "123456789";
-/// The controller's session id, as the authorization and close messages carry it.
 pub const SESSION: u64 = 8_123_456_789_012_345_678;
 pub const PEER: &str = "987654321";
 
@@ -53,7 +50,6 @@ pub async fn ctx(db: &TestDb) -> Ctx {
     c
 }
 
-/// Base64 of the uuid [`Ctx::register`] registers `rustdesk_id` with, as the client sends it.
 pub fn uuid_b64(rustdesk_id: &str) -> String {
     STANDARD.encode(format!("uuid-of-{rustdesk_id}"))
 }
@@ -66,7 +62,6 @@ pub fn envelope(nonce: &str) -> Envelope {
     }
 }
 
-/// A client at 198.51.100.`n`.
 pub fn client(n: u8) -> ClientAddr {
     ClientAddr {
         addr: IpAddr::V4(Ipv4Addr::new(198, 51, 100, n)),
@@ -86,8 +81,7 @@ pub fn session(id: u64) -> SessionId {
     SessionId::from_json(&serde_json::json!(id)).unwrap()
 }
 
-/// The first message: sent when the connection opens, before the login request, so its
-/// session id is still 0 (`src/server/connection.rs:1523-1530`).
+/// Sent before the login request, so its session id is still 0.
 pub fn new_conn(conn_id: i64) -> Record {
     Record::Conn(ConnReport {
         conn_id,
@@ -135,12 +129,10 @@ impl Ctx {
             .unwrap();
     }
 
-    /// Ingests `record` from device [`ID`] under `nonce`.
     pub async fn send(&self, nonce: &str, record: Record) -> Ingest {
         self.audit.ingest(envelope(nonce), record).await.unwrap()
     }
 
-    /// Ingests `record` from the registered device `rustdesk_id` under `nonce`.
     pub async fn send_from(&self, rustdesk_id: &str, nonce: &str, record: Record) -> Ingest {
         let envelope = Envelope {
             rustdesk_id: rustdesk_id.to_owned(),

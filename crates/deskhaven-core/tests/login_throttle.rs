@@ -1,6 +1,3 @@
-//! The login handler facade (M2-06): IP bucket first, then the attempt reservation; the same
-//! `Throttled` for every reason and for existing and unknown accounts alike.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -49,7 +46,6 @@ async fn throttle(db: &TestDb) -> (LoginThrottle, Arc<ManualClock>) {
     (throttle, clock)
 }
 
-/// One failed login: pre-check, then report the failure.
 async fn failed_login(throttle: &LoginThrottle, from: ClientAddr, username: &str) -> LockStatus {
     let attempt = throttle.pre_check(from, username).await.unwrap();
     throttle.on_failure(attempt)
@@ -213,8 +209,6 @@ async fn cleanup_sweeps_ip_buckets_and_stale_rows() {
     })
     .await;
 }
-
-// --- M-1: two-step logins share one budget ---------------------------------------------------
 
 #[tokio::test]
 async fn password_ok_with_failing_second_factor_reaches_the_lock() {

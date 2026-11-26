@@ -4,35 +4,27 @@ use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 use crate::users::UserError;
 
-/// Why a session operation failed. Messages never contain tokens or token hashes.
-///
-/// For API mapping: [`is_unauthenticated`](Self::is_unauthenticated) errors are a 401 with
-/// one generic message (which of them it was is for logs and tests only); everything else
-/// is a server-side failure and must **not** become a 401 (a 401 logs the client out).
+/// Messages never contain tokens or token hashes. Anything not `is_unauthenticated` must not become
+/// a 401: a 401 logs the client out.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SessionError {
-    /// Malformed token, no session has it, or the session is of another kind.
     #[error("invalid session token")]
     InvalidToken,
 
     #[error("session revoked")]
     Revoked,
 
-    /// Past its absolute expiry, or idle for longer than `auth.session_idle_ttl`.
     #[error("session expired")]
     Expired,
 
-    /// The owner is disabled, unverified or deleted (checked at read time).
     #[error("session owner is not active")]
     UserInactive,
 
-    /// Creation: the credential the login verified changed (or the user stopped being an
-    /// active local account) before the session could be stored. The login must restart.
+    /// The login must restart.
     #[error("credentials changed during login")]
     StaleCredential,
 
-    /// Creation: a client session needs a valid device id and uuid.
     #[error("invalid {field}: {reason}")]
     InvalidDevice {
         field: &'static str,
@@ -42,20 +34,16 @@ pub enum SessionError {
     #[error("cannot generate a session token")]
     Random(#[source] CryptoError),
 
-    /// Malformed input (a page out of range); `field` names it.
     #[error("invalid {field}: {reason}")]
     Invalid { field: &'static str, reason: String },
 
-    /// Administrative revocation of an unknown user.
     #[error("user not found")]
     UserNotFound,
 
-    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
 
-    /// The operation's task panicked or the runtime is shutting down; whether it committed
-    /// is unknown until the next read.
+    /// Whether it committed is unknown until the next read.
     #[error("session operation did not complete")]
     Aborted,
 
@@ -64,7 +52,6 @@ pub enum SessionError {
 }
 
 impl SessionError {
-    /// Whether the presented token simply does not authenticate (HTTP 401).
     pub fn is_unauthenticated(&self) -> bool {
         matches!(
             self,

@@ -1,8 +1,3 @@
-//! The controller's session note (`{id, session_id, note}`, no uuid, no connection id): it
-//! names a session, so it can only land on rows that carry that session id. One arriving
-//! before them waits in a buffer bounded per source, per device and overall. The first
-//! non-empty note of a session stays (06 §7).
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;
@@ -17,12 +12,10 @@ use super::support::{ID, SESSION, authorized, client, closed, ctx, new_conn, not
 #[tokio::test]
 async fn the_first_note_of_a_session_stays_and_an_empty_one_clears_nothing() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
         c.send("b", authorized(7, SESSION)).await;
 
-        // Act
         let first = c
             .audit
             .record_note(note(ID, SESSION, "fixing\r\nprinter"), client(1));
@@ -34,7 +27,6 @@ async fn the_first_note_of_a_session_stays_and_an_empty_one_clears_nothing() {
             .record_note(note(ID, SESSION, "\u{200B}"), client(1));
         let empty = empty.await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(first, NoteOutcome::Stored, "{b}");
         assert_eq!(
@@ -53,16 +45,13 @@ async fn the_first_note_of_a_session_stays_and_an_empty_one_clears_nothing() {
 #[tokio::test]
 async fn a_note_before_its_session_waits_for_it() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
 
-        // Act
         let early = c.audit.record_note(note(ID, SESSION, "early"), client(1));
         let early = early.await.unwrap();
         c.send("b", closed(7, SESSION)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(early, NoteOutcome::Pending, "{}", db.backend);
         assert_eq!(rows.len(), 1, "{}", db.backend);
@@ -75,7 +64,6 @@ async fn a_note_before_its_session_waits_for_it() {
 #[tokio::test]
 async fn a_waiting_note_expires_but_outlives_the_pairing_window() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         assert!(NOTE_TTL >= PAIRING_WINDOW);
         c.audit
@@ -87,13 +75,11 @@ async fn a_waiting_note_expires_but_outlives_the_pairing_window() {
             .await
             .unwrap();
 
-        // Act
         c.clock.advance(PAIRING_WINDOW - Duration::from_millis(1));
         c.send("a", authorized(8, SESSION + 1)).await;
         c.clock.advance(NOTE_TTL);
         c.send("b", authorized(7, SESSION)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(
             rows[0].controller_note.as_deref(),
@@ -109,13 +95,10 @@ async fn a_waiting_note_expires_but_outlives_the_pairing_window() {
 #[tokio::test]
 async fn a_note_for_an_unknown_device_is_not_kept() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
 
-        // Act
         let outcome = c.audit.record_note(note("555555555", 1, "x"), client(1));
 
-        // Assert
         assert_eq!(
             outcome.await.unwrap(),
             NoteOutcome::NotFound,
@@ -131,7 +114,6 @@ async fn a_note_for_an_unknown_device_is_not_kept() {
 #[tokio::test]
 async fn waiting_notes_are_capped_per_source_and_per_source_and_device() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let devices: Vec<String> = (0..MAX_NOTES_PER_SOURCE)
             .map(|i| format!("{}", 200_000_000 + i))
@@ -146,7 +128,6 @@ async fn waiting_notes_are_capped_per_source_and_per_source_and_device() {
             assert_eq!(held.await.unwrap(), NoteOutcome::Pending, "{}", db.backend);
         }
 
-        // Act
         let over_source = c
             .audit
             .record_note(note(ID, 1, "n"), client(1))
@@ -163,7 +144,6 @@ async fn waiting_notes_are_capped_per_source_and_per_source_and_device() {
         let other_source = c.audit.record_note(note(ID, 999, "n"), client(3));
         let other_source = other_source.await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(over_source, NoteOutcome::Full, "{b}");
         let (last, kept) = per_device.split_last().unwrap();

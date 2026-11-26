@@ -1,7 +1,3 @@
-//! `--deploy` guards (M2-19 review): the quota on new ids per source network, the signal
-//! server's live registrations, and the registry-changed hook that loads new ids into its
-//! memory.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -26,7 +22,6 @@ fn from(ip: IpAddr, rustdesk_id: &str) -> DeployRequest {
 #[tokio::test]
 async fn new_ids_are_limited_per_source_network_but_marking_is_not() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.require_deploy().await;
@@ -37,12 +32,10 @@ async fn new_ids_are_limited_per_source_network_but_marking_is_not() {
             assert_eq!(outcome, DeployOutcome::Deployed, "{}: {n}", db.backend);
         }
 
-        // Act
         let over = c.deploy(from(ip, "one-too-many")).await;
         let marking = c.deploy(from(ip, ID)).await;
         let elsewhere = c.deploy(from(other, "one-too-many")).await;
 
-        // Assert
         let b = db.backend;
         assert!(
             matches!(over, DeployOutcome::TooMany { .. }),
@@ -139,7 +132,6 @@ async fn only_a_new_id_runs_the_registry_changed_hooks() {
     .await;
 }
 
-/// Deploying an id that is already deployed answers OK at once: no lookup, no write.
 #[tokio::test]
 async fn a_repeated_deploy_neither_asks_the_signal_server_nor_writes() {
     each_migrated_backend(async |db: &TestDb| {

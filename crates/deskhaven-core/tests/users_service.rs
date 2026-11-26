@@ -1,6 +1,3 @@
-//! UserService: creation and normalization, uniqueness, local authentication, rehash on
-//! login, last-owner protection, events. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -819,8 +816,8 @@ async fn unknown_users_are_not_found() {
     .await;
 }
 
-/// Re-review LOW-4: the search folds `q` the way `email_norm` is folded (ASCII only), so a
-/// non-ASCII part of an address matches as stored.
+/// The search folds `q` the way `email_norm` is folded (ASCII only), so a non-ASCII part of an
+/// address matches as stored.
 #[tokio::test]
 async fn search_matches_emails_with_their_ascii_folding() {
     each_migrated_backend(async |db: &TestDb| {

@@ -1,5 +1,3 @@
-//! Deleting a user or user group removes its strategy assignment in the same transaction.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::strategies::Target;

@@ -1,6 +1,3 @@
-//! The `last_seen_at` batch flush (M2-14, 02 §3): presence contacts reach the registry in
-//! batches, never backwards, failed batches are retried, flushed offline entries are evicted.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -48,7 +45,6 @@ async fn rename_devices(db: &TestDb, from: &str, to: &str) {
 #[tokio::test]
 async fn contacts_are_written_in_batches_and_flushed_offline_entries_evicted() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         for id in IDS {
             c.device(id).await;
@@ -59,13 +55,11 @@ async fn contacts_are_written_in_batches_and_flushed_offline_entries_evicted() {
         }
         let mut flusher = c.flusher(2);
 
-        // Act
         let first = flusher.flush().await;
         let tracked_while_online = c.devices.presence().len();
         c.clock.advance(HEARTBEAT_TTL);
         let idle = flusher.flush().await;
 
-        // Assert
         let b = db.backend;
         let expected = FlushReport {
             written: 5,
@@ -90,7 +84,6 @@ async fn contacts_are_written_in_batches_and_flushed_offline_entries_evicted() {
 async fn contacts_of_non_ascii_custom_ids_are_written() {
     const UNICODE_IDS: [&str; 3] = ["a\u{e9}12345", "a\u{5f20}\u{4e09}1234", "a\u{203f}bcdef"];
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         for id in UNICODE_IDS {
             c.device(id).await;
@@ -100,10 +93,8 @@ async fn contacts_of_non_ascii_custom_ids_are_written() {
             c.devices.presence().heartbeat(id, ip(n), &[]);
         }
 
-        // Act
         let report = c.flusher(10).flush().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!((report.written, report.failed), (3, 0), "{b}");
         for (n, id) in (1..).zip(UNICODE_IDS) {
@@ -117,7 +108,6 @@ async fn contacts_of_non_ascii_custom_ids_are_written() {
 #[tokio::test]
 async fn last_seen_never_moves_backwards() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(IDS[0]).await;
         let mut row = c.row(IDS[0]).await.into_active_model();
@@ -125,10 +115,8 @@ async fn last_seen_never_moves_backwards() {
         row.update(&c.conn).await.unwrap();
         c.devices.presence().heartbeat(IDS[0], ip(9), &[]);
 
-        // Act
         let report = c.flusher(10).flush().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.written, 1, "{b}");
         let (seen, last_ip) = c.last_seen(IDS[0]).await;
@@ -147,7 +135,6 @@ async fn last_seen_never_moves_backwards() {
 #[tokio::test]
 async fn a_failed_batch_is_written_by_the_next_flush() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(IDS[0]).await;
         c.clock.advance(Duration::from_secs(3));
@@ -156,13 +143,11 @@ async fn a_failed_batch_is_written_by_the_next_flush() {
         let mut flusher = c.flusher(10);
         rename_devices(db, "devices", "devices_away").await;
 
-        // Act
         let failed = flusher.flush().await;
         let evicted = c.devices.presence().is_empty();
         rename_devices(db, "devices_away", "devices").await;
         let retried = flusher.flush().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(failed.failed, 1, "{b}");
         assert!(evicted, "{b}");
@@ -173,11 +158,9 @@ async fn a_failed_batch_is_written_by_the_next_flush() {
     .await;
 }
 
-/// A batch is one statement (no transaction, no statement per device).
 #[tokio::test]
 async fn each_batch_is_a_single_update() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let (conn, log) = counted(&db.conn);
         let c = ctx_on(conn, Arc::new(ManualClock::at(T0_MS))).await;
         for id in IDS {
@@ -190,11 +173,9 @@ async fn each_batch_is_a_single_update() {
         let mut flusher = c.flusher(2);
         take(&log);
 
-        // Act
         let report = flusher.flush().await;
         let statements = take(&log);
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.batches, 3, "{b}");
         assert_eq!(statements.len(), 3, "{b}: {statements:?}");
@@ -212,7 +193,6 @@ async fn each_batch_is_a_single_update() {
 #[tokio::test]
 async fn a_flush_dropped_midway_loses_nothing() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         for id in IDS {
             c.device(id).await;
@@ -223,7 +203,7 @@ async fn a_flush_dropped_midway_loses_nothing() {
         }
         let mut flusher = c.flusher(2);
 
-        // Act: polled once (it takes the contacts and starts a statement), then dropped.
+        // Polled once (it takes the contacts and starts a statement), then dropped.
         let mut dropped = Box::pin(flusher.flush());
         let first = dropped
             .as_mut()
@@ -231,7 +211,6 @@ async fn a_flush_dropped_midway_loses_nothing() {
         drop(dropped);
         let report = flusher.flush().await;
 
-        // Assert
         let b = db.backend;
         assert!(first.is_pending(), "{b}: the first flush did not finish");
         assert_eq!(report.failed, 0, "{b}");

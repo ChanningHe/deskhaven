@@ -1,11 +1,5 @@
-//! The relying-party protocol over `openidconnect`: the authorization URL, the code exchange
-//! with the PKCE verifier, and ID token verification.
-//!
-//! Verification: signature with a key of the provider's JWKS under an asymmetric algorithm
-//! only ([`ALLOWED_ALGS`]: no HMAC with the client secret, never `none`), `iss` equal to
-//! the configured issuer, `aud` containing the client id and no untrusted extra audience,
-//! `exp` against the service clock, and `nonce` equal to the flow's. The access token is not
-//! used (no userinfo call), so `at_hash` is not checked.
+//! Only asymmetric algorithms: no HMAC with the client secret, never `none`. The access token is
+//! not used (no userinfo call), so `at_hash` is not checked.
 
 use openidconnect::core::{
     CoreAuthDisplay, CoreAuthPrompt, CoreAuthenticationFlow, CoreClientAuthMethod,
@@ -27,7 +21,6 @@ use super::discovery::{Discovered, fetch_kind};
 use super::http::{FetchError, HttpFetch, ProviderHttp};
 use crate::clock::SharedClock;
 
-/// Signature algorithms accepted for ID tokens.
 const ALLOWED_ALGS: [CoreJwsSigningAlgorithm; 9] = [
     CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256,
     CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha384,
@@ -74,22 +67,18 @@ type RpClient = Client<
     EndpointMaybeSet,
 >;
 
-/// What identifies the relying party at the provider.
 pub(crate) struct RelyingParty<'a> {
     pub(crate) client_id: &'a str,
     pub(crate) client_secret: Option<&'a str>,
     pub(crate) redirect_uri: &'a Url,
 }
 
-/// The per-flow secrets.
 pub(crate) struct FlowSecrets<'a> {
     pub(crate) state: &'a str,
     pub(crate) nonce: &'a str,
     pub(crate) pkce_verifier: &'a str,
 }
 
-/// Why the exchange or the verification failed: `Unavailable` is the provider's (network,
-/// error response), `Invalid` the token's.
 #[derive(Debug)]
 pub(crate) enum ExchangeError {
     Unavailable(String),
@@ -114,8 +103,6 @@ fn client(discovered: &Discovered, rp: &RelyingParty<'_>) -> RpClient {
     }
 }
 
-/// The URL the user's browser opens: code flow, the scopes, `state`, `nonce` and the S256
-/// challenge of the verifier.
 pub(crate) fn authorization_url(
     discovered: &Discovered,
     rp: &RelyingParty<'_>,
@@ -142,7 +129,6 @@ pub(crate) fn authorization_url(
     url
 }
 
-/// The ID token the token endpoint returns for `code`, sent with the PKCE verifier.
 pub(crate) async fn exchange(
     discovered: &Discovered,
     fetch: &dyn HttpFetch,
@@ -165,7 +151,6 @@ pub(crate) async fn exchange(
         .ok_or_else(|| ExchangeError::Invalid("the token response has no ID token".to_owned()))
 }
 
-/// The verified claims of `token`.
 pub(crate) fn verify(
     discovered: &Discovered,
     rp: &RelyingParty<'_>,
@@ -186,8 +171,7 @@ pub(crate) fn verify(
 
 type TokenError = RequestTokenError<FetchError, StandardErrorResponse<CoreErrorResponseType>>;
 
-/// What went wrong with the token request, without the response body (a parse error's
-/// message can quote token values): the OAuth error code at most.
+/// A parse error's message can quote token values: the OAuth error code at most.
 fn token_kind(err: &TokenError) -> String {
     match err {
         RequestTokenError::ServerResponse(response) => {
@@ -199,7 +183,6 @@ fn token_kind(err: &TokenError) -> String {
     }
 }
 
-/// The kind of an ID token rejection, without claim values (for logs).
 pub(crate) fn rejection_kind(err: &ClaimsVerificationError) -> &'static str {
     match err {
         ClaimsVerificationError::Expired(_) => "expired",
@@ -215,7 +198,6 @@ pub(crate) fn rejection_kind(err: &ClaimsVerificationError) -> &'static str {
     }
 }
 
-/// Whether the failure may be a signing key rotated since the JWKS was fetched.
 pub(crate) fn is_unknown_key(err: &ClaimsVerificationError) -> bool {
     matches!(
         err,

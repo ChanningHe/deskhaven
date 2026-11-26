@@ -1,6 +1,4 @@
-//! What a refused link logs (M4-09): a warning naming the account and the provider, never
-//! the IdP subject. Its own test binary: the capture is a thread-local subscriber. Both
-//! backends.
+//! Its own test binary: the capture is a thread-local subscriber.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 

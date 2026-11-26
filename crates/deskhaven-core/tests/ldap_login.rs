@@ -1,8 +1,3 @@
-//! Password logins of directory accounts (06 §3.5) against the fake directory: routing
-//! between local and LDAP accounts, service bind -> search -> user bind, provisioning,
-//! no fallback to local passwords, outages, equal answers for unknown and wrong, and
-//! filter escaping. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -51,7 +46,6 @@ async fn first_login_provisions_a_directory_account_after_service_bind_search_an
         );
         assert!(env.fake.log().ends_with(&[Op::Close]));
 
-        // The second login reaches the same account.
         let again = env.login("ALICE", USER_PASSWORD).await.unwrap();
         assert_eq!(again.user.id, account.id);
     })
@@ -85,7 +79,6 @@ async fn wrong_password_and_unknown_user_answer_the_same_and_both_bind_once() {
         assert_eq!(unknown_binds.len(), 2);
         assert!(unknown_binds[1].ends_with(USER_BASE), "{unknown_binds:?}");
         assert_ne!(unknown_binds[1], user_dn("mallory"));
-        // Nothing was provisioned.
         assert!(env.users.get_by_username("mallory").await.is_err());
     })
     .await;
@@ -114,7 +107,6 @@ async fn an_unreachable_directory_fails_the_login_and_never_falls_back() {
             matches!(unknown, Err(AuthError::InvalidCredentials)),
             "{unknown:?}"
         );
-        // Local accounts never depend on the directory.
         assert_eq!(local.unwrap().user.username, "bob");
     })
     .await;
@@ -143,7 +135,6 @@ async fn a_wrong_service_password_is_an_outage_not_a_wrong_user_password() {
 async fn local_and_oidc_accounts_never_reach_the_directory() {
     each_migrated_backend(async |db: &TestDb| {
         let env = Env::new(db).await;
-        // The directory knows both names, with the directory password.
         env.fake.add_user("bob");
         env.fake.add_user("olga");
         env.local_user("bob").await;
@@ -205,7 +196,6 @@ async fn ambiguous_matches_and_mismatched_usernames_are_refused_without_a_user_b
         };
         twin.attrs.insert("uid".to_owned(), vec!["dup".to_owned()]);
         env.fake.put_user(twin);
-        // A directory entry whose username attribute is not a valid deskhaven username.
         let odd = env.fake.add_user("odd");
         env.fake.set_attr(&odd, "uid", &["odd "]);
 

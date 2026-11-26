@@ -1,38 +1,13 @@
-//! Which account a verified identity logs into (06 §3.4, M4-09), inside the callback's
-//! write transaction:
+//! An `email` link is re-checked at every login, not only at link time: a lowered ceiling, TOTP, a
+//! promotion or an unverified address would otherwise be skipped. An account is never provisioned
+//! alongside an email match, nor matched by username. OIDC logins ask for no local second factor:
+//! the IdP's MFA policy applies.
 //!
-//! 1. A linked identity `(provider, sub)`: its account (the stored email is refreshed).
-//!    Linked `explicit` (by the account holder) or `provisioned` (the IdP created the
-//!    account): nothing is re-checked; the identity replaces the password login. Linked by
-//!    `email`: the email-link conditions of step 2 are checked again at every login, not
-//!    only at link time (a lowered ceiling, TOTP enabled, a promotion, a changed and so
-//!    unverified address, an IdP no longer asserting the address would otherwise be
-//!    skipped); failing, the login is refused ([`Failure::NoLinkedAccount`]: the holder
-//!    links it explicitly after signing in with the account). A disabled account is refused
-//!    whatever the source.
-//! 2. Otherwise, an account with the asserted email (case-insensitively): linked (`email`)
-//!    only when all hold: the token says `email_verified: true` (missing = false) for the
-//!    account's address, the account's own address is verified, its role is within
-//!    `auth.oidc.link_email_max_role`, it has no TOTP (whatever the ceiling: an OIDC login
-//!    does not ask for it) and it is not an LDAP account (the directory decides on it: an
-//!    OIDC login would outlive its removal there). Else refused
-//!    ([`Failure::NoLinkedAccount`]). Never provisioned alongside it, never matched by
-//!    username.
-//! 3. Otherwise, with `auto_provision`: a new account (`provision`).
-//! 4. Otherwise refused.
+//! Only an address the IdP asserts verified is ever stored: an unverified one would squat the real
+//! owner's address and become their link target later.
 //!
-//! OIDC logins ask for no local second factor, and `auth.tfa.enforce` constrains password
-//! logins only: a linked identity replaces the password login, and the IdP's MFA policy
-//! applies to it.
-//!
-//! Emails: only an address the IdP asserts verified is ever stored, on the account and on the
-//! identity (also when refreshed). An unverified address could be anything the user typed at
-//! the IdP; stored, it would hold the real owner's address (unique index) and become their
-//! link target later.
-//!
-//! Known, accepted: step 2's refusal versus step 3's provisioning tells someone who can log
-//! in at the IdP whether an address belongs to a deskhaven account (refusing is the clearer
-//! experience for the real owner).
+//! Accepted: refusal versus provisioning tells someone who can log in at the IdP whether an
+//! address belongs to an account.
 
 use deskhaven_config::settings::{AUTH_OIDC_LINK_EMAIL_MAX_ROLE, LinkEmailMaxRole};
 use deskhaven_db::entity::user_identity::{self, LinkedVia};
@@ -109,8 +84,6 @@ pub(crate) async fn resolve(
     provision(svc, tx, provider, asserted).await
 }
 
-/// How an existing identity was linked, and its account; its stored email follows the
-/// token.
 async fn linked_account(
     tx: &DatabaseTransaction,
     provider_id: i64,
@@ -137,9 +110,6 @@ async fn linked_account(
     Ok(account.map(|account| (identity.linked_via, account)))
 }
 
-/// The address deskhaven keeps from a token: only one the IdP asserts verified and the user
-/// service accepts. An unverified one is never stored (anyone may type any address at an
-/// IdP with self-service profiles; stored, it would squat the real owner's address).
 pub(super) fn stored_email(asserted: &Asserted) -> Option<String> {
     asserted
         .verified_email()
@@ -147,9 +117,8 @@ pub(super) fn stored_email(asserted: &Asserted) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The email-link conditions (rule 3 of M4-09), all of them: the IdP asserts the account's
-/// address verified, the account's own address is verified, its role is within `ceiling`,
-/// it has no TOTP (whatever the ceiling) and it is not an LDAP account.
+/// No TOTP whatever the ceiling (an OIDC login does not ask for it), and not an LDAP account (an
+/// OIDC login would outlive its removal there).
 fn email_link_holds(account: &user::Model, asserted: &Asserted, ceiling: LinkEmailMaxRole) -> bool {
     let same_address = asserted
         .verified_email()
@@ -162,7 +131,6 @@ fn email_link_holds(account: &user::Model, asserted: &Asserted, ceiling: LinkEma
         && account.auth_source != AuthSource::Ldap
 }
 
-/// Whether `role` is at most `ceiling` (`off` admits none).
 fn within(role: Role, ceiling: LinkEmailMaxRole) -> bool {
     let rank = |role: Role| match role {
         Role::User => 1,
@@ -186,10 +154,7 @@ fn active(account: user::Model) -> Resolution {
     }
 }
 
-/// A console audit row for an account change the login itself made (an email link, a
-/// provisioned account), in the login's transaction. The actor is the system: no
-/// administrator acted. `after` names the provider and carries no claim value other than
-/// the subject.
+/// The actor is the system: no administrator acted.
 pub(super) async fn audit_login(
     svc: &OidcService,
     tx: &DatabaseTransaction,

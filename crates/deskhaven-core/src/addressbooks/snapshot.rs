@@ -1,7 +1,5 @@
-//! Audit snapshots of address book changes, the `before` / `after` a
-//! [`TxGuard<Value>`](crate::console_audit::TxGuard) sees. Built here, where the secrets are
-//! known: a peer's password and hash are never part of a snapshot, only whether the peer has
-//! one (`had_password`; the audit redactor masks the `true`, so a row shows `"***"`).
+//! Built here, where the secrets are known: a peer's password and hash never enter a snapshot,
+//! only `had_password`.
 
 use deskhaven_db::entity::address_book;
 use deskhaven_db::entity::address_book_peer;
@@ -11,7 +9,6 @@ use serde_json::{Value, json};
 
 use super::{Rule, Subject, Tag};
 
-/// A shared book's own fields.
 pub(super) fn book(book: &address_book::Model) -> Value {
     json!({
         "book": {
@@ -23,7 +20,6 @@ pub(super) fn book(book: &address_book::Model) -> Value {
     })
 }
 
-/// A peer without its secrets.
 pub(super) fn peer(row: &address_book_peer::Model) -> Value {
     json!({
         "peer": {
@@ -40,7 +36,6 @@ pub(super) fn peer(row: &address_book_peer::Model) -> Value {
     })
 }
 
-/// The ids of several peers (a batch delete or import): `{"peer_ids": [..]}`.
 pub(super) fn peer_ids<'a>(ids: impl Iterator<Item = &'a str>) -> Value {
     json!({ "peer_ids": ids.collect::<Vec<_>>() })
 }
@@ -49,7 +44,6 @@ pub(super) fn tag(tag: &Tag) -> Value {
     json!({ "tag": { "name": tag.name, "color": tag.color } })
 }
 
-/// Tag names (a batch delete): `{"tags": [..]}`.
 pub(super) fn tag_names<'a>(names: impl Iterator<Item = &'a str>) -> Value {
     json!({ "tags": names.collect::<Vec<_>>() })
 }

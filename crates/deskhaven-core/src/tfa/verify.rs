@@ -1,7 +1,5 @@
-//! The second login step: claim an attempt of the challenge, then, in one write
-//! transaction, spend the code (TOTP step or recovery code) and consume the challenge.
-//! Either both happen or neither: a wrong code leaves the challenge usable (until its
-//! attempts run out), a challenge consumed concurrently leaves the code unspent.
+//! Either both happen or neither: a wrong code leaves the challenge usable, a challenge consumed
+//! concurrently leaves the code unspent.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::{auth_challenge, recovery_code, user};
@@ -13,7 +11,6 @@ use super::{ChallengeError, Inner, TfaError, TfaService, recovery, totp};
 use crate::auth::limiter::PendingSubject;
 use crate::users::{CredentialStamp, User};
 
-/// Which second factor completed the login (for login events).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecondFactorMethod {
     Totp,
@@ -21,8 +18,6 @@ pub enum SecondFactorMethod {
 }
 
 impl SecondFactorMethod {
-    /// The method a code of this shape would use: six digits are a TOTP code, anything
-    /// else is tried as a recovery code.
     pub fn of_code(code: &str) -> Self {
         if totp::is_code_shaped(code) {
             Self::Totp
@@ -32,8 +27,6 @@ impl SecondFactorMethod {
     }
 }
 
-/// A passed second step: issue the session for `user` under `stamp`, then complete the
-/// login throttle with `lockout`.
 #[derive(Debug)]
 pub struct Passed {
     pub user: User,
@@ -43,8 +36,6 @@ pub struct Passed {
 }
 
 impl TfaService {
-    /// Verifies `step` against its challenge. [`ChallengeError::Invalid`]: the client must
-    /// start over; [`ChallengeError::WrongCode`]: it may try another code.
     pub async fn verify_challenge(&self, step: &SecondStep<'_>) -> Result<Passed, ChallengeError> {
         let inner = &self.inner;
         let (challenge, bound) = inner.claim(step).await?;
@@ -80,11 +71,7 @@ impl TfaService {
         })
     }
 
-    /// The account holder proves possession of the factor for a sensitive change that is
-    /// not itself a factor change (linking an OIDC identity, M4-09): `code` is a current
-    /// TOTP code or an unused recovery code, spent (anti-replay) in its own transaction.
-    /// [`TfaError::InvalidCode`] for a wrong one, [`TfaError::NotEnabled`] while TOTP is
-    /// off.
+    /// The code is spent (anti-replay) in its own transaction.
     pub async fn prove_possession(&self, user_id: i64, code: &str) -> Result<(), TfaError> {
         let inner = &self.inner;
         let txn = begin_write(&inner.db).await?;
@@ -105,7 +92,6 @@ impl TfaService {
 }
 
 impl Inner {
-    /// Spends `code` as a TOTP code or, when it is not six digits, as a recovery code.
     pub(super) async fn spend_code(
         &self,
         txn: &DatabaseTransaction,
@@ -123,8 +109,7 @@ impl Inner {
         })
     }
 
-    /// Accepts `code` for a step after `totp_last_step` and records that step; the
-    /// conditional UPDATE keeps a concurrent request from using the same step.
+    /// The conditional UPDATE keeps a concurrent request from using the same step.
     async fn spend_totp(
         &self,
         txn: &DatabaseTransaction,
@@ -151,7 +136,6 @@ impl Inner {
         Ok(result.rows_affected == 1)
     }
 
-    /// Marks the unused recovery code `code` used (stored under any held master key).
     async fn spend_recovery(
         &self,
         txn: &DatabaseTransaction,

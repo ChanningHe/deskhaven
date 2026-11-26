@@ -1,10 +1,5 @@
-//! Step 2: the IdP's redirect back (see the module docs of `oidc`), once the user confirmed
-//! it on the page `preview_callback` describes.
-//!
-//! The state is claimed before anything else (single use, also against concurrent
-//! callbacks); a callback with an unknown, expired or used state does nothing and is not
-//! recorded. Once claimed, the flow ends with exactly one outcome on its row: the account
-//! (`completed_user_id` and its credential stamp) or a [`Failure`] (`error`).
+//! The state is claimed before anything else (single use, also against concurrent callbacks);
+//! once claimed, the flow ends with exactly one outcome on its row.
 
 use std::fmt;
 
@@ -24,11 +19,10 @@ use super::{OidcService, context, identity};
 use crate::sessions::TokenHash;
 use crate::users::{CredentialStamp, User};
 
-/// The query of the redirect (`?code=&state=` or `?error=&state=`). `Debug` shows no value.
+/// `Debug` shows no value.
 pub struct CallbackParams<'a> {
     pub state: Option<&'a str>,
     pub code: Option<&'a str>,
-    /// The IdP's `error` (e.g. `access_denied`): the flow fails as [`Failure::Denied`].
     pub error: Option<&'a str>,
 }
 
@@ -42,41 +36,30 @@ impl fmt::Debug for CallbackParams<'_> {
     }
 }
 
-/// Which kind of login the flow is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FlowKind {
-    /// Started by a RustDesk client, which polls for the session.
     Client { rustdesk_id: String },
-    /// Started by the web console (M3-02): the session is the callback caller's business.
     Console,
 }
 
-/// The account an OIDC login resolved to, with the stamp to mint its session under.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OidcLogin {
     pub user: User,
     pub stamp: CredentialStamp,
 }
 
-/// The outcome of a claimed flow, for the reply page and the login event.
 #[derive(Debug)]
 pub struct CallbackReport {
     pub flow: FlowKind,
-    /// The provider's name (the client's `op`).
     pub provider: String,
-    /// The ID token's `sub`, once verified.
     pub subject: Option<String>,
     pub outcome: Result<OidcLogin, Failure>,
 }
 
-/// What a completion requires of the flow before claiming it.
 #[derive(Clone, Copy)]
 pub(super) enum Expect<'a> {
     Client,
-    /// The browser binding the console sent back (`None`: no cookie).
     Console(Option<&'a str>),
-    /// A link flow: the browser binding, and the signed-in account it must have been
-    /// started for.
     Link(Option<&'a str>, i64),
 }
 
@@ -93,7 +76,6 @@ impl Expect<'_> {
     }
 }
 
-/// Whether `presented` is the browser binding of the flow (constant-time compare).
 fn bound(presented: Option<&str>, row: &oidc_flow::Model) -> bool {
     let (Some(hash), Some(stored)) = (
         presented.and_then(TokenHash::of_presented),
@@ -105,9 +87,7 @@ fn bound(presented: Option<&str>, row: &oidc_flow::Model) -> bool {
 }
 
 impl OidcService {
-    /// Completes a client flow (the confirmed callback page). A console flow is
-    /// [`CallbackError::InvalidState`] here and stays untouched: it completes only through
-    /// [`complete_console`](Self::complete_console).
+    /// A console flow stays untouched here: it completes only through `complete_console`.
     pub async fn complete_callback(
         &self,
         params: &CallbackParams<'_>,
@@ -115,12 +95,8 @@ impl OidcService {
         self.complete(params, Expect::Client).await
     }
 
-    /// Completes a console flow in the browser that started it: `binding` is the
-    /// [`BrowserBinding`](super::BrowserBinding) of `begin_console`, sent back in its cookie.
-    /// A missing or different binding, or a client flow, is [`CallbackError::InvalidState`]
-    /// and leaves the flow untouched (a callback link forwarded to, or planted in, another
-    /// browser does nothing). The flow row is deleted once it has an outcome; the session
-    /// is the caller's business.
+    /// A missing or different binding leaves the flow untouched: a callback link forwarded to, or
+    /// planted in, another browser does nothing.
     pub async fn complete_console(
         &self,
         params: &CallbackParams<'_>,
@@ -183,7 +159,6 @@ impl OidcService {
         })
     }
 
-    /// The unconsumed, unexpired flow of `state`, read only.
     pub(crate) async fn live_flow(
         &self,
         state: Option<&str>,
@@ -201,7 +176,6 @@ impl OidcService {
             .ok_or(CallbackError::InvalidState)
     }
 
-    /// Marks the live flow of `state` consumed and returns it, when `expect` admits it.
     pub(super) async fn claim(
         &self,
         state: Option<&str>,
@@ -227,7 +201,6 @@ impl OidcService {
             .ok_or(CallbackError::InvalidState)
     }
 
-    /// The identity the IdP asserts for this flow, or why there is none.
     pub(super) async fn verify_callback(
         &self,
         row: &oidc_flow::Model,
@@ -310,8 +283,6 @@ impl OidcService {
         }
     }
 
-    /// Links or creates the account and completes the flow in one transaction; a refusal is
-    /// rolled back and recorded on its own.
     async fn resolve(
         &self,
         row: &oidc_flow::Model,

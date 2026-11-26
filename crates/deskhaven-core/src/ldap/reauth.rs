@@ -1,13 +1,7 @@
-//! Re-authentication with the current password for self-service changes (console TOTP
-//! enrolment): local accounts against their hash, directory accounts against the directory
-//! (a bind, nothing provisioned or synchronized). OIDC accounts have no password.
-
 use super::LdapService;
 use crate::users::{AuthError, AuthSource, MAX_PASSWORD_LEN, Password, UserError};
 
 impl LdapService {
-    /// [`UserError::WrongPassword`] on mismatch, [`UserError::NotLocal`] for an OIDC account,
-    /// [`UserError::DirectoryUnavailable`] when the directory cannot answer.
     pub async fn verify_password(
         &self,
         user_id: i64,

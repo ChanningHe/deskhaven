@@ -1,14 +1,6 @@
-//! HMAC-SHA256 under a key derived from the master key (06-security §3.3):
-//! `k_hmac = HKDF-SHA256(IKM = master key, salt = none, info = "deskhaven/hmac/v1")`.
-//!
-//! For low-entropy secrets that are looked up by equality (recovery codes, emailed codes):
-//! a database dump alone does not allow an offline brute force.
-//!
-//! HKDF is computed here directly (RFC 5869 §2.2–2.3): for a 32-byte output it is exactly
-//! `PRK = HMAC(0^32, IKM)`, `OKM = HMAC(PRK, info || 0x01)`. Every HMAC key is at most one
-//! block long, so it goes through the infallible `KeyInit::new` with the key zero-padded to
-//! the block size, which is what HMAC does with a short key anyway. Pinned by an OpenSSL
-//! known-answer test (`tests/secret_box.rs`).
+//! For low-entropy secrets looked up by equality: a database dump alone does not allow an offline
+//! brute force. HKDF (RFC 5869) is computed directly; every HMAC key fits one block, so the
+//! infallible `KeyInit::new` with a zero-padded key is what HMAC does anyway.
 
 use hmac::digest::Key;
 use hmac::{Hmac, KeyInit, Mac};
@@ -22,13 +14,11 @@ type HmacSha256 = Hmac<Sha256>;
 pub(crate) const MAC_KEY_LEN: usize = 32;
 const HKDF_INFO: &[u8] = b"deskhaven/hmac/v1";
 
-/// `k_hmac` for `master`.
 pub(crate) fn derive_mac_key(master: &[u8; MASTER_KEY_LEN]) -> Zeroizing<[u8; MAC_KEY_LEN]> {
     let prk = hmac_sha256(&[0; MAC_KEY_LEN], &[master]);
     hmac_sha256(&prk, &[HKDF_INFO, &[1]])
 }
 
-/// `HMAC-SHA256(key, parts concatenated)`.
 pub(crate) fn hmac_sha256(key: &[u8; MAC_KEY_LEN], parts: &[&[u8]]) -> Zeroizing<[u8; 32]> {
     let mut padded = Key::<HmacSha256>::default();
     padded[..MAC_KEY_LEN].copy_from_slice(key);

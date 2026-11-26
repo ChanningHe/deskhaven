@@ -1,6 +1,3 @@
-//! LDAP service tests: the real service on the test database, talking to the in-memory
-//! [`FakeDirectory`], with one directory configured for it.
-
 use std::sync::Arc;
 
 use deskhaven_core::crypto::{MasterKey, SecretBox};
@@ -30,8 +27,6 @@ pub struct Env {
     pub directory: Directory,
 }
 
-/// A directory for the fake: service bind, `uid` usernames, `mail`, `cn`, groups under
-/// [`GROUP_BASE`] from `memberOf`, no admin group.
 pub fn new_directory() -> NewDirectory {
     let mut new = NewDirectory::new("corp", "ldaps://ldap.example.org", USER_BASE);
     new.bind_dn = Some(SERVICE_DN.to_owned());
@@ -65,7 +60,6 @@ impl Env {
         Self::with(db, |_| {}).await
     }
 
-    /// The directory adjusted by `adjust` before creation.
     pub async fn with(db: &TestDb, adjust: impl FnOnce(&mut NewDirectory)) -> Self {
         let settings = settings(db).await;
         let hasher = PasswordHasher::new(FAST).unwrap();
@@ -101,7 +95,6 @@ impl Env {
             .unwrap()
     }
 
-    /// An existing directory account (as a previous login would have left it).
     pub async fn ldap_user(&self, username: &str) -> User {
         self.users
             .create(NewUser::new(username, Credential::Ldap))

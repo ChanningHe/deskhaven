@@ -1,7 +1,3 @@
-//! Commit hooks of the user and group services: a panicking hook neither turns a committed
-//! write into an error nor stops the later hooks or the event, and a hook may register
-//! another hook without deadlocking. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -69,9 +65,8 @@ async fn a_panicking_user_hook_does_not_abort_the_write_the_later_hooks_or_the_e
     .await;
 }
 
-/// Re-review LOW-5: a cache whose targeted invalidation panicked must fail closed: the hook's
-/// fallback (e.g. flush the whole cache) runs instead, so a disabled user's cached session
-/// cannot outlive the change.
+/// A cache whose targeted invalidation panicked must fail closed: the hook's fallback runs instead,
+/// so a disabled user's cached session cannot outlive the change.
 #[tokio::test]
 async fn a_panicking_user_hook_runs_its_fallback() {
     each_migrated_backend(async |db: &TestDb| {

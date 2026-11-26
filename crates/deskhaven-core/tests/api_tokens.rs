@@ -1,7 +1,3 @@
-//! ApiTokenService issuing (M2-19, 06 §3.2): `dhk_` tokens from the CSPRNG, only their
-//! SHA-256 stored, validation, listing, revocation and scope names. Every test runs on
-//! SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -17,18 +13,15 @@ use deskhaven_db::time;
 #[tokio::test]
 async fn create_returns_a_dhk_token_once_and_stores_only_its_hash() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let env = Env::new(db).await;
         let admin = env.admin("root").await;
 
-        // Act
         let (token, secret) = env
             .tokens
             .create(env.new_token(Some(admin), &[Scope::Deploy, Scope::Assign]))
             .await
             .unwrap();
 
-        // Assert
         let raw = secret.expose();
         assert!(raw.starts_with(API_TOKEN_PREFIX), "{}", db.backend);
         assert_eq!(raw.len(), API_TOKEN_PREFIX.len() + 43, "{}", db.backend);

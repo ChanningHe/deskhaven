@@ -1,29 +1,9 @@
-//! Connection records (03 §2.3) merged into `connection_sessions`.
-//!
-//! A connection is reported in three records, each of which may arrive first:
-//!
-//! | record | session id | fills |
-//! |---|---|---|
-//! | opening (`action: "new"`) | 0 (sent before the login request) | `ip`, `started_at` |
-//! | authorization (`peer`, `type`, ...) | the controller's | peer, auth, `authorized_at` |
-//! | close (`action: "close"`) | the controller's (0 if closed before login) | `ended_at` |
-//!
-//! The first record creates the row; the others find it by the unique key (device,
-//! session id, conn id) or, across the 0 / real session id divide, **pair** with it: same
-//! device and conn id, created within [`PAIRING_WINDOW`], its slot for this record still
-//! empty. A record with the real session id adopts an unbound, unclosed row (and binds it to
-//! the session); a late opening joins a bound row that has no opening yet. Conn ids are a
-//! per-process counter of the client, so the window keeps a reused id (after a client
-//! restart) from joining an old row.
-//!
-//! The unique key leaves one unbound row per (device, conn id). When a record with session
-//! id 0 finds that row but it belongs to an earlier connection (outside the window, or
-//! already holding this kind of record: a client restart reused the id), the old row is
-//! **retired** (re-keyed, contents kept) and the record starts a row of its own.
-//!
-//! Each slot is filled once: the first record of a kind wins (06 §7, audit records are
-//! append-only for the API). Times are the server's receipt times; the client sends none.
-//! On PostgreSQL the records of one (device, conn id) are serialized (`lock_connection`).
+//! A connection is reported in three records (opening, authorization, close), each of which
+//! may arrive first; the opening carries session id 0. A record finds its row by the unique key
+//! or pairs with one across the 0 / real session id divide within [`PAIRING_WINDOW`], which
+//! keeps a conn id the client reused after a restart from joining an old row. An unbound row of
+//! an earlier connection is retired (re-keyed, contents kept). Each slot is filled once: the
+//! first record of a kind wins.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -40,23 +20,17 @@ use super::SessionId;
 use super::session_id::UNBOUND;
 use crate::text;
 
-/// How long after a connection's first record its other records still pair with it across
-/// the session id divide: a login may take 180 s (`LOGIN_GRACE`,
-/// `src/server/connection.rs:89`) and each record up to 120 s of retries.
+/// A login may take 180 s and each record up to 120 s of retries.
 pub const PAIRING_WINDOW: Duration = Duration::from_secs(10 * 60);
 /// Longest stored peer id (hbbs `MAX_PEER_ID_LEN`) and peer name, in characters.
 const PEER_ID_MAX_CHARS: usize = 253;
 const PEER_NAME_MAX_CHARS: usize = 256;
-/// Session id prefix of a retired unbound row (see `retire`). Not a decimal, so it never
-/// meets a client's session id; the console shows such a row as "no session".
+/// Not a decimal, so it never meets a client's session id.
 pub const RETIRED_PREFIX: &str = "0#";
-/// `pg_advisory_xact_lock` namespace of [`lock_connection`] ("dhac").
 const PG_CONN_LOCK_NS: i32 = 0x6468_6163;
 
-/// One connection record of the controlled device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnReport {
-    /// The device's connection id (`Connection.inner.id`).
     pub conn_id: i64,
     pub session_id: SessionId,
     pub event: ConnEvent,
@@ -68,15 +42,12 @@ pub enum ConnEvent {
     New {
         ip: Option<IpAddr>,
     },
-    /// The controller logged in.
     Authorized(Authorization),
     Close,
 }
 
-/// Who logged in and how (`src/server/connection.rs:1940-1948`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Authorization {
-    /// The controller's RustDesk id and name (`LoginRequest.my_id` / `my_name`).
     pub peer_id: String,
     pub peer_name: String,
     /// 0 remote control, 1 file transfer, 2 port forward, 3 camera, 4 terminal; newer clients
@@ -88,7 +59,6 @@ pub struct Authorization {
     pub two_factor: Option<i32>,
 }
 
-/// Merges `report` of `device` into its row in `tx`, creating it if it is the first record.
 pub(super) async fn merge(
     tx: &DatabaseTransaction,
     device: &str,
@@ -108,11 +78,8 @@ pub(super) async fn merge(
     }
 }
 
-/// PostgreSQL: serializes the records of one (device, conn id) with a transaction-scoped
-/// advisory lock. Under READ COMMITTED an opening and an authorization arriving at once would
-/// both find no row (`FOR UPDATE` on nothing locks nothing) and insert two rows under
-/// different keys that never merge. SQLite: `BEGIN IMMEDIATE` already serializes writers. A
-/// hash collision only makes two connections wait for each other.
+/// Under READ COMMITTED an opening and an authorization arriving at once would both find no
+/// row and insert two rows that never merge. SQLite's `BEGIN IMMEDIATE` already serializes.
 async fn lock_connection(
     tx: &DatabaseTransaction,
     device: &str,
@@ -131,17 +98,11 @@ async fn lock_connection(
     tx.execute_raw(statement).await.map(drop)
 }
 
-/// A row found by its exact key belongs to this record's connection, unless it is an unbound
-/// row (session id 0) of an earlier connection with the same conn id: created outside the
-/// pairing window, or already holding this kind of record.
 fn same_connection(row: &Model, report: &ConnReport, now: TimestampMs) -> bool {
     !report.session_id.is_unbound()
         || (within_window(row.created_at, now) && !is_filled(row, &report.event))
 }
 
-/// Moves an earlier connection's unbound row off the key (session id
-/// [`RETIRED_PREFIX`]`<row id>`, never a normalized decimal), so the new connection gets a
-/// row of its own. The old row keeps everything it recorded.
 async fn retire(tx: &DatabaseTransaction, row: Model) -> Result<(), DbErr> {
     tracing::debug!(
         conn_id = row.conn_id,
@@ -174,8 +135,6 @@ async fn find_exact(
         .await
 }
 
-/// The row of the same connection on the other side of the session id divide (see the
-/// module documentation), newest first.
 async fn find_partner(
     tx: &DatabaseTransaction,
     device: &str,
@@ -212,7 +171,6 @@ async fn find_partner(
         .await
 }
 
-/// The column that records `event` (empty until it arrives).
 fn slot(event: &ConnEvent) -> Column {
     match event {
         ConnEvent::New { .. } => Column::StartedAt,
@@ -272,7 +230,6 @@ async fn insert(
         .map(drop)
 }
 
-/// Sets the columns `event` reports.
 fn fill(row: &mut ActiveModel, event: &ConnEvent, now: TimestampMs) {
     match event {
         ConnEvent::New { ip } => {

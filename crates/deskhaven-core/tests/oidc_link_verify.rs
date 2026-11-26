@@ -1,9 +1,3 @@
-//! Verifying a link flow (M4-09) under concurrency and failure: two verifications at once
-//! exchange the code once (the loser does not ask the IdP and is told to come back), a
-//! verification that never finished does not wedge the flow past a short grace period, and
-//! a provider disabled between verification and confirmation refuses the link. Both
-//! backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

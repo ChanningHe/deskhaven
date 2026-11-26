@@ -1,6 +1,3 @@
-//! [`Purge`]: deletes the rows matching a condition one batch per write transaction (see
-//! the [module documentation](super)).
-
 use std::future::Future;
 use std::time::Duration;
 
@@ -11,13 +8,11 @@ use sea_orm::{
     QueryFilter,
 };
 
-/// Rows deleted per write transaction.
 pub const PURGE_BATCH: u64 = 1000;
-/// Pause between two batches: longer than the longest sleep of SQLite's busy handler
-/// (100 ms), so a writer waiting for the lock retries while it is free.
+/// Longer than the longest sleep of SQLite's busy handler (100 ms), so a waiting writer retries
+/// while the lock is free.
 pub const PURGE_PAUSE: Duration = Duration::from_millis(150);
 
-/// Batch size and pause of the batched deletes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Purge {
     batch: u64,
@@ -30,17 +25,14 @@ impl Default for Purge {
     }
 }
 
-/// The rows to delete from `E`: those matching `cond`, oldest `order` first, by `key`.
 pub(crate) struct Doomed<E: EntityTrait> {
     pub key: E::Column,
     pub order: E::Column,
     pub cond: Condition,
 }
 
-/// Runs inside each deleting batch's transaction: what it writes commits (or rolls back)
-/// with that batch.
+/// What it writes commits or rolls back with that batch.
 pub(crate) trait BatchHook {
-    /// `deleted` (> 0) rows are gone in `tx`, not yet committed.
     fn on_batch(
         &mut self,
         tx: &DatabaseTransaction,
@@ -48,7 +40,6 @@ pub(crate) trait BatchHook {
     ) -> impl Future<Output = Result<(), DbErr>> + Send;
 }
 
-/// No hook.
 pub(crate) struct Plain;
 
 impl BatchHook for Plain {
@@ -58,7 +49,6 @@ impl BatchHook for Plain {
 }
 
 impl Purge {
-    /// `batch` rows (at least 1) per transaction, `pause` between two batches.
     pub fn new(batch: u64, pause: Duration) -> Self {
         Self {
             batch: batch.max(1),
@@ -66,8 +56,7 @@ impl Purge {
         }
     }
 
-    /// Deletes every row of `doomed`, a batch per transaction; returns how many. Stops after
-    /// a short batch (rows another writer holds on PostgreSQL wait for the next run).
+    /// Stops after a short batch (rows another writer holds on PostgreSQL wait for the next run).
     /// Cancel-safe: a dropped future loses at most its uncommitted batch.
     pub(crate) async fn run<E, H>(
         &self,
@@ -95,8 +84,6 @@ impl Purge {
         }
     }
 
-    /// `DELETE … WHERE key IN (SELECT key … ORDER BY order LIMIT batch FOR UPDATE SKIP
-    /// LOCKED)` (SQLite has a single writer and no row locks; the clause is not emitted).
     async fn delete_batch<E: EntityTrait>(
         &self,
         tx: &DatabaseTransaction,
@@ -117,7 +104,6 @@ impl Purge {
         Ok(result.rows_affected)
     }
 
-    /// Lets other writers in between two batches.
     async fn rest(&self) {
         if self.pause.is_zero() {
             tokio::task::yield_now().await;

@@ -1,15 +1,5 @@
-//! Login event log (04 §7 `login_events`): the audit trail of login attempts, shared by the
-//! client and console login flows. Append-only from here (a completed login also stamps
-//! `users.last_login_at`); retention is the background
-//! jobs' business (M2-20).
-//!
-//! What a row may hold: who tried (the user id when known, the attempted username, bounded
-//! to [`MAX_USERNAME_ATTEMPTED_CHARS`]), how, with what result, from which device and
-//! address. Never a password, token or request body.
-//!
-//! The attempted username and the client device id are what the client typed or sent, so they
-//! are stored cleaned like other self-reported text (one line; control, bidi and zero-width
-//! characters dropped) and shown as such.
+//! Never a password, token or request body. The attempted username and device id are what the
+//! client sent, so they are stored cleaned like other self-reported text.
 
 use std::net::IpAddr;
 
@@ -24,52 +14,33 @@ pub use deskhaven_db::entity::login_event::{Client as LoginClient, Method as Log
 use crate::clock::SharedClock;
 use crate::text;
 
-/// Longest stored `username_attempted` (characters; longer input is truncated). Real
-/// usernames are at most 64; the rest is room for what people paste into the field.
+/// Real usernames are at most 64; the rest is room for what people paste into the field.
 pub const MAX_USERNAME_ATTEMPTED_CHARS: usize = 128;
 
-/// Longest stored `rustdesk_id` (characters; longer input is truncated).
 pub const MAX_RUSTDESK_ID_CHARS: usize = 64;
 
-/// `login_events.result`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginResult {
     Success,
-    /// Wrong password, unknown or non-local account: one label, so the log does not
-    /// enumerate accounts either.
+    /// One label, so the log does not enumerate accounts either.
     InvalidCredentials,
-    /// Right password, disabled account.
     Disabled,
-    /// Right password, unverified account.
     Unverified,
-    /// A failed attempt that started a lockout (the next ones are refused unrecorded).
+    /// The next ones are refused unrecorded.
     Locked,
-    /// Right password; a second-factor challenge was issued (the login is not complete).
     SecondFactorRequired,
-    /// Right password, but `auth.tfa.enforce` requires a second factor the user has not
-    /// enrolled: refused.
     SecondFactorSetupRequired,
-    /// Second step: wrong, replayed or already used code.
     InvalidCode,
-    /// Second step: unknown, expired, used or exhausted challenge, or one issued to another
-    /// username or device.
     InvalidChallenge,
-    /// OIDC: the IdP returned an error (cancelled, consent denied) or no code.
     OidcDenied,
-    /// OIDC: discovery or the code exchange failed.
     OidcUnavailable,
-    /// OIDC: the token response or ID token failed verification.
     OidcInvalidToken,
-    /// OIDC: no linked account, and none may be linked or created.
     NoLinkedAccount,
-    /// OIDC: creating the account failed.
     ProvisioningFailed,
 }
 
 impl LoginResult {
-    /// Outcomes that are not a failed login: it succeeded, or the right password is waiting
-    /// for its second step, or a policy (not the credentials) stopped it. Every other
-    /// outcome, including ones added later, counts as a failure.
+    /// Every other outcome, including ones added later, counts as a failure.
     pub const NOT_FAILURES: [Self; 3] = [
         Self::Success,
         Self::SecondFactorRequired,
@@ -111,7 +82,6 @@ impl From<crate::oidc::Failure> for LoginResult {
     }
 }
 
-/// One attempt to record.
 #[derive(Debug, Clone)]
 pub struct NewLoginEvent<'a> {
     pub user_id: Option<i64>,
@@ -123,7 +93,6 @@ pub struct NewLoginEvent<'a> {
     pub ip: Option<IpAddr>,
 }
 
-/// Writes login events. Cheap to clone.
 #[derive(Clone)]
 pub struct LoginEventLog {
     db: DatabaseConnection,
@@ -135,7 +104,6 @@ impl LoginEventLog {
         Self { db, clock }
     }
 
-    /// Inserts one row stamped with the clock's time.
     pub async fn record(&self, event: &NewLoginEvent<'_>) -> Result<(), DbErr> {
         let now = self.clock.now_ms();
         let created_at = time::from_millis(now)
@@ -166,8 +134,7 @@ impl LoginEventLog {
         }
     }
 
-    /// `users.last_login_at`: every completed login ends in a `Success` event, on either
-    /// login surface and by any method, so this is the one place that sees them all.
+    /// Every completed login ends in a `Success` event, so this is the one place that sees them all.
     async fn stamp_last_login(&self, user_id: i64, at: TimestampMs) -> Result<(), DbErr> {
         user::Entity::update_many()
             .col_expr(user::Column::LastLoginAt, Expr::value(at))

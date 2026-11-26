@@ -1,9 +1,6 @@
-//! Maintenance of `auth_lockouts` (scheduled by M2-20): retention and a hard row cap.
-//!
-//! Every delete selects its victims with `FOR UPDATE SKIP LOCKED` (PostgreSQL; SQLite
-//! serializes writers and ignores the clause): a row that a login is working on right now
-//! is left for the next run, and cleanup never waits for a row lock, so it cannot take part
-//! in a deadlock with the global-first lock order of the login paths.
+//! Every delete uses `FOR UPDATE SKIP LOCKED` (PostgreSQL): a row a login is working on is left
+//! for the next run, and cleanup never waits for a row lock, so it cannot deadlock with the
+//! login paths.
 
 use std::time::Duration;
 
@@ -14,23 +11,14 @@ use sea_orm::{ColumnTrait, Condition, DbErr, EntityTrait, PaginatorTrait, QueryF
 use super::lockout::{AccountLockout, KNOWN_SOURCE_RETENTION, at};
 use super::policy::{LEVEL_DECAY, MAX_LOCK, millis};
 
-/// A row older than this no longer affects any decision: a window lasts at most 24h (the
-/// `auth.lockout.window` maximum, equal to [`MAX_LOCK`]), a lock set at `updated_at` ends by
-/// `updated_at + MAX_LOCK`, and its level is forgotten [`LEVEL_DECAY`] after that.
+/// A window lasts at most [`MAX_LOCK`], a lock ends by `updated_at + MAX_LOCK`, and its level is
+/// forgotten [`LEVEL_DECAY`] after that.
 pub const LOCKOUT_RETENTION: Duration = MAX_LOCK.saturating_add(LEVEL_DECAY);
-/// A row that never locked only matters while its window is open (at most 24h).
+/// Only matters while its window is open.
 pub const UNLOCKED_RETENTION: Duration = MAX_LOCK;
 
 impl AccountLockout {
-    /// Deletes rows that no longer affect any decision, then enforces the row cap; returns
-    /// how many rows were deleted.
-    ///
-    /// 1. Retention: untouched for [`LOCKOUT_RETENTION`], or never locked and untouched for
-    ///    [`UNLOCKED_RETENTION`] — unless it is a known source (a success within
-    ///    [`KNOWN_SOURCE_RETENTION`]).
-    /// 2. Cap: while more than the cap ([`AccountLockout::with_max_rows`]) remain, the oldest
-    ///    rows that are neither locked nor known sources go first. Locked and known rows are
-    ///    never evicted, so the cap can be exceeded by them alone.
+    /// Locked and known-source rows are never evicted, so they alone can exceed the cap.
     pub async fn cleanup(&self) -> Result<u64, DbErr> {
         let now = self.clock.now_ms();
         let cutoff = |age: Duration| at(now.saturating_sub(millis(age)));
@@ -64,8 +52,6 @@ impl AccountLockout {
         Ok(deleted)
     }
 
-    /// `DELETE … WHERE key IN (SELECT key … [ORDER BY updated_at LIMIT n] FOR UPDATE SKIP
-    /// LOCKED)`.
     async fn delete_skip_locked(&self, cond: Condition, oldest: Option<u64>) -> Result<u64, DbErr> {
         let mut victims = Query::select();
         victims

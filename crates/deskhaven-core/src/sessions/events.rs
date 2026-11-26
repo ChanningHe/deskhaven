@@ -1,5 +1,3 @@
-//! Consumer of [`UserEvent`]s (contract in `users::events`).
-
 use std::sync::Arc;
 
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -9,11 +7,7 @@ use super::{Core, SessionService};
 use crate::users::UserEvent;
 
 impl SessionService {
-    /// Spawns a task that applies `events` to this service until the channel closes:
-    /// every [`UserEvent`] revokes the sessions of its user (for a password change, only
-    /// those created before it) and drops them from the cache;
-    /// a lag (lost events) flushes the whole cache. [`SessionService::new`] already runs
-    /// one for its `UserService`; this is for further sources and for tests.
+    /// A password change revokes only sessions created before it; a lag flushes the whole cache.
     pub fn spawn_event_consumer(&self, events: broadcast::Receiver<UserEvent>) -> JoinHandle<()> {
         tokio::spawn(consume(Arc::clone(&self.core), events))
     }

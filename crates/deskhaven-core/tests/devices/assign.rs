@@ -1,7 +1,3 @@
-//! `--assign` (M2-19, 03 §2.9): an API token places a device by name: owner, device group,
-//! note, strategy, address book entry and the administrator's names for the device. Unlike
-//! presets it replaces what is set. Failures: `assign_failures`.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -52,7 +48,6 @@ impl Ctx {
         self.devices.assign(a, requester(IP)).await
     }
 
-    /// One heartbeat of [`ID`] holding strategy version `modified_at`, 3 s after the last.
     async fn beat(&self, modified_at: i64) -> HeartbeatReply {
         self.clock.advance(Duration::from_secs(3));
         let beat = Heartbeat {
@@ -75,15 +70,12 @@ impl Ctx {
 #[tokio::test]
 async fn assign_places_the_device_by_name() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
 
-        // Act
         c.assign(everything()).await.unwrap();
 
-        // Assert
         let b = db.backend;
         let row = c.row(ID).await;
         assert_eq!(row.owner_user_id, Some(t.alice), "{b}");
@@ -139,7 +131,6 @@ async fn the_assigned_names_survive_the_next_sysinfo() {
 #[tokio::test]
 async fn assign_replaces_an_existing_placement() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -152,7 +143,6 @@ async fn assign_replaces_an_existing_placement() {
             .await
             .unwrap();
 
-        // Act
         c.assign(DeviceAssignment {
             address_book: None,
             ..everything()
@@ -160,7 +150,6 @@ async fn assign_replaces_an_existing_placement() {
         .await
         .unwrap();
 
-        // Assert
         let b = db.backend;
         let row = c.row(ID).await;
         assert_eq!(row.owner_user_id, Some(t.alice), "{b}");
@@ -172,8 +161,6 @@ async fn assign_replaces_an_existing_placement() {
     .await;
 }
 
-/// The address book entry follows the same replace semantics: an existing entry takes the
-/// given alias and password, and the tag is added to its tags.
 #[tokio::test]
 async fn an_existing_book_entry_is_updated() {
     each_migrated_backend(async |db: &TestDb| {
@@ -254,14 +241,12 @@ async fn an_entry_keeps_its_names_unless_the_assignment_gives_some() {
 #[tokio::test]
 async fn the_next_heartbeat_delivers_the_assigned_strategy() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.targets().await;
         let before = c.beat(0).await;
         let held = before.strategy.map_or(0, |push| push.modified_at);
 
-        // Act
         c.assign(DeviceAssignment {
             strategy_name: Some("Locked".to_owned()),
             ..assignment()
@@ -270,7 +255,6 @@ async fn the_next_heartbeat_delivers_the_assigned_strategy() {
         .unwrap();
         let after = c.beat(held).await;
 
-        // Assert
         let Some(push) = after.strategy else {
             panic!("{}: no strategy push after the assignment", db.backend);
         };

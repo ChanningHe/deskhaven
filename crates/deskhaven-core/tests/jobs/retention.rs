@@ -1,7 +1,3 @@
-//! Audit retention: per-type cutoffs from `audit.retention.*`, `0` keeps forever, retired
-//! connection rows are ordinary rows, a record at the cutoff stays, a failing type does not
-//! stop the others, and every deleting batch appends its own `console_audit` row (`system`).
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;
@@ -22,7 +18,6 @@ fn retention(c: &Ctx) -> AuditRetention {
         .with_purge(Purge::new(2, Duration::ZERO))
 }
 
-/// One row of each type just past and one just inside the default retention.
 async fn seed_both_sides(c: &Ctx) {
     for (session, age) in [("1", 365 * DAY + HOUR), ("2", 365 * DAY - HOUR)] {
         c.connection(session, ago(age)).await;
@@ -38,14 +33,11 @@ async fn seed_both_sides(c: &Ctx) {
 #[tokio::test]
 async fn each_type_keeps_what_its_retention_covers() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         seed_both_sides(&c).await;
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         for kind in AuditKind::ALL {
             assert_eq!(report.deleted(kind), 1, "{b}: {kind:?}");
@@ -65,7 +57,6 @@ async fn each_type_keeps_what_its_retention_covers() {
 #[tokio::test]
 async fn zero_retention_keeps_records_forever() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.set("audit.retention.connection", json!("0")).await;
         c.set("audit.retention.alarm", json!("1d")).await;
@@ -73,10 +64,8 @@ async fn zero_retention_keeps_records_forever() {
         c.alarm(ago(DAY + HOUR)).await;
         c.alarm(ago(DAY - HOUR)).await;
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(c.count(connection_session::Entity).await, 1, "{b}: kept");
         assert_eq!(c.count(alarm::Entity).await, 1, "{b}: 1d applies");
@@ -89,17 +78,14 @@ async fn zero_retention_keeps_records_forever() {
 #[tokio::test]
 async fn retired_connection_rows_follow_the_same_retention() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let old_retired = format!("{RETIRED_PREFIX}17");
         let new_retired = format!("{RETIRED_PREFIX}18");
         c.connection(&old_retired, ago(366 * DAY)).await;
         let kept = c.connection(&new_retired, ago(364 * DAY)).await;
 
-        // Act
         retention(&c).run().await;
 
-        // Assert
         let rows = connection_session::Entity::find()
             .all(&c.conn)
             .await
@@ -117,17 +103,15 @@ fn after(row: &console_audit::Model) -> Value {
 #[tokio::test]
 async fn each_deleting_batch_appends_its_own_system_audit_row() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: an expired alarm, and five expired login events (batches of 2, 2, 1).
+        // An expired alarm, and five expired login events (batches of 2, 2, 1).
         let c = ctx(db).await;
         c.alarm(ago(400 * DAY)).await;
         for _ in 0..5 {
             c.login(ago(181 * DAY)).await;
         }
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         let rows = c.audit_rows(RETENTION_ACTION).await;
         let login_cutoff = T0_MS - i64::try_from((180 * DAY).as_millis()).unwrap();
@@ -155,15 +139,12 @@ async fn each_deleting_batch_appends_its_own_system_audit_row() {
 #[tokio::test]
 async fn runs_have_distinct_ids() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let job = retention(&c);
 
-        // Act
         let first = job.run().await;
         let second = job.run().await;
 
-        // Assert
         assert_ne!(first.run_id, second.run_id, "{}", db.backend);
     })
     .await;
@@ -172,7 +153,7 @@ async fn runs_have_distinct_ids() {
 #[tokio::test]
 async fn a_failing_kind_does_not_stop_the_others() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: the alarms table is gone; login events after it still expire.
+        // The alarms table is gone; login events after it still expire.
         let c = ctx(db).await;
         c.login(ago(181 * DAY)).await;
         c.conn
@@ -180,10 +161,8 @@ async fn a_failing_kind_does_not_stop_the_others() {
             .await
             .unwrap();
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.failed, vec![AuditKind::Alarm], "{b}");
         assert_eq!(report.deleted(AuditKind::Login), 1, "{b}");
@@ -195,15 +174,12 @@ async fn a_failing_kind_does_not_stop_the_others() {
 #[tokio::test]
 async fn a_record_exactly_at_the_cutoff_is_kept() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.login(ago(180 * DAY)).await;
         c.login(ago(180 * DAY + Duration::from_millis(1))).await;
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.deleted(AuditKind::Login), 1, "{b}");
         assert_eq!(
@@ -218,14 +194,11 @@ async fn a_record_exactly_at_the_cutoff_is_kept() {
 #[tokio::test]
 async fn a_run_that_deletes_nothing_records_nothing() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.login(ago(DAY)).await;
 
-        // Act
         let report = retention(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.total(), 0, "{b}");
         assert!(c.audit_rows(RETENTION_ACTION).await.is_empty(), "{b}");
@@ -236,17 +209,15 @@ async fn a_run_that_deletes_nothing_records_nothing() {
 #[tokio::test]
 async fn the_clock_decides_what_is_expired() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: a login event that expires a day from now.
+        // A login event that expires a day from now.
         let c = ctx(db).await;
         c.login(ago(179 * DAY)).await;
         let job = retention(&c);
         let before = job.run().await;
 
-        // Act
         c.clock.advance(DAY + HOUR);
         let after = job.run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(before.deleted(AuditKind::Login), 0, "{b}");
         assert_eq!(after.deleted(AuditKind::Login), 1, "{b}");

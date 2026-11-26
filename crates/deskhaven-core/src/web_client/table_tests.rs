@@ -28,8 +28,6 @@ impl CandidateSource for Device {
     }
 }
 
-/// A session of `user` in `table` under `id`; returns what the browser sent and the
-/// device's side of the candidate channel.
 fn open(table: &Table, user: i64, id: &str) -> (Sent, mpsc::UnboundedSender<String>) {
     let sent = Sent::default();
     let (device, rx) = mpsc::unbounded_channel();
@@ -52,20 +50,17 @@ fn page(candidates: &[&str], next: usize) -> Result<Candidates, Ended> {
 
 #[test]
 fn a_user_holds_at_most_four_sessions_punches_in_flight_included() {
-    // Arrange
     let table = Table::default();
     let _a = open(&table, ALICE, "a");
     let _b = open(&table, ALICE, "b");
     let _c = open(&table, ALICE, "c");
 
-    // Act
     let in_flight = table.reserve(ALICE, T0).unwrap();
     let fifth = table.reserve(ALICE, T0).is_none();
     let bob = table.reserve(BOB, T0).is_some();
     drop(in_flight);
     let after_release = table.reserve(ALICE, T0).is_some();
 
-    // Assert
     assert!(fifth, "four held, the fifth is refused");
     assert!(bob, "the cap is per user");
     assert!(after_release, "a failed punch gives its slot back");
@@ -73,7 +68,6 @@ fn a_user_holds_at_most_four_sessions_punches_in_flight_included() {
 
 #[test]
 fn sessions_belong_to_their_owner_and_expire() {
-    // Arrange
     let table = Table::default();
     let _a = open(&table, ALICE, "a");
     let _b = open(&table, ALICE, "b");
@@ -81,14 +75,12 @@ fn sessions_belong_to_their_owner_and_expire() {
     let _d = open(&table, ALICE, "d");
     let expired = T0 + SESSION_TTL;
 
-    // Act
     let own = table.get(ALICE, "a", T0).is_some();
     let other = table.get(BOB, "a", T0).is_none();
     let removed_by_other = table.remove(BOB, "a", T0).is_none();
     let gone = table.get(ALICE, "a", expired).is_none();
     let slot_back = table.reserve(ALICE, expired).is_some();
 
-    // Assert
     assert!(own && other && removed_by_other);
     assert!(gone, "expired after {SESSION_TTL:?}");
     assert!(slot_back, "expired sessions leave the cap");
@@ -96,13 +88,11 @@ fn sessions_belong_to_their_owner_and_expire() {
 
 #[tokio::test]
 async fn the_long_poll_pages_the_device_candidates_by_index() {
-    // Arrange
     let table = Table::default();
     let (_, device) = open(&table, ALICE, "a");
     let session = table.get(ALICE, "a", T0).unwrap();
     device.send("c0".to_owned()).unwrap();
 
-    // Act
     let first = session.poll(0, WAIT).await;
     let waiting = tokio::spawn({
         let session = Arc::clone(&session);
@@ -114,7 +104,6 @@ async fn the_long_poll_pages_the_device_candidates_by_index() {
     let again = session.poll(0, WAIT).await;
     let beyond = session.poll(9, Duration::ZERO).await;
 
-    // Assert
     assert_eq!(first, page(&["c0"], 1));
     assert_eq!(second, page(&["c1"], 2));
     assert_eq!(
@@ -127,24 +116,20 @@ async fn the_long_poll_pages_the_device_candidates_by_index() {
 
 #[tokio::test]
 async fn a_long_poll_without_candidates_ends_empty_after_its_wait() {
-    // Arrange
     let table = Table::default();
     let (_, _device) = open(&table, ALICE, "a");
     let session = table.get(ALICE, "a", T0).unwrap();
     let wait = Duration::from_millis(50);
 
-    // Act
     let started = tokio::time::Instant::now();
     let empty = session.poll(0, wait).await;
 
-    // Assert
     assert_eq!(empty, page(&[], 0));
     assert!(started.elapsed() >= wait);
 }
 
 #[tokio::test]
 async fn sending_is_not_held_up_by_a_waiting_poll() {
-    // Arrange
     let table = Table::default();
     let (sent, _device) = open(&table, ALICE, "a");
     let session = table.get(ALICE, "a", T0).unwrap();
@@ -154,10 +139,8 @@ async fn sending_is_not_held_up_by_a_waiting_poll() {
     });
     tokio::task::yield_now().await;
 
-    // Act
     let result = session.send("browser-c0".to_owned());
 
-    // Assert
     assert_eq!(result, Ok(()));
     assert_eq!(*sent.0.lock().unwrap(), ["browser-c0"]);
     assert!(!waiting.is_finished());
@@ -166,19 +149,16 @@ async fn sending_is_not_held_up_by_a_waiting_poll() {
 
 #[tokio::test]
 async fn a_closed_route_ends_the_poll_once_everything_was_read() {
-    // Arrange
     let table = Table::default();
     let (_, device) = open(&table, ALICE, "a");
     let session = table.get(ALICE, "a", T0).unwrap();
     device.send("c0".to_owned()).unwrap();
     drop(device);
 
-    // Act
     let first = session.poll(0, WAIT).await;
     let ended = session.poll(1, WAIT).await;
     let reread = session.poll(0, WAIT).await;
 
-    // Assert
     assert_eq!(first, page(&["c0"], 1));
     assert_eq!(ended, Err(Ended));
     assert_eq!(reread, page(&["c0"], 1));
@@ -186,7 +166,6 @@ async fn a_closed_route_ends_the_poll_once_everything_was_read() {
 
 #[tokio::test]
 async fn closing_a_session_wakes_its_waiting_poll() {
-    // Arrange
     let table = Table::default();
     let (_, _device) = open(&table, ALICE, "a");
     let session = table.get(ALICE, "a", T0).unwrap();
@@ -196,11 +175,9 @@ async fn closing_a_session_wakes_its_waiting_poll() {
     });
     tokio::task::yield_now().await;
 
-    // Act
     let removed = table.remove(ALICE, "a", T0);
     let woken = tokio::time::timeout(Duration::from_secs(5), waiting).await;
 
-    // Assert
     assert!(removed.is_some());
     assert_eq!(woken.unwrap().unwrap(), Err(Ended));
     assert!(table.get(ALICE, "a", T0).is_none());

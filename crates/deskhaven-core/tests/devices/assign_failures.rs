@@ -1,6 +1,3 @@
-//! `--assign` failures (M2-19 review): the device is resolved first, every step runs in one
-//! transaction with its audit row, so any failure changes nothing and leaves no audit row.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::addressbooks::{Actor, PeerPatch};
@@ -14,7 +11,6 @@ use super::assign::{assignment, everything};
 use super::deploy::TOKEN;
 use super::support::{Ctx, ID, Targets, b64, ctx};
 
-/// Nothing placed on device [`ID`] (`devices.id` = `device_id`), and nothing audited.
 async fn assert_untouched(c: &Ctx, t: &Targets, device_id: i64, b: impl std::fmt::Display) {
     let row = c.row(ID).await;
     let placed = (
@@ -214,11 +210,9 @@ async fn a_full_book_fails_the_assignment_and_changes_nothing() {
     .await;
 }
 
-/// One audit row per assignment, as the token, with the placement before and after.
 #[tokio::test]
 async fn an_assignment_is_audited_with_the_previous_placement() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -231,10 +225,8 @@ async fn an_assignment_is_audited_with_the_previous_placement() {
             .await
             .unwrap();
 
-        // Act
         c.assign(everything()).await.unwrap();
 
-        // Assert
         let b = db.backend;
         let audit = c.audit_rows().await;
         assert_eq!(audit.len(), 1, "{b}");

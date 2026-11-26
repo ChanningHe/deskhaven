@@ -1,22 +1,7 @@
-//! [`PendingNotes`]: controller notes waiting for their session to appear.
-//!
-//! The controller posts its note with the session id only (`src/ui_session_interface.rs:
-//! 2104-2107`); `connection_sessions.conn_id` is `NOT NULL`, so a note cannot create a row.
-//! The session id reaches a row with the controlled device's authorization record, which can
-//! be held up behind the device's retries of its opening record (sequential, up to 120 s
-//! each, `src/server/connection.rs:1331-1336`), while the controller's note goes out at once.
-//! Such a note waits here until a record binds the session, at most [`NOTE_TTL`].
-//!
-//! The note carries no uuid, so anyone who knows a registered id can post one. Hence:
-//! - **Bounded three ways**, never evicting: at most [`MAX_NOTES_PER_SOURCE`] waiting notes
-//!   per client network (the rate limiter's key: IPv4 /32, IPv6 /64, one shared key for
-//!   proxy-fallback clients), [`MAX_NOTES_PER_SOURCE_DEVICE`] per client network and device,
-//!   [`MAX_PENDING_NOTES`] in all. A note that does not fit is refused; waiting notes stay
-//!   until taken or expired.
-//! - **First wins**: a session's waiting note is not replaced (06 §7).
-//! - **Monotonic**: deadlines run on [`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms).
-//! - **In memory only**: a restart loses waiting notes (the note is a user annotation, the
-//!   connection records themselves are stored).
+//! A note carries only a session id, so it cannot create a row; the authorization record that
+//! binds the session can be held up behind the device's retries, so the note waits here.
+//! Anyone who knows a registered id can post one: bounded three ways, never evicting, and in
+//! memory only.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -28,16 +13,11 @@ use super::{PAIRING_WINDOW, SessionId};
 use crate::auth::limiter::{ClientAddr, ip_key};
 use crate::clock::SharedClock;
 
-/// How long a note waits for its session: as long as a connection's records pair.
 pub const NOTE_TTL: Duration = PAIRING_WINDOW;
-/// Notes waiting at most (a few MiB at the longest notes).
 pub const MAX_PENDING_NOTES: usize = 1_000;
-/// Waiting notes per client network at most.
 pub const MAX_NOTES_PER_SOURCE: usize = 16;
-/// Waiting notes per (client network, device) at most: one source cannot take a device's
-/// slots from its other controllers.
+/// One source cannot take a device's slots from its other controllers.
 pub const MAX_NOTES_PER_SOURCE_DEVICE: usize = 8;
-/// At most one warning per interval about a full buffer.
 const FULL_WARN_INTERVAL_MS: i64 = 60_000;
 
 /// The client network a note came from; `None`: a proxy-fallback client.
@@ -46,16 +26,13 @@ type Key = (String, SessionId);
 
 struct Entry {
     note: String,
-    /// Arrival, monotonic ms.
     at: i64,
     source: Source,
 }
 
-/// What [`PendingNotes::hold`] did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Hold {
     Held,
-    /// A note of the session was already waiting; it stays.
     AlreadyWaiting,
     SourceFull,
     DeviceFull,
@@ -78,7 +55,6 @@ impl PendingNotes {
         }
     }
 
-    /// Keeps `note` for the session if it fits (see the module documentation).
     pub fn hold(&self, device: &str, session: &SessionId, note: String, from: ClientAddr) -> Hold {
         let now = self.clock.elapsed_ms();
         let source = (!from.is_proxy_fallback).then(|| ip_key(from.addr));
@@ -102,7 +78,6 @@ impl PendingNotes {
         hold
     }
 
-    /// Removes and returns the session's note, unless it expired.
     pub fn take(&self, device: &str, session: &SessionId) -> Option<String> {
         let now = self.clock.elapsed_ms();
         let key = (device.to_owned(), session.clone());
@@ -110,7 +85,6 @@ impl PendingNotes {
         (!expired(entry.at, now)).then_some(entry.note)
     }
 
-    /// `true` at most once per minute: whether to warn that the buffer is full.
     pub fn warn_due(&self) -> bool {
         let now = self.clock.elapsed_ms();
         let last = self.warned.load(Ordering::Relaxed);
@@ -129,7 +103,6 @@ impl PendingNotes {
     }
 }
 
-/// Why a new note of `device` from `source` does not fit, if it does not.
 fn refusal(notes: &HashMap<Key, Entry>, device: &str, source: Source) -> Option<Hold> {
     if notes.len() >= MAX_PENDING_NOTES {
         return Some(Hold::Full);

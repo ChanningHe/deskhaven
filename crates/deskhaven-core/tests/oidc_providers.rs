@@ -1,7 +1,3 @@
-//! OIDC provider management: CRUD, validation, the sealed client secret bound to its row,
-//! config-managed providers, deletion with linked accounts, and the login button cache.
-//! Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

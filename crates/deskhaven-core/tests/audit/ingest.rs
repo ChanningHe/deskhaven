@@ -1,5 +1,3 @@
-//! Nonce de-duplication, device identity, and the file / alarm records.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -39,11 +37,9 @@ fn alarm() -> Record {
 #[tokio::test]
 async fn a_repeated_nonce_is_a_duplicate_and_stores_nothing_again() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let b = db.backend;
 
-        // Act
         let first = [
             c.send("conn", new_conn(7)).await,
             c.send("file", file("/home")).await,
@@ -55,7 +51,6 @@ async fn a_repeated_nonce_is_a_duplicate_and_stores_nothing_again() {
             c.send("alarm", alarm()).await,
         ];
 
-        // Assert
         assert_eq!(first, [Ingest::Stored; 3], "{b}");
         assert_eq!(retried, [Ingest::Duplicate; 3], "{b}");
         let sessions = c.sessions().await;
@@ -77,7 +72,6 @@ async fn a_repeated_nonce_is_a_duplicate_and_stores_nothing_again() {
 #[tokio::test]
 async fn unknown_devices_and_wrong_uuids_store_nothing_and_claim_no_nonce() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let unknown = Envelope {
             rustdesk_id: "555555555".to_owned(),
@@ -89,7 +83,6 @@ async fn unknown_devices_and_wrong_uuids_store_nothing_and_claim_no_nonce() {
             ..envelope("n")
         };
 
-        // Act
         let outcomes = [
             c.audit.ingest(unknown.clone(), new_conn(7)).await.unwrap(),
             c.audit.ingest(unknown.clone(), file("/")).await.unwrap(),
@@ -97,7 +90,6 @@ async fn unknown_devices_and_wrong_uuids_store_nothing_and_claim_no_nonce() {
             c.audit.ingest(wrong_uuid, new_conn(7)).await.unwrap(),
         ];
 
-        // Assert
         let b = db.backend;
         assert_eq!(outcomes, [Ingest::NotFound; 4], "{b}");
         assert!(
@@ -115,18 +107,15 @@ async fn unknown_devices_and_wrong_uuids_store_nothing_and_claim_no_nonce() {
 #[tokio::test]
 async fn records_without_a_nonce_are_stored_without_de_duplication() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let bare = Envelope {
             nonce: None,
             ..envelope("unused")
         };
 
-        // Act
         let first = c.audit.ingest(bare.clone(), alarm()).await.unwrap();
         let second = c.audit.ingest(bare, alarm()).await.unwrap();
 
-        // Assert
         assert_eq!(
             (first, second),
             (Ingest::Stored, Ingest::Stored),
@@ -142,14 +131,11 @@ async fn records_without_a_nonce_are_stored_without_de_duplication() {
 #[tokio::test]
 async fn file_and_alarm_records_keep_what_the_device_reported() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
 
-        // Act
         c.send("f", file("/home/alice\u{0}/docs")).await;
         c.send("a", alarm()).await;
 
-        // Assert
         let b = db.backend;
         let files = c.files().await;
         let f = &files[0];

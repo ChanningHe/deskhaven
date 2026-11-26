@@ -1,5 +1,3 @@
-//! Step 3: the client's polling (see the module docs of `oidc`).
-
 use deskhaven_db::entity::oidc_flow::{self, Column, Flow};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
@@ -10,28 +8,22 @@ use super::{OidcService, context};
 use crate::sessions::{ClientDevice, TokenHash};
 use crate::users::UserError;
 
-/// What a poll finds.
 #[derive(Debug)]
 pub enum PollOutcome {
-    /// The callback has not completed yet.
     Pending,
-    /// The flow failed; the same answer until it expires.
+    /// The same answer until it expires.
     Failed(Failure),
-    /// The login, handed out once.
     Ready(Box<ClientLogin>),
 }
 
-/// A finished client login: mint the client session for `device` under `login.stamp`.
 #[derive(Debug)]
 pub struct ClientLogin {
     pub login: OidcLogin,
-    /// The device the flow was started from (and polled from).
     pub device: ClientDevice,
 }
 
 impl OidcService {
-    /// The state of the client flow of `code`, polled from the device `rustdesk_id` /
-    /// `uuid` (it must be the one the flow was started from).
+    /// It must be the device the flow was started from.
     pub async fn poll_client(
         &self,
         code: &str,

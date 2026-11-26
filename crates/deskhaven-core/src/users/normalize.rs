@@ -1,19 +1,7 @@
-//! Validation and normalization of user input (04 §3).
-//!
-//! - Username: 1-64 characters of `[A-Za-z0-9._@-]` (the schema CHECKs the same set);
-//!   `username_norm` is its ASCII lowercase.
-//! - Email: kept as entered; `email_norm` is the **whole address** with its ASCII letters
-//!   lowercased. RFC 5321 allows a case-sensitive local part, but no mainstream provider uses
-//!   one, and folding it prevents two accounts (or an OIDC link) differing only in case.
-//!   Non-ASCII characters are compared as entered (M4-05): Unicode `to_lowercase` maps some of
-//!   them onto ASCII letters (the Kelvin sign U+212A becomes `k`), so an IdP that asserts
-//!   `\u{212A}evin@corp.example` as verified could otherwise be linked to `kevin@corp.example`.
-//!   Validation is deliberately shallow: at most 254 characters, no whitespace or control
-//!   characters, exactly one `@` with a non-empty part on each side. Deliverability is
-//!   proven by verification, not by syntax. No Unicode normalization (NFC / NFKC) or case
-//!   folding is applied: differently composed or cased forms of the same internationalized
-//!   address are distinct. Accepted trade-off (no extra dependency; such addresses are rare,
-//!   and a false "distinct" only fails to link, never links the wrong account).
+//! `email_norm` lowercases the ASCII letters of the whole address: no mainstream provider uses a
+//! case-sensitive local part. Non-ASCII is compared as entered: Unicode lowercasing maps the Kelvin
+//! sign onto `k`, so an IdP-verified look-alike could be linked to another account. No Unicode
+//! normalization: a false "distinct" only fails to link, never links the wrong account.
 
 use super::UserError;
 use crate::text::{self, NOTE_MAX_LEN};
@@ -33,7 +21,6 @@ pub(crate) fn is_username_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '@' | '-')
 }
 
-/// `Some(username_norm)` when `raw` is a well-formed username.
 pub fn username_norm(raw: &str) -> Option<String> {
     let well_formed =
         !raw.is_empty() && raw.len() <= USERNAME_MAX_LEN && raw.chars().all(is_username_char);
@@ -49,7 +36,6 @@ pub(super) fn username(raw: &str) -> Result<String, UserError> {
     })
 }
 
-/// An email address and its normalized form.
 pub(super) struct Email {
     pub value: String,
     pub norm: String,
@@ -86,7 +72,6 @@ fn text(field: &'static str, raw: &str, max: usize, multiline: bool) -> Result<S
     }
 }
 
-/// Trimmed display name; blank falls back to `username`.
 pub(super) fn display_name(raw: &str, username: &str) -> Result<String, UserError> {
     let trimmed = raw.trim();
     let name = if trimmed.is_empty() {

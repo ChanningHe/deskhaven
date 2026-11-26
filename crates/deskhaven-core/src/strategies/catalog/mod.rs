@@ -1,49 +1,32 @@
-//! The client options the strategy editor knows (`strategy_catalog`, M3-07): every option
-//! the official client keeps in `Config::options`, which is where a strategy's
-//! `config_options` land, with its control type, client default, group and en / zh texts.
-//!
-//! The data ([`options`]) is generated from the client source by `cargo xtask
-//! gen-strategy-catalog` (keys and the defaults `option2bool` implies) merged with the
-//! human-written `overlay.toml` next to it. Options outside the catalog are still valid in
-//! a strategy (the advanced editor); the catalog only types the ones it knows.
-//!
-//! **Secret options** ([`CatalogOption::secret`]): their value reaches every device of the
-//! strategy in clear (see the parent module), but the console never shows it again and
-//! audit rows mask it ([`is_secret`]).
+//! Generated from the client source by `cargo xtask gen-strategy-catalog`, merged with
+//! `overlay.toml`. Options outside the catalog are still valid in a strategy. A secret option still
+//! reaches every device in clear, but the console never shows it again and audit rows mask it.
 
 // Formatted by the generator: `cargo fmt` must not touch it, or `--check` would fail.
 #[rustfmt::skip]
 mod generated;
 
-/// English and Chinese text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Text {
     pub en: &'static str,
     pub zh: &'static str,
 }
 
-/// One allowed value of a [`OptionKind::Choice`] option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Choice {
     pub value: &'static str,
     pub label: Text,
 }
 
-/// How the console edits an option. An empty value is always allowed besides: it makes the
-/// client delete the option (back to its own default).
+/// An empty value is always allowed besides: the client then deletes the option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionKind {
-    /// `Y` or `N`.
     Bool,
-    /// One of the listed values.
     Choice(&'static [Choice]),
-    /// A decimal integer within the bounds.
     Number { min: Option<i64>, max: Option<i64> },
-    /// Free text.
     Text,
 }
 
-/// Editor section of an option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Group {
     Security,
@@ -60,26 +43,19 @@ pub struct CatalogOption {
     pub key: &'static str,
     pub kind: OptionKind,
     pub group: Group,
-    /// What the client does when the option is unset; `None` when the source does not say.
     pub default: Option<&'static str>,
-    /// The value is a credential: never shown back, masked in audit rows.
     pub secret: bool,
-    /// Left out of the typed form of the console (custom-client settings); still valid in a
-    /// strategy through the advanced editor.
     pub advanced_only: bool,
     pub label: Text,
     pub description: Text,
 }
 
-/// Client revisions the catalog was generated from (`rustdesk/rustdesk`,
-/// `rustdesk/hbb_common` commits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Revisions {
     pub rustdesk: &'static str,
     pub hbb_common: &'static str,
 }
 
-/// Every known option, in the client's key list order.
 pub fn options() -> &'static [CatalogOption] {
     generated::OPTIONS
 }
@@ -92,12 +68,10 @@ pub fn find(key: &str) -> Option<&'static CatalogOption> {
     generated::OPTIONS.iter().find(|o| o.key == key)
 }
 
-/// Whether the value of option `key` is a credential.
 pub fn is_secret(key: &str) -> bool {
     find(key).is_some_and(|o| o.secret)
 }
 
-/// Why `value` does not fit option `key`; `None` when it does or the option is unknown.
 /// The empty value (delete) always fits. Never echoes the value.
 pub fn value_problem(key: &str, value: &str) -> Option<&'static str> {
     let option = find(key)?;

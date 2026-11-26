@@ -1,19 +1,6 @@
-//! Effective strategy of a device (05 §4.3): the assigned strategies that apply to it,
-//! overlaid from lowest to highest priority.
-//!
-//! Layers, lowest first:
-//!
-//! 1. `global`
-//! 2. `group`: one layer per user group the device's owner belongs to that has a strategy,
-//!    in ascending group id (a tie between groups: the group created last wins)
-//! 3. `user`: the device's owner
-//! 4. `device_group`
-//! 5. `device`
-//!
-//! Merging works per option name: a higher layer's value replaces a lower layer's, and an
-//! **empty value is a value like any other**. It overrides what lower layers set and stays
-//! in the result, because the client deletes an option when it receives it empty (03 §2.1);
-//! dropping it here would leave the client with whatever it applied before.
+//! An empty value is a value like any other: it overrides lower layers and stays in the result,
+//! because the client deletes an option it receives empty. A tie between user groups: the group
+//! created last wins.
 
 use std::collections::{HashMap, HashSet};
 
@@ -23,19 +10,13 @@ use deskhaven_db::time::TimestampMs;
 use super::model::{Assignment, Target};
 use super::options::Options;
 
-/// What decides which strategies apply to a device. Built by the caller from the device
-/// registry (`From<&device::Model>`), so the strategy service never reads `devices`.
+/// Built by the caller, so the strategy service never reads `devices`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DeviceInputs {
-    /// `devices.id`.
     pub device_id: i64,
-    /// `devices.owner_user_id`.
     pub user_id: Option<i64>,
-    /// `devices.device_group_id`.
     pub device_group_id: Option<i64>,
-    /// When the owner or the device group of the device last changed by an explicit
-    /// assignment (deploy / assign), folded into [`EffectiveStrategy::modified_at`] so a
-    /// client that moved to another group refetches. `None` = unknown or never.
+    /// Folded into [`EffectiveStrategy::modified_at`] so a client that moved to another group refetches.
     pub changed_at: Option<TimestampMs>,
 }
 
@@ -52,34 +33,23 @@ impl From<&device::Model> for DeviceInputs {
     }
 }
 
-/// The result of merging the strategies that apply to one device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffectiveStrategy {
-    /// `config_options` to send. Entries with an empty value are kept: they tell the client
-    /// to delete the option.
+    /// Empty values are kept: they tell the client to delete the option.
     pub options: Options,
-    /// Version of this result in unix milliseconds. Within one process run the server value
-    /// only grows (see [`StrategyCache`](super::StrategyCache)).
-    ///
-    /// **Compare with `!=`, not `<`.** The official client overwrites its stored value
-    /// whenever the server's differs from it, and a restart on a clock that is behind the
-    /// maximum issued before it can legitimately yield a lower value; with `<` such a
-    /// client would never refetch. Send `options` to a client whose stored value differs.
+    /// Compare with `!=`, not `<`: a restart on a slower clock can legitimately yield a lower value,
+    /// and with `<` such a client would never refetch.
     pub modified_at: i64,
-    /// The strategies merged, lowest priority first.
     pub applied: Vec<Assignment>,
 }
 
 impl EffectiveStrategy {
-    /// The options the device ends up with: [`options`](Self::options) without the empty
-    /// (delete) entries.
     pub fn live_options(&self) -> impl Iterator<Item = (&str, &str)> {
         let live = self.options.iter().filter(|(_, value)| !value.is_empty());
         live.map(|(key, value)| (key.as_str(), value.as_str()))
     }
 }
 
-/// A user group with a strategy and its members.
 #[derive(Debug)]
 struct GroupLayer {
     group_id: i64,
@@ -87,25 +57,18 @@ struct GroupLayer {
     members: HashSet<i64>,
 }
 
-/// All assignments and the options they point at, as of one load. Immutable; replaced as a
-/// whole when anything changes.
 #[derive(Debug, Default)]
 pub(super) struct Snapshot {
-    /// Cache version at load time (see [`StrategyCache`](super::StrategyCache)).
     modified_at: i64,
     global: Option<i64>,
     devices: HashMap<i64, i64>,
     device_groups: HashMap<i64, i64>,
     users: HashMap<i64, i64>,
-    /// Ascending group id.
     groups: Vec<GroupLayer>,
-    /// Strategy id to options, for every assigned strategy.
     options: HashMap<i64, Options>,
 }
 
 impl Snapshot {
-    /// `members` maps a user group id to its member user ids and need only cover groups that
-    /// have an assignment. Assignments whose strategy is missing from `options` are ignored.
     pub(super) fn build(
         modified_at: i64,
         assignments: &[Assignment],
@@ -135,7 +98,6 @@ impl Snapshot {
         snap
     }
 
-    /// The assignments that apply to `inputs`, lowest priority first.
     fn layers(&self, inputs: &DeviceInputs) -> Vec<Assignment> {
         let mut layers = Vec::new();
         let mut push = |target: Target, strategy_id: Option<&i64>| {
@@ -178,7 +140,6 @@ impl Snapshot {
     }
 }
 
-/// `modified_at` of a device: the cache version, or the device's own `changed_at` if later.
 pub(super) fn stamp(version: i64, inputs: &DeviceInputs) -> i64 {
     let changed = inputs.changed_at.map(|t| t.timestamp_millis());
     version.max(changed.unwrap_or(i64::MIN))

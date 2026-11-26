@@ -1,23 +1,7 @@
-//! The lockout state machine, free of I/O. All times are unix milliseconds.
-//!
-//! Attempts are counted **before** verification (the login pre-check reserves one), so a
-//! reservation is an attempt, not yet a failure; a success deletes the rows and a refund
-//! (verification never ran) gives the attempt back.
-//!
-//! - Attempts are counted in a fixed window that opens at the first one and lasts
-//!   `auth.lockout.window`; an attempt after the window closed starts a new one at 1.
-//! - Reaching the threshold in one window locks the key; the counter and window restart at
-//!   the lock. The attempt that reaches the threshold is still verified, so at most
-//!   `threshold` verifications happen per lock cycle.
-//! - Per-source rows ([`Policy::per_source`]): threshold `auth.lockout.max_failures`, lock
-//!   `auth.lockout.duration × 2^level`, capped at [`MAX_LOCK`]. The level is 0 for the first
-//!   lock, and one more than the previous lock's level when that lock ended less than
-//!   [`LEVEL_DECAY`] ago; after a quiet period of [`LEVEL_DECAY`] with no lock in force it
-//!   starts at 0 again.
-//! - Global rows ([`Policy::global`]): threshold [`GLOBAL_FACTOR`] × `max_failures`, fixed
-//!   lock of `auth.lockout.duration` (no backoff), so distributed guessing is bounded but no
-//!   single source can lock the account for long.
-//! - Attempts while locked change nothing (the pre-check rejects them).
+//! Pure state machine; all times are unix milliseconds. The attempt that reaches the threshold
+//! is still verified, so at most `threshold` verifications happen per lock cycle. Global rows
+//! have a fixed lock (no backoff): distributed guessing is bounded, but no single source can lock
+//! the account for long.
 
 use std::time::Duration;
 
@@ -26,19 +10,14 @@ use deskhaven_config::settings::{
     AUTH_LOCKOUT_DURATION, AUTH_LOCKOUT_MAX_FAILURES, AUTH_LOCKOUT_WINDOW, LOCKOUT_GLOBAL_FACTOR,
 };
 
-/// Upper bound of one lock (05-config §3.6).
 pub const MAX_LOCK: Duration = Duration::from_secs(24 * 60 * 60);
-/// Quiet period after which the backoff level resets.
 pub const LEVEL_DECAY: Duration = Duration::from_secs(24 * 60 * 60);
-/// The global row's threshold is this many times the per-source one. Shared with the
-/// settings rule `auth.lockout.window <= 4 × auth.lockout.duration`.
+/// Shared with the settings rule `auth.lockout.window <= 4 × auth.lockout.duration`.
 #[allow(clippy::cast_possible_wrap)] // 4
 pub const GLOBAL_FACTOR: i32 = LOCKOUT_GLOBAL_FACTOR as i32;
-/// Highest stored level. `duration` is at least 1 minute, and 1m × 2^11 already exceeds
-/// [`MAX_LOCK`], so higher levels would not change anything.
+/// `duration` is at least 1 minute, and 1m × 2^11 already exceeds [`MAX_LOCK`].
 const MAX_LEVEL: i32 = 11;
 
-/// The lockout rule of one kind of row, read from one settings snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Policy {
     pub threshold: i32,
@@ -48,7 +27,6 @@ pub(super) struct Policy {
 }
 
 impl Policy {
-    /// `user:<name>|<source>` rows: exponential backoff.
     pub fn per_source(snapshot: &Snapshot) -> Self {
         Self {
             threshold: i32::try_from(snapshot.get(&AUTH_LOCKOUT_MAX_FAILURES)).unwrap_or(i32::MAX),
@@ -58,7 +36,6 @@ impl Policy {
         }
     }
 
-    /// `user:<name>|*` rows: higher threshold, fixed duration.
     pub fn global(snapshot: &Snapshot) -> Self {
         let per_source = Self::per_source(snapshot);
         Self {
@@ -68,7 +45,6 @@ impl Policy {
         }
     }
 
-    /// The state after one more attempt at `now`.
     pub fn on_attempt(&self, state: State, now: i64) -> State {
         if state.is_locked(now) {
             return state;
@@ -100,7 +76,6 @@ impl Policy {
         }
     }
 
-    /// `duration × 2^level`, capped at [`MAX_LOCK`].
     pub fn lock_ms(&self, level: i32) -> i64 {
         let factor = 1_i64 << level.clamp(0, MAX_LEVEL);
         self.base_lock_ms
@@ -109,7 +84,6 @@ impl Policy {
     }
 }
 
-/// The decision-relevant columns of an `auth_lockouts` row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct State {
     pub failures: i32,
@@ -119,7 +93,6 @@ pub(super) struct State {
 }
 
 impl State {
-    /// No attempts yet.
     pub fn fresh(now: i64) -> Self {
         Self {
             failures: 0,
@@ -133,7 +106,6 @@ impl State {
         self.locked_until.is_some_and(|until| until > now)
     }
 
-    /// Time left on the lock at `now`, if locked.
     pub fn retry_after(&self, now: i64) -> Option<Duration> {
         let until = self.locked_until.filter(|until| *until > now)?;
         Some(Duration::from_millis(
@@ -141,13 +113,11 @@ impl State {
         ))
     }
 
-    /// Whether going from `self` to `next` started a lock.
     pub fn starts_lock(&self, next: &State) -> bool {
         next.locked_until.is_some() && next.locked_until != self.locked_until
     }
 }
 
-/// One reserved attempt on one row: the row before and after the reservation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Reservation {
     pub before: State,
@@ -155,9 +125,8 @@ pub(super) struct Reservation {
 }
 
 impl Reservation {
-    /// The row with this attempt given back, or `None` if there is nothing to give back.
-    /// Untouched since the reservation: exactly the state before it (a lock it started is
-    /// lifted). Otherwise best effort: one attempt less, if any are counted.
+    /// Untouched since the reservation: exactly the state before it. Otherwise best effort: one
+    /// attempt less.
     pub fn refund(&self, current: State) -> Option<State> {
         if current == self.after {
             return Some(self.before);

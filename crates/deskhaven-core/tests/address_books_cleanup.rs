@@ -1,7 +1,3 @@
-//! Deleting a group or a user removes the address book shares naming it in the same
-//! transaction (shares have no foreign key to their subject); a deleted user's personal book
-//! goes, its shared books stay unowned. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -59,7 +55,6 @@ async fn deleting_a_group_removes_its_shares_and_nothing_else() {
                 },
             ]
         );
-        // The deleted group's full control no longer counts.
         let profiles = env
             .books
             .shared_profiles(alice, common::ab::page(1, 10))
@@ -114,7 +109,6 @@ async fn deleting_a_user_removes_its_shares_and_personal_book() {
             .await
             .unwrap();
         assert_eq!(peers, 1, "only the shared book's peer remains");
-        // The unowned book is admin-managed now: reachable through the console only.
         assert_eq!(env.peer_ids(Actor::Admin, &owned.guid).await, ["2"]);
         assert!(is_not_found(
             env.books.tags(Actor::User(bob), &owned.guid).await

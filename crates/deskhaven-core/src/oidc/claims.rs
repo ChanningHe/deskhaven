@@ -1,18 +1,13 @@
-//! What deskhaven takes from a verified ID token.
-
 use openidconnect::core::CoreGenderClaim;
 use openidconnect::{AdditionalClaims, IdTokenClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Longest accepted `sub` (OIDC Core §2: at most 255 ASCII characters).
+/// OIDC Core: at most 255 ASCII characters.
 const MAX_SUBJECT_LEN: usize = 255;
-/// Group claim values beyond this many are ignored.
 const MAX_GROUPS: usize = 256;
-/// Group names longer than this are ignored (deskhaven group names are at most 64).
 const MAX_GROUP_LEN: usize = 256;
 
-/// The claims outside the standard set (for the configured group claim).
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(transparent)]
 pub(crate) struct ExtraClaims(Map<String, Value>);
@@ -21,21 +16,18 @@ impl AdditionalClaims for ExtraClaims {}
 
 pub(crate) type Claims = IdTokenClaims<ExtraClaims, CoreGenderClaim>;
 
-/// The identity an ID token asserts, after verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Asserted {
     pub(crate) subject: String,
     pub(crate) email: Option<String>,
-    /// `None` when the claim is missing: treated as unverified (06 §3.4).
+    /// `None` when the claim is missing: treated as unverified.
     pub(crate) email_verified: Option<bool>,
     pub(crate) preferred_username: Option<String>,
     pub(crate) name: Option<String>,
-    /// Values of the provider's group claim, if configured.
     pub(crate) groups: Vec<String>,
 }
 
 impl Asserted {
-    /// `None` when `sub` is empty or longer than OIDC allows.
     pub(crate) fn from_claims(claims: &Claims, group_claim: Option<&str>) -> Option<Self> {
         let subject = claims.subject().as_str();
         if subject.is_empty() || subject.len() > MAX_SUBJECT_LEN {
@@ -57,7 +49,6 @@ impl Asserted {
         })
     }
 
-    /// The email, only when the IdP asserts it verified.
     pub(crate) fn verified_email(&self) -> Option<&str> {
         match self.email_verified {
             Some(true) => self.email.as_deref(),
@@ -66,7 +57,6 @@ impl Asserted {
     }
 }
 
-/// A string or an array of strings; anything else contributes nothing.
 fn group_values(value: &Value) -> Vec<String> {
     let usable = |s: &&str| !s.is_empty() && s.len() <= MAX_GROUP_LEN;
     match value {

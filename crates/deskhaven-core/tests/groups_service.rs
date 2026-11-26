@@ -1,6 +1,3 @@
-//! GroupService: CRUD, membership, config-managed groups. Every test runs on SQLite and
-//! PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;

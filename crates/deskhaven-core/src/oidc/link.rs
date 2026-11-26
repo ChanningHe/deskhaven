@@ -1,26 +1,6 @@
-//! Explicit linking (M4-09): the signed-in account holder links an IdP identity to their own
-//! account through a `link` flow.
-//!
-//! 1. [`OidcService::begin_link`] (after the caller re-authenticated the user): a
-//!    `flow = link` row whose context holds the browser binding (as for a console login)
-//!    and the account; refused up front for LDAP accounts and accounts that already have an
-//!    identity at the provider.
-//! 2. The IdP redirects to the callback, which sends a link flow on to the console. The
-//!    console calls [`OidcService::verify_link`] (`link_verify`) for the browser holding
-//!    the binding and the account the flow was started for: it exchanges the code once,
-//!    verifies the ID token and stores the verified identity on the (unconsumed) flow, and
-//!    shows it (provider, subject, verified address, preferred username) with the account.
-//! 3. On confirmation, [`OidcService::complete_link`] claims the flow (same binding and
-//!    account), and links exactly that stored identity `(provider, sub)` to the account
-//!    (`linked_via = explicit`). The email plays no
-//!    part. Refused: the identity belongs to another account, the account has another
-//!    identity at this provider, an LDAP account. The same identity linked by email is
-//!    upgraded to `explicit`; linked explicitly already, it stays as it is. The guard records
-//!    the audit row in the linking transaction. The flow row is deleted once it has an
-//!    outcome.
-//!
-//! Once linked, an OIDC login to the account asks for no local second factor: the identity
-//! replaces the password login, and the account's safety is the IdP account's.
+//! The confirmation page names the verified identity, and the confirmation links exactly that one;
+//! the email plays no part. Once linked, an OIDC login asks for no local second factor: the
+//! account's safety is the IdP account's.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::oidc_flow::{self, Flow};
@@ -44,12 +24,9 @@ use crate::console_audit::TxGuard;
 use crate::sessions::SessionToken;
 use crate::users::{AuthSource, Status, User};
 
-/// The outcome of a claimed link flow.
 #[derive(Debug)]
 pub struct LinkReport {
-    /// The provider's name.
     pub provider: String,
-    /// The ID token's `sub`, once verified.
     pub subject: Option<String>,
     pub outcome: Result<Identity, LinkFailure>,
 }
@@ -57,9 +34,6 @@ pub struct LinkReport {
 type Linking = Result<Identity, LinkFailure>;
 
 impl OidcService {
-    /// Starts linking an identity at the enabled provider named `provider` to account
-    /// `user_id`, whom the caller has re-authenticated. Send the browser to the URL with the
-    /// binding in a cookie, as for a console login.
     pub async fn begin_link(
         &self,
         provider: &str,
@@ -79,8 +53,7 @@ impl OidcService {
         })
     }
 
-    /// Whether account `user_id` may start linking at the enabled provider `provider`; the
-    /// caller runs it before re-authenticating, so a refusal spends no code.
+    /// Run before re-authenticating, so a refusal spends no code.
     pub async fn check_link(&self, provider: &str, user_id: i64) -> Result<(), OidcError> {
         let found = self
             .enabled_provider(provider)
@@ -101,11 +74,7 @@ impl OidcService {
         Ok(())
     }
 
-    /// Links the identity [`verify_link`](Self::verify_link) stored on the flow of `state`
-    /// to the signed-in account `user_id`, in the browser holding `binding` (see the module
-    /// docs). A flow not verified yet, refused at verification, or of another browser or
-    /// account is [`CallbackError::InvalidState`] and stays untouched. Single use: the flow
-    /// is claimed, then deleted.
+    /// A flow not verified yet, or of another browser or account, stays untouched. Single use.
     pub async fn complete_link(
         &self,
         state: Option<&str>,
@@ -171,8 +140,6 @@ impl OidcService {
         })
     }
 
-    /// Links the verified identity to the account in one transaction with its audit row; a
-    /// refusal writes nothing.
     async fn link_verified(
         &self,
         provider: &oidc_provider::Model,
@@ -203,8 +170,6 @@ impl OidcService {
         Ok(Ok(change.identity))
     }
 
-    /// The rules, then the write: `Ok(None)` when the identity is already the account's
-    /// explicit (or provisioned) one, nothing to do.
     async fn link_in(
         &self,
         tx: &DatabaseTransaction,
@@ -268,7 +233,6 @@ impl OidcService {
     }
 }
 
-/// Why `account` cannot link at all, if it cannot.
 fn refusal(account: &user::Model) -> Option<LinkFailure> {
     if account.auth_source == AuthSource::Ldap {
         return Some(LinkFailure::DirectoryAccount);

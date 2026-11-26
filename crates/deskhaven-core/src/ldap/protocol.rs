@@ -1,32 +1,26 @@
-//! The steps of a directory login, shared by logins and diagnostics: service bind, user
-//! search, user bind, group lookup. Passwords are only ever handed to [`Session::bind`];
-//! an empty one never is (RFC 4513 §5.1.2 unauthenticated bind).
+//! Passwords are only ever handed to [`Session::bind`]; an empty one never is (an
+//! unauthenticated bind).
 
 use super::directory::{DirectoryFault, Entry, Scope, SearchRequest, Session};
 use super::filter;
 use super::settings::{DirectorySettings, MEMBER_OF};
 use crate::crypto::fill_random;
 
-/// Group DNs beyond this many are ignored.
 pub(crate) const MAX_GROUPS: usize = 256;
-/// The user search wants exactly one entry; more matches are ambiguous (`truncated`).
+/// More matches are ambiguous.
 const USER_SEARCH_LIMIT: usize = 1;
-/// Random bytes of the decoy DN's RDN value.
 const DECOY_BYTES: usize = 12;
-/// LDAP result codes of a bind the directory could not decide: busy, unavailable, other.
+/// Busy, unavailable, other: the directory could not decide.
 const UNDECIDED_CODES: [u32; 3] = [51, 52, 80];
-/// Attribute list asking for no attributes (RFC 4511 §4.5.1.8; an empty list means all).
+/// An empty list would mean all.
 const NO_ATTRIBUTES: &str = "1.1";
 
-/// The directory entry of a username.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DirectoryUser {
     pub(crate) dn: String,
-    /// Values of the username attribute.
     pub(crate) usernames: Vec<String>,
     pub(crate) email: Option<String>,
     pub(crate) display_name: Option<String>,
-    /// `memberOf` values (when asked for).
     member_of: Vec<String>,
 }
 
@@ -50,7 +44,6 @@ impl DirectoryUser {
         }
     }
 
-    /// The value of the username attribute that is `typed` (same normalized username).
     pub(crate) fn username_matching(&self, typed: &str) -> Option<&str> {
         let wanted = crate::users::username_norm(typed)?;
         self.usernames
@@ -63,12 +56,10 @@ impl DirectoryUser {
 pub(crate) enum Lookup {
     Found(DirectoryUser),
     Missing,
-    /// More than one entry matched: refused, the username is not unique in the directory.
     Ambiguous,
 }
 
-/// Binds as the service account; an anonymous directory has nothing to do. A service
-/// account without a stored password is refused here, never sent as an empty bind.
+/// A service account without a stored password is refused here, never sent as an empty bind.
 pub(crate) async fn bind_service(
     session: &mut dyn Session,
     settings: &DirectorySettings,
@@ -103,10 +94,7 @@ pub(crate) async fn find_user(
     }
 }
 
-/// `Ok(false)` for a refused bind (wrong password, or the directory refusing the account,
-/// e.g. locked); `Err` when the directory could not decide: unreachable, or result code
-/// busy (51), unavailable (52) or other (80). The password was sent either way, so the
-/// login counts the attempt (`verify`).
+/// The password was sent either way, so the login counts the attempt.
 pub(crate) async fn bind_user(
     session: &mut dyn Session,
     dn: &str,
@@ -126,9 +114,8 @@ pub(crate) async fn bind_user(
     }
 }
 
-/// A bind for a username the directory does not know, so that an unknown username costs
-/// the same round trips as a wrong password: a random DN below the user base, which cannot
-/// succeed. Only an outage is an error.
+/// An unknown username costs the same round trips as a wrong password: a random DN, which cannot
+/// succeed.
 pub(crate) async fn decoy_bind(
     session: &mut dyn Session,
     settings: &DirectorySettings,
@@ -143,10 +130,6 @@ pub(crate) async fn decoy_bind(
     bind_user(session, &dn, password).await.map(|_| ())
 }
 
-/// The user's group DNs: a group search as the service account (after the user's own
-/// bind) when a group filter is set, else the entry's `memberOf`. Empty when neither group
-/// mapping nor the admin flag needs them. `username` (the matched username attribute
-/// value) fills the filter's `{username}`.
 pub(crate) async fn groups_of(
     session: &mut dyn Session,
     settings: &DirectorySettings,

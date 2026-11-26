@@ -1,6 +1,3 @@
-//! The console's device operations (M3-05): guarded writes roll back with their guard, the
-//! online filter pages through presence, config-managed device groups are read-only.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -56,7 +53,6 @@ async fn audit_rows(c: &Ctx) -> u64 {
 #[tokio::test]
 async fn a_refusing_guard_rolls_back_the_update_and_the_delete() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let id = c.device(ID).await;
         let update = DeviceUpdate {
@@ -65,7 +61,6 @@ async fn a_refusing_guard_rolls_back_the_update_and_the_delete() {
         };
         let no = |_: Option<&DeviceRecord>, _: Option<&DeviceRecord>| Err(refusing());
 
-        // Act
         let updated = c
             .devices
             .update_guarded(id, update, TxGuard::new(&log(&c), no))
@@ -75,7 +70,6 @@ async fn a_refusing_guard_rolls_back_the_update_and_the_delete() {
             .delete_guarded(id, TxGuard::new(&log(&c), no))
             .await;
 
-        // Assert
         let b = db.backend;
         assert!(
             matches!(updated, Err(DeviceError::Refused(r)) if r.code == NOT_ALLOWED),

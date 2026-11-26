@@ -1,12 +1,7 @@
-//! Shared checks for free-text input fields.
-
-/// Longest accepted free-form note, in characters.
 pub(crate) const NOTE_MAX_LEN: usize = 2000;
 
-/// Unicode `Bidi_Control` characters: the marks, embeddings, overrides and isolates that
-/// reorder how neighbouring text is displayed ("Trojan Source": U+202E turns `nimda` into
-/// `admin` in the console). ZWJ / ZWNJ are not among them; emoji sequences and Persian or
-/// Indic text need those.
+/// Unicode `Bidi_Control` ("Trojan Source": U+202E turns `nimda` into `admin` in the console). ZWJ
+/// / ZWNJ are not among them; emoji sequences and Persian or Indic text need those.
 pub(crate) fn is_bidi_control(c: char) -> bool {
     matches!(
         c,
@@ -17,9 +12,6 @@ pub(crate) fn is_bidi_control(c: char) -> bool {
     )
 }
 
-/// Why `raw` is not acceptable as a text field of at most `max` characters without control
-/// or bidirectional formatting characters (newline and tab allowed when `multiline`), or
-/// `None` when it is.
 pub(crate) fn problem(raw: &str, max: usize, multiline: bool) -> Option<String> {
     if raw.chars().count() > max {
         return Some(format!("must be at most {max} characters"));
@@ -32,7 +24,7 @@ pub(crate) fn problem(raw: &str, max: usize, multiline: bool) -> Option<String> 
         .then(|| "must not contain control or bidirectional formatting characters".to_owned())
 }
 
-/// Zero-width characters other than the joiners: invisible, so they make look-alike names.
+/// Invisible, so they make look-alike names.
 fn is_zero_width_filler(c: char) -> bool {
     matches!(
         c,
@@ -44,9 +36,7 @@ fn is_zero_width_filler(c: char) -> bool {
     )
 }
 
-/// Characters dropped from self-reported device text: control characters, [`is_bidi_control`]
-/// characters (which can make a hostname read as something else in the console) and
-/// zero-width characters, joiners included (which make look-alike names).
+/// Joiners included: they make look-alike names.
 pub(crate) fn is_dropped(c: char) -> bool {
     c.is_control()
         || is_bidi_control(c)
@@ -54,10 +44,8 @@ pub(crate) fn is_dropped(c: char) -> bool {
         || matches!(c, '\u{200C}' | '\u{200D}') // zero-width non-joiner / joiner
 }
 
-/// `raw` without control and [`is_bidi_control`] characters (newline and tab kept when
-/// `multiline`), cut to `max` characters: data pushed by the RustDesk client is stored
-/// cleaned rather than refused, so one odd peer name cannot fail a whole sync. Unlike
-/// [`clean`] and [`clean_import`] it keeps joiners and zero-width spaces.
+/// Data pushed by the RustDesk client is stored cleaned rather than refused, so one odd peer name
+/// cannot fail a whole sync. Keeps joiners and zero-width spaces.
 pub(crate) fn strip_bidi_and_control(raw: &str, max: usize, multiline: bool) -> String {
     let kept = |c: &char| {
         let control = c.is_control() && !(multiline && matches!(c, '\n' | '\t'));
@@ -66,27 +54,21 @@ pub(crate) fn strip_bidi_and_control(raw: &str, max: usize, multiline: bool) -> 
     raw.chars().filter(kept).take(max).collect()
 }
 
-/// `raw` without control, [`is_bidi_control`] and zero-width characters, cut to `max`
-/// characters: the one cleaning of names imported from an identity provider (OIDC claims,
-/// LDAP attributes), cleaned rather than refused so a login never fails over a name. The
-/// joiners stay, so emoji sequences and Persian / Indic names stay whole.
+/// Imported names are cleaned rather than refused so a login never fails over a name; the joiners
+/// stay, so emoji sequences and Persian / Indic names stay whole.
 pub(crate) fn clean_import(raw: &str, max: usize) -> String {
     let kept = |c: &char| !c.is_control() && !is_bidi_control(*c) && !is_zero_width_filler(*c);
     raw.chars().filter(kept).take(max).collect()
 }
 
-/// `raw` without [`is_dropped`] characters (newline and tab kept when `multiline`), cut to
-/// `max` characters: self-reported text is stored cleaned rather than refused.
 pub(crate) fn clean(raw: &str, max: usize, multiline: bool) -> String {
     let kept = |c: &char| !is_dropped(*c) || (multiline && matches!(c, '\n' | '\t'));
     raw.chars().filter(kept).take(max).collect()
 }
 
-/// Escape character of `LIKE` patterns built from user input.
 const LIKE_ESCAPE: char = '\\';
 
-/// A `LIKE` pattern matching any value that contains `needle` literally (`%`, `_` and the
-/// escape character in it are escaped). Lowercase both sides for a case-insensitive match.
+/// Lowercase both sides for a case-insensitive match.
 pub(crate) fn contains_pattern(needle: &str) -> sea_orm::sea_query::LikeExpr {
     let mut pattern = String::with_capacity(needle.len() + 2);
     pattern.push('%');

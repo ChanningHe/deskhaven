@@ -1,13 +1,8 @@
-//! Lookups by normalized username / email on any connection, for services that resolve
-//! accounts inside their own transaction (OIDC linking, OIDC and LDAP provisioning).
-
 use deskhaven_db::entity::user;
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter};
 
 use super::normalize;
 
-/// The account whose email matches `raw` (normalized, so case-insensitively). A malformed
-/// address matches nothing.
 pub(crate) async fn find_by_email<C: ConnectionTrait>(
     conn: &C,
     raw: &str,
@@ -21,7 +16,6 @@ pub(crate) async fn find_by_email<C: ConnectionTrait>(
         .await
 }
 
-/// The account named `raw` (case-insensitively). A malformed username matches nothing.
 pub(crate) async fn find_by_username<C: ConnectionTrait>(
     conn: &C,
     raw: &str,
@@ -35,8 +29,7 @@ pub(crate) async fn find_by_username<C: ConnectionTrait>(
         .await
 }
 
-/// Whether an account already uses `username` (case-insensitively). A malformed username
-/// counts as taken: it can never be created.
+/// A malformed username counts as taken: it can never be created.
 pub(crate) async fn username_taken<C: ConnectionTrait>(
     conn: &C,
     username: &str,
@@ -51,12 +44,10 @@ pub(crate) async fn username_taken<C: ConnectionTrait>(
     Ok(found > 0)
 }
 
-/// The normalized form of `raw` (what `users.email_norm` holds); `None` when malformed.
 pub(crate) fn email_norm(raw: &str) -> Option<String> {
     normalize::email(raw).ok().map(|email| email.norm)
 }
 
-/// Whether `raw` is an email address the user service accepts.
 pub(crate) fn is_valid_email(raw: &str) -> bool {
     normalize::email(raw).is_ok()
 }

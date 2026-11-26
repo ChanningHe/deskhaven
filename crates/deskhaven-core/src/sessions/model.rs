@@ -1,5 +1,3 @@
-//! Domain types of the session service.
-
 use std::net::IpAddr;
 
 use deskhaven_db::entity::session;
@@ -10,30 +8,20 @@ pub use deskhaven_db::entity::session::Kind as SessionKind;
 
 use super::SessionError;
 
-/// Longest accepted `rustdesk_id` / `device_uuid` (characters).
 pub const MAX_DEVICE_FIELD_LEN: usize = 128;
-/// Largest accepted `device_info` / user agent, serialized (bytes).
 pub const MAX_DEVICE_INFO_LEN: usize = 2048;
 
-/// Who a valid token belongs to: what an authenticated request carries.
-///
-/// `role` is read at authentication time and may be up to the cache TTL old (role changes
-/// emit no event, see [`UserEvent`](crate::users::UserEvent)), the bound RBAC accepts.
+/// `role` may be up to the cache TTL old (role changes emit no event), the bound RBAC accepts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionPrincipal {
     pub session_id: i64,
     pub user_id: i64,
     pub role: Role,
     pub kind: SessionKind,
-    /// Client sessions: the device the token was issued to.
     pub device: Option<DeviceBinding>,
-    /// Read with `role`, as old as it may be.
     pub account: AccountFlags,
 }
 
-/// The owner's account state that decides what a console session may do before the
-/// account setup is finished (change a temporary password, enrol a required second
-/// factor; the admin API's gate enforces it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AccountFlags {
     pub auth_source: AuthSource,
@@ -67,25 +55,18 @@ pub struct DeviceBinding {
     pub uuid: String,
 }
 
-/// The device a client session is issued to (`id`, `uuid`, `deviceInfo` of `/api/login`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClientDevice {
     pub rustdesk_id: String,
     pub uuid: String,
-    /// `deviceInfo` as the client sent it (os, type, name); must be a JSON object.
     pub info: Option<serde_json::Value>,
 }
 
 impl ClientDevice {
-    /// The checks [`SessionService::create_client`](super::SessionService::create_client)
-    /// applies, for request validation before any work is done:
-    /// [`SessionError::InvalidDevice`] for an empty, over-long or control-character id or
-    /// uuid, or an info that is not a JSON object of at most [`MAX_DEVICE_INFO_LEN`] bytes.
     pub fn check(&self) -> Result<(), SessionError> {
         self.validate().map(drop)
     }
 
-    /// Trimmed, non-empty, bounded fields and the serialized info.
     pub(super) fn validate(&self) -> Result<(DeviceBinding, Option<String>), SessionError> {
         let rustdesk_id = device_field("rustdesk_id", &self.rustdesk_id)?;
         let uuid = device_field("uuid", &self.uuid)?;
@@ -98,14 +79,13 @@ impl ClientDevice {
     }
 }
 
-/// The stored `device_info` of a console session: `{"user_agent": ...}`, truncated.
 pub(super) fn console_info(user_agent: Option<&str>) -> Option<String> {
     let agent = user_agent.map(str::trim).filter(|a| !a.is_empty())?;
     let cut = truncate(agent, MAX_DEVICE_INFO_LEN / 2);
     Some(serde_json::json!({ "user_agent": cut }).to_string())
 }
 
-/// A session as listed to its owner or an admin. Carries no token or token hash.
+/// Carries no token or token hash.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Session {
     pub id: i64,

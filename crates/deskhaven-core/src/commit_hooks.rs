@@ -1,24 +1,15 @@
-//! Synchronous after-commit callbacks shared by the user and group services.
-//!
-//! The write has committed by the time hooks run, so nothing a hook does may turn it into an
-//! error: a panicking hook is caught and logged, and the remaining hooks (and the caller's
-//! event broadcast) still run. A hook may come with a fallback that runs (also caught) when
-//! it panicked, so a cache whose targeted invalidation failed can fail closed by dropping
-//! everything. Hooks run on a snapshot of the list taken without holding the lock while they
-//! execute, so a hook may register another hook; the new one sees the next change, not the
-//! current one.
+//! The write has committed when hooks run, so a panicking hook is caught and logged and the
+//! rest still run; its fallback lets a cache fail closed by dropping everything. Hooks run on a
+//! snapshot of the list, so a hook may register another.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, PoisonError, RwLock};
 
-/// One after-commit callback.
 pub(crate) type Hook<C> = Arc<dyn Fn(&C) + Send + Sync>;
-/// What runs instead when a hook panicked.
 pub type Fallback = Arc<dyn Fn() + Send + Sync>;
 
 type Entry<C> = (Hook<C>, Option<Fallback>);
 
-/// A registry of `Fn(&C)` hooks. Clones share the registry.
 pub(crate) struct CommitHooks<C> {
     hooks: Arc<RwLock<Vec<Entry<C>>>>,
 }
@@ -44,7 +35,6 @@ impl<C: std::fmt::Debug> CommitHooks<C> {
         self.push((hook, None));
     }
 
-    /// Like [`CommitHooks::register`]; `fallback` runs whenever `hook` panics.
     pub(crate) fn register_with_fallback(&self, hook: Hook<C>, fallback: Fallback) {
         self.push((hook, Some(fallback)));
     }
@@ -56,7 +46,6 @@ impl<C: std::fmt::Debug> CommitHooks<C> {
             .push(entry);
     }
 
-    /// Calls every hook registered so far with `change`, in registration order.
     pub(crate) fn run(&self, change: &C) {
         let snapshot = self
             .hooks

@@ -1,8 +1,4 @@
-//! [`Connector`] over ldap3 0.12 (tokio, rustls + ring): one connection per login or
-//! diagnostic, [`CONNECT_TIMEOUT`] for name resolution, TCP and TLS (StartTLS included),
-//! [`OPERATION_TIMEOUT`] for every bind and search. The TCP connection goes to an address
-//! `address` resolved and vetted (no link-local or metadata addresses); TLS still checks the
-//! URL's host name. Referrals are not followed (they are dropped from results).
+//! Referrals are not followed (they are dropped from results).
 
 use std::io;
 use std::sync::{Arc, OnceLock};
@@ -17,22 +13,17 @@ use super::directory::{
 use super::{address, tls};
 use crate::oidc::{Lookup, system_lookup};
 
-/// TCP connect plus TLS handshake.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// One bind or search.
 pub const OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
-/// LDAP `invalidCredentials`.
 const INVALID_CREDENTIALS: u32 = 49;
-/// LDAP `sizeLimitExceeded`: the entries so far are valid, there are more.
+/// The entries so far are valid; there are more.
 const SIZE_LIMIT_EXCEEDED: u32 = 4;
-/// Longest server diagnostic message kept in a fault.
 const MAX_MESSAGE_CHARS: usize = 200;
 
 pub struct Ldap3Connector {
     connect_timeout: Duration,
     operation_timeout: Duration,
     verified: OnceLock<Result<Arc<ClientConfig>, String>>,
-    /// Resolves directory host names (production: the system resolver).
     lookup: Lookup,
 }
 
@@ -56,13 +47,11 @@ impl Ldap3Connector {
         }
     }
 
-    /// The same connector resolving host names with `lookup` (tests).
     pub fn with_lookup(self, lookup: Lookup) -> Self {
         Self { lookup, ..self }
     }
 
-    /// The verifying config is built once (it loads the OS roots); a host without roots
-    /// fails directory logins (logged), not startup.
+    /// Built once (it loads the OS roots); a host without roots fails directory logins, not startup.
     fn tls_config(&self, verify: bool) -> Result<Arc<ClientConfig>, DirectoryFault> {
         let config = if verify {
             self.verified.get_or_init(tls::verified_config).clone()
@@ -74,7 +63,6 @@ impl Ldap3Connector {
 }
 
 impl Ldap3Connector {
-    /// TCP to a vetted address, then ldap3 (StartTLS / TLS with the URL's host name).
     async fn open(
         &self,
         target: &Target,

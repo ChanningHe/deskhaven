@@ -1,7 +1,5 @@
-//! The login buttons of `/api/login-options`, cached: the client also calls that endpoint
-//! as an unauthenticated TLS probe (03 §3.1), so it must not cost a query per request.
-//! Provider writes invalidate the cache (single writer process, 05 §3.6); a load that raced
-//! an invalidation is not stored.
+//! The client also calls `/api/login-options` as an unauthenticated TLS probe, so it must not cost a
+//! query per request. A load that raced an invalidation is not stored.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -43,9 +41,7 @@ impl ButtonCache {
 }
 
 impl OidcService {
-    /// The enabled providers as login buttons, by name. Empty without `public_url` (no
-    /// login can complete) and, logged, when the providers cannot be read: this answer
-    /// never fails.
+    /// This answer never fails.
     pub async fn login_buttons(&self) -> Arc<[LoginButton]> {
         if self.inner.redirect_uri.is_none() {
             return Arc::from([]);

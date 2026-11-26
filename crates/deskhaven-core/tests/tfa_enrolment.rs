@@ -1,6 +1,3 @@
-//! TfaService enrolment and management: begin -> confirm -> enabled with recovery codes,
-//! disable, regeneration, the sealed seed and `auth.tfa.enforce`. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -224,7 +221,7 @@ async fn regenerating_replaces_every_recovery_code() {
     .await;
 }
 
-/// M4-09: proving possession (before linking an OIDC identity) spends the code once.
+/// Proving possession (before linking an OIDC identity) spends the code once.
 #[tokio::test]
 async fn proving_possession_spends_the_code_once() {
     each_migrated_backend(async |db: &TestDb| {
@@ -279,7 +276,6 @@ async fn disable_forgets_seed_codes_and_pending_challenges() {
         assert_eq!((codes, challenges), (0, 0), "{}", db.backend);
         let result = env.verify(&challenge, "alice", &env.code(&alice)).await;
         assert!(matches!(result, Err(ChallengeError::Invalid)), "{result:?}");
-        // A fresh enrolment can start.
         assert!(env.tfa.begin_enrolment(alice.user_id).await.is_ok());
     })
     .await;

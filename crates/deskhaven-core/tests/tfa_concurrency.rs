@@ -1,6 +1,4 @@
-//! TfaService under concurrent second steps: the challenge attempt cap, the TOTP replay
-//! guard and single use hold when requests race. Both backends (PostgreSQL included: row
-//! locks and conditional UPDATEs, not SQLite's single writer, are what is tested there).
+//! PostgreSQL is what tests row locks and conditional UPDATEs here; SQLite has a single writer.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -23,7 +21,6 @@ const RACERS: usize = 12;
 
 type Outcome = Result<Passed, ChallengeError>;
 
-/// Runs every `(secret, code)` second step of `alice` at once.
 async fn race(tfa: &TfaService, steps: Vec<(String, String)>) -> Vec<Outcome> {
     let mut set = JoinSet::new();
     for (secret, code) in steps {

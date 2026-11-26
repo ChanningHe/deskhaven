@@ -1,6 +1,3 @@
-//! The console's view of shared books: a paged list with counts, one book, and its shares
-//! with the names of their subjects. Personal books never appear here.
-
 use std::collections::HashMap;
 
 use deskhaven_db::entity::address_book::{self, Kind};
@@ -31,8 +28,7 @@ pub struct BookSort {
     pub descending: bool,
 }
 
-/// Filters and order of [`AddressBookService::admin_page`]; `q` matches a substring of the
-/// name (case-insensitive, literal; ASCII only on SQLite).
+/// `q`: case-insensitive literal substring of the name, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct BookQuery {
     pub q: Option<String>,
@@ -40,19 +36,15 @@ pub struct BookQuery {
     pub page: PageRequest,
 }
 
-/// A shared book with its owner's name and the sizes of its parts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BookSummary {
     pub book: Book,
-    /// `None`: admin-managed.
     pub owner: Option<String>,
     pub peer_count: u64,
     pub tag_count: u64,
     pub share_count: u64,
 }
 
-/// A share with the name of its subject (`None`: the subject is gone and the share is about
-/// to be, or was, cleaned up).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NamedShare {
     pub share: Share,
@@ -60,8 +52,6 @@ pub struct NamedShare {
 }
 
 impl AddressBookService {
-    /// One page of shared books (ordered by `sort`, default name, then id in the same
-    /// direction).
     pub async fn admin_page(
         &self,
         query: &BookQuery,
@@ -100,14 +90,12 @@ impl AddressBookService {
         })
     }
 
-    /// The shared book `guid`; a personal book is [`AddressBookError::NotFound`].
     pub async fn admin_book(&self, guid: &str) -> Result<BookSummary, AddressBookError> {
         let (book, _) = authorize(&self.db, Actor::Admin, guid, Rule::ReadOnly, false).await?;
         let mut summaries = self.summaries(vec![book]).await?;
         summaries.pop().ok_or(AddressBookError::NotFound)
     }
 
-    /// Every share of the book with the names of its subjects; groups first, then users.
     pub async fn named_shares(
         &self,
         actor: Actor,
@@ -171,7 +159,6 @@ impl AddressBookService {
     }
 }
 
-/// Rows per book id, for the books in `ids`.
 async fn counts<E: EntityTrait>(
     db: &impl ConnectionTrait,
     column: E::Column,

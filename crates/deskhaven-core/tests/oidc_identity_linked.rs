@@ -1,10 +1,3 @@
-//! A linked identity at login (M4-09 rule 4): one linked by `email` is re-checked against
-//! the email-link conditions at every login (a lowered ceiling, TOTP enabled, a promotion,
-//! a changed and so unverified address, an IdP that stops asserting the address: refused,
-//! on the client and the console path alike); an `explicit` or `provisioned` one is not
-//! (a disabled account is still refused). `auth.tfa.enforce` constrains password logins
-//! only (rule 1). Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -35,7 +28,6 @@ async fn login(env: &Env, subject: &str) -> CallbackReport {
     env.login(subject, verified).await.1
 }
 
-/// Client and console logins of `subject` are both refused as unlinked.
 async fn assert_refused_on_both_paths(env: &Env, subject: &str, why: &str) {
     let client = login(env, subject).await;
     let console = env.console_login(subject, verified).await;
@@ -51,14 +43,12 @@ async fn assert_refused_on_both_paths(env: &Env, subject: &str, why: &str) {
     );
 }
 
-/// A local account with [`EMAIL`] linked to `subject` by email (a first login).
 async fn email_linked(env: &Env, subject: &str) -> User {
     let alice = env.local_user("alice", Some(EMAIL)).await;
     assert_eq!(login(env, subject).await.outcome.unwrap().user.id, alice.id);
     alice
 }
 
-/// A local account linked to `subject` explicitly.
 async fn explicitly_linked(env: &Env, subject: &str) -> User {
     let alice = env.local_user("alice", Some(EMAIL)).await;
     env.link(alice.id, subject, verified).await.outcome.unwrap();
@@ -225,8 +215,8 @@ async fn an_explicitly_linked_account_disabled_later_is_refused() {
     .await;
 }
 
-/// Rule 1: enforcement covers password logins only. A linked local account without TOTP
-/// signs in through the IdP while `auth.tfa.enforce = all`.
+/// Enforcement covers password logins only: a linked local account without TOTP signs in through
+/// the IdP while `auth.tfa.enforce = all`.
 #[tokio::test]
 async fn tfa_enforcement_does_not_refuse_oidc_logins() {
     each_migrated_backend(async |db: &TestDb| {

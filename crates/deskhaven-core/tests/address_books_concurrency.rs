@@ -1,8 +1,4 @@
-//! AddressBookService under concurrency: the capacity check holds against concurrent adds,
-//! a revocation and a write to the same book serialize, and deleting a user while shares
-//! change neither deadlocks nor fails (lock order subject -> book -> share rows). Every
-//! test runs on SQLite and PostgreSQL (the races matter on PostgreSQL, whose transactions
-//! interleave; SQLite serializes writers).
+//! The races matter on PostgreSQL, whose transactions interleave; SQLite serializes writers.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 

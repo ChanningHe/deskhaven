@@ -1,5 +1,3 @@
-//! The 32-byte master key and its public fingerprint.
-
 use std::fmt;
 
 use base64_022::{DecodeSliceError, Engine as _};
@@ -13,8 +11,7 @@ const KEY_ID_LEN: usize = 4;
 /// Domain separation: the fingerprint is never a plain hash of the key.
 const KEY_ID_DOMAIN: &[u8] = b"deskhaven/master-key-id/v1\0";
 
-/// Short stable fingerprint of a master key (8 lowercase hex digits). Names
-/// the key inside sealed strings so several keys can coexist during rotation.
+/// Names the key inside sealed strings so several keys can coexist during rotation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyId([u8; KEY_ID_LEN]);
 
@@ -29,7 +26,6 @@ impl KeyId {
         Self(id)
     }
 
-    /// Accepts exactly the canonical rendering (lowercase hex).
     pub(crate) fn parse(text: &str) -> Option<Self> {
         let (pairs, rest) = text.as_bytes().as_chunks::<2>();
         if pairs.len() != KEY_ID_LEN || !rest.is_empty() {
@@ -65,9 +61,7 @@ impl fmt::Debug for KeyId {
 
 type KeyBytes = Box<Zeroizing<[u8; MASTER_KEY_LEN]>>;
 
-/// Encrypts secrets at rest. The key lives on the heap (moving a
-/// `MasterKey` copies no key bytes) and is wiped on drop; `Debug` shows only
-/// the key id.
+/// Heap-allocated (moving it copies no key bytes) and wiped on drop; `Debug` shows only the key id.
 pub struct MasterKey {
     bytes: KeyBytes,
     id: KeyId,
@@ -86,8 +80,7 @@ impl MasterKey {
         Ok(Self::from_box(key))
     }
 
-    /// Parses standard base64 (surrounding whitespace ignored), decoding
-    /// into a wiped scratch buffer. Errors never echo the input.
+    /// Errors never echo the input.
     pub fn from_base64(text: &str) -> Result<Self, CryptoError> {
         const WRONG_LENGTH: CryptoError =
             CryptoError::InvalidMasterKey("must decode to exactly 32 bytes");
@@ -112,7 +105,6 @@ impl MasterKey {
         Self { bytes, id }
     }
 
-    /// Padded standard base64, the format of `security.master_key` and `master.key`.
     pub fn to_base64(&self) -> Zeroizing<String> {
         Zeroizing::new(KEY_B64.encode(self.bytes.as_slice()))
     }

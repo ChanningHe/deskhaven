@@ -1,11 +1,6 @@
-//! The directory part of a password check, bounded: at most
-//! [`DirectoryLimits::concurrent`] at once (a slot is waited for at most
-//! [`DirectoryLimits::queue_timeout`]), each within [`DirectoryLimits::login_timeout`] in
-//! total, connect to close. A stalled or flooded directory therefore costs logins a bounded
-//! wait and never piles up tasks and connections; both limits answer
-//! [`AuthError::DirectoryUnavailable`]. Once a password bind has been sent (the user's or
-//! the decoy's), any failure or timeout is [`AuthError::DirectoryInterrupted`] instead:
-//! the directory has seen the password, so the login throttle counts the attempt.
+//! A stalled or flooded directory costs logins a bounded wait and never piles up tasks and
+//! connections. Once a password bind has been sent, any failure is `DirectoryInterrupted`: the
+//! directory has seen the password, so the login throttle counts the attempt.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -19,17 +14,12 @@ use super::protocol::{self, DirectoryUser, Lookup};
 use super::settings::DirectorySettings;
 use crate::users::AuthError;
 
-/// Bounds on directory work: password checks and the console's diagnostics share the
-/// slots.
+/// Password checks and the console's diagnostics share the slots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DirectoryLimits {
-    /// Directory checks (logins and diagnostics) running at once.
     pub concurrent: usize,
-    /// Longest wait for a free slot.
     pub queue_timeout: Duration,
-    /// Longest whole login check (connect, binds, searches, close).
     pub login_timeout: Duration,
-    /// Longest whole diagnostic (`test_connection`, `test_user`).
     pub diagnostic_timeout: Duration,
 }
 
@@ -44,7 +34,6 @@ impl Default for DirectoryLimits {
     }
 }
 
-/// The slots of [`DirectoryLimits::concurrent`].
 pub(crate) struct Gate {
     permits: Semaphore,
     limits: DirectoryLimits,
@@ -62,8 +51,6 @@ impl Gate {
         self.limits
     }
 
-    /// A free slot, waited for at most [`DirectoryLimits::queue_timeout`]; `None` when
-    /// the directory is saturated.
     pub(crate) async fn slot(&self) -> Option<SemaphorePermit<'_>> {
         match timeout(self.limits.queue_timeout, self.permits.acquire()).await {
             Ok(Ok(permit)) => Some(permit),
@@ -72,17 +59,13 @@ impl Gate {
     }
 }
 
-/// A directory user whose password the directory accepted.
 pub(crate) struct VerifiedUser {
     pub(crate) user: DirectoryUser,
-    /// The username attribute value that is the typed username.
     pub(crate) name: String,
     pub(crate) group_dns: Vec<String>,
 }
 
 impl LdapService {
-    /// The directory steps for `username`, within the limits. `None`: the directory refused
-    /// the login.
     pub(crate) async fn verify(
         &self,
         settings: &DirectorySettings,

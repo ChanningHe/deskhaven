@@ -1,6 +1,3 @@
-//! Device registry repository: registration upserts keyed by RustDesk id, uuid immutability.
-//! Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -42,15 +39,12 @@ async fn count(db: &TestDb) -> u64 {
 #[tokio::test]
 async fn first_registration_inserts_an_active_device() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let repo = DeviceRepository::new(db.conn.clone());
 
-        // Act
         repo.upsert_registration(&registration(ID, b"uuid", b"pk1", 7, 1_000))
             .await
             .unwrap();
 
-        // Assert
         let dev = row(&repo, ID).await;
         let b = db.backend;
         assert_eq!(
@@ -75,19 +69,16 @@ async fn first_registration_inserts_an_active_device() {
 #[tokio::test]
 async fn re_registration_updates_pk_ip_and_time_but_keeps_identity() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let repo = DeviceRepository::new(db.conn.clone());
         repo.upsert_registration(&registration(ID, b"uuid", b"pk1", 7, 1_000))
             .await
             .unwrap();
         let before = row(&repo, ID).await;
 
-        // Act
         repo.upsert_registration(&registration(ID, b"uuid", b"pk2", 8, 2_000))
             .await
             .unwrap();
 
-        // Assert
         let after = row(&repo, ID).await;
         let b = db.backend;
         assert_eq!(after.pk, b"pk2".to_vec(), "{b}");
@@ -106,19 +97,16 @@ async fn re_registration_updates_pk_ip_and_time_but_keeps_identity() {
 #[tokio::test]
 async fn other_uuid_is_rejected_and_changes_nothing() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let repo = DeviceRepository::new(db.conn.clone());
         repo.upsert_registration(&registration(ID, b"uuid", b"pk1", 7, 1_000))
             .await
             .unwrap();
         let before = row(&repo, ID).await;
 
-        // Act
         let res = repo
             .upsert_registration(&registration(ID, b"thief", b"pk2", 9, 2_000))
             .await;
 
-        // Assert
         let b = db.backend;
         match res {
             Err(DeviceError::UuidMismatch { rustdesk_id }) => assert_eq!(rustdesk_id, ID),

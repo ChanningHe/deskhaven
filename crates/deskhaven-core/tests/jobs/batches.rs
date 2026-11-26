@@ -1,7 +1,3 @@
-//! Batched deletes: each batch commits on its own, other writers get in between two
-//! batches, each batch appends its own audit row (none is rewritten), a run stopped between
-//! batches has recorded what it deleted, and a row locked elsewhere (PostgreSQL) is skipped.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeSet;
@@ -22,7 +18,6 @@ const PAUSE: Duration = Duration::from_millis(400);
 const POLL: Duration = Duration::from_millis(5);
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// Nine expired login events, then a retention run in the background.
 async fn start(c: &Ctx) -> JoinHandle<()> {
     for _ in 0..9 {
         c.login(ago(200 * DAY)).await;
@@ -39,7 +34,6 @@ async fn logins(c: &Ctx) -> u64 {
     c.count(login_event::Entity).await
 }
 
-/// Waits until `logins` reads `n`.
 async fn wait_for(c: &Ctx, n: u64) {
     tokio::time::timeout(PATIENCE, async {
         while logins(c).await != n {
@@ -53,11 +47,9 @@ async fn wait_for(c: &Ctx, n: u64) {
 #[tokio::test]
 async fn every_batch_commits_on_its_own() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let run = start(&c).await;
 
-        // Act: watch the table from another connection while the run goes on.
         let mut seen = BTreeSet::new();
         while !run.is_finished() {
             seen.insert(logins(&c).await);
@@ -66,7 +58,7 @@ async fn every_batch_commits_on_its_own() {
         run.await.unwrap();
         seen.insert(logins(&c).await);
 
-        // Assert: only whole batches ever became visible, one at a time.
+        // Only whole batches ever became visible, one at a time.
         let b = db.backend;
         assert!(
             seen.is_subset(&BTreeSet::from([9, 6, 3, 0])),
@@ -81,17 +73,14 @@ async fn every_batch_commits_on_its_own() {
 #[tokio::test]
 async fn another_writer_commits_between_two_batches() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let run = start(&c).await;
         wait_for(&c, 6).await;
 
-        // Act: a write (a fresh login event) while the run still has batches to go.
         c.login(ago(DAY)).await;
         let wrote_during_run = !run.is_finished();
         run.await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert!(wrote_during_run, "{b}: the write waited for the whole run");
         assert_eq!(logins(&c).await, 1, "{b}: only the fresh event is left");
@@ -106,7 +95,6 @@ fn after(row: &console_audit::Model) -> Value {
 #[tokio::test]
 async fn a_run_stopped_between_batches_has_recorded_what_it_deleted() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let run = start(&c).await;
         wait_for(&c, 6).await;
@@ -115,7 +103,6 @@ async fn a_run_stopped_between_batches_has_recorded_what_it_deleted() {
         run.abort();
         let _ = run.await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(logins(&c).await, 6, "{b}: one batch deleted");
         let rows = c.audit_rows(RETENTION_ACTION).await;
@@ -128,17 +115,14 @@ async fn a_run_stopped_between_batches_has_recorded_what_it_deleted() {
 #[tokio::test]
 async fn every_batch_appends_a_row_and_none_is_rewritten() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let run = start(&c).await;
 
-        // Act
         wait_for(&c, 3).await;
         let midway = c.audit_rows(RETENTION_ACTION).await;
         run.await.unwrap();
         let done = c.audit_rows(RETENTION_ACTION).await;
 
-        // Assert: the rows seen midway are unchanged at the end, one more was appended.
         let b = db.backend;
         assert_eq!((midway.len(), done.len()), (2, 3), "{b}");
         assert_eq!(midway[..], done[..2], "{b}");
@@ -155,7 +139,7 @@ async fn a_row_locked_by_another_transaction_is_skipped_not_waited_for() {
         if db.backend != Backend::Postgres {
             return; // SQLite has no row locks.
         }
-        // Arrange: three expired login events, one of them locked by another transaction.
+        // Three expired login events, one of them locked by another transaction.
         let c = ctx(db).await;
         for _ in 0..3 {
             c.login(ago(200 * DAY)).await;
@@ -174,11 +158,9 @@ async fn a_row_locked_by_another_transaction_is_skipped_not_waited_for() {
         let job = AuditRetention::new(s.db.clone(), s.settings.clone(), s.clock.clone())
             .with_purge(Purge::new(BATCH, Duration::ZERO));
 
-        // Act
         let report = tokio::time::timeout(PATIENCE, job.run()).await;
         holder.rollback().await.unwrap();
 
-        // Assert
         let report = report.expect("the purge waited for the locked row");
         assert_eq!(report.deleted(AuditKind::Login), 2);
         let left = login_event::Entity::find().all(&c.conn).await.unwrap();

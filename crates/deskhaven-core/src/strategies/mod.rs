@@ -1,27 +1,6 @@
-//! Client strategies (04 §6, 05 §4.3): named sets of client options that the heartbeat
-//! pushes to devices.
-//!
-//! - **CRUD** ([`StrategyService`]): a strategy is a unique name and an [`Options`] map.
-//! - **Assignment** ([`Target`]): a strategy applies to `global`, a user group, a user, a
-//!   device group or a device. Each target has at most one strategy; assigning replaces.
-//! - **Effective strategy** ([`StrategyService::effective`]): the strategies that apply to a
-//!   device overlaid from lowest to highest priority, see `effective` for the exact rules.
-//! - **Cache and version** ([`StrategyCache`]): effective strategies are computed from one
-//!   in-memory snapshot, and `modified_at` is a counter that only grows.
-//!
-//! **Secrets in strategies reach devices in clear.** Values of the options the catalog marks
-//! secret (proxy and preset address book passwords, ICE servers) are sealed at rest
-//! (`sealing`), but a strategy's options are sent in clear to every device it applies to,
-//! and a device's placement (owner, device group) can come from its own `preset-*` fields
-//! when `devices.accept_presets` is on; treat every option value as readable by any device
-//! of the targets it is assigned to.
-//!
-//! Anything that deletes a user, user group, device group or device removes the strategy
-//! assignments of that target in the same transaction (`forget_*`) and invalidates the cache
-//! after commit. For users and groups [`StrategyService::watch_users`] and
-//! [`StrategyService::watch_groups`] do the second half. The device registry (M2-12) calls
-//! `forget_device` and `cache().invalidate()` itself, and `invalidate()` again whenever it
-//! changes a device's owner or device group (or stamps `changed_at` in [`DeviceInputs`]).
+//! Secrets in strategies reach devices in clear: secret options are sealed at rest, but sent in clear
+//! to every device a strategy applies to, and a device's placement can come from its own `preset-*`
+//! fields. Treat every option value as readable by any device of its targets.
 
 mod admin;
 mod assign;
@@ -55,8 +34,6 @@ use crate::groups::{GroupChange, GroupService};
 use crate::users::{UserChange, UserEvent, UserService};
 use cache::Lookup;
 
-/// Manages strategies, their assignments and the effective strategy of devices. Cheap to
-/// clone (shared state).
 #[derive(Clone)]
 pub struct StrategyService {
     inner: Arc<Inner>,
@@ -64,15 +41,12 @@ pub struct StrategyService {
 
 struct Inner {
     db: DatabaseConnection,
-    /// Seals and opens secret option values (`sealing`).
     crypto: Arc<SecretBox>,
     clock: SharedClock,
     cache: StrategyCache,
 }
 
 impl StrategyService {
-    /// Timestamps and the strategy version come from `clock` (share it with the other
-    /// services).
     pub fn new(db: DatabaseConnection, crypto: Arc<SecretBox>, clock: SharedClock) -> Self {
         let cache = StrategyCache::new(Arc::clone(&clock));
         Self {
@@ -89,8 +63,6 @@ impl StrategyService {
         &self.inner.cache
     }
 
-    /// Invalidates the cache when a user is deleted (its device ownership is cleared and
-    /// its assignment removed by `UserService::delete`).
     pub fn watch_users(&self, users: &UserService) {
         let (cache, flush_cache) = (self.inner.cache.clone(), self.inner.cache.clone());
         users.register_commit_hook_with_fallback(
@@ -103,15 +75,12 @@ impl StrategyService {
         );
     }
 
-    /// Invalidates the cache when a group is deleted or its membership changes.
     pub fn watch_groups(&self, groups: &GroupService) {
         let cache = self.inner.cache.clone();
         groups.register_commit_hook(Arc::new(move |_: &GroupChange| cache.invalidate()));
     }
 
-    /// The strategy a device ends up with, merged from everything assigned to it, with the
-    /// version to send to the client. After the first call this does not touch the database
-    /// until something invalidates the cache.
+    /// After the first call this does not touch the database until something invalidates the cache.
     pub async fn effective(
         &self,
         device: &DeviceInputs,
@@ -120,10 +89,7 @@ impl StrategyService {
         Ok(snapshot.effective(device))
     }
 
-    /// `modified_at` of [`effective`](Self::effective) without computing it, for the
-    /// heartbeat's "does this client need the strategy" check. Never touches the database.
-    /// The client needs the strategy when its stored value is **different** (`!=`); see
-    /// [`EffectiveStrategy::modified_at`].
+    /// Never touches the database. The client needs the strategy when its stored value differs (`!=`).
     pub fn modified_at(&self, device: &DeviceInputs) -> i64 {
         effective::stamp(self.inner.cache.version(), device)
     }
@@ -140,8 +106,8 @@ impl StrategyService {
         Ok(snapshot)
     }
 
-    /// Runs `op` to completion in its own task: dropping the caller's future can then
-    /// neither interrupt a commit nor lose the cache invalidation that follows it.
+    /// Dropping the caller's future can then neither interrupt a commit nor lose the cache invalidation
+    /// that follows it.
     async fn detached<T, F, Fut>(&self, op: F) -> Result<T, StrategyError>
     where
         F: FnOnce(Arc<Inner>) -> Fut,

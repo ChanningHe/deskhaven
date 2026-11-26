@@ -1,5 +1,3 @@
-//! Argon2id hashing, rehash detection, dummy verification and the password policy (06 §3.1).
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::{Duration, Instant};
@@ -156,7 +154,7 @@ async fn dummy_verification_costs_about_as_much_as_a_real_one() {
 
     assert!(real > MIN_HASH_TIME, "real verify took {real:?}");
     assert!(dummy > MIN_HASH_TIME, "dummy verify took {dummy:?}");
-    // Loose bound: same work, but CI machines are noisy.
+    // Loose bound: same work, but test machines are noisy.
     assert!(
         dummy * 4 > real && real * 4 > dummy,
         "{real:?} vs {dummy:?}"

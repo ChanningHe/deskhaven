@@ -5,7 +5,6 @@ use tokio::task::JoinSet;
 
 use super::*;
 
-/// Concurrent heartbeats of one device (a clone, or requests racing) per round.
 const RACERS: usize = 8;
 const ROUNDS: usize = 5;
 
@@ -28,14 +27,12 @@ async fn stored(db: &TestDb, rustdesk_id: &str) -> Keys {
     row.map(|r| decode(&r.option_keys)).unwrap_or_default()
 }
 
-/// Pushes with different keys race each other and a confirmation that would shrink the
-/// set: whatever succeeded is still in the stored set, so no key a device may hold is lost.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_pushes_and_a_confirmation_never_lose_a_sent_key() {
     each_migrated_backend(async |db: &TestDb| {
         let b = db.backend;
         for round in 0..ROUNDS {
-            // Arrange: {a, b} sent, then {a}: confirming the latter shrinks to {a}.
+            // {a, b} sent, then {a}: confirming the latter shrinks to {a}.
             let id = format!("10000000{round}");
             let deliveries = Arc::new(StrategyDeliveries::new(db.conn.clone()));
             deliveries
@@ -47,7 +44,6 @@ async fn racing_pushes_and_a_confirmation_never_lose_a_sent_key() {
                 .await
                 .unwrap();
 
-            // Act
             let mut racers = JoinSet::new();
             for n in 0..RACERS {
                 let (deliveries, id) = (Arc::clone(&deliveries), id.clone());
@@ -66,7 +62,6 @@ async fn racing_pushes_and_a_confirmation_never_lose_a_sent_key() {
             });
             let sent: Vec<String> = racers.join_all().await.into_iter().flatten().collect();
 
-            // Assert
             let kept = stored(db, &id).await;
             assert!(!sent.is_empty(), "{b}: every push failed");
             for key in &sent {
@@ -77,12 +72,9 @@ async fn racing_pushes_and_a_confirmation_never_lose_a_sent_key() {
     .await;
 }
 
-/// Beyond the capacity the pending confirmations are dropped: a later confirmation then
-/// changes nothing, and the stored set stays a superset.
 #[tokio::test]
 async fn a_full_pending_table_is_cleared_and_the_stored_set_kept() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let deliveries = StrategyDeliveries::with_capacity(db.conn.clone(), 2);
         deliveries
             .prepare("1", &effective(1, &["a", "b"]))
@@ -94,12 +86,10 @@ async fn a_full_pending_table_is_cleared_and_the_stored_set_kept() {
             .unwrap();
         deliveries.prepare("2", &effective(2, &[])).await.unwrap();
 
-        // Act
         deliveries.prepare("3", &effective(2, &[])).await.unwrap();
         let after_clear = deliveries.pending_len();
         deliveries.confirm("1", 2).await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(after_clear, 1, "{b}: cleared, then the new one");
         let kept: Vec<String> = stored(db, "1").await.into_iter().collect();

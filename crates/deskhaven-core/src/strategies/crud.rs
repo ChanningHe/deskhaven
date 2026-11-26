@@ -1,8 +1,4 @@
-//! Strategy CRUD. Creating changes no effective strategy (nothing refers to the new
-//! strategy yet); updating and deleting do, and invalidate the cache after commit.
-//!
-//! The `*_guarded` variants are the console's: their [`TxGuard`] decides inside the write
-//! transaction and its audit row commits with the change (see `console_audit`).
+//! Creating changes no effective strategy; updating and deleting invalidate the cache after commit.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::managed_by::ManagedBy;
@@ -20,7 +16,6 @@ use crate::console_audit::TxGuard;
 use crate::text::{self, NOTE_MAX_LEN};
 
 const NAME_MAX_LEN: usize = 64;
-/// A new row's options before they are sealed under its id.
 const EMPTY_OPTIONS: &str = "{}";
 
 impl StrategyService {
@@ -28,7 +23,6 @@ impl StrategyService {
         self.create_guarded(new, TxGuard::none()).await
     }
 
-    /// [`create`](Self::create) with `guard` deciding on the new strategy (no `before`).
     pub async fn create_guarded(
         &self,
         new: NewStrategy,
@@ -77,7 +71,6 @@ impl StrategyService {
         Ok(Strategy::from_row(row, &self.inner.crypto))
     }
 
-    /// Every strategy, ordered by name.
     pub async fn list(&self) -> Result<Vec<Strategy>, StrategyError> {
         let rows = strategy::Entity::find()
             .order_by_asc(strategy::Column::Name)
@@ -90,13 +83,11 @@ impl StrategyService {
             .collect())
     }
 
-    /// Applies `update`; any successful non-empty update advances the strategy version. An
-    /// empty update changes nothing.
+    /// Any successful non-empty update advances the strategy version.
     pub async fn update(&self, id: i64, update: StrategyUpdate) -> Result<Strategy, StrategyError> {
         self.update_guarded(id, update, TxGuard::none()).await
     }
 
-    /// [`update`](Self::update) with `guard` deciding on the strategy before and after.
     pub async fn update_guarded(
         &self,
         id: i64,
@@ -140,12 +131,10 @@ impl StrategyService {
         .await
     }
 
-    /// Deletes the strategy and, by cascade, its assignments.
     pub async fn delete(&self, id: i64) -> Result<(), StrategyError> {
         self.delete_guarded(id, TxGuard::none()).await
     }
 
-    /// [`delete`](Self::delete) with `guard` deciding on the strategy (no `after`).
     pub async fn delete_guarded(
         &self,
         id: i64,
@@ -175,7 +164,6 @@ async fn find(db: &impl ConnectionTrait, id: i64) -> Result<strategy::Model, Str
     found.ok_or(StrategyError::NotFound)
 }
 
-/// The strategy, locked for the rest of the transaction, if the console may change it.
 async fn writable(db: &impl ConnectionTrait, id: i64) -> Result<strategy::Model, StrategyError> {
     let found = strategy::Entity::find_by_id(id)
         .lock_exclusive()
@@ -195,7 +183,6 @@ fn invalid(field: &'static str, reason: impl Into<String>) -> StrategyError {
     }
 }
 
-/// Trimmed name: 1-64 characters, no control characters.
 fn validate_name(raw: &str) -> Result<String, StrategyError> {
     let name = raw.trim();
     if name.is_empty() {

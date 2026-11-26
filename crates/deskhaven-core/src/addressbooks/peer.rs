@@ -1,16 +1,6 @@
-//! The address book peer as the client sends and reads it (03 §5.1,
-//! `flutter/lib/models/peer_model.dart:33-66`), and its validation.
-//!
-//! Wire rules:
-//! - `forceAlwaysRelay` travels as the *string* `"true"` / `"false"` (the client compares
-//!   with `'true'`); a JSON boolean is accepted on input as well.
-//! - `hash` belongs to personal books, `password` to shared books. The service drops the
-//!   other one on input and never emits it.
-//! - `device_group_name` and `same_server` are server-derived: ignored on input, never
-//!   stored (not even in `extra`).
-//! - Every other key is kept verbatim in `extra` and echoed back, so fields a newer client
-//!   adds survive a round trip. Known keys never land in `extra`.
-//! - `null` for a known key means "not given".
+//! Wire rules: `forceAlwaysRelay` travels as the string `"true"` / `"false"`; unknown keys
+//! are kept verbatim in `extra` and echoed back, so fields a newer client adds survive a round
+//! trip; `null` for a known key means "not given".
 
 use std::collections::HashSet;
 use std::fmt;
@@ -25,10 +15,8 @@ const ID_MAX_LEN: usize = 128;
 const SHORT_TEXT_MAX_LEN: usize = 255;
 const HASH_MAX_LEN: usize = 512;
 const PASSWORD_MAX_LEN: usize = 256;
-/// Longest accepted tag name, in characters.
 pub const TAG_NAME_MAX_LEN: usize = 64;
 const MAX_PEER_TAGS: usize = 100;
-/// Largest accepted `extra` object, serialized, in bytes.
 pub const EXTRA_MAX_BYTES: usize = 8 * 1024;
 
 const ID: &str = "id";
@@ -44,12 +32,11 @@ const RDP_PORT: &str = "rdpPort";
 const RDP_USERNAME: &str = "rdpUsername";
 const LOGIN_NAME: &str = "loginName";
 const NOTE: &str = "note";
-/// Computed by the server in RustDesk Pro; deskhaven does not compute them yet.
+/// Server-derived in RustDesk Pro: ignored on input, never stored.
 const SERVER_DERIVED: [&str; 2] = ["device_group_name", "same_server"];
 const TRUE: &str = "true";
 const FALSE: &str = "false";
 
-/// Peer fields the client sent: all of them for an add, any subset for an update.
 /// `None` leaves a field as it is (update) or empty (add).
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct PeerPatch {
@@ -64,11 +51,8 @@ pub struct PeerPatch {
     pub login_name: Option<String>,
     pub tags: Option<Vec<String>>,
     pub force_always_relay: Option<bool>,
-    /// Personal books only; dropped for shared books.
     pub hash: Option<String>,
-    /// Shared books only (stored encrypted); dropped for personal books.
     pub password: Option<Zeroizing<String>>,
-    /// Unknown keys, merged into the stored `extra` object.
     pub extra: Map<String, Value>,
 }
 
@@ -84,12 +68,9 @@ impl fmt::Debug for PeerPatch {
     }
 }
 
-/// The book-kind specific secret of a peer.
 #[derive(Clone, PartialEq, Eq)]
 pub enum PeerSecret {
-    /// Personal book: the password hash the client computed (`""` when none).
     Hash(String),
-    /// Shared book: the decrypted password (`""` when none or unreadable).
     Password(Zeroizing<String>),
 }
 
@@ -102,7 +83,6 @@ impl fmt::Debug for PeerSecret {
     }
 }
 
-/// A stored peer, ready to be sent to a client of the book.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Peer {
     pub id: String,
@@ -121,7 +101,6 @@ pub struct Peer {
 }
 
 impl Peer {
-    /// The client's JSON form: known fields first, then `extra` (which never repeats them).
     pub fn to_json(&self) -> Map<String, Value> {
         let mut out = self.extra.clone();
         let text = [
@@ -154,7 +133,6 @@ impl Peer {
     }
 }
 
-/// Free-text peer fields, single-line (the note is the one multi-line field).
 const CLIENT_TEXT_KEYS: [&str; 7] = [
     ALIAS,
     USERNAME,
@@ -165,22 +143,14 @@ const CLIENT_TEXT_KEYS: [&str; 7] = [
     LOGIN_NAME,
 ];
 
-/// A tag name as pushed by the RustDesk client: control and bidirectional formatting
-/// characters removed instead of refused (see [`PeerPatch::from_client_json`]).
 pub fn client_tag_name(raw: &str) -> String {
     text::strip_bidi_and_control(raw, usize::MAX, false)
 }
 
 impl PeerPatch {
-    /// [`from_json`](Self::from_json) for a peer the RustDesk client pushed: control and
-    /// bidirectional formatting characters are stripped from the free-text fields and tag
-    /// names instead of refused, so one peer reporting a Hebrew or Arabic hostname (they
-    /// carry LRM / RLM) does not fail the whole sync. Console writes stay strict.
-    ///
-    /// Not stripped: `id`, `hash` and `password`. They are identifiers and secrets
-    /// computed by the client; removing a character would silently turn them into other
-    /// values (a different peer, a hash that never verifies), so they are still refused.
-    /// Non-string values are left for `from_json` to refuse.
+    /// Control and bidi characters are stripped instead of refused, so one Hebrew or Arabic
+    /// hostname (LRM / RLM) does not fail the whole sync. `id`, `hash` and `password` are still
+    /// refused: stripping would silently turn them into other values.
     pub fn from_client_json(mut value: Value) -> Result<Self, AddressBookError> {
         if let Value::Object(map) = &mut value {
             for key in CLIENT_TEXT_KEYS {
@@ -196,8 +166,6 @@ impl PeerPatch {
         Self::from_json(value)
     }
 
-    /// Parses and validates a peer object (the console's writes, server-built entries).
-    /// `id` is required.
     pub fn from_json(value: Value) -> Result<Self, AddressBookError> {
         let Value::Object(mut map) = value else {
             return Err(invalid("peer", "must be a JSON object"));
@@ -239,20 +207,18 @@ fn strip_string(map: &mut Map<String, Value>, key: &str, multiline: bool) {
     }
 }
 
-/// `value`, when it is a string, without control and bidirectional formatting characters.
 fn strip_value(value: &mut Value, multiline: bool) {
     if let Value::String(raw) = value {
         *raw = text::strip_bidi_and_control(raw, usize::MAX, multiline);
     }
 }
 
-/// `.` and `..`: URL clients normalise them away even when percent-encoded, so a console
-/// request addressing an entry or tag by such a name would land on another resource.
+/// URL clients normalise `.` and `..` away even percent-encoded, so such a name would address
+/// another resource.
 fn is_dot_segment(name: &str) -> bool {
     name == "." || name == ".."
 }
 
-/// A peer id: 1-128 characters, no whitespace or control characters, not `.` or `..`.
 pub fn check_id(id: &str) -> Result<(), AddressBookError> {
     let bad = |c: char| c.is_whitespace() || c.is_control();
     if id.is_empty() || id.chars().count() > ID_MAX_LEN || id.chars().any(bad) {
@@ -267,7 +233,6 @@ pub fn check_id(id: &str) -> Result<(), AddressBookError> {
     Ok(())
 }
 
-/// A tag name: 1-64 characters, no control characters, not `.` or `..`.
 pub fn check_tag_name(field: &'static str, name: &str) -> Result<(), AddressBookError> {
     if name.is_empty() {
         return Err(invalid(field, "must not be empty"));
@@ -281,7 +246,6 @@ pub fn check_tag_name(field: &'static str, name: &str) -> Result<(), AddressBook
     }
 }
 
-/// `key` removed from `map`: a string, absent, or `null` (absent).
 fn take_string(
     map: &mut Map<String, Value>,
     key: &'static str,
@@ -345,7 +309,6 @@ fn take_tags(map: &mut Map<String, Value>) -> Result<Option<Vec<String>>, Addres
     Ok(Some(unique(tags)))
 }
 
-/// `tags` without repeats, first occurrence kept; linear (a hash set, not a list scan).
 pub(crate) fn unique(tags: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut seen = HashSet::new();
     tags.into_iter()
@@ -353,8 +316,7 @@ pub(crate) fn unique(tags: impl IntoIterator<Item = String>) -> Vec<String> {
         .collect()
 }
 
-/// `"true"` / `"false"` as the client sends it; a JSON boolean is accepted too. Another
-/// string reads as `false`, as the client reads it.
+/// Another string reads as `false`, as the client reads it.
 fn take_relay(map: &mut Map<String, Value>) -> Result<Option<bool>, AddressBookError> {
     match map.remove(FORCE_ALWAYS_RELAY) {
         None | Some(Value::Null) => Ok(None),

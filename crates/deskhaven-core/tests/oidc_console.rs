@@ -1,8 +1,3 @@
-//! Console OIDC logins (M3-02) against the mock IdP: the flow completes only with the
-//! browser binding of `begin_console`, a wrong or missing binding leaves it untouched,
-//! the client completion refuses console flows (and vice versa), and the row is gone once
-//! the flow has an outcome. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

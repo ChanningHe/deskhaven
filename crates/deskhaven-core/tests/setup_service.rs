@@ -1,6 +1,3 @@
-//! First-run setup: token issue at startup, single use, expiry, owner-exists refusal,
-//! retirement of older tokens and the audit row written with the owner. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -249,7 +246,6 @@ async fn a_refused_account_leaves_the_token_usable() {
     .await;
 }
 
-/// Startup and `create-setup-link` racing each other leave exactly one live token.
 #[tokio::test]
 async fn concurrent_issues_leave_one_live_token() {
     each_migrated_backend(async |db: &TestDb| {
@@ -274,7 +270,6 @@ async fn concurrent_issues_leave_one_live_token() {
     .await;
 }
 
-/// Concurrent completions with the same token create exactly one owner.
 #[tokio::test]
 async fn concurrent_completions_create_one_owner() {
     each_migrated_backend(async |db: &TestDb| {

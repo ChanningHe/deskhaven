@@ -1,14 +1,6 @@
-//! User accounts and local passwords (04 §3, 06 §3.1-3.2, §3.6).
-//!
-//! [`UserService`] owns every write to `users`, except the `totp_*` columns, which belong to
-//! [`TfaService`](crate::tfa::TfaService). Usernames and emails are normalized here
-//! (see `normalize`); the schema's unique indexes on the normalized columns are the source
-//! of truth for uniqueness, and their violations map to [`UserError::Conflict`].
-//!
-//! Owner protection: no operation may leave the instance without an active owner. Every
-//! operation that could (demote, disable, delete) first locks all active owners in id order
-//! inside its write transaction, so two concurrent demotions cannot both pass the check and
-//! do not deadlock on PostgreSQL (SQLite's `BEGIN IMMEDIATE` serializes them anyway).
+//! No operation may leave the instance without an active owner: those that could first lock all
+//! active owners in id order, so two concurrent demotions cannot both pass the check and do not
+//! deadlock.
 
 mod admin;
 mod auth;
@@ -42,8 +34,7 @@ pub use events::{CommitHook, UserChange, UserEvent};
 pub use model::{Credential, NewUser, ProfileUpdate, User, UserQuery, UserSort, UserSortField};
 pub use password::{HashLimits, HashParams, Password, PasswordError, PasswordHasher};
 pub use policy::{MAX_PASSWORD_LEN, PolicyViolation, check_password_policy};
-// Also keys the login lockout (`auth::limiter::LockoutKey`) and checks `deskhaven user
-// unlock` input; OIDC derives usernames by it.
+// Also keys the login lockout; OIDC derives usernames by it.
 pub use normalize::username_norm;
 pub(crate) use normalize::{USERNAME_MAX_LEN, is_username_char};
 pub(crate) use write::lock_active_owners;
@@ -55,7 +46,6 @@ use crate::pagination::Page;
 use crate::settings::SettingsService;
 use crate::text::contains_pattern;
 
-/// Manages user accounts. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct UserService {
     inner: Arc<Inner>,
@@ -71,14 +61,10 @@ struct Inner {
 }
 
 impl UserService {
-    /// `settings` supplies `auth.password.min_length` at each password change; `hasher`
-    /// fixes the Argon2id parameters (production: [`PasswordHasher::default`]). Timestamps
-    /// come from the system clock.
     pub fn new(db: DatabaseConnection, settings: SettingsService, hasher: PasswordHasher) -> Self {
         Self::with_clock(db, settings, hasher, Arc::new(SystemClock))
     }
 
-    /// [`UserService::new`] with timestamps from `clock` (share it with the session service).
     pub fn with_clock(
         db: DatabaseConnection,
         settings: SettingsService,
@@ -99,20 +85,15 @@ impl UserService {
         }
     }
 
-    /// Receives every [`UserEvent`] sent after this call (see `events` for the contract).
     pub fn subscribe(&self) -> broadcast::Receiver<UserEvent> {
         self.inner.events.subscribe()
     }
 
-    /// Calls `hook` synchronously after every later committed [`UserChange`], before the
-    /// writing call returns and before the matching event is broadcast. A panicking hook is
-    /// logged and skipped; a hook may register another one, which runs from the next change.
     pub fn register_commit_hook(&self, hook: CommitHook) {
         self.inner.hooks.register(hook);
     }
 
-    /// [`UserService::register_commit_hook`] for a cache that must fail closed: `on_panic`
-    /// (e.g. flush the whole cache) runs whenever `hook` panics.
+    /// `on_panic` runs whenever `hook` panics, so a cache can fail closed.
     pub fn register_commit_hook_with_fallback(&self, hook: CommitHook, on_panic: Fallback) {
         self.inner.hooks.register_with_fallback(hook, on_panic);
     }
@@ -122,14 +103,11 @@ impl UserService {
         found.map(User::from).ok_or(UserError::NotFound)
     }
 
-    /// Looks a user up by username, case-insensitively. A malformed username is simply
-    /// not found.
     pub async fn get_by_username(&self, username: &str) -> Result<User, UserError> {
         let found = self.inner.find_by_username(username).await?;
         found.map(User::from).ok_or(UserError::NotFound)
     }
 
-    /// One page of users ordered by id, with the total number of matches.
     pub async fn list(&self, query: &UserQuery) -> Result<Page<User>, UserError> {
         let index = query.page.index().map_err(|p| UserError::Invalid {
             field: p.field,
@@ -177,8 +155,8 @@ impl UserService {
         })
     }
 
-    /// Runs `op` to completion in its own task: dropping the caller's future can then
-    /// neither interrupt a commit nor lose the event that follows it.
+    /// Dropping the caller's future can then neither interrupt a commit nor lose the event that follows
+    /// it.
     async fn detached<T, F, Fut>(&self, op: F) -> Result<T, UserError>
     where
         F: FnOnce(Arc<Inner>) -> Fut,
@@ -207,8 +185,7 @@ impl Inner {
         self.clock.now()
     }
 
-    /// After commit: the hooks first (synchronously), then the event if there is one. No
-    /// receiver is not an error: nobody needs to react.
+    /// No receiver is not an error: nobody needs to react.
     fn committed(&self, change: UserChange) {
         self.hooks.run(&change);
         if let UserChange::Event(event) = change {
@@ -217,7 +194,6 @@ impl Inner {
     }
 }
 
-/// `SELECT user_id FROM group_member WHERE group_id = ?`, for (not) in-group filters.
 fn member_ids(group_id: i64) -> sea_orm::sea_query::SelectStatement {
     group_member::Entity::find()
         .select_only()
@@ -226,10 +202,8 @@ fn member_ids(group_id: i64) -> sea_orm::sea_query::SelectStatement {
         .into_query()
 }
 
-/// Case-insensitive literal substring match on username, email and display name. Username and
-/// email are matched against their stored ASCII-lowercased forms with `q` folded the same way
-/// (non-ASCII letters match as typed, M4-05). SQLite's `lower()` folds ASCII only, so
-/// non-ASCII display names match case-sensitively there.
+/// Non-ASCII letters match as typed; SQLite's `lower()` folds ASCII only, so non-ASCII display
+/// names match case-sensitively there.
 fn matches_text(q: &str) -> Condition {
     let norm = || contains_pattern(&q.to_ascii_lowercase());
     let lower = || contains_pattern(&q.to_lowercase());

@@ -1,17 +1,6 @@
-//! Step 2 of an explicit link (see `link`): the IdP's answer is exchanged and verified
-//! before the user confirms, so the confirmation page names the IdP identity that will be
-//! linked, and the confirmation links exactly that one.
-//!
-//! The flow stays unconsumed (single use is the confirmation's claim) and bound to the same
-//! browser and account. The code is exchanged once:
-//!
-//! 1. A verification first claims the flow: a conditional update marks it `verifying_at`
-//!    (unchanged context, no stored failure). A request that loses the claim does not ask
-//!    the IdP; it gets [`CallbackError::Verifying`] and asks again shortly.
-//! 2. The winner exchanges the code and stores the verified identity, or the failure, in
-//!    place of the mark. A second verification (a reload) answers from there.
-//! 3. A claim that never stored anything (the process died mid-exchange) is taken over
-//!    after [`VERIFY_GRACE`], well inside the flow's own lifetime.
+//! The code is exchanged once: a verification first claims the flow with a conditional update, a
+//! loser does not ask the IdP, and a claim that never stored anything is taken over after
+//! [`VERIFY_GRACE`].
 
 use std::time::Duration;
 
@@ -26,33 +15,23 @@ use super::claims::Asserted;
 use super::context;
 use super::error::{CallbackError, Failure, LinkFailure};
 
-/// How long a started verification blocks others: longer than an exchange can take
-/// (discovery and token request, each bounded by the HTTP timeouts).
+/// Longer than an exchange can take (each request bounded by the HTTP timeouts).
 pub const VERIFY_GRACE: Duration = Duration::from_secs(60);
 
-/// The verified IdP identity a link flow is about to link, for the confirmation page.
 /// Values the IdP asserted: escape them before display.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkPending {
-    /// The provider's name.
     pub provider_name: String,
-    /// The provider's display name.
     pub provider: String,
-    /// The provider's `sub`.
     pub subject: String,
-    /// The address, only when the IdP asserts it verified.
     pub email: Option<String>,
     pub preferred_username: Option<String>,
-    /// This call exchanged the code (false: answered from an earlier verification).
     pub exchanged: bool,
 }
 
 type Verified = Result<LinkPending, LinkFailure>;
 
 impl OidcService {
-    /// Exchanges and verifies the IdP's answer of the link flow of `params.state`, for the
-    /// browser holding `binding` and the signed-in account `user_id` (anything else:
-    /// [`CallbackError::InvalidState`], the flow untouched), once (see the module docs).
     pub async fn verify_link(
         &self,
         params: &CallbackParams<'_>,
@@ -85,8 +64,6 @@ impl OidcService {
         })
     }
 
-    /// Marks the flow as being verified; the claimed context. [`CallbackError::Verifying`]
-    /// while another verification holds a recent claim, or when it wins the race.
     async fn claim_verification(&self, row: &oidc_flow::Model) -> Result<String, CallbackError> {
         let now = self.inner.now_ms();
         let grace = i64::try_from(VERIFY_GRACE.as_millis()).unwrap_or(i64::MAX);
@@ -107,7 +84,6 @@ impl OidcService {
         }
     }
 
-    /// Stores the verified identity in place of the claim (`row` is the unclaimed context).
     async fn store_asserted(
         &self,
         row: &oidc_flow::Model,
@@ -129,8 +105,7 @@ impl OidcService {
             .await
     }
 
-    /// Sets `column` while the flow still holds this claim; a claim taken over after the
-    /// grace period means another verification answers now.
+    /// A claim taken over after the grace period means another verification answers now.
     async fn replace_claim(
         &self,
         id: i64,
@@ -156,7 +131,6 @@ fn corrupt() -> CallbackError {
     CallbackError::Internal("corrupt OIDC flow context".into())
 }
 
-/// What an earlier verification stored on the row, if any.
 fn stored_outcome(row: &oidc_flow::Model, provider: &oidc_provider::Model) -> Option<Verified> {
     if let Some(code) = &row.error {
         let failure = Failure::from_code(code).unwrap_or(Failure::Unavailable);

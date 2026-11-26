@@ -1,19 +1,6 @@
-//! Key material on disk: the master key and the hbbs Ed25519 key pair.
-//!
-//! - `read_*` functions never write; `load_or_generate_*` create missing
-//!   keys inside a 0700 directory and then read back whatever is on disk, so
-//!   concurrent first starts converge on one key.
-//! - Key files are created atomically and never overwritten: a temporary
-//!   file is written, synced, then linked into place with
-//!   `persist_noclobber`. That needs `renameat2(RENAME_NOREPLACE)` or hard
-//!   links; some network or FUSE mounts (e.g. certain CIFS setups) support
-//!   neither, and key generation fails there with an I/O error.
-//! - Symlinked key files are refused (checked, then opened with
-//!   `O_NOFOLLOW`); symlinks in parent directories are allowed. Key files
-//!   larger than [`MAX_KEY_FILE_LEN`] are refused before reading.
-//! - Group/other access to a private key, a foreign owner, or a
-//!   group/other-writable key directory are reported as warnings; nothing
-//!   is chmod-ed.
+//! Key files are created atomically and never overwritten (`persist_noclobber`), which needs
+//! `renameat2(RENAME_NOREPLACE)` or hard links. Symlinked key files are refused. Loose permissions
+//! are reported as warnings; nothing is chmod-ed.
 
 mod fs;
 mod master;
@@ -33,7 +20,6 @@ pub use read::MAX_KEY_FILE_LEN;
 pub use signal::{SIGNAL_KEY_FILE, SignalKeyPaths, load_or_generate_signal_key, read_signal_key};
 pub use signal_pair::SignalKeyPair;
 
-/// A loaded key plus non-fatal findings the caller should surface.
 #[derive(Debug)]
 pub struct Loaded<T> {
     pub value: T,
@@ -145,13 +131,11 @@ impl KeyError {
         }
     }
 
-    /// A key file disappeared between being written and read back.
     fn vanished(path: &std::path::Path) -> Self {
         Self::io("read back", path, std::io::ErrorKind::NotFound.into())
     }
 }
 
-/// `error: cause: cause...` for embedding an error chain in a warning.
 fn render_chain(err: &dyn std::error::Error) -> String {
     let mut text = err.to_string();
     let mut source = err.source();

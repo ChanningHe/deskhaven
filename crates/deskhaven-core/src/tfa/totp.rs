@@ -1,9 +1,5 @@
-//! TOTP (RFC 6238 over RFC 4226 HOTP) with the parameters every authenticator app assumes
-//! when a provisioning URI does not say otherwise: HMAC-SHA1, 6 digits, 30-second steps
-//! from the Unix epoch (06 §3.3).
-//!
-//! Pure functions; replay protection (one use per step and user) is the service's job, fed
-//! by [`matching_step`]'s result.
+//! The parameters every authenticator app assumes by default: HMAC-SHA1, 6 digits, 30-second
+//! steps. Replay protection is the service's job.
 
 use std::fmt;
 
@@ -18,42 +14,36 @@ use crate::crypto::{CryptoError, fill_random};
 
 type HmacSha1 = Hmac<Sha1>;
 
-/// Digits of a code.
 pub const DIGITS: usize = 6;
-/// Length of one time step.
 pub const PERIOD_MS: i64 = 30_000;
-/// Steps accepted on either side of the current one (clock drift, typing time).
+/// Clock drift and typing time.
 pub const SKEW_STEPS: i64 = 1;
-/// Bytes of a generated seed (RFC 4226 §4 recommends 160 bits).
+/// RFC 4226 §4 recommends 160 bits.
 pub const SECRET_LEN: usize = 20;
-/// Longest seed accepted: one HMAC-SHA1 block, so the key needs no pre-hashing.
+/// One HMAC-SHA1 block, so the key needs no pre-hashing.
 pub const MAX_SECRET_LEN: usize = 64;
 const MODULUS: u32 = 1_000_000;
 
-/// A TOTP seed. Wiped on drop; `Debug` never shows it.
+/// Wiped on drop; `Debug` never shows it.
 pub struct TotpSecret(Zeroizing<Vec<u8>>);
 
 impl TotpSecret {
-    /// A fresh random seed of [`SECRET_LEN`] bytes.
     pub(crate) fn generate() -> Result<Self, CryptoError> {
         let mut bytes = Zeroizing::new(vec![0u8; SECRET_LEN]);
         fill_random(&mut bytes)?;
         Ok(Self(bytes))
     }
 
-    /// `None` when empty or longer than [`MAX_SECRET_LEN`].
     pub(crate) fn from_bytes(bytes: Zeroizing<Vec<u8>>) -> Option<Self> {
         (!bytes.is_empty() && bytes.len() <= MAX_SECRET_LEN).then(|| Self(bytes))
     }
 
-    /// Parses the base32 form an authenticator app is given (RFC 4648, unpadded, any case).
     pub fn from_base32(text: &str) -> Option<Self> {
         let upper = Zeroizing::new(text.to_ascii_uppercase());
         let bytes = Zeroizing::new(BASE32_NOPAD.decode(upper.as_bytes()).ok()?);
         Self::from_bytes(bytes)
     }
 
-    /// RFC 4648 base32, unpadded, upper case: the `secret` of a provisioning URI.
     pub fn to_base32(&self) -> Zeroizing<String> {
         Zeroizing::new(BASE32_NOPAD.encode(&self.0))
     }
@@ -69,25 +59,19 @@ impl fmt::Debug for TotpSecret {
     }
 }
 
-/// The time step containing `unix_ms`.
 pub fn step_at(unix_ms: i64) -> i64 {
     unix_ms.div_euclid(PERIOD_MS)
 }
 
-/// The code of `step` as an authenticator shows it (zero-padded).
 pub fn code_at_step(secret: &TotpSecret, step: i64) -> String {
     format!("{:0width$}", hotp(secret, step), width = DIGITS)
 }
 
-/// The code an authenticator shows at `unix_ms`.
 pub fn code_at(secret: &TotpSecret, unix_ms: i64) -> String {
     code_at_step(secret, step_at(unix_ms))
 }
 
-/// The step `code` belongs to, within [`SKEW_STEPS`] of `now_ms` and strictly after
-/// `last_step` (a step already used, or an older one, is never accepted again); the
-/// earliest such step when several match. `None` for anything but exactly [`DIGITS`] ASCII
-/// digits.
+/// Never a step already used, or an older one; the earliest match when several match.
 pub(crate) fn matching_step(
     secret: &TotpSecret,
     code: &str,
@@ -107,7 +91,6 @@ pub(crate) fn matching_step(
         .find_map(|(step, matched)| matched.then_some(step))
 }
 
-/// Whether `code` has the shape of a TOTP code (as opposed to a recovery code).
 pub fn is_code_shaped(code: &str) -> bool {
     parse_code(code).is_some()
 }
@@ -139,9 +122,7 @@ fn hotp(secret: &TotpSecret, counter: i64) -> u32 {
     (u32::from_be_bytes(word) & 0x7fff_ffff) % MODULUS
 }
 
-/// `otpauth://totp/<issuer>:<account>?secret=…&issuer=…&algorithm=SHA1&digits=6&period=30`
-/// (the Key Uri Format authenticator apps read from a QR code). Contains the seed: show it
-/// to its owner once, never log it.
+/// Contains the seed: show it to its owner once, never log it.
 pub fn provisioning_uri(secret: &TotpSecret, issuer: &str, account: &str) -> Zeroizing<String> {
     let (issuer, account) = (percent_encode(issuer), percent_encode(account));
     let secret = secret.to_base32();
@@ -152,7 +133,6 @@ pub fn provisioning_uri(secret: &TotpSecret, issuer: &str, account: &str) -> Zer
     ))
 }
 
-/// RFC 3986 percent-encoding of everything but the unreserved characters.
 fn percent_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {

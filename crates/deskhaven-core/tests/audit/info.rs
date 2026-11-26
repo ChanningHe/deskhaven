@@ -1,7 +1,3 @@
-//! Alarm `info` is self-reported JSON: stored as a flat object of scalars, strings cleaned
-//! and cut, keys bounded, nested values dropped (every client call site sends flat values,
-//! `src/server/connection.rs:1439-1474`, `4299-4586`).
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::audit::{AlarmReport, MAX_INFO_KEYS, MAX_INFO_TEXT_CHARS, Record};
@@ -13,7 +9,6 @@ use super::support::ctx;
 #[tokio::test]
 async fn alarm_info_is_stored_flat_cleaned_and_bounded() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let mut info = json!({
             "ip": "198.51.100.4", "name": "evil\u{202E}gpj.exe\u{0}", "id": 42, "a_ok": true,
@@ -31,10 +26,8 @@ async fn alarm_info_is_stored_flat_cleaned_and_bounded() {
             info: object.clone(),
         });
 
-        // Act
         c.send("a", record).await;
 
-        // Assert
         let b = db.backend;
         let alarms = c.alarms().await;
         let stored: Value = serde_json::from_str(&alarms[0].info).unwrap();

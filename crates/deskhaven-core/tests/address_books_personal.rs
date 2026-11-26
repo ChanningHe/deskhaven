@@ -1,7 +1,3 @@
-//! AddressBookService, personal books: creation on first access (also concurrently),
-//! privacy, peer writes, `hash` / `password` rules, `extra` round trip, capacity. Every test
-//! runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -313,7 +309,6 @@ async fn capacity_follows_the_max_peers_setting() {
             matches!(third, Err(AddressBookError::Full { max: 2 })),
             "{third:?}"
         );
-        // Updates and deletes still work on a full book.
         env.books
             .update_peer(me, &book.guid, peer(json!({"id": "2", "alias": "a"})))
             .await

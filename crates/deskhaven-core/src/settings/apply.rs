@@ -1,5 +1,3 @@
-//! One update batch: locked read, refresh, checks, writes, commit, publish.
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,12 +12,10 @@ use super::store::{self, Stamp};
 use super::{Inner, SettingsError, observe};
 use crate::console_audit::TxGuard;
 
-/// Upper bound from `BEGIN` to the last write of a batch (the writer lock
-/// is held meanwhile). Commit itself is not cut off, so a batch that has
-/// committed is always published.
+/// The writer lock is held meanwhile. Commit itself is not cut off, so a committed batch is always
+/// published.
 const TX_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A batch with all rows written, waiting for commit.
 struct Staged {
     tx: DatabaseTransaction,
     next: Snapshot,
@@ -54,10 +50,7 @@ impl Inner {
         Ok(next)
     }
 
-    /// Checks versions and cross-key rules against the committed state (not
-    /// the in-memory snapshot) inside the write transaction, then lets `guard`
-    /// decide and record its audit row on the same transaction. `None`: every
-    /// change is a no-op (no guard, no row).
+    /// Checks against the committed state, not the in-memory snapshot, inside the write transaction.
     async fn stage(
         &self,
         accepted: &[Accepted],
@@ -99,9 +92,7 @@ impl Inner {
         Ok(Some(Staged { tx, next, written }))
     }
 
-    /// Rebuilds the snapshot from the locked read and publishes it if it
-    /// differs from memory (another writer, a restore), so even a rejected
-    /// batch leaves callers with fresh versions.
+    /// Even a rejected batch leaves callers with fresh versions.
     fn refresh(&self, rows: &[setting::Model]) -> Arc<Snapshot> {
         let (snapshot, row_warnings) = observe(rows, &self.crypto, &self.pins);
         self.row_warnings.store(Arc::new(row_warnings));
@@ -122,7 +113,6 @@ fn row<'a>(rows: &'a [setting::Model], key: &str) -> Option<&'a setting::Model> 
     rows.iter().find(|row| row.key == key)
 }
 
-/// Every key whose stored version (0 = no row) differs from the expected one.
 fn check_versions(rows: &[setting::Model], accepted: &[Accepted]) -> Result<(), SettingsError> {
     let stale: Vec<String> = accepted
         .iter()
@@ -135,9 +125,8 @@ fn check_versions(rows: &[setting::Model], accepted: &[Accepted]) -> Result<(), 
     }
 }
 
-/// The version each change is written at: one past its row, or, for a key without
-/// a row (never stored, or reset), one past the highest version its history reached,
-/// so a version a client saw before a reset is never handed out again.
+/// A key without a row continues past the highest version its history reached, so a version a
+/// client saw before a reset is never handed out again.
 async fn next_versions(
     tx: &DatabaseTransaction,
     rows: &[setting::Model],
@@ -160,8 +149,7 @@ async fn next_versions(
         .collect())
 }
 
-/// A rewrite of an unusable row always counts, even with the same value. A reset
-/// counts when there is a row to drop.
+/// A rewrite of an unusable row always counts, even with the same value.
 fn changes_value(current: &Snapshot, rows: &[setting::Model], change: &Accepted) -> bool {
     if change.is_reset() {
         return row(rows, change.key()).is_some();
@@ -171,8 +159,6 @@ fn changes_value(current: &Snapshot, rows: &[setting::Model], change: &Accepted)
         .is_none_or(|e| e.is_fallback() || e.value() != change.value())
 }
 
-/// Public JSON text of the previous effective value for the history:
-/// `null` when the row was unusable (secrets render as `{"set": bool}`).
 fn previous(current: &Snapshot, key: &str) -> String {
     match current.entry(key) {
         Some(entry) if !entry.is_fallback() => entry.value().to_json().to_string(),

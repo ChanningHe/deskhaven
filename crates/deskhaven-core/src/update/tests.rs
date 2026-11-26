@@ -21,7 +21,6 @@ const API: &str = "https://api.github.test/repos/o/r/releases/latest";
 
 type Respond = Box<dyn Fn() -> Result<HttpResponse, FetchError> + Send + Sync>;
 
-/// Answers with `respond` once its gate lets a request through; records every request.
 struct FakeFetch {
     respond: StdMutex<Respond>,
     requests: StdMutex<Vec<HttpRequest>>,
@@ -129,7 +128,6 @@ async fn until(what: &str, done: impl Fn() -> bool) {
     panic!("never saw: {what}");
 }
 
-/// Waits until no refresh is running.
 async fn settle(service: &UpdateService) {
     until("the refresh finish", || {
         !service.cache.lock().unwrap().in_flight
@@ -137,7 +135,6 @@ async fn settle(service: &UpdateService) {
     .await;
 }
 
-/// Asks, lets the refresh it starts finish, and asks again.
 async fn checked(f: &Fixture) -> Option<AvailableUpdate> {
     f.service.available();
     settle(&f.service).await;
@@ -344,7 +341,6 @@ async fn a_failed_first_check_offers_nothing() {
     .await;
 }
 
-/// What a failure logs is its error: nothing of the response but the status.
 #[tokio::test]
 async fn a_failure_reports_nothing_from_the_response() {
     each_migrated_backend(async |db: &TestDb| {
@@ -474,7 +470,6 @@ async fn without_a_target_nothing_is_requested() {
     .await;
 }
 
-/// A refresh that dies inside the request still ends: the next one comes a day later.
 #[tokio::test]
 async fn a_refresh_that_panics_is_retried_after_a_day() {
     each_migrated_backend(async |db: &TestDb| {

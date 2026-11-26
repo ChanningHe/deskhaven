@@ -1,13 +1,10 @@
-//! Domain types of the user service.
-
 use deskhaven_db::entity::user::{self, AuthSource, Role, Status};
 use deskhaven_db::time::TimestampMs;
 
 use super::Password;
 use crate::pagination::PageRequest;
 
-/// A user account as seen outside the service. Carries no secret (no password hash, no TOTP
-/// seed), so it is safe to hand to API layers.
+/// Carries no secret, so it is safe to hand to API layers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct User {
     pub id: i64,
@@ -49,14 +46,10 @@ impl From<user::Model> for User {
     }
 }
 
-/// How a new account authenticates; decides `auth_source`.
 #[derive(Clone, Debug)]
 pub enum Credential {
-    /// Local password (checked against the policy, stored as an Argon2id hash).
     Local { password: Password },
-    /// Directory account: no local password, every login goes to LDAP.
     Ldap,
-    /// OIDC account: no local password.
     Oidc,
 }
 
@@ -70,11 +63,9 @@ impl Credential {
     }
 }
 
-/// Input of [`UserService::create`](super::UserService::create).
 #[derive(Clone, Debug)]
 pub struct NewUser {
     pub username: String,
-    /// Blank: the username.
     pub display_name: String,
     pub email: Option<String>,
     pub email_verified: bool,
@@ -86,7 +77,6 @@ pub struct NewUser {
 }
 
 impl NewUser {
-    /// An active `user`-role account with no email, note or display name.
     pub fn new(username: impl Into<String>, credential: Credential) -> Self {
         Self {
             username: username.into(),
@@ -102,37 +92,28 @@ impl NewUser {
     }
 }
 
-/// Profile fields to change; `None` leaves a field as it is.
 #[derive(Clone, Debug, Default)]
 pub struct ProfileUpdate {
-    /// Blank: the username.
     pub display_name: Option<String>,
-    /// `Some(None)` removes the address. A different address (case-insensitively) resets
-    /// `email_verified` unless it is set explicitly in the same update.
+    /// A different address resets `email_verified` unless it is set explicitly in the same update.
     pub email: Option<Option<String>>,
     pub email_verified: Option<bool>,
     pub must_change_password: Option<bool>,
     pub note: Option<String>,
 }
 
-/// Filters of [`UserService::list`](super::UserService::list). `q` matches a substring of
-/// the username, email or display name, case-insensitively and literally (no wildcards).
-/// Results are ordered by `sort` (if any), then by id (in the same direction).
 #[derive(Clone, Debug, Default)]
 pub struct UserQuery {
     pub status: Option<Status>,
     pub role: Option<Role>,
     pub auth_source: Option<AuthSource>,
-    /// Members of this group only.
     pub group_id: Option<i64>,
-    /// Accounts that are not members of this group (candidates to add).
     pub not_group_id: Option<i64>,
     pub q: Option<String>,
     pub sort: Option<UserSort>,
     pub page: PageRequest,
 }
 
-/// Columns a user list can be ordered by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UserSortField {
     Username,

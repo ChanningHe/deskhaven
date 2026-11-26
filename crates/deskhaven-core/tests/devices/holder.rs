@@ -1,6 +1,3 @@
-//! Whom a RustDesk id belongs to (`DeviceService::id_holder`), for the OIDC client login: the
-//! stored registration, else the signal server's memory.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -18,13 +15,11 @@ const OTHER_ID: &str = "246813579";
 #[tokio::test]
 async fn a_stored_id_belongs_to_its_uuid_only() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let live = Live::new(Some(Vec::new()));
         c.devices.set_live_registrations(live.clone());
 
-        // Act
         let own = c.devices.id_holder(ID, &b64(&uuid_of(ID))).await.unwrap();
         let other = c.devices.id_holder(ID, &b64(b"attacker")).await.unwrap();
         let malformed = c.devices.id_holder(ID, "not base64!").await.unwrap();
@@ -34,7 +29,6 @@ async fn a_stored_id_belongs_to_its_uuid_only() {
             .await
             .unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(own, IdHolder::ThisDevice, "{b}");
         assert_eq!(other, IdHolder::OtherDevice, "{b}");
@@ -54,7 +48,6 @@ async fn a_stored_id_belongs_to_its_uuid_only() {
 #[tokio::test]
 async fn a_real_clients_pair_is_the_same_machine_id_in_both_encodings() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let machine_id = b"6f1b2c3d4e5f60718293a4b5c6d7e8f9";
         let registration = Registration {
@@ -70,10 +63,8 @@ async fn a_real_clients_pair_is_the_same_machine_id_in_both_encodings() {
             .unwrap();
         let sent = "NmYxYjJjM2Q0ZTVmNjA3MTgyOTNhNGI1YzZkN2U4Zjk=";
 
-        // Act
         let holder = c.devices.id_holder(ID, sent).await.unwrap();
 
-        // Assert
         assert_eq!(sent, b64(machine_id), "{}", db.backend);
         assert_eq!(holder, IdHolder::ThisDevice, "{}", db.backend);
     })
@@ -85,14 +76,12 @@ async fn a_real_clients_pair_is_the_same_machine_id_in_both_encodings() {
 #[tokio::test]
 async fn an_unstored_id_is_asked_of_the_signal_server() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let known = vec![(ID.to_owned(), uuid_of(ID))];
         c.devices.set_live_registrations(Live::new(Some(known)));
         let unanswered = ctx(db).await;
         unanswered.devices.set_live_registrations(Live::new(None));
 
-        // Act
         let own = c.devices.id_holder(ID, &b64(&uuid_of(ID))).await.unwrap();
         let other = c.devices.id_holder(ID, &b64(b"attacker")).await.unwrap();
         let free = c.devices.id_holder(OTHER_ID, &b64(b"any")).await.unwrap();
@@ -102,7 +91,6 @@ async fn an_unstored_id_is_asked_of_the_signal_server() {
             .await
             .unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(own, IdHolder::ThisDevice, "{b}");
         assert_eq!(other, IdHolder::OtherDevice, "{b}");
@@ -117,15 +105,12 @@ async fn an_unstored_id_is_asked_of_the_signal_server() {
 #[tokio::test]
 async fn verify_uuid_off_does_not_hand_out_another_devices_id() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.set("devices.verify_uuid", json!(false)).await;
 
-        // Act
         let other = c.devices.id_holder(ID, &b64(b"attacker")).await.unwrap();
 
-        // Assert
         assert_eq!(other, IdHolder::OtherDevice, "{}", db.backend);
     })
     .await;

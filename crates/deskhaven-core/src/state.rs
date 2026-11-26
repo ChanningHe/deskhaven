@@ -1,8 +1,3 @@
-//! Process-wide state shared by the HTTP routers (02 §3). Built once at
-//! startup (`deskhaven::startup::open_state`) and handed to the API crates
-//! as `State<Arc<AppState>>`; later subsystems (domain events)
-//! become further fields.
-
 use std::sync::Arc;
 
 use deskhaven_config::bootstrap::Signal;
@@ -29,70 +24,39 @@ use crate::users::{PasswordHasher, UserService};
 use crate::web_client::WebClientService;
 
 pub struct AppState {
-    /// Migrated connection pool (cheap to clone).
     pub db: DatabaseConnection,
-    /// Effective runtime settings with hot reload.
     pub settings: SettingsService,
-    /// The clock every service runs on (background jobs included).
     pub clock: SharedClock,
-    /// Master-key cipher for secrets at rest.
     pub crypto: Arc<SecretBox>,
-    /// hbbs public key (base64), the value clients enter as "Key". Public data.
     pub signal_public_key: String,
-    /// User accounts and local passwords.
     pub users: UserService,
-    /// API tokens (`--deploy`, `--assign`, automation).
     pub api_tokens: ApiTokenService,
-    /// Client and console sessions, with the validated-session cache.
     pub sessions: SessionService,
-    /// Per-IP rate limit and account lockout for login-type endpoints.
     pub login_throttle: LoginThrottle,
-    /// Audit trail of login attempts.
     pub login_events: LoginEventLog,
-    /// TOTP enrolment, recovery codes and two-step login challenges.
     pub tfa: TfaService,
-    /// Audit trail of console / API / CLI changes.
     pub console_audit: ConsoleAuditLog,
-    /// OIDC providers and logins.
     pub oidc: OidcService,
-    /// LDAP directories, and every password login (local or directory: the login
-    /// endpoints call `ldap.authenticate_password`).
     pub ldap: LdapService,
-    /// User groups: the one instance everything shares (admin API included), so the
-    /// strategy cache's commit hooks fire for every membership change.
+    /// The one instance everything shares, so the strategy cache's commit hooks fire for every
+    /// membership change.
     pub groups: GroupService,
-    /// Strategies and the effective-strategy cache, watching `users` and `groups`.
     pub strategies: StrategyService,
-    /// Device registry operations and the presence table (`devices.presence()`), which the
-    /// signal server's liveness notifications feed.
     pub devices: DeviceService,
-    /// Audit ingest of the device endpoints (`/api/audit/*`).
     pub audit: AuditService,
-    /// First-run owner setup.
     pub setup: SetupService,
-    /// The on-demand check for a newer deskhaven release.
     pub updates: Arc<UpdateService>,
-    /// Remote control from the console (web client sessions through the signal server).
     pub web_client: WebClientService,
-    /// See [`StateConfig::console_url`].
     pub console_url: String,
-    /// `public_url` as configured (blank: unset).
     pub public_url: String,
-    /// See [`StateConfig::signal_port`].
     pub signal_port: u16,
 }
 
-/// Bootstrap values the services need beyond the database and the settings.
 #[derive(Debug, Clone)]
 pub struct StateConfig {
-    /// `public_url`, as validated by the bootstrap loader; blank disables OIDC logins.
     pub public_url: String,
-    /// Base URL of the web console as reached from the client API listener, for redirects
-    /// from there into the console (the OIDC callback of a console login):
-    /// `listen.admin_public_url` when the admin side has its own listener, blank when the
-    /// console shares the client API listener (redirects stay relative).
+    /// Blank when the console shares the client API listener (redirects stay relative).
     pub console_url: String,
-    /// `signal.port`, for the client configuration the console hands out.
     pub signal_port: u16,
 }
 
@@ -107,9 +71,7 @@ impl Default for StateConfig {
 }
 
 impl AppState {
-    /// Wires the services around a migrated `db` and loaded `settings`, all on one `clock`
-    /// (production: `SystemClock`, `PasswordHasher::default()`). Must be called inside a
-    /// Tokio runtime (the session service spawns its event consumer).
+    /// Must be called inside a Tokio runtime (the session service spawns its event consumer).
     pub fn new(
         db: DatabaseConnection,
         settings: SettingsService,

@@ -1,8 +1,3 @@
-//! Guarded (console) writes: a `TxGuard` refuses inside the write transaction (nothing
-//! changes, no audit row) or records its audit row with the change; the combined account
-//! edit; batch creation; temporary passwords; user and group listing for the console.
-//! Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -72,7 +67,6 @@ fn snapshot<T: std::fmt::Debug>(value: Option<&T>) -> Option<Value> {
     value.map(|v| json!(format!("{v:?}")))
 }
 
-/// Records `action` with debug snapshots of before / after.
 fn recording<T: std::fmt::Debug + 'static>(state: &AppState, action: &str) -> TxGuard<T> {
     let action = action.to_owned();
     TxGuard::new(&state.console_audit, move |before, after| {
@@ -599,7 +593,6 @@ async fn guarded_2fa_reset_session_revocation_and_unlock() {
     .await;
 }
 
-/// Allows admins and owners (the console's rule), recording `action` as `actor_id`.
 fn as_admin<T: 'static>(state: &AppState, actor_id: i64, action: &str) -> TxGuard<T> {
     let action = action.to_owned();
     TxGuard::for_account(&state.console_audit, actor_id, move |role, _, _| {
@@ -643,7 +636,6 @@ async fn account_guards_use_the_actors_committed_role_and_status() {
         let admin = user(&state, "admin", Role::Admin).await;
         let bob = user(&state, "bob", Role::User).await;
 
-        // Still an admin: allowed and recorded.
         let guard = as_admin(&state, admin.id, "edit");
         state
             .users

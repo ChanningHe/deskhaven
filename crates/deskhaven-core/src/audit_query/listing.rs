@@ -1,6 +1,3 @@
-//! What every audit list shares: the time window, the order and the page, and the one
-//! function that runs them.
-
 use sea_orm::sea_query::{Condition, Expr, ExprTrait, Func};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, Order, PaginatorTrait, QueryFilter,
@@ -11,14 +8,10 @@ use super::{AuditQuery, AuditQueryError};
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 
-/// Window, order and page of one audit list.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Listing {
-    /// Rows created at or after this time (unix ms).
     pub from: Option<i64>,
-    /// Rows created before this time (unix ms).
     pub to: Option<i64>,
-    /// Oldest first; the default is newest first.
     pub oldest_first: bool,
     pub page: PageRequest,
 }
@@ -31,7 +24,6 @@ impl Listing {
         }
     }
 
-    /// `select` restricted to the window, ordered, counted and cut to the page.
     pub(super) async fn run<E, C>(
         &self,
         db: &C,
@@ -70,7 +62,6 @@ impl Listing {
 }
 
 impl<T> Page<T> {
-    /// This page's numbers around `items`.
     pub(super) fn with_items<U>(self, items: Vec<U>) -> Page<U> {
         Page {
             items,
@@ -82,9 +73,8 @@ impl<T> Page<T> {
 }
 
 impl AuditQuery {
-    /// Rows where any of `columns` contains `needle` literally, ignoring case (ASCII only
-    /// on SQLite). SQLite's `LIKE` is case-insensitive by itself, and `lower()` around the
-    /// column would cost this scan half its speed; PostgreSQL's is not.
+    /// SQLite's `LIKE` is case-insensitive by itself, and `lower()` around the column would halve
+    /// this scan's speed; PostgreSQL's is not.
     pub(super) fn contains<C: ColumnTrait>(&self, columns: &[C], needle: &str) -> Condition {
         let fold = self.db.get_database_backend() != DbBackend::Sqlite;
         let pattern = match fold {
@@ -101,7 +91,6 @@ impl AuditQuery {
     }
 }
 
-/// `q` without surrounding blanks; `None` when nothing is left.
 pub(super) fn text(q: Option<&str>) -> Option<&str> {
     q.map(str::trim).filter(|q| !q.is_empty())
 }

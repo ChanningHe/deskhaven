@@ -1,13 +1,6 @@
-//! What the callback confirmation page shows before the user completes a flow.
-//!
-//! Defence against cross-device consent phishing: an attacker can start a flow on their own
-//! device and send its authorization URL to a victim already signed in at the IdP; the IdP
-//! would redirect straight back and log the attacker's device in as the victim. So the
-//! redirect only shows which device is being signed in (from the flow, i.e. server-side
-//! data) and completes nothing; the user has to confirm (`complete_callback`). Reading the
-//! preview never consumes the flow. The reverse, a flow started for the victim's own
-//! (shared) RustDesk id, is the client API's check of who holds the id
-//! (`DeviceService::id_holder`), at the start and again here.
+//! Defence against cross-device consent phishing: an attacker can send the authorization URL of a
+//! flow started on their own device to a victim signed in at the IdP. So the redirect only shows
+//! which device is being signed in and completes nothing until the user confirms.
 
 use deskhaven_db::entity::oidc_flow::Flow;
 use deskhaven_db::entity::oidc_provider;
@@ -18,42 +11,30 @@ use super::OidcService;
 use super::context;
 use super::error::CallbackError;
 
-/// The device a client flow will sign in, as it described itself at `/api/oidc/auth`.
 /// Client-supplied text: escape it before display.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceSummary {
     pub rustdesk_id: String,
-    /// The uuid it sent (base64), never shown: what decides whether the id is its own
-    /// (`DeviceService::id_holder`).
+    /// Never shown.
     pub uuid: String,
-    /// `deviceInfo.name` (the host name).
     pub name: Option<String>,
-    /// `deviceInfo.os`.
     pub os: Option<String>,
 }
 
-/// Where a flow completes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PreviewTarget {
-    /// A client flow: confirmed on the callback page, for this device.
     Device(DeviceSummary),
-    /// A console login: completed by the console page that started it.
     Console,
-    /// A link flow: confirmed and completed on the console's link page.
     Link,
 }
 
-/// The pending flow behind a callback.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallbackPreview {
-    /// The provider's display name.
     pub provider: String,
     pub target: PreviewTarget,
 }
 
 impl OidcService {
-    /// The live flow of `state`, without touching it. [`CallbackError::InvalidState`] for
-    /// an unknown, expired or already used state.
     pub async fn preview_callback(
         &self,
         state: Option<&str>,

@@ -1,8 +1,3 @@
-//! The core half of the console's account setup (M3-02): the session principal's account
-//! flags, the self-service password change (verified, audited in its transaction, a new
-//! stamp for the fresh session) and the rotation of a console session after a privilege
-//! change. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -360,8 +355,6 @@ async fn rotation_refuses_unknown_and_client_sessions() {
     .await;
 }
 
-/// The cached principal never shows stale account flags after a change that matters to
-/// the console's account-setup gate.
 #[tokio::test]
 async fn account_flag_changes_reach_a_cached_principal_at_once() {
     each_migrated_backend(async |db: &TestDb| {

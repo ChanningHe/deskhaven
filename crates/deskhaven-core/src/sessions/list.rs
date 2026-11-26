@@ -1,10 +1,5 @@
-//! A user's usable sessions: the paged list, and the per-user cap
-//! (`auth.max_sessions_per_user`) that creation enforces by revoking the least recently
-//! used ones.
-//!
-//! The cap is enforced in the creating transaction, which share-locks the user row only, so
-//! concurrent creations for one user can leave it exceeded by one each until the next
-//! creation; it bounds growth, not an exact count.
+//! The creating transaction share-locks the user row only, so concurrent creations can exceed the
+//! cap by one each until the next creation: it bounds growth, not an exact count.
 
 use deskhaven_config::settings::AUTH_MAX_SESSIONS_PER_USER;
 use deskhaven_db::entity::session;
@@ -17,13 +12,10 @@ use super::revoke::revoke_rows;
 use super::{Core, Session, SessionError, SessionService, timestamp};
 use crate::pagination::{Page, PageRequest};
 
-/// Most excess sessions one creation revokes (a user far above a lowered cap is brought
-/// down over several creations, in short statements).
+/// A user far above a lowered cap is brought down over several creations, in short statements.
 const EVICT_BATCH: u64 = 500;
 
 impl SessionService {
-    /// One page of the user's usable sessions (unrevoked, within both expiries), most
-    /// recently used first.
     pub async fn list_for_user(
         &self,
         user_id: i64,
@@ -49,7 +41,6 @@ impl SessionService {
 }
 
 impl Core {
-    /// The usable sessions of `user_id` at `now`, most recently used first.
     fn usable_of(&self, user_id: i64, now: i64) -> Result<Select<session::Entity>, DbErr> {
         let usable = Condition::all()
             .add(session::Column::UserId.eq(user_id))
@@ -62,9 +53,7 @@ impl Core {
             .order_by_desc(session::Column::Id))
     }
 
-    /// Revokes the user's usable sessions beyond the cap, least recently used first (a
-    /// session created at `now` is the most recent and stays); returns their ids, for the
-    /// cache.
+    /// A session created at `now` is the most recent and stays.
     pub(super) async fn evict_beyond_cap<C: ConnectionTrait>(
         &self,
         conn: &C,

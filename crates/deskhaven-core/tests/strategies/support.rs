@@ -1,4 +1,3 @@
-//! Shared setup: services over one clock, and rows the strategy service refers to.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test module uses a subset.
@@ -43,8 +42,6 @@ pub struct Ctx {
     pub groups: GroupService,
 }
 
-/// Strategy, user and group services sharing one manual clock, with the strategy cache
-/// watching users and groups.
 pub async fn ctx(db: &TestDb) -> Ctx {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
     let (settings, _) = SettingsService::load(db.conn.clone(), crypto.clone(), PinSet::empty())
@@ -105,7 +102,6 @@ impl Ctx {
         row.insert(&self.conn).await.unwrap().id
     }
 
-    /// Registers a device and returns its `devices.id`.
     pub async fn device(&self, rustdesk_id: &str) -> i64 {
         let repo = DeviceRepository::new(self.conn.clone());
         let registration = Registration {
@@ -127,7 +123,6 @@ impl Ctx {
         self.svc.assign(target, strategy.id).await.unwrap();
     }
 
-    /// Effective options of a device, as a plain map.
     pub async fn options(&self, device: &DeviceInputs) -> Options {
         self.svc.effective(device).await.unwrap().options
     }

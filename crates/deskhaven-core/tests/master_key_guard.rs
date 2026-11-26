@@ -1,7 +1,3 @@
-//! The master key at startup, against the migrated database: generated only into a
-//! database without accounts; with accounts and no key, startup refuses (a new key would
-//! orphan every sealed secret, and startup sealing would re-seal under it). Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,23 +1,13 @@
-//! [`SessionId`]: the session id of a connection record, normalized.
-
 use serde_json::Value;
 
-/// The session id of a record before the login request named one.
 pub(super) const UNBOUND: &str = "0";
 
-/// The controller's session id (`LoginRequest.session_id`, a random `u64`) as the client
-/// reports it, in canonical decimal: `123` and `"123"` (and `"0123"`) are the same session.
-/// `connection_sessions.session_id` stores this text.
-///
-/// The controlled device sends its connection's opening record before the login request
-/// arrives (`src/server/connection.rs:1523-1530`), so that record carries 0, the *unbound*
-/// session id; the authorization and close records carry the real one.
+/// `123`, `"123"` and `"0123"` are the same session. The opening record is sent before the
+/// login request, so it carries 0, the unbound session id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SessionId(String);
 
 impl SessionId {
-    /// An integer (JSON number or decimal string) in `i64::MIN..=u64::MAX`; anything else
-    /// (fractions, other text, other types) is `None`.
     pub fn from_json(value: &Value) -> Option<Self> {
         let number = match value {
             Value::Number(n) => n
@@ -35,7 +25,6 @@ impl SessionId {
         &self.0
     }
 
-    /// `true` for 0: sent before the login request, it names no session yet.
     pub fn is_unbound(&self) -> bool {
         self.0 == UNBOUND
     }

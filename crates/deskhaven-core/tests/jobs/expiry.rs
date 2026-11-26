@@ -1,7 +1,3 @@
-//! Expiry cleanup: audit nonces after 24 h, finished setup tokens, strategy keys of devices
-//! deleted longer than the grace period, and the services' own cleanups (sessions, OIDC
-//! flows, login challenges, lockout counters), all on the manual clock.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;
@@ -38,7 +34,7 @@ async fn keys(c: &Ctx) -> Vec<String> {
 #[tokio::test]
 async fn nonces_are_kept_for_a_day() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: more than two batches of expired nonces, one fresh.
+        // More than two batches of expired nonces, one fresh.
         let c = ctx(db).await;
         for n in 0..5 {
             c.nonce(&format!("old-{n}"), ago(NONCE_RETENTION + HOUR))
@@ -46,10 +42,8 @@ async fn nonces_are_kept_for_a_day() {
         }
         c.nonce("fresh", ago(NONCE_RETENTION - HOUR)).await;
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.audit_nonces, 5, "{b}");
         assert_eq!(report.failed, 0, "{b}");
@@ -76,16 +70,13 @@ async fn setup_row(c: &Ctx, hash: &str, expires_at: TimestampMs, used: bool) {
 #[tokio::test]
 async fn used_and_expired_setup_tokens_go_the_live_one_stays() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         setup_row(&c, "used", at(T0_MS + 1_000), true).await;
         setup_row(&c, "expired", at(T0_MS), false).await;
         setup_row(&c, "live", at(T0_MS + 1_000), false).await;
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.setup_tokens, 2, "{b}");
         let left = setup_token::Entity::find().all(&c.conn).await.unwrap();
@@ -98,7 +89,6 @@ async fn used_and_expired_setup_tokens_go_the_live_one_stays() {
 #[tokio::test]
 async fn strategy_keys_go_only_after_their_device_is_gone_for_the_grace_period() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let past_grace = ago(STRATEGY_KEYS_GRACE + HOUR);
         c.register("111111111").await;
@@ -107,10 +97,8 @@ async fn strategy_keys_go_only_after_their_device_is_gone_for_the_grace_period()
         c.strategy_keys("333333333", ago(STRATEGY_KEYS_GRACE - HOUR))
             .await; // gone recently
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.strategy_keys, 1, "{b}");
         assert_eq!(keys(&c).await, ["111111111", "333333333"], "{b}");
@@ -121,8 +109,8 @@ async fn strategy_keys_go_only_after_their_device_is_gone_for_the_grace_period()
 #[tokio::test]
 async fn deleting_a_device_restarts_the_grace_period_of_its_keys() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: keys last written long ago, device deleted now (wall clock: the stamp
-        // shares `device_strategy_keys`' own clock).
+        // Keys last written long ago, device deleted now (wall clock: the stamp shares
+        // `device_strategy_keys`' own clock).
         let c = ctx(db).await;
         c.register("111111111").await;
         c.strategy_keys("111111111", at(0)).await;
@@ -136,10 +124,8 @@ async fn deleting_a_device_restarts_the_grace_period_of_its_keys() {
         c.state.devices.delete(device).await.unwrap();
         c.clock.set(time::now().timestamp_millis() + 1_000);
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.strategy_keys, 0, "{b}");
         let row = device_strategy_key::Entity::find_by_id("111111111".to_owned())
@@ -152,7 +138,6 @@ async fn deleting_a_device_restarts_the_grace_period_of_its_keys() {
     .await;
 }
 
-/// A local user row, for the tables that reference one.
 async fn user_row(c: &Ctx) -> i64 {
     user::ActiveModel {
         username: Set("alice".to_owned()),
@@ -256,7 +241,6 @@ async fn stale_lockout(c: &Ctx) {
 #[tokio::test]
 async fn the_services_own_cleanups_run_too() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let alice = user_row(&c).await;
         expired_session(&c, alice).await;
@@ -264,10 +248,8 @@ async fn the_services_own_cleanups_run_too() {
         expired_flow(&c).await;
         stale_lockout(&c).await;
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.sessions, 1, "{b}");
         assert_eq!(report.auth_challenges, 1, "{b}");
@@ -285,17 +267,15 @@ async fn the_services_own_cleanups_run_too() {
 #[tokio::test]
 async fn a_failing_step_is_counted_and_the_others_still_run() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange: the setup token table is gone, the nonces are still there.
+        // The setup token table is gone, the nonces are still there.
         let c = ctx(db).await;
         c.nonce("old", ago(NONCE_RETENTION + HOUR)).await;
         sea_orm::ConnectionTrait::execute_unprepared(&c.conn, "DROP TABLE setup_tokens")
             .await
             .unwrap();
 
-        // Act
         let report = cleanup(&c).run().await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(report.failed, 1, "{b}");
         assert_eq!(report.audit_nonces, 1, "{b}");

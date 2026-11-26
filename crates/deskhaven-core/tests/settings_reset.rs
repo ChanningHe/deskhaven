@@ -1,6 +1,3 @@
-//! Resets to the default, guarded (audited) updates and the history reader of the settings
-//! service. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -77,7 +74,6 @@ fn audit_log(db: &TestDb) -> ConsoleAuditLog {
     ConsoleAuditLog::new(db.conn.clone(), Arc::new(SystemClock))
 }
 
-/// A guard that records one audit row listing the written keys.
 fn recording_guard(db: &TestDb) -> TxGuard<AppliedChanges> {
     TxGuard::new(&audit_log(db), |_, after: Option<&AppliedChanges>| {
         let changes = after.map(|a| a.changes.clone()).unwrap_or_default();
@@ -301,7 +297,6 @@ async fn versions_continue_after_a_reset_so_old_ones_never_match_again() {
         );
         let versions: Vec<i64> = history(db).await.iter().map(|h| h.version).collect();
         assert_eq!(versions, [1, 2, 3], "{}", db.backend);
-        // The in-memory snapshot and a reload agree.
         let reloaded = service(db).await.snapshot();
         assert_eq!(
             reloaded.view("auth.session_ttl").unwrap(),
@@ -430,7 +425,6 @@ async fn a_refusing_guard_rolls_the_whole_batch_back() {
     .await;
 }
 
-/// A subscriber of `svc`, with nothing pending yet.
 fn subscriber(svc: &SettingsService) -> tokio::sync::watch::Receiver<Arc<settings::Snapshot>> {
     let mut rx = svc.subscribe();
     rx.mark_unchanged();

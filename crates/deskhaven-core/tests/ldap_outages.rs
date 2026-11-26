@@ -1,9 +1,3 @@
-//! Directory trouble during logins (06 §3.5, §3.6): busy / unavailable result codes,
-//! stalled directories (one total timeout per login) and the bound on concurrent directory
-//! logins. Directory accounts get `DirectoryUnavailable` (503, not counted) before their
-//! password is sent and `DirectoryInterrupted` (503, counted) after; unknown names the same
-//! `InvalidCredentials` a wrong local password gets. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

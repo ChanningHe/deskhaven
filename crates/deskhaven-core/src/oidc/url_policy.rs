@@ -1,13 +1,6 @@
-//! Which URLs deskhaven talks to, or sends a browser to, for a provider.
-//!
-//! Provider URLs are admin-configured, but the endpoints come from the IdP's discovery
-//! document, so they are checked as untrusted input:
-//!
-//! - https, always;
-//! - plain http only when the issuer itself is plain http on a loopback host (a local test
-//!   or development IdP), and then only to loopback hosts. An https issuer can never steer
-//!   requests to plain http (no downgrade, no reaching local plaintext services);
-//! - never credentials in the URL; issuers additionally take no query or fragment.
+//! Endpoints come from the IdP's discovery document, so they are checked as untrusted input. An
+//! https issuer can never steer requests to plain http (no downgrade, no reaching local plaintext
+//! services).
 
 use std::net::IpAddr;
 
@@ -15,17 +8,14 @@ use url::{Host, Url};
 
 use super::resolver::is_forbidden;
 
-/// Longest accepted issuer URL.
 pub const MAX_ISSUER_LEN: usize = 2048;
 
-/// The rule for one provider, derived from its issuer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct EndpointPolicy {
     allow_http_loopback: bool,
 }
 
 impl EndpointPolicy {
-    /// For an issuer accepted by [`check_issuer`].
     pub(crate) fn for_issuer(issuer: &Url) -> Self {
         Self {
             allow_http_loopback: issuer.scheme() == "http",
@@ -54,8 +44,6 @@ impl EndpointPolicy {
     }
 }
 
-/// An issuer the provider service accepts: https with a host, or http on a loopback host;
-/// no credentials, query or fragment.
 pub(crate) fn check_issuer(raw: &str) -> Result<Url, &'static str> {
     if raw.len() > MAX_ISSUER_LEN {
         return Err("must be at most 2048 characters");

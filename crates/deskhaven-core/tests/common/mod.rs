@@ -1,4 +1,3 @@
-//! Shared setup for the login throttle tests.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -22,7 +21,6 @@ pub mod oidc;
 pub mod oidc_idp;
 pub mod tfa;
 
-/// A fixed instant with a non-zero millisecond part.
 pub const T0_MS: i64 = 1_700_000_000_123;
 pub const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -66,7 +64,6 @@ impl std::io::Write for BufWriter {
     }
 }
 
-/// Captures every event at debug and above until the returned value is dropped.
 pub fn capture_logs() -> CapturedLogs {
     let buf = Arc::new(std::sync::Mutex::new(Vec::new()));
     let writer = BufWriter(Arc::clone(&buf));
@@ -80,7 +77,6 @@ pub fn capture_logs() -> CapturedLogs {
     }
 }
 
-/// Sets `key` to `value`, whatever its current version.
 pub async fn set(settings: &SettingsService, key: &str, value: Json) {
     let version = settings.snapshot().view(key).unwrap().version;
     let change = Change {

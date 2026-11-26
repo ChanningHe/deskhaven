@@ -7,18 +7,13 @@ use super::options::{Options, OptionsPatch};
 use super::sealing;
 use crate::crypto::SecretBox;
 
-/// What a strategy is assigned to. Each target has at most one strategy.
+/// Each target has at most one strategy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Target {
-    /// Every device; the lowest priority.
     Global,
-    /// Members of a user group (`groups.id`).
     Group(i64),
-    /// Devices owned by a user (`users.id`).
     User(i64),
-    /// Devices in a device group (`device_groups.id`).
     DeviceGroup(i64),
-    /// One device (`devices.id`); the highest priority.
     Device(i64),
 }
 
@@ -33,7 +28,6 @@ impl Target {
         }
     }
 
-    /// `None` exactly for [`Target::Global`] (the schema stores NULL there).
     pub(super) fn id(self) -> Option<i64> {
         match self {
             Self::Global => None,
@@ -41,7 +35,6 @@ impl Target {
         }
     }
 
-    /// `None` for a row violating the schema's `target_id` check.
     pub(super) fn from_row(kind: TargetType, id: Option<i64>) -> Option<Self> {
         match (kind, id) {
             (TargetType::Global, None) => Some(Self::Global),
@@ -54,7 +47,6 @@ impl Target {
     }
 }
 
-/// A strategy assigned to a target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Assignment {
     pub target: Target,
@@ -65,11 +57,9 @@ pub struct Assignment {
 pub struct Strategy {
     pub id: i64,
     pub name: String,
-    /// Empty when [`options_corrupt`](Self::options_corrupt).
     pub options: Options,
-    /// The stored options are not a `{string: string}` JSON object (damaged outside the
-    /// service). Such a strategy is skipped when computing effective strategies (logged at
-    /// error level when the cache loads) until its options are replaced or it is deleted.
+    /// Damaged outside the service; such a strategy is skipped when computing effective strategies until
+    /// its options are replaced or it is deleted.
     pub options_corrupt: bool,
     pub note: String,
     pub managed_by: ManagedBy,
@@ -78,9 +68,7 @@ pub struct Strategy {
 }
 
 impl Strategy {
-    /// The row with its secret options opened. Never fails: a row whose options cannot be
-    /// read is shown flagged ([`Strategy::options_corrupt`]) so the console can still list,
-    /// repair or delete it.
+    /// Never fails: an unreadable row is shown flagged so the console can still list, repair or delete it.
     pub(super) fn from_row(m: strategy::Model, crypto: &SecretBox) -> Self {
         let decoded = sealing::decode(crypto, m.id, &m.options).map(|o| o.options);
         Self {
@@ -96,9 +84,7 @@ impl Strategy {
     }
 }
 
-/// Input of [`StrategyService::create`](super::StrategyService::create); the strategy is
-/// managed in the console (`ui`). Its options reach every device it applies to in clear,
-/// secret ones included (sealed at rest only; see the module documentation).
+/// Its options reach every device it applies to in clear, secret ones included (sealed at rest only).
 #[derive(Clone, Debug, Default)]
 pub struct NewStrategy {
     pub name: String,
@@ -116,9 +102,8 @@ impl NewStrategy {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is. `options` replaces the whole map, then
-/// `options_patch` changes single options (applied on top, in the same transaction, so a
-/// patch never overwrites options another writer changed meanwhile).
+/// `options_patch` applies on top of `options` in the same transaction, so a patch never overwrites
+/// options another writer changed meanwhile.
 #[derive(Clone, Debug, Default)]
 pub struct StrategyUpdate {
     pub name: Option<String>,

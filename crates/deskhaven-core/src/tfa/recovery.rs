@@ -1,12 +1,6 @@
-//! Recovery codes (06 §3.3): [`RECOVERY_CODE_COUNT`] single-use codes of
-//! [`RECOVERY_CODE_CHARS`] lowercase base32 characters (50 random bits each), shown as
-//! `xxxxx-xxxxx`. Stored as `SecretBox::mac` of the normalized code under the context
-//! `recovery_codes.code_hash:<user id>`, so a database dump cannot be brute-forced offline
-//! and a hash cannot be moved to another user. A presented code is looked up under every
-//! master key the `SecretBox` holds (`mac_candidates`), so a key rotation does not void it.
-//!
-//! Input is normalized before hashing: separators (`-`, spaces) dropped, ASCII lower-cased.
-//! Anything else that is not a well-formed code is rejected without a database lookup.
+//! Stored as a keyed MAC per user, so a database dump cannot be brute-forced offline and a hash
+//! cannot move to another user; looked up under every held master key, so a rotation does not void a
+//! code.
 
 use std::fmt;
 
@@ -14,20 +8,16 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{CryptoError, SecretBox, fill_random};
 
-/// Codes issued per enrolment / regeneration.
 pub const RECOVERY_CODE_COUNT: usize = 10;
-/// Characters of a code, separators excluded.
 pub const RECOVERY_CODE_CHARS: usize = 10;
-/// RFC 4648 base32, lower case: 32 symbols, so `byte % 32` is uniform.
+/// 32 symbols, so `byte % 32` is uniform.
 const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 const GROUP: usize = RECOVERY_CODE_CHARS / 2;
 const SEPARATOR: char = '-';
 
-/// Freshly generated codes, to show their owner once. `Debug` never shows them.
 pub struct RecoveryCodes(Vec<Zeroizing<String>>);
 
 impl RecoveryCodes {
-    /// The codes as shown to the user (`xxxxx-xxxxx`).
     pub fn codes(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|code| code.as_str())
     }
@@ -47,7 +37,6 @@ impl fmt::Debug for RecoveryCodes {
     }
 }
 
-/// [`RECOVERY_CODE_COUNT`] new codes and, for each, its stored hash for `user_id`.
 pub(crate) fn generate(
     crypto: &SecretBox,
     user_id: i64,
@@ -67,13 +56,11 @@ pub(crate) fn generate(
     Ok((RecoveryCodes(codes), hashes))
 }
 
-/// The stored hash of a normalized code (under the primary master key).
 pub(crate) fn hash(crypto: &SecretBox, user_id: i64, normalized: &str) -> String {
     crypto.mac(&context(user_id), normalized.as_bytes())
 }
 
-/// Every hash a stored code may have: under the primary key and under each retired key
-/// still held, so codes issued before a master-key rotation keep working.
+/// Codes issued before a master-key rotation keep working.
 pub(crate) fn candidates(crypto: &SecretBox, user_id: i64, normalized: &str) -> Vec<String> {
     crypto.mac_candidates(&context(user_id), normalized.as_bytes())
 }
@@ -82,7 +69,6 @@ fn context(user_id: i64) -> String {
     format!("recovery_codes.code_hash:{user_id}")
 }
 
-/// The canonical form of user input, or `None` when it cannot be a recovery code.
 pub(crate) fn normalize(input: &str) -> Option<Zeroizing<String>> {
     let code: Zeroizing<String> = Zeroizing::new(
         input

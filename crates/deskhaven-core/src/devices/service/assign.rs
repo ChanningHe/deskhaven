@@ -1,29 +1,7 @@
-//! [`DeviceService::assign`]: `rustdesk --assign` (03 §2.9, `src/core_main.rs:530-626`),
-//! called with an API token holding the `assign` scope: an administrator's placement of a
-//! device, by name.
-//!
-//! | field | effect |
-//! |---|---|
-//! | `user_name` | owner = the user with that username (case-insensitive) |
-//! | `device_group_name` | device group = the group with exactly that name |
-//! | `note` | device note |
-//! | `device_name` / `device_username` | `display_name` / `display_username`: the administrator's names, which the device's sysinfo never overwrites |
-//! | `strategy_name` | device-level strategy assignment = the strategy with that name |
-//! | `address_book_*` | the device's entry in the shared book of that name, added or updated as an administrator (see [`preset_book`](crate::devices::preset_book)) |
-//!
-//! Unlike the presets, an assignment **replaces** what is set. Empty values count as absent;
-//! at least one field must be given.
-//!
-//! **All or nothing**: the values are checked first; then one write transaction locks the
-//! device row and resolves the device before anything else ([`DeviceError::UnknownDevice`],
-//! so an unknown device reveals nothing about which names exist), resolves every name
-//! ([`DeviceError::NameNotFound`]), writes the row, the strategy assignment, the address
-//! book entry and the console audit row (as the requester, with the placement before and
-//! after). Any failure rolls all of it back. The transaction runs in its own task, so a
-//! dropped request cannot cut it half-way.
-//!
-//! The uuid is always checked (constant time), whatever `devices.verify_uuid` says: tokens
-//! travel in scripts and prove nothing about the machine asking.
+//! An assignment replaces what is set, all or nothing, in one transaction run in its own task.
+//! The device is resolved before any name, so an unknown device reveals nothing about which
+//! names exist. The uuid is always checked (constant time), whatever `devices.verify_uuid` says:
+//! tokens travel in scripts and prove nothing about the machine asking.
 
 use deskhaven_db::entity::device;
 
@@ -35,11 +13,9 @@ use crate::devices::{DeviceError, preset_book};
 use crate::strategies::StrategyError;
 use crate::text::{self, NOTE_MAX_LEN};
 
-/// A `POST /api/devices/cli` body, as sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeviceAssignment {
     pub rustdesk_id: String,
-    /// Base64 of the device uuid.
     pub uuid: String,
     pub user_name: Option<String>,
     pub strategy_name: Option<String>,
@@ -47,7 +23,6 @@ pub struct DeviceAssignment {
     pub note: Option<String>,
     pub device_username: Option<String>,
     pub device_name: Option<String>,
-    /// `address_book_*`; only meaningful with a name.
     pub address_book: Option<AddressBookPreset>,
 }
 
@@ -89,7 +64,6 @@ impl DeviceAssignment {
 }
 
 impl DeviceService {
-    /// Places a device on behalf of `by` (see the module documentation).
     pub async fn assign(
         &self,
         assignment: DeviceAssignment,
@@ -101,7 +75,6 @@ impl DeviceService {
     }
 }
 
-/// The values themselves, before the transaction.
 fn validate(a: &DeviceAssignment) -> Result<(), DeviceError> {
     if a.is_empty() {
         return Err(invalid("body", "names nothing to assign".to_owned()));
@@ -132,7 +105,7 @@ fn validate(a: &DeviceAssignment) -> Result<(), DeviceError> {
     }
 }
 
-/// The audit view of the request's address book part: never the password itself.
+/// Never the password itself.
 pub(super) fn book_view(a: &DeviceAssignment) -> serde_json::Value {
     let Some(b) = &a.address_book else {
         return serde_json::Value::Null;
@@ -143,7 +116,6 @@ pub(super) fn book_view(a: &DeviceAssignment) -> serde_json::Value {
     })
 }
 
-/// The placement columns of `row` plus its strategy, as audited.
 pub(super) fn placement(row: &device::Model, strategy_id: Option<i64>) -> serde_json::Value {
     serde_json::json!({
         "owner_user_id": row.owner_user_id, "device_group_id": row.device_group_id,
@@ -172,7 +144,6 @@ pub(super) fn strategy_error(err: StrategyError) -> DeviceError {
     }
 }
 
-/// Book failures the caller can fix are [`DeviceError::Invalid`]; the rest are internal.
 pub(super) fn book_error(err: AddressBookError) -> DeviceError {
     match err {
         AddressBookError::Invalid { .. } | AddressBookError::Full { .. } => {

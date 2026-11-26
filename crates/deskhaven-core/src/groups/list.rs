@@ -1,5 +1,3 @@
-//! Paginated group listing with member counts (console).
-
 use std::collections::HashMap;
 
 use deskhaven_db::entity::{group, group_member};
@@ -12,8 +10,7 @@ use super::{Group, GroupError, GroupService};
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 
-/// Filters of [`GroupService::page`]: `q` matches a substring of the name,
-/// case-insensitively (ASCII on SQLite) and literally.
+/// `q`: case-insensitive literal substring of the name, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct GroupQuery {
     pub q: Option<String>,
@@ -33,7 +30,6 @@ pub struct GroupSort {
     pub descending: bool,
 }
 
-/// A group with its number of members.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GroupSummary {
     pub group: Group,
@@ -41,8 +37,6 @@ pub struct GroupSummary {
 }
 
 impl GroupService {
-    /// One page of groups (ordered by `sort`, default name, then id in the same direction)
-    /// with member counts.
     pub async fn page(&self, query: &GroupQuery) -> Result<Page<GroupSummary>, GroupError> {
         let index = query.page.index().map_err(|p| GroupError::Invalid {
             field: p.field,
@@ -88,7 +82,6 @@ impl GroupService {
         })
     }
 
-    /// The group with its number of members.
     pub async fn summary(&self, id: i64) -> Result<GroupSummary, GroupError> {
         let group = self.get(id).await?;
         let counts = self.member_counts([id]).await?;

@@ -1,33 +1,22 @@
-//! Search filters and DNs (06 §3.5): every value spliced into a filter is RFC 4515-escaped
-//! (`*`, `(`, `)`, `\` and NUL become `\2a`, `\28`, `\29`, `\5c`, `\00`), placeholders are
-//! substituted in one pass (a value is never scanned for further placeholders), and DNs
-//! compare by RDN, ASCII case-insensitively.
+//! Placeholders are substituted in one pass: a value is never scanned for further placeholders.
 
-/// Placeholder of a group filter for the user's DN.
 pub const USER_DN_PLACEHOLDER: &str = "{user_dn}";
-/// Placeholder of a group filter for the user's username attribute value.
 pub const USERNAME_PLACEHOLDER: &str = "{username}";
-/// Group filter when none is configured: the usual membership attributes.
 pub const DEFAULT_GROUP_FILTER: &str =
     "(|(member={user_dn})(uniqueMember={user_dn})(memberUid={username}))";
 
-/// `raw` as an RFC 4515 assertion value.
 pub fn escape_filter_value(raw: &str) -> String {
     ldap3::ldap_escape(raw).into_owned()
 }
 
-/// Whether `filter` is one well-formed RFC 4515 filter.
 pub(crate) fn is_valid_filter(filter: &str) -> bool {
     ldap3::parse_filter(filter).is_ok()
 }
 
-/// `(&<user_filter>(<attr>=<escaped username>))`.
 pub(crate) fn user_search(user_filter: &str, attr: &str, username: &str) -> String {
     format!("(&{user_filter}({attr}={}))", escape_filter_value(username))
 }
 
-/// `template` with [`USER_DN_PLACEHOLDER`] and [`USERNAME_PLACEHOLDER`] replaced by the
-/// escaped values.
 pub(crate) fn group_search(template: &str, user_dn: &str, username: &str) -> String {
     let user_dn = escape_filter_value(user_dn);
     let username = escape_filter_value(username);
@@ -51,7 +40,6 @@ pub(crate) fn group_search(template: &str, user_dn: &str, username: &str) -> Str
     out
 }
 
-/// Splits `s` at every `sep` that is not backslash-escaped.
 fn split_unescaped(s: &str, sep: char) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -71,7 +59,6 @@ fn split_unescaped(s: &str, sep: char) -> Vec<&str> {
     parts
 }
 
-/// A comparison key: RDNs trimmed, ASCII-lowercased, joined by `,`.
 pub(crate) fn dn_key(dn: &str) -> String {
     split_unescaped(dn, ',')
         .into_iter()
@@ -80,14 +67,11 @@ pub(crate) fn dn_key(dn: &str) -> String {
         .join(",")
 }
 
-/// Whether `dn` lies strictly below `base`.
 pub(crate) fn is_under(dn: &str, base: &str) -> bool {
     let (dn, base) = (dn_key(dn), dn_key(base));
     dn.len() > base.len() && dn.ends_with(&base) && dn[..dn.len() - base.len()].ends_with(',')
 }
 
-/// The value of the first attribute of the first RDN, unescaped (`cn=ops,ou=groups,...`
-/// -> `ops`); `None` when it is empty or not UTF-8.
 pub(crate) fn first_rdn_value(dn: &str) -> Option<String> {
     let rdn = split_unescaped(dn, ',').into_iter().next()?;
     let ava = split_unescaped(rdn, '+').into_iter().next()?;
@@ -96,7 +80,6 @@ pub(crate) fn first_rdn_value(dn: &str) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-/// RFC 4514 unescaping: `\XX` is a byte, `\c` is `c`.
 fn unescape_dn_value(raw: &str) -> Option<String> {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -133,7 +116,6 @@ mod tests {
 
     use super::*;
 
-    /// RFC 4511 Filter tags (context-specific).
     const AND: u64 = 0;
     const EQUALITY: u64 = 3;
 
@@ -151,7 +133,6 @@ mod tests {
         }
     }
 
-    /// The equality assertion `(attr=value)` of the composed user search, parsed back.
     fn assertion_of(filter: &str) -> (Vec<u8>, Vec<u8>) {
         let parsed = ldap3::parse_filter(filter).unwrap().into_structure();
         assert_eq!(parsed.id, AND, "{filter}");

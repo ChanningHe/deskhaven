@@ -1,9 +1,4 @@
-//! Batch import of devices from the registry into a book as entries (rule 2).
-//!
-//! An entry takes what the registry knows: the RustDesk id, the administrator's name for the
-//! device (alias), its hostname and user name, and the platform read off the reported OS. A
-//! device the book already lists is left as it is. The whole import is one transaction: a
-//! book without room for all the new entries takes none.
+//! One transaction: a book without room for all the new entries takes none.
 
 use std::collections::HashSet;
 
@@ -22,25 +17,18 @@ use super::peers::peer_conflict;
 use super::{AddressBookService, Rule, snapshot};
 use crate::console_audit::TxGuard;
 
-/// Most devices one import takes.
 pub const MAX_IMPORT_DEVICES: usize = 500;
-/// The longest text of an entry the client sends (`peer.rs`), so a registry value that
-/// exceeds it is cut instead of refusing the whole import.
+/// The client's longest entry text; a longer registry value is cut instead of failing the import.
 const SHORT_TEXT_MAX_CHARS: usize = 255;
 
-/// What an import did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ImportReport {
-    /// RustDesk ids of the entries added.
     pub added: Vec<String>,
-    /// RustDesk ids the book already listed (left as they are).
     pub existing: Vec<String>,
-    /// `devices.id` values that name no device.
     pub missing: Vec<i64>,
 }
 
 impl AddressBookService {
-    /// Adds the devices `device_ids` (`devices.id`) to book `guid` as entries; needs rule 2.
     pub async fn import_devices(
         &self,
         actor: Actor,
@@ -51,8 +39,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`import_devices`](Self::import_devices), with `guard` deciding on the ids added (no
-    /// `before`; not consulted when nothing is added).
     pub async fn import_devices_guarded(
         &self,
         actor: Actor,
@@ -95,8 +81,6 @@ impl AddressBookService {
         Ok(report)
     }
 
-    /// Inserts an entry per device; the RustDesk ids added. A device whose registry values
-    /// make an invalid entry fails the import, naming the device.
     async fn insert_entries(
         &self,
         tx: &DatabaseTransaction,
@@ -121,7 +105,6 @@ impl AddressBookService {
     }
 }
 
-/// The devices among `wanted` (`devices.id`), by RustDesk id, and the ids that name none.
 async fn load_devices(
     tx: &DatabaseTransaction,
     wanted: &HashSet<i64>,
@@ -135,7 +118,7 @@ async fn load_devices(
     Ok((devices, sorted(wanted.difference(&found).copied())))
 }
 
-/// The RustDesk ids the book lists (ids only: a book can hold thousands of entries).
+/// Ids only: a book can hold thousands of entries.
 async fn listed_ids(
     tx: &DatabaseTransaction,
     book_id: i64,
@@ -156,7 +139,6 @@ fn sorted(ids: impl Iterator<Item = i64>) -> Vec<i64> {
     ids
 }
 
-/// The entry for `device`, as the client would send it.
 fn entry_json(device: &device::Model) -> Value {
     let cut = |text: &str| text.chars().take(SHORT_TEXT_MAX_CHARS).collect::<String>();
     let username = device
@@ -172,7 +154,6 @@ fn entry_json(device: &device::Model) -> Value {
     })
 }
 
-/// The platform name clients show an icon for, read off the reported OS text.
 fn platform(os: &str) -> &'static str {
     let os = os.to_lowercase();
     [

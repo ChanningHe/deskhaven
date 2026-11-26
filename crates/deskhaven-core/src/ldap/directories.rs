@@ -1,13 +1,5 @@
-//! Directory management (admin routes: M3-09). The bind password is sealed under
-//! `ldap_directories.bind_password_enc:<id>` (06 §5); a new row is inserted first and the
-//! password written in the same transaction, once the id is known. Rows with
-//! `managed_by = config` (05 §4.1) are read-only here. P0 allows one enabled directory
-//! (unique partial index): a second is a [`DirectoryError::Conflict`] on `enabled`. An
-//! update that changes the URL, StartTLS, certificate verification or the bind DN must
-//! carry the bind password again (else `Invalid` on `bind_password`), so console access
-//! alone cannot redirect the stored password to another server. Each `*_guarded` variant
-//! runs a [`TxGuard`] inside its write transaction (the console's audit row and its
-//! owner-only rule, decided on the committed role).
+//! A change of URL, StartTLS, certificate verification or bind DN must carry the bind password
+//! again, so console access alone cannot redirect the stored password to another server.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::ldap_directory::{self, Column};
@@ -31,8 +23,6 @@ impl LdapService {
         self.create_directory_guarded(new, TxGuard::none()).await
     }
 
-    /// [`create_directory`](Self::create_directory), with `guard` deciding on the new
-    /// directory (no `before`).
     pub async fn create_directory_guarded(
         &self,
         new: NewDirectory,
@@ -68,7 +58,6 @@ impl LdapService {
         found.map(Directory::from).ok_or(DirectoryError::NotFound)
     }
 
-    /// Every directory, ordered by name.
     pub async fn list_directories(&self) -> Result<Vec<Directory>, DirectoryError> {
         let rows = ldap_directory::Entity::find()
             .order_by_asc(Column::Name)
@@ -86,8 +75,6 @@ impl LdapService {
             .await
     }
 
-    /// [`update_directory`](Self::update_directory), with `guard` deciding on the
-    /// directory before and after.
     pub async fn update_directory_guarded(
         &self,
         id: i64,
@@ -133,8 +120,6 @@ impl LdapService {
         self.delete_directory_guarded(id, TxGuard::none()).await
     }
 
-    /// [`delete_directory`](Self::delete_directory), with `guard` deciding on the
-    /// directory (no `after`).
     pub async fn delete_directory_guarded(
         &self,
         id: i64,
@@ -149,7 +134,6 @@ impl LdapService {
         Ok(())
     }
 
-    /// The stored directory with its bind password opened, for diagnostics.
     pub async fn stored_settings(&self, id: i64) -> Result<DirectorySettings, DirectoryError> {
         let found = ldap_directory::Entity::find_by_id(id)
             .one(&self.inner.db)
@@ -158,7 +142,6 @@ impl LdapService {
         self.settings_of(&row)
     }
 
-    /// The enabled directory, if any, with its bind password opened.
     pub(crate) async fn enabled_settings(
         &self,
     ) -> Result<Option<DirectorySettings>, DirectoryError> {
@@ -169,7 +152,6 @@ impl LdapService {
         found.map(|row| self.settings_of(&row)).transpose()
     }
 
-    /// Whether a directory is enabled (no secret is opened).
     pub(crate) async fn has_enabled_directory(&self) -> Result<bool, DbErr> {
         let found = ldap_directory::Entity::find()
             .select_only()
@@ -223,7 +205,6 @@ impl LdapService {
     }
 }
 
-/// Sealing context of a directory's bind password.
 fn password_context(id: i64) -> String {
     format!("ldap_directories.bind_password_enc:{id}")
 }
@@ -246,7 +227,6 @@ fn apply(row: &mut ldap_directory::ActiveModel, fields: Fields, now: TimestampMs
     row.updated_at = Set(now);
 }
 
-/// The row, locked for the transaction; refused when the configuration owns it.
 async fn writable(
     tx: &DatabaseTransaction,
     id: i64,
@@ -262,8 +242,7 @@ async fn writable(
     Ok(row)
 }
 
-/// Unique violations by index: the single-enabled index names `enabled` on both backends
-/// (`uq_ldap_directories_enabled` / `ldap_directories.enabled`); anything else is the name.
+/// The single-enabled index names `enabled` on both backends.
 fn conflict(err: DbErr) -> DirectoryError {
     match err.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(message)) => {

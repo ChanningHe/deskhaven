@@ -1,6 +1,3 @@
-//! Client polling of an OIDC flow: pending, single hand-out, device binding, failures,
-//! expiry, and the session minted from the stored credential stamp. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,18 +1,5 @@
-//! XChaCha20-Poly1305 sealing of secrets stored in the database.
-//!
-//! Sealed form: `v1:<key_id>:<nonce>:<ciphertext>` with unpadded standard
-//! base64 fields and a random 24-byte nonce per seal.
-//!
-//! Associated data is `"v1:<key_id>:" || context`. The context names where
-//! the ciphertext lives, by convention `"<table>.<column>:<row id>"` (e.g.
-//! `users.totp_secret_enc:42`, 06-security §5), so an attacker with database
-//! write access but no master key cannot move a ciphertext to another row or
-//! column. The context is not stored; callers recompute it on open.
-//!
-//! [`SecretBox::mac`] is the keyed hash of low-entropy secrets that are looked up by
-//! equality (06 §3.3): `v1:<key_id>:<base64 HMAC-SHA256>` under the `k_hmac` of the
-//! primary key (`mac.rs`). [`SecretBox::mac_candidates`] gives the value under every held
-//! key, so values stored before a rotation still match while the retired key is held.
+//! The AAD binds a ciphertext to `"<table>.<column>:<row id>"`, so an attacker with database
+//! write access but no master key cannot move it to another row or column.
 
 use std::fmt;
 
@@ -25,9 +12,8 @@ use super::b64::SEALED_B64;
 use super::mac::{MAC_KEY_LEN, derive_mac_key, hmac_sha256};
 use super::{CryptoError, KeyId, MasterKey, fill_random};
 
-/// Largest plaintext `seal` accepts; sealed output stays below [`MAX_SEALED_LEN`].
 pub const MAX_PLAINTEXT_LEN: usize = 512 * 1024;
-/// Longer strings are refused by `open` before any decoding.
+/// Refused by `open` before any decoding.
 pub const MAX_SEALED_LEN: usize = 1024 * 1024;
 
 const VERSION: &str = "v1";
@@ -38,7 +24,6 @@ const TAG_LEN: usize = 16;
 struct Slot {
     id: KeyId,
     cipher: XChaCha20Poly1305,
-    /// `k_hmac` of this key.
     mac_key: Zeroizing<[u8; MAC_KEY_LEN]>,
 }
 
@@ -51,7 +36,6 @@ impl Slot {
         }
     }
 
-    /// `v1:<key_id>:<tag>` of `u64be(len(context)) || context || data` under this key.
     fn mac(&self, context: &str, data: &[u8]) -> String {
         let len = u64::try_from(context.len())
             .unwrap_or(u64::MAX)
@@ -65,8 +49,6 @@ impl Slot {
     }
 }
 
-/// Seals with the primary key; opens with any held key (rotation). Cipher
-/// state and MAC keys wipe their key copies on drop.
 pub struct SecretBox {
     primary: Slot,
     previous: Vec<Slot>,
@@ -80,8 +62,6 @@ impl SecretBox {
         }
     }
 
-    /// Adds a retired key that can still open existing ciphertexts and match
-    /// existing MACs. Each key id may be held once.
     pub fn with_previous(self, key: &MasterKey) -> Result<Self, CryptoError> {
         if self.slot(key.key_id()).is_some() {
             return Err(CryptoError::DuplicateKeyId);
@@ -94,16 +74,12 @@ impl SecretBox {
         })
     }
 
-    /// `v1:<key_id>:<tag>` under the primary key: HMAC-SHA256 under `k_hmac` of
-    /// `u64be(len(context)) || context || data`, the tag in unpadded standard base64.
-    /// Deterministic, so it can be looked up by equality. The context names the use, like
-    /// a sealing context (`"<table>.<column>:<row or owner id>"`). Store this value.
+    /// Deterministic, so it can be looked up by equality.
     pub fn mac(&self, context: &str, data: &[u8]) -> String {
         self.primary.mac(context, data)
     }
 
-    /// [`SecretBox::mac`] under every held key, primary first: look a stored value up with
-    /// `IN (candidates)`, so values made before a rotation still match.
+    /// Values made before a rotation still match while the retired key is held.
     pub fn mac_candidates(&self, context: &str, data: &[u8]) -> Vec<String> {
         std::iter::once(&self.primary)
             .chain(&self.previous)
@@ -135,8 +111,7 @@ impl SecretBox {
         ))
     }
 
-    /// Whether `text` claims the sealed form (starts with `v1:`), whether or not it opens.
-    /// For telling a sealed value from one stored in clear before sealing existed.
+    /// Tells a sealed value from one stored in clear before sealing existed.
     pub fn is_sealed_form(text: &str) -> bool {
         text.strip_prefix(VERSION)
             .is_some_and(|rest| rest.starts_with(SEPARATOR))

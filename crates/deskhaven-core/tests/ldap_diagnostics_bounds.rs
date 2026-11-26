@@ -1,7 +1,3 @@
-//! Bounds of the LDAP diagnostics (M3-09): one total timeout that records the steps not
-//! finished as timed out, the directory slots shared with logins, and `attempted` (would a
-//! login have counted?) for the console's lockout settling. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

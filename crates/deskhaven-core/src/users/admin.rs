@@ -1,6 +1,3 @@
-//! Administrative account changes: one combined edit (profile, role, status), batch
-//! creation for imports, and temporary passwords.
-
 use std::collections::HashMap;
 
 use deskhaven_db::begin_write;
@@ -23,15 +20,12 @@ use super::{
 use crate::console_audit::{GuardError, TxGuard};
 use crate::crypto::fill_random;
 
-/// Most accounts [`UserService::create_batch`] takes at once.
 pub const MAX_BATCH: usize = 500;
-/// Length of a temporary password when the policy minimum is shorter.
 pub const TEMPORARY_PASSWORD_LEN: usize = 20;
-/// 64 symbols, so `byte % 64` is uniform: 6 bits per character.
+/// 64 symbols, so `byte % 64` is uniform.
 const TEMPORARY_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/// Changes to one account, applied in one transaction; `None` leaves a part as it is.
 #[derive(Clone, Debug, Default)]
 pub struct AccountEdit {
     pub profile: ProfileUpdate,
@@ -39,24 +33,20 @@ pub struct AccountEdit {
     pub status: Option<Status>,
 }
 
-/// A row of a batch that cannot be created, by its position in the batch.
 #[derive(Debug)]
 pub struct RowError {
     pub index: usize,
     pub error: UserError,
 }
 
-/// Why [`UserService::create_batch`] created nothing.
 #[derive(Debug, thiserror::Error)]
 pub enum BatchError {
-    /// Rows that are invalid, duplicate each other or existing accounts, or were refused.
     #[error("{} row(s) rejected", .0.len())]
     Rows(Vec<RowError>),
     #[error(transparent)]
     Failed(#[from] UserError),
 }
 
-/// [`ProfileUpdate`] with its email and note validated.
 struct ValidProfile {
     update: ProfileUpdate,
     email: Option<Option<Email>>,
@@ -86,7 +76,6 @@ impl ValidProfile {
             && u.note.is_none()
     }
 
-    /// Applies the profile fields to `row`.
     fn apply(self, row: &mut user::Model) -> Result<(), UserError> {
         if let Some(name) = &self.update.display_name {
             row.display_name = normalize::display_name(name, &row.username)?;
@@ -118,13 +107,8 @@ impl ValidProfile {
 }
 
 impl UserService {
-    /// Applies `edit` in one transaction. A different email (case-insensitively) resets
-    /// `email_verified` unless set explicitly. Demoting or deactivating the last active
-    /// owner is refused; entering `disabled` revokes every session in the same transaction
-    /// and emits [`UserEvent::Disabled`]; entering `disabled` or the `user` role revokes the
-    /// account's API tokens in the same transaction; role and other status changes reach
-    /// commit hooks, as does a set `must_change_password` ([`UserChange::AccountChanged`]).
-    /// `guard` sees the account before and after (a no-op edit included).
+    /// Demoting or deactivating the last active owner is refused. Entering `disabled` revokes every
+    /// session and, like the `user` role, the account's API tokens in the same transaction.
     pub async fn edit(
         &self,
         id: i64,
@@ -186,10 +170,7 @@ impl UserService {
         .await
     }
 
-    /// Creates every account of `rows` in one transaction, or none. Every row is validated
-    /// first and every problem reported at once ([`BatchError::Rows`]): invalid fields, a
-    /// username or email repeated in the batch or already taken, and (inside the
-    /// transaction) a guard's refusal. At most [`MAX_BATCH`] rows.
+    /// One transaction, or none; every problem is reported at once.
     pub async fn create_batch(
         &self,
         rows: Vec<(super::NewUser, TxGuard<User>)>,
@@ -240,9 +221,7 @@ impl UserService {
             .map_err(|_| BatchError::Failed(UserError::Aborted))?
     }
 
-    /// The hashes of `rows`' local passwords, in order (`None` for directory accounts),
-    /// computed concurrently: one fewer at a time than the hasher has slots, so a login
-    /// never waits behind a whole import, only behind one computation.
+    /// One fewer at a time than the hasher has slots, so a login never waits behind a whole import.
     async fn hash_batch(&self, rows: &[ValidNew]) -> Result<Vec<Option<String>>, UserError> {
         let width = self.inner.hasher.max_concurrent().saturating_sub(1).max(1);
         let passwords = rows.iter().map(|row| match &row.new.credential {
@@ -270,14 +249,10 @@ impl UserService {
         Ok(hashes)
     }
 
-    /// What [`create_batch`](Self::create_batch) would reject in `rows` (sorted by index),
-    /// without creating anything: invalid fields, duplicates within the batch, usernames
-    /// or emails already taken. Empty when every row is acceptable now.
     pub async fn check_batch(&self, rows: Vec<super::NewUser>) -> Result<Vec<RowError>, UserError> {
         Ok(self.validate_batch(rows).await?.1)
     }
 
-    /// The valid rows (in order) and the problems of all rows, sorted by index.
     async fn validate_batch(
         &self,
         rows: Vec<super::NewUser>,
@@ -296,7 +271,6 @@ impl UserService {
         Ok((valid.into_iter().map(|(_, row)| row).collect(), errors))
     }
 
-    /// Rows whose username or email an existing account already has.
     async fn taken(&self, rows: &[(usize, ValidNew)]) -> Result<Vec<RowError>, UserError> {
         let usernames: Vec<&str> = rows.iter().map(|(_, r)| r.username_norm.as_str()).collect();
         let emails: Vec<&str> = rows.iter().filter_map(|(_, r)| email_norm(r)).collect();
@@ -331,8 +305,6 @@ impl UserService {
         Ok(errors)
     }
 
-    /// A random password for an administrator to hand over (with `must_change_password`):
-    /// [`TEMPORARY_PASSWORD_LEN`] characters or the policy minimum, if longer.
     pub fn temporary_password(&self) -> Result<Password, UserError> {
         let min = usize::try_from(self.inner.min_password_length()).unwrap_or(usize::MAX);
         let len = TEMPORARY_PASSWORD_LEN.max(min);
@@ -348,7 +320,6 @@ fn email_norm(row: &ValidNew) -> Option<&str> {
     row.email.as_ref().map(|e| e.norm.as_str())
 }
 
-/// Second and later rows repeating a username or email of an earlier row.
 fn duplicates(rows: &[(usize, ValidNew)]) -> Vec<RowError> {
     let mut seen: HashMap<(&'static str, &str), usize> = HashMap::new();
     let mut errors = Vec::new();

@@ -1,8 +1,3 @@
-//! Listing and removing a user's OIDC identities (M4-09): the owner of the account or an
-//! administrator (the caller's guard decides) unlinks; the last identity of an `oidc`
-//! account stays (it has no other way in); an identity of another account is not found
-//! through the self-service path; a refused guard changes nothing. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -117,7 +112,6 @@ async fn unlinking_any_identity_unverifies_the_address_so_nothing_relinks_by_ema
     .await;
 }
 
-/// A second (explicit) identity of `user_id` at another provider.
 async fn second_identity(env: &Env, db: &TestDb, user_id: i64) {
     let mut other = NewProvider::new("other", env.idp.issuer.clone(), "other-client");
     other.client_secret = Some("s".to_owned());

@@ -1,8 +1,5 @@
-//! Reads a [`Snapshot`] from the database: three plain queries, deliberately not in one
-//! read transaction. A writer committing in between can make the snapshot mixed, but every
-//! writer invalidates the cache after its commit (in a task the caller cannot cancel), which
-//! bumps the generation, so such a snapshot is dropped by `StrategyCache::store` or by that
-//! invalidation, and it is served at most for the moment before the invalidation runs.
+//! Deliberately not one read transaction: every writer invalidates after its commit, so a mixed
+//! snapshot is dropped by `StrategyCache::store` or by that invalidation.
 
 use std::collections::{HashMap, HashSet};
 
@@ -27,8 +24,7 @@ pub(super) async fn snapshot(
     Ok(Snapshot::build(version, &assignments, options, members))
 }
 
-/// Every assignment. A row that breaks the schema's `target_id` rule (impossible while the
-/// CHECK exists) is skipped with a warning.
+/// A row breaking the `target_id` rule (impossible while the CHECK exists) is skipped with a warning.
 pub(super) async fn assignments(
     db: &impl ConnectionTrait,
 ) -> Result<Vec<Assignment>, StrategyError> {
@@ -49,7 +45,6 @@ pub(super) async fn assignments(
     Ok(assignments)
 }
 
-/// Options of every strategy that has an assignment.
 async fn assigned_options(
     db: &impl ConnectionTrait,
     crypto: &SecretBox,
@@ -77,13 +72,11 @@ async fn assigned_options(
     Ok(options)
 }
 
-/// Only the assigned strategies: options are up to ~1 MB each and most strategies may be
-/// unassigned.
+/// Options are up to ~1 MB each and most strategies may be unassigned.
 fn strategies_by_id(ids: &HashSet<i64>) -> Select<strategy::Entity> {
     strategy::Entity::find().filter(strategy::Column::Id.is_in(ids.iter().copied()))
 }
 
-/// Members of the user groups that have an assignment.
 async fn group_members(
     db: &impl ConnectionTrait,
     assignments: &[Assignment],

@@ -1,37 +1,11 @@
-//! Deployment presets: the `preset-*` fields a client adds to its sysinfo (03 §2.2;
-//! `src/hbbs_http/sync.rs:146-188`), set by the custom client's built-in options or its
-//! config, to place a freshly installed device without an administrator.
+//! Presets are self-reported: whoever registers an id with a uuid of their choosing can send
+//! any of them. They only apply when an administrator opted in, and never while
+//! `devices.verify_uuid` is off (anyone knowing an id could send the first sysinfo of a migrated
+//! device).
 //!
-//! Presets are **self-reported**: whoever registers an id with a uuid of their choosing can
-//! send any of them. They therefore only apply when an administrator opted in:
-//!
-//! - `devices.accept_presets` (default `off`): `row` applies owner, device group, note and
-//!   strategy; `all` also the address book entry.
-//! - Never while `devices.verify_uuid` is off: anyone knowing an id could then send the first
-//!   sysinfo of a device that registered but never reported (e.g. every device migrated
-//!   from an OSS hbbs).
-//! - TODO(M5): with `devices.require_deploy`, accept them only from deployed devices.
-//!
-//! **When**: only with the first sysinfo a device row ever stores (`sysinfo_hash` was
-//! `NULL`), decided under the row lock, so concurrent first uploads apply one set. Later
-//! uploads never apply them again: an administrator's change (console, `--assign`) is never
-//! undone by the device. Presets that could not be applied then (unknown name) stay
-//! unapplied; place the device by `--assign` or in the console instead.
-//!
-//! **What**, each only where nothing is set yet (never replacing a value):
-//!
-//! | field | effect |
-//! |---|---|
-//! | `preset-user-name` | owner = the user with that username (case-insensitive) |
-//! | `preset-device-group-name` | device group = the group with exactly that name |
-//! | `preset-note` | device note |
-//! | `preset-strategy-name` | device-level strategy assignment = the strategy with that name |
-//! | `preset-address-book-*` | see [`preset_book`](super::preset_book): a peer entry written **as the device's owner** |
-//!
-//! Unknown or ambiguous names, invalid values, missing rights and full books are skipped
-//! (logged); they never fail the sysinfo upload. Owner, device group and note are written in
-//! the sysinfo transaction; the strategy and the address book entry right after it commits
-//! (best effort: a crash in between loses them, like an unknown name would).
+//! Only the first sysinfo a row ever stores applies them, decided under the row lock, so an
+//! administrator's later change is never undone by the device. Each preset only fills what is
+//! unset; failures are logged and skipped, never failing the upload.
 
 use deskhaven_config::settings::{
     AcceptPresets, DEVICES_ACCEPT_PRESETS, DEVICES_VERIFY_UUID, Snapshot,
@@ -45,8 +19,7 @@ use crate::strategies::{StrategyError, StrategyService, Target};
 use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::username_norm;
 
-/// The presets of one sysinfo upload. Empty strings count as absent (the client only sends
-/// non-empty values).
+/// Empty strings count as absent (the client only sends non-empty values).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Presets {
     pub user_name: Option<String>,
@@ -56,13 +29,11 @@ pub struct Presets {
     pub address_book: Option<AddressBookPreset>,
 }
 
-/// `preset-address-book-*`; only meaningful with a name.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct AddressBookPreset {
     pub name: String,
     pub tag: Option<String>,
     pub alias: Option<String>,
-    /// Stored encrypted, like any shared-book password.
     pub password: Option<Zeroizing<String>>,
     pub note: Option<String>,
 }
@@ -78,7 +49,6 @@ impl std::fmt::Debug for AddressBookPreset {
     }
 }
 
-/// Which presets the current settings let through (see the module documentation).
 pub(super) fn scope(settings: &Snapshot) -> AcceptPresets {
     match settings.get(&DEVICES_VERIFY_UUID) {
         true => settings.get(&DEVICES_ACCEPT_PRESETS),
@@ -86,7 +56,6 @@ pub(super) fn scope(settings: &Snapshot) -> AcceptPresets {
     }
 }
 
-/// What the sysinfo transaction writes into the device row (`None`: leave as is).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct RowPresets {
     pub owner_user_id: Option<i64>,
@@ -95,15 +64,13 @@ pub(super) struct RowPresets {
 }
 
 impl RowPresets {
-    /// Owner or device group change, which can change the effective strategy.
     pub fn moves_device(&self) -> bool {
         self.owner_user_id.is_some() || self.device_group_id.is_some()
     }
 }
 
-/// The row presets that apply to `row`, read in `tx`. The user and group found stay
-/// key-share locked until `tx` ends, so they cannot vanish before the row points at them
-/// (PostgreSQL; SQLite's write transaction excludes other writers).
+/// The user and group found stay key-share locked until `tx` ends, so they cannot vanish before
+/// the row points at them.
 pub(super) async fn resolve_row(
     tx: &impl ConnectionTrait,
     presets: &Presets,
@@ -171,7 +138,6 @@ fn log_unresolved(row: &device::Model, p: &Presets, owner: Option<i64>, group: O
     }
 }
 
-/// `preset-strategy-name`, after the sysinfo commit.
 pub(super) async fn apply_strategy(
     strategies: &StrategyService,
     device: &device::Model,

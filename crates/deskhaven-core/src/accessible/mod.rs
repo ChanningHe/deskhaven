@@ -1,7 +1,4 @@
-//! What a signed-in client may list in its group panel (03 §4, 06 §4.2): users, devices and
-//! device groups, each as a stably sorted page. The visibility scope is part of every query
-//! (`scope`), never a filter over a fetched list, and a page is at most
-//! [`MAX_PAGE_SIZE`](crate::pagination::MAX_PAGE_SIZE) rows.
+//! The visibility scope is part of every query, never a filter over a fetched list.
 
 mod device_groups;
 mod peers;
@@ -15,7 +12,6 @@ pub use peers::AccessiblePeer;
 
 use crate::pagination::{Page, PageRequest};
 
-/// Why a listing failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AccessibleError {
@@ -26,7 +22,6 @@ pub enum AccessibleError {
     Database(#[from] DbErr),
 }
 
-/// Lists what a viewer (a user id) can see. Stateless and cheap to clone.
 #[derive(Clone)]
 pub struct AccessibleService {
     db: DatabaseConnection,
@@ -38,7 +33,6 @@ impl AccessibleService {
     }
 }
 
-/// The requested page of `select`, with the total number of rows it matches.
 async fn fetch_page<E>(
     db: &DatabaseConnection,
     select: Select<E>,

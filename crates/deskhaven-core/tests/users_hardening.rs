@@ -1,7 +1,3 @@
-//! UserService hardening: credential stamps against the login / password-change race,
-//! bounded pagination, best-effort rehash, fail-closed on corrupt hashes, commit hooks.
-//! Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::{Arc, Mutex};
@@ -188,7 +184,6 @@ async fn huge_page_numbers_are_rejected_not_overflowed() {
     .await;
 }
 
-/// Makes every UPDATE of `users.password_hash` fail.
 async fn block_password_updates(db: &TestDb) {
     let statements: &[&str] = match db.backend {
         Backend::Sqlite => &[

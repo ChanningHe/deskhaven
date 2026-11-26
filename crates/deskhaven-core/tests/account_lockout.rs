@@ -1,8 +1,3 @@
-//! Persistent account lockout (M2-06): count-before-verify reservations, per-source and
-//! global rows, exponential backoff with cap and decay, reset on success, refund, unlock,
-//! anti-enumeration, exact counting under concurrency, restart persistence and cleanup.
-//! Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -52,8 +47,6 @@ async fn insert_user(db: &TestDb, username: &str) {
     .await
     .unwrap();
 }
-
-// --- counting and locking --------------------------------------------------------------
 
 #[tokio::test]
 async fn threshold_attempt_is_granted_and_starts_the_lock() {
@@ -153,8 +146,6 @@ async fn backoff_level_resets_after_a_quiet_period() {
     })
     .await;
 }
-
-// --- H1: per-source and global rows -----------------------------------------------------
 
 #[tokio::test]
 async fn one_source_locks_only_its_own_row() {
@@ -258,8 +249,6 @@ async fn unlock_clears_every_row_of_one_username_only() {
     })
     .await;
 }
-
-// --- M1: count before verify --------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_attempts_grant_at_most_max_failures_per_lock_cycle() {
@@ -404,8 +393,6 @@ async fn refund_after_the_rows_were_cleared_is_a_no_op() {
     .await;
 }
 
-// --- success, anti-enumeration, persistence -------------------------------------------------
-
 #[tokio::test]
 async fn success_deletes_the_global_row_and_keeps_the_source_as_known() {
     each_migrated_backend(async |db: &TestDb| {
@@ -530,8 +517,6 @@ async fn lock_survives_a_new_instance() {
     .await;
 }
 
-// --- L1: success racing attempts ------------------------------------------------------------
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn success_refund_and_unlock_racing_attempts_never_error() {
     each_migrated_backend(async |db: &TestDb| {
@@ -593,8 +578,6 @@ async fn success_refund_and_unlock_racing_attempts_never_error() {
     })
     .await;
 }
-
-// --- cleanup ---------------------------------------------------------------------------------
 
 #[tokio::test]
 async fn cleanup_removes_only_rows_past_retention() {

@@ -98,7 +98,6 @@ async fn strategy_names_are_unique_and_validated() {
             matches!(clash, Err(StrategyError::Conflict { field: "name" })),
             "{clash:?}"
         );
-        // The failed rename left the strategy as it was.
         assert_eq!(c.svc.get(a.id).await.unwrap().name, "a");
 
         for bad in ["", "   ", "tab\there", &"s".repeat(65)] {
@@ -203,12 +202,10 @@ async fn config_managed_strategies_are_read_only() {
     .await;
 }
 
-/// A strategy whose stored options were damaged outside the service.
 async fn insert_corrupt(db: &TestDb, name: &str) -> i64 {
     insert_stored(db, name, "[1]").await
 }
 
-/// A strategy row with `stored` options, written past the service.
 async fn insert_stored(db: &TestDb, name: &str, stored: &str) -> i64 {
     let now = time::now();
     let row = strategy::ActiveModel {
@@ -307,9 +304,8 @@ async fn a_corrupt_strategy_can_be_repaired_or_deleted() {
 const SPACED_WHITELIST: &str = " 10.0.0.0/8, 192.0.2.1 ,,";
 const CLEAN_WHITELIST: &str = "10.0.0.0/8,192.0.2.1";
 
-/// Clients before rustdesk 78450f4 (#16692) do not trim IP whitelist entries, so every write
-/// (create, replacement, patch) stores the whitelist without spaces or empty entries, and
-/// devices get it that way. Other options keep their spaces.
+/// Older clients do not trim IP whitelist entries, so every write stores the whitelist without
+/// spaces or empty entries. Other options keep their spaces.
 #[tokio::test]
 async fn ip_whitelist_entries_are_stored_and_delivered_without_spaces() {
     each_migrated_backend(async |db: &TestDb| {

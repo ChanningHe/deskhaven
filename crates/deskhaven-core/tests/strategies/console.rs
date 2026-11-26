@@ -1,6 +1,3 @@
-//! The console's entry points (M3-07): guarded writes that commit with their audit row or
-//! not at all, option patches, the paged list with assignment counts and the named targets
-//! of a strategy.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::{Arc, Mutex};
@@ -22,7 +19,6 @@ use super::support::{Ctx, ctx, device_inputs, opts};
 
 type Seen<T> = Arc<Mutex<Vec<(Option<T>, Option<T>)>>>;
 
-/// A guard that records what it was shown and writes a row named `action`.
 fn recording<T: Clone + Send + 'static>(c: &Ctx, action: &str, seen: &Seen<T>) -> TxGuard<T> {
     let log = ConsoleAuditLog::new(c.conn.clone(), c.clock.clone());
     let (action, seen) = (action.to_owned(), Arc::clone(seen));

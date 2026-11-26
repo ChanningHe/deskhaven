@@ -1,5 +1,3 @@
-//! Helpers for the `AccountLockout` tests.
-
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,10 +48,8 @@ pub fn subject(name: &str, addr: &str) -> Subject {
     Subject::new(client(addr), name)
 }
 
-/// What a login handler sees for one attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
-    /// Verification may run; `Locked` if this attempt started a lock.
     Granted(LockStatus),
     Throttled(Duration),
 }
@@ -77,7 +73,6 @@ pub fn throttled(minutes: u32) -> Outcome {
 
 pub const GRANTED: Outcome = Outcome::Granted(LockStatus::Allowed);
 
-/// `n` failed attempts (reserved, attempt dropped); the last outcome.
 pub async fn fail(lockout: &AccountLockout, subject: &Subject, n: usize) -> Outcome {
     let mut last = GRANTED;
     for _ in 0..n {
@@ -93,7 +88,6 @@ pub async fn granted(lockout: &AccountLockout, subject: &Subject) -> Attempt {
     }
 }
 
-/// A completed login of `name` from `addr`.
 pub async fn succeed(lockout: &AccountLockout, name: &str, addr: &str) {
     let attempt = granted(lockout, &subject(name, addr)).await;
     lockout.release(attempt).await.unwrap();
@@ -114,7 +108,6 @@ pub async fn row_count(db: &TestDb) -> u64 {
     auth_lockout::Entity::find().count(&db.conn).await.unwrap()
 }
 
-/// `locked_until` (unix ms) of `name`'s global row, if set.
 pub async fn global_locked_until(db: &TestDb, name: &str) -> Option<i64> {
     let key = subject(name, IP_A).global_key();
     row(db, &key)

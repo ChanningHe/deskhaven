@@ -1,21 +1,3 @@
-//! [`ExpiryCleanup`]: state that has expired or can no longer matter.
-//!
-//! | Table | Deleted when |
-//! |---|---|
-//! | `audit_nonces` | received more than [`NONCE_RETENTION`] ago |
-//! | `setup_tokens` | used (or retired), or expired |
-//! | `device_strategy_keys` | no device row with its RustDesk id, and not written for [`STRATEGY_KEYS_GRACE`] (deleting the device writes it: see `devices::strategy_keys`) |
-//! | `sessions` | revoked, or expired (absolute or idle): [`SessionService::cleanup`] |
-//! | `oidc_flows` | expired (the criterion of `OidcService::cleanup_flows`) |
-//! | `auth_challenges` | expired or consumed (the criterion of `TfaService::cleanup_challenges`) |
-//! | `auth_lockouts` | no longer affecting any decision: [`LoginThrottle::cleanup`] |
-//!
-//! All but the last two are batched here ([`Purge`]); sessions batch their own cleanup, and
-//! the lockout cleanup selects with `SKIP LOCKED` over a capped table.
-//!
-//! [`SessionService::cleanup`]: crate::sessions::SessionService::cleanup
-//! [`LoginThrottle::cleanup`]: crate::auth::limiter::LoginThrottle::cleanup
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,14 +11,12 @@ use crate::sessions::SessionError;
 use crate::state::AppState;
 use crate::{oidc, tfa};
 
-/// Audit nonces are kept this long (04 §7), far past the client's 120 s retry window.
+/// Far past the client's 120 s retry window.
 pub const NONCE_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
-/// A `device_strategy_keys` row is deleted once its RustDesk id has had no device row for
-/// this long. A deleted device's client that comes back later registers as a new device and
-/// is not sent `""` for the options it still holds from before.
+/// A deleted device's client that comes back later registers as new and is not sent `""` for the
+/// options it still holds.
 pub const STRATEGY_KEYS_GRACE: Duration = Duration::from_secs(90 * 24 * 60 * 60);
 
-/// Rows deleted by one [`ExpiryCleanup::run`], per table.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExpiryReport {
     pub audit_nonces: u64,
@@ -46,7 +26,6 @@ pub struct ExpiryReport {
     pub oidc_flows: u64,
     pub auth_challenges: u64,
     pub auth_lockouts: u64,
-    /// Steps that failed (logged; retried by the next run).
     pub failed: usize,
 }
 
@@ -62,7 +41,6 @@ impl ExpiryReport {
     }
 }
 
-/// Why a step failed.
 #[derive(Debug, thiserror::Error)]
 enum StepError {
     #[error(transparent)]
@@ -71,7 +49,6 @@ enum StepError {
     Session(#[from] SessionError),
 }
 
-/// Counts failed steps, logging each.
 #[derive(Default)]
 struct Tally {
     failed: usize,
@@ -90,7 +67,6 @@ impl Tally {
     }
 }
 
-/// The expiry cleanup job.
 #[derive(Clone)]
 pub struct ExpiryCleanup {
     state: Arc<AppState>,
@@ -109,8 +85,6 @@ impl ExpiryCleanup {
         Self { purge, ..self }
     }
 
-    /// Runs every step (see the module documentation); a failed step does not stop the
-    /// others.
     pub async fn run(&self) -> ExpiryReport {
         let now_ms = self.state.clock.now_ms();
         let s = &self.state;

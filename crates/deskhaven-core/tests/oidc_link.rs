@@ -1,9 +1,3 @@
-//! Explicit linking (M4-09): a signed-in user links an IdP identity to their own account
-//! through a `link` flow bound to the user and the browser that started it. The email plays
-//! no part; refused: an identity linked elsewhere, a second identity at the same provider,
-//! LDAP accounts. An identity linked by email is upgraded to `explicit`. Once linked, the
-//! account signs in through the IdP on both paths without its local TOTP. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -384,8 +378,6 @@ async fn linking_an_email_linked_identity_again_makes_it_explicit() {
     .await;
 }
 
-/// The acceptance case: an owner with TOTP links explicitly, then both OIDC paths sign in
-/// without asking for the local second factor.
 #[tokio::test]
 async fn an_owner_with_totp_signs_in_through_an_explicit_link_on_both_paths() {
     each_migrated_backend(async |db: &TestDb| {

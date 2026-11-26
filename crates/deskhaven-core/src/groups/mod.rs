@@ -1,8 +1,4 @@
-//! User groups and membership (04 §3).
-//!
-//! Groups with `managed_by = config` come from the bootstrap configuration: they can be read
-//! here but every mutation (rename, delete, membership) is refused with
-//! [`GroupError::ManagedByConfig`]. Membership changes are idempotent.
+//! Groups with `managed_by = config` are read-only here. Membership changes are idempotent.
 
 mod list;
 mod write;
@@ -27,7 +23,7 @@ use crate::text::{self, NOTE_MAX_LEN};
 use crate::users::User;
 
 const NAME_MAX_LEN: usize = 64;
-/// Name of the membership foreign key to `groups` (PostgreSQL names it in FK errors).
+/// PostgreSQL names it in FK errors.
 const FK_MEMBER_GROUP: &str = "fk_group_members_group";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,7 +49,6 @@ impl From<group::Model> for Group {
     }
 }
 
-/// Input of [`GroupService::create`]; the group is managed in the console (`ui`).
 #[derive(Clone, Debug)]
 pub struct NewGroup {
     pub name: String,
@@ -69,14 +64,12 @@ impl NewGroup {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is.
 #[derive(Clone, Debug, Default)]
 pub struct GroupUpdate {
     pub name: Option<String>,
     pub note: Option<String>,
 }
 
-/// Why a group operation failed. Variants are stable for API error mapping.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum GroupError {
@@ -92,16 +85,13 @@ pub enum GroupError {
     #[error("invalid {field}: {reason}")]
     Invalid { field: &'static str, reason: String },
 
-    /// The group is defined in the configuration file and read-only here.
     #[error("the group is managed by the configuration file")]
     ManagedByConfig,
 
-    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
 
-    /// The operation's task panicked or the runtime is shutting down; whether it committed
-    /// is unknown until the next read.
+    /// Whether it committed is unknown until the next read.
     #[error("group operation did not complete")]
     Aborted,
 
@@ -124,12 +114,10 @@ impl From<GuardError> for GroupError {
     }
 }
 
-/// A user's membership in a group, as a guard of a membership change sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Membership {
     pub group: Group,
     pub user_id: i64,
-    /// `None` when the user is unknown (removing a non-member that does not exist).
     pub username: Option<String>,
 }
 
@@ -143,22 +131,16 @@ impl Membership {
     }
 }
 
-/// A committed change that cached views of group membership must drop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum GroupChange {
-    /// The group, its memberships and its strategy assignment are gone.
     Deleted { group_id: i64 },
-    /// `add_member` / `remove_member` committed and changed a membership row (not sent when
-    /// the user already was / was not a member).
     MembershipChanged { group_id: i64, user_id: i64 },
 }
 
-/// Called synchronously after each committed [`GroupChange`], before the writing call
-/// returns. Must be fast and must not block; a panic is logged and skipped.
+/// Runs synchronously before the writing call returns: must be fast and must not block.
 pub type GroupCommitHook = Arc<dyn Fn(&GroupChange) + Send + Sync>;
 
-/// Manages groups and membership. Cheap to clone (clones share the hooks).
 #[derive(Clone)]
 pub struct GroupService {
     db: DatabaseConnection,
@@ -173,8 +155,7 @@ impl GroupService {
         }
     }
 
-    /// Calls `hook` after every later committed [`GroupChange`]. A hook may register another
-    /// one, which runs from the next change on.
+    /// A hook may register another one, which runs from the next change on.
     pub fn register_commit_hook(&self, hook: GroupCommitHook) {
         self.hooks.register(hook);
     }
@@ -187,7 +168,6 @@ impl GroupService {
         Ok(find_group(&self.db, id).await?.into())
     }
 
-    /// Every group, ordered by name.
     pub async fn list(&self) -> Result<Vec<Group>, GroupError> {
         let groups = group::Entity::find()
             .order_by_asc(group::Column::Name)
@@ -196,8 +176,8 @@ impl GroupService {
         Ok(groups.into_iter().map(Group::from).collect())
     }
 
-    /// Runs `op` to completion in its own task: dropping the caller's future can then
-    /// neither interrupt a commit nor lose the hooks that follow it.
+    /// Dropping the caller's future can then neither interrupt a commit nor lose the hooks that
+    /// follow it.
     async fn detached<T, F, Fut>(&self, op: F) -> Result<T, GroupError>
     where
         F: FnOnce(GroupService) -> Fut,
@@ -209,7 +189,6 @@ impl GroupService {
             .map_err(|_| GroupError::Aborted)?
     }
 
-    /// Members of the group, ordered by id.
     pub async fn members(&self, group_id: i64) -> Result<Vec<User>, GroupError> {
         let group = find_group(&self.db, group_id).await?;
         let users = group
@@ -220,7 +199,6 @@ impl GroupService {
         Ok(users.into_iter().map(User::from).collect())
     }
 
-    /// Groups the user belongs to, ordered by name.
     pub async fn groups_of_user(&self, user_id: i64) -> Result<Vec<Group>, GroupError> {
         let user = find_user(&self.db, user_id).await?;
         let groups = user
@@ -232,7 +210,6 @@ impl GroupService {
     }
 }
 
-/// Ids of the groups `user_id` belongs to (address book share resolution).
 pub(crate) async fn member_group_ids(
     db: &impl ConnectionTrait,
     user_id: i64,
@@ -256,7 +233,6 @@ async fn find_user(db: &impl ConnectionTrait, id: i64) -> Result<user::Model, Gr
     found.ok_or(GroupError::UserNotFound)
 }
 
-/// The group, locked for the rest of the transaction, if the console may change it.
 async fn writable_group(db: &impl ConnectionTrait, id: i64) -> Result<group::Model, GroupError> {
     let found = group::Entity::find_by_id(id)
         .lock_exclusive()
@@ -276,7 +252,6 @@ fn invalid(field: &'static str, reason: impl Into<String>) -> GroupError {
     }
 }
 
-/// Trimmed name: 1-64 characters, no control characters.
 fn validate_name(raw: &str) -> Result<String, GroupError> {
     let name = raw.trim();
     if name.is_empty() {
@@ -302,8 +277,6 @@ fn name_conflict(err: DbErr) -> GroupError {
     }
 }
 
-/// A row referenced by a new membership vanished concurrently (PostgreSQL; SQLite's write
-/// transaction excludes that).
 fn missing_reference(err: DbErr) -> GroupError {
     if !is_foreign_key_violation(&err) {
         return GroupError::Database(err);

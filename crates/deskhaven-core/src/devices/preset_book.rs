@@ -1,18 +1,6 @@
-//! The device's entry in a shared address book, by book name (case-insensitive, unique):
-//! `preset-address-book-*` (only with `devices.accept_presets = all`, see
-//! [`presets`](super::presets)) and `--assign --address_book_name` (an API token).
-//!
-//! A preset entry is written **as the device's owner** (`Actor::User`, the owner the presets
-//! just set or the one it already had), through the normal rule checks: a device without an
-//! owner, or whose owner lacks read-write access (rule 2) to the book, gets no entry. So a
-//! device can only add itself where its owner could have added it by hand. A preset never
-//! replaces an existing entry (and then creates no tag). The tag is created in the book only
-//! after the entry was added, and not beyond the book's tag limit: then the entry stays
-//! without it.
-//!
-//! An assignment writes as `Actor::Admin`, inside its own transaction
-//! (`AddressBookService::place_entry_in`): it adds the entry or updates an existing one
-//! (given fields replaced, the tag added), and any failure rolls the whole assignment back.
+//! A preset entry is written as the device's owner, through the normal rule checks: a device
+//! can only add itself where its owner could have added it by hand. A preset never replaces an
+//! existing entry. An assignment writes as `Actor::Admin`, inside its own transaction.
 
 use deskhaven_db::entity::device;
 use serde_json::{Map, Value, json};
@@ -20,12 +8,12 @@ use serde_json::{Map, Value, json};
 use super::presets::{AddressBookPreset, log_failure};
 use crate::addressbooks::{Actor, AddressBookError, AddressBookService, PeerPatch, Tag};
 
-/// Colour of a tag a preset creates: the client's `Colors.grey` (ARGB), its neutral choice.
+/// The client's `Colors.grey` (ARGB), its neutral choice.
 pub const PRESET_TAG_COLOR: i64 = 0xFF9E_9E9E;
 
 const PRESET: &str = "preset-address-book-name";
 
-/// The presets' entry: every failure is logged and skipped.
+/// Every failure is logged and skipped.
 pub(super) async fn apply(
     books: &AddressBookService,
     device: &device::Model,
@@ -65,8 +53,6 @@ pub(super) async fn apply(
     }
 }
 
-/// Adds the device's entry to book `guid` as `actor`, then tags it; `Ok(false)` when the
-/// book already lists the device (left as it is, no tag created).
 pub(super) async fn add_entry(
     books: &AddressBookService,
     actor: Actor,
@@ -86,8 +72,6 @@ pub(super) async fn add_entry(
     Ok(true)
 }
 
-/// The entry's own fields (alias, note, password, tag) are acceptable, checked before
-/// anything is written.
 pub(super) fn check(rustdesk_id: &str, preset: &AddressBookPreset) -> Result<(), AddressBookError> {
     let mut peer = entry_fields(rustdesk_id, preset);
     if let Some(tag) = &preset.tag {
@@ -96,10 +80,8 @@ pub(super) fn check(rustdesk_id: &str, preset: &AddressBookPreset) -> Result<(),
     PeerPatch::from_json(Value::Object(peer)).map(drop)
 }
 
-/// An assignment's entry for device `rustdesk_id` (written as an administrator, in the
-/// assignment's transaction): the preset's fields, the tag to add, and the entry's hostname /
-/// username only when the assignment names the device (`device_name` / `device_username`),
-/// so an existing entry keeps the names written into it.
+/// Hostname and username only when the assignment names them, so an existing entry keeps its
+/// names.
 pub(super) fn assign_patch(
     rustdesk_id: &str,
     preset: &AddressBookPreset,
@@ -118,7 +100,6 @@ pub(super) fn assign_patch(
     PeerPatch::from_json(Value::Object(peer))
 }
 
-/// The tag a preset or assignment creates in the book.
 pub(super) fn new_tag(preset: &AddressBookPreset) -> Option<Tag> {
     preset.tag.as_ref().map(|name| Tag {
         name: name.clone(),
@@ -126,7 +107,6 @@ pub(super) fn new_tag(preset: &AddressBookPreset) -> Option<Tag> {
     })
 }
 
-/// Creates `tag` in the book if missing (and room is left), then puts it on the entry.
 async fn tag_entry(
     books: &AddressBookService,
     actor: Actor,
@@ -143,7 +123,6 @@ async fn tag_entry(
     books.update_peer(actor, guid, patch).await
 }
 
-/// The peer entry as the client would send it (validated by [`PeerPatch::from_json`]).
 fn peer_json(device: &device::Model, preset: &AddressBookPreset) -> Value {
     let mut peer = entry_fields(&device.rustdesk_id, preset);
     let optional = [

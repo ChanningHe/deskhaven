@@ -1,5 +1,3 @@
-//! Books themselves: the personal book, shared book profiles, shared book management.
-
 use std::collections::HashMap;
 
 use deskhaven_db::entity::address_book::{self, Kind};
@@ -21,8 +19,6 @@ use crate::text::{self, NOTE_MAX_LEN};
 const NAME_MAX_LEN: usize = 64;
 
 impl AddressBookService {
-    /// The personal book of `user_id`, created on first access. Concurrent first accesses
-    /// return the same book.
     pub async fn personal(&self, user_id: i64) -> Result<Book, AddressBookError> {
         if let Some(book) = find_personal(&self.db, user_id).await? {
             return Ok(book.into());
@@ -38,9 +34,8 @@ impl AddressBookService {
             updated_at: Set(now),
             ..Default::default()
         };
-        // The partial unique index `uq_address_books_personal_owner` decides a race: the
-        // loser's insert fails and it reads the winner's book. (`ON CONFLICT` cannot name a
-        // partial index portably: SQLite wants the index predicate as a literal.)
+        // The partial unique index decides a race: the loser's insert fails and it reads the
+        // winner's book. `ON CONFLICT` cannot name a partial index portably.
         match row.insert(&self.db).await {
             Ok(created) => return Ok(created.into()),
             Err(err) if is_foreign_key_violation(&err) => {
@@ -53,8 +48,6 @@ impl AddressBookService {
         found.map(Book::from).ok_or(AddressBookError::UserNotFound)
     }
 
-    /// One page of the shared books `user_id` owns or is granted, ordered by name, with the
-    /// user's effective rule on each.
     pub async fn shared_profiles(
         &self,
         user_id: i64,
@@ -111,15 +104,11 @@ impl AddressBookService {
         Ok(profiles.collect())
     }
 
-    /// The one shared book named `name` (case-insensitive, surrounding blanks ignored), for
-    /// administrative tools that address books by name. Several matches are
-    /// [`AddressBookError::AmbiguousName`], none is [`AddressBookError::NotFound`].
     pub async fn find_shared_by_name(&self, name: &str) -> Result<Book, AddressBookError> {
         shared_by_name(&self.db, name).await
     }
 }
 
-/// [`AddressBookService::find_shared_by_name`] on `db` (e.g. a write transaction).
 pub(crate) async fn shared_by_name(
     db: &impl ConnectionTrait,
     name: &str,
@@ -141,7 +130,6 @@ pub(crate) async fn shared_by_name(
     found.map(Book::from).ok_or(AddressBookError::NotFound)
 }
 
-/// Sets `updated_at` of `book` (after a change of its contents).
 pub(crate) async fn touch(
     db: &impl ConnectionTrait,
     book: &address_book::Model,
@@ -211,7 +199,6 @@ async fn shared_names(db: &impl ConnectionTrait) -> Result<Vec<(i64, String)>, A
     Ok(rows)
 }
 
-/// Refuses a reserved name or one another shared book (not `except`) already has.
 pub(super) async fn ensure_name_free(
     db: &impl ConnectionTrait,
     name: &str,
@@ -231,7 +218,6 @@ pub(super) async fn ensure_name_free(
     }
 }
 
-/// Trimmed name: 1-64 characters, no control characters.
 pub(super) fn validate_name(raw: &str) -> Result<String, AddressBookError> {
     let name = raw.trim();
     if name.is_empty() {

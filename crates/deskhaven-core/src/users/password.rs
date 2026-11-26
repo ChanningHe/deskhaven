@@ -1,10 +1,5 @@
-//! Argon2id password hashing (06 §3.1).
-//!
-//! Hashes are PHC strings. Every hash and verification runs on the blocking pool: one
-//! computation at the default parameters takes tens of milliseconds of CPU and 19 MiB of
-//! memory. A semaphore bounds how many run at once, so a login flood cannot fill tokio's
-//! blocking pool (512 threads ≈ 9.7 GiB) and take the process, hbbs included, down; callers
-//! that cannot get a slot in time get [`PasswordError::Busy`] (APIs: 503).
+//! A semaphore bounds concurrent computations, so a login flood cannot fill tokio's blocking pool
+//! and take the process down; callers that cannot get a slot in time get [`PasswordError::Busy`].
 
 use std::fmt;
 use std::sync::Arc;
@@ -17,21 +12,14 @@ use zeroize::Zeroizing;
 
 use crate::crypto::fill_random;
 
-/// Salt length in bytes (the PHC recommendation, 128 bits).
 const SALT_LEN: usize = 16;
-/// Salt of [`PasswordHasher::verify_dummy`]. Its value is irrelevant: the output is discarded.
+/// Its value is irrelevant: the output is discarded.
 const DUMMY_SALT: [u8; SALT_LEN] = [0x5a; SALT_LEN];
-/// Lower bound of [`HashLimits::default`]'s concurrency, for hosts reporting one CPU.
 const MIN_DEFAULT_CONCURRENCY: usize = 2;
-/// How long [`HashLimits::default`] waits for a computation slot.
 const DEFAULT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A plaintext password. Zeroed on drop; `Debug` never shows it and there is no `Display`.
-///
-/// No Unicode normalization (NFC / NFKC) is applied: the same visible password typed with
-/// differently composed characters hashes differently. Accepted trade-off: normalization
-/// would need an extra dependency, and clients send what the user's input method produces
-/// consistently.
+/// Zeroed on drop; `Debug` never shows it and there is no `Display`. No Unicode normalization:
+/// clients send what the input method produces consistently.
 #[derive(Clone)]
 pub struct Password(Zeroizing<String>);
 
@@ -40,12 +28,10 @@ impl Password {
         Self(Zeroizing::new(value.into()))
     }
 
-    /// The plaintext. Call only where the value is actually used.
     pub fn expose(&self) -> &str {
         &self.0
     }
 
-    /// Length in Unicode scalar values (what the policy counts).
     pub fn char_len(&self) -> usize {
         self.0.chars().count()
     }
@@ -57,20 +43,15 @@ impl fmt::Debug for Password {
     }
 }
 
-/// Argon2id cost parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HashParams {
-    /// Memory cost in KiB.
     pub memory_kib: u32,
-    /// Number of passes.
     pub iterations: u32,
-    /// Degree of parallelism (lanes).
     pub parallelism: u32,
 }
 
 impl HashParams {
-    /// m=19 MiB, t=2, p=1: the OWASP baseline (06 §3.1). Changing it makes every older hash
-    /// [`needs_rehash`](PasswordHasher::needs_rehash), upgraded at the next login.
+    /// The OWASP baseline. Changing it makes every older hash need a rehash at its next login.
     pub const DEFAULT: Self = Self {
         memory_kib: 19 * 1024,
         iterations: 2,
@@ -84,17 +65,13 @@ impl Default for HashParams {
     }
 }
 
-/// Bounds on concurrent Argon2 computations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HashLimits {
-    /// Computations allowed to run at once (at least 1).
     pub max_concurrent: usize,
-    /// How long a caller waits for a slot before [`PasswordError::Busy`].
     pub acquire_timeout: Duration,
 }
 
 impl Default for HashLimits {
-    /// One computation per CPU (at least 2), waiting up to 5 s.
     fn default() -> Self {
         let cpus = std::thread::available_parallelism().map_or(1, usize::from);
         Self {
@@ -104,14 +81,12 @@ impl Default for HashLimits {
     }
 }
 
-/// Failures of hashing and verification. Never carries the password.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PasswordError {
     #[error("invalid argon2 parameters or limits")]
     Params,
 
-    /// A stored hash that is not a usable PHC string (data corruption, foreign format).
     #[error("stored password hash is malformed")]
     MalformedHash,
 
@@ -121,18 +96,14 @@ pub enum PasswordError {
     #[error("the operating system random number generator failed")]
     Random,
 
-    /// Every computation slot stayed taken for the whole acquire timeout (overload; APIs
-    /// answer 503).
     #[error("too many concurrent password computations")]
     Busy,
 
-    /// The blocking task panicked or the runtime is shutting down.
     #[error("password hashing task did not complete")]
     Aborted,
 }
 
-/// Hashes and verifies passwords with fixed Argon2id parameters. Cheap to clone; clones share
-/// the concurrency limit, so a process should build one and hand out clones.
+/// Clones share the concurrency limit, so a process should build one and hand out clones.
 #[derive(Clone, Debug)]
 pub struct PasswordHasher {
     params: Arc<Params>,
@@ -142,15 +113,14 @@ pub struct PasswordHasher {
 }
 
 impl Default for PasswordHasher {
-    /// [`HashParams::DEFAULT`] (argon2's own default is the same OWASP baseline; a unit test
-    /// keeps the two equal, so this needs no fallible constructor) and [`HashLimits::default`].
+    /// argon2's own default is the same OWASP baseline; a unit test keeps the two equal, so this needs
+    /// no fallible constructor.
     fn default() -> Self {
         Self::build(Params::default(), HashLimits::default())
     }
 }
 
 impl PasswordHasher {
-    /// `params` with [`HashLimits::default`].
     pub fn new(params: HashParams) -> Result<Self, PasswordError> {
         Self::with_limits(params, HashLimits::default())
     }
@@ -178,19 +148,14 @@ impl PasswordHasher {
         }
     }
 
-    /// Computation slots free right now (shared by all clones). For load metrics and for
-    /// tests that need to know a computation is running.
     pub fn available_slots(&self) -> usize {
         self.permits.available_permits()
     }
 
-    /// Computation slots in total ([`HashLimits::max_concurrent`]): how many computations a
-    /// batch may usefully run at once.
     pub fn max_concurrent(&self) -> usize {
         self.max_concurrent
     }
 
-    /// A new PHC string for `password`, with a fresh random salt.
     pub async fn hash(&self, password: &Password) -> Result<String, PasswordError> {
         let mut salt = [0u8; SALT_LEN];
         fill_random(&mut salt).map_err(|_| PasswordError::Random)?;
@@ -204,8 +169,7 @@ impl PasswordHasher {
         .await
     }
 
-    /// Whether `password` matches the PHC string `phc`, computed with the parameters stored
-    /// in `phc`. A malformed `phc` is an error, not a mismatch.
+    /// A malformed `phc` is an error, not a mismatch.
     pub async fn verify(&self, password: &Password, phc: &str) -> Result<bool, PasswordError> {
         let phc = phc.to_owned();
         self.argon2(password, move |argon2, pwd| {
@@ -223,15 +187,9 @@ impl PasswordHasher {
         .await
     }
 
-    /// Spends the cost of one verification at the current parameters and discards the
-    /// result: for unknown or non-local accounts, so their failures take as long as a wrong
-    /// password (06 §3.6). Goes through the same concurrency limit as real work.
-    ///
-    /// Known gap: [`verify`](Self::verify) costs what the *stored* hash's parameters cost.
-    /// After a parameter change, accounts whose hash is not yet upgraded (no login since)
-    /// verify faster or slower than this dummy, so timing can tell them apart from unknown
-    /// usernames until their next successful login rehashes them. Accepted: it reveals only
-    /// "exists, has not logged in since the upgrade", and parameter changes are rare.
+    /// Makes unknown or non-local accounts fail as slowly as a wrong password. Known gap: after a
+    /// parameter change, accounts not yet rehashed verify at a different cost until their next login.
+    /// Accepted: it reveals only "exists, has not logged in since", and parameter changes are rare.
     pub async fn verify_dummy(&self, password: &Password) -> Result<(), PasswordError> {
         let salt = SaltString::encode_b64(&DUMMY_SALT).map_err(|_| PasswordError::Hash)?;
         self.argon2(password, move |argon2, pwd| {
@@ -243,8 +201,6 @@ impl PasswordHasher {
         .await
     }
 
-    /// Whether `phc` was not produced by this hasher's algorithm, version and parameters
-    /// (including anything unparsable), so it should be replaced at the next login.
     pub fn needs_rehash(&self, phc: &str) -> bool {
         let Ok(hash) = PasswordHash::new(phc) else {
             return true;
@@ -262,7 +218,6 @@ impl PasswordHasher {
             || !same_params
     }
 
-    /// Runs `op` with an Argon2id instance and a zeroizing copy of the password.
     async fn argon2<T, F>(&self, password: &Password, op: F) -> Result<T, PasswordError>
     where
         T: Send + 'static,
@@ -274,9 +229,8 @@ impl PasswordHasher {
             .await
     }
 
-    /// Runs `work` on the blocking pool once a slot is free. The slot is held by the blocking
-    /// task itself, so it is released when the computation ends, even if the caller's future
-    /// was dropped meanwhile.
+    /// The slot is held by the blocking task itself, so it is released when the computation ends, even
+    /// if the caller's future was dropped.
     async fn limited<T, W>(&self, work: W) -> Result<T, PasswordError>
     where
         T: Send + 'static,
@@ -364,7 +318,6 @@ mod tests {
         assert_eq!(peak.load(Ordering::SeqCst), LIMIT);
     }
 
-    /// A computation that reports when it starts, then holds its slot until released.
     fn held() -> (
         impl FnOnce() -> Result<(), PasswordError> + Send + 'static,
         oneshot::Receiver<()>,

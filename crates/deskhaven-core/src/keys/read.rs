@@ -1,6 +1,3 @@
-//! Hardened key-file reads: no symlinks, regular files only, size-capped,
-//! plus permission/ownership/directory warnings for private keys.
-
 use std::fs::File;
 use std::io::{ErrorKind, Read as _};
 use std::path::Path;
@@ -9,7 +6,6 @@ use zeroize::Zeroizing;
 
 use super::{KeyError, KeyWarning};
 
-/// Key files are a few dozen bytes; anything larger is refused unread.
 pub const MAX_KEY_FILE_LEN: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,7 +19,6 @@ pub(super) struct KeyFile {
     pub(super) warnings: Vec<KeyWarning>,
 }
 
-/// The file's text, or `None` if nothing exists at `path`.
 pub(super) fn read_key_file(
     path: &Path,
     sensitivity: Sensitivity,
@@ -74,7 +69,7 @@ fn too_large(path: &Path) -> KeyError {
     }
 }
 
-/// Reads into a pre-sized, wiped buffer (no reallocation copies).
+/// No reallocation copies.
 fn read_capped(file: File, path: &Path) -> Result<Zeroizing<String>, KeyError> {
     let mut text = Zeroizing::new(String::with_capacity(MAX_KEY_FILE_LEN + 1));
     file.take(MAX_KEY_FILE_LEN as u64 + 1)
@@ -86,8 +81,8 @@ fn read_capped(file: File, path: &Path) -> Result<Zeroizing<String>, KeyError> {
     Ok(text)
 }
 
-/// Opens without following a final symlink (closes the check/open race);
-/// non-blocking so a swapped-in FIFO cannot hang startup.
+/// No final symlink (closes the check/open race); non-blocking so a swapped-in FIFO cannot hang
+/// startup.
 #[cfg(unix)]
 fn open_no_follow(path: &Path) -> Result<Option<File>, KeyError> {
     use rustix::fs::{Mode, OFlags};
@@ -138,7 +133,6 @@ fn private_warnings(_path: &Path, _meta: &std::fs::Metadata) -> Result<Vec<KeyWa
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
 
-/// Any group/other access to a private key file.
 #[cfg(unix)]
 fn mode_warning(path: &Path, mode: u32) -> Option<KeyWarning> {
     const GROUP_OTHER_ANY: u32 = 0o077;
@@ -157,7 +151,7 @@ fn owner_warning(path: &Path, owner: u32, euid: u32) -> Option<KeyWarning> {
     })
 }
 
-/// Group/other write on the key directory lets others swap key files.
+/// Lets others swap key files.
 #[cfg(unix)]
 fn dir_warning(dir: &Path, mode: u32) -> Option<KeyWarning> {
     const GROUP_OTHER_WRITE: u32 = 0o022;

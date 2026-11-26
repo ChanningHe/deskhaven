@@ -1,5 +1,3 @@
-//! Devices in the viewer's scope.
-
 use std::collections::HashMap;
 
 use deskhaven_db::entity::{device, device_group, user};
@@ -11,17 +9,13 @@ use super::scope::visible_devices;
 use super::{AccessibleError, AccessibleService, DeviceStatus, fetch_page};
 use crate::pagination::{Page, PageRequest};
 
-/// A device in the group panel, with the names the panel shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccessiblePeer {
     pub rustdesk_id: String,
-    /// The administrator's `display_name`, else the reported hostname.
     pub device_name: Option<String>,
-    /// The administrator's `display_username`, else the reported username.
     pub username: Option<String>,
     pub os: Option<String>,
-    /// Username of the owner. `None` only if the owner vanished since the page was read:
-    /// unowned devices are out of scope.
+    /// `None` only if the owner vanished after the page was read.
     pub owner: Option<String>,
     pub device_group: Option<String>,
     pub note: String,
@@ -29,8 +23,6 @@ pub struct AccessiblePeer {
 }
 
 impl AccessibleService {
-    /// One page of the devices `viewer` can see (owned by themselves or a teammate), by
-    /// RustDesk id; `status` keeps only devices in that state.
     pub async fn peers(
         &self,
         viewer: i64,
@@ -68,12 +60,10 @@ impl AccessibleService {
     }
 }
 
-/// The administrator's name when it holds text, else what the device reported.
 fn preferred(display: Option<String>, reported: Option<String>) -> Option<String> {
     display.filter(|name| !name.trim().is_empty()).or(reported)
 }
 
-/// Usernames of the owners of `devices`, by user id.
 async fn owner_names(
     db: &DatabaseConnection,
     devices: &[device::Model],
@@ -89,7 +79,6 @@ async fn owner_names(
     Ok(rows.into_iter().collect())
 }
 
-/// Names of the device groups of `devices`, by group id.
 async fn group_names(
     db: &DatabaseConnection,
     devices: &[device::Model],

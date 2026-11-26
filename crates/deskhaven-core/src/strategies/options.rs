@@ -1,21 +1,16 @@
-//! The option map of a strategy: client option name to value (05 §4.3).
-//!
-//! An empty value is meaningful: it makes the client delete that option (03 §2.1), so it is
-//! valid input and is kept through storage and merging.
+//! An empty value makes the client delete that option, so it is valid and kept through storage and
+//! merging.
 
 use std::collections::BTreeMap;
 
 use super::StrategyError;
 use crate::text;
 
-/// `config_options` as sent to the client.
 pub type Options = BTreeMap<String, String>;
 
-/// Changes to single options: `Some(value)` sets the option (an empty value included),
-/// `None` removes it from the strategy. Options not named stay as they are.
+/// `None` removes the option from the strategy; options not named stay as they are.
 pub type OptionsPatch = BTreeMap<String, Option<String>>;
 
-/// `options` with `patch` applied.
 pub(super) fn patched(mut options: Options, patch: &OptionsPatch) -> Options {
     for (key, change) in patch {
         match change {
@@ -26,14 +21,10 @@ pub(super) fn patched(mut options: Options, patch: &OptionsPatch) -> Options {
     options
 }
 
-/// The IP whitelist option: comma-separated IP addresses or CIDR ranges.
 const IP_WHITELIST: &str = "whitelist";
 
-/// `options` as clients should get them: the IP whitelist without spaces around its entries
-/// and without empty entries. Clients trim entries since rustdesk 78450f4 (#16692,
-/// connection.rs `ip_whitelist_entries`); older ones do not, so `"10.0.0.0/8, 192.0.2.1"`
-/// blocks 192.0.2.1 on them. Applied on write and again when loading what devices get, which
-/// also covers rows stored before.
+/// Older clients do not trim whitelist entries, so `"10.0.0.0/8, 192.0.2.1"` blocks 192.0.2.1 on
+/// them. Applied on write and again on load, which also covers rows stored before.
 pub(super) fn normalized(options: Options) -> Options {
     options
         .into_iter()
@@ -51,11 +42,9 @@ pub(super) fn normalized(options: Options) -> Options {
         .collect()
 }
 
-/// Most options one strategy may carry.
 pub const MAX_OPTIONS: usize = 256;
-/// Longest option name, in characters.
 pub const KEY_MAX_LEN: usize = 128;
-/// Longest option value, in characters (whitelists and server lists can be long).
+/// Whitelists and server lists can be long.
 pub const VALUE_MAX_LEN: usize = 4096;
 
 fn invalid(reason: String) -> StrategyError {
@@ -65,8 +54,7 @@ fn invalid(reason: String) -> StrategyError {
     }
 }
 
-/// Checks count and sizes; names are non-empty without whitespace or control characters,
-/// values may be empty. Values are never echoed in the error.
+/// Values are never echoed in the error.
 pub(super) fn validate(options: &Options) -> Result<(), StrategyError> {
     if options.len() > MAX_OPTIONS {
         return Err(invalid(format!("at most {MAX_OPTIONS} options")));
@@ -88,12 +76,10 @@ pub(super) fn validate(options: &Options) -> Result<(), StrategyError> {
     Ok(())
 }
 
-/// The stored form: a JSON object with sorted keys.
 pub(super) fn encode(options: &Options) -> Result<String, StrategyError> {
     serde_json::to_string(options).map_err(|e| invalid(e.to_string()))
 }
 
-/// `None` when `stored` is not a JSON object of strings.
 pub(super) fn decode(stored: &str) -> Option<Options> {
     serde_json::from_str(stored).ok()
 }

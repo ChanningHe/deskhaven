@@ -1,5 +1,3 @@
-//! File transfer (03 §2.5) and alarm (03 §2.6) records: one row each, as reported.
-
 use std::net::IpAddr;
 
 use deskhaven_db::entity::{alarm, file_transfer};
@@ -12,25 +10,20 @@ use crate::text;
 
 pub use deskhaven_db::entity::file_transfer::Direction;
 
-/// Files listed per record at most (the client sends the ten largest,
-/// `src/server/connection.rs:1602-1604`).
+/// The client sends the ten largest.
 pub const MAX_FILES: usize = 10;
 const PEER_ID_MAX_CHARS: usize = 253;
 const PATH_MAX_CHARS: usize = 4096;
 const FILE_NAME_MAX_CHARS: usize = 1024;
-/// Alarm `info` keys stored at most (the client sends up to five).
+/// The client sends up to five.
 pub const MAX_INFO_KEYS: usize = 16;
-/// Longest stored alarm `info` string, in characters.
 pub const MAX_INFO_TEXT_CHARS: usize = 256;
 const MAX_INFO_KEY_CHARS: usize = 64;
-/// The keys of the client's alarm `info` objects (`src/server/connection.rs:1439-1474`,
-/// `1658-1667`, `4299-4586`), kept before any other.
+/// The keys every client call site uses, kept before any other.
 const KNOWN_INFO_KEYS: &[&str] = &["ip", "id", "name", "conn_type", "message"];
 
-/// A file transfer the controlled device reports (`src/server/connection.rs:1590-1625`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileReport {
-    /// The controller's RustDesk id.
     pub peer_id: String,
     pub conn_id: i64,
     /// `Send`: the device sent files to the controller (type 0, RemoteSend).
@@ -40,24 +33,19 @@ pub struct FileReport {
     pub info: FileInfo,
 }
 
-/// The `info` JSON string of a file record.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileInfo {
-    /// The controller's address.
     pub ip: Option<IpAddr>,
     /// Files transferred (`num`), which may exceed the listed ones.
     pub file_count: i32,
-    /// `[name, size]`, largest first; only the first [`MAX_FILES`] are stored.
     pub files: Vec<(String, i64)>,
 }
 
-/// A security alarm the controlled device reports (`src/server/connection.rs:1627-1656`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlarmReport {
-    /// `AlarmAuditType` (`src/server/connection.rs:6542-6554`); unknown values are stored.
+    /// The client's `AlarmAuditType`; unknown values are stored.
     pub typ: i32,
     pub conn_id: i64,
-    /// The decoded `info` JSON string; stored flat and cleaned (`clean_info`).
     pub info: Map<String, Value>,
 }
 
@@ -107,9 +95,6 @@ pub(super) async fn insert_alarm(
         .map(drop)
 }
 
-/// Alarm `info` as stored: a flat object, the keys every client call site uses first
-/// ([`KNOWN_INFO_KEYS`]), then the others in order, at most [`MAX_INFO_KEYS`]; keys and
-/// strings cleaned and cut, numbers and booleans kept, other values (nested, null) dropped.
 fn clean_info(info: &Map<String, Value>) -> Map<String, Value> {
     let known = KNOWN_INFO_KEYS
         .iter()
@@ -135,7 +120,6 @@ fn scalar(value: &Value) -> Option<Value> {
     }
 }
 
-/// `[[name, size], ...]` of the first [`MAX_FILES`] files, names cleaned.
 fn files_json(files: &[(String, i64)]) -> String {
     let pairs = files.iter().take(MAX_FILES).map(|(name, size)| {
         let name = text::clean(name, FILE_NAME_MAX_CHARS, false);

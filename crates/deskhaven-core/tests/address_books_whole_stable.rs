@@ -1,8 +1,3 @@
-//! AddressBookService whole-book operations, part 2: a push that changes nothing writes
-//! nothing (timestamps and sealed secrets stay), a push that changes one peer rewrites only
-//! that peer, and a read is one snapshot even while pushes run. Every test runs on SQLite
-//! and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -33,7 +28,6 @@ fn push(peers: Vec<Value>, tags: &[(&str, i64)]) -> BookReplacement {
     }
 }
 
-/// `rustdesk_id -> (updated_at ms, sealed hash)` of every peer row.
 async fn stamps(db: &TestDb) -> BTreeMap<String, (i64, Option<String>)> {
     let rows = address_book_peer::Entity::find()
         .all(&db.conn)

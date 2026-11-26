@@ -1,10 +1,5 @@
-//! A device's entry in a shared book written inside the caller's write transaction, so it
-//! commits or rolls back with the rest of a placement (`--assign`, M2-19). Rule 2 is
-//! checked as for any write.
-//!
-//! A missing entry is added (refused at `addressbook.max_peers`); an existing one takes the
-//! fields `patch` carries, and its tags gain the patch's (never lose any). A tag the book
-//! lacks is created first (refused at the book's tag limit).
+//! Written inside the caller's transaction, so it commits or rolls back with the rest of a
+//! placement. Tags are only ever added.
 
 use deskhaven_db::entity::address_book_peer;
 use deskhaven_db::time;
@@ -23,7 +18,6 @@ use super::tags::{check_tag, ensure_room, find_tag, insert_tag};
 use super::{AddressBookService, Book, Rule, Tag};
 
 impl AddressBookService {
-    /// [`find_shared_by_name`](Self::find_shared_by_name) inside `tx`.
     pub(crate) async fn shared_by_name_in(
         &self,
         tx: &DatabaseTransaction,
@@ -32,8 +26,7 @@ impl AddressBookService {
         shared_by_name(tx, name).await
     }
 
-    /// The audit view of `rustdesk_id`'s entry in book `guid`, read in `tx` as `actor`
-    /// (`None`: no entry): alias, note, tags and whether it has a password, never the password.
+    /// Never the password, only whether there is one.
     pub(crate) async fn entry_view_in(
         &self,
         tx: &DatabaseTransaction,
@@ -56,8 +49,6 @@ impl AddressBookService {
         }))
     }
 
-    /// Adds or updates `patch`'s entry in book `guid` as `actor`, inside `tx` (see the module
-    /// documentation); creates `tag` in the book if needed. `patch.tags` lists the tags to add.
     pub(crate) async fn place_entry_in(
         &self,
         tx: &DatabaseTransaction,
@@ -109,7 +100,6 @@ impl AddressBookService {
     }
 }
 
-/// The stored tags plus `added` (in order, without duplicates); `None` when nothing is added.
 /// Unreadable stored tags are an error: rewriting them would silently drop them.
 fn merged_tags(
     stored: &str,

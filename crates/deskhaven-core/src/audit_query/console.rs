@@ -1,5 +1,3 @@
-//! The console audit log (`console_audit`, 06 §7).
-
 use deskhaven_db::entity::console_audit::{ActorKind, Column, Entity, Model};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::Value;
@@ -10,21 +8,16 @@ use super::{AuditQuery, AuditQueryError};
 use crate::console_audit::redact;
 use crate::pagination::Page;
 
-/// Filters of [`AuditQuery::console`]. `q` matches the action, target type and target id.
 #[derive(Clone, Debug, Default)]
 pub struct ConsoleQuery {
     pub listing: Listing,
-    /// Changes made by this user account (an API token's changes: `actor_kind`).
     pub user_id: Option<i64>,
     pub actor_kind: Option<ActorKind>,
-    /// The action name exactly, e.g. `user.disable`.
     pub action: Option<String>,
     pub target_type: Option<String>,
     pub q: Option<String>,
 }
 
-/// Who made a change: the kind, the id for users and tokens, and the name while the
-/// account or token still exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConsoleActor {
     pub kind: ActorKind,
@@ -38,13 +31,10 @@ pub struct ConsoleEntry {
     pub actor: ConsoleActor,
 }
 
-/// Shown instead of a snapshot column that does not parse.
 pub const UNREADABLE_SNAPSHOT: &str = "<unreadable>";
 
-/// A stored `before` / `after` snapshot as JSON, redacted again: the writer masked it, and
-/// masking is idempotent, so this only matters for a row an older writer or a hand edit left
-/// unmasked. A column that does not parse is never shown (it could hold anything, secrets
-/// included): it reads as [`UNREADABLE_SNAPSHOT`].
+/// Redacted again (masking is idempotent): a row an older writer or a hand edit left unmasked
+/// must not leak. A column that does not parse is never shown: it could hold secrets.
 pub fn parse_snapshot(stored: Option<&str>) -> Option<Value> {
     let stored = stored?;
     Some(match serde_json::from_str::<Value>(stored) {

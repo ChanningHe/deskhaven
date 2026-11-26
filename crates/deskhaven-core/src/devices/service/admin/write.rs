@@ -1,7 +1,5 @@
-//! The console's device writes. Both run in their own task and write transaction with the
-//! device row locked, so the guard decides on the committed state and the audit row commits
-//! with the change. Moving a device (owner, group) invalidates the strategy cache after the
-//! commit, like the registry's own moves (see `heartbeat`).
+//! Each write runs in its own task and transaction with the device row locked, so the guard
+//! decides on the committed state and the audit row commits with the change.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::device::{self, DeviceStatus};
@@ -18,8 +16,7 @@ use crate::devices::strategy_keys;
 use crate::strategies;
 use crate::text::{self, NOTE_MAX_LEN};
 
-/// Fields to change; `None` leaves a field as it is. For the optional references,
-/// `Some(None)` clears them.
+/// `Some(None)` clears an optional reference.
 #[derive(Clone, Debug, Default)]
 pub struct DeviceUpdate {
     pub owner_user_id: Option<Option<i64>>,
@@ -34,15 +31,12 @@ impl DeviceUpdate {
         self.owner_user_id.is_some() || self.device_group_id.is_some()
     }
 
-    /// Nothing to change: applying it writes nothing and records nothing.
     fn is_empty(&self) -> bool {
         !self.moves_device() && self.note.is_none() && self.status.is_none()
     }
 }
 
 impl DeviceService {
-    /// Applies `update` to device `id`, with `guard` deciding on the device before and after.
-    /// An empty `update` changes and records nothing.
     pub async fn update_guarded(
         &self,
         id: i64,
@@ -95,13 +89,8 @@ impl DeviceService {
         .await
     }
 
-    /// Asks device `id` to close connection `conn_id` at its next heartbeat. The guard checks
-    /// the actor and its audit row commits first; only then is the request queued
-    /// ([`DeviceError::QueueFull`] if the queue has no room). Runs in its own task, so a
-    /// dropped request cannot leave a queued request without its row.
-    ///
-    /// The row is committed before the enqueue on purpose (an executed action must never lack
-    /// its row), so a full queue leaves an audited attempt that queued nothing.
+    /// The audit row commits before the enqueue on purpose (an executed action must never lack its
+    /// row), so a full queue leaves an audited attempt that queued nothing.
     pub async fn disconnect_guarded(
         &self,
         id: i64,
@@ -122,9 +111,7 @@ impl DeviceService {
         .await
     }
 
-    /// Deletes device `id` and its strategy assignment (its `device_strategy_keys` row stays,
-    /// stamped with the deletion time), with `guard` deciding on the device
-    /// (no `after`); `false` if it did not exist. Then runs the deleted hooks.
+    /// Its `device_strategy_keys` row stays, stamped with the deletion time.
     pub async fn delete_guarded(
         &self,
         id: i64,
@@ -156,7 +143,6 @@ impl DeviceService {
     }
 }
 
-/// The owner and device group `update` names exist.
 async fn check_references(
     tx: &sea_orm::DatabaseTransaction,
     update: &DeviceUpdate,
@@ -184,13 +170,11 @@ fn unknown(field: &'static str, reason: &str) -> DeviceError {
     }
 }
 
-/// Names of the foreign keys of `devices` (PostgreSQL puts them in its error text).
+/// PostgreSQL puts them in its error text.
 const FK_OWNER: &str = "fk_devices_owner_user";
 const FK_GROUP: &str = "fk_devices_device_group";
 
-/// A referenced row vanished between the check and the write (PostgreSQL; SQLite's write
-/// transaction excludes that). The violated key names the reference; without a name the
-/// owner, if the update sets one, is blamed first.
+/// A referenced row vanished between the check and the write (PostgreSQL only).
 fn missing(err: DbErr, update: &DeviceUpdate) -> DeviceError {
     if !is_foreign_key_violation(&err) {
         return DeviceError::Database(err);

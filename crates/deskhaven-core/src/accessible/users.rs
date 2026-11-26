@@ -1,5 +1,3 @@
-//! Users in the viewer's scope.
-
 use deskhaven_db::entity::user;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
@@ -9,8 +7,6 @@ use crate::pagination::{Page, PageRequest};
 use crate::users::{Status, User};
 
 impl AccessibleService {
-    /// One page of the users `viewer` can see (themselves and their teammates), by username;
-    /// `status` keeps only users in that state.
     pub async fn users(
         &self,
         viewer: i64,

@@ -1,5 +1,3 @@
-//! Step 1: a new flow row and the authorization URL (see the module docs of `oidc`).
-
 use std::fmt;
 
 use deskhaven_db::entity::oidc_flow::{self, Flow};
@@ -17,7 +15,7 @@ use super::{FLOW_TTL, OidcService};
 use crate::jobs::{Doomed, Plain, Purge};
 use crate::sessions::{ClientDevice, SessionToken};
 
-/// The polling `code` of a client flow. Exposed once; `Debug` never shows it.
+/// Exposed once; `Debug` never shows it.
 pub struct ClientCode(SessionToken);
 
 impl ClientCode {
@@ -32,16 +30,13 @@ impl fmt::Debug for ClientCode {
     }
 }
 
-/// `{code, url}` of `/api/oidc/auth`.
 #[derive(Debug)]
 pub struct ClientFlowStart {
     pub code: ClientCode,
-    /// The IdP's authorization endpoint with the request parameters.
     pub url: Url,
 }
 
-/// The value that ties a console flow to the browser that started it (a cookie). Exposed
-/// once; `Debug` never shows it.
+/// Exposed once; `Debug` never shows it.
 pub struct BrowserBinding(SessionToken);
 
 impl BrowserBinding {
@@ -60,15 +55,12 @@ impl fmt::Debug for BrowserBinding {
     }
 }
 
-/// A started console login: send the browser to `url` with `binding` in a cookie.
 #[derive(Debug)]
 pub struct ConsoleFlowStart {
     pub url: Url,
-    /// Must come back with the completion (see `OidcService::complete_console`).
     pub binding: BrowserBinding,
 }
 
-/// What differs between the flow kinds at the start.
 pub(super) struct FlowRow {
     pub(super) flow: Flow,
     pub(super) context: serde_json::Value,
@@ -76,8 +68,6 @@ pub(super) struct FlowRow {
 }
 
 impl OidcService {
-    /// Starts a client login at the enabled provider named `provider` (the client's `op`)
-    /// for `device`, which the session will be bound to.
     pub async fn begin_client(
         &self,
         provider: &str,
@@ -97,9 +87,8 @@ impl OidcService {
         })
     }
 
-    /// Starts a web console login at the enabled provider named `provider`. The flow only
-    /// completes with the returned binding (`complete_console`), so a callback opened in
-    /// another browser (a forwarded link, an attacker's flow) does nothing.
+    /// Completes only with the returned binding, so a callback opened in another browser (a forwarded
+    /// link, an attacker's flow) does nothing.
     pub async fn begin_console(&self, provider: &str) -> Result<ConsoleFlowStart, OidcError> {
         let binding = SessionToken::generate()?;
         let row = FlowRow {
@@ -114,7 +103,6 @@ impl OidcService {
         })
     }
 
-    /// Stores the flow row and returns the IdP's authorization URL.
     pub(super) async fn begin(&self, provider: &str, row: FlowRow) -> Result<Url, OidcError> {
         let redirect_uri = self
             .inner
@@ -180,8 +168,6 @@ impl OidcService {
         ))
     }
 
-    /// Deletes expired flows in batches; returns how many. The expiry job (M2-20) deletes
-    /// [`expired_flows`] with its own batch settings.
     pub async fn cleanup_flows(&self) -> Result<u64, OidcError> {
         let now = timestamp(self.inner.now_ms())?;
         let deleted = Purge::default()
@@ -191,7 +177,6 @@ impl OidcService {
     }
 }
 
-/// Flows expired at `now`: what cleanup deletes.
 pub(crate) fn expired_flows(now: TimestampMs) -> Doomed<oidc_flow::Entity> {
     use oidc_flow::Column as C;
     Doomed {
@@ -201,8 +186,7 @@ pub(crate) fn expired_flows(now: TimestampMs) -> Doomed<oidc_flow::Entity> {
     }
 }
 
-/// Sealing context of a flow's PKCE verifier: the row's unique state hash (the id does not
-/// exist before the insert).
+/// The id does not exist before the insert.
 pub(crate) fn verifier_context(state_hash: &str) -> String {
     format!("oidc_flows.pkce_verifier_enc:{state_hash}")
 }

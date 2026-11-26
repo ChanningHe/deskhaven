@@ -1,6 +1,3 @@
-//! Tags of a book: list (rule 1), add / update / rename / delete (rule 2). Renaming and
-//! deleting a tag also rewrites the tag lists of the book's peers.
-
 use std::collections::HashSet;
 
 use deskhaven_db::entity::address_book;
@@ -20,14 +17,11 @@ use super::peer::{check_tag_name, unique};
 use super::{AddressBookService, Rule, Tag, snapshot};
 use crate::console_audit::TxGuard;
 
-/// A tag colour is a 32-bit ARGB value.
 const MAX_COLOR: i64 = 0xFFFF_FFFF;
-/// Most tags one book may hold.
 pub const MAX_BOOK_TAGS: u64 = 1000;
 const DELETE_CHUNK: usize = 500;
 
 impl AddressBookService {
-    /// Every tag of the book, ordered by name; needs rule 1.
     pub async fn tags(&self, actor: Actor, guid: &str) -> Result<Vec<Tag>, AddressBookError> {
         let (book, _) = authorize(&self.db, actor, guid, Rule::ReadOnly, false).await?;
         let rows = address_book_tag::Entity::find()
@@ -42,7 +36,6 @@ impl AddressBookService {
         Ok(tags.collect())
     }
 
-    /// Adds a tag; an existing tag of that name is kept as it is. Needs rule 2.
     pub async fn add_tag(
         &self,
         actor: Actor,
@@ -53,8 +46,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`add_tag`](Self::add_tag), with `guard` deciding on the new tag (not consulted when
-    /// the tag already exists: nothing changes).
     pub async fn add_tag_guarded(
         &self,
         actor: Actor,
@@ -76,7 +67,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Changes a tag's colour; needs rule 2.
     pub async fn update_tag(
         &self,
         actor: Actor,
@@ -87,7 +77,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`update_tag`](Self::update_tag), with `guard` deciding on the tag before and after.
     pub async fn update_tag_guarded(
         &self,
         actor: Actor,
@@ -116,8 +105,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Renames tag `old` to `new` (keeping its colour), in the tag list and in every peer
-    /// of the book; needs rule 2.
     pub async fn rename_tag(
         &self,
         actor: Actor,
@@ -129,8 +116,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`rename_tag`](Self::rename_tag), with `guard` deciding on the tag before and after
-    /// (not consulted when `old == new`: nothing changes).
     pub async fn rename_tag_guarded(
         &self,
         actor: Actor,
@@ -176,9 +161,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Deletes these tags from the book and from its peers; unknown names are ignored. At
-    /// most [`MAX_BOOK_TAGS`] names (a book holds no more), else nothing is touched. Needs
-    /// rule 2.
     pub async fn delete_tags(
         &self,
         actor: Actor,
@@ -189,8 +171,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`delete_tags`](Self::delete_tags), with `guard` deciding on the requested names (no
-    /// `after`; not consulted for an empty list).
     pub async fn delete_tags_guarded(
         &self,
         actor: Actor,
@@ -225,7 +205,6 @@ impl AddressBookService {
     }
 }
 
-/// Deletes the tags of the book named in `names`; the names that were tags, sorted.
 async fn remove_tags(
     tx: &DatabaseTransaction,
     book_id: i64,
@@ -300,8 +279,6 @@ pub(super) async fn insert_tag(
     Ok(())
 }
 
-/// Maps every tag of every peer through `map` (`None` drops it, duplicates collapse) and
-/// writes back the peers whose list changed.
 async fn rewrite_peer_tags(
     tx: &DatabaseTransaction,
     book: &address_book::Model,

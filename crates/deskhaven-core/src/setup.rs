@@ -1,21 +1,7 @@
-//! First-run setup (05 §2.4, 04 §3 `setup_tokens`): while the instance has no owner, a
-//! one-time link creates it.
-//!
-//! - **Token**: 256 random bits in the session-token format; only its SHA-256 is stored,
-//!   with `expires_at` ([`SETUP_TOKEN_TTL`]) and `used_at`. At most one token is live:
-//!   issuing one retires every unused token. The raw token leaves the service once, at
-//!   issue (startup log or `deskhaven admin create-setup-link`).
-//! - **Check**: the presented token is hashed and compared, in constant time, with every
-//!   live row (normally one), so neither the database index nor the comparison times the
-//!   token; a malformed token is rejected without a lookup.
-//! - **Completion**: one write transaction claims the token (`used_at` set where it is
-//!   still NULL: single use, also against concurrent requests), refuses when an owner
-//!   already exists, creates the active local owner, retires every other token and records
-//!   the caller's audit row. Any failure rolls all of it back.
-//! - **Serialization**: issue and completion run one at a time across processes (SQLite:
-//!   the `BEGIN IMMEDIATE` write lock; PostgreSQL: a transaction-scoped advisory lock), so
-//!   a CLI `create-setup-link` racing a starting server cannot leave two live tokens, and
-//!   two completions can never both see "no owner yet".
+//! Only the token's SHA-256 is stored; at most one token is live. The presented token is compared
+//! in constant time with every live row, so neither the index nor the comparison times it. Issue
+//! and completion are serialized across processes, so two completions can never both see "no owner
+//! yet".
 
 use std::fmt;
 use std::time::Duration;
@@ -40,10 +26,9 @@ use crate::users::{
     Credential, CredentialStamp, NewUser, Password, Role, Status, User, UserError, UserService,
 };
 
-/// Lifetime of a setup link.
 pub const SETUP_TOKEN_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// A freshly issued setup token. Exposed once; `Debug` never shows it.
+/// Exposed once; `Debug` never shows it.
 pub struct SetupToken {
     token: SessionToken,
     pub expires_at: TimestampMs,
@@ -63,23 +48,16 @@ impl fmt::Debug for SetupToken {
     }
 }
 
-/// What startup did about the first-run setup.
 #[derive(Debug)]
 pub enum StartupSetup {
-    /// An owner exists: nothing to set up.
     Done,
-    /// No owner, and a token issued earlier is still live (its raw value is gone: reissue
-    /// with `deskhaven admin create-setup-link` when the link was lost).
     Pending { expires_at: TimestampMs },
-    /// No owner and no live token: this one was issued.
     Issued(SetupToken),
 }
 
-/// The owner the setup creates.
 #[derive(Debug)]
 pub struct NewOwner {
     pub username: String,
-    /// Blank: the username.
     pub display_name: String,
     pub email: Option<String>,
     pub password: Password,
@@ -87,12 +65,10 @@ pub struct NewOwner {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
-    /// Unknown, expired, used or malformed token.
     #[error("invalid or expired setup token")]
     InvalidToken,
     #[error("the instance already has an owner")]
     OwnerExists,
-    /// The account was refused (invalid username or email, password policy, ...).
     #[error(transparent)]
     User(UserError),
     #[error("cannot generate a setup token")]
@@ -110,14 +86,12 @@ impl From<UserError> for SetupError {
     }
 }
 
-/// The created owner and the stamp to sign them in under.
 #[derive(Debug)]
 pub struct SetupDone {
     pub user: User,
     pub stamp: CredentialStamp,
 }
 
-/// First-run setup tokens and completion. Cheap to clone.
 #[derive(Clone)]
 pub struct SetupService {
     db: DatabaseConnection,
@@ -130,12 +104,10 @@ impl SetupService {
         Self { db, users, clock }
     }
 
-    /// Whether the instance still needs its first owner.
     pub async fn is_required(&self) -> Result<bool, SetupError> {
         Ok(!owner_exists(&self.db).await?)
     }
 
-    /// Issues a token unless an owner exists or a live token waits; see [`StartupSetup`].
     pub async fn on_startup(&self) -> Result<StartupSetup, SetupError> {
         if owner_exists(&self.db).await? {
             return Ok(StartupSetup::Done);
@@ -153,15 +125,10 @@ impl SetupService {
         }
     }
 
-    /// Issues a new token, retiring every unused one. [`SetupError::OwnerExists`] once
-    /// the setup is done.
     pub async fn issue(&self) -> Result<SetupToken, SetupError> {
         issue(&self.db, self.clock.now_ms()).await
     }
 
-    /// Creates the owner with the live token `presented` (see the module docs). `audit`
-    /// builds the console audit row from the new owner; it is written in the same
-    /// transaction.
     pub async fn complete(
         &self,
         presented: &str,
@@ -212,7 +179,6 @@ impl SetupService {
     }
 }
 
-/// [`SetupService::issue`] on `db` at `now_ms`, for the CLI (no running service).
 pub async fn issue(db: &DatabaseConnection, now_ms: i64) -> Result<SetupToken, SetupError> {
     let token = SessionToken::generate().map_err(SetupError::Random)?;
     let ttl = i64::try_from(SETUP_TOKEN_TTL.as_millis()).unwrap_or(i64::MAX);
@@ -235,11 +201,8 @@ pub async fn issue(db: &DatabaseConnection, now_ms: i64) -> Result<SetupToken, S
     Ok(SetupToken { token, expires_at })
 }
 
-/// Transaction-scoped PostgreSQL advisory lock key serializing setup writes (ASCII
-/// "dhsetup!").
 const PG_SETUP_LOCK_KEY: i64 = 0x6468_7365_7475_7021;
 
-/// A write transaction holding the setup lock until it ends (see the module docs).
 async fn begin_setup(db: &DatabaseConnection) -> Result<DatabaseTransaction, DbErr> {
     let tx = begin_write(db).await?;
     if tx.get_database_backend() == DbBackend::Postgres {
@@ -249,7 +212,6 @@ async fn begin_setup(db: &DatabaseConnection) -> Result<DatabaseTransaction, DbE
     Ok(tx)
 }
 
-/// The id of the live token whose hash equals `hash`, compared in constant time.
 async fn matching_live_token<C: ConnectionTrait>(
     conn: &C,
     hash: &TokenHash,
@@ -278,7 +240,6 @@ async fn owner_exists<C: ConnectionTrait>(conn: &C) -> Result<bool, DbErr> {
     Ok(owners > 0)
 }
 
-/// Marks every unused token used (retired).
 async fn retire_unused<C: ConnectionTrait>(conn: &C, now: TimestampMs) -> Result<(), DbErr> {
     setup_token::Entity::update_many()
         .col_expr(Column::UsedAt, Expr::value(now))

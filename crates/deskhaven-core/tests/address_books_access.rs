@@ -1,8 +1,3 @@
-//! AddressBookService, authorization: the rule matrix (1 read, 2 write peers and tags, 3
-//! manage shares and the book), group shares and the effective rule, owners, admin-managed
-//! books, and that books out of reach look exactly like books that do not exist. Every test
-//! runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -21,7 +16,6 @@ fn tag(name: &str) -> Tag {
     }
 }
 
-/// Every peer and tag write, as `actor`, each result reduced to "allowed" / the error.
 async fn writes(books: &AddressBookService, actor: Actor, guid: &str) -> Vec<Result<(), String>> {
     let show = |r: Result<(), AddressBookError>| r.map_err(|e| format!("{e:?}"));
     vec![
@@ -39,7 +33,6 @@ async fn writes(books: &AddressBookService, actor: Actor, guid: &str) -> Vec<Res
     ]
 }
 
-/// Every management operation (rule 3), as `actor`.
 async fn management(env: &Env, actor: Actor, guid: &str, other: i64) -> Vec<Result<(), String>> {
     let show = |r: Result<(), AddressBookError>| r.map_err(|e| format!("{e:?}"));
     let books = &env.books;
@@ -59,7 +52,6 @@ async fn management(env: &Env, actor: Actor, guid: &str, other: i64) -> Vec<Resu
     ]
 }
 
-/// A book shared with `user` at `rule`, holding peer `p1` and tag `t1`.
 async fn stocked(env: &Env, name: &str, user: i64, rule: Rule) -> String {
     let book = env.shared_with(name, user, rule).await;
     env.books
@@ -193,7 +185,6 @@ async fn rule_3_sharee_cannot_change_or_revoke_another_rule_3_grant() {
             assert!(is_forbidden(revoke), "{subject:?}");
         }
         assert_eq!(env.books.shares(me, &guid).await.unwrap().len(), 3);
-        // The console may.
         env.books
             .set_share(admin, &guid, Subject::User(carol), Rule::ReadOnly)
             .await
@@ -318,7 +309,6 @@ async fn group_shares_grant_access_and_the_highest_rule_wins() {
                 .add_peer(Actor::User(carol), guid, bare("c"))
                 .await
         ));
-        // A direct read-only share does not lower what a group grants.
         env.books
             .set_share(admin, guid, Subject::User(alice), Rule::ReadOnly)
             .await
@@ -327,7 +317,6 @@ async fn group_shares_grant_access_and_the_highest_rule_wins() {
             .add_peer(Actor::User(alice), guid, bare("b"))
             .await
             .unwrap();
-        // Leaving the group takes its rule away.
         env.groups.remove_member(writers, alice).await.unwrap();
         assert!(is_forbidden(
             env.books
@@ -363,7 +352,6 @@ async fn owners_have_full_control_and_unowned_books_need_shares() {
             .await
             .unwrap();
         assert_eq!(env.peer_ids(Actor::User(bob), &book.guid).await, ["1"]);
-        // Nobody reaches an unowned book without a share; the console does.
         assert!(is_not_found(
             env.books
                 .tags(Actor::User(alice), &admin_managed.guid)

@@ -1,7 +1,3 @@
-//! Peer writes: add, update and delete (rule 2). Each `*_guarded` variant runs a
-//! [`TxGuard`] inside its write transaction (the console's audit row); the plain variants
-//! are the same writes without one.
-
 use deskhaven_db::entity::address_book_peer;
 use deskhaven_db::{begin_write, time};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
@@ -16,8 +12,6 @@ use super::{AddressBookService, Rule, snapshot};
 use crate::console_audit::TxGuard;
 
 impl AddressBookService {
-    /// Adds a peer; needs rule 2. Refused when the id is already in the book
-    /// ([`AddressBookError::PeerExists`]) or the book holds `addressbook.max_peers` peers.
     pub async fn add_peer(
         &self,
         actor: Actor,
@@ -28,7 +22,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`add_peer`](Self::add_peer), with `guard` deciding on the new peer.
     pub async fn add_peer_guarded(
         &self,
         actor: Actor,
@@ -62,8 +55,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Changes the fields `patch` carries (unknown fields are merged into `extra`); needs
-    /// rule 2.
     pub async fn update_peer(
         &self,
         actor: Actor,
@@ -74,8 +65,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`update_peer`](Self::update_peer), with `guard` deciding on the peer before and
-    /// after.
     pub async fn update_peer_guarded(
         &self,
         actor: Actor,
@@ -99,9 +88,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Removes the peers with these ids; ids not in the book are ignored. At most
-    /// `addressbook.max_peers` ids (a book holds no more), else nothing is touched. Needs
-    /// rule 2.
     pub async fn delete_peers(
         &self,
         actor: Actor,
@@ -112,9 +98,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`delete_peers`](Self::delete_peers), with `guard` deciding on the removed peers
-    /// (no `after`). When none of the ids is in the book nothing changes and the guard is
-    /// not consulted.
     pub async fn delete_peers_guarded(
         &self,
         actor: Actor,

@@ -1,7 +1,3 @@
-//! TfaService login challenges with a manual clock: the ±1 step window, persisted replay
-//! protection, single use, attempt cap, expiry, username/device binding, recovery codes
-//! and cleanup. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

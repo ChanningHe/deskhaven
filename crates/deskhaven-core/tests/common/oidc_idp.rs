@@ -1,7 +1,5 @@
-//! A mock OpenID provider on wiremock: discovery document, JWKS and a token endpoint that
-//! answers with an ID token the test describes ([`TokenSpec`]), signed RS256 with a
-//! throwaway fixture key (`tests/fixtures/oidc/idp-key-*.pem`, PKCS#1, generated for these
-//! tests only). Shared by the core and contract tests (`#[path]` include).
+//! Signed with a throwaway fixture key generated for these tests only. Shared by the core and
+//! contract tests (`#[path]` include).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 #![allow(dead_code)]
@@ -41,11 +39,9 @@ impl AdditionalClaims for Extra {}
 
 pub struct MockIdp {
     pub server: MockServer,
-    /// `<server>/realms/test`, as configured on the provider.
     pub issuer: String,
 }
 
-/// What the next ID token says. `Default` + [`TokenSpec::for_flow`] is a valid token.
 #[derive(Clone, Debug)]
 pub struct TokenSpec {
     pub subject: String,
@@ -55,19 +51,12 @@ pub struct TokenSpec {
     pub preferred_username: Option<String>,
     pub name: Option<String>,
     pub extra: Map<String, Value>,
-    /// Overrides the issuer (default: the mock's).
     pub issuer: Option<String>,
-    /// Overrides the audience (default: [`CLIENT_ID`]).
     pub audience: Option<String>,
-    /// Further audiences next to it.
     pub extra_audiences: Vec<String>,
-    /// Expiry relative to `now`.
     pub expires_in: ChronoDuration,
-    /// The test's notion of now (the service clock).
     pub now: DateTime<Utc>,
-    /// Signing key PEM (default [`KEY_A`], the one published in the JWKS).
     pub key: &'static str,
-    /// `kid` of the token header (default [`KID`]).
     pub kid: &'static str,
 }
 
@@ -98,7 +87,6 @@ impl TokenSpec {
     }
 }
 
-/// `state`, `nonce` and the PKCE challenge of an authorization URL.
 #[derive(Debug)]
 pub struct AuthRequest {
     pub state: String,
@@ -119,14 +107,12 @@ impl AuthRequest {
     }
 }
 
-/// base64url(SHA-256(verifier)), the S256 challenge.
 pub fn s256(verifier: &str) -> String {
     use base64_022::Engine as _;
     base64_022::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 impl MockIdp {
-    /// Discovery and JWKS mounted; no token endpoint yet.
     pub async fn start() -> Self {
         let server = MockServer::start().await;
         let issuer = format!("{}{ISSUER_PATH}", server.uri());
@@ -169,8 +155,6 @@ impl MockIdp {
             .await;
     }
 
-    /// Resets the mock (mocks and recorded requests), then discovery, the JWKS of
-    /// [`KEY_A`] and a token endpoint answering every exchange with an ID token per `spec`.
     pub async fn mount_token(&self, spec: &TokenSpec) {
         self.server.reset().await;
         self.mount_discovery(self.discovery()).await;
@@ -236,8 +220,7 @@ impl MockIdp {
         token.to_string()
     }
 
-    /// A JWT with the claims of `spec`, header `{"alg": alg, "kid": KID}` and the signature
-    /// `sign(signing input)` (algorithm-confusion tests: HS256, `none`).
+    /// Algorithm-confusion tests: HS256, `none`.
     pub fn raw_token(
         &self,
         spec: &TokenSpec,
@@ -264,7 +247,6 @@ impl MockIdp {
         format!("{input}.{}", b64(&signature))
     }
 
-    /// The token endpoint answers with this raw ID token (discovery and JWKS remounted).
     pub async fn mount_raw_token(&self, id_token: &str, discovery: Value) {
         self.server.reset().await;
         self.mount_discovery(discovery).await;
@@ -276,7 +258,6 @@ impl MockIdp {
             .await;
     }
 
-    /// Form bodies of every token request received so far.
     pub async fn token_requests(&self) -> Vec<HashMap<String, String>> {
         let requests = self.server.received_requests().await.unwrap_or_default();
         requests
@@ -286,7 +267,6 @@ impl MockIdp {
             .collect()
     }
 
-    /// Number of requests received for paths ending in `suffix`.
     pub async fn hits(&self, suffix: &str) -> usize {
         let requests = self.server.received_requests().await.unwrap_or_default();
         requests

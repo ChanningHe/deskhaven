@@ -1,10 +1,5 @@
-//! Assignments: one strategy per target, replace semantics.
-//!
-//! `strategy_assignments.target_id` has no foreign key (it points at four tables), so the
-//! deletion paths of those tables call the `forget_*` functions in their own transaction.
-//! They cannot invalidate the cache themselves (nothing is committed yet): the caller does
-//! it after commit, through [`StrategyCache::invalidate`](super::StrategyCache::invalidate)
-//! (users and groups: `StrategyService::watch_users` / `watch_groups`).
+//! `target_id` has no foreign key (it points at four tables), so the deletion paths call the
+//! `forget_*` functions in their own transaction and invalidate the cache after commit.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::managed_by::ManagedBy;
@@ -23,17 +18,12 @@ use super::{StrategyError, StrategyService};
 use crate::console_audit::TxGuard;
 
 impl StrategyService {
-    /// Makes `strategy_id` the strategy of `target`, replacing the one it had. Assigning the
-    /// strategy it already has is a no-op that still advances the version.
+    /// Assigning the strategy it already has still advances the version.
     pub async fn assign(&self, target: Target, strategy_id: i64) -> Result<(), StrategyError> {
         self.assign_with(target, strategy_id, TxGuard::none(), false)
             .await
     }
 
-    /// [`assign`](Self::assign) for the console, with `guard` deciding on the assignment it
-    /// replaces (if any) and the new one. The assignments of a strategy from the
-    /// configuration file belong to that file: assigning such a strategy, or replacing a
-    /// target's assignment to one, fails with [`StrategyError::ManagedByConfig`].
     pub async fn assign_guarded(
         &self,
         target: Target,
@@ -78,10 +68,6 @@ impl StrategyService {
         .await
     }
 
-    /// Removes the assignment of `target` if it is `strategy_id`, with `guard` deciding on
-    /// it; `false` (nothing changed, nothing recorded) if the target has another strategy
-    /// or none. A strategy from the configuration file fails with
-    /// [`StrategyError::ManagedByConfig`] (see [`assign_guarded`](Self::assign_guarded)).
     pub async fn unassign_guarded(
         &self,
         target: Target,
@@ -111,10 +97,8 @@ impl StrategyService {
         .await
     }
 
-    /// Makes `strategy_id` the strategy of `target` only if `target` has none (a device's
-    /// `preset-strategy-name`, which must never replace an administrator's choice); `true` if
-    /// it was assigned. Atomic: a concurrent [`assign`](Self::assign) either comes first and
-    /// wins, or replaces this one.
+    /// Never replaces an administrator's choice. Atomic: a concurrent [`assign`](Self::assign) either
+    /// comes first and wins, or replaces this one.
     pub async fn assign_if_unassigned(
         &self,
         target: Target,
@@ -137,7 +121,6 @@ impl StrategyService {
         .await
     }
 
-    /// Removes the strategy of `target`; `false` if it had none.
     pub async fn unassign(&self, target: Target) -> Result<bool, StrategyError> {
         self.detached(move |inner| async move {
             let tx = begin_write(&inner.db).await?;
@@ -151,7 +134,6 @@ impl StrategyService {
         .await
     }
 
-    /// The strategy id assigned to `target`.
     pub async fn assignment(&self, target: Target) -> Result<Option<i64>, StrategyError> {
         let row = strategy_assignment::Entity::find()
             .filter(target_filter(target))
@@ -160,7 +142,6 @@ impl StrategyService {
         Ok(row.map(|r| r.strategy_id))
     }
 
-    /// Every assignment, ordered by target type and id.
     pub async fn assignments(&self) -> Result<Vec<Assignment>, StrategyError> {
         let mut all = load::assignments(&self.inner.db).await?;
         all.sort_by_key(|a| a.target);
@@ -168,8 +149,7 @@ impl StrategyService {
     }
 }
 
-/// [`StrategyService::assign`] inside the caller's write transaction, for a change that must
-/// commit with other writes (`--assign`). The caller invalidates the cache after commit.
+/// The caller invalidates the cache after commit.
 pub(crate) async fn assign_in(
     tx: &impl ConnectionTrait,
     target: Target,
@@ -181,7 +161,6 @@ pub(crate) async fn assign_in(
     Ok(())
 }
 
-/// The strategy id assigned to `target`, read on `conn`.
 pub(crate) async fn assignment_in(
     conn: &impl ConnectionTrait,
     target: Target,
@@ -193,8 +172,6 @@ pub(crate) async fn assignment_in(
     Ok(row.map(|r| r.strategy_id))
 }
 
-/// The id of the strategy named `name` (surrounding blanks ignored), share-locked until the
-/// transaction ends.
 pub(crate) async fn id_by_name_in(
     tx: &impl ConnectionTrait,
     name: &str,
@@ -207,28 +184,22 @@ pub(crate) async fn id_by_name_in(
     Ok(found.map(|s| s.id))
 }
 
-/// Removes the assignment of a deleted user. Call in the transaction that deletes the row.
 pub async fn forget_user(tx: &impl ConnectionTrait, id: i64) -> Result<(), DbErr> {
     forget_target(tx, Target::User(id)).await.map(drop)
 }
 
-/// Removes the assignment of a deleted user group. Call in the transaction that deletes it.
 pub async fn forget_group(tx: &impl ConnectionTrait, id: i64) -> Result<(), DbErr> {
     forget_target(tx, Target::Group(id)).await.map(drop)
 }
 
-/// Removes the assignment of a deleted device group. Call in the transaction that deletes it.
 pub async fn forget_device_group(tx: &impl ConnectionTrait, id: i64) -> Result<(), DbErr> {
     forget_target(tx, Target::DeviceGroup(id)).await.map(drop)
 }
 
-/// Removes the assignment of a deleted device (`devices.id`). Call in the transaction that
-/// deletes it.
 pub async fn forget_device(tx: &impl ConnectionTrait, id: i64) -> Result<(), DbErr> {
     forget_target(tx, Target::Device(id)).await.map(drop)
 }
 
-/// Number of rows removed.
 async fn forget_target(tx: &impl ConnectionTrait, target: Target) -> Result<u64, DbErr> {
     let result = strategy_assignment::Entity::delete_many()
         .filter(target_filter(target))
@@ -237,7 +208,6 @@ async fn forget_target(tx: &impl ConnectionTrait, target: Target) -> Result<u64,
     Ok(result.rows_affected)
 }
 
-/// The row of `target`: its type, and its id (NULL for the global target).
 fn target_filter(target: Target) -> Condition {
     let kind = Condition::all().add(strategy_assignment::Column::TargetType.eq(target.kind()));
     match target.id() {
@@ -246,8 +216,7 @@ fn target_filter(target: Target) -> Condition {
     }
 }
 
-/// The strategy exists, and keeps existing until the transaction ends (shared row lock on
-/// PostgreSQL; SQLite's write transaction excludes other writers); who manages it.
+/// Shared row lock on PostgreSQL; SQLite's write transaction excludes other writers.
 async fn ensure_strategy(tx: &impl ConnectionTrait, id: i64) -> Result<ManagedBy, StrategyError> {
     let found = strategy::Entity::find_by_id(id)
         .lock_shared()
@@ -263,8 +232,8 @@ fn refuse_config(managed: ManagedBy) -> Result<(), StrategyError> {
     }
 }
 
-/// The target exists (and cannot be deleted before commit). A deletion path removes its
-/// assignments in its own transaction, so no assignment of a vanished target survives.
+/// A deletion path removes its assignments in its own transaction, so none of a vanished target
+/// survives.
 async fn ensure_target(tx: &impl ConnectionTrait, target: Target) -> Result<(), StrategyError> {
     let found = match target {
         Target::Global => return Ok(()),
@@ -297,9 +266,7 @@ async fn ensure_target(tx: &impl ConnectionTrait, target: Target) -> Result<(), 
     }
 }
 
-/// Points the target's row at `strategy_id`, inserting it if there is none. Never relies on
-/// catching a unique violation: that would abort the PostgreSQL transaction. A concurrent
-/// insert of the same target makes ours do nothing and the second update succeed.
+/// Never relies on catching a unique violation: that would abort the PostgreSQL transaction.
 async fn upsert(tx: &impl ConnectionTrait, target: Target, strategy_id: i64) -> Result<(), DbErr> {
     if repoint(tx, target, strategy_id).await? {
         return Ok(());
@@ -317,12 +284,9 @@ async fn upsert(tx: &impl ConnectionTrait, target: Target, strategy_id: i64) -> 
     )))
 }
 
-/// `INSERT ... ON CONFLICT DO NOTHING` **without a conflict target**, so any unique index
-/// absorbs the conflict: `uq_strategy_assignments_target` for the four id-carrying targets
-/// and the partial `uq_strategy_assignments_global` for the global one. sea-orm's own
-/// `on_conflict_do_nothing()` targets the primary key (`("id")`), which neither index is,
-/// so a concurrent first insert of the same target would raise 23505 and abort the
-/// PostgreSQL transaction.
+/// No conflict target, so any unique index absorbs the conflict; sea-orm's
+/// `on_conflict_do_nothing()` targets the primary key, so a concurrent first insert would raise
+/// 23505 and abort the transaction.
 fn insert_if_absent(
     target: Target,
     strategy_id: i64,
@@ -338,7 +302,6 @@ fn insert_if_absent(
         .try_insert()
 }
 
-/// `true` if the target had a row (now pointing at `strategy_id`).
 async fn repoint(
     tx: &impl ConnectionTrait,
     target: Target,

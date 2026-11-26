@@ -4,35 +4,26 @@ use sea_orm::DbErr;
 use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 
-/// Why a settings update was not applied. Nothing is ever partially written.
-/// Messages carry keys and reasons, never values.
+/// Nothing is ever partially written. Messages carry keys and reasons, never values.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SettingsError {
-    /// Keys fixed by the bootstrap configuration (API: 409 `setting_pinned`).
     #[error("settings pinned by the bootstrap configuration: {}", keys.join(", "))]
     Pinned { keys: Vec<String> },
 
-    /// Keys changed since the caller read them (API: 409).
     #[error("settings changed since they were read: {}", keys.join(", "))]
     VersionConflict { keys: Vec<String> },
 
-    /// Unknown keys, invalid values or violated cross-key rules (API: 422).
     #[error("invalid settings: {}", render(problems))]
     Invalid { problems: Vec<Problem> },
 
-    /// The audit guard of the write declined it (the acting account may no longer change
-    /// settings); nothing was written.
     #[error(transparent)]
     Refused(#[from] Refused),
 
-    /// The update task panicked or the runtime is shutting down; whether
-    /// the batch was committed is unknown until the next read.
+    /// Whether the batch committed is unknown until the next read.
     #[error("settings update did not complete")]
     Aborted,
 
-    /// The batch did not reach commit in time (e.g. another writer held the
-    /// lock); nothing was written.
     #[error("settings update timed out")]
     Timeout,
 

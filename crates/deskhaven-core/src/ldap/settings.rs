@@ -1,5 +1,3 @@
-//! A directory as the protocol code uses it: validated fields and the opened bind password.
-
 use std::fmt;
 
 use deskhaven_db::entity::ldap_directory;
@@ -11,18 +9,16 @@ use super::filter::DEFAULT_GROUP_FILTER;
 use super::model::{Fields, NewDirectory};
 use super::validate;
 
-/// Attribute holding the groups of a user entry (AD, OpenLDAP's memberof overlay).
 pub(crate) const MEMBER_OF: &str = "memberOf";
 
-/// The service account searches run as. The password is `None` only when the stored row
-/// lost it (validation never allows that); binding then fails as a configuration error.
+/// `None` only when the stored row lost it; binding then fails as a configuration error.
 #[derive(Clone)]
 pub(crate) struct ServiceAccount {
     pub(crate) dn: String,
     pub(crate) password: Option<Zeroizing<String>>,
 }
 
-/// Everything needed to talk to one directory. `Debug` never shows the bind password.
+/// `Debug` never shows the bind password.
 #[derive(Clone)]
 pub struct DirectorySettings {
     pub(crate) name: String,
@@ -39,7 +35,6 @@ pub struct DirectorySettings {
 }
 
 impl DirectorySettings {
-    /// Settings of a directory that is not stored (yet), e.g. to test a form before saving.
     pub fn from_new(new: &NewDirectory) -> Result<Self, DirectoryError> {
         let fields = Fields::of_new(new)?;
         let password = validate::bind_password(new.bind_password.as_deref())?;
@@ -94,12 +89,10 @@ impl DirectorySettings {
         &self.name
     }
 
-    /// Whether groups come from a group search (else from `memberOf`).
     pub(crate) fn searches_groups(&self) -> bool {
         self.group_filter.is_some() && self.group_base_dn.is_some()
     }
 
-    /// Whether group DNs are needed at all (mapping or the admin flag).
     pub(crate) fn wants_groups(&self) -> bool {
         self.group_base_dn.is_some() || self.admin_group_dn.is_some()
     }
@@ -108,7 +101,6 @@ impl DirectorySettings {
         self.group_filter.as_deref().unwrap_or(DEFAULT_GROUP_FILTER)
     }
 
-    /// Attributes the user search asks for.
     pub(crate) fn user_attrs(&self) -> Vec<String> {
         let mut attrs = vec![self.username_attr.clone()];
         attrs.extend(self.email_attr.iter().cloned());

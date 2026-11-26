@@ -1,7 +1,3 @@
-//! Outbound HTTP hardening of the OIDC client: response size cap, no redirects, request
-//! timeout, and endpoints from the discovery document checked before use (no `javascript:`
-//! authorization URL, no plain http outside loopback). Service-level cases on both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -85,7 +81,6 @@ async fn slow_responses_time_out() {
     assert!(started.elapsed() < Duration::from_secs(2));
 }
 
-/// The provider's discovery document replaced by `document(issuer)`.
 async fn with_discovery(env: &Env, document: serde_json::Value) {
     env.idp.server.reset().await;
     env.idp.mount_discovery(document).await;
@@ -228,7 +223,6 @@ async fn a_failed_discovery_is_remembered_for_thirty_seconds() {
         .mount(&env.idp.server)
         .await;
         let failed = env.oidc.begin_client("corp", &device()).await;
-        // The IdP recovers.
         env.idp.server.reset().await;
         env.idp.mount_discovery(env.idp.discovery()).await;
         env.idp

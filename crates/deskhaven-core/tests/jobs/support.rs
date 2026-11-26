@@ -1,5 +1,3 @@
-//! Shared setup: the application state on one manual clock, and rows of the tables the jobs
-//! clean, inserted with chosen timestamps.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test module uses a subset.
@@ -66,7 +64,6 @@ pub async fn ctx(db: &TestDb) -> Ctx {
     }
 }
 
-/// `T0_MS` minus `age`.
 pub fn ago(age: Duration) -> TimestampMs {
     at(T0_MS - i64::try_from(age.as_millis()).unwrap())
 }
@@ -76,7 +73,6 @@ pub fn at(ms: i64) -> TimestampMs {
 }
 
 impl Ctx {
-    /// Sets `key` to `value`, whatever its current version.
     pub async fn set(&self, key: &str, value: Json) {
         let settings = &self.state.settings;
         let version = settings.snapshot().view(key).unwrap().version;
@@ -107,7 +103,6 @@ impl Ctx {
             .unwrap();
     }
 
-    /// A connection row with `session_id`, created at `created_at`.
     pub async fn connection(&self, session_id: &str, created_at: TimestampMs) -> i64 {
         let row = connection_session::ActiveModel {
             guid: Set(uuid::Uuid::now_v7().to_string()),
@@ -210,7 +205,6 @@ impl Ctx {
         E::find().count(&self.conn).await.unwrap()
     }
 
-    /// Console audit rows with `action`, oldest first.
     pub async fn audit_rows(&self, action: &str) -> Vec<console_audit::Model> {
         use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
         console_audit::Entity::find()

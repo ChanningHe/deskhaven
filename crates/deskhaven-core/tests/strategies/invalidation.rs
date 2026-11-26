@@ -1,6 +1,3 @@
-//! The cache serves repeated lookups without the database and drops its snapshot after
-//! every mutation that can change an effective strategy.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::strategies::{DeviceInputs, StrategyUpdate, Target};
@@ -11,14 +8,12 @@ use sea_orm::{EntityTrait, TransactionTrait};
 
 use super::support::{Ctx, ctx, device_inputs, opts};
 
-/// Loads the snapshot and returns the version it carries.
 async fn warm(c: &Ctx, inputs: &DeviceInputs) -> i64 {
     let version = c.svc.effective(inputs).await.unwrap().modified_at;
     assert!(c.svc.cache().is_loaded());
     version
 }
 
-/// After a mutation: the snapshot is gone and the version moved on.
 fn assert_invalidated(c: &Ctx, before: i64, what: &str) {
     assert!(!c.svc.cache().is_loaded(), "{what}: snapshot kept");
     assert!(
@@ -189,7 +184,7 @@ async fn device_and_device_group_deletion_paths_use_forget_and_invalidate() {
         let inputs = device_inputs(device, None, Some(lab));
         assert_eq!(c.options(&inputs).await, opts(&[("k", "v")]));
 
-        // What the device registry (M2-12) does when it deletes a device.
+        // What the device registry does when it deletes a device.
         let tx = begin_write(&db.conn).await.unwrap();
         deskhaven_core::strategies::forget_device(&tx, device)
             .await

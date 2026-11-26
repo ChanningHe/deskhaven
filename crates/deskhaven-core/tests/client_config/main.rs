@@ -1,8 +1,5 @@
-//! The RustDesk client configuration (M3-11): the config string, the QR payload and the
-//! Windows file names must be accepted by the official client. The client's decoders are
-//! ported in `rustdesk_port` (pinned commit 23e5bb4); the golden strings below were made
-//! independently of this code (Python mimicking Dart's `ServerConfig.encode`:
-//! `common.dart:2956-2966`).
+//! The golden strings below were made independently of this code (Python mimicking Dart's
+//! `ServerConfig.encode`).
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod resolve;
@@ -38,8 +35,8 @@ fn decoded(s: &ServerConfig) -> Decoded {
     }
 }
 
-/// Dart's `ServerConfig.encode` (`common.dart:2956-2966`): compact JSON in the order
-/// host, relay, api, key; padded base64url; reversed.
+/// Dart's `ServerConfig.encode`: compact JSON in the order host, relay, api, key; padded base64url;
+/// reversed.
 fn canonical(s: &ServerConfig) -> String {
     let json = format!(
         r#"{{"host":"{}","relay":"{}","api":"{}","key":"{}"}}"#,
@@ -66,9 +63,8 @@ fn matches_the_golden_strings() {
 
 #[test]
 fn the_clients_own_test_vector_decodes_to_what_we_encode() {
-    // `custom_server.rs:190-198` of the client: the licensed string of this config. The
-    // client's own string is unpadded; `official` is that string with the padding `=` the
-    // Flutter encoder adds (the client's test at `:225` pads it too).
+    // The client's own test string of this config is unpadded; `official` adds the padding `=` the
+    // Flutter encoder adds.
     let client_unpadded = "0nI900VsFHZVBVdIlncwpHS4V0bOZ0dtVldrpVO4JHdCp0YV5WdzUGZzdnYRVjI6ISeltmIsISMuEjLx4SMiojI0N3boJye";
     let official = format!("={client_unpadded}");
     let ours = server("1.1.1.1", "", "", KEY);
@@ -102,8 +98,8 @@ fn every_client_path_decodes_the_string() {
 
 #[test]
 fn the_string_never_holds_the_separator_the_cli_splits_at() {
-    // `--config` and the file name parser cut at "--" (`custom_server.rs:98`). Even the
-    // characters that encode to '-' (0x3E, 0x7E) cannot make two in a row.
+    // `--config` and the file name parser cut at "--". Even the characters that encode to '-' (0x3E,
+    // 0x7E) cannot make two in a row.
     for n in 0..3000 {
         let tail = "~>".repeat(n % 7);
         let cfg = server(
@@ -201,8 +197,8 @@ fn the_plain_name_orders_host_key_api_relay_and_skips_empty_values() {
 
     let plain = cfg.windows_names().plain;
 
-    // `custom_server.rs` finds `host=` first and reads the other keys from the tokens
-    // after it; the template puts host first and a trailing comma last (`(1)` renames).
+    // The client finds `host=` first and reads the other keys from the tokens after it; the template
+    // puts host first and a trailing comma last (`(1)` renames).
     assert_eq!(
         plain.as_deref(),
         Some(
@@ -218,7 +214,7 @@ fn encoded_names_survive_windows_duplicate_suffixes() {
     let encoded = cfg.windows_names().encoded.unwrap();
     let stem = encoded.strip_suffix(".exe").unwrap();
 
-    // Windows appends " (1)" before the extension (`custom_server.rs:102-107`).
+    // Windows appends " (1)" before the extension.
     let renamed = format!("{stem} (1).exe");
 
     assert!(encoded.starts_with("rustdesk-licensed-") && encoded.ends_with(".exe"));

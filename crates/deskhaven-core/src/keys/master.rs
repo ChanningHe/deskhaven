@@ -1,6 +1,3 @@
-//! Master key resolution (05-config §2.2): `security.master_key` if set,
-//! else `{data_dir}/master.key` (generated on first start, 0600).
-
 use std::path::{Path, PathBuf};
 
 use deskhaven_config::Secret;
@@ -17,8 +14,7 @@ pub fn master_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join(MASTER_KEY_FILE)
 }
 
-/// The configured or on-disk master key; `None` if neither exists. Never
-/// writes. A configured key wins; a differing `master.key` is a warning.
+/// Never writes. A configured key wins; a differing `master.key` is a warning.
 pub fn read_master_key(
     configured: &Secret,
     data_dir: &Path,
@@ -32,10 +28,8 @@ pub fn read_master_key(
     Ok(Some(Loaded::new(key, warnings)))
 }
 
-/// Like [`read_master_key`], but generates `master.key` when absent, then
-/// reads back whatever is on disk (a concurrent winner's key included). A
-/// present but unreadable or malformed file is an error, never replaced:
-/// a new key would orphan every existing ciphertext.
+/// A present but unreadable or malformed file is an error, never replaced: a new key would orphan
+/// every existing ciphertext.
 pub fn load_or_generate_master_key(
     configured: &Secret,
     data_dir: &Path,
@@ -50,7 +44,6 @@ pub fn load_or_generate_master_key(
     read_file(&path)?.ok_or_else(|| KeyError::vanished(&path))
 }
 
-/// `<base64>\n`, built without reallocation copies of the key text.
 fn file_contents(key: &MasterKey) -> Zeroizing<String> {
     let encoded = key.to_base64();
     let mut text = Zeroizing::new(String::with_capacity(encoded.len() + 1));
@@ -59,8 +52,6 @@ fn file_contents(key: &MasterKey) -> Zeroizing<String> {
     text
 }
 
-/// Any `master.key` that is not the configured key (including one that
-/// cannot be read) is ignored, which the operator must know about.
 fn conflict_warning(configured: &MasterKey, path: &Path) -> Option<KeyWarning> {
     match read_file(path) {
         Ok(None) => None,

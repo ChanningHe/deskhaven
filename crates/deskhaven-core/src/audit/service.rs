@@ -1,6 +1,3 @@
-//! [`AuditService`]: identity check, rate limits, nonce claim and the record write, in one
-//! transaction.
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,7 +20,6 @@ use crate::clock::SharedClock;
 use crate::devices::DeviceService;
 use crate::text::{self, NOTE_MAX_LEN};
 
-/// Audit ingest. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct AuditService {
     inner: Arc<Inner>,
@@ -39,8 +35,6 @@ struct Inner {
 }
 
 impl AuditService {
-    /// `devices` verifies the reporting device; times (rows, rate limits, waiting notes)
-    /// come from `clock`.
     pub fn new(db: DatabaseConnection, devices: DeviceService, clock: SharedClock) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -54,16 +48,12 @@ impl AuditService {
         }
     }
 
-    /// Takes a token of `client`'s audit bucket, or returns how long until one is free.
     pub fn admit(&self, client: ClientAddr) -> Result<(), Duration> {
         self.inner.ips.check(client)
     }
 
-    /// Stores `record` of the device `envelope` names, unless the device is not verified
-    /// (nothing written, no nonce claimed, no quota spent), over its quota, or the nonce was
-    /// stored before. The nonce is claimed in the record's transaction, so a failed write
-    /// leaves it free for the retry. The write runs in its own task: a dropped request cannot
-    /// cut it short.
+    /// The nonce is claimed in the record's transaction, so a failed write leaves it free for the
+    /// retry. The write runs in its own task: a dropped request cannot cut it short.
     pub async fn ingest(&self, envelope: Envelope, record: Record) -> Result<Ingest, AuditError> {
         let inner = &self.inner;
         let verified = inner
@@ -83,10 +73,8 @@ impl AuditService {
             .map_err(AuditError::from)
     }
 
-    /// Sets the controller's note on its session's rows unless they have one, or keeps it
-    /// until a record binds the session (see `notes`). The note carries no uuid: the id must
-    /// be registered, and the session id (a random `u64` of the controller) selects the rows.
-    /// `from` is charged for a waiting note.
+    /// The note carries no uuid: the id must be registered, and the session id (a random `u64` of
+    /// the controller) selects the rows.
     pub async fn record_note(
         &self,
         note: ControllerNote,
@@ -140,8 +128,7 @@ impl Inner {
         Ok(Ingest::Stored)
     }
 
-    /// Sets a note that waited for `session` now that a record bound it. The record is
-    /// committed, so a failure here costs only the note.
+    /// The record is committed, so a failure here costs only the note.
     async fn apply_waiting_note(&self, device: &str, session: &SessionId) {
         if session.is_unbound() {
             return;
@@ -154,7 +141,6 @@ impl Inner {
         }
     }
 
-    /// The outcome of a note whose session has no rows yet.
     fn pending(&self, device: &str, hold: Hold) -> NoteOutcome {
         match hold {
             Hold::Held | Hold::AlreadyWaiting => NoteOutcome::Pending,
@@ -172,7 +158,6 @@ impl Inner {
     }
 }
 
-/// Records `nonce`; `false` if it was already stored.
 async fn claim(tx: &DatabaseTransaction, nonce: &str, now: TimestampMs) -> Result<bool, DbErr> {
     let row = audit_nonce::ActiveModel {
         nonce: Set(nonce.to_owned()),
@@ -185,8 +170,6 @@ async fn claim(tx: &DatabaseTransaction, nonce: &str, now: TimestampMs) -> Resul
     Ok(matches!(inserted, TryInsertResult::Inserted(n) if n > 0))
 }
 
-/// Sets `note` on the session's rows that have none (the first note stays, 06 §7); `true`
-/// if any row took it.
 async fn set_controller_note(
     db: &impl ConnectionTrait,
     device: &str,

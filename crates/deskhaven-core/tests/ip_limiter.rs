@@ -1,6 +1,3 @@
-//! Per-IP login token bucket (M2-06): quota from settings with hot reload, /64 keying,
-//! trusted-proxy fallback bucket, bounded memory. Time is a manual clock.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,21 +1,7 @@
-//! In-memory cache of validated sessions (06 §3.2: hash → session, TTL 60s, explicit
-//! invalidation on revocation).
-//!
-//! A plain `HashMap` behind a `std::sync::Mutex`: lookups are synchronous (usable from the
-//! hbbs ACL path without an executor), critical sections are a few map operations and never
-//! span an `.await`. Bounded: when full, stale entries are purged first, then one arbitrary
-//! entry is evicted. Rare whole-cache scans (invalidate by user, flush) are O(n), which is
-//! fine at the expected size.
-//!
-//! Each entry stores the session's absolute expiry and last use, so expiry is enforced on a
-//! hit without the database ([`CachedSession::check`]). Entries expire after the cache TTL,
-//! which bounds how long a change made without an explicit invalidation (a lost event, a
-//! role change) can go unnoticed.
-//!
-//! Fill race: a request that read a session from the database must not re-insert it after
-//! a concurrent revocation invalidated it. Every invalidation bumps a generation counter;
-//! a fill passes the generation it saw *before* its database read and is dropped if any
-//! invalidation happened since.
+//! Lookups are synchronous (usable from the hbbs ACL path without an executor) and never span an
+//! `.await`. The TTL bounds how long a change made without an explicit invalidation can go
+//! unnoticed. Every invalidation bumps a generation; a fill that saw an older generation before its
+//! database read is dropped, so it cannot re-insert a revoked session.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -23,23 +9,18 @@ use std::time::Duration;
 
 use super::{SessionError, SessionPrincipal, TokenHash};
 
-/// How long an entry may serve without going back to the database.
 pub const CACHE_TTL: Duration = Duration::from_secs(60);
-/// Default bound on cached sessions.
 pub const DEFAULT_CAPACITY: usize = 50_000;
 
-/// A validated session as cached.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CachedSession {
     pub principal: SessionPrincipal,
-    /// Absolute expiry, unix ms.
     pub expires_at_ms: i64,
-    /// Last recorded use, unix ms (the idle timeout counts from here).
+    /// The idle timeout counts from here.
     pub last_used_at_ms: i64,
 }
 
 impl CachedSession {
-    /// [`SessionError::Expired`] past the absolute expiry or after `idle_ms` without use.
     pub fn check(&self, now_ms: i64, idle_ms: i64) -> Result<(), SessionError> {
         let idle_deadline = self.last_used_at_ms.saturating_add(idle_ms);
         if now_ms >= self.expires_at_ms || now_ms >= idle_deadline {
@@ -49,11 +30,9 @@ impl CachedSession {
     }
 }
 
-/// Opaque snapshot of the invalidation counter, taken before a database read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CacheGeneration(u64);
 
-/// Shared handle; clones see the same entries.
 #[derive(Clone)]
 pub struct SessionCache {
     state: Arc<Mutex<State>>,
@@ -87,8 +66,7 @@ impl SessionCache {
         }
     }
 
-    /// The cached session, unless absent or older than the TTL (then dropped). Does not
-    /// check session expiry: see [`CachedSession::check`].
+    /// Does not check session expiry: see [`CachedSession::check`].
     pub fn get(&self, hash: &TokenHash, now_ms: i64) -> Option<CachedSession> {
         let mut state = self.lock();
         let fresh = state.entries.get(hash).map(|e| self.is_fresh(e, now_ms))?;
@@ -103,8 +81,6 @@ impl SessionCache {
         CacheGeneration(self.lock().generation)
     }
 
-    /// Caches `session` unless an invalidation happened since `seen` was taken. Returns
-    /// whether it was stored.
     pub(super) fn insert(
         &self,
         hash: TokenHash,
@@ -127,15 +103,13 @@ impl SessionCache {
         true
     }
 
-    /// Records a use written to the database (sliding idle expiry).
     pub(super) fn mark_used(&self, hash: &TokenHash, last_used_at_ms: i64) {
         if let Some(entry) = self.lock().entries.get_mut(hash) {
             entry.session.last_used_at_ms = last_used_at_ms;
         }
     }
 
-    /// Drops an entry whose session expired. Unlike the `invalidate_*` methods it leaves
-    /// concurrent fills alone: a re-filled expired session is rejected by its check anyway.
+    /// Leaves concurrent fills alone: a re-filled expired session is rejected by its check anyway.
     pub(super) fn remove_expired(&self, hash: &TokenHash) {
         self.lock().entries.remove(hash);
     }
@@ -194,8 +168,7 @@ impl SessionCache {
         now_ms.saturating_sub(entry.cached_at_ms) < self.ttl_ms
     }
 
-    /// A panic while holding the lock cannot leave the map half-updated (every critical
-    /// section is a single map operation), so poisoning is ignored.
+    /// Every critical section is a single map operation, so poisoning is ignored.
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }

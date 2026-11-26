@@ -1,14 +1,6 @@
-//! Settings persistence and hot reload (05-config §3.2-3.3).
-//!
-//! Validation, pins and snapshots live in `deskhaven_config::settings`;
-//! this module loads rows, applies batches in one write transaction with
-//! optimistic `version` checks, writes history, encrypts sensitive values
-//! and publishes each new snapshot (lock-free reads, `watch` notification).
-//!
-//! Single writer process (05-config §3.6): snapshots are rebuilt on this
-//! process's own updates, and from the locked read of every update attempt
-//! (so a conflict also refreshes stale versions); another process writing
-//! the same database is not otherwise observed.
+//! Single writer process: snapshots are rebuilt on this process's own updates and from the locked
+//! read of every update attempt; another process writing the same database is not otherwise
+//! observed.
 
 mod apply;
 mod changes;
@@ -33,22 +25,16 @@ use crate::console_audit::TxGuard;
 use crate::crypto::SecretBox;
 use crate::text;
 
-/// Longest accepted history note.
 pub const MAX_REASON_LEN: usize = 500;
 
-/// One batch of changes, applied atomically. Changes whose value equals
-/// the current effective value are skipped (no version bump, no history).
+/// Changes equal to the current effective value are skipped (no version bump, no history).
 #[derive(Debug, Clone)]
 pub struct UpdateRequest {
     pub changes: Vec<Change>,
-    /// Acting user; `None` for the system.
     pub actor: Option<i64>,
-    /// Free-form note stored in the history (at most [`MAX_REASON_LEN`]
-    /// characters, no control characters).
     pub reason: Option<String>,
 }
 
-/// Owns the effective settings of the process. Cheap to clone (shared state).
 #[derive(Clone)]
 pub struct SettingsService {
     inner: Arc<Inner>,
@@ -60,17 +46,12 @@ struct Inner {
     pins: PinSet,
     current: ArcSwap<Snapshot>,
     notify: watch::Sender<Arc<Snapshot>>,
-    /// Stored rows that could not be used, until each key is rewritten.
     row_warnings: ArcSwap<Vec<LoadWarning>>,
-    /// Keeps commit and publish of one batch together, so snapshots are
-    /// published in commit order.
+    /// Snapshots are published in commit order.
     writer: Mutex<()>,
 }
 
 impl SettingsService {
-    /// Reads every stored row and builds the first snapshot. Rows that
-    /// cannot be used are ignored (see [`SettingsService::load_warnings`]);
-    /// only database errors fail.
     pub async fn load(
         db: DatabaseConnection,
         crypto: Arc<SecretBox>,
@@ -96,39 +77,27 @@ impl SettingsService {
         Ok((service, warnings))
     }
 
-    /// The current snapshot. Lock-free; hold it for a consistent view.
     pub fn snapshot(&self) -> Arc<Snapshot> {
         self.inner.current.load_full()
     }
 
-    /// Receives every snapshot published after a successful update or a
-    /// refresh from the database.
     pub fn subscribe(&self) -> watch::Receiver<Arc<Snapshot>> {
         self.inner.notify.subscribe()
     }
 
-    /// Unusable stored rows (kept until the key is successfully rewritten)
-    /// and cross-key rules that do not hold on the current snapshot. Never
-    /// contains values; for readiness checks and admin banners.
     pub fn load_warnings(&self) -> Vec<LoadWarning> {
         let mut warnings = (*self.inner.row_warnings.load_full()).clone();
         warnings.extend(self.snapshot().rule_warnings());
         warnings
     }
 
-    /// Validates and applies `request` atomically, then publishes the new
-    /// snapshot. On any error nothing is written. Cancel-safe: the batch
-    /// runs in its own task, so dropping this future cannot leave the
-    /// database and the snapshot apart.
+    /// Cancel-safe: the batch runs in its own task, so dropping this future cannot leave the database
+    /// and the snapshot apart.
     pub async fn update(&self, request: UpdateRequest) -> Result<Arc<Snapshot>, SettingsError> {
         self.update_guarded(request, Vec::new(), TxGuard::none())
             .await
     }
 
-    /// [`update`](Self::update) for the console: `resets` drop the stored value of their keys
-    /// (the default applies again; `version` as for a change, 0 when nothing is stored), and
-    /// `guard` decides on the written keys and records the audit row inside the write
-    /// transaction. A batch that changes nothing runs no guard and records nothing.
     pub async fn update_guarded(
         &self,
         request: UpdateRequest,
@@ -147,8 +116,6 @@ impl SettingsService {
     }
 }
 
-/// The snapshot of `rows` and the warnings about rows it could not use
-/// (cross-key rule warnings are recomputed from the snapshot on demand).
 fn observe(
     rows: &[setting::Model],
     crypto: &SecretBox,

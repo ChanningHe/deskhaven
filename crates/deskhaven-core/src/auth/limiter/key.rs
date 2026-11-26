@@ -1,36 +1,22 @@
-//! `auth_lockouts` keys of one login attempt.
+//! IPv6 sources are /48, deliberately wider than the IP bucket's /64: a residential customer
+//! commonly gets a /56 and a tunnel broker a /48, so per-/64 rows would let one attacker look
+//! like hundreds of sources to the global row.
 //!
-//! Every attempt touches two rows:
-//! - per source: `user:<name>|<source>`, where `<source>` is the client's IPv4 address, its
-//!   IPv6 **/48** ([`source_prefix`]), or `fallback` for a trusted proxy's own address.
-//!   Exponential backoff. The /48 is deliberately wider than the IP bucket's /64: a single
-//!   residential customer commonly gets a /56 (256 /64s) and a free tunnel broker a /48, so
-//!   per-/64 rows would let one attacker look like hundreds of sources to the global row.
-//! - global: `user:<name>|*`. Higher threshold, fixed duration (`policy.rs`).
-//!
-//! `<name>` is the `users.username_norm` form of the input ([`username_norm`]), or
-//! `~malformed` for input that is not a well-formed username (it cannot name an account).
-//! So keys never depend on whether the account exists, attacker-chosen strings neither grow
-//! the table nor reach it verbatim (PostgreSQL rejects NUL in text), and every key of one
-//! username starts with `user:<name>|`.
+//! Keys never depend on whether the account exists, and attacker-chosen strings never reach
+//! the table verbatim: a malformed username maps to `~malformed`.
 
 use std::net::{IpAddr, Ipv6Addr};
 
 use super::ClientAddr;
 use crate::users::username_norm;
 
-/// IPv6 prefix of a lockout source (see module docs).
 pub const LOCKOUT_IPV6_PREFIX: u32 = 48;
-/// Name part shared by every malformed username (`~` is outside the username charset).
+/// `~` is outside the username charset.
 const MALFORMED_NAME: &str = "~malformed";
-/// Source part shared by every proxy-fallback address.
 const FALLBACK_SOURCE: &str = "fallback";
-/// Source part of the global row.
 const GLOBAL_SOURCE: &str = "*";
-/// `LIKE` escape character for [`username_pattern`].
 pub(super) const LIKE_ESCAPE: char = '\\';
 
-/// The lockout source network of `addr`: the canonical IPv4 address, or its IPv6 /48.
 pub fn source_prefix(addr: IpAddr) -> IpAddr {
     match addr.to_canonical() {
         IpAddr::V6(v6) => {
@@ -41,12 +27,10 @@ pub fn source_prefix(addr: IpAddr) -> IpAddr {
     }
 }
 
-/// The username part of a key.
 pub(super) fn name_of(username: &str) -> String {
     username_norm(username).unwrap_or_else(|| MALFORMED_NAME.to_owned())
 }
 
-/// The source part of a key.
 pub(super) fn source_of(client: ClientAddr) -> String {
     if client.is_proxy_fallback {
         FALLBACK_SOURCE.to_owned()
@@ -55,13 +39,11 @@ pub(super) fn source_of(client: ClientAddr) -> String {
     }
 }
 
-/// The global row key of a key name part.
 pub(super) fn global_key_of(name: &str) -> String {
     format!("user:{name}|{GLOBAL_SOURCE}")
 }
 
-/// `LIKE` pattern (escaped with [`LIKE_ESCAPE`]) matching every key of `name`. Usernames may
-/// contain `_`, a `LIKE` wildcard, so it must be escaped.
+/// Usernames may contain `_`, a `LIKE` wildcard.
 pub(super) fn username_pattern(name: &str) -> String {
     let mut pattern = String::from("user:");
     for c in name.chars() {
@@ -74,7 +56,6 @@ pub(super) fn username_pattern(name: &str) -> String {
     pattern
 }
 
-/// The two rows of one attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subject {
     name: String,
@@ -89,9 +70,7 @@ impl Subject {
         }
     }
 
-    /// Rebuilds a subject from [`Subject::name`] and [`Subject::source`] as stored elsewhere
-    /// (e.g. in a 2FA challenge). `None` unless both are exactly what [`Subject::new`]
-    /// produces, so stored data can never address the global row or another key shape.
+    /// Stored data can never address the global row or another key shape.
     pub fn from_parts(name: &str, source: &str) -> Option<Self> {
         let name_ok = name == MALFORMED_NAME || username_norm(name).as_deref() == Some(name);
         let source_ok = source == FALLBACK_SOURCE
@@ -104,12 +83,10 @@ impl Subject {
         })
     }
 
-    /// Normalized username (or `~malformed`).
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Source network (or `fallback`).
     pub fn source(&self) -> &str {
         &self.source
     }

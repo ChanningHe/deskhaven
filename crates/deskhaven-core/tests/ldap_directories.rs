@@ -1,8 +1,3 @@
-//! Directory management (04 §3 `ldap_directories`, 06 §3.5, §5): validation (TLS by
-//! default, no link-local or metadata addresses, parseable filters, attribute names), the
-//! sealed bind password (re-entered when the connection changes), one enabled directory,
-//! config-managed rows. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -16,7 +11,6 @@ use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, EntityTrait};
 
-/// A change to a valid directory input.
 type Adjust<'a> = &'a dyn Fn(&mut NewDirectory);
 
 async fn stored(db: &TestDb, id: i64) -> ldap_directory::Model {
@@ -104,7 +98,6 @@ async fn plain_ldap_needs_start_tls_except_on_loopback() {
             "ldaps://user:pw@ldap.example.org",
             "ldaps://ldap.example.org/dc=x?uid",
             "ldaps://",
-            // Link-local and cloud metadata addresses (as with OIDC).
             "ldaps://169.254.169.254",
             "ldaps://0xa9fea9fe",
             "ldaps://169.254.43518",

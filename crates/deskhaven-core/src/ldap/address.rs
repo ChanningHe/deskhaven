@@ -1,9 +1,5 @@
-//! Where a directory connection goes: the URL's host resolved here, not by ldap3, and
-//! refused when **any** address it resolves to is link-local or a cloud metadata address
-//! (`oidc::is_forbidden`, the IdP policy). The TCP connection is made to a vetted address;
-//! ldap3 then runs TLS over it with the URL's host name, so SNI and certificate
-//! verification still check the name. Applies to logins and diagnostics alike. IP-literal
-//! hosts skip DNS and get the same check (`validate` refuses them when written already).
+//! Resolved here, not by ldap3, and refused when any address is link-local or a cloud metadata
+//! address. The connection goes to a vetted address; TLS still verifies the URL's host name.
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -17,7 +13,6 @@ use crate::oidc::{Lookup, is_forbidden};
 const LDAP_PORT: u16 = 389;
 const LDAPS_PORT: u16 = 636;
 
-/// A TCP connection to the directory `url` names, made to a vetted address.
 pub(crate) async fn connect(lookup: &Lookup, url: &str) -> Result<TcpStream, DirectoryFault> {
     let parsed = Url::parse(url).map_err(|_| unreachable("the directory URL is invalid"))?;
     let port = parsed.port().unwrap_or(match parsed.scheme() {
@@ -36,7 +31,6 @@ pub(crate) async fn connect(lookup: &Lookup, url: &str) -> Result<TcpStream, Dir
     Err(unreachable(&err.to_string()))
 }
 
-/// The addresses of the URL's host; refused when one of them is forbidden.
 async fn vetted(lookup: &Lookup, url: &Url) -> Result<Vec<IpAddr>, DirectoryFault> {
     let addrs = match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
@@ -81,7 +75,6 @@ mod tests {
 
     use super::*;
 
-    /// A lookup answering `ips` for every name, recording the names asked.
     fn answering(ips: &[&str]) -> (Lookup, Arc<Mutex<Vec<String>>>) {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&asked);

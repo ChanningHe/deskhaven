@@ -1,6 +1,3 @@
-//! Which addresses the client configuration offers, from `public_url`, the address the
-//! console was opened with, the signal port and the relay list.
-
 use deskhaven_config::settings::HostPort;
 use deskhaven_core::client_config::{ClientConfig, ConfigInput, HostSource};
 
@@ -100,8 +97,8 @@ fn an_unusable_request_host_gives_no_host() {
 
 #[test]
 fn configured_relays_are_listed_but_never_pinned_into_the_string() {
-    // A `relay-server` on the controlled client wins over the signal server's pick
-    // (07 §relay selection), so pinning one would defeat later rotation.
+    // A `relay-server` on the controlled client wins over the signal server's pick, so pinning one
+    // would defeat later rotation.
     for list in [
         &["relay.example.com:21117"][..],
         &["a.example.com:21117", "b.example.com:21127"][..],

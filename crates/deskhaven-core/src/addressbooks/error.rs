@@ -3,22 +3,17 @@ use sea_orm::DbErr;
 use crate::console_audit::{GuardError, Refused};
 use crate::crypto::CryptoError;
 
-/// Why an address book operation failed. Variants are stable for API error mapping.
-///
-/// [`NotFound`](Self::NotFound) covers both "no such book" and "a book the actor may not
-/// see", so a caller learns nothing about books outside its reach.
-/// [`Forbidden`](Self::Forbidden) is only returned for a book the actor can read.
+/// `NotFound` also covers a book the actor may not see, so a caller learns nothing about
+/// books outside its reach.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AddressBookError {
     #[error("address book not found")]
     NotFound,
 
-    /// The book is visible but the actor's rule does not allow the operation.
     #[error("permission denied")]
     Forbidden,
 
-    /// The acting user no longer exists.
     #[error("user not found")]
     UserNotFound,
 
@@ -34,32 +29,24 @@ pub enum AddressBookError {
     #[error("tag already exists")]
     TagExists,
 
-    /// Adding a peer would exceed `addressbook.max_peers`.
     #[error("the address book is full ({max} peers)")]
     Full { max: u32 },
 
-    /// Malformed input; `field` names the offending input field (wire name).
     #[error("invalid {field}: {reason}")]
     Invalid { field: &'static str, reason: String },
 
-    /// Another shared book already has this name (compared case-insensitively), or the name
-    /// is one the client reserves.
     #[error("address book name is already taken")]
     NameTaken,
 
-    /// Several shared books carry the requested name; resolving by name refuses to guess.
     #[error("several address books have this name")]
     AmbiguousName,
 
-    /// The user or group a share names does not exist.
     #[error("share subject not found")]
     SubjectNotFound,
 
-    /// Personal books are never shared, renamed or deleted through the shared-book API.
     #[error("personal address books cannot be shared or managed")]
     Personal,
 
-    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
 

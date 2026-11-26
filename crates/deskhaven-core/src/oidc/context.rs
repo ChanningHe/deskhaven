@@ -1,6 +1,3 @@
-//! `oidc_flows.context` (JSON, written and read only here): the device a client flow was
-//! started from, and after a successful callback the resolved account's credential stamp.
-
 use deskhaven_db::entity::user::AuthSource;
 use sea_orm::ActiveEnum;
 use serde_json::{Value, json};
@@ -17,25 +14,20 @@ pub(crate) fn for_client(device: &ClientDevice) -> Value {
     })
 }
 
-/// A console flow: the SHA-256 of the browser binding it must complete with.
 pub(crate) fn for_console(binding: &TokenHash) -> Value {
     json!({ "binding": binding.as_str() })
 }
 
-/// A link flow: the browser binding (as for a console flow) and the account it links to.
 pub(crate) fn for_link(binding: &TokenHash, user_id: i64) -> Value {
     json!({ "binding": binding.as_str(), "user_id": user_id })
 }
 
-/// The browser binding hash of a console or link flow; `None` when the context has none.
 pub(crate) fn console_binding(raw: &str) -> Option<String> {
     let value: Value = serde_json::from_str(raw).ok()?;
     value.get("binding")?.as_str().map(str::to_owned)
 }
 
-/// `raw` with the verified identity of a link flow added (only what the confirmation shows
-/// and the link stores: the subject, an IdP-verified address, the preferred username);
-/// `None` when `raw` is not a JSON object.
+/// Only what the confirmation shows and the link stores.
 pub(crate) fn with_asserted(raw: &str, asserted: &Asserted) -> Option<String> {
     let mut value: Value = serde_json::from_str(raw).ok()?;
     value.as_object_mut()?.insert(
@@ -49,8 +41,6 @@ pub(crate) fn with_asserted(raw: &str, asserted: &Asserted) -> Option<String> {
     Some(value.to_string())
 }
 
-/// `raw` marked as being verified since `now_ms` (the exchange is under way); `None` when
-/// `raw` is not a JSON object.
 pub(crate) fn with_verifying(raw: &str, now_ms: i64) -> Option<String> {
     let mut value: Value = serde_json::from_str(raw).ok()?;
     value
@@ -59,13 +49,11 @@ pub(crate) fn with_verifying(raw: &str, now_ms: i64) -> Option<String> {
     Some(value.to_string())
 }
 
-/// When a verification of the link flow started, if one is under way.
 pub(crate) fn verifying_since(raw: &str) -> Option<i64> {
     let value: Value = serde_json::from_str(raw).ok()?;
     value.get("verifying_at")?.as_i64()
 }
 
-/// The verified identity a link flow stored; `None` before the exchange.
 pub(crate) fn link_asserted(raw: &str) -> Option<Asserted> {
     let value: Value = serde_json::from_str(raw).ok()?;
     let stored = value.get("asserted")?;
@@ -81,13 +69,11 @@ pub(crate) fn link_asserted(raw: &str) -> Option<Asserted> {
     })
 }
 
-/// The account a link flow links to; `None` when the context is not one.
 pub(crate) fn link_user(raw: &str) -> Option<i64> {
     let value: Value = serde_json::from_str(raw).ok()?;
     value.get("user_id")?.as_i64()
 }
 
-/// The device of a client flow; `None` when the context is not one.
 pub(crate) fn client_device(raw: &str) -> Option<ClientDevice> {
     let value: Value = serde_json::from_str(raw).ok()?;
     let text = |key: &str| value.get(key)?.as_str().map(str::to_owned);
@@ -98,7 +84,6 @@ pub(crate) fn client_device(raw: &str) -> Option<ClientDevice> {
     })
 }
 
-/// `raw` with the stamp added; `None` when `raw` is not a JSON object.
 pub(crate) fn with_stamp(raw: &str, stamp: CredentialStamp) -> Option<String> {
     let mut value: Value = serde_json::from_str(raw).ok()?;
     let (password_changed_at, source) = stamp.parts();

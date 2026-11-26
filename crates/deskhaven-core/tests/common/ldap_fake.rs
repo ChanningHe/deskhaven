@@ -1,13 +1,6 @@
-//! An in-memory directory behind the `deskhaven_core::ldap::Connector` seam: users with a
-//! password and attributes, groups with member DNs, a service account, an outage switch and
-//! a log of every operation. Shared with the API crates' tests (`#[path]`), so it only uses
-//! deskhaven-core's public API.
-//!
-//! Searches understand the shapes the service sends: a user search matches users whose
-//! `(uid=<escaped value>)` appears in the filter, a group search (base under
-//! [`GROUP_BASE`]) matches groups whose escaped member DN appears in it. A bind with an
-//! empty password *succeeds* (as an RFC 4513 unauthenticated bind does on many servers),
-//! so a test can prove the service never sends one.
+//! Shared with the API crates' tests (`#[path]`), so it only uses deskhaven-core's public API. A
+//! bind with an empty password succeeds, as an unauthenticated bind does on many servers, so a test
+//! can prove the service never sends one.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic, dead_code)]
 
@@ -55,19 +48,14 @@ pub struct FakeUser {
 #[derive(Default)]
 struct State {
     down: bool,
-    /// Connects never complete (a directory that accepts TCP and then stalls).
     hang: bool,
-    /// User binds fail with this LDAP result code (e.g. 51 busy).
     bind_refusal: Option<u32>,
-    /// User binds answer after this long.
     bind_delay: Option<Duration>,
     users: Vec<FakeUser>,
-    /// Group DN -> member DNs.
     groups: BTreeMap<String, Vec<String>>,
     log: Vec<Op>,
 }
 
-/// Cheap to clone: clones share the directory.
 #[derive(Clone, Default)]
 pub struct FakeDirectory {
     state: Arc<Mutex<State>>,
@@ -82,7 +70,6 @@ impl FakeDirectory {
         Arc::new(self.clone())
     }
 
-    /// `uid` with [`USER_PASSWORD`], `mail` `<uid>@example.org`, `cn` "User <uid>".
     pub fn add_user(&self, uid: &str) -> String {
         let mut attrs = BTreeMap::new();
         attrs.insert("uid".to_owned(), vec![uid.to_owned()]);
@@ -131,7 +118,6 @@ impl FakeDirectory {
         self.state.lock().unwrap().bind_refusal = code;
     }
 
-    /// User (not service) binds answer only after `delay`.
     pub fn set_bind_delay(&self, delay: Option<Duration>) {
         self.state.lock().unwrap().bind_delay = delay;
     }
@@ -148,7 +134,6 @@ impl FakeDirectory {
         self.count(|op| matches!(op, Op::Connect(_)))
     }
 
-    /// DNs bound, in order.
     pub fn binds(&self) -> Vec<String> {
         self.log()
             .into_iter()
@@ -292,7 +277,6 @@ fn user_entries(state: &State, request: &SearchRequest) -> Vec<Entry> {
         .collect()
 }
 
-/// RFC 4511 §4.5.1.8: no attributes listed means all user attributes, `1.1` means none.
 fn selected(
     all: BTreeMap<String, Vec<String>>,
     wanted: &[String],

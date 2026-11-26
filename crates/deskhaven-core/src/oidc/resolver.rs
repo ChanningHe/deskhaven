@@ -1,10 +1,5 @@
-//! DNS for the OIDC client, minus addresses an IdP has no business pointing deskhaven at:
-//! link-local (169.254.0.0/16, fe80::/10) and the cloud metadata services (169.254.169.254
-//! is link-local; 100.100.100.200 on Alibaba Cloud; fd00:ec2::254 on AWS IPv6), also as
-//! IPv4-mapped IPv6. A name resolving only to such addresses fails; mixed answers keep the
-//! rest. IP-literal URLs skip DNS, so `url_policy` refuses the same addresses there.
-//! Loopback is not filtered: it stays reachable (over plain http) only for loopback issuers,
-//! which `url_policy` enforces.
+//! A name resolving only to forbidden addresses fails; mixed answers keep the rest. Loopback is not
+//! filtered: `url_policy` limits it to loopback issuers.
 
 use std::future::Future;
 use std::io;
@@ -14,22 +9,18 @@ use std::sync::Arc;
 
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
-/// Resolves a host name to addresses (the port is ignored).
 pub type LookupFuture = Pin<Box<dyn Future<Output = io::Result<Vec<SocketAddr>>> + Send>>;
-/// The lookup the resolver filters (production: the system resolver).
 pub type Lookup = Arc<dyn Fn(String) -> LookupFuture + Send + Sync>;
 
 const ALIBABA_METADATA: Ipv4Addr = Ipv4Addr::new(100, 100, 100, 200);
 const AWS_METADATA_V6: Ipv6Addr = Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254);
 
-/// The operating system's resolver (`getaddrinfo` through Tokio).
 pub fn system_lookup() -> Lookup {
     Arc::new(|host: String| {
         Box::pin(async move { Ok(tokio::net::lookup_host((host.as_str(), 0)).await?.collect()) })
     })
 }
 
-/// Whether deskhaven refuses to connect to `ip` for an IdP.
 pub(crate) fn is_forbidden(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_link_local() || v4 == ALIBABA_METADATA,
@@ -40,7 +31,6 @@ pub(crate) fn is_forbidden(ip: IpAddr) -> bool {
     }
 }
 
-/// The reqwest resolver: `lookup`, then [`is_forbidden`] addresses dropped.
 pub(crate) struct FilteringResolver {
     lookup: Lookup,
 }

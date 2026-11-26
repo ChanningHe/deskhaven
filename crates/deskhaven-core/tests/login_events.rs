@@ -1,6 +1,3 @@
-//! Login event log (04 §7 `login_events`): one row per recorded attempt, the injected
-//! clock's time, bounded attempted usernames, user deletion keeps the row. Every test runs
-//! on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

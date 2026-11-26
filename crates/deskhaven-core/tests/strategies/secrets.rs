@@ -1,8 +1,3 @@
-//! Secret catalog options at rest (06 §5): sealed per value under
-//! `strategies.options:<id>:<key>`, opened for the console and the heartbeat, bound to their
-//! row and key, and plaintext rows from before sealing are sealed by
-//! `seal_plaintext_secrets`.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::strategies::{NewStrategy, Options, StrategyUpdate, Target};
@@ -16,7 +11,6 @@ use super::support::{Ctx, ctx, device_inputs, opts};
 
 const PASSWORD: &str = "hunter2-proxy";
 
-/// The stored options of `id`, as the database holds them.
 async fn stored(db: &TestDb, id: i64) -> Options {
     let row = strategy::Entity::find_by_id(id)
         .one(&db.conn)
@@ -35,7 +29,6 @@ async fn write_stored(db: &TestDb, id: i64, options: &Options) {
     row.update(&db.conn).await.unwrap();
 }
 
-/// A row written before secrets were sealed: every value in clear.
 async fn insert_plaintext(db: &TestDb, name: &str, options: &Options) -> i64 {
     let now = time::now();
     let row = strategy::ActiveModel {

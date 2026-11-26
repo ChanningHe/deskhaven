@@ -1,6 +1,3 @@
-//! Opaque session tokens (06 §3.2): 256 random bits, base64url without padding. Only the
-//! SHA-256 of a token is ever stored or used as a cache key.
-
 use std::fmt;
 
 use base64_022::Engine as _;
@@ -10,13 +7,11 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{CryptoError, fill_random};
 
-/// Random bytes per token.
 pub const TOKEN_BYTES: usize = 32;
 /// Length of the encoded token: `ceil(32 * 4 / 3)` base64 characters, unpadded.
 pub const TOKEN_LEN: usize = 43;
 
-/// A freshly issued session token. Handed out exactly once, at creation; zeroed on drop,
-/// `Debug` never shows it and there is no `Display` or `Clone`.
+/// Handed out once; zeroed on drop, hidden from `Debug`, no `Display` or `Clone`.
 pub struct SessionToken(Zeroizing<String>);
 
 impl SessionToken {
@@ -26,7 +21,6 @@ impl SessionToken {
         Ok(Self(Zeroizing::new(URL_SAFE_NO_PAD.encode(bytes.as_ref()))))
     }
 
-    /// The token to send to the client (once).
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -42,14 +36,12 @@ impl fmt::Debug for SessionToken {
     }
 }
 
-/// Lowercase hex SHA-256 of a token: the `sessions.token_hash` column and the cache key.
-/// The token cannot be recovered from it, but it is a lookup key, so it is never logged.
+/// Not recoverable to the token, but a lookup key, so never logged.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TokenHash(String);
 
 impl TokenHash {
-    /// The hash of a presented token, or `None` when it cannot be one of ours (wrong
-    /// length or alphabet): such input never reaches the cache or the database.
+    /// Input that cannot be one of ours never reaches the cache or the database.
     pub fn of_presented(token: &str) -> Option<Self> {
         is_well_formed(token).then(|| Self::digest(token))
     }

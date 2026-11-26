@@ -1,8 +1,4 @@
-//! TOTP enrolment and management: begin (new pending seed) -> confirm with a code
-//! (enabled, recovery codes issued) -> disable; recovery code regeneration.
-//!
-//! Every operation is one write transaction over the user row (locked on PostgreSQL;
-//! SQLite's `BEGIN IMMEDIATE` excludes other writers), so concurrent calls for one user
+//! Every operation is one write transaction over the user row, so concurrent calls for one user
 //! apply one after another.
 
 use std::fmt;
@@ -21,12 +17,9 @@ use super::{ISSUER, Inner, RecoveryCodes, TfaError, TfaService, recovery, seed_c
 use crate::console_audit::{self, NewConsoleAudit, TxGuard};
 use crate::users::User;
 
-/// A pending enrolment, to show its owner once (as text and as a QR code of `uri`).
 /// `Debug` never shows the seed.
 pub struct Enrolment {
-    /// The seed in base32, for manual entry.
     pub secret: Zeroizing<String>,
-    /// `otpauth://` provisioning URI.
     pub uri: Zeroizing<String>,
 }
 
@@ -36,23 +29,18 @@ impl fmt::Debug for Enrolment {
     }
 }
 
-/// A user's 2FA state, for the console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TfaStatus {
     pub enabled: bool,
-    /// A seed waits for confirmation.
     pub pending_enrolment: bool,
     pub recovery_codes_left: u64,
 }
 
 impl TfaService {
-    /// Generates a new seed and stores it, sealed, as a pending enrolment (replacing any
-    /// earlier pending one). [`TfaError::AlreadyEnabled`] while TOTP is enabled.
     pub async fn begin_enrolment(&self, user_id: i64) -> Result<Enrolment, TfaError> {
         self.begin(user_id, None).await
     }
 
-    /// [`begin_enrolment`](Self::begin_enrolment), recording `audit` in its transaction.
     pub async fn begin_enrolment_audited(
         &self,
         user_id: i64,
@@ -83,8 +71,7 @@ impl TfaService {
         })
     }
 
-    /// Enables TOTP when `code` matches the pending seed, and issues fresh recovery codes
-    /// (returned once). The confirming code's step is recorded, so it cannot log in.
+    /// The confirming code's step is recorded, so it cannot log in.
     pub async fn confirm_enrolment(
         &self,
         user_id: i64,
@@ -93,7 +80,6 @@ impl TfaService {
         self.confirm(user_id, code, None).await
     }
 
-    /// [`confirm_enrolment`](Self::confirm_enrolment), recording `audit` in its transaction.
     pub async fn confirm_enrolment_audited(
         &self,
         user_id: i64,
@@ -128,14 +114,11 @@ impl TfaService {
         Ok(codes)
     }
 
-    /// Turns TOTP off (or cancels a pending enrolment): forgets the seed, deletes the
-    /// recovery codes and every unconsumed login challenge of the user. Idempotent.
+    /// Also deletes every unconsumed login challenge of the user. Idempotent.
     pub async fn disable(&self, user_id: i64) -> Result<(), TfaError> {
         self.disable_guarded(user_id, TxGuard::none()).await
     }
 
-    /// [`disable`](Self::disable) by an administrator ("reset 2FA"), with `guard` deciding
-    /// on the account before and after.
     pub async fn disable_guarded(
         &self,
         user_id: i64,
@@ -144,10 +127,8 @@ impl TfaService {
         self.disable_checked(user_id, None, guard).await
     }
 
-    /// Turns TOTP off for its owner, who proves possession of the factor: `code` is a
-    /// current TOTP code or an unused recovery code, spent in the same transaction as the
-    /// removal (a wrong one changes nothing: [`TfaError::InvalidCode`]).
-    /// [`TfaError::NotEnabled`] while TOTP is off.
+    /// The owner proves possession: the code is spent in the same transaction as the removal, and a
+    /// wrong one changes nothing.
     pub async fn disable_verified(
         &self,
         user_id: i64,
@@ -197,15 +178,11 @@ impl TfaService {
         Ok(())
     }
 
-    /// Replaces every recovery code (used or not) with fresh ones, returned once.
     pub async fn regenerate_recovery_codes(&self, user_id: i64) -> Result<RecoveryCodes, TfaError> {
         self.regenerate(user_id, None, None).await
     }
 
-    /// [`regenerate_recovery_codes`](Self::regenerate_recovery_codes) for the owner, who
-    /// proves possession of the factor: `code` is a current TOTP code or an unused recovery
-    /// code, spent in the same transaction (a wrong one changes nothing:
-    /// [`TfaError::InvalidCode`]); `audit` is recorded there too.
+    /// The code is spent in the same transaction; a wrong one changes nothing.
     pub async fn regenerate_recovery_codes_verified(
         &self,
         user_id: i64,
@@ -258,7 +235,6 @@ impl TfaService {
 }
 
 impl Inner {
-    /// Opens a sealed seed; a seed that does not open or decode is [`TfaError::Corrupt`].
     pub(super) fn open_seed(&self, user_id: i64, sealed: &str) -> Result<TotpSecret, TfaError> {
         let bytes = self
             .crypto
@@ -271,7 +247,6 @@ impl Inner {
     }
 }
 
-/// Writes `audit` (when given) in the operation's transaction.
 async fn record(
     txn: &DatabaseTransaction,
     inner: &Inner,
@@ -283,7 +258,6 @@ async fn record(
     Ok(())
 }
 
-/// The user row, write-locked until the transaction ends (PostgreSQL).
 async fn locked_user(txn: &DatabaseTransaction, user_id: i64) -> Result<user::Model, TfaError> {
     user::Entity::find_by_id(user_id)
         .lock_exclusive()
@@ -292,7 +266,6 @@ async fn locked_user(txn: &DatabaseTransaction, user_id: i64) -> Result<user::Mo
         .ok_or(TfaError::NotFound)
 }
 
-/// Writes the three `totp_*` columns (and `updated_at`).
 async fn set_totp(
     txn: &DatabaseTransaction,
     inner: &Inner,

@@ -1,14 +1,5 @@
-//! Device registry (04-data-model §4): `devices` rows keyed by RustDesk id.
-//!
-//! Rows are created by the signal server's first accepted RegisterPk of an id (07-hbbs-fork
-//! §3.1) and bind that id to the device uuid for good: the uuid never changes afterwards
-//! (06-security §2), only the public key and the registration address / time do.
-//! `uuid` / `pk` are stored as raw bytes (`BLOB` / `BYTEA`), compared byte for byte.
-//!
-//! [`Presence`] tracks which devices are online (in memory only). [`DeviceService`] serves
-//! the device endpoints: id + uuid verification, sysinfo with its deployment presets, and the
-//! deletion of devices and device groups; and tells the OIDC client login whom an id
-//! belongs to ([`IdHolder`]).
+//! A row binds its RustDesk id to the device uuid for good: only the public key and the
+//! registration address change. `uuid` and `pk` are raw bytes, compared byte for byte.
 
 mod disconnects;
 mod flush;
@@ -57,36 +48,28 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, TryInsertResult,
 };
 
-/// An accepted RegisterPk.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Registration {
     pub rustdesk_id: String,
     pub uuid: Vec<u8>,
     pub pk: Vec<u8>,
-    /// Source address of the RegisterPk.
     pub ip: IpAddr,
-    /// When it was accepted.
     pub at: TimestampMs,
 }
 
-/// What the signal server needs of a registered device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegisteredKeys {
     pub rustdesk_id: String,
     pub uuid: Vec<u8>,
     pub pk: Vec<u8>,
-    /// Source address of the last RegisterPk, as stored.
     pub register_ip: String,
 }
 
-/// Why a device operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceError {
-    /// The id is registered with another uuid; nothing changed.
     #[error("device {rustdesk_id} is registered with another uuid")]
     UuidMismatch { rustdesk_id: String },
 
-    /// Malformed input; `field` names the offending input field.
     #[error("invalid {field}: {reason}")]
     Invalid { field: &'static str, reason: String },
 
@@ -99,38 +82,30 @@ pub enum DeviceError {
     #[error("device group not found")]
     GroupNotFound,
 
-    /// The device group is defined in the configuration file and read-only here.
     #[error("the device group is managed by the configuration file")]
     ManagedByConfig,
 
-    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
 
-    /// Too many devices have pending disconnect requests ([`MAX_QUEUED_DEVICES`]).
     #[error("too many devices have pending disconnects")]
     QueueFull,
-    /// No registered device has this id and uuid; nothing changed.
     #[error("unknown device id or uuid")]
     UnknownDevice,
 
-    /// Input field `field` names no `kind` that exists; nothing changed.
     #[error("{field} does not name an existing {kind}")]
     NameNotFound {
         field: &'static str,
         kind: &'static str,
     },
 
-    /// The strategy assignment of a placement failed (nothing was written).
     #[error("device strategy assignment failed")]
     Strategy(#[source] crate::strategies::StrategyError),
 
-    /// The address book entry of a placement failed (nothing was written).
     #[error("device address book entry failed")]
     AddressBook(#[source] crate::addressbooks::AddressBookError),
 
-    /// The operation's task panicked or the runtime is shutting down; whether it committed
-    /// is unknown until the next read.
+    /// Whether it committed is unknown until the next read.
     #[error("device operation did not complete")]
     Aborted,
 
@@ -147,7 +122,6 @@ impl From<GuardError> for DeviceError {
     }
 }
 
-/// `devices` access. Cheap to clone (pooled connection).
 #[derive(Clone, Debug)]
 pub struct DeviceRepository {
     db: DatabaseConnection,
@@ -168,10 +142,8 @@ impl DeviceRepository {
             .await
     }
 
-    /// Up to `limit` registered devices with `rustdesk_id` after `after` (from the first if
-    /// `None`), ordered by `rustdesk_id` (keyset pagination over `ux_devices_rustdesk_id`), for
-    /// the signal server's startup preload. Order and comparison use the same collation, so
-    /// passing the last id of a page as `after` walks every row exactly once.
+    /// Order and comparison use the same collation, so passing a page's last id as `after` walks
+    /// every row exactly once.
     pub async fn registrations_page(
         &self,
         after: Option<&str>,
@@ -203,14 +175,8 @@ impl DeviceRepository {
             .collect())
     }
 
-    /// Inserts the device on its first registration; afterwards updates `pk`, `register_ip`
-    /// and `register_at`, but only while the stored uuid matches (otherwise
-    /// [`DeviceError::UuidMismatch`], nothing changed).
-    ///
-    /// Each statement is atomic on both backends, so concurrent calls need no lock: the
-    /// update is conditional on the uuid, and the insert does nothing when it conflicts on
-    /// the unique `rustdesk_id`. The common case (re-registration) is a single UPDATE, which
-    /// on PostgreSQL also avoids burning a sequence value on a conflicting INSERT.
+    /// Each statement is atomic on both backends, so concurrent calls need no lock. Re-registration
+    /// is a single UPDATE, which on PostgreSQL also avoids burning a sequence value.
     pub async fn upsert_registration(&self, reg: &Registration) -> Result<(), DeviceError> {
         if self.update_keys(reg).await? || self.insert_new(reg).await? {
             return Ok(());
@@ -224,7 +190,6 @@ impl DeviceRepository {
         })
     }
 
-    /// `true` if a row with this id and uuid was updated.
     async fn update_keys(&self, reg: &Registration) -> Result<bool, DbErr> {
         let updated = device::Entity::update_many()
             .col_expr(device::Column::Pk, Expr::value(reg.pk.clone()))
@@ -238,7 +203,6 @@ impl DeviceRepository {
         Ok(updated.rows_affected > 0)
     }
 
-    /// `true` if `reg` created the row, `false` if the id already existed.
     async fn insert_new(&self, reg: &Registration) -> Result<bool, DbErr> {
         let ip = reg.ip.to_string();
         let row = device::ActiveModel {

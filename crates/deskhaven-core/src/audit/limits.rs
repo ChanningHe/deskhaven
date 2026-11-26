@@ -1,13 +1,5 @@
-//! Audit rate limits (06 §2.4: by source IP and by device id).
-//!
-//! - **Per client network** ([`AUDIT_PER_IP_PER_MINUTE`]): the login limiter's buckets (IPv4
-//!   /32, IPv6 /64, shared proxy-fallback bucket) with a quota of their own; every request is
-//!   charged, malformed and unknown-device ones included.
-//! - **Per device** ([`AUDIT_PER_DEVICE_PER_MINUTE`]): charged only after the device is
-//!   verified, so records under a stolen id with a wrong uuid cannot spend its quota.
-//!
-//! Over either the endpoint answers 429; the client retries the record (10 s, 30 s) with the
-//! same nonce. Both run on the monotonic clock; buckets are in memory and per process.
+//! The per-device limit is charged only after verification, so records under a stolen id with
+//! a wrong uuid cannot spend its quota.
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,17 +11,12 @@ use governor::{Quota, RateLimiter};
 
 use crate::clock::SharedClock;
 
-/// Audit requests per client network per minute (burst the same). A device posts three
-/// connection records per connection plus file and alarm records; this lets an office NAT
-/// open a few hundred connections a minute.
+/// Three records per connection plus file and alarm records: an office NAT can still open a
+/// few hundred connections a minute.
 pub const AUDIT_PER_IP_PER_MINUTE: u32 = 900;
-/// Records per verified device per minute (burst the same): a busy device with bursts of
-/// file jobs or failed-login alarms stays below it.
 pub const AUDIT_PER_DEVICE_PER_MINUTE: u32 = 300;
-/// Checks between two sweeps of refilled buckets (which are dropped).
 const SWEEP_EVERY: u64 = 1024;
 
-/// governor's view of the injected clock: its monotonic reading.
 #[derive(Clone)]
 struct Monotonic(SharedClock);
 
@@ -43,8 +30,6 @@ impl governor::clock::Clock for Monotonic {
 
 type Buckets = RateLimiter<String, HashMapStateStore<String>, Monotonic, NoOpMiddleware<Duration>>;
 
-/// Token bucket per device RustDesk id. Bounded by the devices seen within a minute (refilled
-/// buckets are swept), and only verified devices get one.
 pub(super) struct DeviceLimit {
     clock: Monotonic,
     buckets: Buckets,
@@ -67,7 +52,6 @@ impl DeviceLimit {
         }
     }
 
-    /// Takes one token of `rustdesk_id`, or returns how long until one is free.
     pub fn check(&self, rustdesk_id: &str) -> Result<(), Duration> {
         let now = governor::clock::Clock::now(&self.clock);
         let result = self

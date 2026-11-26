@@ -1,8 +1,5 @@
-//! TLS for directory connections: rustls on the ring provider (02 §5.1), like the OIDC
-//! client. Verified (the default): the operating system's roots and host name checks
-//! (rustls-platform-verifier). Unverified (`tls_verify = false`, set explicitly and shown
-//! as a warning in the console): any certificate is accepted, but handshake signatures
-//! are still checked, so the session is at least bound to the presented key.
+//! Unverified still checks handshake signatures, so the session is at least bound to the
+//! presented key.
 
 use std::sync::Arc;
 
@@ -15,7 +12,6 @@ fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
-/// A client config verifying certificates against the OS roots.
 pub(crate) fn verified_config() -> Result<Arc<ClientConfig>, String> {
     let provider = provider();
     let verifier = rustls_platform_verifier::Verifier::new(Arc::clone(&provider))
@@ -29,7 +25,6 @@ pub(crate) fn verified_config() -> Result<Arc<ClientConfig>, String> {
     Ok(Arc::new(config))
 }
 
-/// A client config accepting any certificate (see the module docs).
 pub(crate) fn unverified_config() -> Result<Arc<ClientConfig>, String> {
     let provider = provider();
     let verifier = AnyCertificate {

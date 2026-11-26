@@ -1,21 +1,8 @@
-//! [`DisconnectQueue`] (02 §3, 03 §2.1): connections an administrator (or, later, an ACL
-//! change) wants closed, waiting for the device's next heartbeat. The heartbeat reply lists
-//! them in `disconnect` and the client closes each one it still has ("Closed manually by the
-//! web console", `src/server/connection.rs:1389-1392`).
-//!
-//! - **Once**: an id is handed out by one heartbeat and then gone, whether or not the reply
-//!   arrives. Losing it costs a click; replaying it could close a later connection.
-//! - **Only live connections**: the reply carries only ids the device reports in that
-//!   heartbeat's `conns`. A requested id it does not report stays queued until reported or
-//!   expired, so a heartbeat with no `conns` (a clone, or a stolen uuid) cannot swallow it.
-//!   A disconnect-all request is used up by the first heartbeat that reports connections.
-//! - **Short-lived** ([`DISCONNECT_TTL`], per id from its own request, on the monotonic
-//!   clock): connection ids are a per-process counter in the client, so after a client
-//!   restart an old id can name a new connection. A request the device does not pick up in
-//!   time expires; a device with live connections heartbeats every 3 s (`sync.rs:232-235`).
-//!   A later request never extends the deadline of an id already queued.
-//! - **Bounded**: at most [`MAX_QUEUED_DEVICES`] devices with pending requests and
-//!   [`MAX_CONNS`] ids each. Not persisted (02 §3): after a restart the connections are new.
+//! An id is handed out once, whether or not the reply arrives: losing it costs a click, replaying
+//! it could close a later connection. Only ids the device reports live in that heartbeat are handed
+//! out, so a heartbeat with no `conns` (a clone, a stolen uuid) cannot swallow them. Requests are
+//! short-lived: conn ids are a per-process counter, so after a client restart an old id can name a
+//! new connection.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -24,25 +11,18 @@ use std::time::Duration;
 use super::presence::MAX_CONNS;
 use crate::clock::SharedClock;
 
-/// How long a request waits for the device's next heartbeat.
 pub const DISCONNECT_TTL: Duration = Duration::from_secs(60);
-/// Devices with pending requests at most.
 pub const MAX_QUEUED_DEVICES: usize = 10_000;
 
-/// Why [`DisconnectQueue`] did not queue a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum QueueFull {
     #[error("too many devices with pending disconnects")]
     Devices,
 }
 
-/// What waits for one device. Times are monotonic ms
-/// ([`Clock::elapsed_ms`](crate::clock::Clock::elapsed_ms)) of the request that queued them.
 #[derive(Debug, Default)]
 struct Pending {
-    /// A disconnect-all request.
     all: Option<i64>,
-    /// Requested connection ids.
     ids: HashMap<i32, i64>,
 }
 
@@ -57,7 +37,6 @@ impl Pending {
     }
 }
 
-/// Shared handle; clones see the same queue.
 #[derive(Clone)]
 pub struct DisconnectQueue {
     inner: Arc<Inner>,
@@ -78,9 +57,7 @@ impl DisconnectQueue {
         }
     }
 
-    /// Asks device `rustdesk_id` to close connections `conn_ids`, added to what is already
-    /// pending for it (an id already queued keeps its deadline; ids beyond [`MAX_CONNS`] per
-    /// device are ignored).
+    /// An id already queued keeps its deadline.
     pub fn disconnect(&self, rustdesk_id: &str, conn_ids: &[i32]) -> Result<(), QueueFull> {
         self.queue(rustdesk_id, |pending, now| {
             for id in conn_ids {
@@ -92,21 +69,14 @@ impl DisconnectQueue {
         })
     }
 
-    /// Asks device `rustdesk_id` to close every connection reported by its next heartbeat
-    /// that reports any.
     pub fn disconnect_all(&self, rustdesk_id: &str) -> Result<(), QueueFull> {
         self.queue(rustdesk_id, |pending, now| pending.all = Some(now))
     }
 
-    /// Whether a request for `rustdesk_id` is waiting (expired ones count until the next
-    /// heartbeat or request drops them).
     pub fn is_pending(&self, rustdesk_id: &str) -> bool {
         self.lock().contains_key(rustdesk_id)
     }
 
-    /// The connection ids to put in the heartbeat reply of `rustdesk_id`, which reports the
-    /// live connections `active`: the requested ones among them. Removes only what it hands
-    /// out.
     pub(crate) fn take(&self, rustdesk_id: &str, active: &[i32]) -> Vec<i32> {
         let now = self.inner.clock.elapsed_ms();
         let mut table = self.lock();

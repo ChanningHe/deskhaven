@@ -1,8 +1,4 @@
-//! Rows of `settings` / `settings_history`: decoding, locking, writing.
-//!
-//! Values are JSON text. A sensitive value is stored as the JSON string of
-//! its `SecretBox` seal under [`value_context`]; history never holds a
-//! secret or its ciphertext, only the `{"set": bool}` marker.
+//! History never holds a secret or its ciphertext, only the `{"set": bool}` marker.
 
 use std::collections::BTreeMap;
 
@@ -18,13 +14,11 @@ use serde_json::Value as Json;
 use super::SettingsError;
 use crate::crypto::SecretBox;
 
-/// `SecretBox` context of a stored sensitive value (06-security §5): binds
-/// the ciphertext to its key, so it cannot be moved to another setting.
+/// Binds the ciphertext to its key, so it cannot be moved to another setting.
 pub fn value_context(key: &str) -> String {
     format!("settings.value:{key}")
 }
 
-/// Who and when, shared by every row of one batch.
 pub(super) struct Stamp<'a> {
     pub(super) by: Option<i64>,
     pub(super) at: TimestampMs,
@@ -35,11 +29,8 @@ pub(super) async fn fetch(conn: &impl ConnectionTrait) -> Result<Vec<setting::Mo
     setting::Entity::find().all(conn).await
 }
 
-/// Serializes settings writers across processes. SQLite already holds the
-/// write lock (`BEGIN IMMEDIATE`, bounded by its busy timeout); PostgreSQL
-/// READ COMMITTED would otherwise allow write skew across keys of one
-/// cross-key rule. Readers are not blocked. The wait is bounded so a stuck
-/// transaction elsewhere surfaces as an error instead of a hang.
+/// PostgreSQL READ COMMITTED would otherwise allow write skew across keys of one cross-key rule.
+/// The wait is bounded so a stuck transaction elsewhere surfaces as an error, not a hang.
 pub(super) async fn lock(tx: &DatabaseTransaction) -> Result<(), DbErr> {
     if tx.get_database_backend() == DbBackend::Postgres {
         tx.execute_unprepared(PG_LOCK_TIMEOUT).await?;
@@ -50,13 +41,12 @@ pub(super) async fn lock(tx: &DatabaseTransaction) -> Result<(), DbErr> {
     Ok(())
 }
 
-/// Matches the SQLite busy timeout (`deskhaven_db::SQLITE_BUSY_TIMEOUT`).
+/// Matches the SQLite busy timeout.
 const PG_LOCK_TIMEOUT: &str = "SET LOCAL lock_timeout = '5s'";
-/// Per statement; the whole batch is bounded by `TX_TIMEOUT` in `mod.rs`.
 const PG_STATEMENT_TIMEOUT: &str = "SET LOCAL statement_timeout = '10s'";
 
-/// Every row becomes a [`Stored`]; one that cannot be read keeps its
-/// version (so it can be overwritten) and is reported as a warning.
+/// One that cannot be read keeps its version (so it can be overwritten) and is reported as a
+/// warning.
 pub(super) fn decode(
     rows: &[setting::Model],
     crypto: &SecretBox,
@@ -101,16 +91,9 @@ fn open(crypto: &SecretBox, key: &str, value: &Json) -> Option<Json> {
     Some(Json::String(text.to_owned()))
 }
 
-/// Writes one accepted change and its history row. `old` is the current row
-/// (its version was already checked) with the public JSON text of its
-/// previous effective value (`null` when the row was unreadable), which is
-/// what the history records. `version` is the one the row gets (the history
-/// entry of a reset gets it too: the row is gone, the version is not reused).
-///
-/// Lock order note: once `updated_by` references `users(id)`, these writes
-/// take a key-share lock on the user row after the settings table lock; any
-/// path that deletes users and then writes settings must not hold user row
-/// locks first, or it can deadlock with a settings update.
+/// A reset's history entry gets the version too: the row is gone, the version is not reused. Lock
+/// order: these writes key-share lock the user row after the settings table lock, so a path that
+/// deletes users and then writes settings must not hold user row locks first.
 pub(super) async fn write(
     tx: &DatabaseTransaction,
     crypto: &SecretBox,
@@ -153,8 +136,7 @@ pub(super) async fn write(
     Ok(())
 }
 
-/// The highest history version of each of `keys` that has one. A key without a
-/// row continues after it, so no version is ever reused.
+/// A key without a row continues after it, so no version is ever reused.
 pub(super) async fn version_floors<'a>(
     conn: &impl ConnectionTrait,
     keys: impl IntoIterator<Item = &'a str>,
@@ -175,8 +157,7 @@ pub(super) async fn version_floors<'a>(
     Ok(rows.into_iter().collect())
 }
 
-/// Compare-and-set deletion on `version`: a reset of a row that changed meanwhile
-/// is a conflict.
+/// A reset of a row that changed meanwhile is a conflict.
 async fn delete_row(
     tx: &DatabaseTransaction,
     key: &str,
@@ -195,8 +176,7 @@ async fn delete_row(
     }
 }
 
-/// A row that appeared since the locked read (only possible if the lock
-/// is bypassed) is a version conflict, not a storage failure.
+/// Only possible if the lock is bypassed: a version conflict, not a storage failure.
 async fn insert_row(
     tx: &DatabaseTransaction,
     row: setting::ActiveModel,
@@ -213,7 +193,7 @@ async fn insert_row(
     }
 }
 
-/// Compare-and-set on `version`: defense in depth behind [`lock`].
+/// Defense in depth behind [`lock`].
 async fn update_row(
     tx: &DatabaseTransaction,
     row: setting::ActiveModel,
@@ -234,7 +214,6 @@ async fn update_row(
     }
 }
 
-/// Secrets are always sealed; everything else is its public JSON form.
 fn storage_text(crypto: &SecretBox, accepted: &Accepted) -> Result<String, SettingsError> {
     let json = match accepted.value().secret() {
         Some(secret) => {

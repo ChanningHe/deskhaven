@@ -1,24 +1,13 @@
-# Human-written half of the strategy option catalog. `cargo xtask gen-strategy-catalog`
-# merges it onto the keys read from the vendored client source (xtask/vendor/strategy-catalog:
-# KEYS_SETTINGS of rustdesk/rustdesk libs/base/src/config/keys.rs) and writes generated.rs;
-# see xtask/src/catalog/mod.rs. `[source]` must name the vendored files' revisions.
-#
-# Per option: group (security | permissions | display | network | recording | presets |
-# other), kind (bool | choice | number | text), optional choices / min / max, default (only
-# where the source's option2bool does not imply one), secret (text only: never shown in
-# clear, masked in audit rows; required when the name suggests a credential), advanced_only
-# (left out of the typed form), label and description in en and zh.
-#
-# Facts not derivable from the key lists are taken from the client source at the revision
-# below, as noted per entry.
+# Human-written half of the strategy option catalog, merged by `cargo xtask
+# gen-strategy-catalog` onto the keys of the vendored client source. `[source]` must name the
+# vendored files' revisions; facts not derivable from the key lists come from the client source
+# at those revisions, as noted per entry.
 
 [source]
 rustdesk = "23e5bb4"
 hbb_common = "fae47e0"
 
-# ---- permissions ------------------------------------------------------------------------
-
-# flutter/lib/desktop/pages/desktop_setting_page.dart permissions(): '' / 'custom', 'full', 'view'.
+# Client permissions(): '' / 'custom', 'full', 'view'.
 [options.access-mode]
 group = "permissions"
 kind = "choice"
@@ -103,7 +92,7 @@ kind = "bool"
 label = { en = "Privacy mode", zh = "隐私模式" }
 description = { en = "Let the controlling side black out this device's screen.", zh = "允许控制端遮蔽本设备的屏幕。" }
 
-# src/server/connection.rs handle_authorized_scope_violation (get_bool_option).
+# Client handle_authorized_scope_violation reads it with get_bool_option.
 [options.allow-scope-violation-close]
 group = "permissions"
 kind = "bool"
@@ -116,9 +105,7 @@ kind = "bool"
 label = { en = "Alarm on permission violations", zh = "越权时告警" }
 description = { en = "Report an alarm to the server the first time a session exceeds its granted permissions.", zh = "会话首次超出授权范围时向服务端上报告警。" }
 
-# ---- security ---------------------------------------------------------------------------
-
-# desktop_setting_page.dart: 'password', 'click', defaultOptionApproveMode ('' or 'password-click').
+# Client: 'password', 'click', defaultOptionApproveMode ('' or 'password-click').
 [options.approve-mode]
 group = "security"
 kind = "choice"
@@ -131,7 +118,7 @@ choices = [
 label = { en = "Session approval", zh = "会话接受方式" }
 description = { en = "How incoming sessions are accepted: with a password, by a click on this device, or either.", zh = "被控会话的接受方式：输入密码、在本设备上点击确认，或两者皆可。" }
 
-# flutter/lib/models/server_model.dart kUse*Password.
+# Client kUse*Password.
 [options.verification-method]
 group = "security"
 kind = "choice"
@@ -144,7 +131,7 @@ choices = [
 label = { en = "Password type", zh = "密码类型" }
 description = { en = "Which passwords are accepted when sessions are approved with a password.", zh = "通过密码接受会话时接受哪种密码。" }
 
-# desktop_setting_page.dart lengthRadios ['6', '8', '10'].
+# Client lengthRadios ['6', '8', '10'].
 [options.temporary-password-length]
 secret = false
 group = "security"
@@ -183,7 +170,7 @@ kind = "bool"
 label = { en = "Direct IP access", zh = "直接 IP 访问" }
 description = { en = "Accept connections straight to this device's IP address, bypassing the ID server.", zh = "接受直接连接本设备 IP 地址的会话，不经过 ID 服务器。" }
 
-# desktop_setting_page.dart direct access port field: hint '21118', 0-65535.
+# Client direct access port field: hint '21118', 0-65535.
 [options.direct-access-port]
 group = "security"
 kind = "number"
@@ -199,7 +186,7 @@ kind = "text"
 label = { en = "IP whitelist", zh = "IP 白名单" }
 description = { en = "Comma-separated IP addresses or CIDR ranges allowed to connect; empty allows all.", zh = "允许连接的 IP 地址或 CIDR 网段，逗号分隔；为空则不限制。" }
 
-# src/server/connection.rs check_id_whitelist: comma-separated, trimmed.
+# Client check_id_whitelist: comma-separated, trimmed.
 [options.id-whitelist]
 group = "security"
 kind = "text"
@@ -212,7 +199,7 @@ kind = "bool"
 label = { en = "Disconnect idle sessions", zh = "空闲时自动断开" }
 description = { en = "Close incoming sessions after a period without input.", zh = "被控会话在一段时间无操作后自动关闭。" }
 
-# src/server/connection.rs get_auto_disconenct_timer: minutes, unparsable or 0 -> 10.
+# Client get_auto_disconenct_timer: minutes, unparsable or 0 -> 10.
 [options.auto-disconnect-timeout]
 group = "security"
 kind = "number"
@@ -234,7 +221,7 @@ kind = "bool"
 label = { en = "Trusted devices", zh = "可信设备" }
 description = { en = "Let controllers that passed two-factor authentication skip it on later sessions.", zh = "已通过双重验证的控制端在之后的会话中可跳过验证。" }
 
-# src/trusted_devices/policy.rs days(): '' or '90' -> 90, '1', '7', '30', '0' = never.
+# Client trusted-device days(): '' or '90' -> 90, '1', '7', '30', '0' = never.
 [options.trusted-device-expiration-days]
 group = "security"
 kind = "choice"
@@ -249,8 +236,6 @@ choices = [
 label = { en = "Trusted device validity", zh = "可信设备有效期" }
 description = { en = "How long a trusted controller may skip two-factor authentication.", zh = "可信控制端可免双重验证的时长。" }
 
-# ---- recording --------------------------------------------------------------------------
-
 [options.allow-auto-record-incoming]
 group = "recording"
 kind = "bool"
@@ -262,8 +247,6 @@ group = "recording"
 kind = "text"
 label = { en = "Recording folder (Windows service)", zh = "录像目录（Windows 服务）" }
 description = { en = "Folder where the Windows service saves recordings of incoming sessions.", zh = "Windows 服务保存被控会话录像的目录。" }
-
-# ---- display ----------------------------------------------------------------------------
 
 [options.enable-abr]
 group = "display"
@@ -300,8 +283,6 @@ group = "display"
 kind = "bool"
 label = { en = "Half-scale software encoding (Android)", zh = "软件编码半分辨率（Android）" }
 description = { en = "Halve the resolution when Android encodes in software.", zh = "Android 使用软件编码时分辨率减半。" }
-
-# ---- network ----------------------------------------------------------------------------
 
 [options.custom-rendezvous-server]
 group = "network"
@@ -343,7 +324,7 @@ max = 65535
 label = { en = "WebSocket port", zh = "WebSocket 端口" }
 description = { en = "Port of WebSocket connections.", zh = "WebSocket 连接的端口。" }
 
-# desktop_setting_page.dart: the switch is on only for 'Y'.
+# Client: the switch is on only for 'Y'.
 [options.disable-udp]
 group = "network"
 kind = "bool"
@@ -377,9 +358,8 @@ kind = "bool"
 label = { en = "WebRTC congestion control", zh = "WebRTC 拥塞控制" }
 description = { en = "Enable congestion control on WebRTC connections.", zh = "在 WebRTC 连接上启用拥塞控制。" }
 
-# hbb_common config.rs: proxy-* are custom-client settings; the client reads its proxy from
-# its own proxy configuration, so these may have no effect when set by a strategy. Kept out
-# of the typed form (advanced_only); still settable in the advanced editor.
+# proxy-* are custom-client settings: the client reads its proxy from its own configuration, so
+# these may have no effect when set by a strategy.
 [options.proxy-url]
 advanced_only = true
 group = "network"
@@ -401,8 +381,6 @@ kind = "text"
 secret = true
 label = { en = "Proxy password", zh = "代理密码" }
 description = { en = "Password of the proxy. Sent to every device in clear; never shown again here.", zh = "代理的密码。会明文下发给设备；保存后此处不再显示。" }
-
-# ---- presets ----------------------------------------------------------------------------
 
 [options.preset-address-book-name]
 group = "presets"
@@ -453,9 +431,7 @@ kind = "text"
 label = { en = "Device note", zh = "设备备注" }
 description = { en = "Note the device reports with its system information.", zh = "设备随系统信息上报的备注。" }
 
-# ---- other ------------------------------------------------------------------------------
-
-# src/server/connection.rs reads it with get_bool_option, whose final branch is on unless 'N'.
+# Client reads it with get_bool_option, whose final branch is on unless 'N'.
 [options.keep-awake-during-incoming-sessions]
 group = "other"
 kind = "bool"

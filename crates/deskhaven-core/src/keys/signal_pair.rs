@@ -1,10 +1,5 @@
-//! The hbbs Ed25519 key pair in upstream's representation.
-//!
-//! Upstream rustdesk-server (`src/common.rs` `gen_sk`) stores a sodiumoxide
-//! `sign::SecretKey`: 64 bytes = 32-byte seed || 32-byte public key, as
-//! padded standard base64, and the public key as base64 of its 32 bytes.
-//! Ed25519 (RFC 8032) is identical in libsodium and ed25519-dalek, so the
-//! same seed yields the same public key and the same signatures.
+//! Upstream's representation: the 64-byte seed and public key as padded standard base64. Ed25519
+//! is identical in libsodium and ed25519-dalek, so the same seed yields the same keys and signatures.
 
 use std::fmt;
 
@@ -14,18 +9,17 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{CryptoError, KEY_B64, fill_random};
 
-/// Upstream retries generation this many times (common.rs `gen_sk`).
+/// As upstream.
 const GENERATE_ATTEMPTS: usize = 300;
 
-/// Heap-held so moving the pair copies no key bytes; wiped on drop
-/// (ed25519-dalek `zeroize`); `Debug` shows only the public key.
+/// Heap-held so moving the pair copies no key bytes; wiped on drop; `Debug` shows only the public
+/// key.
 pub struct SignalKeyPair {
     signing: Box<SigningKey>,
 }
 
 impl SignalKeyPair {
-    /// A fresh pair whose base64 public key contains neither '/' nor ':'
-    /// (clients take the key from a renamed exe file name), as upstream.
+    /// Clients take the key from a renamed exe file name, so the base64 public key avoids '/' and ':'.
     pub fn generate() -> Result<Self, CryptoError> {
         let mut pair = Self::random()?;
         for _ in 1..GENERATE_ATTEMPTS {
@@ -45,9 +39,7 @@ impl SignalKeyPair {
         })
     }
 
-    /// Parses the contents of an upstream `id_ed25519` file, decoding into a
-    /// wiped scratch buffer. The stored public half must match the one
-    /// derived from the seed.
+    /// The stored public half must match the one derived from the seed.
     pub(crate) fn from_secret_base64(text: &str) -> Result<Self, &'static str> {
         const WRONG_LENGTH: &str = "expected 64 bytes (seed || public key)";
         let mut scratch = Zeroizing::new([0u8; 2 * KEYPAIR_LENGTH]);
@@ -68,12 +60,11 @@ impl SignalKeyPair {
             .map_err(|_| "public half does not match the seed")
     }
 
-    /// Contents of an upstream `id_ed25519` file.
     pub fn secret_base64(&self) -> Zeroizing<String> {
         Zeroizing::new(KEY_B64.encode(self.keypair_bytes().as_slice()))
     }
 
-    /// Seed || public key: the libsodium / sodiumoxide `sign::SecretKey` layout.
+    /// The libsodium `sign::SecretKey` layout: seed, then public key.
     pub fn keypair_bytes(&self) -> Zeroizing<[u8; KEYPAIR_LENGTH]> {
         Zeroizing::new(self.signing.to_keypair_bytes())
     }
@@ -82,12 +73,10 @@ impl SignalKeyPair {
         self.signing.verifying_key().to_bytes()
     }
 
-    /// The `Key` value clients are configured with; contents of `id_ed25519.pub`.
     pub fn public_key_base64(&self) -> String {
         KEY_B64.encode(self.public_key())
     }
 
-    /// Detached Ed25519 signature (libsodium `crypto_sign_detached`).
     pub fn sign(&self, message: &[u8]) -> [u8; 64] {
         self.signing.sign(message).to_bytes()
     }

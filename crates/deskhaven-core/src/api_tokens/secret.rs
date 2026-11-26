@@ -1,6 +1,3 @@
-//! The token itself: [`API_TOKEN_PREFIX`] + 256 random bits, base64url without padding.
-//! Only its SHA-256 (the sessions' [`TokenHash`]) is stored or looked up.
-
 use std::fmt;
 
 use base64_022::Engine as _;
@@ -10,14 +7,11 @@ use zeroize::Zeroizing;
 use crate::crypto::{CryptoError, fill_random};
 use crate::sessions::{TOKEN_BYTES, TOKEN_LEN, TokenHash};
 
-/// Every API token starts with this, so scanners and humans can tell what it is.
+/// Lets scanners and humans tell what it is.
 pub const API_TOKEN_PREFIX: &str = "dhk_";
-/// Characters of the token kept in `token_prefix` (prefix included) to tell tokens apart in
-/// the console: 8 random characters, 48 of the 256 bits.
 pub const DISPLAY_PREFIX_LEN: usize = API_TOKEN_PREFIX.len() + 8;
 
-/// A freshly issued API token. Handed out exactly once, at creation; zeroed on drop,
-/// `Debug` never shows it and there is no `Display` or `Clone`.
+/// Handed out once; zeroed on drop, hidden from `Debug`, no `Display` or `Clone`.
 pub struct ApiTokenSecret(Zeroizing<String>);
 
 impl ApiTokenSecret {
@@ -28,7 +22,6 @@ impl ApiTokenSecret {
         Ok(Self(Zeroizing::new(format!("{API_TOKEN_PREFIX}{}", *body))))
     }
 
-    /// The token to give to the administrator (once).
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -48,8 +41,7 @@ impl fmt::Debug for ApiTokenSecret {
     }
 }
 
-/// The hash of a presented token, or `None` when it cannot be one of ours (wrong prefix,
-/// length or alphabet): such input never reaches the database.
+/// Input that cannot be one of ours never reaches the database.
 pub(super) fn presented_hash(token: &str) -> Option<TokenHash> {
     let body = token.strip_prefix(API_TOKEN_PREFIX)?;
     let well_formed = body.len() == TOKEN_LEN

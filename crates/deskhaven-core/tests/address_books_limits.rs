@@ -1,7 +1,3 @@
-//! AddressBookService, request size limits: delete lists are capped (refused before any row
-//! is touched) and deleting tags is linear in peers × tags, so a large request cannot hold
-//! the write lock for long. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -17,7 +13,6 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{EntityTrait, PaginatorTrait};
 use serde_json::Value;
 
-/// Most names `delete_tags` takes (the most tags one book may hold).
 const MAX_TAG_NAMES: usize = 1000;
 const FULL_BOOK_PEERS: usize = 1000;
 const TAGS_PER_PEER: usize = 100;
@@ -63,7 +58,6 @@ async fn oversized_delete_lists_are_refused_without_touching_rows() {
         );
         assert_eq!(env.peer_ids(me, &book.guid).await, ["t0"]);
         assert_eq!(env.books.tags(me, &book.guid).await.unwrap().len(), 1);
-        // At the caps the lists are accepted.
         env.books
             .delete_peers(me, &book.guid, &tag_names(5))
             .await
@@ -121,7 +115,6 @@ async fn deleting_every_tag_of_a_full_book_is_linear() {
                 .await
                 .unwrap();
         }
-        // The largest accepted request: every tag, then duplicates up to the cap.
         let mut request = names.clone();
         request.extend(
             names

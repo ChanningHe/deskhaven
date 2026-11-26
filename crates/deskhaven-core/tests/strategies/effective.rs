@@ -1,4 +1,3 @@
-//! Effective strategy through the service: real assignments, memberships and ownership.
 //! The merge rules themselves are unit-tested next to the code.
 
 #![allow(clippy::unwrap_used, clippy::panic)]

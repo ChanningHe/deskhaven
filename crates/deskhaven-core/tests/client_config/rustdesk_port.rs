@@ -1,21 +1,13 @@
-//! A port of the official RustDesk client's server-configuration decoders at the pinned
-//! commit 23e5bb4, to check our encoder against what the client really accepts. Not
-//! built from the client's code; the logic is transcribed and only the unsigned branch is
-//! kept (the signed branch needs libsodium and serves RustDesk Pro's own licence strings).
-//!
-//! - Import box, deep link and mobile QR scan: `flutter/lib/common.dart:2938-2952`
-//!   (`ServerConfig.decode`, called by `importConfig` at `common.dart:3551-3556`); the QR
-//!   payload prefix `config=` is `flutter/lib/mobile/pages/scan_page.dart:152-157`.
-//! - `rustdesk --config <string>` and the renamed exe: `src/core_main.rs:488-512` calls
-//!   `src/custom_server.rs:44-113` (`get_custom_server_from_string`) with the string plus
-//!   `.exe`; the encoded part is decoded at `src/custom_server.rs:24-42`.
+//! A port of the official client's server-configuration decoders, to check our encoder against
+//! what the client really accepts. Transcribed, not built from the client's code; only the
+//! unsigned branch is kept (the signed branch serves RustDesk Pro's own licence strings).
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use base64_022::Engine as _;
 use base64_022::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 
-/// `CustomServer` (`custom_server.rs:12-22`).
+/// The client's `CustomServer`.
 #[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct Decoded {
     pub key: String,
@@ -41,7 +33,7 @@ fn from_json(data: &[u8]) -> Option<Decoded> {
     })
 }
 
-/// `get_custom_server_from_config_string` (`custom_server.rs:24-42`), unsigned branch.
+/// `get_custom_server_from_config_string`, unsigned branch.
 fn from_config_string(s: &str) -> Option<Decoded> {
     let reversed: String = s.chars().rev().collect();
     let data = URL_SAFE_NO_PAD
@@ -51,8 +43,8 @@ fn from_config_string(s: &str) -> Option<Decoded> {
     from_json(&data)
 }
 
-/// `get_custom_server_from_string` (`custom_server.rs:44-113`); `s` is a file name or the
-/// `--config` argument with `.exe` appended.
+/// `get_custom_server_from_string`; `s` is a file name or the `--config` argument with `.exe`
+/// appended.
 pub fn from_file_name(s: &str) -> Option<Decoded> {
     let s = if s.to_lowercase().ends_with(".exe.exe") {
         &s[0..s.len() - 8]
@@ -83,7 +75,7 @@ pub fn from_file_name(s: &str) -> Option<Decoded> {
     None
 }
 
-/// The `host=` branch (`custom_server.rs:64-92`).
+/// The `host=` branch.
 fn from_host_tokens(s: &str) -> Decoded {
     let stripped = &s[s.to_ascii_lowercase().find("host=").unwrap_or(0)..s.len()];
     let mut out = Decoded::default();
@@ -105,7 +97,7 @@ fn from_host_tokens(s: &str) -> Decoded {
     out
 }
 
-/// `rustdesk --config <arg>` (`core_main.rs:488-512`): the argument becomes an exe name.
+/// `rustdesk --config <arg>`: the argument becomes an exe name.
 pub fn cli_config(arg: &str) -> Option<Decoded> {
     let name = if arg.ends_with(".exe") {
         arg.to_owned()
@@ -115,9 +107,8 @@ pub fn cli_config(arg: &str) -> Option<Decoded> {
     from_file_name(&name).filter(|lic| !lic.host.is_empty())
 }
 
-/// `ServerConfig.decode` (`common.dart:2938-2952`) after `importConfig` trimmed the text
-/// (`common.dart:3551-3556`): plain JSON first, else the reversed text as base64 with the
-/// padding normalized (Dart accepts both alphabets).
+/// `ServerConfig.decode` after `importConfig` trimmed the text: plain JSON first, else the reversed
+/// text as base64 with the padding normalized (Dart accepts both alphabets).
 pub fn flutter_decode(text: &str) -> Option<Decoded> {
     let text = text.trim();
     if let Some(decoded) = from_json(text.as_bytes()) {
@@ -130,7 +121,7 @@ pub fn flutter_decode(text: &str) -> Option<Decoded> {
     from_json(&data)
 }
 
-/// The mobile QR scan (`scan_page.dart:152-157`): `config=` followed by the string.
+/// The mobile QR scan: `config=` followed by the string.
 pub fn qr_decode(payload: &str) -> Option<Decoded> {
     flutter_decode(payload.strip_prefix("config=")?)
 }

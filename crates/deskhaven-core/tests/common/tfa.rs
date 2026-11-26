@@ -1,6 +1,3 @@
-//! Helpers for the 2FA service tests: a user service with a fast hasher, a manual clock
-//! shared with the 2FA service, and an authenticator emulation.
-
 use std::sync::Arc;
 
 use deskhaven_core::auth::limiter::PendingSubject;
@@ -38,7 +35,6 @@ pub struct Env {
     pub clock: Arc<ManualClock>,
 }
 
-/// An enrolled user: its id, password stamp and authenticator seed.
 pub struct Enrolled {
     pub user_id: i64,
     pub username: String,
@@ -96,7 +92,6 @@ impl Env {
         }
     }
 
-    /// A six-digit code matching none of the steps accepted now.
     pub fn wrong_code(&self, user: &Enrolled) -> String {
         let window: Vec<String> = (-2..=2).map(|d| self.code_in(user, d)).collect();
         ["000000", "111111", "222222"]
@@ -111,7 +106,6 @@ impl Env {
         self.clock.now_ms()
     }
 
-    /// A local account with [`PASSWORD`] and the stamp of a successful login.
     pub async fn user(&self, username: &str, role: Role) -> (i64, CredentialStamp) {
         let password = Password::new(PASSWORD);
         let new = NewUser {
@@ -127,7 +121,6 @@ impl Env {
         (login.user.id, login.stamp)
     }
 
-    /// A user with TOTP enabled (the confirming step is the current one).
     pub async fn enrolled(&self, username: &str) -> Enrolled {
         let (user_id, _) = self.user(username, Role::User).await;
         let enrolment = self.tfa.begin_enrolment(user_id).await.unwrap();
@@ -190,12 +183,10 @@ impl Env {
         self.tfa.verify_challenge(&step).await
     }
 
-    /// The authenticator's current code.
     pub fn code(&self, user: &Enrolled) -> String {
         totp::code_at(&user.secret, self.now_ms())
     }
 
-    /// The code `delta` steps from now.
     pub fn code_in(&self, user: &Enrolled, delta: i64) -> String {
         totp::code_at_step(&user.secret, totp::step_at(self.now_ms()) + delta)
     }

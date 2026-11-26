@@ -1,5 +1,3 @@
-//! Secret-at-rest encryption (06-security §5): the master key and `SecretBox`.
-
 pub(crate) mod b64;
 mod mac;
 mod master_key;
@@ -31,7 +29,6 @@ pub enum CryptoError {
     Random,
 }
 
-/// Fills `buf` in place from the OS CSPRNG (no intermediate copies).
 pub(crate) fn fill_random(buf: &mut [u8]) -> Result<(), CryptoError> {
     OsRng.try_fill_bytes(buf).map_err(|_| CryptoError::Random)
 }

@@ -1,15 +1,10 @@
-//! Write-side filesystem primitives for key files: 0700 directories and
-//! atomic create-only writes (see the module docs of `keys`).
-
 use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 
 use super::KeyError;
 
-/// Owner read/write: private keys.
 #[cfg(unix)]
 const PRIVATE_MODE: u32 = 0o600;
-/// World readable: public keys (umask still applies), as upstream hbbs.
 #[cfg(unix)]
 const PUBLIC_MODE: u32 = 0o644;
 #[cfg(unix)]
@@ -22,14 +17,13 @@ pub(super) enum Visibility {
     Public,
 }
 
-/// Outcome of [`create_new`]; losing a race to another writer is not an error.
+/// Losing a race to another writer is not an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Created {
     New,
     AlreadyExisted,
 }
 
-/// The directory holding `path` (`.` for a bare file name).
 pub(super) fn parent_dir(path: &Path) -> PathBuf {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
@@ -37,7 +31,6 @@ pub(super) fn parent_dir(path: &Path) -> PathBuf {
     }
 }
 
-/// Whether anything (including a dangling symlink) occupies `path`.
 pub(super) fn occupied(path: &Path) -> Result<bool, KeyError> {
     match std::fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -46,8 +39,6 @@ pub(super) fn occupied(path: &Path) -> Result<bool, KeyError> {
     }
 }
 
-/// Creates the directory holding `path` (and missing ancestors) as 0700.
-/// Existing directories are left untouched.
 pub(super) fn ensure_parent_dir(path: &Path) -> Result<(), KeyError> {
     let dir = parent_dir(path);
     let mut builder = std::fs::DirBuilder::new();
@@ -59,9 +50,7 @@ pub(super) fn ensure_parent_dir(path: &Path) -> Result<(), KeyError> {
         .map_err(|err| KeyError::io("create directory", &dir, err))
 }
 
-/// Writes `contents` to a temporary file beside `path`, syncs it, then
-/// links it into place only if `path` is still free. A crash leaves either
-/// no key or a complete one; an existing entry is never replaced.
+/// A crash leaves either no key or a complete one; an existing entry is never replaced.
 pub(super) fn create_new(
     path: &Path,
     contents: &[u8],
@@ -98,7 +87,6 @@ fn temp_builder(visibility: Visibility) -> tempfile::Builder<'static, 'static> {
     builder
 }
 
-/// Makes the new directory entry durable.
 #[cfg(unix)]
 fn sync_dir(dir: &Path) -> Result<(), KeyError> {
     std::fs::File::open(dir)

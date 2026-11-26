@@ -1,5 +1,3 @@
-//! Master key resolution: bootstrap `security.master_key` or `{data_dir}/master.key`.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::Path;
@@ -10,8 +8,8 @@ use deskhaven_core::keys::{
     KeyError, KeyWarning, load_or_generate_master_key, master_key_path, read_master_key,
 };
 
-/// A data dir like production's: private regardless of the test runner's umask
-/// (CI containers run with umask 000, which would add a writable-directory warning).
+/// Private regardless of the test runner's umask: a umask of 000 would add a writable-directory
+/// warning.
 fn data_dir() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     #[cfg(unix)]

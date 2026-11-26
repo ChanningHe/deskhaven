@@ -48,7 +48,6 @@ async fn assigning_replaces_the_strategy_of_a_target() {
                 Some(b.id),
                 "{target:?}"
             );
-            // Assigning what is already assigned is fine.
             c.assign(target, &b).await;
         }
 
@@ -166,7 +165,6 @@ async fn unassign_reports_whether_anything_was_removed() {
         assert!(!c.svc.unassign(Target::User(user.id)).await.unwrap());
         assert!(!c.svc.unassign(Target::Global).await.unwrap());
         assert_eq!(rows(db).await, 0);
-        // The strategy itself stays.
         assert!(c.svc.get(a.id).await.is_ok());
     })
     .await;
@@ -224,18 +222,14 @@ async fn deleting_a_strategy_removes_its_assignments() {
     .await;
 }
 
-/// `assign_if_unassigned` (device presets, M2-12) fills an empty target only, and only then
-/// invalidates the cache.
 #[tokio::test]
 async fn assign_if_unassigned_never_replaces_an_assignment() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let (a, b) = (c.strategy("a", &[]).await, c.strategy("b", &[]).await);
         let device = c.device("123456789").await;
         let target = Target::Device(device);
 
-        // Act
         let first = c.svc.assign_if_unassigned(target, a.id).await.unwrap();
         c.svc.effective(&Default::default()).await.unwrap();
         let second = c.svc.assign_if_unassigned(target, b.id).await.unwrap();
@@ -245,7 +239,6 @@ async fn assign_if_unassigned_never_replaces_an_assignment() {
             .assign_if_unassigned(Target::Device(device + 100), a.id)
             .await;
 
-        // Assert
         let be = db.backend;
         assert!(first && !second, "{be}");
         assert_eq!(c.svc.assignment(target).await.unwrap(), Some(a.id), "{be}");

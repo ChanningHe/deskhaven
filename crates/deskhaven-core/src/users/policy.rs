@@ -1,11 +1,5 @@
-//! Password policy (06 §3.1): `auth.password.min_length` ..= [`MAX_PASSWORD_LEN`] characters,
-//! not on the embedded common-password list. Any Unicode is allowed; no normalization
-//! (NFC / NFKC) is applied (see [`Password`]).
-//!
-//! The list (`data/common-passwords.txt`, provenance and MIT license in
-//! `data/common-passwords.LICENSE`) is SecLists' top-100k list reduced to entries of at least
-//! 8 characters (the lowest allowed minimum length), lowercased, byte-order sorted and
-//! deduplicated. It is searched in place by bisection: no index, no startup cost.
+//! The list is SecLists' top-100k reduced to entries of at least 8 characters, lowercased,
+//! byte-order sorted and deduplicated, searched in place by bisection: no index, no startup cost.
 
 use std::cmp::Ordering;
 
@@ -13,13 +7,11 @@ use zeroize::Zeroizing;
 
 use super::Password;
 
-/// Longest accepted password, in characters.
 pub const MAX_PASSWORD_LEN: usize = 256;
 
-/// Newline-separated, strictly increasing in byte order (`LC_ALL=C sort -u`).
+/// Strictly increasing in byte order (`LC_ALL=C sort -u`).
 const COMMON_PASSWORDS: &str = include_str!("../../data/common-passwords.txt");
 
-/// Why a password was rejected. Stable for API error mapping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PolicyViolation {
     #[error("must be at least {min} characters")]
@@ -32,7 +24,6 @@ pub enum PolicyViolation {
     Common,
 }
 
-/// Checks `password` against the policy with the given minimum length (in characters).
 pub fn check_password_policy(password: &Password, min_length: u32) -> Result<(), PolicyViolation> {
     let len = password.char_len();
     if len < usize::try_from(min_length).unwrap_or(usize::MAX) {
@@ -50,9 +41,7 @@ pub fn check_password_policy(password: &Password, min_length: u32) -> Result<(),
     Ok(())
 }
 
-/// Binary search for `needle` as a whole line of `sorted` (lines in strictly increasing byte
-/// order). Probes the line around the midpoint of the remaining byte range; `lo` and `hi`
-/// always sit on line starts (or the end).
+/// `lo` and `hi` always sit on line starts (or the end).
 fn contains_line(sorted: &str, needle: &str) -> bool {
     let bytes = sorted.as_bytes();
     let (mut lo, mut hi) = (0, bytes.len());

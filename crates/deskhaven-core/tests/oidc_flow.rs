@@ -1,7 +1,3 @@
-//! OIDC protocol against a mock IdP (wiremock): the authorization request, PKCE, single-use
-//! state, ID token verification (nonce, issuer, audience, expiry, signature), IdP errors,
-//! flow expiry and key rotation. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -122,9 +118,8 @@ async fn a_state_completes_once_and_a_replay_does_nothing() {
     .await;
 }
 
-/// M3: algorithm confusion. Even when the discovery document advertises HS256 and `none`,
-/// a token MACed with the client secret, an unsigned one, and one also issued to another
-/// audience are all refused.
+/// Algorithm confusion: even when discovery advertises HS256 and `none`, a token MACed with the
+/// client secret, an unsigned one, and one also issued to another audience are all refused.
 #[tokio::test]
 async fn hs256_with_the_client_secret_alg_none_and_extra_audiences_are_rejected() {
     use hmac::{Hmac, KeyInit, Mac};
@@ -506,7 +501,6 @@ async fn unknown_key_ids_refetch_at_most_once_per_minute() {
     .await;
 }
 
-/// The mock now publishes only KEY_B (kid `test-key-2`) and answers with `spec`'s token.
 async fn rotate_to(env: &Env, spec: &TokenSpec) {
     env.idp.server.reset().await;
     env.idp.mount_discovery(env.idp.discovery()).await;

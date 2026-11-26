@@ -1,6 +1,3 @@
-//! `modified_at`: the version clients compare. Strictly increasing on every relevant change,
-//! stable otherwise, never taken from the database's idea of "newest input".
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;

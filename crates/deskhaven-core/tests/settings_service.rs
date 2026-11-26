@@ -1,6 +1,3 @@
-//! Settings persistence: load, batch update, optimistic locking, history,
-//! encryption at rest, hot reload. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -482,7 +479,6 @@ async fn empty_batch_is_a_no_op() {
     .await;
 }
 
-/// Writes a row directly, bypassing the service (another writer, a restore).
 async fn write_out_of_band(db: &TestDb, key: &str, value: &str, version: i64) {
     let row = setting::ActiveModel {
         key: Set(key.to_owned()),

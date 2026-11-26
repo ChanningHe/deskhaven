@@ -1,7 +1,3 @@
-//! `preset-*` fields: off by default (`devices.accept_presets`), never with
-//! `devices.verify_uuid` off, applied with the first stored sysinfo only, never replacing a
-//! value.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::addressbooks::{Actor, PeerPatch, Rule};
@@ -29,7 +25,6 @@ pub fn all_presets() -> Presets {
     }
 }
 
-/// Nothing is placed: owner, group, note, strategy and book entry all unset.
 async fn assert_unplaced(c: &Ctx, t: &Targets, device_id: i64, b: impl std::fmt::Display) {
     let row = c.row(ID).await;
     let placed = (row.owner_user_id, row.device_group_id, row.note);
@@ -42,15 +37,12 @@ async fn assert_unplaced(c: &Ctx, t: &Targets, device_id: i64, b: impl std::fmt:
 #[tokio::test]
 async fn presets_are_ignored_by_default() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
 
-        // Act
         let outcome = c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         assert_eq!(outcome, SysinfoOutcome::Stored, "{}", db.backend);
         assert_eq!(c.row(ID).await.hostname.as_deref(), Some("pc"));
         assert_unplaced(&c, &t, device_id, db.backend).await;
@@ -58,21 +50,17 @@ async fn presets_are_ignored_by_default() {
     .await;
 }
 
-/// `row`: owner (case-insensitive name), device group, note and strategy; no book entry.
 #[tokio::test]
 async fn row_applies_the_placement_but_not_the_address_book_entry() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
         c.grant(&t.book, t.alice, Rule::ReadWrite).await;
         c.accept_presets("row").await;
 
-        // Act
         let outcome = c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(outcome, SysinfoOutcome::Stored, "{b}");
         let row = c.row(ID).await;
@@ -86,21 +74,17 @@ async fn row_applies_the_placement_but_not_the_address_book_entry() {
     .await;
 }
 
-/// `all`: the book entry too, written as the (preset) owner, who holds rule 2 on the book.
 #[tokio::test]
 async fn all_adds_the_book_entry_as_an_owner_with_write_access() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let t = c.targets().await;
         c.grant(&t.book, t.alice, Rule::ReadWrite).await;
         c.accept_presets("all").await;
 
-        // Act
         c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         let b = db.backend;
         let peers = c.book_peers(&t.book).await;
         assert_eq!(peers.len(), 1, "{b}");
@@ -127,7 +111,6 @@ async fn all_adds_the_book_entry_as_an_owner_with_write_access() {
 #[tokio::test]
 async fn the_book_entry_needs_an_owner_with_write_access() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let t = c.targets().await;
@@ -138,13 +121,12 @@ async fn the_book_entry_needs_an_owner_with_write_access() {
             ..all_presets()
         };
 
-        // Act: no owner, then (another device) an owner with rule 1.
+        // No owner, then (another device) an owner with rule 1.
         c.report(report(ID, sysinfo("pc"), ownerless)).await;
         c.device("987654321").await;
         let read_only = report("987654321", sysinfo("pc-2"), all_presets());
         c.report(read_only).await;
 
-        // Assert
         let b = db.backend;
         assert!(c.book_peers(&t.book).await.is_empty(), "{b}");
         let tags = c.books.tags(Actor::Admin, &t.book).await.unwrap();
@@ -158,7 +140,6 @@ async fn the_book_entry_needs_an_owner_with_write_access() {
 #[tokio::test]
 async fn presets_are_ignored_while_uuid_verification_is_off() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -166,21 +147,17 @@ async fn presets_are_ignored_while_uuid_verification_is_off() {
         c.accept_presets("all").await;
         c.set("devices.verify_uuid", json!(false)).await;
 
-        // Act
         let outcome = c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         assert_eq!(outcome, SysinfoOutcome::Stored, "{}", db.backend);
         assert_unplaced(&c, &t, device_id, db.backend).await;
     })
     .await;
 }
 
-/// Presets are only read with the first stored sysinfo.
 #[tokio::test]
 async fn presets_after_the_first_sysinfo_are_ignored() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -190,10 +167,8 @@ async fn presets_after_the_first_sysinfo_are_ignored() {
             .await;
         c.next_write_window();
 
-        // Act
         let outcome = c.report(report(ID, sysinfo("pc-2"), all_presets())).await;
 
-        // Assert
         assert_eq!(outcome, SysinfoOutcome::Stored, "{}", db.backend);
         assert_eq!(c.row(ID).await.hostname.as_deref(), Some("pc-2"));
         assert_unplaced(&c, &t, device_id, db.backend).await;
@@ -206,7 +181,6 @@ async fn presets_after_the_first_sysinfo_are_ignored() {
 #[tokio::test]
 async fn presets_never_replace_existing_values() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -226,10 +200,8 @@ async fn presets_never_replace_existing_values() {
             .unwrap();
         c.accept_presets("all").await;
 
-        // Act
         c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         let b = db.backend;
         let row = c.row(ID).await;
         assert_eq!(row.owner_user_id, Some(bob), "{b}");
@@ -253,7 +225,6 @@ async fn presets_never_replace_existing_values() {
 #[tokio::test]
 async fn full_books_and_tag_lists_are_respected() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let t = c.targets().await;
         c.grant(&t.book, t.alice, Rule::ReadWrite).await;
@@ -278,12 +249,10 @@ async fn full_books_and_tag_lists_are_respected() {
             ..all_presets()
         };
 
-        // Act
         c.report(report(ID, sysinfo("pc"), all_presets())).await;
         c.report(report("987654321", sysinfo("pc-2"), to_tagged))
             .await;
 
-        // Assert
         let b = db.backend;
         let full = c.book_peers(&t.book).await;
         assert_eq!(full.len(), 1, "{b}: only the earlier peer");
@@ -296,11 +265,9 @@ async fn full_books_and_tag_lists_are_respected() {
     .await;
 }
 
-/// Concurrent first uploads: exactly one of them is first, and its presets alone apply.
 #[tokio::test]
 async fn concurrent_first_sysinfos_apply_one_set_of_presets() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         let t = c.targets().await;
@@ -318,7 +285,6 @@ async fn concurrent_first_sysinfos_apply_one_set_of_presets() {
             ..Default::default()
         };
 
-        // Act
         let (a, b) = tokio::join!(
             c.devices
                 .report_sysinfo(report(ID, sysinfo("from-alice"), as_alice)),
@@ -326,8 +292,8 @@ async fn concurrent_first_sysinfos_apply_one_set_of_presets() {
                 .report_sysinfo(report(ID, sysinfo("from-bob"), as_bob)),
         );
 
-        // Assert: one is stored (and placed the device), the other is refused by the
-        // per-device write limit; never a mix of both sets.
+        // One is stored (and placed the device), the other is refused by the per-device write limit;
+        // never a mix of both sets.
         let be = db.backend;
         let (a, b) = (a.unwrap(), b.unwrap());
         let row = c.row(ID).await;
@@ -344,19 +310,15 @@ async fn concurrent_first_sysinfos_apply_one_set_of_presets() {
     .await;
 }
 
-/// Names that match nothing are skipped; the sysinfo is stored all the same.
 #[tokio::test]
 async fn unknown_preset_names_are_ignored() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         c.accept_presets("all").await;
 
-        // Act
         let outcome = c.report(report(ID, sysinfo("pc"), all_presets())).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(outcome, SysinfoOutcome::Stored, "{b}");
         let row = c.row(ID).await;
@@ -382,7 +344,6 @@ async fn unknown_preset_names_are_ignored() {
 #[tokio::test]
 async fn placing_a_device_invalidates_the_strategy_cache() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.user("alice").await;
@@ -394,10 +355,8 @@ async fn placing_a_device_invalidates_the_strategy_cache() {
             ..Default::default()
         };
 
-        // Act
         c.report(report(ID, sysinfo("pc"), presets)).await;
 
-        // Assert
         let b = db.backend;
         assert!(!c.strategies.cache().is_loaded(), "{b}");
         assert!(c.strategies.cache().version() > warm.modified_at, "{b}");

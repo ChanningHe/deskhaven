@@ -1,7 +1,3 @@
-//! Group mapping and the admin flag of directory accounts (06 §3.5), applied at every
-//! login: `memberOf` or a group search, groups below `group_base_dn` only, console-managed
-//! groups only, owners never changed. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -152,7 +148,6 @@ async fn directory_changes_to_roles_and_groups_are_audited_as_the_system() {
         env.login("alice", USER_PASSWORD).await.unwrap();
         env.fake.set_members(&group_dn("ops"), &[]);
         env.login("alice", USER_PASSWORD).await.unwrap();
-        // Nothing changed: nothing more is audited.
         env.login("alice", USER_PASSWORD).await.unwrap();
 
         let rows = console_audit::Entity::find()
@@ -196,7 +191,6 @@ async fn the_admin_group_promotes_and_demotes_but_never_touches_owners() {
         let demoted = env.login("alice", USER_PASSWORD).await.unwrap().user;
         let owner = env.login("olivia", USER_PASSWORD).await.unwrap().user;
 
-        // DNs compare case-insensitively.
         assert_eq!(promoted.role, Role::Admin, "{}", db.backend);
         assert_eq!(demoted.role, Role::User);
         assert_eq!(env.users.get(demoted.id).await.unwrap().role, Role::User);

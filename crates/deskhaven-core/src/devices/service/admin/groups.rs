@@ -1,8 +1,3 @@
-//! Device groups for the console: paged list with device counts, detail, create, update and
-//! delete. Groups with `managed_by = config` are read-only here
-//! ([`DeviceError::ManagedByConfig`]). Deleting a group ungroups its devices (foreign key
-//! `SET NULL`) and drops its strategy assignment.
-
 use std::collections::HashMap;
 
 use deskhaven_db::begin_write;
@@ -46,15 +41,13 @@ impl From<device_group::Model> for DeviceGroup {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is.
 #[derive(Clone, Debug, Default)]
 pub struct DeviceGroupUpdate {
     pub name: Option<String>,
     pub note: Option<String>,
 }
 
-/// Filters of [`DeviceService::group_page`]: `q` matches a substring of the name,
-/// case-insensitively (ASCII on SQLite) and literally.
+/// `q`: case-insensitive literal substring of the name, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct DeviceGroupQuery {
     pub q: Option<String>,
@@ -74,7 +67,6 @@ pub struct DeviceGroupSort {
     pub descending: bool,
 }
 
-/// A device group with the number of devices in it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceGroupSummary {
     pub group: DeviceGroup,
@@ -82,7 +74,6 @@ pub struct DeviceGroupSummary {
 }
 
 impl DeviceService {
-    /// One page of groups (ordered by `sort`, default name, then id in the same direction).
     pub async fn group_page(
         &self,
         query: &DeviceGroupQuery,
@@ -130,7 +121,6 @@ impl DeviceService {
         })
     }
 
-    /// The group with its number of devices.
     pub async fn group_summary(&self, id: i64) -> Result<DeviceGroupSummary, DeviceError> {
         let found = device_group::Entity::find_by_id(id)
             .one(&self.inner.db)
@@ -166,8 +156,6 @@ impl DeviceService {
             .collect())
     }
 
-    /// Creates a group managed in the console; `guard` decides on the new group (no
-    /// `before`). Names are unique (exact match).
     pub async fn create_group_guarded(
         &self,
         name: &str,
@@ -195,8 +183,6 @@ impl DeviceService {
         .await
     }
 
-    /// Renames the group or changes its note, with `guard` deciding on it before and after.
-    /// An empty update changes and records nothing.
     pub async fn update_group_guarded(
         &self,
         id: i64,
@@ -236,8 +222,6 @@ impl DeviceService {
         .await
     }
 
-    /// Deletes the group and its strategy assignment, with `guard` deciding on the group
-    /// (no `after`); its devices become ungrouped.
     pub async fn delete_group_guarded(
         &self,
         id: i64,
@@ -259,7 +243,6 @@ impl DeviceService {
     }
 }
 
-/// The group, locked for the rest of the transaction, if the console may change it.
 async fn writable_group(
     db: &impl ConnectionTrait,
     id: i64,
@@ -275,7 +258,6 @@ async fn writable_group(
     }
 }
 
-/// Trimmed name: 1-[`DEVICE_GROUP_NAME_MAX_LEN`] characters, no control characters.
 fn validate_group_name(raw: &str) -> Result<String, DeviceError> {
     let name = raw.trim();
     let problem = match name.is_empty() {

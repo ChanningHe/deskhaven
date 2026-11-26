@@ -1,6 +1,3 @@
-//! The heartbeat (M2-14, 02 §4.1): identity, presence, sysinfo request, disconnects and the
-//! strategy with its removed-key deletes; the steady path touches no database.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -41,7 +38,6 @@ fn beat(conns: &[i32], modified_at: i64) -> Heartbeat {
     }
 }
 
-/// One tick later, a heartbeat of [`ID`] that must be answered.
 async fn send(c: &Ctx, conns: &[i32], modified_at: i64) -> HeartbeatReply {
     c.clock.advance(TICK);
     match c.devices.heartbeat(beat(conns, modified_at)).await.unwrap() {
@@ -50,7 +46,7 @@ async fn send(c: &Ctx, conns: &[i32], modified_at: i64) -> HeartbeatReply {
     }
 }
 
-/// The client: applies a strategy and keeps the version it was sent (`sync.rs:261-275`).
+/// The client: applies a strategy and keeps the version it was sent.
 struct Client {
     modified_at: i64,
 }
@@ -65,7 +61,6 @@ impl Client {
     }
 }
 
-/// `strategy.config_options` of `reply` (empty when none was sent).
 fn options(reply: &HeartbeatReply) -> Options {
     reply
         .strategy
@@ -99,7 +94,6 @@ impl Ctx {
 #[tokio::test]
 async fn an_unknown_id_and_a_wrong_uuid_are_not_found_alike_and_change_nothing() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.devices.disconnects().disconnect(ID, &[12]).unwrap();
@@ -112,11 +106,9 @@ async fn an_unknown_id_and_a_wrong_uuid_are_not_found_alike_and_change_nothing()
             ..beat(&[12], 0)
         };
 
-        // Act
         let unknown = c.devices.heartbeat(unknown).await.unwrap();
         let wrong = c.devices.heartbeat(wrong).await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(unknown, HeartbeatOutcome::NotFound, "{b}");
         assert_eq!(wrong, HeartbeatOutcome::NotFound, "{b}");
@@ -132,14 +124,12 @@ async fn an_unknown_id_and_a_wrong_uuid_are_not_found_alike_and_change_nothing()
 #[tokio::test]
 async fn a_device_is_asked_for_its_sysinfo_until_it_reports_one() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.device("987654321").await;
         c.report(report("987654321", sysinfo("other"), Presets::default()))
             .await;
 
-        // Act
         let before = send(&c, &[], 0).await;
         let again = send(&c, &[], 0).await;
         c.report(report(ID, sysinfo("pc"), Presets::default()))
@@ -152,7 +142,6 @@ async fn a_device_is_asked_for_its_sysinfo_until_it_reports_one() {
         };
         let other = c.devices.heartbeat(other).await.unwrap();
 
-        // Assert
         let b = db.backend;
         assert!(before.sysinfo && again.sysinfo, "{b}");
         assert!(!after.sysinfo, "{b}: stored, no longer asked");
@@ -167,19 +156,16 @@ async fn a_device_is_asked_for_its_sysinfo_until_it_reports_one() {
 #[tokio::test]
 async fn a_heartbeat_updates_presence_and_one_too_soon_is_refused() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         send(&c, &[5], 0).await;
         c.devices.disconnects().disconnect(ID, &[7]).unwrap();
 
-        // Act
         c.clock
             .advance(HEARTBEAT_MIN_INTERVAL - Duration::from_millis(1));
         let early = c.devices.heartbeat(beat(&[7], 0)).await.unwrap();
         let state = c.devices.presence().get(ID).unwrap();
 
-        // Assert
         let b = db.backend;
         assert_eq!(early, HeartbeatOutcome::TooFrequent, "{b}");
         assert!(state.online, "{b}");
@@ -195,16 +181,13 @@ async fn a_heartbeat_updates_presence_and_one_too_soon_is_refused() {
 #[tokio::test]
 async fn disconnects_are_handed_out_once_and_only_for_live_connections() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.devices.disconnects().disconnect(ID, &[12, 13]).unwrap();
 
-        // Act
         let first = send(&c, &[11, 12], 0).await;
         let second = send(&c, &[11, 12], 0).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             first.disconnect,
@@ -219,7 +202,6 @@ async fn disconnects_are_handed_out_once_and_only_for_live_connections() {
 #[tokio::test]
 async fn a_stale_version_gets_every_option_including_empty_ones_and_the_current_none() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         c.global(&[
@@ -229,12 +211,10 @@ async fn a_stale_version_gets_every_option_including_empty_ones_and_the_current_
         .await;
         let current = c.strategies.cache().version();
 
-        // Act
         let stale = send(&c, &[], 0).await;
         let up_to_date = send(&c, &[], current).await;
         let newer = send(&c, &[], current + 1).await;
 
-        // Assert
         let b = db.backend;
         let push = stale.strategy.unwrap();
         assert_eq!(push.modified_at, current, "{b}");
@@ -255,7 +235,6 @@ async fn a_stale_version_gets_every_option_including_empty_ones_and_the_current_
 #[tokio::test]
 async fn a_removed_key_is_sent_empty_until_confirmed_and_then_never_again() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let strategy = c.global(&[("a", "1"), ("b", "2")]).await;
@@ -264,14 +243,12 @@ async fn a_removed_key_is_sent_empty_until_confirmed_and_then_never_again() {
         client.beat(&c).await;
         c.set_options(strategy, &[("a", "1")]).await;
 
-        // Act
         let lost = send(&c, &[], client.modified_at).await;
         let removal = client.beat(&c).await;
         let confirmed = client.beat(&c).await;
         c.set_options(strategy, &[("a", "3")]).await;
         let next_change = client.beat(&c).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(options(&lost), opts(&[("a", "1"), ("b", "")]), "{b}");
         assert_eq!(
@@ -292,7 +269,6 @@ async fn a_removed_key_is_sent_empty_until_confirmed_and_then_never_again() {
 #[tokio::test]
 async fn keys_of_a_device_group_it_left_are_deleted() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let alice = c.user("alice").await.id;
@@ -310,11 +286,9 @@ async fn keys_of_a_device_group_it_left_are_deleted() {
         let joined = client.beat(&c).await;
         client.beat(&c).await;
 
-        // Act
         c.devices.delete_group(group).await.unwrap();
         let left = client.beat(&c).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(options(&joined), opts(&[("k", "v")]), "{b}");
         assert_eq!(options(&left), opts(&[("k", "")]), "{b}");
@@ -328,7 +302,6 @@ async fn keys_of_a_device_group_it_left_are_deleted() {
 #[tokio::test]
 async fn a_deleted_and_re_registered_device_still_gets_its_old_keys_deleted() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let old_row = c.device(ID).await;
         let created = c
@@ -343,12 +316,10 @@ async fn a_deleted_and_re_registered_device_still_gets_its_old_keys_deleted() {
         let applied = client.beat(&c).await;
         client.beat(&c).await;
 
-        // Act
         assert!(c.devices.delete(old_row).await.unwrap());
         let new_row = c.device(ID).await;
         let after = client.beat(&c).await;
 
-        // Assert
         let b = db.backend;
         assert_ne!(new_row, old_row, "{b}");
         assert_eq!(options(&applied), opts(&[("k", "v")]), "{b}");
@@ -362,7 +333,6 @@ async fn a_deleted_and_re_registered_device_still_gets_its_old_keys_deleted() {
 #[tokio::test]
 async fn a_restart_keeps_the_keys_to_delete() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let strategy = c.global(&[("a", "1"), ("b", "2")]).await;
@@ -372,12 +342,10 @@ async fn a_restart_keeps_the_keys_to_delete() {
         c.set_options(strategy, &[("a", "1")]).await;
         let clock = Arc::new(ManualClock::at(T0_MS + 3_600_000));
 
-        // Act
         let restarted = ctx_on(db.conn.clone(), clock).await;
         let after_restart = client.beat(&restarted).await;
         let confirmed = client.beat(&restarted).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             options(&after_restart),
@@ -394,7 +362,6 @@ async fn a_restart_keeps_the_keys_to_delete() {
 #[tokio::test]
 async fn a_restart_before_the_confirmation_sends_the_delete_again() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.device(ID).await;
         let strategy = c.global(&[("a", "1"), ("b", "2")]).await;
@@ -405,14 +372,12 @@ async fn a_restart_before_the_confirmation_sends_the_delete_again() {
         let unconfirmed = client.beat(&c).await;
         let clock = Arc::new(ManualClock::at(T0_MS + 3_600_000));
 
-        // Act
         let restarted = ctx_on(db.conn.clone(), clock).await;
         let again = client.beat(&restarted).await;
         client.beat(&restarted).await;
         restarted.set_options(strategy, &[("c", "1")]).await;
         let later = client.beat(&restarted).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(options(&unconfirmed), opts(&[("a", ""), ("b", "")]), "{b}");
         assert_eq!(options(&again), opts(&[("a", ""), ("b", "")]), "{b}");
@@ -421,13 +386,12 @@ async fn a_restart_before_the_confirmation_sends_the_delete_again() {
     .await;
 }
 
-/// 02 §4.1: once the identity is cached and the client holds the current version, a
-/// heartbeat runs no statement at all (no write, no read). The one write after a strategy
-/// change is the confirmation shrinking the stored keys.
+/// Once the identity is cached and the client holds the current version, a heartbeat runs no
+/// statement at all. The one write after a strategy change is the confirmation shrinking the stored
+/// keys.
 #[tokio::test]
 async fn the_steady_path_runs_no_statement() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let (conn, log) = counted(&db.conn);
         let c = ctx_on(conn, Arc::new(ManualClock::at(T0_MS))).await;
         c.device(ID).await;
@@ -441,7 +405,6 @@ async fn the_steady_path_runs_no_statement() {
         client.beat(&c).await;
         take(&log);
 
-        // Act
         let confirming = client.beat(&c).await;
         let confirmation = take(&log);
         let mut steady = Vec::new();
@@ -450,7 +413,6 @@ async fn the_steady_path_runs_no_statement() {
         }
         let steady_statements = take(&log);
 
-        // Assert
         let b = db.backend;
         assert_eq!(confirming, HeartbeatReply::default(), "{b}");
         assert_eq!(confirmation.len(), 1, "{b}: {confirmation:?}");

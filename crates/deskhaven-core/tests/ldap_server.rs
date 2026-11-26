@@ -1,16 +1,6 @@
-//! LDAP logins against a real directory through the production ldap3 connector. Skipped
-//! unless `DESKHAVEN_TEST_LDAP_URL` names a directory seeded with
-//! `tests/fixtures/ldap/seed.ldif`; `DESKHAVEN_TEST_LDAPS_URL` (its LDAPS port, with the
-//! image's self-signed certificate) adds the certificate checks. Locally:
-//!
-//! ```sh
-//! docker run -d --name deskhaven-ldap -p 127.0.0.1:3389:389 -p 127.0.0.1:3636:636 \
-//!   -e LDAP_ADMIN_PASSWORD=admin-Secret-9 -e LDAP_TLS_VERIFY_CLIENT=never \
-//!   -v "$PWD/crates/deskhaven-core/tests/fixtures/ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom" \
-//!   osixia/openldap:1.5.0 --copy-service
-//! DESKHAVEN_TEST_LDAP_URL=ldap://127.0.0.1:3389 DESKHAVEN_TEST_LDAPS_URL=ldaps://127.0.0.1:3636 \
-//!   cargo test -p deskhaven-core --test ldap_server
-//! ```
+//! Skipped unless `DESKHAVEN_TEST_LDAP_URL` names a directory seeded with
+//! `tests/fixtures/ldap/seed.ldif`; `DESKHAVEN_TEST_LDAPS_URL` (its LDAPS port, self-signed) adds
+//! the certificate checks.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -66,7 +56,6 @@ struct Env {
 }
 
 impl Env {
-    /// The directory account alice, as an earlier login left it.
     async fn alice(&self) {
         let new = NewUser::new("alice", Credential::Ldap);
         self.users.create(new).await.unwrap();

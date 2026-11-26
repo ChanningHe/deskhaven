@@ -1,8 +1,3 @@
-//! SessionService: hashed tokens, creation under the credential stamp, absolute and idle
-//! expiry with a manual clock, throttled touches, the cache (hits, invalidation, flush),
-//! read-time owner checks, user events and cleanup. Every test runs on SQLite and
-//! PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::IpAddr;
@@ -46,7 +41,6 @@ struct Env {
     users: UserService,
     sessions: SessionService,
     clock: Arc<ManualClock>,
-    /// Statements run on the sessions service's connection.
     queries: Arc<AtomicUsize>,
 }
 
@@ -78,7 +72,6 @@ impl Env {
         }
     }
 
-    /// A local account and the stamp of a successful login.
     async fn login(&self, username: &str) -> (i64, CredentialStamp) {
         let password = Password::new(PASSWORD);
         self.users
@@ -107,7 +100,6 @@ impl Env {
         self.queries.load(Ordering::SeqCst)
     }
 
-    /// Authenticates a client token; the owner's id.
     async fn auth(&self, token: &SessionToken) -> Result<i64, SessionError> {
         self.auth_as(token, SessionKind::Client).await
     }
@@ -123,9 +115,8 @@ impl Env {
             .map(|p| p.user_id)
     }
 
-    /// Records, from a commit hook registered after the session service's own, how many
-    /// sessions are still cached at each committed change: hooks run before the event is
-    /// broadcast, so the event consumer cannot have touched the cache yet.
+    /// Hooks run before the event is broadcast, so the event consumer cannot have touched the cache
+    /// yet.
     fn observe_cache_at_commit(&self) -> Arc<Mutex<Vec<usize>>> {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let (cache, sink) = (self.sessions.cache().clone(), Arc::clone(&seen));
@@ -807,7 +798,6 @@ async fn a_token_only_authenticates_as_its_own_kind() {
     .await;
 }
 
-/// Makes every `UPDATE ... SET last_used_at` on `sessions` fail.
 async fn break_touches(db: &TestDb) {
     let statements: &[&str] = match db.backend {
         Backend::Sqlite => &[

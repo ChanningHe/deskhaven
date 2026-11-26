@@ -1,6 +1,3 @@
-//! OIDC service tests: the real service on the test database with a manual clock, a
-//! provider pointing at the mock IdP, and one-call logins.
-
 use std::sync::Arc;
 
 use deskhaven_core::clock::{Clock, ManualClock};
@@ -55,12 +52,10 @@ pub fn device() -> ClientDevice {
 }
 
 impl Env {
-    /// A confidential provider `corp` without auto-provisioning.
     pub async fn new(db: &TestDb) -> Self {
         Self::with(db, |_| {}).await
     }
 
-    /// `corp` adjusted by `adjust` before creation.
     pub async fn with(db: &TestDb, adjust: impl FnOnce(&mut NewProvider)) -> Self {
         let settings = settings(db).await;
         let clock = clock();
@@ -101,7 +96,6 @@ impl Env {
         }
     }
 
-    /// The console flow of `subject`, completed in the browser that started it.
     pub async fn console_login(
         &self,
         subject: &str,
@@ -123,7 +117,6 @@ impl Env {
             .unwrap()
     }
 
-    /// A guard recording `action` on the identity's account as `actor`.
     pub fn link_guard(&self, actor: i64, action: &'static str) -> TxGuard<IdentityChange> {
         TxGuard::new(
             &self.audit,
@@ -142,7 +135,6 @@ impl Env {
         )
     }
 
-    /// `user_id` links `subject` (token shaped by `shape`) in the browser that started it.
     pub async fn link(
         &self,
         user_id: i64,
@@ -189,12 +181,10 @@ impl Env {
         (start, request)
     }
 
-    /// A valid token spec for `request`'s nonce.
     pub fn spec(&self, subject: &str, request: &AuthRequest) -> TokenSpec {
         TokenSpec::for_flow(subject, &request.nonce, self.now_ms())
     }
 
-    /// The IdP redirect for `request` with the mock's code.
     pub async fn callback(&self, request: &AuthRequest) -> CallbackReport {
         let params = CallbackParams {
             state: Some(&request.state),
@@ -204,7 +194,6 @@ impl Env {
         self.oidc.complete_callback(&params).await.unwrap()
     }
 
-    /// Begin, a token per `shape(spec)`, callback.
     pub async fn login(
         &self,
         subject: &str,
@@ -218,7 +207,6 @@ impl Env {
         (start, report)
     }
 
-    /// A local account with [`PASSWORD`] (and `email`, if given).
     pub async fn local_user(&self, username: &str, email: Option<&str>) -> User {
         let new = NewUser {
             email: email.map(str::to_owned),
@@ -233,7 +221,6 @@ impl Env {
         self.users.create(new).await.unwrap()
     }
 
-    /// An LDAP account with `email` (verified).
     pub async fn ldap_user(&self, username: &str, email: &str) -> User {
         let new = NewUser {
             email: Some(email.to_owned()),
@@ -244,7 +231,7 @@ impl Env {
     }
 }
 
-/// Enrols TOTP on the row directly (only "has TOTP" matters to OIDC).
+/// Only "has TOTP" matters to OIDC.
 pub async fn enable_totp(db: &TestDb, user_id: i64) {
     let mut row: user::ActiveModel = user::Entity::find_by_id(user_id)
         .one(&db.conn)

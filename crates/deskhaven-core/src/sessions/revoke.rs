@@ -1,5 +1,3 @@
-//! Revocation and cleanup.
-
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::{session, user};
 use deskhaven_db::time::TimestampMs;
@@ -13,14 +11,9 @@ use super::{Core, SessionError, SessionService, TokenHash, detached, timestamp};
 use crate::console_audit::TxGuard;
 use crate::users::User;
 
-/// Rows deleted per statement by [`SessionService::cleanup`] (short write locks).
+/// Short write locks.
 const CLEANUP_BATCH: u64 = 500;
 
-/// Sets `revoked_at` on every unrevoked session of `user_id`. For account changes that must
-/// revoke in their own transaction (`users::write`); the caller's [`UserEvent`] then
-/// invalidates the cache.
-///
-/// [`UserEvent`]: crate::users::UserEvent
 pub(crate) async fn revoke_user_sessions<C: ConnectionTrait>(
     conn: &C,
     user_id: i64,
@@ -44,7 +37,6 @@ pub(super) async fn revoke_rows<C: ConnectionTrait>(
 }
 
 impl SessionService {
-    /// Revokes one session. `false` when it does not exist or was already revoked.
     pub async fn revoke(&self, session_id: i64) -> Result<bool, SessionError> {
         let core = self.core.clone();
         detached(async move {
@@ -55,8 +47,6 @@ impl SessionService {
         .await
     }
 
-    /// Logout: revokes the session of a presented token. `false` when the token is
-    /// malformed, unknown or already revoked.
     pub async fn revoke_token(&self, token: &str) -> Result<bool, SessionError> {
         let Some(hash) = TokenHash::of_presented(token) else {
             return Ok(false);
@@ -71,15 +61,11 @@ impl SessionService {
         .await
     }
 
-    /// Revokes every session of `user_id`; returns how many were still active.
     pub async fn revoke_all_for_user(&self, user_id: i64) -> Result<u64, SessionError> {
         let core = self.core.clone();
         detached(async move { Ok(core.revoke_all_for_user(user_id).await?) }).await
     }
 
-    /// [`revoke_all_for_user`](Self::revoke_all_for_user) by an administrator, in one
-    /// transaction over the locked user row, with `guard` deciding on the account (the same
-    /// account as `before` and `after`). [`SessionError::UserNotFound`] for an unknown user.
     pub async fn revoke_all_for_user_guarded(
         &self,
         user_id: i64,
@@ -95,8 +81,6 @@ impl SessionService {
         .await
     }
 
-    /// Deletes revoked and expired (absolute or idle) sessions in batches; returns the
-    /// number deleted. Scheduled by the background jobs (M2-20).
     pub async fn cleanup(&self) -> Result<u64, SessionError> {
         let core = &self.core;
         let now = core.now_ms();
@@ -136,8 +120,8 @@ impl Core {
         revoke_rows(&self.db, which, timestamp(self.now_ms())?).await
     }
 
-    /// Cache first (nothing cached survives even a failing write), then the database, then
-    /// the cache again (drops a fill that read the rows just before the write committed).
+    /// Cache first (nothing cached survives even a failing write), then the database, then the cache
+    /// again (drops a fill that read the rows just before the commit).
     pub(super) async fn revoke_all_for_user(&self, user_id: i64) -> Result<u64, DbErr> {
         self.cache.invalidate_user(user_id);
         let revoked = self
@@ -147,12 +131,9 @@ impl Core {
         revoked
     }
 
-    /// Like [`revoke_all_for_user`](Self::revoke_all_for_user), but spares the sessions
-    /// created at or after the user's last password change: the change itself already
-    /// revoked the older ones in its transaction, and a session minted after it (the user
-    /// signing in again, or the self-service change handing out a fresh one) is legitimate
-    /// even when this late, asynchronous follow-up runs after it. A missing user (deleted)
-    /// revokes everything.
+    /// Spares sessions created at or after the last password change: the change already revoked the
+    /// older ones, and a session minted after it is legitimate even when this asynchronous follow-up
+    /// runs late.
     pub(super) async fn revoke_sessions_before_password_change(
         &self,
         user_id: i64,
@@ -190,7 +171,6 @@ impl Core {
         Ok(revoked)
     }
 
-    /// Sessions last used at or before this instant are idle-expired.
     pub(super) fn idle_cutoff(&self, now: i64) -> i64 {
         now.saturating_sub(self.idle_ttl_ms())
     }

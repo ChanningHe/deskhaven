@@ -1,20 +1,8 @@
-//! Snapshot redaction for console audit rows (see the parent module docs for the layers).
-//!
-//! An object member is masked when its key (ASCII case-insensitive):
-//! - contains one of [`SECRET_KEY_FRAGMENTS`] (`password`, `passwd`, `smtp_pass` all
-//!   contain `pass`),
-//! - ends with one of [`SECRET_KEY_SUFFIXES`] (the schema's `*_enc` ciphertext and
-//!   `*_hash` digest columns, `*_key`), or
-//! - is one of [`SECRET_KEYS`].
-//!
-//! Independently of keys, any string **value** that looks like a credential is masked
-//! wherever it appears: an API token (`dhk_` prefix, 06 §3.2) or a sealed secret
-//! (`v1:<key_id>:<nonce>:<ciphertext>`, 04 §1 / 06 §5).
+//! Values that look like credentials (an API token, a sealed secret) are masked whatever their key.
 
 use deskhaven_config::REDACTED;
 use serde_json::{Map, Value};
 
-/// Keys containing any of these are secret.
 pub const SECRET_KEY_FRAGMENTS: &[&str] = &[
     "pass",
     "secret",
@@ -24,19 +12,14 @@ pub const SECRET_KEY_FRAGMENTS: &[&str] = &[
     "credential",
     "seed",
 ];
-/// Keys ending with any of these are secret.
 pub const SECRET_KEY_SUFFIXES: &[&str] = &["_enc", "_hash", "_key"];
-/// Keys equal to any of these are secret.
 pub const SECRET_KEYS: &[&str] = &["hash", "nonce"];
-/// Prefix of API tokens.
 pub const API_TOKEN_PREFIX: &str = "dhk_";
 
 const SEALED_VERSION: &str = "v1";
 /// `v1`, key id, nonce, ciphertext.
 const SEALED_PARTS: usize = 4;
 
-/// `value` with every secret member (by key) and every credential-looking string replaced
-/// by [`REDACTED`], at any depth. `null` stays `null`.
 pub fn redact(value: &Value) -> Value {
     match value {
         Value::Object(members) => Value::Object(
@@ -51,7 +34,6 @@ pub fn redact(value: &Value) -> Value {
     }
 }
 
-/// Whether a member named `key` is masked by name.
 pub fn is_secret_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     SECRET_KEY_FRAGMENTS.iter().any(|f| key.contains(f))

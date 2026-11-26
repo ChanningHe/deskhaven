@@ -1,7 +1,3 @@
-//! `--deploy` (M2-19, 03 §2.8): off unless `devices.require_deploy`; binds an id to the
-//! device's uuid and marks it deployed, refusing ids that another uuid holds, with an audit
-//! row in the same transaction.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -72,14 +68,11 @@ async fn deploy_is_not_enabled_by_default() {
 #[tokio::test]
 async fn deploying_a_new_id_registers_it_as_deployed() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.require_deploy().await;
 
-        // Act
         let outcome = c.deploy(request(ID, &uuid_of(ID), &PK)).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(outcome, DeployOutcome::Deployed, "{b}");
         let row = c.row(ID).await;
@@ -110,18 +103,15 @@ async fn deploying_a_new_id_registers_it_as_deployed() {
 #[tokio::test]
 async fn deploying_a_registered_device_marks_it_and_keeps_its_key() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let device_id = c.device(ID).await;
         c.require_deploy().await;
 
-        // Act
         let first = c.deploy(request(ID, &uuid_of(ID), &PK)).await;
         let deployed_at = c.row(ID).await.deployed_at;
         c.clock.advance(std::time::Duration::from_secs(60));
         let again = c.deploy(request(ID, &uuid_of(ID), &PK)).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             (first, again),

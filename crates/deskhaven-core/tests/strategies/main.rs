@@ -1,6 +1,3 @@
-//! Strategy service (M2-13): CRUD, assignments, effective strategy, cache invalidation,
-//! `modified_at`. Every test runs on SQLite and PostgreSQL.
-
 mod assignments;
 mod console;
 mod crud;

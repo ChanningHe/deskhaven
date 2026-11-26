@@ -1,5 +1,4 @@
-//! Field rules of a directory. TLS by default (06 §3.5): `ldaps://`, or `ldap://` with
-//! StartTLS; plain `ldap://` only to a loopback host (a local test directory).
+//! Plain `ldap://` only to a loopback host (a local test directory).
 
 use std::net::IpAddr;
 
@@ -84,9 +83,7 @@ pub(crate) fn url(raw: &str, start_tls: bool) -> Result<(), DirectoryError> {
     }
 }
 
-/// The host as an IP address, when it is a literal. `ldap:` is not a special scheme, so
-/// `url` leaves IPv4 literals as domain strings. Host names are resolved and filtered by
-/// the same rule when connecting (`address`).
+/// `ldap:` is not a special scheme, so `url` leaves IPv4 literals as domain strings.
 fn host_ip(url: &Url) -> Option<IpAddr> {
     match url.host()? {
         Host::Domain(name) => name.parse().ok(),
@@ -95,10 +92,8 @@ fn host_ip(url: &Url) -> Option<IpAddr> {
     }
 }
 
-/// Whether a host that is not a canonical IP literal is still a number to a resolver: the
-/// inet_aton spellings (`0xa9fea9fe`, `2852039166`, `169.254.43518`, octal `0251.…`, a
-/// trailing dot) that getaddrinfo turns into an address without DNS. Refused outright, so
-/// the forbidden-address check cannot be dodged by spelling.
+/// The inet_aton spellings getaddrinfo turns into an address without DNS (`0xa9fea9fe`, octal, a
+/// trailing dot): refused outright, so the forbidden-address check cannot be dodged by spelling.
 fn is_numeric_host(host: &str) -> bool {
     let host = host.strip_suffix('.').unwrap_or(host);
     let number = |part: &str| match part.strip_prefix("0x").or(part.strip_prefix("0X")) {
@@ -123,7 +118,6 @@ pub(crate) fn dn(field: &'static str, raw: &str) -> Result<String, DirectoryErro
     plain(field, trimmed, MAX_DN_LEN)
 }
 
-/// Blank is none.
 pub(crate) fn optional_dn(
     field: &'static str,
     raw: Option<&str>,
@@ -148,7 +142,6 @@ fn checked_filter(field: &'static str, value: &str) -> Result<String, DirectoryE
     Ok(value)
 }
 
-/// Blank: [`DEFAULT_USER_FILTER`].
 pub(crate) fn user_filter(raw: &str) -> Result<String, DirectoryError> {
     match raw.trim() {
         "" => Ok(DEFAULT_USER_FILTER.to_owned()),
@@ -156,7 +149,6 @@ pub(crate) fn user_filter(raw: &str) -> Result<String, DirectoryError> {
     }
 }
 
-/// Blank is none. Checked with sample values in its placeholders.
 pub(crate) fn group_filter(raw: Option<&str>) -> Result<Option<String>, DirectoryError> {
     let Some(value) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
@@ -166,8 +158,7 @@ pub(crate) fn group_filter(raw: Option<&str>) -> Result<Option<String>, Director
     plain("group_filter", value, MAX_FILTER_LEN).map(Some)
 }
 
-/// An attribute name as RFC 4512 spells one (`[A-Za-z][A-Za-z0-9-]*`). Numeric OIDs are
-/// refused: servers name attributes in results, so an OID would never match an entry.
+/// Numeric OIDs are refused: servers name attributes in results, so an OID would never match.
 fn is_attr(value: &str) -> bool {
     value.len() <= MAX_ATTR_LEN
         && value.starts_with(|c: char| c.is_ascii_alphabetic())
@@ -182,7 +173,6 @@ fn attr(field: &'static str, value: &str) -> Result<String, DirectoryError> {
     }
 }
 
-/// Blank: [`DEFAULT_USERNAME_ATTR`].
 pub(crate) fn username_attr(raw: &str) -> Result<String, DirectoryError> {
     match raw.trim() {
         "" => Ok(DEFAULT_USERNAME_ATTR.to_owned()),
@@ -190,7 +180,6 @@ pub(crate) fn username_attr(raw: &str) -> Result<String, DirectoryError> {
     }
 }
 
-/// Blank is none.
 pub(crate) fn optional_attr(
     field: &'static str,
     raw: Option<&str>,
@@ -201,7 +190,7 @@ pub(crate) fn optional_attr(
     }
 }
 
-/// Blank is none. Not trimmed: passwords are opaque.
+/// Not trimmed: passwords are opaque.
 pub(crate) fn bind_password(raw: Option<&str>) -> Result<Option<String>, DirectoryError> {
     match raw.filter(|s| !s.is_empty()) {
         None => Ok(None),
@@ -217,7 +206,6 @@ pub(crate) fn bind_password(raw: Option<&str>) -> Result<Option<String>, Directo
     }
 }
 
-/// A service account needs a password, and a password needs an account.
 pub(crate) fn bind_pair(bind_dn: bool, has_password: bool) -> Result<(), DirectoryError> {
     match (bind_dn, has_password) {
         (true, false) => Err(invalid("bind_password", "is required with a bind DN")),

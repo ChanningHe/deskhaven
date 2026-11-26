@@ -1,12 +1,6 @@
-//! The login challenge: issued after the password (step 1), claimed and consumed by the
-//! second step. See the module docs of `tfa` for the columns.
-//!
-//! The secret is a session-format token (256 random bits); only its SHA-256 is stored.
-//! The `context` binds the challenge to what step 1 established, so a stolen secret is
-//! useless elsewhere: where the login runs ([`LoginBinding`]: the client device `id` +
-//! `uuid`, or the web console), the lockout subject (whose name is the normalized username)
-//! and the password's credential stamp. A console challenge never verifies for a client
-//! login and a client challenge never for the console.
+//! Only the secret's SHA-256 is stored. `context` binds the challenge to what step 1 established
+//! (where the login runs, the lockout subject, the password's credential stamp), so a stolen secret
+//! is useless elsewhere.
 
 use std::fmt;
 
@@ -24,11 +18,9 @@ use crate::sessions::{ClientDevice, SessionToken, TokenHash};
 use crate::users::{AuthSource, CredentialStamp, username_norm};
 use sea_orm::ActiveEnum;
 
-/// `context` marker of a console challenge (instead of a device).
 const CONSOLE_KEY: &str = "console";
 
-/// The `secret` handed to the client with the challenge. Exposed once; `Debug` never
-/// shows it.
+/// Exposed once; `Debug` never shows it.
 pub struct ChallengeSecret(SessionToken);
 
 impl ChallengeSecret {
@@ -43,33 +35,26 @@ impl fmt::Debug for ChallengeSecret {
     }
 }
 
-/// Where a two-step login runs: both steps must name the same place.
 #[derive(Clone, Copy, Debug)]
 pub enum LoginBinding<'a> {
-    /// A RustDesk client login, from this device.
     Device(&'a ClientDevice),
-    /// A web console login (the session becomes a cookie, not bound to a device).
     Console,
 }
 
-/// Step 1 passed the password and the user needs a second factor.
 #[derive(Debug)]
 pub struct PendingLogin<'a> {
     pub user_id: i64,
     pub stamp: &'a CredentialStamp,
-    /// Where the login runs; step 2 must run there too.
     pub binding: LoginBinding<'a>,
-    /// From `LoginThrottle::on_password_ok_pending_2fa`.
     pub lockout: &'a PendingSubject,
 }
 
-/// The second-step request. `Debug` shows neither the secret nor the code.
+/// `Debug` shows neither the secret nor the code.
 pub struct SecondStep<'a> {
     pub secret: &'a str,
-    /// Must name the user of the challenge (case-insensitively).
     pub username: &'a str,
     pub binding: LoginBinding<'a>,
-    /// A TOTP code or a recovery code. Never logged.
+    /// Never logged.
     pub code: &'a str,
 }
 
@@ -82,7 +67,6 @@ impl fmt::Debug for SecondStep<'_> {
     }
 }
 
-/// Where the challenge was issued, read back from `context`.
 #[derive(Debug, PartialEq, Eq)]
 enum BoundBinding {
     Device { rustdesk_id: String, uuid: String },
@@ -101,7 +85,6 @@ impl BoundBinding {
     }
 }
 
-/// What the challenge carries from step 1, read back from `context`.
 pub(super) struct Bound {
     binding: BoundBinding,
     pub(super) lockout: PendingSubject,
@@ -109,8 +92,6 @@ pub(super) struct Bound {
 }
 
 impl TfaService {
-    /// Stores a TOTP challenge for `login`, valid for [`CHALLENGE_TTL`] and
-    /// [`MAX_CHALLENGE_ATTEMPTS`] codes.
     pub async fn issue_challenge(
         &self,
         login: &PendingLogin<'_>,
@@ -155,8 +136,6 @@ impl TfaService {
         Ok(ChallengeSecret(secret))
     }
 
-    /// Deletes expired and consumed challenges in batches; returns how many. The expiry job
-    /// (M2-20) deletes [`finished_challenges`] with its own batch settings.
     pub async fn cleanup_challenges(&self) -> Result<u64, TfaError> {
         let doomed = finished_challenges(self.inner.now());
         let deleted = Purge::default()
@@ -166,7 +145,6 @@ impl TfaService {
     }
 }
 
-/// Challenges expired at `now` or consumed: what cleanup deletes.
 pub(crate) fn finished_challenges(now: time::TimestampMs) -> Doomed<auth_challenge::Entity> {
     Doomed {
         key: Column::Id,
@@ -178,9 +156,8 @@ pub(crate) fn finished_challenges(now: time::TimestampMs) -> Doomed<auth_challen
 }
 
 impl Inner {
-    /// Spends one attempt of the live challenge `secret` names, and checks it was issued
-    /// for `step`'s username and binding. Every failure is [`ChallengeError::Invalid`]; a
-    /// bad binding still spends the attempt (the secret was presented).
+    /// Every failure is [`ChallengeError::Invalid`]; a bad binding still spends the attempt (the secret
+    /// was presented).
     pub(super) async fn claim(
         &self,
         step: &SecondStep<'_>,

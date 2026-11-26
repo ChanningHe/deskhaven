@@ -1,41 +1,10 @@
-//! Password logins, local or directory (06 §3.5): [`LdapService::password_login`] is what
-//! the login endpoints call instead of `UserService::authenticate_local`.
+//! A directory account's answer comes from the directory alone: there is no local password and
+//! no fallback. An unknown username binds a random decoy DN, so wrong password and unknown user
+//! give the same answer; disabled / unverified are only told after the bind.
 //!
-//! Routing, by the account the username names (case-insensitively):
-//!
-//! - a local or OIDC account, a malformed username, or no account while no directory is
-//!   enabled: `authenticate_local` (OIDC accounts and unknown names fail there after the
-//!   dummy hash). The directory is never asked. Login method `password`.
-//! - an `ldap` account, or no account while a directory is enabled: the directory (login
-//!   method `ldap`). Its answer is final: **there is no local password and no fallback**.
-//!
-//! A directory login spends one dummy Argon2id verification first (the same cost as a
-//! local login), refuses empty and over-long passwords before connecting, then runs the
-//! directory steps (`verify`: connect -> service bind -> search
-//! `(&<user_filter>(<username_attr>=<escaped username>))` -> user bind -> groups) under a
-//! bound on concurrent directory logins and one total timeout. An unknown username binds a
-//! random decoy DN instead, so wrong password and unknown user give the same answer. A
-//! refused bind, a missing or ambiguous entry and a directory value that is not the typed
-//! username are all [`AuthError::InvalidCredentials`]; disabled / unverified are only told
-//! after the bind.
-//!
-//! When the directory cannot answer (unreachable, timed out, saturated, refusing the
-//! service account, misconfigured):
-//!
-//! - an existing `ldap` account gets [`AuthError::DirectoryUnavailable`] (APIs: 503, not
-//!   counted) as long as its password was not sent yet, and
-//!   [`AuthError::DirectoryInterrupted`] (503, counted) once it was (`verify`);
-//! - a name without an account gets [`AuthError::InvalidCredentials`], the counted 401 a
-//!   wrong local password gets.
-//!
-//! **Accepted residual risks.** The 503 does tell that a name is an existing directory
-//! account (a local account or an unknown name never answers 503), and anyone can cause
-//! one by saturating the directory gate with concurrent logins of unknown names, which
-//! makes existing directory accounts answer 503 while it lasts. Timing differs too: an
-//! unknown name costs directory round trips (or the timeout during an outage) on top of
-//! the hash a local account's check costs.
-//!
-//! Logs name the directory and the failing step, never a password or the typed username.
+//! Accepted residual risks: a 503 tells that a name is an existing directory account, and anyone
+//! can cause one by saturating the directory gate; an unknown name also costs directory round
+//! trips on top of the hash. Logs never name a password or the typed username.
 
 use deskhaven_db::entity::user;
 
@@ -49,17 +18,14 @@ use crate::users::{
     username_norm,
 };
 
-/// A password check and how it was made (for the login event).
 #[derive(Debug)]
 pub struct PasswordLogin {
-    /// `ldap` when the directory decided, `password` for a local check.
     pub method: LoginMethod,
     pub result: Result<Authenticated, AuthError>,
 }
 
 impl LdapService {
-    /// Verifies a username / password pair against the account's source (see the module
-    /// docs). Only verifies: rate limiting, lockout, 2FA and sessions are the caller's.
+    /// Only verifies: rate limiting, lockout, 2FA and sessions are the caller's.
     pub async fn password_login(&self, username: &str, password: &Password) -> PasswordLogin {
         match self.route(username).await {
             Ok(Some(account)) => PasswordLogin {
@@ -81,7 +47,6 @@ impl LdapService {
         }
     }
 
-    /// [`password_login`](Self::password_login)'s result alone.
     pub async fn authenticate_password(
         &self,
         username: &str,
@@ -90,7 +55,6 @@ impl LdapService {
         self.password_login(username, password).await.result
     }
 
-    /// `Some(account)` (`None`: not provisioned yet) when the directory decides.
     async fn route(&self, username: &str) -> Result<Option<Option<user::Model>>, AuthError> {
         if username_norm(username).is_none() {
             return Ok(None);
@@ -141,7 +105,7 @@ impl LdapService {
         self.complete(&settings, account, &found).await
     }
 
-    /// The enabled directory; none refuses the login, a broken one is an outage.
+    /// None refuses the login; a broken one is an outage.
     pub(crate) async fn login_settings(&self) -> Result<DirectorySettings, AuthError> {
         match self.enabled_settings().await {
             Ok(Some(settings)) => Ok(settings),

@@ -1,15 +1,6 @@
-//! The quota on ids `--deploy` registers that the registry did not know (M2-19 review): a
-//! valid deploy token must not be able to flood `devices`, which the signal server loads
-//! whole at startup. Marking an id that is already registered is not charged.
-//!
-//! - **Per client network** ([`DEPLOY_NEW_IDS_PER_IP_PER_DAY`], keyed like the other
-//!   limits: IPv4 /32, IPv6 /64, one shared key for proxy-fallback clients): the signal
-//!   server's own limit on new ids per IP (300 a day), so `--deploy` adds no way around it.
-//! - **Per actor** ([`DEPLOY_NEW_IDS_PER_ACTOR_PER_DAY`]): one token rolled out from many
-//!   networks, generous enough for a fleet rollout.
-//!
-//! Fixed windows of [`WINDOW`] per key on the monotonic clock, in memory (a restart forgets
-//! them, like every rate limit here).
+//! A valid deploy token must not be able to flood `devices`, which the signal server loads whole
+//! at startup. The per-network quota matches the signal server's own limit on new ids per IP, so
+//! `--deploy` adds no way around it.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -20,13 +11,9 @@ use crate::auth::limiter::{ClientAddr, ip_key};
 use crate::clock::SharedClock;
 use crate::console_audit::Actor;
 
-/// New ids `--deploy` registers per client network per [`WINDOW`].
 pub const DEPLOY_NEW_IDS_PER_IP_PER_DAY: u32 = 300;
-/// New ids `--deploy` registers per actor (token) per [`WINDOW`].
 pub const DEPLOY_NEW_IDS_PER_ACTOR_PER_DAY: u32 = 10_000;
-/// Length of one quota window.
 pub const WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
-/// Expired windows are dropped once the table holds more than this.
 const PRUNE_ABOVE: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -36,7 +23,6 @@ enum Key {
     Actor(Actor),
 }
 
-/// Start (monotonic ms) and count of a key's current window.
 #[derive(Clone, Copy)]
 struct Window {
     start: i64,
@@ -68,8 +54,7 @@ impl NewIdQuota {
         }
     }
 
-    /// Charges one new id to `client`'s network and to `actor`, or returns how long until
-    /// the exhausted one of the two frees up (then nothing is charged).
+    /// Nothing is charged when either is exhausted.
     pub fn try_charge(&self, client: ClientAddr, actor: Actor) -> Result<(), Duration> {
         let now = self.clock.elapsed_ms();
         let network = Key::Network((!client.is_proxy_fallback).then(|| ip_key(client.addr)));
@@ -118,7 +103,6 @@ fn expired(window: &Window, now: i64) -> bool {
     now.saturating_sub(window.start) >= window_ms()
 }
 
-/// Time until `window` ends, at least 1 ms.
 fn left(window: &Window, now: i64) -> Duration {
     let end = window.start.saturating_add(window_ms());
     let ms = u64::try_from(end.saturating_sub(now)).unwrap_or(0).max(1);

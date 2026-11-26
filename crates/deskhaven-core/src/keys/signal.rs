@@ -1,12 +1,5 @@
-//! hbbs key files (05-config §5): `id_ed25519` + `id_ed25519.pub`, byte
-//! compatible with upstream so an OSS hbbs key can be copied in unchanged.
-//!
-//! Mirrors upstream `gen_sk` (rustdesk-server src/common.rs): contents are
-//! trimmed on read, written without a trailing newline; an existing `.pub`
-//! must match the private key; a missing `.pub` is recreated; a `.pub`
-//! without its private key blocks generation. Unlike upstream, permissive
-//! private key modes are reported as warnings instead of being chmod-ed,
-//! and symlinked key files are refused instead of followed.
+//! Byte compatible with upstream hbbs, so its key can be copied in unchanged. Unlike upstream,
+//! permissive modes are warnings instead of being chmod-ed, and symlinked key files are refused.
 
 use std::path::{Path, PathBuf};
 
@@ -26,8 +19,6 @@ pub struct SignalKeyPaths {
 }
 
 impl SignalKeyPaths {
-    /// `key_file` empty = `{data_dir}/id_ed25519`; the public key is
-    /// `<key_file>.pub`, as upstream.
     pub fn resolve(key_file: &Path, data_dir: &Path) -> Self {
         let secret = if key_file.as_os_str().is_empty() {
             data_dir.join(SIGNAL_KEY_FILE)
@@ -62,15 +53,12 @@ enum PublicFile {
 
 type Existing = (Loaded<SignalKeyPair>, PublicFile);
 
-/// The existing key pair, or `None` if neither file exists. Never writes.
 pub fn read_signal_key(paths: &SignalKeyPaths) -> Result<Option<Loaded<SignalKeyPair>>, KeyError> {
     Ok(read_existing(paths)?.map(|(loaded, _)| loaded))
 }
 
-/// Like [`read_signal_key`], but generates the pair when absent and
-/// recreates a missing `.pub`. Existing files are never overwritten; after
-/// generating, the files on disk are read back, so concurrent first starts
-/// converge on the winner's pair.
+/// Existing files are never overwritten; the files on disk are read back, so concurrent first
+/// starts converge on the winner's pair.
 pub fn load_or_generate_signal_key(
     paths: &SignalKeyPaths,
 ) -> Result<Loaded<SignalKeyPair>, KeyError> {
@@ -118,8 +106,7 @@ fn check_public(paths: &SignalKeyPaths, public_key: &str) -> Result<PublicFile, 
     }
 }
 
-/// The `.pub` follows from whichever secret ends up on disk, so it is
-/// written by [`restore_public`] after reading back.
+/// The `.pub` follows from whichever secret ends up on disk.
 fn write_new_secret(paths: &SignalKeyPaths) -> Result<(), KeyError> {
     let pair = SignalKeyPair::generate().map_err(KeyError::Generate)?;
     fs::ensure_parent_dir(&paths.secret)?;
@@ -131,9 +118,8 @@ fn write_new_secret(paths: &SignalKeyPaths) -> Result<(), KeyError> {
     .map(drop)
 }
 
-/// Writes the missing `.pub`. A concurrent writer's file is accepted only
-/// if it matches. As upstream (read-only provisioning), an unwritable
-/// `.pub` beside a valid private key is a warning, not an error.
+/// An unwritable `.pub` beside a valid private key is a warning (read-only provisioning), as
+/// upstream.
 fn restore_public(
     paths: &SignalKeyPaths,
     mut loaded: Loaded<SignalKeyPair>,

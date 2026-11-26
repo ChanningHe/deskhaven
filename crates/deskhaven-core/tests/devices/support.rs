@@ -1,5 +1,3 @@
-//! Shared setup: a device service wired like `AppState` (strategy cache watching users and
-//! groups, one manual clock), and registered devices.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test module uses a subset.
@@ -59,8 +57,7 @@ pub async fn ctx(db: &TestDb) -> Ctx {
     ctx_on(db.conn.clone(), Arc::new(ManualClock::at(T0_MS))).await
 }
 
-/// Services over `conn` (e.g. a clone carrying a statement counter) on `clock`. Called twice
-/// over one database, it is a restart.
+/// Called twice over one database, it is a restart.
 pub async fn ctx_on(conn: DatabaseConnection, clock: Arc<ManualClock>) -> Ctx {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[7; 32])));
     let (settings, _) = SettingsService::load(conn.clone(), crypto.clone(), PinSet::empty())
@@ -92,7 +89,7 @@ pub async fn ctx_on(conn: DatabaseConnection, clock: Arc<ManualClock>) -> Ctx {
     }
 }
 
-/// The signal server's memory, as the test sets it; `None`: it does not answer in time.
+/// `None`: it does not answer in time.
 pub struct Live {
     pub known: Option<Vec<(String, Vec<u8>)>>,
     pub asked: AtomicUsize,
@@ -118,12 +115,10 @@ impl LiveRegistrations for Live {
     }
 }
 
-/// Base64 of `uuid`, as the client sends it (`crate::encode64(get_uuid())`).
 pub fn b64(uuid: &[u8]) -> String {
     STANDARD.encode(uuid)
 }
 
-/// The uuid every [`Ctx::device`] registers with: derived from the id.
 pub fn uuid_of(rustdesk_id: &str) -> Vec<u8> {
     format!("uuid-of-{rustdesk_id}").into_bytes()
 }
@@ -149,7 +144,6 @@ pub fn report(rustdesk_id: &str, info: Sysinfo, presets: Presets) -> SysinfoRepo
 }
 
 impl Ctx {
-    /// Registers a device (as the signal server would) and returns its `devices.id`.
     pub async fn device(&self, rustdesk_id: &str) -> i64 {
         let repo = DeviceRepository::new(self.conn.clone());
         let registration = Registration {
@@ -217,19 +211,15 @@ impl Ctx {
         self.settings.update(request).await.unwrap();
     }
 
-    /// Moves the clock past the per-device sysinfo write interval.
     pub fn next_write_window(&self) {
         self.clock.advance(SYSINFO_WRITE_INTERVAL);
     }
 
-    /// Sets `devices.accept_presets`.
     pub async fn accept_presets(&self, mode: &str) {
         self.set("devices.accept_presets", serde_json::json!(mode))
             .await;
     }
 
-    /// User `alice`, device group `Office`, strategy `Locked`, admin-managed shared book
-    /// `Team`: what [`all_presets`](super::presets::all_presets) names.
     pub async fn targets(&self) -> Targets {
         Targets {
             alice: self.user("alice").await.id,
@@ -239,7 +229,6 @@ impl Ctx {
         }
     }
 
-    /// Grants `user` `rule` on book `guid`.
     pub async fn grant(&self, guid: &str, user: i64, rule: Rule) {
         self.books
             .set_share(Actor::Admin, guid, Subject::User(user), rule)
@@ -252,7 +241,6 @@ impl Ctx {
         page.await.unwrap().items
     }
 
-    /// Owner, device group and note of device [`ID`], set directly (the console's job).
     pub async fn preassign(&self, owner: i64, group: i64) {
         let mut row = self.row(ID).await.into_active_model();
         row.owner_user_id = Set(Some(owner));
@@ -261,7 +249,6 @@ impl Ctx {
         row.update(&self.conn).await.unwrap();
     }
 
-    /// Fills book `guid` up to its tag limit.
     pub async fn fill_tags(&self, guid: &str) {
         let book_id = self.books.find_shared_by_name("Tagged").await.unwrap().id;
         assert_eq!(
@@ -280,7 +267,6 @@ impl Ctx {
     }
 }
 
-/// The rows [`Ctx::targets`] creates.
 pub struct Targets {
     pub alice: i64,
     pub group: i64,
@@ -291,7 +277,6 @@ pub struct Targets {
 /// `addressbooks::tags::MAX_BOOK_TAGS`.
 const MAX_BOOK_TAGS: u64 = 1000;
 
-/// A clone of `conn` that records the SQL of every statement it runs.
 pub fn counted(conn: &DatabaseConnection) -> (DatabaseConnection, Arc<Mutex<Vec<String>>>) {
     let mut conn = conn.clone();
     let log = Arc::new(Mutex::new(Vec::new()));
@@ -300,7 +285,6 @@ pub fn counted(conn: &DatabaseConnection) -> (DatabaseConnection, Arc<Mutex<Vec<
     (conn, log)
 }
 
-/// The statements recorded so far (and forgets them).
 pub fn take(log: &Mutex<Vec<String>>) -> Vec<String> {
     std::mem::take(&mut *log.lock().unwrap())
 }

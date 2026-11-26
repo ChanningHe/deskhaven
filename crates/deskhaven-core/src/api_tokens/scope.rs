@@ -1,17 +1,11 @@
-//! What a token may do (04 §3 `api_tokens.scopes`, a JSON array of these names).
-
 use std::collections::BTreeSet;
 
-/// One permission of an API token. Scopes are independent: none implies another.
+/// Scopes are independent: none implies another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Scope {
-    /// `POST /api/devices/deploy` (`rustdesk --deploy`).
     Deploy,
-    /// `POST /api/devices/cli` (`rustdesk --assign`).
     Assign,
-    /// Read the admin API.
     AdminRead,
-    /// Write through the admin API.
     AdminWrite,
 }
 
@@ -23,7 +17,6 @@ impl Scope {
         Self::AdminWrite,
     ];
 
-    /// The stored and displayed name.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Deploy => "deploy",
@@ -38,14 +31,13 @@ impl Scope {
     }
 }
 
-/// The `scopes` column: a JSON array of names, in [`Scope`] order.
 pub(super) fn encode(scopes: &BTreeSet<Scope>) -> String {
     let names: Vec<&str> = scopes.iter().map(|s| s.as_str()).collect();
     serde_json::Value::from(names).to_string()
 }
 
-/// The scopes of a stored `scopes` column. Unknown names (a newer version's) and malformed
-/// JSON grant nothing: a token never gets more than it can be shown to have.
+/// Unknown names and malformed JSON grant nothing: a token never gets more than it can be
+/// shown to have.
 pub(super) fn decode(stored: &str) -> BTreeSet<Scope> {
     let names: Vec<String> = serde_json::from_str(stored).unwrap_or_default();
     names.iter().filter_map(|name| Scope::parse(name)).collect()

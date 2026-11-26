@@ -1,5 +1,3 @@
-//! Login events (`login_events`).
-
 use deskhaven_db::entity::login_event::{Client, Column, Entity, Method, Model};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
@@ -8,21 +6,17 @@ use super::names::{AuditUser, user_of, usernames};
 use super::{AuditQuery, AuditQueryError};
 use crate::pagination::Page;
 
-/// Filters of [`AuditQuery::logins`]. `q` matches the attempted username and the address.
 #[derive(Clone, Debug, Default)]
 pub struct LoginQuery {
     pub listing: Listing,
     pub user_id: Option<i64>,
     pub method: Option<Method>,
     pub client: Option<Client>,
-    /// The outcome label exactly (`success`, `invalid_credentials`, ...).
     pub result: Option<String>,
-    /// The RustDesk id of the client device.
     pub device: Option<String>,
     pub q: Option<String>,
 }
 
-/// A login attempt with the account it matched, when that still exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoginEntry {
     pub row: Model,

@@ -1,38 +1,13 @@
-//! Which strategy options a device may still hold (M2-14 handover from M2-13).
+//! The client keeps every option it was sent until it gets that key again, and an empty value
+//! deletes it: a key that disappears from the effective strategy must be sent once more as `""`.
 //!
-//! The client only touches the options it receives: a key sent with a value stays on the
-//! device until the server sends that key again, and an empty value deletes it
-//! (`src/hbbs_http/sync.rs:295-311`). A key that disappears from the effective strategy
-//! (option removed, strategy or assignment removed, device moved to another group or owner)
-//! must therefore be sent once more as `""`. To know which keys those are, the server keeps,
-//! per device, the keys it sent with a non-empty value: `device_strategy_keys`.
+//! Invariant: the stored set is a superset of the keys the device may hold. It grows before a
+//! send and shrinks only when the device confirms a strategy (the client stores `modified_at`
+//! only after applying it). Both writes are compare-and-set on the stored text, so a lost race
+//! only leaves a larger set.
 //!
-//! **Invariant**: the stored set is a superset of the keys the device may hold.
-//! - Before a strategy is sent, the stored set grows by the keys sent with a value
-//!   ([`StrategyDeliveries::prepare`]); if that write fails nothing is sent.
-//! - It shrinks to exactly the keys of one sent strategy only when the device confirms that
-//!   strategy by reporting its `modified_at` ([`StrategyDeliveries::confirm`]); the client
-//!   stores `modified_at` only after applying the options (`sync.rs:261-275`), so a lost
-//!   reply or a rejected update never shrinks it.
-//!
-//! Both writes are compare-and-set statements on the stored text, so no transaction or lock
-//! is needed and a lost race only leaves a larger set (an extra `""` later, never a missed
-//! one). Sending `""` for a key the device does not hold is harmless.
-//!
-//! **Keyed by RustDesk id**, not by `devices` row: deleting a device does not reset its
-//! client, which registers again as a new row and still holds what it was sent. Rows are
-//! therefore never deleted with the device (an extra `""` for a key the client lacks is
-//! harmless). Deleting the device stamps its row's `updated_at` instead
-//! ([`stamp_deleted`]); the expiry job (`jobs::ExpiryCleanup`) removes a row once its id has
-//! had no device row and the row no write for `STRATEGY_KEYS_GRACE`, i.e. a client that
-//! stays away that long after its device was deleted gets no `""` for what it was sent.
-//!
-//! **Restart**: the stored set survives, so a device that was offline while a key was
-//! removed, across any number of restarts, still gets its `""`. What is lost is the pending
-//! confirmation (memory, [`MAX_PENDING`] devices at most): the stored set then stays larger
-//! than needed until the next strategy the device confirms, i.e. at worst a few redundant
-//! `""`. Restoring an older database can forget keys sent after the backup; nothing can
-//! recover those.
+//! Keyed by RustDesk id, not by row: deleting a device does not reset its client, which still
+//! holds what it was sent.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -48,16 +23,13 @@ use sea_orm::{
 
 use crate::strategies::{EffectiveStrategy, Options};
 
-/// Devices whose confirmation is awaited, at most; beyond that the table is cleared (safe,
-/// see the module documentation).
+/// Beyond that the table is cleared (safe: the stored set stays a superset).
 pub const MAX_PENDING: usize = 100_000;
-/// Compare-and-set attempts before giving up on growing the stored set (concurrent
-/// heartbeats of one device; the per-device interval makes even one retry rare).
+/// Concurrent heartbeats of one device; the per-device interval makes even one retry rare.
 const GROW_ATTEMPTS: usize = 3;
 
 type Keys = BTreeSet<String>;
 
-/// Why a strategy could not be prepared.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum KeysError {
     #[error("the stored strategy keys kept changing")]
@@ -66,20 +38,15 @@ pub(crate) enum KeysError {
     Database(#[from] DbErr),
 }
 
-/// A strategy sent and not yet confirmed.
 #[derive(Clone, Debug)]
 struct Pending {
     modified_at: i64,
-    /// Keys sent with a value: what the stored set shrinks to on confirmation.
     live: Keys,
-    /// The stored text right after the send (`None`: no row).
     stored: Option<String>,
 }
 
-/// The stored key sets and the pending confirmations.
 pub(crate) struct StrategyDeliveries {
     db: DatabaseConnection,
-    /// Pending confirmations at most ([`MAX_PENDING`]).
     capacity: usize,
     pending: Mutex<HashMap<String, Pending>>,
 }
@@ -102,9 +69,7 @@ impl StrategyDeliveries {
         self.lock().len()
     }
 
-    /// The `config_options` to send device `rustdesk_id` for `effective`: its options (empty
-    /// values included) plus `""` for every stored key it no longer has. Grows the stored set
-    /// first; on error nothing may be sent.
+    /// On error nothing may be sent.
     pub async fn prepare(
         &self,
         rustdesk_id: &str,
@@ -132,9 +97,6 @@ impl StrategyDeliveries {
         Ok(options)
     }
 
-    /// Device `rustdesk_id` reports `modified_at`, the server's current value: if that is the
-    /// strategy it was last sent, the stored set shrinks to that strategy's keys. Memory only
-    /// unless such a shrink is due (once per sent strategy).
     pub async fn confirm(&self, rustdesk_id: &str, modified_at: i64) -> Result<(), DbErr> {
         let confirmed = self
             .lock()
@@ -162,7 +124,6 @@ impl StrategyDeliveries {
         Ok(())
     }
 
-    /// Adds `live` to the stored set; returns the set and its stored text.
     async fn grow(
         &self,
         rustdesk_id: &str,
@@ -190,7 +151,6 @@ impl StrategyDeliveries {
         Err(KeysError::Contended)
     }
 
-    /// `true` if the row of `rustdesk_id` held `old` and now holds `new`.
     async fn swap(&self, rustdesk_id: &str, old: &str, new: &str) -> Result<bool, DbErr> {
         let updated = StoredKeys::update_many()
             .col_expr(device_strategy_key::Column::OptionKeys, Expr::value(new))
@@ -205,7 +165,6 @@ impl StrategyDeliveries {
         Ok(updated.rows_affected == 1)
     }
 
-    /// `true` if the row was created (`false`: one appeared meanwhile).
     async fn insert(&self, rustdesk_id: &str, keys: &str) -> Result<bool, DbErr> {
         let row = device_strategy_key::ActiveModel {
             rustdesk_id: Set(rustdesk_id.to_owned()),
@@ -225,8 +184,7 @@ impl StrategyDeliveries {
     }
 }
 
-/// Marks the row of `rustdesk_id` as written now, in the transaction that deletes its
-/// device, so the expiry job's grace period runs from the deletion (see the module docs).
+/// So the expiry job's grace period runs from the deletion.
 pub(crate) async fn stamp_deleted<C: ConnectionTrait>(
     conn: &C,
     rustdesk_id: &str,
@@ -242,7 +200,7 @@ pub(crate) async fn stamp_deleted<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Sorted JSON array: one text per set, so compare-and-set can compare text.
+/// One text per set, so compare-and-set can compare text.
 fn encode(keys: &Keys) -> String {
     let names: Vec<&str> = keys.iter().map(String::as_str).collect();
     serde_json::Value::from(names).to_string()

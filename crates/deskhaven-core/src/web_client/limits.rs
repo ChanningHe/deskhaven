@@ -1,6 +1,3 @@
-//! Rate limits of web client sessions (the audit limiter's pattern: governor GCRA keyed by
-//! text, on the monotonic clock, refilled buckets swept, in memory per process).
-
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -11,12 +8,10 @@ use governor::{Quota, RateLimiter};
 
 use crate::clock::SharedClock;
 
-/// Sessions one console user may open per minute (burst the same).
 pub const WEB_SESSIONS_PER_USER_PER_MINUTE: u32 = 10;
-/// Sessions to one device per minute, whoever opens them (burst the same): each makes the
-/// device set up a relay connection (and with an offer a WebRTC peer) before any password.
+/// Each makes the device set up a relay connection (and with an offer a WebRTC peer) before any
+/// password.
 pub const WEB_SESSIONS_PER_DEVICE_PER_MINUTE: u32 = 10;
-/// Checks between two sweeps of refilled buckets (which are dropped).
 const SWEEP_EVERY: u64 = 1024;
 
 #[derive(Clone)]
@@ -53,7 +48,6 @@ impl KeyedLimit {
         }
     }
 
-    /// Takes one token of `key`, or returns how long until one is free.
     pub(super) fn check(&self, key: &str) -> Result<(), Duration> {
         let now = governor::clock::Clock::now(&self.clock);
         let result = self

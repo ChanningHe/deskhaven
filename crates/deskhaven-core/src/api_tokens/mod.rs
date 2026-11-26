@@ -1,22 +1,8 @@
-//! API tokens (06 §3.2, 04 §3 `api_tokens`): credentials for automation, `rustdesk --deploy`
-//! and `rustdesk --assign`.
+//! Only the SHA-256 of a token is stored; the raw token leaves the service once, at creation.
 //!
-//! - **Form**: [`API_TOKEN_PREFIX`] + 256 bits from the OS CSPRNG, base64url unpadded. Only
-//!   the SHA-256 (hex) is stored, plus a short display prefix; the raw token leaves the
-//!   service once, at creation.
-//! - **Authority**: a token carries its creator's. It authenticates only while unrevoked,
-//!   unexpired, holding the requested [`Scope`], and while its creator (if any) exists, is
-//!   `active` and still an administrator, checked on every use. Disabling the creator or
-//!   demoting them to `user` also revokes their tokens durably, in the same transaction
-//!   ([`revoke_created_by`], `users::admin`), so re-enabling or re-promoting the account
-//!   brings none back. Deleting the creator deletes the token (foreign key). A token without
-//!   creator is a system token.
-//! - **Use**: `last_used_at` is written at most once per [`TOUCH_INTERVAL`].
-//! - Tokens are looked up by hash on every use (no cache): their endpoints are rare, and a
-//!   revocation therefore takes effect on the next request.
-//!
-//! Creation, listing and revocation are the console's (M3-12): the `*_guarded` operations
-//! and [`ApiTokenService::page`] (in `admin`), audited in the write's own transaction.
+//! A token carries its creator's authority, checked on every use. Disabling or demoting the
+//! creator revokes its tokens in the same transaction, so re-enabling brings none back.
+//! Tokens are looked up on every use (no cache), so a revocation takes effect at once.
 
 mod admin;
 mod authenticate;
@@ -49,22 +35,16 @@ use crate::console_audit::TxGuard;
 pub use crate::sessions::TOUCH_INTERVAL;
 use crate::text;
 
-/// Longest token name, in characters.
 pub const NAME_MAX_LEN: usize = 64;
 
-/// Furthest expiry a token can be given (ten years); "never" is `None`, which the console
-/// warns about, not a date far away.
+/// "Never" is `None` (the console warns about it), not a far-away date.
 pub const MAX_LIFETIME_DAYS: i64 = 3650;
 const MAX_LIFETIME_MS: i64 = MAX_LIFETIME_DAYS * 24 * 60 * 60 * 1000;
 
-/// The expiry instant for a unix-millisecond count from the wire; `None` when out of range.
 pub fn expiry_from_millis(ms: i64) -> Option<TimestampMs> {
     time::from_millis(ms)
 }
 
-/// Sets `revoked_at` on every unrevoked token `user_id` created. For account changes that
-/// take the creator's authority away (disable, demotion to `user`), in their own write
-/// transaction; returns the number revoked.
 pub(crate) async fn revoke_created_by<C: ConnectionTrait>(
     conn: &C,
     user_id: i64,
@@ -79,25 +59,18 @@ pub(crate) async fn revoke_created_by<C: ConnectionTrait>(
     Ok(result.rows_affected)
 }
 
-/// What [`ApiTokenService::create`] needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewApiToken {
-    /// Shown in the console; surrounding blanks are trimmed.
     pub name: String,
-    /// At least one.
     pub scopes: BTreeSet<Scope>,
-    /// The creating administrator; `None` for a system token.
     pub created_by: Option<i64>,
-    /// `None`: never expires. Must be in the future.
     pub expires_at: Option<TimestampMs>,
 }
 
-/// A stored token, without its secret.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiToken {
     pub id: i64,
     pub name: String,
-    /// The first [`DISPLAY_PREFIX_LEN`] characters of the token.
     pub token_prefix: String,
     pub scopes: BTreeSet<Scope>,
     pub created_by: Option<i64>,
@@ -123,7 +96,6 @@ impl From<api_token::Model> for ApiToken {
     }
 }
 
-/// Issues, lists, revokes and checks API tokens. Cheap to clone.
 #[derive(Clone)]
 pub struct ApiTokenService {
     db: DatabaseConnection,
@@ -131,13 +103,10 @@ pub struct ApiTokenService {
 }
 
 impl ApiTokenService {
-    /// Timestamps and expiry use `clock` (share it with the other services).
     pub fn new(db: DatabaseConnection, clock: SharedClock) -> Self {
         Self { db, clock }
     }
 
-    /// Stores a new token and returns it with its secret, the only time the secret exists
-    /// outside the caller's hands.
     pub async fn create(
         &self,
         new: NewApiToken,
@@ -146,9 +115,6 @@ impl ApiTokenService {
         Ok((entry.token, secret))
     }
 
-    /// [`create`](Self::create) with `guard` deciding on the new token (no `before`) and
-    /// recording the audit row in the same transaction. Returns the token with its creator
-    /// as committed, so the caller needs no further read to answer with the secret.
     pub async fn create_guarded(
         &self,
         new: NewApiToken,
@@ -197,7 +163,6 @@ impl ApiTokenService {
         Ok((entry, secret))
     }
 
-    /// Every token, revoked and expired ones included, oldest first.
     pub async fn list(&self) -> Result<Vec<ApiToken>, ApiTokenError> {
         let rows = api_token::Entity::find()
             .order_by_asc(api_token::Column::Id)
@@ -206,8 +171,6 @@ impl ApiTokenService {
         Ok(rows.into_iter().map(ApiToken::from).collect())
     }
 
-    /// Revokes token `id` (effective on its next use); revoking it again keeps the first
-    /// revocation time. `false`: no such token.
     pub async fn revoke(&self, id: i64) -> Result<bool, ApiTokenError> {
         let now = self.now()?;
         let updated = api_token::Entity::update_many()
@@ -229,7 +192,6 @@ impl ApiTokenService {
     }
 }
 
-/// The trimmed name, once the whole request is valid.
 fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError> {
     let name = new.name.trim();
     let name_problem = match name.is_empty() {
@@ -267,9 +229,8 @@ fn validate(new: &NewApiToken, now: TimestampMs) -> Result<String, ApiTokenError
     }
 }
 
-/// The creator exists and is an active administrator, and stays so until `tx` ends: the
-/// key-share lock makes a concurrent disable or demotion (which locks the account row for
-/// update and revokes its tokens) wait for this token, so the revocation sees it.
+/// The key-share lock makes a concurrent disable or demotion wait for this token, so its
+/// revocation sees it.
 async fn ensure_creator(
     tx: &DatabaseTransaction,
     creator: i64,

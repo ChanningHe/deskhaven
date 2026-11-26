@@ -1,14 +1,6 @@
-//! [`AuditRetention`]: audit records older than their `audit.retention.*` setting are
-//! deleted, by `created_at` (indexed); a record created exactly at the cutoff is kept.
-//! `connection_sessions` rows retired by the audit ingest (session id
-//! [`RETIRED_PREFIX`](crate::audit::RETIRED_PREFIX)…) are ordinary rows here.
-//!
-//! **Its own audit trail** (06 §7), append-only: every batch that deletes anything inserts,
-//! in its own transaction, one `console_audit` row (actor `system`, action
-//! [`RETENTION_ACTION`], target `audit` / the run's id) with the type, the rows deleted, the
-//! cutoff and the batch's number within the run. Whatever has been deleted, however the run
-//! ends, is committed together with the row that records it; nothing is ever updated. A
-//! run that deletes nothing writes nothing.
+//! Every batch that deletes anything inserts its `console_audit` row in the same transaction, so
+//! whatever was deleted is committed with the row that records it. A record created exactly at the
+//! cutoff is kept.
 
 use std::time::Duration;
 
@@ -29,12 +21,9 @@ use crate::clock::SharedClock;
 use crate::console_audit::{self as audit_log, Actor, NewConsoleAudit};
 use crate::settings::SettingsService;
 
-/// `console_audit.action` of a retention batch.
 pub const RETENTION_ACTION: &str = "audit.retention.purge";
-/// `console_audit.target_type` of a retention batch (`target_id`: the run's id).
 pub const RETENTION_TARGET: &str = "audit";
 
-/// The audit record types with a retention setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AuditKind {
     Connection,
@@ -53,7 +42,6 @@ impl AuditKind {
         Self::Console,
     ];
 
-    /// The name in `audit.retention.<name>` and in the audit rows.
     pub fn name(self) -> &'static str {
         match self {
             Self::Connection => "connection",
@@ -75,14 +63,10 @@ impl AuditKind {
     }
 }
 
-/// What one [`AuditRetention::run`] did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RetentionReport {
-    /// The run's id (`console_audit.target_id` of its rows).
     pub run_id: String,
-    /// Records deleted, per type purged without error; a type kept forever is absent.
     pub deleted: Vec<(AuditKind, u64)>,
-    /// Types whose purge failed (logged; retried by the next run).
     pub failed: Vec<AuditKind>,
 }
 
@@ -99,7 +83,6 @@ impl RetentionReport {
     }
 }
 
-/// The audit retention job.
 #[derive(Clone)]
 pub struct AuditRetention {
     db: DatabaseConnection,
@@ -122,8 +105,6 @@ impl AuditRetention {
         Self { purge, ..self }
     }
 
-    /// Deletes the expired records of every type (see the module documentation); a type
-    /// that fails does not stop the others.
     pub async fn run(&self) -> RetentionReport {
         let now_ms = self.clock.now_ms();
         let mut report = RetentionReport {
@@ -151,7 +132,6 @@ impl AuditRetention {
         report
     }
 
-    /// The cutoff of every type not kept forever, from one reading of the settings.
     fn cutoffs(&self, now_ms: i64, failed: &mut Vec<AuditKind>) -> Vec<(AuditKind, TimestampMs)> {
         let snapshot = self.settings.snapshot();
         let mut cutoffs = Vec::new();
@@ -216,7 +196,6 @@ impl AuditRetention {
     }
 }
 
-/// Rows created before `before`.
 fn older<C: ColumnTrait>(key: C, created_at: C, before: TimestampMs) -> Doomed<C::EntityName>
 where
     C::EntityName: EntityTrait<Column = C>,
@@ -228,14 +207,12 @@ where
     }
 }
 
-/// Inserts the audit row of each deleting batch, in its transaction.
 struct AuditBatch {
     run_id: String,
     now_ms: i64,
     kind: AuditKind,
-    /// The current type's cutoff (unix ms).
     before: i64,
-    /// Batches recorded so far in this run (a rolled-back one leaves a gap).
+    /// A rolled-back batch leaves a gap.
     batches: u64,
 }
 

@@ -1,6 +1,5 @@
-//! The three messages of one connection (new, authorized, close) merge into one
-//! `connection_sessions` row whatever order they arrive in. The real client sends `new`
-//! before the login request, with session id 0; the others carry the controller's session id.
+//! The real client sends `new` before the login request, with session id 0; the others carry the
+//! controller's session id.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -35,10 +34,8 @@ fn messages(conn_id: i64, new_session: Option<u64>) -> [Record; 3] {
 }
 
 async fn merges_in_every_order(db: &TestDb, new_session: Option<u64>) {
-    // Arrange
     let c = ctx(db).await;
 
-    // Act
     for (i, order) in ORDERS.iter().enumerate() {
         let conn_id = 1000 + i as i64;
         let mut parts = messages(conn_id, new_session).map(Some);
@@ -49,7 +46,6 @@ async fn merges_in_every_order(db: &TestDb, new_session: Option<u64>) {
         }
     }
 
-    // Assert
     let rows = c.sessions().await;
     assert_eq!(
         rows.len(),
@@ -88,7 +84,6 @@ async fn messages_that_all_carry_the_session_id_merge_too() {
 #[tokio::test]
 async fn a_number_and_a_string_session_id_name_the_same_connection() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         let Record::Conn(mut close) = closed(7, 0) else {
             unreachable!()
@@ -97,11 +92,9 @@ async fn a_number_and_a_string_session_id_name_the_same_connection() {
             deskhaven_core::audit::SessionId::from_json(&serde_json::json!(SESSION.to_string()))
                 .unwrap();
 
-        // Act
         c.send("a", authorized(7, SESSION)).await;
         c.send("b", Record::Conn(close)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(rows.len(), 1, "{}", db.backend);
         assert!(rows[0].ended_at.is_some(), "{}", db.backend);
@@ -114,15 +107,12 @@ async fn a_number_and_a_string_session_id_name_the_same_connection() {
 #[tokio::test]
 async fn an_opening_is_not_paired_outside_the_window() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
 
-        // Act
         c.clock.advance(PAIRING_WINDOW + Duration::from_millis(1));
         c.send("b", authorized(7, SESSION)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(rows.len(), 2, "{}", db.backend);
         assert_eq!(rows[0].session_id, "0", "{}", db.backend);
@@ -137,15 +127,12 @@ async fn an_opening_is_not_paired_outside_the_window() {
 #[tokio::test]
 async fn a_connection_closed_before_login_is_not_adopted() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
         c.send("b", closed(7, 0)).await;
 
-        // Act
         c.send("c", authorized(7, SESSION)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(rows.len(), 2, "{}", db.backend);
         assert!(rows[0].ended_at.is_some() && rows[0].started_at.is_some());
@@ -154,21 +141,18 @@ async fn a_connection_closed_before_login_is_not_adopted() {
     .await;
 }
 
-/// Audit tables are append-only for the API (06 §7): a second message of a kind already
-/// merged fills nothing in again.
+/// Audit tables are append-only for the API: a second message of a kind already merged fills
+/// nothing in again.
 #[tokio::test]
 async fn the_first_message_of_a_kind_wins() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", closed(7, SESSION)).await;
         let first = c.sessions().await[0].ended_at;
 
-        // Act
         c.clock.advance(Duration::from_secs(5));
         c.send("b", closed(7, SESSION)).await;
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(rows.len(), 1, "{}", db.backend);
         assert_eq!(rows[0].ended_at, first, "{}", db.backend);

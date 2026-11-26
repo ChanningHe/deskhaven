@@ -1,5 +1,3 @@
-//! Provider types and input validation (04 §3 `oidc_providers`).
-
 use std::fmt;
 
 use deskhaven_db::entity::managed_by::ManagedBy;
@@ -10,9 +8,8 @@ use super::super::error::ProviderError;
 use super::super::url_policy::check_issuer;
 use crate::text;
 
-/// Longest provider name (the client's `op`).
 pub const MAX_NAME_LEN: usize = 32;
-/// Largest icon (an SVG document the client renders inline, `login.dart:79-82`).
+/// An SVG document the client renders inline.
 pub const MAX_ICON_LEN: usize = 16 * 1024;
 const MAX_DISPLAY_NAME_LEN: usize = 128;
 const MAX_CLIENT_ID_LEN: usize = 256;
@@ -23,7 +20,7 @@ const MAX_GROUP_NAME_LEN: usize = 256;
 pub(crate) const DEFAULT_SCOPES: &str = "openid profile email";
 const OPENID: &str = "openid";
 
-/// A provider as seen outside the service: never the client secret, only whether one is set.
+/// Never the client secret, only whether one is set.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Provider {
     pub id: i64,
@@ -32,15 +29,11 @@ pub struct Provider {
     pub icon: Option<String>,
     pub issuer: String,
     pub client_id: String,
-    /// `false`: a public client (PKCE only).
     pub has_client_secret: bool,
-    /// Space-separated, always including `openid`.
     pub scopes: String,
     pub auto_provision: bool,
-    /// Claim of the ID token listing the user's groups (string or array of strings).
     pub group_claim: Option<String>,
-    /// A value of `group_claim` that makes a provisioned account an admin. The trust
-    /// boundary is whoever controls that claim: only safe when the IdP's administrators
+    /// The trust boundary is whoever controls that claim: only safe when the IdP's administrators
     /// alone do (never a multi-tenant IdP, or one where users edit their own groups).
     pub admin_group: Option<String>,
     pub enabled: bool,
@@ -71,21 +64,16 @@ impl From<oidc_provider::Model> for Provider {
     }
 }
 
-/// Input of [`OidcService::create_provider`](super::super::OidcService::create_provider).
 /// `Debug` never shows the client secret.
 #[derive(Clone)]
 pub struct NewProvider {
-    /// `[A-Za-z0-9._-]`, 1–32 characters; the client's `op`.
     pub name: String,
-    /// Blank: the name.
     pub display_name: String,
     pub icon: Option<String>,
-    /// https (or http on a loopback host); never changes after creation.
+    /// Never changes after creation.
     pub issuer: String,
     pub client_id: String,
-    /// `None`: a public client.
     pub client_secret: Option<String>,
-    /// `None`: `openid profile email`.
     pub scopes: Option<String>,
     pub auto_provision: bool,
     pub group_claim: Option<String>,
@@ -94,7 +82,6 @@ pub struct NewProvider {
 }
 
 impl NewProvider {
-    /// An enabled public client with the default scopes, no icon, no provisioning.
     pub fn new(
         name: impl Into<String>,
         issuer: impl Into<String>,
@@ -128,7 +115,6 @@ impl fmt::Debug for NewProvider {
     }
 }
 
-/// Fields to change; `None` leaves a field as it is, `Some(None)` clears an optional one.
 /// The issuer cannot change (identities are keyed by it). `Debug` never shows the secret.
 #[derive(Clone, Default)]
 pub struct ProviderUpdate {
@@ -136,7 +122,6 @@ pub struct ProviderUpdate {
     pub display_name: Option<String>,
     pub icon: Option<Option<String>>,
     pub client_id: Option<String>,
-    /// `Some(None)` makes it a public client.
     pub client_secret: Option<Option<String>>,
     pub scopes: Option<String>,
     pub auto_provision: Option<bool>,
@@ -156,7 +141,6 @@ impl fmt::Debug for ProviderUpdate {
     }
 }
 
-/// A login button of `/api/login-options`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoginButton {
     pub name: String,
@@ -184,14 +168,12 @@ pub(crate) fn name(raw: &str) -> Result<String, ProviderError> {
     })
 }
 
-/// Trimmed; blank falls back to `name`.
 pub(crate) fn display_name(raw: &str, name: &str) -> Result<String, ProviderError> {
     let trimmed = raw.trim();
     let value = if trimmed.is_empty() { name } else { trimmed };
     plain("display_name", value, MAX_DISPLAY_NAME_LEN, false)
 }
 
-/// Blank is no icon.
 pub(crate) fn icon(raw: Option<&str>) -> Result<Option<String>, ProviderError> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(None),
@@ -218,7 +200,7 @@ pub(crate) fn client_id(raw: &str) -> Result<String, ProviderError> {
     plain("client_id", trimmed, MAX_CLIENT_ID_LEN, false)
 }
 
-/// Blank is no secret (public client). Not trimmed: secrets are opaque.
+/// Not trimmed: secrets are opaque.
 pub(crate) fn client_secret(raw: Option<&str>) -> Result<Option<String>, ProviderError> {
     match raw.filter(|s| !s.is_empty()) {
         None => Ok(None),
@@ -234,7 +216,6 @@ pub(crate) fn client_secret(raw: Option<&str>) -> Result<Option<String>, Provide
     }
 }
 
-/// Space-separated RFC 6749 scope tokens, deduplicated, `openid` required.
 pub(crate) fn scopes(raw: Option<&str>) -> Result<String, ProviderError> {
     let raw = raw.unwrap_or(DEFAULT_SCOPES);
     if raw.len() > MAX_SCOPES_LEN {
@@ -264,7 +245,6 @@ pub(crate) fn scopes(raw: Option<&str>) -> Result<String, ProviderError> {
     Ok(tokens.join(" "))
 }
 
-/// A claim name: no whitespace or control characters; blank is none.
 pub(crate) fn group_claim(raw: Option<&str>) -> Result<Option<String>, ProviderError> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(None),
@@ -280,7 +260,6 @@ pub(crate) fn group_claim(raw: Option<&str>) -> Result<Option<String>, ProviderE
     }
 }
 
-/// Blank is none.
 pub(crate) fn admin_group(raw: Option<&str>) -> Result<Option<String>, ProviderError> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(None),

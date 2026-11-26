@@ -1,12 +1,4 @@
-//! Provider management (admin routes: M3-09). The client secret is sealed under
-//! `oidc_providers.client_secret_enc:<id>` (06 §5); the provider is inserted first and the
-//! secret written in the same transaction, once the id is known.
-//!
-//! Providers with `managed_by = config` (bootstrap file, 05 §4.1) are read-only here.
-//! Deleting a provider with linked accounts is refused ([`ProviderError::InUse`]); its
-//! in-flight flows go with it (cascade). Every write drops the login button cache and the
-//! provider's discovery cache before returning. Each `*_guarded` variant runs a
-//! [`TxGuard`] inside its write transaction (the console's audit row, the actor re-check).
+//! Every write drops the login button cache and the provider's discovery cache before returning.
 
 mod buttons;
 mod model;
@@ -35,8 +27,6 @@ impl OidcService {
         self.create_provider_guarded(new, TxGuard::none()).await
     }
 
-    /// [`create_provider`](Self::create_provider), with `guard` deciding on the new
-    /// provider (no `before`).
     pub async fn create_provider_guarded(
         &self,
         new: NewProvider,
@@ -86,7 +76,6 @@ impl OidcService {
         found.map(Provider::from).ok_or(ProviderError::NotFound)
     }
 
-    /// Every provider, ordered by name.
     pub async fn list_providers(&self) -> Result<Vec<Provider>, ProviderError> {
         let rows = oidc_provider::Entity::find()
             .order_by_asc(Column::Name)
@@ -104,8 +93,6 @@ impl OidcService {
             .await
     }
 
-    /// [`update_provider`](Self::update_provider), with `guard` deciding on the provider
-    /// before and after.
     pub async fn update_provider_guarded(
         &self,
         id: i64,
@@ -132,8 +119,6 @@ impl OidcService {
         self.delete_provider_guarded(id, TxGuard::none()).await
     }
 
-    /// [`delete_provider`](Self::delete_provider), with `guard` deciding on the provider
-    /// (no `after`).
     pub async fn delete_provider_guarded(
         &self,
         id: i64,
@@ -155,7 +140,6 @@ impl OidcService {
         Ok(())
     }
 
-    /// The enabled provider the client names as `op`.
     pub(crate) async fn enabled_provider(
         &self,
         name: &str,
@@ -164,7 +148,6 @@ impl OidcService {
         Ok(found.filter(|p| p.enabled))
     }
 
-    /// The provider's client secret, opened; `None` for a public client.
     pub(crate) fn client_secret(
         &self,
         provider: &oidc_provider::Model,
@@ -212,19 +195,16 @@ impl OidcService {
         Ok(active.update(tx).await?)
     }
 
-    /// After a committed write: forget what was derived from the old row.
     fn changed(&self, id: i64) {
         self.inner.buttons.invalidate();
         self.inner.discovery.forget(id);
     }
 }
 
-/// Sealing context of a provider's client secret.
 fn secret_context(id: i64) -> String {
     format!("oidc_providers.client_secret_enc:{id}")
 }
 
-/// The row, locked for the transaction; refused when the configuration owns it.
 async fn writable(
     tx: &DatabaseTransaction,
     id: i64,
@@ -240,7 +220,6 @@ async fn writable(
     Ok(row)
 }
 
-/// The validated changes of `update` (the secret is written separately).
 fn changes(
     current: &oidc_provider::Model,
     update: &ProviderUpdate,

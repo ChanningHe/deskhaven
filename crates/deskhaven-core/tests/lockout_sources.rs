@@ -1,7 +1,3 @@
-//! Lockout sources (M2-06 round 2): IPv6 /48 source rows, known-good sources that bypass
-//! the global row, the single-source guarantee, the hard row cap, lock-free cleanup and
-//! exact counts under concurrent refunds. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -18,12 +14,9 @@ use sea_orm::{EntityTrait, QuerySelect};
 use serde_json::json;
 use tokio::task::JoinSet;
 
-/// A distinct IPv6 /48 per `i`.
 fn slash48(i: u32) -> String {
     format!("2001:db8:{i:x}::1")
 }
-
-// --- H-1a: one source row per IPv6 /48 -----------------------------------------------------
 
 #[tokio::test]
 async fn four_slash64s_in_one_slash48_share_one_source_row() {
@@ -64,8 +57,6 @@ async fn four_slash64s_in_one_slash48_share_one_source_row() {
     .await;
 }
 
-// --- H-1b: known-good sources --------------------------------------------------------------
-
 #[tokio::test]
 async fn rotating_slash48s_lock_fresh_sources_but_not_a_known_source() {
     each_migrated_backend(async |db: &TestDb| {
@@ -74,7 +65,7 @@ async fn rotating_slash48s_lock_fresh_sources_but_not_a_known_source() {
         succeed(&f.lockout, "admin", IP_A).await;
         let mut next = 0;
 
-        // 24h of the reviewer's attack: every 15m, four fresh /48s × 5 trip the global row.
+        // 24h of an attack: every 15m, four fresh /48s × 5 trip the global row.
         for round in 0..96 {
             for _ in 0..4 {
                 next += 1;
@@ -192,8 +183,6 @@ async fn zero_failure_sources_are_not_exempt() {
     .await;
 }
 
-/// Attempts from one source whenever it is allowed, for `hours`; returns how many times the
-/// global row was found locked.
 async fn single_source_global_locks(f: &Fixture, db: &TestDb, hours: i64) -> usize {
     let end = f.clock.now_ms() + hours * 3_600_000;
     let alice = subject("alice", IP_A);
@@ -261,8 +250,6 @@ async fn cleanup_keeps_known_sources_within_retention() {
     .await;
 }
 
-// --- M-2: hard row cap -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn cleanup_caps_rows_evicting_the_oldest_unlocked_unknown_rows_first() {
     each_migrated_backend(async |db: &TestDb| {
@@ -313,8 +300,6 @@ async fn cleanup_cap_never_evicts_locked_or_known_rows() {
     .await;
 }
 
-// --- L-b: cleanup never waits for row locks ------------------------------------------------
-
 #[tokio::test]
 async fn cleanup_skips_rows_locked_by_a_concurrent_transaction() {
     each_migrated_backend(async |db: &TestDb| {
@@ -341,8 +326,6 @@ async fn cleanup_skips_rows_locked_by_a_concurrent_transaction() {
     })
     .await;
 }
-
-// --- L-d: exact counts under concurrency ---------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_reserves_and_refunds_leave_exact_counts() {

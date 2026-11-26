@@ -1,7 +1,3 @@
-//! Writes of the shared book itself: create, rename / note, delete. Each `*_guarded`
-//! variant runs a [`TxGuard`] inside its write transaction (the console's audit row); the
-//! plain variants are the same writes without one.
-
 use deskhaven_db::entity::address_book::{self, Kind};
 use deskhaven_db::{begin_write, is_foreign_key_violation, time};
 use sea_orm::ActiveValue::Set;
@@ -15,12 +11,10 @@ use super::{AddressBookService, Book, NewSharedBook, Rule, SharedBookUpdate, sna
 use crate::console_audit::TxGuard;
 
 impl AddressBookService {
-    /// Creates a shared book (an administrator's operation: no actor check).
     pub async fn create_shared(&self, new: NewSharedBook) -> Result<Book, AddressBookError> {
         self.create_shared_guarded(new, TxGuard::none()).await
     }
 
-    /// [`create_shared`](Self::create_shared), with `guard` deciding on the new book.
     pub async fn create_shared_guarded(
         &self,
         new: NewSharedBook,
@@ -55,7 +49,6 @@ impl AddressBookService {
         Ok(created.into())
     }
 
-    /// Renames a shared book or changes its note; needs full control.
     pub async fn update_shared(
         &self,
         actor: Actor,
@@ -66,8 +59,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`update_shared`](Self::update_shared), with `guard` deciding on the book before and
-    /// after. An update that changes nothing writes nothing and does not consult the guard.
     pub async fn update_shared_guarded(
         &self,
         actor: Actor,
@@ -103,14 +94,11 @@ impl AddressBookService {
         Ok(updated.into())
     }
 
-    /// Deletes a shared book with its peers, tags and shares; needs full control, and is
-    /// the owner's or the console's (see [`is_steward`]).
     pub async fn delete_shared(&self, actor: Actor, guid: &str) -> Result<(), AddressBookError> {
         self.delete_shared_guarded(actor, guid, TxGuard::none())
             .await
     }
 
-    /// [`delete_shared`](Self::delete_shared), with `guard` deciding on the book (no `after`).
     pub async fn delete_shared_guarded(
         &self,
         actor: Actor,

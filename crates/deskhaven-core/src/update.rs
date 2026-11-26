@@ -1,11 +1,6 @@
-//! The update check: whether a newer deskhaven release than this build is out.
-//!
-//! On demand only: [`UpdateService::available`] (an admin's console asking) answers from the
-//! cache and, when the cache is empty or a day old and `updates.check` is on, starts one
-//! background request to the GitHub releases API of [`SOURCE_URL`]. An instance nobody
-//! administers never connects out. Only the response's `tag_name` is trusted, and only when
-//! it is `v` + a plain semver version; the release page link is built here from that
-//! version, never taken from the response.
+//! On demand only: an instance nobody administers never connects out. Only the response's
+//! `tag_name` is trusted, and only as `v` + a plain semver version; the release link is built here,
+//! never taken from the response.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -20,25 +15,19 @@ use crate::clock::SharedClock;
 use crate::oidc::{FetchError, HttpFetch};
 use crate::settings::SettingsService;
 
-/// Longest accepted `tag_name`.
 const MAX_TAG_LEN: usize = 32;
-/// How long a check, successful or not, is good for.
 const RECHECK_MS: i64 = 24 * 60 * 60 * 1000;
 /// GitHub refuses requests without one; nothing about the instance goes in it.
 const USER_AGENT: &str = "deskhaven";
 const ACCEPT: &str = "application/vnd.github+json";
 const GITHUB: &str = "https://github.com/";
 
-/// A release newer than the running build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AvailableUpdate {
     pub version: Version,
-    /// Its release page under [`SOURCE_URL`].
     pub release_url: String,
 }
 
-/// `"v0.1.3"` -> 0.1.3. Rejects prereleases, build metadata, over-long tags and anything
-/// else.
 pub fn parse_tag(tag: &str) -> Option<Version> {
     if tag.len() > MAX_TAG_LEN {
         return None;
@@ -47,8 +36,6 @@ pub fn parse_tag(tag: &str) -> Option<Version> {
     (version.pre.is_empty() && version.build.is_empty()).then_some(version)
 }
 
-/// The GitHub API URL of the latest release of the repository at `source_url`
-/// (`https://github.com/<owner>/<repo>`); `None` for anything else.
 pub fn latest_release_url(source_url: &str) -> Option<String> {
     let (owner, repo) = source_url.strip_prefix(GITHUB)?.split_once('/')?;
     let plain = |s: &str| {
@@ -60,7 +47,7 @@ pub fn latest_release_url(source_url: &str) -> Option<String> {
         .then(|| format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"))
 }
 
-/// Why one check failed. Never carries anything from the response but its status.
+/// Never carries anything from the response but its status.
 #[derive(Debug, thiserror::Error)]
 enum CheckError {
     #[error("cannot build the request")]
@@ -80,13 +67,11 @@ struct Release {
     tag_name: String,
 }
 
-/// The update check (see the module docs). Shared as `Arc<UpdateService>`.
 pub struct UpdateService {
     settings: SettingsService,
     clock: SharedClock,
     fetch: Arc<dyn HttpFetch>,
-    /// `None` when [`SOURCE_URL`] is not a GitHub repository (a fork hosted elsewhere): the
-    /// check never runs.
+    /// `None` when [`SOURCE_URL`] is not a GitHub repository: the check never runs.
     target: Option<Target>,
     cache: Mutex<Cache>,
 }
@@ -99,7 +84,6 @@ struct Target {
 #[derive(Default)]
 struct Cache {
     latest: Option<Version>,
-    /// Monotonic ms of the last finished check.
     checked_at: Option<i64>,
     in_flight: bool,
 }
@@ -111,7 +95,6 @@ impl Cache {
 }
 
 impl UpdateService {
-    /// Checks this build ([`VERSION`]) against the releases of [`SOURCE_URL`].
     pub fn new(settings: SettingsService, clock: SharedClock, fetch: Arc<dyn HttpFetch>) -> Self {
         let target = latest_release_url(SOURCE_URL)
             .zip(Version::parse(VERSION).ok())
@@ -134,9 +117,7 @@ impl UpdateService {
         }
     }
 
-    /// The newer release the cache knows of; `None` while `updates.check` is off (nothing is
-    /// sent then). Starts one background check when the cache is empty or a day old, but
-    /// never waits for it. Must be called inside a Tokio runtime.
+    /// Never waits for the check. Must be called inside a Tokio runtime.
     pub fn available(self: &Arc<Self>) -> Option<AvailableUpdate> {
         if !self.settings.snapshot().get(&UPDATES_CHECK) {
             return None;
@@ -193,8 +174,7 @@ impl UpdateService {
     }
 }
 
-/// Ends a refresh however it ends (done, panicked, or cancelled at an await): without it a
-/// dead refresh would leave `in_flight` set and no check would ever run again.
+/// Without it a dead refresh would leave `in_flight` set and no check would ever run again.
 struct Finish<'a>(&'a UpdateService);
 
 impl Drop for Finish<'_> {

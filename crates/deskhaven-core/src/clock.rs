@@ -1,13 +1,5 @@
-//! Injectable clock, so time-dependent services (login throttling, and session expiry in
-//! M2-05) can be tested without sleeping.
-//!
-//! Two readings with different jobs:
-//! - [`Clock::now`]: wall time, for timestamps that are stored or compared with stored ones.
-//! - [`Clock::elapsed`]: monotonic time, for in-memory intervals (rate-limit buckets) that
-//!   must not jump when the wall clock is stepped.
-//!
-//! Production uses [`SystemClock`]; tests share one [`ManualClock`] between the services
-//! under test and move both readings forward together.
+//! Two readings: [`Clock::now`] (wall) for stored timestamps, [`Clock::elapsed`] (monotonic) for
+//! in-memory intervals that must not jump when the wall clock is stepped.
 
 use std::fmt;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -18,28 +10,22 @@ use chrono::DateTime;
 use deskhaven_db::time::{self, TimestampMs};
 
 pub trait Clock: Send + Sync + fmt::Debug {
-    /// Wall time as stored in the database (unix milliseconds, UTC).
     fn now(&self) -> TimestampMs;
 
-    /// Monotonic time since an arbitrary fixed point of this clock. Never goes backwards.
+    /// Never goes backwards.
     fn elapsed(&self) -> Duration;
 
-    /// [`Clock::now`] as unix milliseconds.
     fn now_ms(&self) -> i64 {
         self.now().timestamp_millis()
     }
 
-    /// [`Clock::elapsed`] in milliseconds, for in-memory windows (liveness, intervals, TTLs)
-    /// that must neither freeze nor shorten when the wall clock is stepped.
     fn elapsed_ms(&self) -> i64 {
         i64::try_from(self.elapsed().as_millis()).unwrap_or(i64::MAX)
     }
 }
 
-/// A clock shared by the services of one process.
 pub type SharedClock = Arc<dyn Clock>;
 
-/// The system clocks: wall time (millisecond precision) and `Instant` since first use.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemClock;
 
@@ -54,18 +40,14 @@ impl Clock for SystemClock {
     }
 }
 
-/// A clock that only moves when told to. For tests; safe to share across tasks.
-/// [`Clock::elapsed`] is the wall reading as a duration (clamped at 0), so both move together,
-/// unless [`ManualClock::step_wall`] moved the wall reading alone.
+/// Both readings move together unless [`ManualClock::step_wall`] moved the wall reading alone.
 #[derive(Debug)]
 pub struct ManualClock {
     ms: AtomicI64,
-    /// Wall minus monotonic reading, in ms (moved by `step_wall`).
     wall_offset: AtomicI64,
 }
 
 impl ManualClock {
-    /// A clock reading `ms` unix milliseconds.
     pub fn at(ms: i64) -> Self {
         Self {
             ms: AtomicI64::new(ms),
@@ -78,14 +60,11 @@ impl ManualClock {
         self.ms.fetch_add(by, Ordering::SeqCst);
     }
 
-    /// Both readings to `ms` (undoes [`step_wall`](Self::step_wall)).
     pub fn set(&self, ms: i64) {
         self.ms.store(ms, Ordering::SeqCst);
         self.wall_offset.store(0, Ordering::SeqCst);
     }
 
-    /// Steps the wall reading by `by_ms` (negative: back) while the monotonic one stays, as
-    /// an NTP correction or a manual change of the system time does.
     pub fn step_wall(&self, by_ms: i64) {
         self.wall_offset.fetch_add(by_ms, Ordering::SeqCst);
     }

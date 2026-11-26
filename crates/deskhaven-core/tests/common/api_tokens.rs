@@ -1,6 +1,3 @@
-//! Shared setup for the API token tests: a token service and a user service on one manual
-//! clock.
-
 use std::sync::Arc;
 
 use deskhaven_config::settings::PinSet;

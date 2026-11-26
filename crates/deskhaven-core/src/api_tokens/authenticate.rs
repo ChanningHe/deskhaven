@@ -1,6 +1,3 @@
-//! Token checks on every use: hash lookup, revocation, expiry, the creator's current status
-//! and role, the scope, then the throttled `last_used_at` touch.
-
 use std::collections::BTreeSet;
 
 use deskhaven_db::entity::api_token;
@@ -12,21 +9,15 @@ use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter};
 use super::secret::presented_hash;
 use super::{ApiTokenError, ApiTokenService, Scope, TOUCH_INTERVAL};
 
-/// Who acts through an authenticated token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiTokenPrincipal {
-    /// `api_tokens.id`: the audit actor.
     pub token_id: i64,
-    /// The creating administrator; `None` for a system token.
     pub created_by: Option<i64>,
     pub scopes: BTreeSet<Scope>,
 }
 
 impl ApiTokenService {
-    /// The principal of a presented token that holds `required` (see the module
-    /// documentation for every condition). Unauthenticated outcomes are those of
-    /// [`ApiTokenError::is_unauthenticated`]; database failures reading the token are
-    /// [`ApiTokenError::Database`]; a failed `last_used_at` touch is only logged.
+    /// A failed `last_used_at` touch is only logged.
     pub async fn authenticate(
         &self,
         token: &str,
@@ -53,7 +44,6 @@ impl ApiTokenService {
         })
     }
 
-    /// Writes `last_used_at = now` when the recorded use is at least [`TOUCH_INTERVAL`] old.
     /// The update only matches an unrevoked row, so it doubles as a revocation re-check.
     async fn touch_if_due(
         &self,
@@ -91,7 +81,6 @@ impl ApiTokenService {
     }
 }
 
-/// Revocation, expiry and the creator, in that order.
 fn check(
     row: &api_token::Model,
     creator: Option<&user::Model>,
@@ -116,7 +105,6 @@ fn check(
     }
 }
 
-/// An account whose authority a token can carry.
 pub(super) fn is_active_admin(user: &user::Model) -> bool {
     user.status == Status::Active && matches!(user.role, Role::Owner | Role::Admin)
 }

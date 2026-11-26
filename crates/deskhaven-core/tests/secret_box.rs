@@ -1,6 +1,3 @@
-//! SecretBox: XChaCha20-Poly1305 with `v1:<key_id>:<nonce>:<ct>` strings and
-//! AAD = `"v1:<key_id>:" || context`.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_core::crypto::{CryptoError, MasterKey, SecretBox};
@@ -219,8 +216,6 @@ fn duplicate_key_ids_are_rejected() {
     assert_eq!(twice.err(), Some(CryptoError::DuplicateKeyId));
 }
 
-/// Drives every real error path with a planted secret and checks that no
-/// rendering (Display, Debug, source chain) leaks it, the key, or input.
 #[test]
 fn error_paths_and_debug_never_leak_planted_material() {
     const PLANTED: &str = "PLANTED-SECRET-c0ffee";
@@ -290,8 +285,6 @@ fn generated_master_keys_differ() {
     let b = MasterKey::generate().unwrap();
     assert_ne!(a.key_id(), b.key_id());
 }
-
-// --- keyed MAC (06 §3.3: k_hmac = HKDF(master key, "deskhaven/hmac/v1")) ------------------
 
 /// Computed independently with OpenSSL, not with this crate:
 /// `openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt hexkey:07…07

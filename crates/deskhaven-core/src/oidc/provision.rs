@@ -1,8 +1,5 @@
-//! Step 3 of the identity resolution (see `identity`): a new active `oidc` account for an
-//! identity nobody has, with `auto_provision` on. Username by the `username` rules, `admin`
-//! when `admin_group` is among the group claim's values, membership in the existing
-//! UI-managed groups the claim names (groups are never created from claims). The account
-//! is brand new, so no cached membership view can be stale (no group commit hook needed).
+//! Groups are never created from claims. The account is brand new, so no cached membership view
+//! can be stale.
 
 use deskhaven_db::entity::managed_by::ManagedBy;
 use deskhaven_db::entity::user_identity::LinkedVia;
@@ -20,7 +17,6 @@ use crate::text;
 use crate::users::lookup::username_taken;
 use crate::users::{Credential, NewUser, Role, UserError};
 
-/// Longest display name taken from the `name` claim (the user service's limit).
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 
 pub(super) async fn provision(
@@ -87,10 +83,7 @@ async fn free_username(
     Ok(None)
 }
 
-/// The `name` claim cleaned like every imported name ([`text::clean_import`]: the user
-/// service refuses control, bidirectional and zero-width characters, and a login must not
-/// fail over the IdP's display name), cut to the user service's limit; blank leaves the
-/// username as the display name.
+/// A login must not fail over the IdP's display name, so it is cleaned rather than refused.
 fn display_name(name: Option<&str>) -> String {
     text::clean_import(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
 }

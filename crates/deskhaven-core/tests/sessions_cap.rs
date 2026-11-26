@@ -1,7 +1,3 @@
-//! Sessions per user: creating one beyond `auth.max_sessions_per_user` revokes the least
-//! recently used of the user's usable sessions (cache included), and the user's session
-//! list is paged. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -32,7 +28,6 @@ struct Env {
 }
 
 impl Env {
-    /// Services with `auth.max_sessions_per_user` = `cap`.
     async fn new(db: &TestDb, cap: u32) -> Self {
         let settings = settings(db).await;
         set(&settings, "auth.max_sessions_per_user", json!(cap)).await;
@@ -62,7 +57,6 @@ impl Env {
         (login.user.id, login.stamp)
     }
 
-    /// A console session of `user_id`, one minute after the previous one.
     async fn console(&self, user_id: i64, stamp: &CredentialStamp) -> (Session, SessionToken) {
         self.clock.advance(MINUTE);
         self.sessions
@@ -183,7 +177,6 @@ async fn the_session_list_is_paged_most_recent_first() {
     .await;
 }
 
-/// Using a session makes it recent: the cap ends the least recently *used* one.
 #[tokio::test]
 async fn a_session_used_lately_survives_the_cap() {
     each_migrated_backend(async |db: &TestDb| {

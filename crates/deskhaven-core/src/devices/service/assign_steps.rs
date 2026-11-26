@@ -1,6 +1,3 @@
-//! The transaction of [`DeviceService::assign`](super::DeviceService::assign), step by step
-//! (see `assign` for the rules).
-
 use std::sync::Arc;
 
 use base64_022::Engine as _;
@@ -24,13 +21,11 @@ use crate::crypto::b64::KEY_B64;
 use crate::devices::{DeviceError, preset_book, presets};
 use crate::strategies::{self, Target};
 
-/// The rows the assignment's names resolved to, held until the transaction ends.
 #[derive(Default)]
 struct Targets {
     owner: Option<i64>,
     group: Option<i64>,
     strategy: Option<i64>,
-    /// The book's guid.
     book: Option<String>,
 }
 
@@ -43,7 +38,6 @@ impl Inner {
         )
     }
 
-    /// Every write of an assignment and its audit row, in one transaction.
     pub(super) async fn assign_all(
         self: Arc<Self>,
         a: DeviceAssignment,
@@ -86,7 +80,6 @@ impl Inner {
     }
 }
 
-/// The device row, locked, if `a`'s id is registered with `a`'s uuid (always compared).
 async fn lock_device(
     tx: &DatabaseTransaction,
     a: &DeviceAssignment,
@@ -104,7 +97,6 @@ async fn lock_device(
         .ok_or(DeviceError::UnknownDevice)
 }
 
-/// Every name of `a`, resolved inside `tx`.
 async fn resolve(
     tx: &DatabaseTransaction,
     books: &AddressBookService,
@@ -147,7 +139,6 @@ async fn book_guid(
     }
 }
 
-/// Owner, device group, note and the administrator's names.
 async fn write_row(
     tx: &DatabaseTransaction,
     row: device::Model,
@@ -190,7 +181,6 @@ async fn place_entry(
     books.place_entry_in(tx, admin, guid, patch, tag).await
 }
 
-/// The placement before the assignment, with the device's entry in the named book.
 async fn before_view(
     tx: &DatabaseTransaction,
     books: &AddressBookService,

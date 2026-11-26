@@ -1,22 +1,12 @@
-//! Usernames of provisioned accounts: the same charset and length as every username
-//! (`[A-Za-z0-9._@-]`, 1–64, `users::username_norm`), so they also key the login lockout
-//! like any other.
-//!
-//! The base is the first of `preferred_username`, `email`, `sub` that keeps at least one
-//! character after dropping the others (e.g. `Zoë Smith` -> `ZoSmith`), else
-//! [`FALLBACK`]. A taken name gets `-2`, `-3`, … ([`MAX_SUFFIX`]); the base is shortened to
-//! keep the result within 64 characters. An existing account is never reused because its
-//! name matches: the suffix makes a new one.
+//! Same charset and length as every username, so they also key the login lockout. An existing
+//! account is never reused because its name matches: the suffix makes a new one.
 
 use super::claims::Asserted;
 use crate::users::{USERNAME_MAX_LEN, is_username_char, username_norm};
 
-/// Base when no claim has a usable character.
 pub(crate) const FALLBACK: &str = "oidc-user";
-/// Highest numeric suffix tried before provisioning gives up.
 pub(crate) const MAX_SUFFIX: u32 = 50;
 
-/// The usable characters of `raw`, at most 64.
 fn sanitize(raw: &str) -> String {
     raw.chars()
         .filter(|c| is_username_char(*c))
@@ -37,7 +27,6 @@ pub(crate) fn base(asserted: &Asserted) -> String {
     .unwrap_or_else(|| FALLBACK.to_owned())
 }
 
-/// `base`, then `base-2` … `base-MAX_SUFFIX`, each a valid username.
 pub(crate) fn candidates(base: &str) -> impl Iterator<Item = String> + '_ {
     std::iter::once(base.to_owned())
         .chain((2..=MAX_SUFFIX).map(move |n| {

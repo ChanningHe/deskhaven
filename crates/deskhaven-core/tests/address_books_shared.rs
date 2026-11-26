@@ -1,7 +1,3 @@
-//! AddressBookService, shared books: passwords sealed at rest (and bound to their row),
-//! no `hash`, name rules, tag rename / delete rewriting peers. Every test runs on SQLite and
-//! PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

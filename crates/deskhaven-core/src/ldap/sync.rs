@@ -1,11 +1,6 @@
-//! Applies the directory's role and groups to a directory account at every login
-//! (`mapping`). Each change goes through the owning service's guarded write: the account
-//! (or membership) is locked and re-read in the write transaction, the guard decides on
-//! that committed state, and an audit row (actor `system`) commits with the change.
-//! Owners are never changed, also when one became an owner after the login read the
-//! account; a change that turns out to be a no-op is dropped without a row. Either way the
-//! login continues with the account as that transaction read it (so the second factor is
-//! judged on the committed role, e.g. a promotion made while the bind was pending).
+//! Each change goes through the owning service's guarded write, so the guard decides on the
+//! committed state. The login continues with the account as that transaction read it, so the
+//! second factor is judged on the committed role.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -22,9 +17,7 @@ use crate::console_audit::{Actor, NewConsoleAudit, Refused, TxGuard};
 use crate::groups::{GroupError, Membership};
 use crate::users::{AccountEdit, AuthError, Role, User, UserError};
 
-/// Guard refusal: the account is an owner (the directory never changes owners).
 const OWNER: &str = "ldap_sync_owner";
-/// Guard refusal: nothing to change after all.
 const UNCHANGED: &str = "ldap_sync_unchanged";
 
 fn sync_failed(err: impl std::error::Error + Send + Sync + 'static) -> AuthError {
@@ -44,7 +37,6 @@ fn system_entry(action: &str, target_type: &str, target_id: i64) -> NewConsoleAu
 }
 
 impl LdapService {
-    /// The directory's role and groups applied to `account` (see `mapping`).
     pub(crate) async fn sync(
         &self,
         settings: &DirectorySettings,
@@ -112,7 +104,6 @@ impl LdapService {
         }
     }
 
-    /// Membership in exactly the console-managed groups named `names` (lowercased).
     async fn sync_groups(&self, user_id: i64, names: &BTreeSet<String>) -> Result<(), AuthError> {
         let groups = &self.inner.groups;
         let all = groups.list().await.map_err(sync_failed)?;
@@ -145,8 +136,7 @@ impl LdapService {
         Ok(())
     }
 
-    /// Audits a membership change the directory makes; a no-op (already / not a member
-    /// in the transaction) is refused, so it leaves no row.
+    /// A no-op is refused, so it leaves no row.
     fn member_guard(&self, action: &'static str, group_id: i64) -> TxGuard<Membership> {
         TxGuard::new(
             &self.inner.audit,

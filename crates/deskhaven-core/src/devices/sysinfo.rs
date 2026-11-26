@@ -1,26 +1,14 @@
-//! Device-reported system information (`POST /api/sysinfo`, 03 §2.2;
-//! `src/hbbs_http/sync.rs:135-228`, `src/common.rs:962-1006` `get_sysinfo`) and its content
-//! hash.
-//!
-//! Every field is self-reported by an unauthenticated device (06 §2): control characters,
-//! bidi controls and zero-width characters are
-//! dropped (PostgreSQL TEXT cannot even hold NUL) and each field is cut to
-//! [`MAX_FIELD_CHARS`] characters. A truncated value is still stored: refusing would leave the
-//! client retrying every 120 s forever without its "Pro" features. The client version is
-//! also trimmed, and a blank one stored as not reported.
+//! Every field is self-reported by an unauthenticated device: it is cleaned and cut, never
+//! refused, since refusing would leave the client retrying every 120 s forever.
 
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
 
 use crate::text::is_dropped;
 
-/// Longest stored sysinfo field, in characters (a hostname is at most 253 bytes; real
-/// `os` / `cpu` strings are well under 100).
 pub const MAX_FIELD_CHARS: usize = 256;
-/// Domain separation and format version of [`Sysinfo::hash`].
 const HASH_DOMAIN: &[u8] = b"deskhaven/sysinfo/v1";
 
-/// The stored sysinfo columns of `devices` (04 §4). `None`: not reported.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Sysinfo {
     pub hostname: Option<String>,
@@ -28,12 +16,10 @@ pub struct Sysinfo {
     pub os: Option<String>,
     pub cpu: Option<String>,
     pub memory: Option<String>,
-    /// Client version (`crate::VERSION`).
     pub version: Option<String>,
 }
 
 impl Sysinfo {
-    /// Every field cleaned as described in the module documentation.
     pub fn sanitized(self) -> Self {
         Self {
             hostname: self.hostname.map(clean),
@@ -45,8 +31,7 @@ impl Sysinfo {
         }
     }
 
-    /// Content hash stored in `devices.sysinfo_hash`: lower-case hex SHA-256 over every field,
-    /// each encoded unambiguously (absent and empty differ, no field can bleed into the next).
+    /// Each field encoded unambiguously: absent and empty differ, no field can bleed into the next.
     pub fn hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(HASH_DOMAIN);
@@ -75,7 +60,6 @@ impl Sysinfo {
     }
 }
 
-/// Without control or invisible characters, at most [`MAX_FIELD_CHARS`] characters.
 fn clean(raw: String) -> String {
     let fits = raw.chars().count() <= MAX_FIELD_CHARS;
     if fits && !raw.chars().any(is_dropped) {
@@ -87,8 +71,7 @@ fn clean(raw: String) -> String {
         .collect()
 }
 
-/// A version is one token: [`clean`], then trimmed; nothing left counts as not reported
-/// (`None`), so blank reports neither form a version of their own nor count as known.
+/// Blank reports neither form a version of their own nor count as known.
 fn clean_version(raw: String) -> Option<String> {
     let cleaned = clean(raw);
     let trimmed = cleaned.trim();

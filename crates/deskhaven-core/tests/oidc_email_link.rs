@@ -1,8 +1,4 @@
-//! Automatic linking by email (M4-09 rule 3): an unknown identity links an existing account
-//! only when every condition holds: the IdP asserts the address verified, the account's
-//! own address is verified, its role is within `auth.oidc.link_email_max_role`, it has no
-//! TOTP (whatever the ceiling) and it is not an LDAP account. The matrix runs in one
-//! database per backend, one account per case. Both backends.
+//! The matrix runs in one database per backend, one account per case.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -23,7 +19,6 @@ struct Case {
     max_role: &'static str,
     role: Role,
     totp: bool,
-    /// The token's `email_verified` claim.
     idp_verified: Option<bool>,
     local_verified: bool,
     ldap: bool,
@@ -201,8 +196,8 @@ async fn the_default_ceiling_links_plain_users_only() {
     .await;
 }
 
-/// `auto_provision` does not change any of it: an address that belongs to an account that
-/// may not be linked is refused, never provisioned a second time (rule 6).
+/// `auto_provision` does not change any of it: an address that belongs to an account that may not
+/// be linked is refused, never provisioned a second time.
 #[tokio::test]
 async fn provisioning_never_creates_a_second_account_for_a_refused_address() {
     each_migrated_backend(async |db: &TestDb| {
@@ -225,9 +220,6 @@ async fn provisioning_never_creates_a_second_account_for_a_refused_address() {
     .await;
 }
 
-/// Identities the login itself creates are audited with the system as the actor: an email
-/// link as `user.identity_link` (`linked_via: email`), a provisioned account as
-/// `user.create`, each naming the provider and no claim value beyond the subject.
 #[tokio::test]
 async fn email_links_and_provisioning_are_audited_as_the_system() {
     each_migrated_backend(async |db: &TestDb| {

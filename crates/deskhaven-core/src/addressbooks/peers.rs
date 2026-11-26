@@ -1,5 +1,3 @@
-//! Peers of a book: list (rule 1), add / update / delete (rule 2).
-
 use deskhaven_db::entity::address_book::{self, Kind};
 use deskhaven_db::entity::address_book_peer;
 use deskhaven_db::time;
@@ -19,11 +17,10 @@ use super::{AddressBookService, Rule};
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 
-/// Ids deleted per statement (keeps far below SQLite's bound-parameter limit).
+/// Keeps far below SQLite's bound-parameter limit.
 pub(super) const DELETE_CHUNK: usize = 500;
 
-/// The sealed secret columns of a peer: the personal-book hash (a login credential: the
-/// client sends it as the password) and the shared-book password.
+/// The personal-book hash is a login credential: the client sends it as the password.
 #[derive(Clone, Copy)]
 enum Secret {
     Hash,
@@ -39,9 +36,7 @@ impl Secret {
     }
 }
 
-/// AAD context of a sealed peer secret (06 §5): `address_book_peers.<column>:<book
-/// id>:<rustdesk id>`. The book id has no `:`, so the rest is the peer id, whatever it
-/// contains.
+/// The book id has no `:`, so the rest is the peer id, whatever it contains.
 fn secret_context(secret: Secret, book_id: i64, rustdesk_id: &str) -> String {
     format!(
         "address_book_peers.{}:{book_id}:{rustdesk_id}",
@@ -50,7 +45,6 @@ fn secret_context(secret: Secret, book_id: i64, rustdesk_id: &str) -> String {
 }
 
 impl AddressBookService {
-    /// One page of a book's peers, ordered by id; needs rule 1.
     pub async fn peers(
         &self,
         actor: Actor,
@@ -60,7 +54,6 @@ impl AddressBookService {
         self.peers_matching(actor, guid, None, page).await
     }
 
-    /// The peer `id` of the book; needs rule 1.
     pub async fn peer(&self, actor: Actor, guid: &str, id: &str) -> Result<Peer, AddressBookError> {
         let (book, _) = authorize(&self.db, actor, guid, Rule::ReadOnly, false).await?;
         let found = address_book_peer::Entity::find_by_id((book.id, id.to_owned()))
@@ -70,8 +63,7 @@ impl AddressBookService {
         Ok(self.to_peer(&book, row))
     }
 
-    /// [`peers`](Self::peers) narrowed to the peers whose id, alias, hostname, username or
-    /// note contains `q` (case-insensitive, literal; ASCII only on SQLite).
+    /// Case-insensitive, literal; ASCII only on SQLite.
     pub async fn peers_matching(
         &self,
         actor: Actor,
@@ -199,7 +191,6 @@ impl AddressBookService {
         Ok(row)
     }
 
-    /// The sealed secret, or `None` for no or an empty one.
     fn seal(
         &self,
         secret: Secret,
@@ -217,9 +208,8 @@ impl AddressBookService {
             .map_err(AddressBookError::Crypto)
     }
 
-    /// A stored row as clients read it. Unreadable stored values (corrupt JSON, a password
-    /// sealed under a lost key) are logged and read as empty, so one bad row does not hide
-    /// the whole book.
+    /// Unreadable stored values are logged and read as empty, so one bad row does not hide the
+    /// whole book.
     pub(super) fn to_peer(
         &self,
         book: &address_book::Model,
@@ -279,7 +269,6 @@ impl AddressBookService {
     }
 }
 
-/// Peers whose id, alias, hostname, username or note contains the lowercase `needle`.
 fn matching(needle: &str) -> Condition {
     let columns = [
         address_book_peer::Column::RustdeskId,
@@ -305,8 +294,7 @@ pub(crate) fn parse_extra(row: &address_book_peer::Model) -> Map<String, Value> 
     })
 }
 
-/// The id was inserted concurrently (cannot happen while the book row is locked, kept as a
-/// safety net).
+/// Cannot happen while the book row is locked; a safety net.
 pub(super) fn peer_conflict(err: sea_orm::DbErr) -> AddressBookError {
     match err.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(_)) => AddressBookError::PeerExists,

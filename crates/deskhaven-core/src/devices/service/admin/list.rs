@@ -1,10 +1,5 @@
-//! Paged device list and single device lookup, with the owner and group names and the
-//! presence of each device.
-//!
-//! **Online filter**: online status lives in memory ([`Presence`](crate::devices::Presence)),
-//! not in the database. With `online` set, the ids matching the other filters are read
-//! (two columns, in order), filtered through the presence table and paged in memory; without
-//! it the database pages. Either way the page is the same shape.
+//! Online status lives in memory, not in the database: with `online` set, the matching ids are
+//! read, filtered through the presence table and paged in memory.
 
 use std::collections::HashMap;
 
@@ -23,9 +18,7 @@ use crate::devices::service::{DeviceService, Inner};
 use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 
-/// Filters and order of [`DeviceService::page`]. `q` matches a substring of the RustDesk id,
-/// hostname, device username or note, `os` a substring of the reported OS; both
-/// case-insensitively (ASCII on SQLite) and literally.
+/// Substring filters are case-insensitive and literal, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct DeviceQuery {
     pub q: Option<String>,
@@ -33,7 +26,6 @@ pub struct DeviceQuery {
     pub owner_user_id: Option<i64>,
     pub device_group_id: Option<i64>,
     pub status: Option<DeviceStatus>,
-    /// `Some(true)`: online now; `Some(false)`: not.
     pub online: Option<bool>,
     pub sort: Option<DeviceSort>,
     pub page: PageRequest,
@@ -70,7 +62,6 @@ impl DeviceSortField {
     }
 }
 
-/// A device with the names of its owner and group and what the presence table knows of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceSummary {
     pub record: DeviceRecord,
@@ -81,8 +72,6 @@ pub struct DeviceSummary {
 }
 
 impl DeviceService {
-    /// One page of devices (ordered by `sort`, default RustDesk id ascending, then id in the
-    /// same direction).
     pub async fn page(&self, query: &DeviceQuery) -> Result<Page<DeviceSummary>, DeviceError> {
         let index = query.page.index().map_err(|p| DeviceError::Invalid {
             field: p.field,
@@ -106,7 +95,6 @@ impl DeviceService {
         })
     }
 
-    /// The device with `devices.id` `id`.
     pub async fn summary(&self, id: i64) -> Result<DeviceSummary, DeviceError> {
         let found = device::Entity::find_by_id(id).one(&self.inner.db).await?;
         let row = found.ok_or(DeviceError::NotFound)?;
@@ -178,7 +166,6 @@ impl Inner {
         Ok((total, paginator.fetch_page(index).await?))
     }
 
-    /// `devices.id` of the matching devices whose presence equals `online`, in order.
     async fn online_ids(
         &self,
         select: Select<device::Entity>,
@@ -198,7 +185,6 @@ impl Inner {
         Ok(matching.map(|(id, _)| id).collect())
     }
 
-    /// The rows of the requested page of `ids`, in `ids` order, and the total.
     async fn page_of_ids(
         &self,
         ids: &[i64],
@@ -222,7 +208,6 @@ impl Inner {
         Ok((ids.len() as u64, rows))
     }
 
-    /// `rows` with owner and group names and presence.
     pub(super) async fn summaries(
         &self,
         rows: Vec<device::Model>,

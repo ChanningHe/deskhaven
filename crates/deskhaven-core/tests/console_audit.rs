@@ -1,5 +1,3 @@
-//! `ConsoleAuditLog`: rows on both backends, actors, redaction and bounded labels.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -148,7 +146,6 @@ async fn record_in_commits_and_rolls_back_with_the_caller_transaction() {
     .await;
 }
 
-/// Every column of the migrated schema, as `(table, column)`.
 async fn schema_columns(db: &TestDb) -> Vec<(String, String)> {
     let sql = match db.backend {
         Backend::Sqlite => {

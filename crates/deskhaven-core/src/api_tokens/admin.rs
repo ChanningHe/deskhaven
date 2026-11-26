@@ -1,7 +1,5 @@
-//! The console's view of API tokens (M3-12): a paged list with the creating account, and
-//! creation and revocation decided and audited by a [`TxGuard`] inside the write
-//! transaction (the rule "who may revoke whose token" is the API layer's; the guard sees
-//! the token and its creator's committed role).
+//! Who may revoke whose token is the API layer's rule; the guard sees the token and its
+//! creator's committed role.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::api_token;
@@ -18,15 +16,12 @@ use crate::pagination::{Page, PageRequest};
 use crate::text::contains_pattern;
 use crate::users::lock_active_owners;
 
-/// What a [`TxGuard`] of a token write sees: the token and its creator's committed role
-/// (`None`: a system token without creator).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenTarget {
     pub token: ApiToken,
     pub creator_role: Option<Role>,
 }
 
-/// The account that created a token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenCreator {
     pub id: i64,
@@ -34,11 +29,9 @@ pub struct TokenCreator {
     pub role: Role,
 }
 
-/// A stored token with its creator, for listings.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiTokenEntry {
     pub token: ApiToken,
-    /// `None` for a system token.
     pub creator: Option<TokenCreator>,
 }
 
@@ -73,8 +66,7 @@ pub struct ApiTokenSort {
     pub descending: bool,
 }
 
-/// Filters of [`ApiTokenService::page`]: `q` matches a substring of the name,
-/// case-insensitively (ASCII on SQLite) and literally. Default order: newest first.
+/// `q`: case-insensitive literal substring of the name, ASCII only on SQLite.
 #[derive(Clone, Debug, Default)]
 pub struct ApiTokenQuery {
     pub q: Option<String>,
@@ -83,7 +75,6 @@ pub struct ApiTokenQuery {
 }
 
 impl ApiTokenService {
-    /// One page of tokens, revoked and expired ones included.
     pub async fn page(&self, query: &ApiTokenQuery) -> Result<Page<ApiTokenEntry>, ApiTokenError> {
         let index = query.page.index().map_err(|p| ApiTokenError::Invalid {
             field: p.field,
@@ -121,7 +112,6 @@ impl ApiTokenService {
         })
     }
 
-    /// Token `id` with its creator.
     pub async fn entry(&self, id: i64) -> Result<Option<ApiTokenEntry>, ApiTokenError> {
         let found = api_token::Entity::find_by_id(id)
             .find_also_related(user::Entity)
@@ -130,16 +120,8 @@ impl ApiTokenService {
         Ok(found.map(ApiTokenEntry::from))
     }
 
-    /// [`revoke`](Self::revoke) with `guard` deciding on the token before and after, and
-    /// recording the audit row in the same transaction. The guard sees the creator's
-    /// committed role. Revoking a revoked token changes and records nothing. `false`: no
-    /// such token.
-    ///
-    /// Locks are taken in the order `UserService::edit` takes them: all active owners, then
-    /// the creator, then the acting account (in the guard), the token last. Disabling or
-    /// demoting the creator revokes its tokens under that order, so the two cannot
-    /// deadlock. Two revocations racing: the second finds the token revoked and rolls its
-    /// audit row back with it.
+    /// Locks follow `UserService::edit`'s order (active owners, creator, actor, token last), so a
+    /// concurrent disable or demotion of the creator cannot deadlock with it.
     pub async fn revoke_guarded(
         &self,
         id: i64,
@@ -184,7 +166,6 @@ impl ApiTokenService {
     }
 }
 
-/// The committed role of the creating account, key-share locked like `ensure_creator`.
 async fn creator_role<C: ConnectionTrait>(
     conn: &C,
     created_by: Option<i64>,

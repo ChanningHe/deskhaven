@@ -1,8 +1,3 @@
-//! What the web console needs of the registry (M3-05): paged device lists with presence,
-//! device details, the console's writes (owner, device group, note, status, delete) and
-//! device groups. Writes take a [`TxGuard`](crate::console_audit::TxGuard) that records the
-//! console audit row in the write's own transaction.
-
 mod connections;
 mod fleet;
 mod groups;
@@ -21,13 +16,12 @@ pub use write::DeviceUpdate;
 use deskhaven_db::entity::device::{self, DeviceStatus};
 use deskhaven_db::time::TimestampMs;
 
-/// A `devices` row as the console sees it: everything but the identity secrets (`uuid`,
-/// `pk`) and the sysinfo hash.
+/// Everything but the identity secrets (`uuid`, `pk`) and the sysinfo hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub id: i64,
     pub rustdesk_id: String,
-    /// Sysinfo, self-reported by the device (06 §2): never trust it.
+    /// Self-reported by the device: never trust it.
     pub hostname: Option<String>,
     pub username: Option<String>,
     pub os: Option<String>,
@@ -39,7 +33,7 @@ pub struct DeviceRecord {
     pub note: Option<String>,
     pub status: DeviceStatus,
     pub first_seen_at: TimestampMs,
-    /// As flushed from the presence table; the live value is in [`DeviceSummary::presence`].
+    /// As flushed; the live value is in [`DeviceSummary::presence`].
     pub last_seen_at: TimestampMs,
     pub last_ip: String,
     pub register_ip: String,

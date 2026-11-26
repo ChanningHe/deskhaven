@@ -1,8 +1,3 @@
-//! AddressBookService, the console's side: the paged list of shared books with counts, shares
-//! with subject names, peer search, guarded writes (audit snapshots in the write's own
-//! transaction, no secrets, rollback when the guard refuses) and the batch import of devices.
-//! Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -34,7 +29,6 @@ fn query(q: Option<&str>, sort: Option<BookSort>, page_no: u64, size: u64) -> Bo
     }
 }
 
-/// A guard that records the snapshots it sees under `action`.
 fn recording(db: &TestDb, action: &str) -> TxGuard<Value> {
     let log = ConsoleAuditLog::new(
         db.conn.clone(),
@@ -87,7 +81,6 @@ async fn register(db: &TestDb, rustdesk_id: &str, hostname: &str, os: &str) -> i
     id
 }
 
-/// The JSON of a stored snapshot column.
 fn json_of(snapshot: &Option<String>) -> Value {
     serde_json::from_str(snapshot.as_deref().unwrap()).unwrap()
 }

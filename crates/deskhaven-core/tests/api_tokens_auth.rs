@@ -1,7 +1,3 @@
-//! ApiTokenService checks (M2-19, 06 §3.2): scopes, malformed and unknown tokens, expiry,
-//! the creator's status and role (read time, and durable revocation) and the throttled
-//! `last_used_at`. Every test runs on SQLite and PostgreSQL.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -24,16 +20,13 @@ const MINUTE: Duration = Duration::from_secs(60);
 #[tokio::test]
 async fn a_token_authenticates_for_its_scopes_only() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let env = Env::new(db).await;
         let admin = env.admin("root").await;
         let (id, raw) = env.issue(Some(admin), &[Scope::Assign]).await;
 
-        // Act
         let granted = env.tokens.authenticate(&raw, Scope::Assign).await.unwrap();
         let denied = env.tokens.authenticate(&raw, Scope::Deploy).await;
 
-        // Assert
         assert_eq!(granted.token_id, id, "{}", db.backend);
         assert_eq!(granted.created_by, Some(admin), "{}", db.backend);
         assert_eq!(
@@ -114,18 +107,15 @@ async fn expired_tokens_do_not_authenticate() {
 #[tokio::test]
 async fn revoked_tokens_do_not_authenticate_and_revoke_is_idempotent() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let env = Env::new(db).await;
         let (id, raw) = env.issue(None, &[Scope::Deploy]).await;
 
-        // Act
         let first = env.tokens.revoke(id).await.unwrap();
         env.clock.advance(MINUTE);
         let again = env.tokens.revoke(id).await.unwrap();
         let unknown = env.tokens.revoke(id + 100).await.unwrap();
         let result = env.tokens.authenticate(&raw, Scope::Deploy).await;
 
-        // Assert
         assert!(first && again && !unknown, "{}", db.backend);
         assert_eq!(
             env.row(id).await.revoked_at,
@@ -198,24 +188,21 @@ async fn last_used_at_is_written_at_most_once_a_minute() {
     .await;
 }
 
-/// 06 §3.2 "禁用时吊销": disabling the creator revokes their tokens for good, so
-/// re-enabling a (possibly compromised) account resurrects none of them.
+/// Disabling the creator revokes their tokens for good, so re-enabling a (possibly compromised)
+/// account resurrects none of them.
 #[tokio::test]
 async fn disabling_the_creator_revokes_their_tokens_durably() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let env = Env::new(db).await;
         let admin = env.admin("dora").await;
         let other = env.admin("otto").await;
         let (id, raw) = env.issue(Some(admin), &[Scope::Deploy]).await;
         let (other_id, _) = env.issue(Some(other), &[Scope::Deploy]).await;
 
-        // Act
         env.users.set_status(admin, Status::Disabled).await.unwrap();
         env.users.set_status(admin, Status::Active).await.unwrap();
         let result = env.tokens.authenticate(&raw, Scope::Deploy).await;
 
-        // Assert
         let b = db.backend;
         assert!(
             matches!(result, Err(ApiTokenError::Revoked)),
@@ -228,17 +215,13 @@ async fn disabling_the_creator_revokes_their_tokens_durably() {
     .await;
 }
 
-/// Same for losing the administrator role: promoting the account again resurrects nothing.
-/// Owner -> admin keeps the tokens (still an administrator).
 #[tokio::test]
 async fn demoting_the_creator_to_user_revokes_their_tokens_durably() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let env = Env::new(db).await;
         let admin = env.admin("dean").await;
         let (id, raw) = env.issue(Some(admin), &[Scope::Assign]).await;
 
-        // Act
         let owner = env.admin("olga").await;
         env.users.set_role(owner, Role::Owner).await.unwrap();
         env.users.set_role(admin, Role::Owner).await.unwrap();
@@ -248,7 +231,6 @@ async fn demoting_the_creator_to_user_revokes_their_tokens_durably() {
         env.users.set_role(admin, Role::Admin).await.unwrap();
         let result = env.tokens.authenticate(&raw, Scope::Assign).await;
 
-        // Assert
         let b = db.backend;
         assert!(still.is_ok(), "{b}: {still:?}");
         assert!(

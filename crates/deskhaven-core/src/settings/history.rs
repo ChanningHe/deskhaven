@@ -1,5 +1,3 @@
-//! Read side of `settings_history`: the changes of one setting, newest first.
-
 use std::collections::HashMap;
 
 use deskhaven_config::settings::{Problem, lookup};
@@ -12,26 +10,21 @@ use serde_json::{Value as Json, json};
 use super::{SettingsError, SettingsService};
 use crate::pagination::{Page, PageRequest};
 
-/// One change of a setting. Values are public JSON; a sensitive setting's are always
-/// `{"set": bool}`, whatever the stored text says.
+/// A sensitive setting's values are always `{"set": bool}`, whatever the stored text says.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryEntry {
     pub version: i64,
     /// `None`: the key had no stored value before; `Some(null)`: it had an unusable one.
     pub old_value: Option<Json>,
-    /// The value after the change; for a reset, the default that applies again.
     pub new_value: Json,
     pub reset: bool,
     pub updated_by: Option<i64>,
-    /// The author's username, when the account still exists.
     pub updated_by_username: Option<String>,
-    /// Unix milliseconds.
     pub updated_at: i64,
     pub reason: Option<String>,
 }
 
 impl SettingsService {
-    /// Usernames of those of `ids` that still exist, for "last changed by".
     pub async fn authors(
         &self,
         ids: impl IntoIterator<Item = i64>,
@@ -39,8 +32,6 @@ impl SettingsService {
         Ok(usernames(&self.inner.db, ids).await?)
     }
 
-    /// One page of the history of `key`, newest first. An unknown key is
-    /// [`SettingsError::Invalid`].
     pub async fn history(
         &self,
         key: &str,
@@ -122,8 +113,6 @@ fn entry(
     }
 }
 
-/// `{"set": bool}` for whatever a sensitive setting's history holds: only the marker
-/// survives, anything else (it should not exist) counts as unset.
 fn mask(value: &Json) -> Json {
     match value.get("set").and_then(Json::as_bool) {
         Some(set) => json!({ "set": set }),

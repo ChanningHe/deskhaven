@@ -1,59 +1,36 @@
-//! The addresses to offer, from what the deployment knows.
-//!
-//! - ID server: the host of `public_url`, else the host the console was opened with (the
-//!   `Host` header; right when the operator browses to the public name, wrong behind a
-//!   tunnel, hence [`HostSource`]), plus the signal port when it is not the client's
-//!   default 21116. The port of `public_url` is the HTTP port and never used here.
-//! - API server: `public_url` without a trailing slash (the client strips one itself,
-//!   `common.dart:3589-3593`), empty when unset.
-//! - Relay server: never written into the string. A `relay-server` set on the controlled
-//!   client overrides the signal server's pick (07-hbbs-fork), which would switch rotation
-//!   and later relay changes off for every client that imported it. The configured relays
-//!   are only listed for information.
-//!
-//! A `Host` header naming this machine (`localhost`, loopback, unspecified) is no address a
-//! client elsewhere can use, so it counts as no host at all.
+//! The `Host` header fallback is right when the operator browses to the public name, wrong
+//! behind a tunnel, hence [`HostSource`]. The port of `public_url` is the HTTP port and never
+//! used. A relay is never written into the string: a `relay-server` set on the client overrides
+//! the signal server's pick, switching rotation and later relay changes off for every client
+//! that imported it.
 
 use deskhaven_config::settings::HostPort;
 use url::{Host, Url};
 
 use super::ServerConfig;
 
-/// The port the client assumes for an ID server address without one (hbbs).
 const DEFAULT_ID_PORT: u16 = 21116;
 
-/// Where the ID server host came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostSource {
-    /// `public_url`: the address operators chose for clients.
     PublicUrl,
-    /// The address the console was opened with; may not be reachable from clients.
     RequestHost,
-    /// Neither is usable.
     Unknown,
 }
 
-/// Everything [`ClientConfig::resolve`] reads.
 #[derive(Debug, Clone, Copy)]
 pub struct ConfigInput<'a> {
-    /// `public_url` as configured; blank = unset.
     pub public_url: &'a str,
-    /// The `Host` header of the console request, if any.
     pub request_host: Option<&'a str>,
-    /// `signal.port`.
     pub signal_port: u16,
-    /// `signal.relay_servers`.
     pub relay_servers: &'a [HostPort],
-    /// The hbbs public key (base64).
     pub public_key: &'a str,
 }
 
-/// The offered configuration and how it was derived.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientConfig {
     pub server: ServerConfig,
     pub host_source: HostSource,
-    /// Every configured relay as `host:port` (the config string pins at most one).
     pub relay_servers: Vec<String>,
 }
 
@@ -90,7 +67,6 @@ impl ClientConfig {
     }
 }
 
-/// `host[:port]` with the port left out when it is the client's default.
 fn with_port(host: &str, port: u16, default: u16) -> String {
     if port == default {
         host.to_owned()
@@ -99,7 +75,6 @@ fn with_port(host: &str, port: u16, default: u16) -> String {
     }
 }
 
-/// `scheme://host[:port][/path]`, no trailing slash.
 fn api_base(url: &Url) -> String {
     let Some(host) = url.host_str() else {
         return String::new();
@@ -109,8 +84,6 @@ fn api_base(url: &Url) -> String {
     format!("{}://{host}{port}{path}", url.scheme())
 }
 
-/// The host of a `Host` header (`name`, `name:port`, `[v6]:port`), lowercase, IPv6 in
-/// brackets; `None` for anything that is not just an authority.
 fn request_host(raw: Option<&str>) -> Option<String> {
     let url = Url::parse(&format!("http://{}/", raw?)).ok()?;
     let is_authority = url.path() == "/"
@@ -124,7 +97,6 @@ fn request_host(raw: Option<&str>) -> Option<String> {
     url.host_str().map(str::to_owned)
 }
 
-/// This machine, as seen from itself: `localhost`, loopback and unspecified addresses.
 fn is_local(host: &Host<&str>) -> bool {
     match host {
         Host::Domain(name) => *name == "localhost" || name.ends_with(".localhost"),

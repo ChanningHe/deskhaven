@@ -1,5 +1,4 @@
-//! Names of the accounts an audit row points at, looked up for the rows of one page. The
-//! audit tables keep ids only (the trail outlives its accounts); a missing name is a deleted
+//! Audit tables keep ids only (the trail outlives its accounts): a missing name is a deleted
 //! account, not an error.
 
 use std::collections::{BTreeSet, HashMap};
@@ -7,14 +6,12 @@ use std::collections::{BTreeSet, HashMap};
 use deskhaven_db::entity::{api_token, user};
 use sea_orm::{ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QuerySelect};
 
-/// A user an audit row refers to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuditUser {
     pub id: i64,
     pub username: String,
 }
 
-/// Usernames of `ids` that still exist.
 pub(super) async fn usernames<C: ConnectionTrait>(
     db: &C,
     ids: impl IntoIterator<Item = i64>,
@@ -34,7 +31,6 @@ pub(super) async fn usernames<C: ConnectionTrait>(
     Ok(rows.into_iter().collect())
 }
 
-/// Names of the API tokens in `ids` that still exist.
 pub(super) async fn token_names<C: ConnectionTrait>(
     db: &C,
     ids: impl IntoIterator<Item = i64>,
@@ -54,7 +50,6 @@ pub(super) async fn token_names<C: ConnectionTrait>(
     Ok(rows.into_iter().collect())
 }
 
-/// The user `id` points at, when it still exists.
 pub(super) fn user_of(names: &HashMap<i64, String>, id: Option<i64>) -> Option<AuditUser> {
     let id = id?;
     names.get(&id).map(|username| AuditUser {

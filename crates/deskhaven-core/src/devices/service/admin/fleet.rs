@@ -1,9 +1,3 @@
-//! Fleet totals for the overview page (M3-14): device counts, live connections and the
-//! distribution of the client versions the devices report.
-//!
-//! Online devices and live connections come from the presence table (no query); the totals
-//! and the distribution are two aggregate queries and one count over `devices`.
-
 use deskhaven_db::entity::device;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
@@ -13,32 +7,24 @@ use sea_orm::{
 use crate::devices::DeviceError;
 use crate::devices::service::DeviceService;
 
-/// The devices that report one client version, for the distribution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionCount {
-    /// Self-reported by the device (06 §2): never trust it.
+    /// Self-reported by the device: never trust it.
     pub version: String,
     pub count: u64,
 }
 
-/// What [`DeviceService::fleet`] reports.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FleetStats {
     pub total: u64,
-    /// Devices online now.
     pub online: u64,
-    /// Connections those devices reported in their latest heartbeat.
     pub connections: u64,
-    /// The most common client versions, most devices first, ties in version order.
     pub top_versions: Vec<VersionCount>,
-    /// Devices whose version is not among `top_versions`.
     pub other_versions: u64,
-    /// Devices that never reported a version.
     pub unknown_versions: u64,
 }
 
 impl DeviceService {
-    /// Fleet totals; the version distribution lists the `top` most common versions.
     pub async fn fleet(&self, top: u64) -> Result<FleetStats, DeviceError> {
         let db = &self.inner.db;
         let reported = device::Column::Version

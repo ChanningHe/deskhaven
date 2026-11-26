@@ -1,14 +1,6 @@
-//! The deskhaven account of a verified directory user, provisioned at its first login
-//! (its role and groups are then synchronized at every login, `sync`).
-//!
-//! Provisioning (like OIDC's, M2-10): a new active `ldap` account named by the directory's
-//! username attribute value that equals the typed username (so it is a valid username,
-//! `[A-Za-z0-9._@-]` 1–64, and keys the lockout like the typed one), no local password.
-//! The directory's address is stored unverified and only when no other account holds it
-//! (directories may let users edit their own address: never a link target, never a
-//! squatter). The display name is the directory's, without control, bidi-override or
-//! zero-width characters. Accounts are matched by username only; an existing local or
-//! OIDC account of that name never reaches the directory (see `login`).
+//! The directory's address is stored unverified and only when no other account holds it: users
+//! may edit their own address in a directory, so it is never a link target. Accounts are matched
+//! by username only.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::user;
@@ -20,7 +12,6 @@ use crate::text;
 use crate::users::lookup::{find_by_email, find_by_username, is_valid_email};
 use crate::users::{AuthError, AuthSource, Credential, NewUser, UserError};
 
-/// Longest display name taken from the directory (the user service's limit).
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
 
 fn sync_failed(err: impl std::error::Error + Send + Sync + 'static) -> AuthError {
@@ -28,8 +19,7 @@ fn sync_failed(err: impl std::error::Error + Send + Sync + 'static) -> AuthError
 }
 
 impl LdapService {
-    /// Creates the account of `found` as `username`. A concurrent login that created it
-    /// first is fine: its account is used.
+    /// A concurrent login that created it first is fine: its account is used.
     pub(crate) async fn provision(
         &self,
         settings: &DirectorySettings,
@@ -65,9 +55,7 @@ impl LdapService {
     }
 }
 
-/// The directory's name cleaned like every imported name ([`text::clean_import`]: control,
-/// bidi-override and zero-width characters make a name read as another in the console), cut
-/// to the user service's limit; blank leaves the username as the display name.
+/// Bidi-override and zero-width characters would make a name read as another in the console.
 fn display_name(name: Option<&str>) -> String {
     text::clean_import(name.unwrap_or_default(), MAX_DISPLAY_NAME_CHARS)
 }

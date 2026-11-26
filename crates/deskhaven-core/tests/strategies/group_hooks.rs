@@ -1,5 +1,3 @@
-//! Group commit hooks run in a task the caller cannot cancel, and only for real changes.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -16,7 +14,6 @@ use super::support::{Ctx, ctx, device_inputs, opts};
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Records every [`GroupChange`] the group service reports.
 fn record(c: &Ctx) -> UnboundedReceiver<GroupChange> {
     let (tx, rx) = unbounded_channel();
     c.groups.register_commit_hook(Arc::new(move |change| {
@@ -25,7 +22,7 @@ fn record(c: &Ctx) -> UnboundedReceiver<GroupChange> {
     rx
 }
 
-/// Polls the future once, then drops it: what a cancelled request does.
+/// What a cancelled request does.
 async fn drop_after_first_poll<T>(fut: impl Future<Output = T>) {
     let mut fut = std::pin::pin!(fut);
     let _ = fut.as_mut().poll(&mut Context::from_waker(Waker::noop()));

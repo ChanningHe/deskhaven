@@ -1,26 +1,9 @@
-//! Shares of shared books, and the cleanup when a share subject is deleted.
+//! Lock order (PostgreSQL), everywhere: subject row -> book rows -> share rows.
 //!
-//! Lock order (PostgreSQL), everywhere: **subject row -> book rows -> share rows**.
-//! - `set_share`: the subject (`FOR KEY SHARE`: only its deletion must wait), then the book
-//!   (`FOR UPDATE`), then the share row it upserts.
-//! - `remove_share`, `delete_shared`, peer and tag writes: the book, then its share rows.
-//! - Deleting a user (`forget_user` inside `UserService::delete`): the user, then every book
-//!   it owns (`FOR UPDATE`, by id, *before* touching shares), then the share rows naming
-//!   it; the `ON DELETE SET NULL` that follows finds those books already locked.
-//! - Deleting a group: the group, then the share rows naming it (groups own no books).
-//!
-//! - A console write (`*_guarded`) re-reads the acting account (`FOR SHARE`, `TxGuard`) *after*
-//!   it locked the book: book -> actor row, the reverse of the order above. It cannot be
-//!   fixed by locking the actor first (the guard runs after the write, inside the service),
-//!   so deleting an administrator while that administrator writes a book it owns can form a
-//!   cycle. PostgreSQL aborts one side with a deadlock error (SQLSTATE `40P01`) and nothing
-//!   is written; the admin API reports it as a retryable 503
-//!   (`deskhaven_db::is_transient_conflict`).
-//!
-//! A share naming the owner of its own book would let the owner's deletion wait for a share
-//! row held by a writer of that book while the writer waits for the book; `set_share`
-//! refuses it (the owner already has full control), and `forget_user` locking the books
-//! first also covers such rows written earlier.
+//! A console write re-reads the acting account after it locked the book, the reverse order:
+//! deleting an administrator while it writes a book it owns can deadlock, and PostgreSQL
+//! aborts one side (a retryable error, nothing written). `set_share` refuses a share naming
+//! the book's owner: the owner's deletion would wait on a share row held by a book writer.
 
 use deskhaven_db::begin_write;
 use deskhaven_db::entity::address_book::{self, Kind};
@@ -41,7 +24,6 @@ use super::error::{AddressBookError, invalid};
 use super::{AddressBookService, Rule, snapshot};
 use crate::console_audit::TxGuard;
 
-/// Whom a share grants a book to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Subject {
     User(i64),
@@ -64,7 +46,6 @@ impl Subject {
     }
 }
 
-/// One grant of a shared book.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Share {
     pub subject: Subject,
@@ -72,8 +53,6 @@ pub struct Share {
 }
 
 impl AddressBookService {
-    /// Grants (or changes) `rule` on a shared book to `subject`; needs full control, and
-    /// rule 3 only by the owner or the console (see [`is_steward`]).
     pub async fn set_share(
         &self,
         actor: Actor,
@@ -85,8 +64,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`set_share`](Self::set_share), with `guard` deciding on the share before (`None` for
-    /// a new grant) and after.
     pub async fn set_share_guarded(
         &self,
         actor: Actor,
@@ -125,8 +102,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Revokes the share of `subject`, if any; needs full control, and the owner or the
-    /// console for a rule 3 share.
     pub async fn remove_share(
         &self,
         actor: Actor,
@@ -137,8 +112,6 @@ impl AddressBookService {
             .await
     }
 
-    /// [`remove_share`](Self::remove_share), with `guard` deciding on the revoked share
-    /// (`subject` had none: nothing changes and the guard is not consulted).
     pub async fn remove_share_guarded(
         &self,
         actor: Actor,
@@ -168,7 +141,6 @@ impl AddressBookService {
         Ok(())
     }
 
-    /// Every share of a book, groups first, then users, each by id; needs full control.
     pub async fn shares(&self, actor: Actor, guid: &str) -> Result<Vec<Share>, AddressBookError> {
         let (book, _) = authorize(&self.db, actor, guid, Rule::FullControl, false).await?;
         let rows = address_book_share::Entity::find()
@@ -185,7 +157,6 @@ impl AddressBookService {
     }
 }
 
-/// Grants `rule` to `subject`, replacing the rule it had.
 async fn upsert_share(
     tx: &DatabaseTransaction,
     book_id: i64,
@@ -213,8 +184,6 @@ async fn upsert_share(
     Ok(())
 }
 
-/// A grant from `current` to `new` (`None`: no share) is a steward's business when it
-/// involves rule 3; anyone else with full control may only deal in rules 1 and 2.
 fn ensure_may_grant(
     actor: Actor,
     book: &address_book::Model,
@@ -228,9 +197,8 @@ fn ensure_may_grant(
     }
 }
 
-/// Whether the subject row exists. On PostgreSQL it stays locked `FOR KEY SHARE` for the
-/// rest of the transaction: its deletion waits, other updates of the row do not. (SQLite has
-/// no row locks; its write transaction already excludes every other writer.)
+/// PostgreSQL: `FOR KEY SHARE` until the transaction ends, so a deletion waits but other
+/// updates of the row do not. SQLite's write transaction already excludes every other writer.
 async fn lock_subject(db: &impl ConnectionTrait, subject: Subject) -> Result<bool, DbErr> {
     let found = match subject {
         Subject::User(id) => {
@@ -255,11 +223,8 @@ async fn lock_subject(db: &impl ConnectionTrait, subject: Subject) -> Result<boo
     Ok(found.is_some())
 }
 
-/// Address book data of a user being deleted, inside the deleting transaction (which holds
-/// the user row): first every book the user owns is locked, in id order, then the personal
-/// book (peers and tags cascade) and every share naming the user are deleted (see the module
-/// docs for the lock order). The personal book must go before the user row: the database
-/// refuses to orphan one.
+/// Locks every owned book in id order first (the lock order above). The personal book must
+/// go before the user row: the database refuses to orphan one.
 pub(crate) async fn forget_user(tx: &DatabaseTransaction, user_id: i64) -> Result<(), DbErr> {
     address_book::Entity::find()
         .select_only()
@@ -278,7 +243,6 @@ pub(crate) async fn forget_user(tx: &DatabaseTransaction, user_id: i64) -> Resul
     delete_shares_of(tx, Subject::User(user_id)).await
 }
 
-/// Every share naming a group being deleted, inside the deleting transaction.
 pub(crate) async fn forget_group(tx: &DatabaseTransaction, group_id: i64) -> Result<(), DbErr> {
     delete_shares_of(tx, Subject::Group(group_id)).await
 }

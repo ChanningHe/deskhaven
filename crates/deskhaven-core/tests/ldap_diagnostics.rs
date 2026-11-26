@@ -1,7 +1,3 @@
-//! "Test connection" / "test user" diagnostics (M3-09 builds on them): one structured
-//! result per step, later steps skipped after a failure, escaped search input, and no
-//! password in any result or log line. Both backends.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,15 +1,6 @@
-//! Provider metadata (discovery document + JWKS), cached per provider for [`CACHE_TTL`].
-//!
-//! A stale entry is refetched on next use; an ID token signed by a key the cached JWKS lacks
-//! (key rotation) forces one refetch, at most once per [`MIN_REFRESH`] per provider, so
-//! forged `kid`s cannot make deskhaven hammer the IdP. A failed fetch is remembered for
-//! [`NEGATIVE_TTL`]: during an IdP outage, logins fail at once instead of each waiting for
-//! its own timeout. Provider writes drop both. Discovery checks that the document's issuer
-//! equals the configured one; the endpoints it names are checked against the provider's
-//! [`EndpointPolicy`].
-//!
-//! Failure reasons name the kind of failure only (status, transport, parse, policy), never
-//! upstream bodies, which can echo anything.
+//! A key-rotation refetch happens at most once per [`MIN_REFRESH`] per provider, so forged `kid`s
+//! cannot make us hammer the IdP; a failed fetch is remembered for [`NEGATIVE_TTL`], so logins fail
+//! at once during an outage. Failure reasons never carry upstream bodies, which can echo anything.
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, RwLock};
@@ -22,21 +13,16 @@ use super::http::{FetchError, HttpFetch, ProviderHttp};
 use super::url_policy::EndpointPolicy;
 use crate::clock::SharedClock;
 
-/// How long fetched metadata is used before it is fetched again.
 pub(crate) const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
-/// Minimum age of an entry before a key-rotation refetch.
 pub(crate) const MIN_REFRESH: Duration = Duration::from_secs(60);
-/// How long a failed fetch is answered from memory.
 pub const NEGATIVE_TTL: Duration = Duration::from_secs(30);
 
-/// Metadata of one provider, checked: issuer as configured, usable endpoints.
 pub(crate) struct Discovered {
     pub(crate) metadata: CoreProviderMetadata,
     pub(crate) policy: EndpointPolicy,
     fetched: Duration,
 }
 
-/// A recent failure: when, and the reason.
 struct Failed {
     at: Duration,
     reason: String,
@@ -49,12 +35,9 @@ pub(crate) struct Discovery {
     failures: RwLock<HashMap<i64, Failed>>,
 }
 
-/// Which entry a lookup accepts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Freshness {
-    /// Any entry younger than [`CACHE_TTL`].
     Cached,
-    /// Refetch unless the entry is younger than [`MIN_REFRESH`].
     Refresh,
 }
 
@@ -77,7 +60,6 @@ impl Discovery {
         write(&self.failures).remove(&provider_id);
     }
 
-    /// The provider's metadata; `Err` is a loggable reason (no secrets, no upstream text).
     pub(crate) async fn get(
         &self,
         provider_id: i64,
@@ -154,8 +136,7 @@ fn write<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
     lock.write().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The browser is sent to the authorization endpoint (it must not be `javascript:` or plain
-/// http); the token endpoint is required for the code flow.
+/// The browser is sent to the authorization endpoint: it must not be `javascript:` or plain http.
 fn check_endpoints(metadata: &CoreProviderMetadata, policy: EndpointPolicy) -> Result<(), String> {
     policy
         .check(metadata.authorization_endpoint().url())
@@ -168,7 +149,6 @@ fn check_endpoints(metadata: &CoreProviderMetadata, policy: EndpointPolicy) -> R
         .map_err(|reason| format!("token endpoint refused: {reason}"))
 }
 
-/// What went wrong, without the document's or response's content.
 fn discovery_kind(err: &DiscoveryError<FetchError>) -> String {
     match err {
         DiscoveryError::Request(fetch) => fetch_kind(fetch),
@@ -182,8 +162,7 @@ fn discovery_kind(err: &DiscoveryError<FetchError>) -> String {
     }
 }
 
-/// Our own transport errors carry no upstream text; the reqwest error is reduced to its
-/// kind (its message can contain the URL, which is fine, but nothing else is needed).
+/// The reqwest error is reduced to its kind.
 pub(crate) fn fetch_kind(err: &FetchError) -> String {
     match err {
         FetchError::Transport(inner) if inner.is_timeout() => "request timed out".to_owned(),

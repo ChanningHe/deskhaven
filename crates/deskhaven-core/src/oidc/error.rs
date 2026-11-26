@@ -1,5 +1,5 @@
-//! Errors of the OIDC service. Messages never contain secrets (client secret, state, code,
-//! verifier, tokens); upstream details stay in the source chain and the log.
+//! Messages never contain secrets (client secret, state, code, verifier, tokens); upstream
+//! details stay in the source chain and the log.
 
 use sea_orm::DbErr;
 
@@ -8,7 +8,6 @@ use crate::crypto::CryptoError;
 use crate::login_events::LoginResult;
 use crate::users::UserError;
 
-/// Why a provider operation failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ProviderError {
@@ -18,15 +17,12 @@ pub enum ProviderError {
     Conflict,
     #[error("invalid {field}: {reason}")]
     Invalid { field: &'static str, reason: String },
-    /// Declared in the bootstrap configuration: read-only here (05 §4.1).
     #[error("the OIDC provider is managed by the configuration file")]
     ManagedByConfig,
-    /// Accounts are linked to it (`user_identities`): disable it, or unlink them first.
     #[error("the OIDC provider still has linked accounts")]
     InUse,
     #[error("sealing the client secret failed")]
     Crypto(#[source] CryptoError),
-    /// A [`TxGuard`](crate::console_audit::TxGuard) declined the change (nothing was written).
     #[error(transparent)]
     Refused(#[from] Refused),
     #[error("OIDC provider storage failed")]
@@ -48,23 +44,17 @@ impl From<GuardError> for ProviderError {
     }
 }
 
-/// Why a login could not start.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum OidcError {
-    /// No `public_url`, so there is no callback URL (06 §3.4).
     #[error("OIDC login is not configured")]
     NotConfigured,
-    /// Unknown or disabled provider name.
     #[error("unknown OIDC provider")]
     UnknownProvider,
-    /// The device fields are not acceptable for a client session.
     #[error("invalid device")]
     InvalidDevice,
-    /// Discovery failed or returned unusable endpoints.
     #[error("the OIDC provider is unavailable: {0}")]
     Unavailable(String),
-    /// A link flow cannot start for this account (M4-09).
     #[error("the account cannot link this provider: {0:?}")]
     LinkRefused(LinkFailure),
     #[error("OIDC login state failed")]
@@ -83,16 +73,13 @@ impl From<CryptoError> for OidcError {
     }
 }
 
-/// Why a callback was not processed at all: nothing about a flow is known, so nothing is
-/// recorded.
+/// Nothing about a flow is known, so nothing is recorded.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CallbackError {
-    /// Unknown, expired or already used `state` (or no state).
     #[error("unknown, expired or used OIDC state")]
     InvalidState,
-    /// Another request is verifying this link flow right now: ask again shortly (the code
-    /// is exchanged only once).
+    /// The code is exchanged only once.
     #[error("the OIDC link flow is being verified")]
     Verifying,
     #[error("OIDC callback failed")]
@@ -105,12 +92,10 @@ impl From<DbErr> for CallbackError {
     }
 }
 
-/// Why a poll does not answer with a login or a flow outcome.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PollError {
-    /// Unknown, expired or already handed-out code, or a device other than the one the flow
-    /// was started from. Indistinguishable on purpose.
+    /// Indistinguishable on purpose.
     #[error("unknown, expired or used OIDC code")]
     Invalid,
     #[error("OIDC poll failed")]
@@ -123,22 +108,14 @@ impl From<DbErr> for PollError {
     }
 }
 
-/// How a claimed flow failed. Stored in `oidc_flows.error` by [`code`](Self::code) and
-/// reported to the poller; each has a login event result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
-    /// The IdP returned an error (user cancelled, consent denied) or no code.
     Denied,
-    /// Discovery or the token request failed, or the provider was disabled meanwhile.
     Unavailable,
-    /// The token response or ID token failed verification (signature, issuer, audience,
-    /// expiry, nonce, missing ID token or subject).
     InvalidToken,
-    /// No linked account and none may be linked or created (06 §3.4).
     NoLinkedAccount,
     Disabled,
     Unverified,
-    /// Creating the account failed (no usable username, or a concurrent conflict).
     ProvisioningFailed,
 }
 
@@ -153,7 +130,6 @@ impl Failure {
         Self::ProvisioningFailed,
     ];
 
-    /// Stored form (`oidc_flows.error`): the login event result of the failure.
     pub fn code(self) -> &'static str {
         LoginResult::from(self).as_str()
     }
@@ -163,27 +139,19 @@ impl Failure {
     }
 }
 
-/// Why a link flow did not link (M4-09). Nothing was written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkFailure {
-    /// The IdP returned an error (user cancelled, consent denied) or no code.
     Denied,
-    /// Discovery or the token request failed, or the provider was disabled meanwhile.
     Unavailable,
-    /// The token response or ID token failed verification.
     InvalidToken,
-    /// The identity is linked to another account.
     IdentityTaken,
-    /// The account already has (another) identity at this provider.
     ProviderLinked,
-    /// LDAP accounts: the directory decides on them, an OIDC login would outlive it.
+    /// The directory decides on LDAP accounts; an OIDC login would outlive it.
     DirectoryAccount,
-    /// The account is gone or no longer active.
     AccountInactive,
 }
 
 impl LinkFailure {
-    /// Stable machine name (the admin API's `details.reason`).
     pub const fn code(self) -> &'static str {
         match self {
             Self::Denied => "denied",
@@ -196,7 +164,6 @@ impl LinkFailure {
         }
     }
 
-    /// The link outcome of a failed token verification step.
     pub(crate) const fn of(failure: Failure) -> Self {
         match failure {
             Failure::Denied => Self::Denied,
@@ -206,17 +173,13 @@ impl LinkFailure {
     }
 }
 
-/// Why listing or removing an identity failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum IdentityError {
-    /// No such identity (or not one of the given account's).
     #[error("identity not found")]
     NotFound,
-    /// The only identity of an account that signs in through OIDC alone.
     #[error("the account's last OIDC identity cannot be removed")]
     LastIdentity,
-    /// The caller's [`TxGuard`](crate::console_audit::TxGuard) declined the change.
     #[error(transparent)]
     Refused(#[from] Refused),
     #[error("identity storage failed")]

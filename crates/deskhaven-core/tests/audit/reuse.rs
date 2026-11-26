@@ -1,7 +1,3 @@
-//! Connection ids are a per-process counter of the client: after a restart an old id names a
-//! new connection. A finished or stale unbound row (session id 0) must not swallow the new
-//! connection's records. And records of one connection racing each other still merge.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;
@@ -11,22 +7,18 @@ use deskhaven_db::testing::{TestDb, each_migrated_backend};
 
 use super::support::{SESSION, authorized, closed, ctx, new_conn};
 
-/// Session id prefix of an unbound row whose key was freed for a later connection.
 const RETIRED: &str = "0#";
 
 #[tokio::test]
 async fn a_connection_closed_before_login_frees_its_conn_id() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
         c.send("b", closed(7, 0)).await;
 
-        // Act
         let reopened = c.send("c", new_conn(7)).await;
         let reclosed = c.send("d", closed(7, 0)).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             (reopened, reclosed),
@@ -56,17 +48,14 @@ async fn a_connection_closed_before_login_frees_its_conn_id() {
 #[tokio::test]
 async fn a_stale_unbound_row_does_not_take_a_new_connection() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         c.send("a", new_conn(7)).await;
         let stale = c.sessions().await[0].clone();
         c.clock.advance(PAIRING_WINDOW + Duration::from_secs(1));
 
-        // Act
         let opened = c.send("b", new_conn(7)).await;
         c.send("c", authorized(7, SESSION)).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(opened, Ingest::Stored, "{b}");
         let rows = c.sessions().await;
@@ -90,11 +79,9 @@ async fn a_stale_unbound_row_does_not_take_a_new_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_records_of_one_connection_merge() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let c = ctx(db).await;
         const CONNS: i64 = 20;
 
-        // Act
         let mut tasks = Vec::new();
         for conn_id in 0..CONNS {
             for (kind, record) in [
@@ -117,7 +104,6 @@ async fn racing_records_of_one_connection_merge() {
             );
         }
 
-        // Assert
         let rows = c.sessions().await;
         assert_eq!(rows.len(), CONNS as usize, "{}", db.backend);
         assert!(

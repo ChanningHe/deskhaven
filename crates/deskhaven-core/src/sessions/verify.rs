@@ -1,6 +1,3 @@
-//! Token validation: cache, then database (with the owner's current status), then the
-//! throttled `last_used_at` touch.
-
 use deskhaven_db::entity::session;
 use deskhaven_db::entity::user::{self, Status};
 use sea_orm::sea_query::Expr;
@@ -13,13 +10,8 @@ use super::{
 };
 
 impl SessionService {
-    /// The principal of a presented token, which must belong to a session of `expected`
-    /// kind (a console token is no client credential, and vice versa).
-    ///
-    /// Unauthenticated outcomes (see [`SessionError::is_unauthenticated`]): malformed or
-    /// unknown token, wrong kind, revoked, absolutely or idle expired, owner not active or
-    /// deleted. Database failures reading the session are [`SessionError::Database`]; a
-    /// failed `last_used_at` touch is only logged.
+    /// A console token is no client credential, and vice versa. A failed `last_used_at` touch is only
+    /// logged.
     pub async fn authenticate(
         &self,
         token: &str,
@@ -36,10 +28,7 @@ impl SessionService {
             .await
     }
 
-    /// [`authenticate`](Self::authenticate) without the database read: the outcome when
-    /// the token's session is in the cache (or the token is malformed), else
-    /// [`CachedAuth::Miss`]. Lets callers rate-limit only the requests that would read the
-    /// database. A hit may still write (the throttled `last_used_at` touch).
+    /// Lets callers rate-limit only the requests that would read the database.
     pub async fn authenticate_cached(&self, token: &str, expected: SessionKind) -> CachedAuth {
         let Some(hash) = TokenHash::of_presented(token) else {
             return CachedAuth::Hit(Err(SessionError::InvalidToken));
@@ -55,18 +44,13 @@ impl SessionService {
     }
 }
 
-/// Outcome of [`SessionService::authenticate_cached`].
 #[derive(Debug)]
 pub enum CachedAuth {
-    /// Decided without reading the database.
     Hit(Result<SessionPrincipal, SessionError>),
-    /// Not cached: only [`SessionService::authenticate`] can tell.
     Miss,
 }
 
 impl Core {
-    /// Expiry, kind and touch checks of a session from the cache (`fill: None`) or the
-    /// database (`fill`: the generation seen before the read, to cache it race-free).
     async fn validated(
         &self,
         hash: &TokenHash,
@@ -91,8 +75,6 @@ impl Core {
         core.touch_if_due(hash, &session, now).await?;
         Ok(session.principal)
     }
-    /// The session and its owner from the database, plus the cache generation seen before
-    /// the read (for a race-free fill).
     async fn load(
         &self,
         hash: &TokenHash,
@@ -125,10 +107,8 @@ impl Core {
         Ok((session, seen))
     }
 
-    /// Writes `last_used_at = now` when the recorded use is at least [`TOUCH_INTERVAL`] old.
-    /// The update only matches an unrevoked row, so it doubles as a revocation re-check: no
-    /// row is [`SessionError::Revoked`]. A failed write is logged and the request allowed
-    /// (the session was just validated; the next request retries the touch).
+    /// The update only matches an unrevoked row, so it doubles as a revocation re-check. A failed
+    /// write is logged and the request allowed.
     async fn touch_if_due(
         &self,
         hash: &TokenHash,

@@ -1,30 +1,10 @@
-//! The strategy cache and the version (`modified_at`) clients compare.
+//! Every change that can alter an effective strategy invalidates after commit, so a heartbeat costs
+//! a few hash lookups and no database access.
 //!
-//! One immutable [`Snapshot`] of every assignment (with the options it points at and the
-//! members of assigned user groups) is loaded on first use and served until anything that
-//! can change an effective strategy happens: strategy or assignment writes, deletion of a
-//! user, group, device group or device, membership changes. Each of those calls
-//! [`StrategyCache::invalidate`] after its transaction committed. Computing the effective
-//! strategy of a device is then a few hash lookups and no database access, which is what the
-//! 15 s heartbeat of every device needs.
-//!
-//! **Version.** The cache keeps one counter in unix milliseconds. It starts at the clock
-//! reading when the cache is created (a restart counts as a change, so clients refetch once)
-//! and every invalidation moves it to `max(now, previous + 1)`: strictly increasing even
-//! when the clock does not move, and never lower than a value already handed out. Every
-//! device's [`EffectiveStrategy::modified_at`] is this counter (or, if later, the device's
-//! own `changed_at`). One global counter over-notifies (a change to one group's strategy
-//! makes every device refetch once) but can never miss a change, including removals, which a
-//! "newest input timestamp" cannot see. Edits made by another process are not noticed.
-//!
-//! The counter is in-memory: after a restart on a wall clock that is behind the maximum
-//! issued before, it can be lower than a value a client holds. Clients must therefore be
-//! served on `server != client`, never `server > client` (see
-//! [`EffectiveStrategy::modified_at`](super::EffectiveStrategy::modified_at)).
-//!
-//! **Fill race.** A reader that missed takes a [`Ticket`] (generation and version) before
-//! it reads the database and stores its snapshot only if the generation is unchanged, so an
-//! invalidation can never be overwritten by a snapshot read before it.
+//! One global version over-notifies but can never miss a change, removals included. It is
+//! in-memory: after a restart on a slower wall clock it can be lower than a client's, so clients
+//! are served on `server != client`, never `server > client`. A fill stores its snapshot only if no
+//! invalidation happened since its ticket.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -32,7 +12,6 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use super::effective::Snapshot;
 use crate::clock::SharedClock;
 
-/// Shared handle; clones see the same snapshot and version.
 #[derive(Clone)]
 pub struct StrategyCache {
     inner: Arc<Inner>,
@@ -47,11 +26,9 @@ struct Inner {
 struct State {
     snapshot: Option<Arc<Snapshot>>,
     generation: u64,
-    /// Unix ms; see the module documentation.
     version: i64,
 }
 
-/// What a reader that missed must present to [`StrategyCache::store`].
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Ticket {
     generation: u64,
@@ -79,8 +56,7 @@ impl StrategyCache {
         }
     }
 
-    /// Drops the snapshot and advances the version. Call after any committed change that can
-    /// alter the effective strategy of some device. Cheap; safe to call spuriously.
+    /// Cheap; safe to call spuriously.
     pub fn invalidate(&self) {
         let now = self.inner.clock.now_ms();
         let mut state = self.lock();
@@ -89,18 +65,14 @@ impl StrategyCache {
         state.version = now.max(state.version.saturating_add(1));
     }
 
-    /// The current version (unix ms): what `modified_at` of a device without its own
-    /// `changed_at` is.
     pub fn version(&self) -> i64 {
         self.lock().version
     }
 
-    /// Whether a snapshot is currently held (`false` right after an invalidation).
     pub fn is_loaded(&self) -> bool {
         self.lock().snapshot.is_some()
     }
 
-    /// How many snapshots were read from the database so far.
     pub fn loads(&self) -> u64 {
         self.inner.loads.load(Ordering::Relaxed)
     }
@@ -116,7 +88,6 @@ impl StrategyCache {
         }
     }
 
-    /// Keeps `snapshot` unless an invalidation happened since `ticket` was taken.
     pub(super) fn store(&self, ticket: Ticket, snapshot: &Arc<Snapshot>) {
         self.inner.loads.fetch_add(1, Ordering::Relaxed);
         let mut state = self.lock();
