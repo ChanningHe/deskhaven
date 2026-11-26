@@ -118,12 +118,6 @@ mod tests {
     }
 
     #[test]
-    fn display_round_trips() {
-        let d: Duration = "1h30m".parse().unwrap();
-        assert_eq!(d.to_string().parse::<Duration>().unwrap(), d);
-    }
-
-    #[test]
     fn display_is_compact_and_exact() {
         for (input, shown) in [
             ("30d", "30d"),

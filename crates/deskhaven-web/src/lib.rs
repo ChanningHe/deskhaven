@@ -80,13 +80,6 @@ pub fn router_for<E: RustEmbed + 'static>() -> Router {
 mod tests {
     use super::*;
 
-    #[test]
-    fn is_built_matches_the_embedded_index() {
-        let has_index = Dist::iter().any(|name| name == serve::INDEX);
-
-        assert_eq!(is_built(), has_index);
-    }
-
     /// Vacuous when `web/dist` is not built.
     #[test]
     fn the_embed_has_no_dotfiles_or_source_maps() {

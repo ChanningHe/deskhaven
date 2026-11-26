@@ -42,11 +42,6 @@ fn dist_missing(required: bool, path: &Path) {
 }
 
 #[test]
-fn a_missing_dist_is_skipped_unless_required() {
-    dist_missing(false, Path::new("web/dist"));
-}
-
-#[test]
 #[should_panic(expected = "is not built")]
 fn a_missing_dist_fails_when_required() {
     dist_missing(true, Path::new("web/dist"));

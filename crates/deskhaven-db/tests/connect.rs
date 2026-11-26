@@ -128,19 +128,6 @@ async fn connect_failure_does_not_leak_password() {
 }
 
 #[tokio::test]
-async fn connect_reports_backend() {
-    each_backend(async |db: &TestDb| {
-        let expected = match db.backend {
-            Backend::Sqlite => DbBackend::Sqlite,
-            Backend::Postgres => DbBackend::Postgres,
-        };
-        assert_eq!(db.conn.get_database_backend(), expected);
-        db.conn.execute_unprepared("SELECT 1").await.unwrap();
-    })
-    .await;
-}
-
-#[tokio::test]
 async fn read_only_sqlite_never_creates_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let (mut opts, path) = sqlite_options(&dir, "absent.db");

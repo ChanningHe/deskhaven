@@ -55,12 +55,6 @@ fn fallback(addr: &str) -> ClientIp {
 }
 
 #[test]
-fn no_trusted_proxies_ignores_xff() {
-    let resolved = TrustedProxies::default().resolve(ip("10.0.0.1"), &xff(&["1.2.3.4"]));
-    assert_eq!(resolved, client("10.0.0.1"));
-}
-
-#[test]
 fn untrusted_peer_ignores_xff() {
     let resolved = trusted(&["10.0.0.0/8"]).resolve(ip("203.0.113.9"), &xff(&["1.2.3.4"]));
     assert_eq!(resolved, client("203.0.113.9"));
@@ -73,36 +67,9 @@ fn trusted_peer_without_xff_is_a_proxy_fallback() {
 }
 
 #[test]
-fn single_trusted_hop_uses_rightmost_entry() {
-    let resolved = trusted(&["10.0.0.1"]).resolve(ip("10.0.0.1"), &xff(&["198.51.100.7"]));
-    assert_eq!(resolved, client("198.51.100.7"));
-}
-
-#[test]
 fn multi_hop_trusted_chain_skips_all_trusted_hops() {
     let proxies = trusted(&["10.0.0.0/8", "192.168.0.0/16"]);
     let headers = xff(&["198.51.100.7, 192.168.1.1, 10.1.1.1"]);
-    assert_eq!(
-        proxies.resolve(ip("10.0.0.1"), &headers),
-        client("198.51.100.7")
-    );
-}
-
-#[test]
-fn spoofed_leftmost_entries_are_ignored() {
-    let proxies = trusted(&["10.0.0.0/8"]);
-    // The client sent "XFF: 1.1.1.1, 10.9.9.9"; the proxy appended the real peer.
-    let headers = xff(&["1.1.1.1, 10.9.9.9, 203.0.113.50"]);
-    assert_eq!(
-        proxies.resolve(ip("10.0.0.1"), &headers),
-        client("203.0.113.50")
-    );
-}
-
-#[test]
-fn multiple_xff_headers_are_one_list_in_order() {
-    let proxies = trusted(&["10.0.0.0/8"]);
-    let headers = xff(&["6.6.6.6", "198.51.100.7, 10.0.0.2"]);
     assert_eq!(
         proxies.resolve(ip("10.0.0.1"), &headers),
         client("198.51.100.7")

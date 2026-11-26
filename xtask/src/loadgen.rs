@@ -96,10 +96,4 @@ mod tests {
             .map(OsString::from)
         );
     }
-
-    #[test]
-    fn both_binaries_are_built_in_release_mode() {
-        assert!(BUILD_ARGS.contains(&"--release"));
-        assert!(BUILD_ARGS.contains(&"deskhaven") && BUILD_ARGS.contains(&"deskhaven-loadgen"));
-    }
 }

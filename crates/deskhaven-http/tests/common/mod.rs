@@ -31,20 +31,6 @@ pub fn apps() -> Apps {
             get(|ip: ClientIp| async move { ip.addr.to_string() }),
         )
         .route("/shared", get(|| async { "client-wins" }))
-        .route(
-            "/api/slow",
-            get(|| async {
-                tokio::time::sleep(HANDLER_DELAY).await;
-                "slow-done"
-            }),
-        )
-        .route(
-            "/api/stuck",
-            get(|| async {
-                tokio::time::sleep(Duration::from_secs(3600)).await;
-                "never"
-            }),
-        )
         .route("/api/big", get(|| async { vec![0u8; BIG_BODY] }));
     let admin = Router::new()
         .route("/admin/ping", get(|| async { "admin-pong" }))

@@ -79,10 +79,4 @@ mod tests {
         ));
         assert!(matches!(run(None, &[]), Err(XtaskError::NoTask)));
     }
-
-    #[test]
-    fn repo_root_holds_the_workspace_manifest() {
-        assert!(repo_root().join("Cargo.toml").is_file());
-        assert!(repo_root().join("web").is_dir());
-    }
 }

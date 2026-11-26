@@ -178,7 +178,7 @@ mod tests {
         stream.shutdown().await
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn non_reader_times_out() {
         let (near, _far) = duplex(PIPE);
         let err = write_payload(near).await.unwrap_err();
@@ -186,7 +186,7 @@ mod tests {
     }
 
     /// Review round 3 M1: progress below the floor does not keep the write alive.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn drip_reader_below_the_floor_times_out() {
         let (near, far) = duplex(PIPE);
         // 16 bytes / 50 ms = 320 B/s < 1024 B/s.
@@ -197,7 +197,7 @@ mod tests {
         assert!(read > 0 && read < PAYLOAD, "reader got {read} bytes");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn reader_above_the_floor_is_unaffected() {
         let (near, far) = duplex(PIPE);
         // 64 bytes / 10 ms = 6400 B/s > 1024 B/s.
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(reader.await.unwrap().unwrap(), PAYLOAD);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn reads_are_not_timed() {
         let (near, mut far) = duplex(PIPE);
         let mut stream = MinWriteRate::new(near, WINDOW, MIN_RATE);
@@ -229,12 +229,5 @@ mod tests {
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"late");
         writer.await.unwrap().unwrap();
-    }
-
-    #[test]
-    fn required_bytes_follow_rate_and_window() {
-        let (near, _far) = duplex(PIPE);
-        let stream = MinWriteRate::new(near, Duration::from_secs(30), 1024);
-        assert_eq!(stream.required, 30 * 1024);
     }
 }

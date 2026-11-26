@@ -25,7 +25,7 @@ rustix = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-tokio = { workspace = true, features = ["io-util"] }
+tokio = { workspace = true, features = ["io-util", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 
 [lints]

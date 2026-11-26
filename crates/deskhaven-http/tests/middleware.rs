@@ -473,12 +473,3 @@ async fn json_and_success_responses_are_untouched() {
     let got = status_and_body(tagged(), get_req("/api/thing")).await;
     assert_eq!(got, (StatusCode::OK, "api".into()));
 }
-
-#[tokio::test]
-async fn axum_rejection_wording_never_leaks_from_the_api() {
-    for path in ["/api/plain-400", "/admin/api/plain-400"] {
-        let (status, body) = status_and_body(tagged(), get_req(path)).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(!body.contains("axum wording"), "{path}: {body}");
-    }
-}

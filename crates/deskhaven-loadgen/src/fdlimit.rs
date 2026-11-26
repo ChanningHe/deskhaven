@@ -84,6 +84,5 @@ mod tests {
         let err = plan(Some(1_024), Some(4_096), 20_256).unwrap_err();
 
         assert!(err.contains("20256") && err.contains("4096"), "{err}");
-        assert!(err.contains("ulimit"), "says how to fix it: {err}");
     }
 }

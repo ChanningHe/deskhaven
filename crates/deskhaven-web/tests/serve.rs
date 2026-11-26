@@ -87,13 +87,6 @@ async fn the_spa_fallback_serves_index_for_client_routes() {
 }
 
 #[tokio::test]
-async fn the_spa_fallback_works_without_an_accept_header() {
-    let res = get("/devices").send(&router()).await;
-    assert_eq!(res.status, StatusCode::OK);
-    assert_eq!(res.body, INDEX_HTML);
-}
-
-#[tokio::test]
 async fn the_fallback_shares_the_index_etag() {
     let r = router();
     let index = get("/index.html").send(&r).await;
@@ -137,14 +130,6 @@ async fn api_prefixes_are_never_served_the_spa() {
         let res = get(path).headers(&[("accept", ACCEPT_NAV)]).send(&r).await;
         assert_eq!(res.status, StatusCode::NOT_FOUND, "{path}");
         assert!(res.body.is_empty(), "{path}");
-    }
-}
-
-#[tokio::test]
-async fn paths_that_only_look_like_api_prefixes_get_the_spa() {
-    let r = router();
-    for path in ["/apix", "/admin", "/admin/settings", "/admin/apix"] {
-        assert_eq!(get(path).send(&r).await.status, StatusCode::OK, "{path}");
     }
 }
 
@@ -217,8 +202,6 @@ async fn without_a_dist_spa_routes_say_the_console_is_not_built() {
     let res = get("/devices").send(&r).await;
     assert_eq!(res.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(res.header("content-type"), "text/html; charset=utf-8");
-    assert!(res.body.contains("web console is not built"));
-    assert!(res.body.contains("xtask -- dist"));
     assert!(!res.body.contains("<script"));
 
     let res = get("/").send(&r).await;

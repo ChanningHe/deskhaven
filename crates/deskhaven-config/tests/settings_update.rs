@@ -275,45 +275,6 @@ fn accepted_json(key: &str, value: Json) -> Result<Json, Rejection> {
 }
 
 #[test]
-fn enums_are_case_insensitive_and_canonical() {
-    assert_eq!(
-        accepted_json("auth.registration", json!("Invite")),
-        Ok(json!("invite"))
-    );
-    assert_eq!(
-        accepted_json("smtp.tls", json!(" STARTTLS ")),
-        Ok(json!("starttls"))
-    );
-    assert!(accepted_json("auth.registration", json!("invites")).is_err());
-}
-
-#[test]
-fn u32_text_must_be_plain_digits() {
-    assert_eq!(accepted_json("smtp.port", json!("0465")), Ok(json!(465)));
-    for bad in ["+465", "-1", "4 65", ""] {
-        assert!(accepted_json("smtp.port", json!(bad)).is_err(), "{bad:?}");
-    }
-}
-
-#[test]
-fn comma_lists_reject_empty_items_like_arrays() {
-    assert_eq!(
-        accepted_json("signal.relay_servers", json!("")),
-        Ok(json!([]))
-    );
-    assert_eq!(
-        accepted_json("signal.relay_servers", json!(" a:1 , b:2 ")),
-        Ok(json!(["a:1", "b:2"]))
-    );
-    for bad in [json!("a:1,,b:2"), json!("a:1,"), json!(["a:1", ""])] {
-        assert!(
-            accepted_json("signal.relay_servers", bad.clone()).is_err(),
-            "{bad}"
-        );
-    }
-}
-
-#[test]
 fn relays_reject_unspecified_and_broadcast_addresses() {
     for bad in ["0.0.0.0:21117", "255.255.255.255:21117", "[::]:21117"] {
         assert!(

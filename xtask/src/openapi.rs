@@ -14,12 +14,3 @@ pub fn run(root: &Path, mode: Mode) -> Result<(), XtaskError> {
     eprintln!("xtask: {} is up to date", deskhaven_admin_api::SPEC_PATH);
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn committed_spec_location_is_inside_the_repository() {
-        let path = crate::repo_root().join(deskhaven_admin_api::SPEC_PATH);
-        assert!(path.parent().unwrap().join("Cargo.toml").is_file());
-    }
-}

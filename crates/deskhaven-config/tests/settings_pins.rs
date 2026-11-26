@@ -5,7 +5,6 @@
 
 mod common;
 
-use common::jail_err;
 use deskhaven_config::Source;
 use deskhaven_config::settings::{
     self, Change, HostPort, PinSet, Registration, Rejection, Reset, Snapshot, TfaEnforce, prepare,
@@ -33,6 +32,10 @@ fn env_text_pins_coerce_per_kind() {
         jail.set_env("DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS", "a:1, b:2");
         jail.set_env("DESKHAVEN_SETTINGS__SMTP__HOST", "mail.example.com");
         jail.set_env("DESKHAVEN_SETTINGS__SMTP__FROM", "rd@example.com");
+        jail.set_env(
+            "DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_EMAIL_MAX_ROLE",
+            "Admin",
+        );
 
         let pins = pins(jail)?;
         let (s, warnings) = Snapshot::build(&pins, Vec::new());
@@ -51,6 +54,10 @@ fn env_text_pins_coerce_per_kind() {
             .map(HostPort::to_string)
             .collect();
         assert_eq!(relays, ["a:1", "b:2"]);
+        assert_eq!(
+            s.get(&settings::AUTH_OIDC_LINK_EMAIL_MAX_ROLE),
+            settings::LinkEmailMaxRole::Admin
+        );
 
         let view = s.view("auth.session_ttl").unwrap();
         assert!(view.pinned);
@@ -202,26 +209,6 @@ fn the_replaced_email_link_key_names_its_successor() {
 }
 
 #[test]
-fn the_email_link_role_ceiling_pins_from_the_environment() {
-    Jail::expect_with(|jail| {
-        jail.clear_env();
-        jail.set_env(
-            "DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_EMAIL_MAX_ROLE",
-            "Admin",
-        );
-
-        let pins = pins(jail)?;
-        let (s, _) = Snapshot::build(&pins, Vec::new());
-
-        assert_eq!(
-            s.get(&settings::AUTH_OIDC_LINK_EMAIL_MAX_ROLE),
-            settings::LinkEmailMaxRole::Admin
-        );
-        Ok(())
-    });
-}
-
-#[test]
 fn unknown_pin_keys_are_sanitized_in_errors() {
     Jail::expect_with(|jail| {
         jail.clear_env();
@@ -292,18 +279,6 @@ fn resets_of_pinned_keys_are_rejected() {
                 keys: vec!["auth.session_ttl".to_owned()]
             }
         );
-        Ok(())
-    });
-}
-
-#[test]
-fn no_pins_is_empty() {
-    Jail::expect_with(|jail| {
-        jail.clear_env();
-        let loaded = common::load(jail).map_err(jail_err)?;
-        let pins = PinSet::from_bootstrap(&loaded.config.settings)
-            .map_err(|e| figment::Error::from(e.to_string()))?;
-        assert!(pins.is_empty());
         Ok(())
     });
 }

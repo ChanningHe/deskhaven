@@ -395,9 +395,11 @@ mod tests {
 
     #[test]
     fn u32_text_is_digits_only() {
-        assert!(u32::parse(&json!("+5")).is_err());
-        assert!(u32::parse(&json!("")).is_err());
+        for bad in ["+5", "-1", "4 65", ""] {
+            assert!(u32::parse(&json!(bad)).is_err(), "{bad:?}");
+        }
         assert_eq!(u32::parse(&json!(" 7 ")), Ok(7));
+        assert_eq!(u32::parse(&json!("0465")), Ok(465));
     }
 
     #[test]
@@ -409,7 +411,9 @@ mod tests {
 
     #[test]
     fn host_port_list_accepts_array_or_comma_text() {
-        assert!(Vec::<HostPort>::parse(&json!("a:1,")).is_err());
+        for bad in [json!("a:1,"), json!("a:1,,b:2"), json!(["a:1", ""])] {
+            assert!(Vec::<HostPort>::parse(&bad).is_err(), "{bad}");
+        }
         let from_text = Vec::<HostPort>::parse(&json!(" a:1 , b:2 ")).unwrap();
         let from_array = Vec::<HostPort>::parse(&json!(["a:1", "b:2"])).unwrap();
         assert_eq!(from_text, from_array);

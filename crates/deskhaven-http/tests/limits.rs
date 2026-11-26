@@ -7,12 +7,13 @@ mod common;
 
 use std::time::Duration;
 
-use common::{DEADLINE, Running, connect_from, http_get, request, send_on, single, slow_header};
+use axum::routing::get;
+use common::{
+    DEADLINE, Running, apps, connect_from, http_get, request, send_on, single, slow_header,
+};
 use deskhaven_http::{HttpConfig, TrustedProxies};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-
-const SETTLE: Duration = Duration::from_millis(150);
 
 /// Review H-a: a client that requests a large response and never reads it is
 /// disconnected after `write_stall_timeout`, which frees its slot.
@@ -29,7 +30,6 @@ async fn slow_reader_is_disconnected_and_frees_its_slot() {
         .write_all(request("/api/big").as_bytes())
         .await
         .unwrap();
-    tokio::time::sleep(SETTLE).await;
 
     let res = tokio::time::timeout(DEADLINE, http_get(srv.client_api, "/api/ip"))
         .await
@@ -56,7 +56,6 @@ async fn per_ip_cap_rejects_excess_connections_from_one_address() {
     let srv = Running::start(single(), per_ip(2, &[])).await;
     let _a = slow_header(srv.client_api).await;
     let _b = slow_header(srv.client_api).await;
-    tokio::time::sleep(SETTLE).await;
 
     let third = TcpStream::connect(srv.client_api).await.unwrap();
     let res = tokio::time::timeout(DEADLINE, send_on(third, "/api/ip"))
@@ -75,11 +74,21 @@ async fn per_ip_cap_rejects_excess_connections_from_one_address() {
 async fn per_ip_cap_slot_is_released_when_a_connection_closes() {
     let srv = Running::start(single(), per_ip(1, &[])).await;
     let holder = slow_header(srv.client_api).await;
-    tokio::time::sleep(SETTLE).await;
     drop(holder);
-    tokio::time::sleep(SETTLE).await;
-    let res = http_get(srv.client_api, "/api/ip").await;
-    assert!(res.starts_with("HTTP/1.1 200"), "{res}");
+
+    let addr = srv.client_api;
+    let served = async move {
+        loop {
+            let res = http_get(addr, "/api/ip").await;
+            if res.starts_with("HTTP/1.1 200") {
+                return res;
+            }
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(DEADLINE, served)
+        .await
+        .expect("the closed connection still holds its slot");
     srv.stop().await;
 }
 
@@ -88,7 +97,6 @@ async fn trusted_proxy_is_exempt_from_per_ip_cap() {
     let srv = Running::start(single(), per_ip(1, &["127.0.0.1/32"])).await;
     let _a = slow_header(srv.client_api).await;
     let _b = slow_header(srv.client_api).await;
-    tokio::time::sleep(SETTLE).await;
     let res = http_get(srv.client_api, "/api/ip").await;
     assert!(res.starts_with("HTTP/1.1 200"), "{res}");
     srv.stop().await;
@@ -184,14 +192,28 @@ async fn shutdown_with_stuck_connections_returns_within_drain_deadline() {
         drain_timeout: Duration::from_millis(300),
         ..HttpConfig::default()
     };
-    let srv = Running::start(single(), cfg).await;
+    let (started_tx, mut started) = tokio::sync::mpsc::channel::<()>(1);
+    let mut apps = apps();
+    apps.client_api = apps.client_api.route(
+        "/api/hang",
+        get(move || {
+            let started_tx = started_tx.clone();
+            async move {
+                let _ = started_tx.send(()).await;
+                std::future::pending::<&str>().await
+            }
+        }),
+    );
+    let srv = Running::start_with(single(), cfg, apps).await;
     let _slow = slow_header(srv.client_api).await;
     let mut stuck = TcpStream::connect(srv.client_api).await.unwrap();
     stuck
-        .write_all(request("/api/stuck").as_bytes())
+        .write_all(request("/api/hang").as_bytes())
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(DEADLINE, started.recv())
+        .await
+        .unwrap();
 
     let took = srv.stop().await;
     assert!(took < Duration::from_secs(2), "serve took {took:?}");
@@ -210,7 +232,6 @@ async fn connection_cap_defers_extra_connections() {
     };
     let srv = Running::start(single(), cfg).await;
     let holder = slow_header(srv.client_api).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let addr = srv.client_api;
     let mut waiting = tokio::spawn(async move { http_get(addr, "/api/ip").await });

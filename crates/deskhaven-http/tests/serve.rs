@@ -132,10 +132,25 @@ async fn split_admin_without_public_url_gives_404_on_root() {
 
 #[tokio::test]
 async fn graceful_shutdown_finishes_in_flight_requests() {
-    let srv = Running::start(single(), HttpConfig::default()).await;
+    let (started_tx, mut started) = tokio::sync::mpsc::channel::<()>(1);
+    let mut apps = apps();
+    apps.client_api = apps.client_api.route(
+        "/api/in-flight",
+        get(move || {
+            let started_tx = started_tx.clone();
+            async move {
+                let _ = started_tx.send(()).await;
+                tokio::time::sleep(HANDLER_DELAY).await;
+                "slow-done"
+            }
+        }),
+    );
+    let srv = Running::start_with(single(), HttpConfig::default(), apps).await;
     let addr = srv.client_api;
-    let in_flight = tokio::spawn(async move { http_get(addr, "/api/slow").await });
-    tokio::time::sleep(HANDLER_DELAY / 3).await;
+    let in_flight = tokio::spawn(async move { http_get(addr, "/api/in-flight").await });
+    tokio::time::timeout(DEADLINE, started.recv())
+        .await
+        .unwrap();
 
     srv.stop().await;
     let res = tokio::time::timeout(DEADLINE, in_flight)

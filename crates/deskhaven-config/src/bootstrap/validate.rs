@@ -216,22 +216,18 @@ mod tests {
     }
 
     #[test]
-    fn v4_unspecified_overlaps_v4_and_v6_unspecified_only() {
-        assert!(overlap("0.0.0.0", "127.0.0.1"));
-        assert!(overlap("0.0.0.0", "::"));
-        assert!(!overlap("0.0.0.0", "::1"));
-    }
-
-    #[test]
-    fn v6_unspecified_overlaps_everything() {
-        assert!(overlap("::", "::1"));
-        assert!(overlap("::", "10.0.0.1"));
-    }
-
-    #[test]
-    fn specific_addresses_overlap_only_when_equal() {
-        assert!(!overlap("127.0.0.1", "10.0.0.1"));
-        assert!(overlap("127.0.0.1", "127.0.0.1"));
+    fn addresses_overlap_when_equal_or_covered_by_an_unspecified_one() {
+        for (a, b, expected) in [
+            ("0.0.0.0", "127.0.0.1", true),
+            ("0.0.0.0", "::", true),
+            ("0.0.0.0", "::1", false),
+            ("::", "::1", true),
+            ("::", "10.0.0.1", true),
+            ("127.0.0.1", "127.0.0.1", true),
+            ("127.0.0.1", "10.0.0.1", false),
+        ] {
+            assert_eq!(overlap(a, b), expected, "{a} {b}");
+        }
     }
 
     #[test]

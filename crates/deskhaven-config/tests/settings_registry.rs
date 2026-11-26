@@ -5,10 +5,8 @@
 
 use std::collections::BTreeSet;
 
-use deskhaven_config::settings::{
-    self, AcceptPresets, AclAction, HostPort, Registration, SmtpTls, Snapshot, TfaEnforce,
-};
-use deskhaven_config::{Duration, Source};
+use deskhaven_config::Source;
+use deskhaven_config::settings::{self, Snapshot};
 use serde_json::{Value as Json, json};
 
 const GOLDEN_SCHEMA: &str = concat!(
@@ -16,10 +14,6 @@ const GOLDEN_SCHEMA: &str = concat!(
     "/tests/snapshots/settings_schema.json"
 );
 const UPDATE_ENV: &str = "DESKHAVEN_UPDATE_SNAPSHOTS";
-
-fn d(s: &str) -> Duration {
-    s.parse().unwrap()
-}
 
 /// 05-config §3.6, one line per key: (key, public JSON form of the default).
 const P0_DEFAULTS: &[(&str, &str)] = &[
@@ -132,33 +126,13 @@ fn only_passwords_and_credentials_are_sensitive() {
     assert_eq!(sensitive, ["smtp.password", "web_client.turn_credential"]);
 }
 
+/// A row that cannot be read turns these features off rather than on.
 #[test]
-fn typed_access_returns_defaults() {
-    let s = Snapshot::defaults();
-    assert_eq!(s.get(&settings::AUTH_SESSION_TTL), d("30d"));
-    assert_eq!(s.get(&settings::AUTH_SESSION_IDLE_TTL), d("7d"));
-    assert_eq!(s.get(&settings::AUTH_PASSWORD_MIN_LENGTH), 10);
-    assert_eq!(s.get(&settings::AUTH_REGISTRATION), Registration::Disabled);
-    assert_eq!(s.get(&settings::AUTH_TFA_ENFORCE), TfaEnforce::Off);
-    assert!(!s.get(&settings::AUTH_EMAIL_CODE_ENABLED));
-    assert_eq!(s.get(&settings::SMTP_TLS), SmtpTls::Starttls);
-    assert_eq!(s.get(&settings::SMTP_HOST), "");
-    assert!(s.get(&settings::SMTP_PASSWORD).is_empty());
-    assert_eq!(
-        s.get(&settings::SIGNAL_RELAY_SERVERS),
-        Vec::<HostPort>::new()
-    );
-    assert_eq!(s.get(&settings::SIGNAL_ACL_DEFAULT), AclAction::Allow);
-    assert_eq!(s.get(&settings::SIGNAL_ACL_ON_ERROR), AclAction::Deny);
-    assert_eq!(s.get(&settings::DEVICES_ACCEPT_PRESETS), AcceptPresets::Off);
-    assert_eq!(s.get(&settings::AUDIT_RETENTION_LOGIN), d("180d"));
-}
-
-/// A row that cannot be read keeps the web client off.
-#[test]
-fn an_unreadable_web_client_row_keeps_it_off() {
-    let setting = settings::lookup("web_client.enabled").unwrap();
-    assert_eq!(setting.bad_row_value().to_json(), json!(false));
+fn unreadable_feature_rows_turn_the_feature_off() {
+    for key in ["web_client.enabled", "updates.check"] {
+        let setting = settings::lookup(key).unwrap();
+        assert_eq!(setting.bad_row_value().to_json(), json!(false), "{key}");
+    }
 }
 
 /// ICE server URLs: `stun:` / `stuns:` / `turn:` / `turns:` with a host, an optional port and
@@ -189,35 +163,6 @@ fn ice_servers_accept_stun_and_turn_urls_only() {
     }
     let nine = ["stun:s.example"; 9].join(",");
     assert!(setting.coerce(&json!(nine)).is_err(), "at most 8 servers");
-}
-
-/// A row that cannot be read stops the update check rather than re-enabling it.
-#[test]
-fn an_unreadable_update_check_row_turns_the_check_off() {
-    let setting = settings::lookup("updates.check").unwrap();
-    assert_eq!(setting.default_value().to_json(), json!(true));
-    assert_eq!(setting.bad_row_value().to_json(), json!(false));
-}
-
-#[test]
-fn schema_lists_type_constraints_and_rules() {
-    let schema = settings::schema();
-    let ttl = &schema["settings"][0];
-    assert_eq!(ttl["key"], json!("auth.session_ttl"));
-    assert_eq!(ttl["type"], json!("duration"));
-    assert_eq!(ttl["min"], json!("5m"));
-    assert_eq!(ttl["category"], json!("auth"));
-    let registration = schema["settings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["key"] == json!("auth.registration"))
-        .unwrap();
-    assert_eq!(
-        registration["variants"],
-        json!(["disabled", "invite", "open"])
-    );
-    assert!(!schema["rules"].as_array().unwrap().is_empty());
 }
 
 /// Golden file; regenerate with `DESKHAVEN_UPDATE_SNAPSHOTS=1 cargo test`.

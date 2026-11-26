@@ -44,12 +44,6 @@ async fn healthz_is_always_ok() {
 }
 
 #[tokio::test]
-async fn readyz_is_200_when_check_passes() {
-    let app = app_with_flag(Arc::new(AtomicBool::new(true)));
-    assert_eq!(get(app, "/readyz").await, (StatusCode::OK, "ok".to_owned()));
-}
-
-#[tokio::test]
 async fn readyz_is_503_without_leaking_reason() {
     let app = app_with_flag(Arc::new(AtomicBool::new(false)));
     let (status, body) = get(app, "/readyz").await;

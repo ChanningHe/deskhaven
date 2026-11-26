@@ -174,7 +174,6 @@ async fn console_routes_are_served_with_the_csp_and_security_headers() {
     assert!(res.starts_with("HTTP/1.1 200"), "{res}");
     assert_eq!(body(&res), INDEX_HTML);
     assert!(lower.contains(&format!("content-security-policy: {CSP}").to_ascii_lowercase()));
-    assert!(lower.contains("img-src 'self' blob:;"), "{res}");
     assert!(lower.contains("x-content-type-options: nosniff"), "{res}");
     assert!(lower.contains("x-frame-options: deny"), "{res}");
     assert!(lower.contains("cache-control: no-cache"), "{res}");
