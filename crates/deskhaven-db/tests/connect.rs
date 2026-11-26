@@ -1,4 +1,3 @@
-//! Connection factory tests.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -169,7 +168,6 @@ fn side_file(db: &std::path::Path, suffix: &str) -> std::path::PathBuf {
     name.into()
 }
 
-/// Size and mtime of every file of the database.
 fn fingerprint(db: &std::path::Path) -> Vec<Option<(u64, std::time::SystemTime)>> {
     ["", "-wal", "-shm"]
         .iter()
@@ -180,8 +178,8 @@ fn fingerprint(db: &std::path::Path) -> Vec<Option<(u64, std::time::SystemTime)>
         .collect()
 }
 
-/// Review H1: SQLite >= 3.22 creates missing `-wal`/`-shm` files even for a
-/// read-only connection; run as another user (sudo) they would lock the server out.
+/// SQLite creates missing `-wal`/`-shm` files even for a read-only connection; made by another
+/// user they would lock the server out.
 #[tokio::test]
 async fn read_only_sqlite_leaves_a_closed_wal_database_untouched() {
     let dir = tempfile::tempdir().unwrap();

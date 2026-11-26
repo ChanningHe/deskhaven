@@ -4,8 +4,7 @@ use std::str::FromStr;
 
 use ipnet::IpNet;
 
-/// An IPv4 or IPv6 network in CIDR notation, e.g. `"10.0.0.0/8"`; a bare
-/// address means a single host.
+/// A bare address means a single host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cidr(IpNet);
 
@@ -19,7 +18,7 @@ impl Cidr {
     }
 }
 
-/// Parse failure for [`Cidr`]. Never includes the input.
+/// Never includes the input.
 #[derive(Debug, thiserror::Error)]
 #[error("invalid CIDR: expected e.g. \"10.0.0.0/8\", \"fd00::/8\" or a bare address")]
 pub struct CidrError;
@@ -27,7 +26,6 @@ pub struct CidrError;
 impl FromStr for Cidr {
     type Err = CidrError;
 
-    /// A bare address is a single host (`/32` or `/128`).
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let trimmed = s.trim();
         trimmed

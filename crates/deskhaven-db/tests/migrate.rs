@@ -1,4 +1,3 @@
-//! Migrator acceptance tests, run on every available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -13,7 +12,6 @@ use sea_orm_migration::seaql_migrations;
 const FAILING_VERSION: &str = "m20991231_000001_always_fails";
 const PARTIAL_TABLE: &str = "partial_from_failed_migration";
 
-/// Test-only migration: applies some DDL, then fails.
 struct AlwaysFails;
 
 impl MigrationName for AlwaysFails {
@@ -34,7 +32,6 @@ impl MigrationTrait for AlwaysFails {
     }
 }
 
-/// The real migrations followed by one that always fails.
 struct BrokenMigrator;
 
 impl MigratorTrait for BrokenMigrator {
@@ -254,7 +251,6 @@ fn migration_names_are_timestamped_and_ordered() {
     );
 }
 
-/// `mYYYYMMDD_NNNNNN_<snake_case>`
 fn is_timestamped_name(name: &str) -> bool {
     let bytes = name.as_bytes();
     let all_digits = |r: std::ops::Range<usize>| bytes[r].iter().all(u8::is_ascii_digit);

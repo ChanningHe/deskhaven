@@ -1,5 +1,3 @@
-//! Connection-level limits on real listeners: header-read timeout, write stall
-//! timeout, global and per-IP connection caps, header size, drain deadline.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -15,8 +13,6 @@ use deskhaven_http::{HttpConfig, TrustedProxies};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-/// Review H-a: a client that requests a large response and never reads it is
-/// disconnected after `write_stall_timeout`, which frees its slot.
 #[tokio::test]
 async fn slow_reader_is_disconnected_and_frees_its_slot() {
     let cfg = HttpConfig {
@@ -50,7 +46,6 @@ fn per_ip(limit: usize, trusted: &[&str]) -> HttpConfig {
     }
 }
 
-/// Review H-a: one address cannot take more than its share of slots.
 #[tokio::test]
 async fn per_ip_cap_rejects_excess_connections_from_one_address() {
     let srv = Running::start(single(), per_ip(2, &[])).await;
@@ -102,7 +97,6 @@ async fn trusted_proxy_is_exempt_from_per_ip_cap() {
     srv.stop().await;
 }
 
-/// Review M-a: oversized request heads are refused; normal ones still work.
 #[tokio::test]
 async fn oversized_header_is_rejected() {
     let srv = Running::start(single(), HttpConfig::default()).await;
@@ -151,7 +145,6 @@ fn header_read_timeout_defaults_to_nginx_client_header_timeout() {
     );
 }
 
-/// Review H2: a client that never finishes its request head is disconnected.
 #[tokio::test]
 async fn slow_header_connection_is_closed_by_header_read_timeout() {
     let cfg = HttpConfig {
@@ -166,7 +159,6 @@ async fn slow_header_connection_is_closed_by_header_read_timeout() {
     srv.stop().await;
 }
 
-/// Review H2: idle keep-alive connections are bounded by the same timer.
 #[tokio::test]
 async fn idle_keep_alive_connection_is_closed() {
     let cfg = HttpConfig {
@@ -184,7 +176,6 @@ async fn idle_keep_alive_connection_is_closed() {
     srv.stop().await;
 }
 
-/// Review H2: stuck connections cannot hold `serve` past the drain deadline.
 #[tokio::test]
 async fn shutdown_with_stuck_connections_returns_within_drain_deadline() {
     let cfg = HttpConfig {

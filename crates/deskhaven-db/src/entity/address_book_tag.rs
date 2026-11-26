@@ -1,5 +1,3 @@
-//! `address_book_tags`: a tag name and its colour within an address book.
-
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]

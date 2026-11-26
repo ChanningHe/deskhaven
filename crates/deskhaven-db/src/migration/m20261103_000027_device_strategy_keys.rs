@@ -1,12 +1,6 @@
-//! `device_strategy_keys` (M2-14): per RustDesk id, the strategy option keys the heartbeat
-//! last sent with a value. The client keeps every option it was ever sent until it receives
-//! that key again (empty = delete), so the server must remember what it sent to delete what
-//! later disappears from the effective strategy.
-//!
-//! Kept in the database because a restart must not forget it: a device offline across a
-//! removal and a restart would otherwise keep the removed option for good. Keyed by RustDesk
-//! id without a foreign key for the same reason: deleting a device does not reset its client,
-//! which re-registers as a new `devices` row and still holds what it was sent.
+//! The client keeps every option it was sent until it receives that key again (empty =
+//! delete), so the server must remember what it sent, across restarts too. No foreign key:
+//! deleting a device does not reset its client.
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, text};

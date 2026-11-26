@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// A byte size written with units, e.g. `"10MiB"` or `"512KB"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Size(u64);
 
@@ -15,8 +14,7 @@ impl Size {
     }
 }
 
-/// Parse failure for [`Size`]. Never includes the input (it may be a secret
-/// given to the wrong key).
+/// Never includes the input (it may be a secret given to the wrong key).
 #[derive(Debug, thiserror::Error)]
 #[error("invalid size: expected a number with a unit, e.g. \"10MiB\"")]
 pub struct SizeError;

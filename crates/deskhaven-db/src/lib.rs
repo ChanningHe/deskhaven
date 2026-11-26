@@ -1,5 +1,3 @@
-//! Database layer: SeaORM entities, migrations and repositories (SQLite and PostgreSQL).
-
 #[cfg(any(test, feature = "testing"))]
 pub mod coded_error;
 mod connect;

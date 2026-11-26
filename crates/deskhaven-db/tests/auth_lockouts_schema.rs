@@ -1,5 +1,3 @@
-//! `auth_lockouts` schema (M2-06): table, cleanup index, CHECKs and entity round trip, on
-//! every available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 

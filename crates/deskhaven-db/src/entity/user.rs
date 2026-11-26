@@ -1,6 +1,5 @@
-//! `users`: accounts of every auth source. `username_norm` / `email_norm` are the
-//! lowercased forms the unique indexes are built on; the caller must keep them in sync
-//! (the schema CHECKs reject a stale `username_norm`).
+//! `username_norm` / `email_norm` are the lowercased forms the unique indexes are built on;
+//! the caller keeps them in sync (the schema CHECKs reject a stale `username_norm`).
 
 use sea_orm::entity::prelude::*;
 
@@ -60,7 +59,7 @@ pub struct Model {
     pub role: Role,
     pub status: Status,
     pub must_change_password: bool,
-    /// Encrypted TOTP seed (`v1:<key_id>:<nonce>:<ct>`).
+    /// Encrypted TOTP seed.
     pub totp_secret_enc: Option<String>,
     pub totp_enabled_at: Option<TimestampMs>,
     /// Last accepted TOTP time step (replay guard).

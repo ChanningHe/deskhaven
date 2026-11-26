@@ -1,5 +1,3 @@
-//! `oidc_providers`: configured OpenID Connect identity providers.
-
 use sea_orm::entity::prelude::*;
 
 use super::managed_by::ManagedBy;
@@ -16,7 +14,7 @@ pub struct Model {
     pub icon: Option<String>,
     pub issuer: String,
     pub client_id: String,
-    /// Encrypted client secret (`v1:<key_id>:<nonce>:<ct>`); `None` for public (PKCE-only) clients.
+    /// Encrypted client secret; `None` for public (PKCE-only) clients.
     pub client_secret_enc: Option<String>,
     /// Space-separated scopes.
     pub scopes: String,

@@ -1,5 +1,3 @@
-//! Markdown rendering of a [`Report`].
-
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;

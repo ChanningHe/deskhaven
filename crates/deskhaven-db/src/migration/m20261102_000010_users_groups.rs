@@ -1,9 +1,6 @@
-//! Local user accounts, groups and group membership (04-data-model §3).
-//!
-//! Case-insensitive uniqueness uses stored normalized columns. `email_norm` is a nullable
-//! UNIQUE column: SQLite and PostgreSQL both treat NULLs as distinct in unique indexes, so
-//! users without an email never conflict and no partial index is needed. CHECK constraints
-//! keep a buggy writer from bypassing the normalized columns.
+//! `email_norm` is a nullable UNIQUE column: both backends treat NULLs as distinct, so no
+//! partial index is needed. CHECK constraints keep a buggy writer from bypassing the
+//! normalized columns.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
@@ -66,10 +63,8 @@ const STATUSES: &[&str] = &["active", "disabled", "unverified"];
 const MANAGED_BY: &[&str] = &["ui", "config"];
 const USERNAME_MAX_LEN: i32 = 64;
 
-/// `username_norm` is the ASCII lowercase of `username` (the application computes it with
-/// `to_ascii_lowercase`). PostgreSQL's `lower()` follows the column collation's locale (e.g.
-/// Turkish `I` -> `ı`), so it is pinned to the `C` collation, which folds ASCII only.
-/// SQLite's `lower()` folds ASCII only already.
+/// PostgreSQL's `lower()` follows the collation's locale (Turkish `I` -> `ı`), so it is pinned
+/// to `C`, which folds ASCII only, like SQLite's.
 fn username_norm_check(backend: DbBackend) -> Check {
     let expr = if backend == DbBackend::Postgres {
         Expr::cust(r#"username_norm = lower(username COLLATE "C")"#)
@@ -79,9 +74,8 @@ fn username_norm_check(backend: DbBackend) -> Check {
     Check::named("ck_users_username_norm", expr)
 }
 
-/// `[A-Za-z0-9._@-]` only (04 §3). The two backends have no common character-class syntax
-/// (SQLite has no regex operator, PostgreSQL no GLOB), so the expression branches. Both reject
-/// every non-ASCII character; emptiness is covered by the length check.
+/// The backends share no character-class syntax (SQLite has no regex operator, PostgreSQL no
+/// GLOB), so the expression branches.
 fn username_charset_check(backend: DbBackend) -> Check {
     let expr = if backend == DbBackend::Postgres {
         "username ~ '^[A-Za-z0-9._@-]+$'"

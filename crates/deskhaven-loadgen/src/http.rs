@@ -1,5 +1,5 @@
-//! One HTTP/1.1 request per TCP connection from a chosen source address, like the client's
-//! `post_request`, which builds a new HTTP client for every call (`src/common.rs`).
+//! One request per TCP connection, like the client's `post_request`, which builds a new HTTP
+//! client for every call.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -12,15 +12,13 @@ use tokio::net::TcpSocket;
 
 use crate::stats::Failure;
 
-/// Status and body of an answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reply {
     pub status: u16,
     pub body: Bytes,
 }
 
-/// Sends `method path` with an optional JSON body to `server` from `local` and reads the
-/// whole answer, all within `limit` (connecting included).
+/// All within `limit`, connecting included.
 pub async fn send(
     local: IpAddr,
     server: SocketAddr,
@@ -46,7 +44,7 @@ fn build(
         .uri(path)
         .header(header::HOST, server.to_string());
     let (builder, body) = match json {
-        // `post_request` always sets this content type (`common.rs:1760`).
+        // The client's `post_request` always sets this content type.
         Some(json) => (
             builder.header(header::CONTENT_TYPE, "application/json"),
             Bytes::from(json),

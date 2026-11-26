@@ -1,4 +1,3 @@
-//! Placeholder served when the binary was compiled without `web/dist`.
 //! No inline script or style: it must work under the strict CSP.
 
 pub(crate) const NOT_BUILT_HTML: &str = "<!doctype html>

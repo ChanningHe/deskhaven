@@ -1,23 +1,8 @@
-//! Content-Security-Policy for the console (06-security §6).
-
-/// Set it as `HttpConfig::content_security_policy`
-/// (`HeaderValue::from_static(CSP)`), or [`csp_connecting_to`] when the web client's relay
-/// is on another origin than the console.
-///
-/// Derived from what the built SPA needs, nothing more:
-/// - `default-src 'self'`: everything else is same-origin only.
-/// - `script-src 'self'`: no inline script (the theme bootstrap is the external
-///   `theme-init.js`), no `eval`.
-/// - `style-src 'self'`: the build emits one external stylesheet; the app only
-///   sets CSS variables through the CSSOM, which CSP allows. A style *element*
-///   or `style=""` attribute would be blocked.
-/// - `font-src 'self'`: the Geist woff2 files are served from `/assets/`.
-/// - `img-src 'self' blob:`: `/favicon.svg` and the remote page's own cursor images; no `data:`.
-/// - `connect-src 'self'`: the SPA talks to `/admin/api` and the web client's relay
-///   (`/ws/relay`) on its own origin.
-/// - `object-src 'none'`, `base-uri 'none'`: no plugins, no `<base>` hijack.
-/// - `form-action 'self'`: forms can only post back to this origin.
-/// - `frame-ancestors 'none'`: cannot be framed (clickjacking).
+/// Derived from what the built SPA needs: no inline script (the theme bootstrap is
+/// `theme-init.js`) or `eval`; one external stylesheet (CSS variables go through the CSSOM,
+/// which CSP allows); `blob:` images for the remote page's cursors, no `data:`;
+/// `connect-src 'self'` covers `/admin/api` and the relay at `/ws/relay`. Use
+/// [`csp_connecting_to`] when the relay is on another origin.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
 font-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; \
 base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -25,9 +10,7 @@ base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const CONNECT_SRC: &str = "connect-src 'self'";
 const WS_SCHEMES: [&str; 2] = ["ws://", "wss://"];
 
-/// [`CSP`] whose `connect-src` also admits the WebSocket origin `origin` (`ws://` or
-/// `wss://` + host and port: the web client's relay on another origin than the console).
-/// `None` for anything else, so nothing but an origin can reach the header.
+/// `None` for anything but a `ws://` / `wss://` origin, so nothing else can reach the header.
 pub fn csp_connecting_to(origin: &str) -> Option<String> {
     let authority = WS_SCHEMES
         .iter()

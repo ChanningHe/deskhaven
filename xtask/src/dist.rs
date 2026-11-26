@@ -1,12 +1,9 @@
-//! `xtask dist`: build the web console, then the release binary that embeds it.
-
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
 
 use crate::error::XtaskError;
 
-/// One external command, run from the repository root.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Step {
     pub description: &'static str,
@@ -22,15 +19,15 @@ fn step(description: &'static str, program: &OsString, args: &[&'static str]) ->
     }
 }
 
-/// `cargo` is the program that started xtask (`$CARGO`) so the toolchain matches.
+/// `$CARGO`, so the toolchain matches.
 pub fn steps(cargo: &OsString) -> Vec<Step> {
     let pnpm = OsString::from("pnpm");
     vec![
         step(
             "install web dependencies",
             &pnpm,
-            // No dependency lifecycle scripts: the build needs none (verified), and a
-            // release build should not run third-party install code.
+            // No dependency lifecycle scripts: a release build should not run third-party
+            // install code.
             &[
                 "-C",
                 "web",

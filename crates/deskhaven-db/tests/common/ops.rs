@@ -1,5 +1,3 @@
-//! Row builders and assertions for the device, address book, strategy and audit schema tests
-//! (M2-02).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::panic)]
 
@@ -35,7 +33,6 @@ pub async fn has_index(conn: &DatabaseConnection, table: &str, index: &str) -> b
         .unwrap()
 }
 
-/// Asserts that every `(table, index)` exists on the backend under test.
 pub async fn assert_indexes(db: &TestDb, expected: &[(&str, &str)]) {
     for (table, index) in expected {
         assert!(

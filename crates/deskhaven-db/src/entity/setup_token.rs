@@ -1,5 +1,3 @@
-//! `setup_tokens`: one-time first-start Owner setup link (hash only).
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

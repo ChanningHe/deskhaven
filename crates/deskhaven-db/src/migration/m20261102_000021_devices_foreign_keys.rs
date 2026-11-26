@@ -1,14 +1,7 @@
-//! Foreign keys `devices.owner_user_id -> users(id)` and `devices.device_group_id ->
-//! device_groups(id)`, both `ON DELETE SET NULL`: deleting the user or the group leaves the
-//! device registered but unassigned (04-data-model §4: NULL = unassigned).
-//!
-//! The columns predate their target tables (migration 000002 carries no FK), so existing rows
-//! may only hold references that never pointed anywhere; they are cleared first rather than
-//! failing the whole upgrade.
-//!
-//! PostgreSQL adds the constraints in place. SQLite cannot add a foreign key to an existing
-//! table, so the table is rebuilt: create the new shape, copy the rows, drop the old table,
-//! rename. Nothing references `devices`, so the drop needs no `defer_foreign_keys`.
+//! The columns predate their tables, so existing rows may hold references that never pointed
+//! anywhere; they are cleared rather than failing the upgrade. SQLite cannot add a foreign
+//! key to an existing table, so it is rebuilt; nothing references `devices`, so the drop needs
+//! no `defer_foreign_keys`.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
@@ -61,7 +54,7 @@ enum DeviceGroups {
     Id,
 }
 
-/// Every column of `devices`, in table order (migration 000002).
+/// Every column of `devices`, in table order.
 const COLUMNS: [&str; 23] = [
     "id",
     "rustdesk_id",
@@ -91,7 +84,6 @@ const STATUSES: [&str; 2] = ["active", "disabled"];
 const DEFAULT_STATUS: &str = "active";
 const REBUILT: &str = "devices_new";
 
-/// `col` if it names an existing row of `target`, else NULL.
 fn valid_reference(col: &str, target: &str) -> String {
     format!("CASE WHEN {col} IN (SELECT id FROM {target}) THEN {col} END")
 }
@@ -158,7 +150,6 @@ fn group_fk(table: DynIden) -> ForeignKeyCreateStatement {
     )
 }
 
-/// SQLite: rebuild the table with the foreign keys and re-create what the drop took along.
 async fn rebuild_sqlite(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     manager
         .create_table(devices_table(Alias::new(REBUILT).into_iden()))
@@ -206,9 +197,7 @@ async fn rebuild_sqlite(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     manager.create_index(rustdesk_id).await
 }
 
-/// PostgreSQL: clear unusable references, then add the constraints in place.
 async fn alter_postgres(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    // Only rows that hold a dangling reference are rewritten.
     let clear = format!(
         "UPDATE devices SET owner_user_id = {}, device_group_id = {} \
          WHERE (owner_user_id IS NOT NULL AND NOT EXISTS \

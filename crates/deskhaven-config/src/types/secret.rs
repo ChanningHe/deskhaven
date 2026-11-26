@@ -3,7 +3,6 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Placeholder emitted wherever a secret would otherwise be shown.
 pub const REDACTED: &str = "<redacted>";
 
 /// A sensitive string. `Debug` and `Serialize` never reveal the value; an
@@ -16,7 +15,7 @@ impl Secret {
         Self(value.into())
     }
 
-    /// Returns the plaintext. Call only where the value is actually used.
+    /// Call only where the value is actually used.
     pub fn expose(&self) -> &str {
         &self.0
     }

@@ -1,11 +1,5 @@
-//! Markdown rendering of the configuration reference from the exported schemas: the
-//! bootstrap JSON Schema (walked to its leaf keys, sorted) and the settings schema
-//! (`{"settings": [...], "rules": [...]}`, in declaration order, grouped by category).
-//!
-//! Strict about shape, lenient about extras: a type, composition (`anyOf` / `oneOf` /
-//! `allOf`), dangling `$ref`, non-object property or bootstrap leaf without a default
-//! (secrets excepted) that the tables cannot describe is an error. Fields the tables do not
-//! show (`format`, `minimum`, `examples`, `on_bad_row`, ...) are ignored on purpose.
+//! Strict about shape, lenient about extras: anything the tables cannot describe is an error;
+//! fields they do not show (`format`, `minimum`, `examples`, ...) are ignored on purpose.
 
 use deskhaven_config::bootstrap;
 use serde_json::Value as Json;
@@ -19,7 +13,6 @@ const DEFS_PREFIX: &str = "#/$defs/";
 /// Guards against self-referential schemas.
 const MAX_DEPTH: usize = 16;
 const COMPOSITION: [&str; 3] = ["anyOf", "oneOf", "allOf"];
-/// The kind of a `writeOnly` value.
 const SECRET: &str = "secret";
 const PIN_ONLY_NOTE: &str =
     "Set only in the configuration file or the environment; the console cannot change it.";
@@ -41,8 +34,6 @@ pub fn configuration(bootstrap: &Json, settings: &Json) -> Result<String, String
         }
     })
 }
-
-// --- bootstrap ---
 
 struct Leaf {
     key: String,
@@ -114,8 +105,6 @@ fn collect_leaves(
     Ok(())
 }
 
-/// A schema object without composition (`anyOf` / `oneOf` / `allOf`), which this
-/// renderer cannot describe.
 fn checked<'a>(node: &'a Json, key: &str) -> Result<&'a Json, String> {
     let object = node
         .as_object()
@@ -126,7 +115,6 @@ fn checked<'a>(node: &'a Json, key: &str) -> Result<&'a Json, String> {
     }
 }
 
-/// `$ref` target, or the node itself.
 fn resolve<'a>(root: &'a Json, node: &'a Json) -> Result<&'a Json, String> {
     let Some(reference) = node.get("$ref").and_then(Json::as_str) else {
         return Ok(node);
@@ -175,16 +163,12 @@ fn description(node: &Json, target: &Json) -> String {
         .to_owned()
 }
 
-/// `listen.client_api` -> `DESKHAVEN_LISTEN__CLIENT_API`; a table takes one more segment
-/// per entry (`DESKHAVEN_SETTINGS__<KEY>`).
 fn env_var(leaf: &Leaf) -> String {
     match leaf.kind.as_str() {
         "table" => bootstrap::env_var(&format!("{}.<key>", leaf.key)),
         _ => bootstrap::env_var(&leaf.key),
     }
 }
-
-// --- settings ---
 
 fn entries<'a>(settings: &'a Json, field: &str) -> Result<&'a Vec<Json>, String> {
     settings
@@ -302,8 +286,6 @@ fn rules_list(settings: &Json) -> Result<String, String> {
         .collect()
 }
 
-// --- markdown ---
-
 fn table<const N: usize>(header: [&str; N], rows: impl Iterator<Item = [String; N]>) -> String {
     let line = |cells: &[String]| format!("| {} |\n", cells.join(" | "));
     let header: Vec<String> = header.iter().map(|h| (*h).to_owned()).collect();
@@ -313,7 +295,7 @@ fn table<const N: usize>(header: [&str; N], rows: impl Iterator<Item = [String; 
     out
 }
 
-/// Text for a table cell: one line, `|` escaped.
+/// One line, `|` escaped.
 fn cell(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
@@ -333,7 +315,6 @@ fn code_list(values: &[Json]) -> Result<String, String> {
     }
 }
 
-/// A string without quotes, anything else as compact JSON.
 fn scalar(value: &Json) -> String {
     match value {
         Json::String(s) => s.clone(),
@@ -364,7 +345,6 @@ mod tests {
 
     use super::*;
 
-    /// A bootstrap schema with one property `x`, plus a `Secret` definition.
     fn with_property(property: Json) -> Json {
         json!({
             "properties": { "x": property },

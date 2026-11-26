@@ -1,4 +1,3 @@
-//! Row builders shared by the identity & access schema tests.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 // Each test crate uses a subset.

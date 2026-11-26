@@ -1,6 +1,3 @@
-//! A device's registration channel: `RegisterPeer` / `RegisterPk` over UDP with the
-//! client's protobufs (`hbb_common::rendezvous_proto`, `src/rendezvous_mediator.rs`).
-
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
@@ -17,7 +14,6 @@ use crate::stats::Failure;
 /// Rendezvous answers are a few dozen bytes.
 const MAX_DATAGRAM: usize = 2048;
 
-/// What a device registers (`Config::get_key_pair`, `hbb_common::get_uuid`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Keys {
     pub id: String,
@@ -36,7 +32,7 @@ impl Rendezvous {
         Ok(Self { socket, server })
     }
 
-    /// `RegisterPk` (`rendezvous_mediator.rs:1255-1283`); `Ok` only for result `OK`.
+    /// `Ok` only for result `OK`.
     pub async fn register_pk(&self, keys: &Keys, wait: Duration) -> Result<(), Failure> {
         let mut msg = RendezvousMessage::new();
         msg.set_register_pk(RegisterPk {
@@ -54,8 +50,7 @@ impl Rendezvous {
         }
     }
 
-    /// `RegisterPeer` (`rendezvous_mediator.rs:1302-1330`); `Ok(true)` when the server asks
-    /// for the key (`request_pk`).
+    /// `Ok(true)` when the server asks for the key (`request_pk`).
     pub async fn register_peer(&self, id: &str, wait: Duration) -> Result<bool, Failure> {
         let mut msg = RendezvousMessage::new();
         msg.set_register_peer(RegisterPeer {
@@ -68,7 +63,6 @@ impl Rendezvous {
         }
     }
 
-    /// Sends `msg` and returns the first message the server sends back within `wait`.
     async fn exchange(&self, msg: &RendezvousMessage, wait: Duration) -> Result<Union, Failure> {
         let deadline = Instant::now() + wait;
         let bytes = msg

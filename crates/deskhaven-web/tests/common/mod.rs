@@ -1,4 +1,3 @@
-//! Asset sets and an in-process request helper shared by the integration tests.
 // Each test binary uses a different subset; unwrap is fine in test helpers.
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 

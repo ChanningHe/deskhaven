@@ -1,8 +1,5 @@
-//! Schema migrations (forward-only).
-//!
-//! Naming: `mYYYYMMDD_NNNNNN_<name>` (timestamp, not a sequence number), registered in order
-//! in [`Migrator::migrations`]. One migration body serves both backends; dialect differences
-//! branch on `manager.get_database_backend()`.
+//! Forward-only. Names are `mYYYYMMDD_NNNNNN_<name>` (timestamp, not a sequence); one body
+//! serves both backends.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
@@ -55,7 +52,6 @@ impl MigratorTrait for Migrator {
     }
 }
 
-/// Named `CHECK (col IN (...))` for an enum stored as `TEXT` (04-data-model §1).
 fn enum_check(name: &str, col: impl IntoColumnRef, values: &[&str]) -> Check {
     Check::named(
         name.to_owned(),
@@ -63,8 +59,7 @@ fn enum_check(name: &str, col: impl IntoColumnRef, values: &[&str]) -> Check {
     )
 }
 
-/// SQLite stores booleans as integers and accepts any value; constrain them to 0/1.
-/// PostgreSQL's native `boolean` needs nothing.
+/// SQLite stores booleans as integers and accepts any value.
 fn bool_checks(table: &mut TableCreateStatement, backend: DbBackend, name: &str, cols: &[&str]) {
     if backend != DbBackend::Sqlite {
         return;
@@ -75,8 +70,8 @@ fn bool_checks(table: &mut TableCreateStatement, backend: DbBackend, name: &str,
     }
 }
 
-/// Named UNIQUE index over one column. NULLs never conflict on either backend, so a nullable
-/// column is unique among its non-NULL values.
+/// NULLs never conflict on either backend, so a nullable column is unique among its non-NULL
+/// values.
 fn unique_index(name: &str, table: impl IntoIden, col: impl IntoIden) -> IndexCreateStatement {
     Index::create()
         .name(name)
@@ -86,12 +81,12 @@ fn unique_index(name: &str, table: impl IntoIden, col: impl IntoIden) -> IndexCr
         .to_owned()
 }
 
-/// Named non-unique index over one column (PostgreSQL does not index FK columns itself).
+/// PostgreSQL does not index FK columns itself.
 fn index(name: &str, table: impl IntoIden, col: impl IntoIden) -> IndexCreateStatement {
     Index::create().name(name).table(table).col(col).to_owned()
 }
 
-/// Inline foreign key (SQLite cannot add one to an existing table).
+/// Inline: SQLite cannot add a foreign key to an existing table.
 fn foreign_key(
     name: &str,
     from: (impl IntoIden, impl IntoIden),

@@ -1,5 +1,3 @@
-//! `groups`: user groups (membership in `group_members`).
-
 use sea_orm::entity::prelude::*;
 
 use super::managed_by::ManagedBy;

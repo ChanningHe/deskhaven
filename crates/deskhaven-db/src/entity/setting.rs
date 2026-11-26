@@ -1,5 +1,3 @@
-//! `settings`: current value of each runtime setting (optimistic locking via `version`).
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

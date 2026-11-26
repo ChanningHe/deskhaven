@@ -1,6 +1,3 @@
-//! One setting declaration: key, description, typed default, rule and
-//! bad-row fallback.
-
 use std::marker::PhantomData;
 
 use serde_json::{Map, Value as Json};
@@ -9,23 +6,18 @@ use super::kind::SettingType;
 use super::value::Value;
 use crate::bootstrap::{SETTINGS_KEY, env_var};
 
-/// The environment variable that pins `key`, e.g. `auth.session_ttl` ->
-/// `DESKHAVEN_SETTINGS__AUTH__SESSION_TTL`.
 pub(crate) fn env_name(key: &str) -> String {
     env_var(&format!("{SETTINGS_KEY}.{key}"))
 }
 
-/// A declared setting whose values are `T`. Declared only through
-/// `settings!` (see `registry.rs`); read with
-/// [`Snapshot::get`](super::Snapshot::get).
+/// Declared only through `settings!`; read with [`Snapshot::get`](super::Snapshot::get).
 pub struct Setting<T: SettingType> {
     key: &'static str,
     description: &'static str,
     default: T::Default,
     rule: T::Rule,
-    /// Value used when a stored row exists but cannot be used; `None` =
-    /// the default. Set for security-relevant settings, so corruption or a
-    /// lost master key fails closed rather than open.
+    /// Used when a stored row cannot be used; `None` = the default. Set for security-relevant
+    /// settings, so corruption or a lost master key fails closed rather than open.
     on_bad_row: Option<T::Default>,
     /// Only a pin sets the value: a stored row is ignored and every write is
     /// refused, so the console cannot turn it on.
@@ -33,7 +25,6 @@ pub struct Setting<T: SettingType> {
     _type: PhantomData<fn() -> T>,
 }
 
-/// Bad-row policy: fall back to `value` instead of the default.
 pub(crate) const fn strict<D>(value: D) -> Option<D> {
     Some(value)
 }
@@ -67,12 +58,8 @@ impl<T: SettingType> Setting<T> {
     }
 }
 
-/// The type-erased view of a [`Setting`], used wherever all settings are
-/// handled uniformly (pins, storage, schema, read APIs).
 pub trait AnySetting: Send + Sync {
-    /// Dotted key, e.g. `auth.session_ttl`.
     fn key(&self) -> &'static str;
-    /// The first key segment, e.g. `auth`.
     fn category(&self) -> &'static str {
         let key = self.key();
         key.split_once('.').map_or(key, |(category, _)| category)
@@ -80,15 +67,11 @@ pub trait AnySetting: Send + Sync {
     fn description(&self) -> &'static str;
     /// Sensitive values are encrypted at rest and never shown.
     fn is_sensitive(&self) -> bool;
-    /// Only the bootstrap configuration sets it; a stored row is ignored.
     fn is_pin_only(&self) -> bool;
     fn default_value(&self) -> Value;
-    /// Effective value when a stored row exists but cannot be used.
     fn bad_row_value(&self) -> Value;
-    /// Parses (native or text JSON) and checks the rule. The error never
-    /// contains the input.
+    /// The error never contains the input.
     fn coerce(&self, raw: &Json) -> Result<Value, String>;
-    /// Exported schema entry.
     fn schema(&self) -> Json;
 }
 

@@ -1,5 +1,3 @@
-//! Audit schema (M2-02): connection sessions, file transfers, alarms, nonces, login events and
-//! the console audit log, on every available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -66,8 +64,6 @@ async fn tables_and_indexes_exist() {
     })
     .await;
 }
-
-// connection_sessions
 
 #[tokio::test]
 async fn a_close_message_alone_makes_a_valid_row() {
@@ -206,8 +202,6 @@ async fn controller_must_exist_and_is_cleared_when_deleted() {
     .await;
 }
 
-// file_transfers
-
 #[tokio::test]
 async fn file_transfer_round_trips_and_checks_its_enums() {
     each_migrated_backend(async |db: &TestDb| {
@@ -235,8 +229,6 @@ async fn file_transfer_round_trips_and_checks_its_enums() {
     .await;
 }
 
-// alarms
-
 #[tokio::test]
 async fn alarm_round_trips() {
     each_migrated_backend(async |db: &TestDb| {
@@ -251,8 +243,6 @@ async fn alarm_round_trips() {
     })
     .await;
 }
-
-// audit_nonces
 
 #[tokio::test]
 async fn a_nonce_is_recorded_once() {
@@ -272,8 +262,6 @@ async fn a_nonce_is_recorded_once() {
     })
     .await;
 }
-
-// login_events
 
 #[tokio::test]
 async fn login_event_round_trips_with_and_without_a_user() {
@@ -351,8 +339,6 @@ async fn login_event_user_must_exist_and_is_cleared_when_deleted() {
     })
     .await;
 }
-
-// console_audit
 
 #[tokio::test]
 async fn console_audit_round_trips_for_each_actor_kind() {

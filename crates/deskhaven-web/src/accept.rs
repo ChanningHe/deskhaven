@@ -1,5 +1,5 @@
-//! `Accept` handling for the SPA fallback: only requests that would take an
-//! HTML document get `index.html`; `fetch()` of JSON or an `<img>` must not.
+//! Only requests that would take an HTML document get `index.html`; `fetch()` of JSON or an
+//! `<img>` must not.
 
 use axum::http::HeaderMap;
 use axum::http::header::ACCEPT;
@@ -25,7 +25,6 @@ fn range_matches_html(range: &str) -> bool {
     is_html && !parts.any(is_zero_quality)
 }
 
-/// `q=0`, `q=0.0`, `q=0.000`: explicitly not acceptable.
 fn is_zero_quality(param: &str) -> bool {
     let Some((name, value)) = param.split_once('=') else {
         return false;

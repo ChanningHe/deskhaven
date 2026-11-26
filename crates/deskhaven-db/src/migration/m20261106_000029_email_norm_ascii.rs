@@ -1,9 +1,6 @@
-//! `users.email_norm` becomes the ASCII lowercase of `users.email` (M4-05). It was the Unicode
-//! `to_lowercase`, which maps some non-ASCII characters onto ASCII letters (the Kelvin sign
-//! U+212A to `k`). Rows whose stored form differs (only addresses with non-ASCII upper-case
-//! letters) are recomputed. No unique-index conflict is possible: two addresses whose ASCII
-//! lowercases are equal also had equal Unicode lowercases, so they could not coexist before.
-//! Mirrors `deskhaven_core::users::normalize::email`.
+//! Unicode `to_lowercase` maps some non-ASCII characters onto ASCII letters (Kelvin sign U+212A
+//! to `k`). No unique-index conflict is possible: equal ASCII lowercases had equal Unicode
+//! lowercases too.
 
 use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::*;

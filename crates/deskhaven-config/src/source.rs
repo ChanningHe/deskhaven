@@ -1,14 +1,9 @@
-//! Provenance of an effective configuration value.
-
 use std::fmt;
 use std::path::PathBuf;
 
 use serde::Serialize;
 
-/// Where an effective value came from.
-///
-/// Shared by bootstrap keys and runtime settings; only settings use
-/// [`Source::Database`].
+/// Only runtime settings use [`Source::Database`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 #[non_exhaustive]
@@ -23,11 +18,11 @@ pub enum Source {
     Cli,
     /// A runtime setting stored in the database.
     Database {
-        /// Optimistic-lock version of the stored row (starts at 1).
+        /// Starts at 1.
         version: i64,
         /// User who wrote it; `None` for the system.
         by: Option<i64>,
-        /// When it was written, unix milliseconds (UTC).
+        /// Unix milliseconds (UTC).
         at: i64,
     },
 }

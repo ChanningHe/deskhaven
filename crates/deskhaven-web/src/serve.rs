@@ -1,5 +1,3 @@
-//! The request handler: exact asset, SPA fallback or 404.
-
 use axum::Router;
 use axum::extract::Request;
 use axum::http::header::{ALLOW, CACHE_CONTROL, CONTENT_TYPE};
@@ -48,7 +46,6 @@ async fn handle<E: RustEmbed>(req: Request) -> Response {
     }
 }
 
-/// 503: the binary was built without `web/dist`.
 fn not_built() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,

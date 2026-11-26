@@ -1,5 +1,3 @@
-//! `ldap_directories`: LDAP directories used for authentication (P0 enables one).
-
 use sea_orm::entity::prelude::*;
 
 use super::managed_by::ManagedBy;
@@ -15,7 +13,7 @@ pub struct Model {
     pub start_tls: bool,
     pub tls_verify: bool,
     pub bind_dn: Option<String>,
-    /// Encrypted service-account password (`v1:<key_id>:<nonce>:<ct>`).
+    /// Encrypted service-account password.
     pub bind_password_enc: Option<String>,
     pub user_base_dn: String,
     pub user_filter: String,

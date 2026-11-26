@@ -1,6 +1,3 @@
-//! The server under test: `deskhaven serve` in its own working directory, started and
-//! stopped by the load generator (so its pid, ports and settings are known).
-
 use std::fs::File;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -16,14 +13,13 @@ use crate::http;
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const POLL: Duration = Duration::from_millis(100);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-/// The server's own shutdown deadline is 10 s (02 §7).
+/// The server's own shutdown deadline is 10 s.
 const STOP_LIMIT: Duration = Duration::from_secs(15);
 const CONFIG_FILE: &str = "deskhaven.toml";
 const RESTART_LOG: &str = "server-restart.log";
 #[cfg(unix)]
 const DATA_DIR_MODE: u32 = 0o700;
 
-/// How to run the server.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub bin: PathBuf,
@@ -51,7 +47,6 @@ impl ServerConfig {
         self.work_dir.join("server.log")
     }
 
-    /// The URL the server uses, the default SQLite file included.
     pub fn effective_database_url(&self) -> String {
         self.database_url.clone().unwrap_or_else(|| {
             let file = self.work_dir.join("data").join("deskhaven.db");
@@ -59,7 +54,6 @@ impl ServerConfig {
         })
     }
 
-    /// `deskhaven.toml` for this run.
     pub fn render(&self) -> String {
         let mut root = toml::Table::new();
         let data_dir = self.work_dir.join("data").display().to_string();
@@ -80,8 +74,8 @@ impl ServerConfig {
         root.to_string()
     }
 
-    /// The same with absolute paths, since the server runs inside the work dir. A bare
-    /// program name (no `/`) stays as it is: it is looked up on `PATH`.
+    /// Absolute because the server runs inside the work dir. A bare program name (no `/`) stays
+    /// as it is: it is looked up on `PATH`.
     pub fn absolute(&self) -> Result<Self, LoadgenError> {
         let resolve = |path: &Path| std::path::absolute(path).map_err(io_error("resolve", path));
         let bin = match self.bin.components().count() > 1 {
@@ -104,16 +98,14 @@ fn table<const N: usize>(entries: [(&str, toml::Value); N]) -> toml::Value {
     toml::Value::Table(table)
 }
 
-/// A running server; killed on drop if still alive.
+/// Killed on drop if still alive.
 pub struct Server {
     child: Child,
     config: ServerConfig,
-    /// Its stdout and stderr.
     log: PathBuf,
 }
 
 impl Server {
-    /// Writes the configuration into the (new or empty) work dir and starts the server.
     pub fn spawn(config: &ServerConfig) -> Result<Self, LoadgenError> {
         let config = config.absolute()?;
         prepare_work_dir(&config.work_dir)?;
@@ -122,8 +114,7 @@ impl Server {
         Self::launch(config, log)
     }
 
-    /// Starts the server again in the work dir of an earlier [`Server::spawn`], on the same
-    /// configuration and database; it logs to `server-restart.log`.
+    /// Same configuration and database; logs to `server-restart.log`.
     pub fn restart(config: &ServerConfig) -> Result<Self, LoadgenError> {
         let config = config.absolute()?;
         let log = config.work_dir.join(RESTART_LOG);
@@ -155,12 +146,10 @@ impl Server {
         self.child.id()
     }
 
-    /// The configuration it runs with (absolute paths).
     pub fn config(&self) -> &ServerConfig {
         &self.config
     }
 
-    /// Waits until `/readyz` answers 200 (database open, signal server serving).
     pub async fn wait_ready(&mut self, limit: Duration) -> Result<(), LoadgenError> {
         let deadline = Instant::now() + limit;
         let api = self.config.api();

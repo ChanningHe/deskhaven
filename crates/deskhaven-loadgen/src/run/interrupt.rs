@@ -1,6 +1,5 @@
-//! SIGINT / SIGTERM, latched for the whole run: one watcher task trips it once, and every
-//! later [`Interrupt::guard`] or [`Interrupt::check`] fails, so a signal during a server stop
-//! still cancels what would come next (the idle restart).
+//! Latched for the whole run: once tripped, every later [`Interrupt::guard`] or
+//! [`Interrupt::check`] fails, so a signal during a server stop still cancels the idle restart.
 
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
@@ -17,7 +16,7 @@ pub(super) struct Interrupt {
 }
 
 impl Interrupt {
-    /// Starts watching the signals; the watcher is aborted when the returned set is dropped.
+    /// The watcher is aborted when the returned set is dropped.
     pub(super) fn watch() -> (Self, JoinSet<()>) {
         let interrupt = Self::default();
         let mut watcher = JoinSet::new();
@@ -36,7 +35,6 @@ impl Interrupt {
         LoadgenError::Interrupted(self.by.get().copied().unwrap_or("a signal"))
     }
 
-    /// `Err` once a signal came.
     pub(super) fn check(&self) -> Result<(), LoadgenError> {
         match self.token.is_cancelled() {
             true => Err(self.error()),
@@ -44,8 +42,8 @@ impl Interrupt {
         }
     }
 
-    /// `work`, unless a signal comes (or came) first; `work` is then dropped, which aborts
-    /// the device and sampler tasks, and the caller stops the server.
+    /// `work` is then dropped, which aborts the device and sampler tasks; the caller stops the
+    /// server.
     pub(super) async fn guard<T>(
         &self,
         work: impl Future<Output = Result<T, LoadgenError>>,
@@ -88,11 +86,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_signal_cancels_the_running_work_and_everything_after_it() {
-        // Arrange
         let interrupt = Interrupt::default();
         assert!(interrupt.check().is_ok());
 
-        // Act: tripped while work is pending.
+        // Tripped while work is pending.
         let tripper = interrupt.clone();
         let running = interrupt.guard(async {
             tripper.trip("SIGINT");
@@ -102,7 +99,7 @@ mod tests {
             .await
             .expect("guard must return once tripped");
 
-        // Assert: that work and any later step fail, without another signal.
+        // That work and any later step fail, without another signal.
         assert!(matches!(first, Err(LoadgenError::Interrupted("SIGINT"))));
         assert!(matches!(
             interrupt.check(),

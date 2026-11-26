@@ -1,5 +1,3 @@
-//! SQLite read-then-write transactions: deferred BEGIN fails on lock upgrade, `begin_write`
-//! serializes writers instead.
 #![allow(clippy::unwrap_used)]
 
 use std::time::Duration;
@@ -40,8 +38,8 @@ async fn write_n(db: &impl ConnectionTrait, n: i64) -> Result<(), DbErr> {
     db.execute_unprepared(&sql).await.map(|_| ())
 }
 
-/// Documents the hazard: two deferred transactions both read; after the first commits its
-/// write, the second cannot upgrade its stale snapshot and fails at once (no busy wait).
+/// Documents the hazard: the second deferred transaction cannot upgrade its stale snapshot and
+/// fails at once (no busy wait).
 #[tokio::test]
 async fn deferred_read_then_write_fails_with_busy() {
     let dir = tempfile::tempdir().unwrap();

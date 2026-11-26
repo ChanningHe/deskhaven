@@ -1,7 +1,5 @@
-//! Bootstrap configuration: CLI > env > TOML file > built-in defaults.
-//!
-//! See `05-config.md` §2. Values needed before the database is reachable;
-//! changing any of them requires a restart.
+//! Bootstrap configuration: CLI > env > TOML file > built-in defaults. Values needed before
+//! the database is reachable; changing any of them requires a restart.
 
 mod cli;
 mod effective;
@@ -29,15 +27,12 @@ use env::CONFIG_VAR;
 use keys::KnownKeys;
 pub(crate) use pins::SETTINGS_KEY;
 
-/// Config file candidates when neither `--config` nor `$DESKHAVEN_CONFIG` is set.
 pub const DEFAULT_SEARCH_PATHS: [&str; 2] = ["deskhaven.toml", "/etc/deskhaven/deskhaven.toml"];
 
-/// Inputs that do not come from the process environment.
 #[derive(Debug, Clone)]
 pub struct LoadOptions {
-    /// `--config <path>`; must exist when given.
+    /// Must exist when given.
     pub config_path: Option<PathBuf>,
-    /// Tried in order when no explicit path is given; first existing file wins.
     pub search_paths: Vec<PathBuf>,
     pub cli: CliOverrides,
 }
@@ -52,24 +47,19 @@ impl Default for LoadOptions {
     }
 }
 
-/// A validated bootstrap configuration with provenance.
 #[derive(Debug, Clone)]
 pub struct Loaded {
     pub config: Bootstrap,
-    /// The file that was read, if any.
     pub config_file: Option<PathBuf>,
-    /// Non-fatal findings for the caller to log.
     pub warnings: Vec<Warning>,
     entries: Vec<EffectiveEntry>,
 }
 
 impl Loaded {
-    /// Every key (schema leaves, then `settings.*` pins) with redacted values.
     pub fn effective(&self) -> &[EffectiveEntry] {
         &self.entries
     }
 
-    /// Provenance of a dotted key; `None` if the key does not exist.
     pub fn source(&self, key: &str) -> Option<&Source> {
         self.entries
             .iter()
@@ -78,8 +68,7 @@ impl Loaded {
     }
 }
 
-/// Loads, merges and validates the bootstrap configuration. Reads the process
-/// environment (`DESKHAVEN_*`) but never prints; warnings are returned.
+/// Reads the process environment but never prints; warnings are returned.
 pub fn load(options: &LoadOptions) -> Result<Loaded, ConfigError> {
     let known = KnownKeys::new()?;
     let env = env::plan(std::env::vars_os(), &known)?;
@@ -144,8 +133,7 @@ fn locate(options: &LoadOptions, env_path: Option<&Path>) -> Result<Option<PathB
         .map(|p| absolute(p)))
 }
 
-/// Absolute form for clearer provenance; falls back to the path as given if
-/// the working directory is unavailable (purely cosmetic).
+/// Cosmetic: falls back to the path as given if the working directory is unavailable.
 fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
 }

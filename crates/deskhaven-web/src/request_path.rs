@@ -1,16 +1,12 @@
-//! Request path -> what the web console may serve for it.
-//!
-//! The path is percent-decoded first so that encoded traversal (`%2e%2e`,
-//! `%2f`) and an encoded API prefix (`/%61pi/x`) are judged on what they mean.
+//! The path is percent-decoded first so that encoded traversal (`%2e%2e`, `%2f`) and an
+//! encoded API prefix (`/%61pi/x`) are judged on what they mean.
 
-/// Whole-segment API prefixes (the same ones `deskhaven-http` re-renders errors for).
+/// The same ones `deskhaven-http` re-renders errors for.
 const API_PREFIXES: [&str; 2] = ["/api", "/admin/api"];
 
-/// What to do with a request path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Target {
-    /// Never served: undecodable, traversal, hidden file, or an API path
-    /// (the API owns its 404, the SPA must not swallow it).
+    /// Undecodable, traversal, hidden file, or an API path (the API owns its 404).
     Reject,
     /// A candidate file key (`assets/a.js`; empty for `/`).
     Path { key: String, has_extension: bool },
@@ -46,7 +42,6 @@ fn is_forbidden_segment(segment: &str) -> bool {
     segment.starts_with('.') || segment.contains(['\\', '\0'])
 }
 
-/// `None` when a `%` escape is malformed or the result is not UTF-8.
 fn percent_decode(input: &str) -> Option<String> {
     let bytes = input.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());

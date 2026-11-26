@@ -1,12 +1,3 @@
-//! Development tasks. Run as `cargo xtask <task>` (alias of `cargo run -p xtask --`).
-//!
-//! - `dist`: build the web console and the release binary that embeds it.
-//! - `docs [--check]`: write (or check) the generated configuration reference.
-//! - `gen-openapi [--check]`: write (or check) the admin API OpenAPI document.
-//! - `gen-strategy-catalog [--from <dir>] [--check]`: regenerate (or check) the strategy
-//!   editor's client option catalog from the vendored client source (or `<dir>`).
-//! - `loadgen [args]`: build release binaries and run the load generator (M4-04).
-
 mod catalog;
 mod dist;
 mod docs;
@@ -56,7 +47,6 @@ fn run(task: Option<&str>, args: &[String]) -> Result<(), XtaskError> {
     }
 }
 
-/// xtask lives in `<root>/xtask`.
 fn repo_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

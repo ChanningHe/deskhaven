@@ -1,6 +1,3 @@
-//! Fixed-variant setting values. Each enum is declared once with its wire
-//! names; parsing, display and the schema's `variants` derive from that.
-
 use serde_json::{Map, Value as Json};
 
 use super::kind::{SettingType, sealed};
@@ -18,7 +15,6 @@ macro_rules! setting_enum {
         }
 
         impl $name {
-            /// Wire names, in declaration order.
             pub const VARIANTS: &'static [&'static str] = &[$($text),+];
 
             pub const fn as_str(self) -> &'static str {
@@ -27,7 +23,6 @@ macro_rules! setting_enum {
                 }
             }
 
-            /// ASCII case-insensitive; the result is the declared variant.
             fn from_name(name: &str) -> Option<Self> {
                 [$( Self::$variant ),+]
                     .into_iter()
@@ -88,9 +83,7 @@ setting_enum! {
 }
 
 setting_enum! {
-    /// The highest role an OIDC login may reach by linking an existing account through its
-    /// verified email; `off` never links by email. Ordered: each variant covers the ones
-    /// before it.
+    /// Ordered: each variant covers the ones before it; `off` never links by email.
     LinkEmailMaxRole { Off = "off", User = "user", Admin = "admin", Owner = "owner" }
 }
 

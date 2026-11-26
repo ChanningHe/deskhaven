@@ -1,8 +1,5 @@
-//! Backend-independent classification of constraint violations.
-
 use sea_orm::{DbErr, RuntimeErr, SqlErr};
 
-/// PostgreSQL `foreign_key_violation`.
 const PG_FOREIGN_KEY_VIOLATION: &str = "23503";
 /// PostgreSQL `restrict_violation`: PostgreSQL 18 reports `ON DELETE RESTRICT` with this code.
 const PG_RESTRICT_VIOLATION: &str = "23001";
@@ -10,8 +7,6 @@ const PG_RESTRICT_VIOLATION: &str = "23001";
 /// `ON DELETE RESTRICT` (1811), which sea-orm does not classify.
 const SQLITE_FOREIGN_KEY_CODES: [&str; 2] = ["787", "1811"];
 
-/// Whether `err` is a foreign-key violation on either backend, including
-/// `ON DELETE RESTRICT` (PostgreSQL 18 `23001`, SQLite extended code 1811).
 pub fn is_foreign_key_violation(err: &DbErr) -> bool {
     if matches!(
         err.sql_err(),
@@ -26,7 +21,6 @@ pub fn is_foreign_key_violation(err: &DbErr) -> bool {
     })
 }
 
-/// The driver-level error code, if the error came from the database itself.
 pub(crate) fn database_code(err: &DbErr) -> Option<String> {
     let runtime = match err {
         DbErr::Exec(runtime) | DbErr::Query(runtime) | DbErr::Conn(runtime) => runtime,

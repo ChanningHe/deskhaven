@@ -1,8 +1,3 @@
-//! External identity sources: OIDC providers, LDAP directories and the identities linking
-//! users to a provider (04-data-model §3, 06-security §3.4–3.5).
-//!
-//! `*_secret_enc` / `*_password_enc` hold `v1:<key_id>:<nonce>:<ct>` ciphertext (06 §5).
-
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_pk_auto, boolean, text, text_null};
@@ -118,7 +113,7 @@ fn ldap_directories_table(backend: DbBackend) -> TableCreateStatement {
         .col(text(LdapDirectories::Name))
         .col(text(LdapDirectories::Url))
         .col(boolean(LdapDirectories::StartTls).default(false))
-        // Certificate verification is on unless explicitly turned off (06 §3.5).
+        // Certificate verification is on unless explicitly turned off.
         .col(boolean(LdapDirectories::TlsVerify).default(true))
         .col(text_null(LdapDirectories::BindDn))
         .col(text_null(LdapDirectories::BindPasswordEnc))
@@ -179,8 +174,8 @@ fn user_identities_table(backend: DbBackend) -> TableCreateStatement {
     table
 }
 
-/// P0 allows a single enabled directory. A partial unique index over the (constant) `enabled`
-/// column admits at most one row with `enabled` true, on both backends.
+/// A partial unique index over the constant `enabled` column admits at most one enabled
+/// directory, on both backends.
 fn single_enabled_ldap_index() -> IndexCreateStatement {
     Index::create()
         .name("uq_ldap_directories_enabled")
@@ -216,8 +211,7 @@ impl MigrationTrait for Migration {
         manager.create_index(single_enabled_ldap_index()).await?;
 
         manager.create_table(user_identities_table(backend)).await?;
-        // The identity key (06 §3.4): (provider, subject). Its prefix also serves the
-        // provider_id FK.
+        // The identity key: (provider, subject). Its prefix also serves the provider_id FK.
         let identity_key = Index::create()
             .name("uq_user_identities_provider_subject")
             .table(UserIdentities::Table)

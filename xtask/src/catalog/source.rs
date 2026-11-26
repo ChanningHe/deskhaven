@@ -1,19 +1,11 @@
-//! Reads the client's option keys and their boolean defaults from its Rust source (read as
-//! text, never built):
-//!
-//! - `rustdesk/libs/base/src/config/keys.rs`: the `OPTION_*` constants and `KEYS_SETTINGS`,
-//!   the options the client keeps in `Config::options`, which is where a strategy's
-//!   `config_options` land (`src/hbbs_http/sync.rs`, `handle_config_options`).
-//! - `hbb_common/src/config.rs`: the `OPTION_*` constants of its `keys` module (re-exported
-//!   by the client) and `option2bool`, whose branches give the default of `enable-*` (on)
-//!   and `allow-*` style (off) options.
+//! Read as text, never built. `KEYS_SETTINGS` lists the options a strategy's `config_options`
+//! can set; `option2bool` gives the default of `enable-*` (on) and `allow-*` style (off)
+//! options.
 
 use std::collections::BTreeMap;
 
-/// Where the files live under `--from`.
 pub const CONFIG_RS: &str = "hbb_common/src/config.rs";
 pub const KEYS_RS: &str = "rustdesk/libs/base/src/config/keys.rs";
-/// The key list of the options a strategy can set.
 pub const SETTINGS_LIST: &str = "KEYS_SETTINGS";
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -28,10 +20,8 @@ pub enum SourceError {
     Duplicate(String),
 }
 
-/// Marker line naming the upstream commit a vendored file was copied from.
 const REVISION_MARKER: &str = "// vendored-revision: ";
 
-/// The commit recorded in a vendored file's `// vendored-revision: <rev>` line.
 pub fn revision(src: &str) -> Option<&str> {
     src.lines()
         .find_map(|line| line.strip_prefix(REVISION_MARKER))
@@ -39,7 +29,6 @@ pub fn revision(src: &str) -> Option<&str> {
         .filter(|rev| !rev.is_empty())
 }
 
-/// One option of the key list with the default its name implies (`option2bool`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceKey {
     pub key: String,
@@ -63,7 +52,6 @@ impl Rule {
     }
 }
 
-/// The options of [`SETTINGS_LIST`] in source order, with their derived defaults.
 pub fn settings_keys(config_rs: &str, keys_rs: &str) -> Result<Vec<SourceKey>, SourceError> {
     let shared = string_consts(
         block(config_rs, "pub mod keys {").ok_or(SourceError::Missing("pub mod keys"))?,
@@ -84,7 +72,7 @@ pub fn settings_keys(config_rs: &str, keys_rs: &str) -> Result<Vec<SourceKey>, S
     Ok(keys)
 }
 
-/// `pub const NAME: &str = "value";` items of `src` (one statement may span lines).
+/// One statement may span lines.
 fn string_consts(src: &str) -> BTreeMap<String, String> {
     let mut found = BTreeMap::new();
     for item in src.split("pub const ").skip(1) {
@@ -107,13 +95,12 @@ fn string_consts(src: &str) -> BTreeMap<String, String> {
     found
 }
 
-/// The content of a plain string literal (no escapes).
+/// No escapes.
 fn literal(token: &str) -> Option<String> {
     let inner = token.strip_prefix('"')?.strip_suffix('"')?;
     (!inner.contains(['"', '\\'])).then(|| inner.to_owned())
 }
 
-/// The text inside the braces that follow `opener` (which ends with `{`).
 fn block<'a>(src: &'a str, opener: &str) -> Option<&'a str> {
     let start = src.find(opener)? + opener.len();
     let mut depth = 1usize;
@@ -132,7 +119,6 @@ fn block<'a>(src: &'a str, opener: &str) -> Option<&'a str> {
     None
 }
 
-/// The identifiers (or literals) of `pub const <name>: &[&str] = &[...];`, comments dropped.
 fn key_list(src: &str, name: &'static str) -> Result<Vec<String>, SourceError> {
     let opener = format!("pub const {name}: &[&str] = &[");
     let start = src.find(&opener).ok_or(SourceError::Missing(name))? + opener.len();
@@ -153,7 +139,6 @@ fn key_list(src: &str, name: &'static str) -> Result<Vec<String>, SourceError> {
         .collect())
 }
 
-/// A key list item: a constant name or a string literal.
 fn resolve(item: &str, consts: &BTreeMap<String, String>) -> Result<String, SourceError> {
     let name = item.strip_prefix("keys::").unwrap_or(item);
     literal(item)
@@ -161,9 +146,8 @@ fn resolve(item: &str, consts: &BTreeMap<String, String>) -> Result<String, Sour
         .ok_or_else(|| SourceError::Unresolved(item.to_owned()))
 }
 
-/// The `if` / `else if` rules of `option2bool`, in order. The final `else` gives no rule:
-/// it only holds for options the client reads through `option2bool`, which the name does
-/// not tell.
+/// The final `else` gives no rule: it only holds for options the client reads through
+/// `option2bool`, which the name does not tell.
 fn bool_rules(
     config_rs: &str,
     consts: &BTreeMap<String, String>,

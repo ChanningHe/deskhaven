@@ -1,6 +1,3 @@
-//! Device groups (04-data-model §4). Membership is `devices.device_group_id`, whose foreign
-//! key is added by the next migration.
-
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_pk_auto, text};
 

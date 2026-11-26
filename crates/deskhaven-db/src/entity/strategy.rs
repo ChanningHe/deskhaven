@@ -1,5 +1,3 @@
-//! `strategies`: named sets of client options pushed through the heartbeat.
-
 use sea_orm::entity::prelude::*;
 
 use super::managed_by::ManagedBy;

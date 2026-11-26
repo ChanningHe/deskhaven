@@ -1,37 +1,29 @@
-//! File-descriptor budget (review M-b, round 3 M2). Every connection costs a
-//! descriptor; hitting `RLIMIT_NOFILE` makes `accept` fail and also breaks the
-//! DB pool, files and the in-process signal server. HTTP therefore gets only a
-//! share of the soft limit (`nofile_budget_percent`, default 50%), split 3:1 in
-//! favour of the client API when the admin listener is separate.
+//! Hitting `RLIMIT_NOFILE` makes `accept` fail and also breaks the DB pool, files and the
+//! in-process signal server, so HTTP gets only a share of the soft limit.
 
 /// Soft-limit target when the hard limit is unlimited (macOS): asking for
 /// "infinity" fails there.
 pub const NOFILE_TARGET_WHEN_UNLIMITED: u64 = 65_536;
 
 const PERCENT: u64 = 100;
-/// Split mode: client_api gets 3 parts, admin 1.
 const CLIENT_API_PARTS: u64 = 3;
 const ADMIN_PARTS: u64 = 1;
 
-/// `RLIMIT_NOFILE` after [`raise_nofile_limit`]; `None` = unlimited/unknown.
+/// `None` = unlimited/unknown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NofileInfo {
     pub soft: Option<u64>,
     pub hard: Option<u64>,
-    /// The soft limit was raised by this call.
     pub raised: bool,
 }
 
-/// The soft limit to ask for, or `None` if the current one is already enough.
 fn raise_target(soft: Option<u64>, hard: Option<u64>) -> Option<u64> {
-    let soft = soft?; // already unlimited
+    let soft = soft?;
     let target = hard.unwrap_or(NOFILE_TARGET_WHEN_UNLIMITED);
     (soft < target).then_some(target)
 }
 
-/// Raise the soft `RLIMIT_NOFILE` to the hard limit, or to
-/// [`NOFILE_TARGET_WHEN_UNLIMITED`] when the hard limit is unlimited. Call once
-/// at startup. Failure is logged and leaves the limit unchanged.
+/// Failure is logged and leaves the limit unchanged.
 #[cfg(unix)]
 pub fn raise_nofile_limit() -> NofileInfo {
     use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
@@ -81,17 +73,13 @@ pub(crate) fn current_soft_limit() -> Option<u64> {
     None
 }
 
-/// Which listener a budget is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Share {
-    /// The only listener.
     Single,
     SplitClientApi,
     SplitAdmin,
 }
 
-/// Connection cap for one listener: `configured`, clamped to its share of
-/// `soft * percent / 100`. Never below 1.
 pub(crate) fn connection_budget(
     configured: usize,
     soft: Option<u64>,
@@ -161,7 +149,6 @@ mod tests {
         assert_eq!(raise_target(Some(4096), Some(4096)), None);
     }
 
-    /// Review round 3 LOW: unlimited hard limit -> a sane finite target.
     #[test]
     fn raise_target_is_finite_when_hard_is_unlimited() {
         assert_eq!(

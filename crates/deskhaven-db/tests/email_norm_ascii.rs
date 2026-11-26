@@ -1,6 +1,3 @@
-//! M4-05: `users.email_norm` is the ASCII lowercase of `email`. Earlier rows were folded with
-//! Unicode `to_lowercase`, which maps e.g. the Kelvin sign (U+212A) to ASCII `k`; the
-//! migration recomputes them. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used)]
 
 use deskhaven_db::begin_write;
@@ -9,7 +6,6 @@ use deskhaven_db::testing::{TestDb, each_backend};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
 
-/// Applies the next `steps` pending migrations (all when `None`).
 async fn migrate_steps(conn: &DatabaseConnection, steps: Option<u32>) {
     let txn = begin_write(conn).await.unwrap();
     Migrator::up(&txn, steps).await.unwrap();

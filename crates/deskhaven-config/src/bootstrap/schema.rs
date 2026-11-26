@@ -1,5 +1,3 @@
-//! Bootstrap configuration structure (05-config §2.2). Defaults are the spec.
-
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
@@ -62,8 +60,7 @@ pub struct Listen {
 }
 
 impl Listen {
-    /// The separate admin listener, if any. An address equal to `client_api`
-    /// means "not split".
+    /// An address equal to `client_api` means "not split".
     pub fn admin_addr(&self) -> Option<SocketAddr> {
         self.admin.filter(|addr| *addr != self.client_api)
     }
@@ -161,12 +158,10 @@ pub enum LogFormat {
     Json,
 }
 
-/// JSON Schema of the bootstrap file, for editors and docs.
 pub fn json_schema() -> serde_json::Value {
     schemars::schema_for!(Bootstrap).to_value()
 }
 
-/// `""` <-> `None` for optional `FromStr` values.
 mod empty_as_none {
     use std::fmt::Display;
     use std::str::FromStr;

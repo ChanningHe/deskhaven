@@ -1,10 +1,7 @@
-//! `devices`: the device registry (04-data-model §4), keyed by the RustDesk id.
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;
 
-/// `devices.status` (TEXT + CHECK).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Text")]
 pub enum DeviceStatus {
@@ -19,7 +16,6 @@ pub enum DeviceStatus {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    /// hbbs `id`; unique.
     #[sea_orm(column_type = "Text", unique)]
     pub rustdesk_id: String,
     /// Device uuid from its first RegisterPk; immutable.
@@ -56,7 +52,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub display_username: Option<String>,
     pub status: DeviceStatus,
-    /// `None` = not deployed (P1 admission).
+    /// `None` = not deployed.
     pub deployed_at: Option<TimestampMs>,
     pub first_seen_at: TimestampMs,
     /// Flushed in batches from the in-memory presence table.
@@ -66,7 +62,6 @@ pub struct Model {
     /// Source IP of the last RegisterPk.
     #[sea_orm(column_type = "Text")]
     pub register_ip: String,
-    /// Time of the last RegisterPk.
     pub register_at: TimestampMs,
     pub created_at: TimestampMs,
     pub updated_at: TimestampMs,

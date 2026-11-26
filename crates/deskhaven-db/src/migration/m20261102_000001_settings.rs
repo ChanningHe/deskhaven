@@ -1,6 +1,3 @@
-//! Runtime settings store and its change history (05-config §3.2).
-//! `updated_by` will reference `users(id)` once that table exists; no FK yet.
-
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_integer_null, big_pk_auto, text, text_null};
 

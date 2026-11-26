@@ -1,6 +1,3 @@
-//! The real composition on a real listener: client API + admin API + the web
-//! console as the admin side's catch-all, single-listener mode, with the CSP
-//! configured through `deskhaven-http`.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -67,7 +64,6 @@ async fn start() -> Server {
     start_with(None).await
 }
 
-/// Split mode: the console and the admin API get their own listener.
 async fn start_split() -> Server {
     start_with(Some(loopback())).await
 }
@@ -95,7 +91,6 @@ async fn start_with(admin: Option<SocketAddr>) -> Server {
     }
 }
 
-/// One request on a fresh connection; reads until the server closes it.
 async fn send(addr: SocketAddr, method: &str, path: &str, accept: &str) -> String {
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: t\r\nAccept: {accept}\r\nConnection: close\r\n\r\n"
@@ -206,8 +201,6 @@ async fn doubled_slash_api_paths_never_get_the_spa() {
     srv.stop().await;
 }
 
-/// Split mode: the admin listener does not serve the client API, and the
-/// console must not answer for it either.
 #[tokio::test]
 async fn split_admin_listener_gets_a_404_for_client_api_paths_not_the_spa() {
     let srv = start_split().await;

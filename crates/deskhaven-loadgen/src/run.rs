@@ -1,7 +1,3 @@
-//! A whole run: start the server, sample it idle, start the devices over the ramp, let them
-//! settle, measure the steady window, stop everything; then restart the server on the now
-//! populated database and sample its idle RSS. SIGINT / SIGTERM stop the server too.
-
 mod interrupt;
 mod summary;
 
@@ -27,14 +23,13 @@ use interrupt::Interrupt;
 /// Startup includes migrations and loading the peer table.
 const READY_LIMIT: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-/// `MIN_REG_TIMEOUT` of `rendezvous_mediator.rs`.
+/// The client's `MIN_REG_TIMEOUT`.
 const UDP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Devices finish their in-flight call (at most [`HTTP_TIMEOUT`]) after the stop.
 const DRAIN_LIMIT: Duration = Duration::from_secs(30);
-/// `devices.last_seen_flush` bounds (configuration reference).
+/// `devices.last_seen_flush` bounds.
 const MIN_FLUSH: Duration = Duration::from_secs(5);
 const MAX_FLUSH: Duration = Duration::from_secs(3600);
-/// Spreads per-device seeds.
 const SEED_MIX: u64 = 0x9E37_79B9_7F4A_7C15;
 
 #[derive(Clone, Debug)]
@@ -51,7 +46,6 @@ pub struct Config {
     pub settle: Duration,
     pub steady: Duration,
     pub seed: u64,
-    /// How the run was started, for the report.
     pub command: String,
 }
 
@@ -75,7 +69,7 @@ impl Config {
     }
 }
 
-/// Runs the load test described by `config`; every server it starts is stopped on every path.
+/// Every server it starts is stopped on every path.
 pub async fn run(config: &Config) -> Result<Report, LoadgenError> {
     config.validate()?;
     fdlimit::ensure(config.devices)?;
@@ -103,8 +97,8 @@ pub async fn run(config: &Config) -> Result<Report, LoadgenError> {
     Ok(Report { measured, ..report })
 }
 
-/// Restarts the server on the database the load left behind (every device registered) and
-/// takes the largest RSS over `window` without load. Returns it and whether it stopped cleanly.
+/// On the database the load left behind (every device registered): the largest RSS over
+/// `window` without load, and whether it stopped cleanly.
 async fn idle_after_load(
     config: &ServerConfig,
     window: Duration,
@@ -126,7 +120,6 @@ async fn idle_after_load(
     Ok((sampled?, clean?))
 }
 
-/// Database snapshots at the edges of the run and of the steady window.
 struct Counters {
     start: Snapshot,
     steady_start: Snapshot,
@@ -186,8 +179,8 @@ fn shared(config: &Config) -> Shared {
 }
 
 /// Device i starts at `ramp × i / n`, so its calls are spread evenly once all run. Its
-/// registration channel and its client API timer are separate tasks, as in the client
-/// (`RendezvousMediator` and `start_hbbs_sync`), so a slow API never delays a RegisterPeer.
+/// registration channel and API timer are separate tasks, as in the client, so a slow API
+/// never delays a RegisterPeer.
 fn spawn_devices(identities: Vec<Identity>, shared: &Arc<Shared>, config: &Config) -> JoinSet<()> {
     let start = Instant::now();
     let count = identities.len().max(1);

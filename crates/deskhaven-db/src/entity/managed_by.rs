@@ -1,5 +1,4 @@
-//! Who owns a resource: the console (`ui`) or the bootstrap config file (`config`, read-only
-//! in the UI; 05-config §4).
+//! `config` resources come from the bootstrap config file and are read-only in the UI.
 
 use sea_orm::entity::prelude::*;
 

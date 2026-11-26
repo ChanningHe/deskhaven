@@ -1,4 +1,4 @@
-//! `sessions`: opaque-token sessions; only the SHA-256 of the token is stored.
+//! Only the SHA-256 of the token is stored.
 
 use sea_orm::entity::prelude::*;
 

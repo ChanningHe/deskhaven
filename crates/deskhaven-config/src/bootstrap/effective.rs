@@ -1,5 +1,3 @@
-//! Effective view: every key with its (redacted) value and provenance.
-
 use figment::Figment;
 use serde::Serialize;
 
@@ -11,8 +9,7 @@ use super::schema::Bootstrap;
 use crate::Source;
 use crate::types::REDACTED;
 
-/// One effective key. Secrets (and, until the settings registry knows which
-/// pins are sensitive, all pin values) are rendered as `<redacted>`.
+/// Secrets and all pin values (pins carry no sensitivity here) are rendered as `<redacted>`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EffectiveEntry {
     pub key: String,
@@ -20,7 +17,6 @@ pub struct EffectiveEntry {
     pub source: Source,
 }
 
-/// Schema leaves (sources from `figment`), then pins (sources already resolved).
 pub(crate) fn collect(
     figment: &Figment,
     config: &Bootstrap,
@@ -40,7 +36,6 @@ pub(crate) fn collect(
     Ok(schema.chain(pins).collect())
 }
 
-/// Maps the metadata of the layer that won `path` to a [`Source`].
 pub(crate) fn source_of(figment: &Figment, env: &EnvPlan, path: &str) -> Source {
     let Some(metadata) = figment.find_metadata(path) else {
         return Source::Default;

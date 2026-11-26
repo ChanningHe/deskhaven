@@ -1,5 +1,4 @@
-//! `deskhaven-loadgen`: run with `cargo xtask loadgen [args]`, which builds it and the server
-//! in release mode first. Exit status: 0 every NFR passed, 1 error, 2 an NFR failed.
+//! Exit status: 0 every NFR passed, 1 error, 2 an NFR failed.
 
 use std::io::Write as _;
 use std::net::Ipv4Addr;
@@ -127,7 +126,6 @@ fn main() -> ExitCode {
     }
 }
 
-/// `Ok(passed)` once the report is written.
 fn execute(config: &Config, out: Option<PathBuf>) -> Result<bool, LoadgenError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

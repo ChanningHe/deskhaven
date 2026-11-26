@@ -1,8 +1,5 @@
-//! Value kinds: how each Rust type is parsed, constrained and described.
-//!
-//! Parsing accepts the native JSON form or its text form, so TOML pins
-//! (native), env/`_FILE`/CLI pins (always text), stored rows and API input
-//! all go through one coercion. Error reasons never contain the input.
+//! Parsing accepts the native JSON form or its text form, so TOML pins (native), env/CLI
+//! pins (text), stored rows and API input share one coercion. Errors never contain the input.
 
 use std::fmt;
 
@@ -16,18 +13,12 @@ pub(crate) mod sealed {
     pub trait Sealed {}
 }
 
-/// A Rust type usable as a setting value. Sealed: the set of kinds is fixed
-/// here (enums join through `setting_enum!`).
 pub trait SettingType: sealed::Sealed + Clone + Send + Sync + Sized + 'static {
     /// Const-constructible form of the default.
     type Default: Send + Sync + 'static;
-    /// Constraints checked after parsing.
     type Rule: Send + Sync + 'static;
-    /// Rule used when a declaration gives none.
     const DEFAULT_RULE: Self::Rule;
-    /// The `type` field of the exported schema.
     const TYPE_NAME: &'static str;
-    /// Stored encrypted and never shown.
     const SENSITIVE: bool = false;
 
     fn parse(raw: &Json) -> Result<Self, String>;
@@ -35,7 +26,6 @@ pub trait SettingType: sealed::Sealed + Clone + Send + Sync + Sized + 'static {
     fn from_default(default: &Self::Default) -> Self;
     fn into_value(self) -> Value;
     fn from_value(value: &Value) -> Option<Self>;
-    /// Schema fields describing the rule (and variants, for enums).
     fn describe(rule: &Self::Rule) -> Map<String, Json>;
 }
 
@@ -48,7 +38,6 @@ pub struct Range<T> {
     zero: bool,
 }
 
-/// `min..=max`.
 pub const fn range<T>(min: T, max: T) -> Range<T> {
     Range {
         min,
@@ -67,7 +56,6 @@ impl<T: Copy> Range<T> {
     }
 }
 
-/// Numeric-like types that can be bounded by a [`Range`].
 pub trait Bound: Copy + PartialOrd + fmt::Display {
     fn is_zero(&self) -> bool;
     fn to_json(&self) -> Json;
@@ -112,7 +100,6 @@ impl<T: Bound> Range<T> {
     }
 }
 
-/// List constraints.
 #[derive(Debug, Clone, Copy)]
 pub struct ListRule {
     max_items: usize,
@@ -218,7 +205,7 @@ impl SettingType for Duration {
     );
     const TYPE_NAME: &'static str = "duration";
 
-    /// Strings only: a bare number has no unit (05-config §2.3).
+    /// Strings only: a bare number has no unit.
     fn parse(raw: &Json) -> Result<Self, String> {
         as_text(raw)
             .ok()
@@ -275,7 +262,7 @@ impl SettingType for String {
     }
 }
 
-/// Defaults to unset; secrets are taken verbatim (no trimming).
+/// Secrets are taken verbatim (no trimming).
 impl sealed::Sealed for Secret {}
 impl SettingType for Secret {
     type Default = ();
@@ -304,7 +291,6 @@ impl SettingType for Secret {
     }
 }
 
-/// `["a:1", "b:2"]` or the text form `"a:1,b:2"`; defaults to empty.
 impl sealed::Sealed for Vec<HostPort> {}
 impl SettingType for Vec<HostPort> {
     type Default = ();

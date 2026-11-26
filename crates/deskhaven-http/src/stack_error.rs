@@ -1,17 +1,7 @@
-//! Errors produced by the HTTP stack itself (unknown route, wrong method, body
-//! too large, timeout, panic, ...) rendered in the API's contract shape.
-//!
-//! Only requests under the API prefixes (`/api`, `/admin/api`, whole segments)
-//! are affected: there, any 4xx/5xx response *without* a JSON content type is
-//! treated as stack-generated and its body is replaced by the renderer's (the
-//! status and other headers are kept), so framework wording never reaches API
-//! clients. API handlers that want their own error body must return JSON (both
-//! API error types do). Everything else (SPA routes, static assets) passes
-//! through untouched.
-//!
-//! The request deadline lives here as well because a timeout has to be rendered:
-//! it returns 503 (API renderer under the API prefixes, plain text elsewhere),
-//! which RustDesk clients retry once through hbbs (03 §1.4).
+//! Under the API prefixes, any 4xx/5xx response without a JSON content type is treated as
+//! stack-generated and its body replaced by the renderer's (status and headers kept), so
+//! framework wording never reaches API clients. The deadline lives here because a timeout
+//! must be rendered: 503, which RustDesk clients retry once.
 
 use std::time::Duration;
 
@@ -23,7 +13,7 @@ use axum::response::IntoResponse;
 
 use crate::paths;
 
-/// What went wrong, without any detail worth hiding.
+/// Carries no detail worth hiding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackError {
     /// Any other 4xx (e.g. an extractor rejection).
@@ -31,7 +21,6 @@ pub enum StackError {
     NotFound,
     MethodNotAllowed,
     PayloadTooLarge,
-    /// The request deadline expired (503).
     Timeout,
     /// A 503 that is not a timeout (e.g. `/readyz`).
     Unavailable,
@@ -51,7 +40,6 @@ impl StackError {
         }
     }
 
-    /// Generic, user-facing text.
     pub const fn message(self) -> &'static str {
         match self {
             Self::BadRequest => "bad request",
@@ -65,18 +53,13 @@ impl StackError {
     }
 }
 
-/// Builds the body for a stack error. The status it sets is ignored: the
-/// original status is kept (503 for timeouts).
+/// The status it sets is ignored: the original status is kept.
 pub type ErrorRenderer = fn(StackError) -> Response<Body>;
 
-/// Plain-text `message()`; the default when no API renderer is plugged in.
 pub fn plain_text(err: StackError) -> Response<Body> {
     err.message().into_response()
 }
 
-/// Renderers per API: paths under [`paths::CLIENT_API_PREFIX`] use `client_api`,
-/// paths under [`paths::ADMIN_API_PREFIX`] use `admin`; other paths are not
-/// re-rendered.
 #[derive(Debug, Clone, Copy)]
 pub struct ErrorBodies {
     pub client_api: ErrorRenderer,
@@ -84,7 +67,6 @@ pub struct ErrorBodies {
 }
 
 impl ErrorBodies {
-    /// One renderer for every path (a listener that serves a single API).
     pub const fn uniform(renderer: ErrorRenderer) -> Self {
         Self {
             client_api: renderer,
@@ -92,7 +74,6 @@ impl ErrorBodies {
         }
     }
 
-    /// `None` outside the API prefixes.
     fn select(&self, path: &str) -> Option<ErrorRenderer> {
         if paths::is_client_api(path) {
             Some(self.client_api)
@@ -120,7 +101,6 @@ fn is_json(headers: &HeaderMap) -> bool {
         })
 }
 
-/// `res` with its body replaced by `render(err)`, keeping status and headers.
 fn rerender(res: Response<Body>, render: ErrorRenderer, err: StackError) -> Response<Body> {
     let (mut parts, _) = res.into_parts();
     let (rendered, body) = render(err).into_parts();

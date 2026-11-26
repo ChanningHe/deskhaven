@@ -1,5 +1,4 @@
-//! A database error carrying a chosen SQLSTATE, to test how callers classify driver errors
-//! (feature `testing`, and this crate's own tests).
+//! A database error with a chosen SQLSTATE, to test how callers classify driver errors.
 
 use std::borrow::Cow;
 use std::error::Error;
@@ -9,7 +8,6 @@ use sea_orm::sqlx;
 use sea_orm::sqlx::error::{DatabaseError, ErrorKind};
 use sea_orm::{DbErr, RuntimeErr};
 
-/// What the driver reports for a statement the database refused with `code`.
 #[derive(Debug)]
 struct Coded(&'static str);
 
@@ -47,7 +45,6 @@ impl DatabaseError for Coded {
     }
 }
 
-/// A [`DbErr`] as the driver reports a failed statement with SQLSTATE `code`.
 pub fn coded_error(code: &'static str) -> DbErr {
     let error = sqlx::Error::Database(Box::new(Coded(code)));
     DbErr::Exec(RuntimeErr::SqlxError(error.into()))

@@ -1,4 +1,3 @@
-//! Text constraints: length, forbidden characters, optional format.
 //! The empty string always passes the format check (it means "not set").
 
 use serde_json::{Map, Value as Json};
@@ -6,7 +5,6 @@ use serde_json::{Map, Value as Json};
 use super::ice::{MAX_ICE_SERVERS, is_ice_url_list};
 use super::value::is_host;
 
-/// Shape a non-empty text value must have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
     Any,
@@ -14,7 +12,6 @@ enum Format {
     Host,
     /// `local@domain`: one `@`, both sides non-empty, no whitespace.
     Email,
-    /// Comma-separated ICE server URLs (`ice.rs`).
     IceUrls,
 }
 

@@ -1,11 +1,5 @@
-//! Login failure counters and lockouts (04-data-model §3 `auth_lockouts`, 06-security §3.6).
-//!
-//! Keyed by an opaque text key (`user:<username_norm>`), deliberately without a foreign key
-//! to `users`: unknown usernames are counted exactly like existing ones, so the table never
-//! tells whether an account exists. Rows are written in short read-modify-write
-//! transactions by `deskhaven_core::auth::limiter`; `updated_at` is indexed for the
-//! periodic cleanup of rows that no longer affect any decision. `last_success_at` marks a
-//! source row as a known-good source of its username (it bypasses the global row).
+//! No foreign key to `users`: unknown usernames are counted exactly like existing ones, so the
+//! table never tells whether an account exists.
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_integer_null, integer, text};

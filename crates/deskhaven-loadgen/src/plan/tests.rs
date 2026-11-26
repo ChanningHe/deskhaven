@@ -51,21 +51,18 @@ fn heartbeat_goes_out_every_fifteen_seconds_without_connections() {
 
 #[test]
 fn uploaded_sysinfo_is_sent_again_only_when_a_heartbeat_asks() {
-    // Arrange
     let base = Instant::now();
     let (state, _) = DeviceState::new(base, Timing::default(), QUIET, 1).tick(base);
     let state = state.sysinfo_done(base, SysinfoOutcome::Updated);
     let (state, plan) = state.tick(secs(base, 3));
     assert!(!plan.sysinfo);
 
-    // Act
     let state = state.heartbeat_done(HeartbeatReply {
         sysinfo: true,
         modified_at: None,
     });
     let (_, plan) = state.tick(secs(base, 6));
 
-    // Assert
     assert!(plan.sysinfo);
 }
 
@@ -102,7 +99,6 @@ fn reply_modified_at_is_kept_and_reported() {
 
 #[test]
 fn a_connection_sends_its_three_records_on_consecutive_ticks_and_heartbeats_every_tick() {
-    // Arrange
     let base = Instant::now();
     let rates = Rates {
         connections_per_hour: EAGER,
@@ -114,12 +110,10 @@ fn a_connection_sends_its_three_records_on_consecutive_ticks_and_heartbeats_ever
     assert_eq!(start.audit, None);
     let state = state.sysinfo_done(base, SysinfoOutcome::Updated);
 
-    // Act
     let (state, first) = state.tick(secs(base, 3));
     let (state, second) = state.tick(secs(base, 6));
     let (_, third) = state.tick(secs(base, 9));
 
-    // Assert
     let new = first.audit.unwrap();
     assert_eq!((new.step, new.session_id), (AuditStep::New, 0));
     assert_eq!(first.heartbeat, Some(vec![new.conn_id]));

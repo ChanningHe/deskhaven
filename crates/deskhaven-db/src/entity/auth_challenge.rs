@@ -1,5 +1,3 @@
-//! `auth_challenges`: pending second login step (email code or TOTP).
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

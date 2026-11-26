@@ -1,5 +1,3 @@
-//! Strongly typed configuration values with human-friendly string forms.
-
 mod cidr;
 mod duration;
 mod secret;
@@ -10,8 +8,7 @@ pub use duration::Duration;
 pub use secret::{REDACTED, Secret};
 pub use size::Size;
 
-/// Implements `Serialize`/`Deserialize` via `Display`/`FromStr`, accepting
-/// strings only (bare numbers are rejected to avoid unit ambiguity).
+/// Strings only: bare numbers are rejected to avoid unit ambiguity.
 macro_rules! string_serde {
     ($ty:ty, $expecting:literal) => {
         impl serde::Serialize for $ty {
@@ -38,7 +35,6 @@ macro_rules! string_serde {
     };
 }
 
-/// Implements `JsonSchema` as a plain string with a description and example.
 macro_rules! string_schema {
     ($ty:ty, $name:literal, $description:literal, $example:literal) => {
         impl schemars::JsonSchema for $ty {

@@ -1,23 +1,18 @@
-//! Client-observed outcomes of the simulated requests, per run phase and request kind.
-
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-/// Where the run is; every sample is filed under the phase it completed in.
+/// Every sample is filed under the phase it completed in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Phase {
-    /// Server up, no devices yet (idle RSS / CPU).
     Idle = 0,
-    /// Devices start, spread over the ramp (first registration and sysinfo of each).
     Ramp = 1,
     /// Every device started; stragglers finish their first round.
     Settle = 2,
     /// The measurement window the NFRs are judged on.
     Steady = 3,
-    /// Devices stopping.
     Drain = 4,
 }
 
@@ -33,7 +28,6 @@ impl Phase {
     }
 }
 
-/// What a simulated device sent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Kind {
     Heartbeat,
@@ -55,16 +49,12 @@ impl fmt::Display for Kind {
     }
 }
 
-/// Why a request did not get the answer a client counts as success.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Failure {
-    /// An HTTP status other than the expected one.
     Status(u16),
     /// The expected status with a body the client would not accept.
     Body(String),
-    /// No (complete) answer within the request timeout.
     Timeout,
-    /// Socket or protocol error.
     Transport(String),
     /// Any failure once a series already holds [`MAX_FAILURE_KINDS`] distinct ones.
     Other,
@@ -94,7 +84,6 @@ pub fn percentile(sorted: &[Duration], p: f64) -> Option<Duration> {
     sorted.get(rank.saturating_sub(1).min(last)).copied()
 }
 
-/// Latency distribution and failure counts of one series.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Summary {
     pub ok: u64,
@@ -113,7 +102,6 @@ impl Summary {
 
 #[derive(Default)]
 struct Series {
-    /// Latencies of successful requests.
     samples: Vec<Duration>,
     failures: BTreeMap<Failure, u64>,
 }
@@ -133,12 +121,10 @@ impl Series {
     }
 }
 
-/// Shared by every device task.
 #[derive(Default)]
 pub struct Recorder {
     phase: AtomicU8,
     series: Mutex<HashMap<(Phase, Kind), Series>>,
-    /// Devices whose setup failed, any phase.
     start_failures: AtomicU64,
 }
 
@@ -151,7 +137,6 @@ impl Recorder {
         self.phase.store(phase as u8, Ordering::Relaxed);
     }
 
-    /// Files one finished request under the current phase.
     pub fn record(&self, kind: Kind, latency: Duration, result: Result<(), Failure>) {
         let phase = self.phase();
         let mut series = self.lock();
@@ -206,10 +191,9 @@ mod tests {
 
     #[test]
     fn percentile_uses_the_nearest_rank() {
-        // Arrange: 1..=100 ms.
+        // 1..=100 ms.
         let sorted: Vec<Duration> = (1..=100).map(Duration::from_millis).collect();
 
-        // Act + Assert
         assert_eq!(percentile(&sorted, 50.0), Some(Duration::from_millis(50)));
         assert_eq!(percentile(&sorted, 99.0), Some(Duration::from_millis(99)));
         assert_eq!(percentile(&sorted, 99.5), Some(Duration::from_millis(100)));
@@ -240,10 +224,9 @@ mod tests {
 
     #[test]
     fn distinct_failure_kinds_are_capped() {
-        // Arrange
         let recorder = Recorder::default();
 
-        // Act: 20 different bodies, then one already known.
+        // 20 different bodies, then one already known.
         for n in 0..20 {
             let body = Err(Failure::Body(format!("garbage {n}")));
             recorder.record(Kind::Sysinfo, Duration::ZERO, body);
@@ -251,7 +234,6 @@ mod tests {
         let known = Err(Failure::Body("garbage 0".to_owned()));
         recorder.record(Kind::Sysinfo, Duration::ZERO, known);
 
-        // Assert
         let summary = recorder.summary(Phase::Idle, Kind::Sysinfo);
         assert_eq!(summary.failures.len(), MAX_FAILURE_KINDS + 1);
         assert_eq!(summary.failures.get(&Failure::Other), Some(&4));
@@ -262,13 +244,11 @@ mod tests {
 
     #[test]
     fn recorder_files_samples_under_the_current_phase() {
-        // Arrange
         let recorder = Recorder::default();
         recorder.set_phase(Phase::Ramp);
         recorder.record(Kind::Heartbeat, Duration::from_millis(5), Ok(()));
         recorder.set_phase(Phase::Steady);
 
-        // Act
         for latency in [3, 1, 2] {
             recorder.record(Kind::Heartbeat, Duration::from_millis(latency), Ok(()));
         }
@@ -276,7 +256,6 @@ mod tests {
         recorder.record(Kind::Heartbeat, Duration::ZERO, Err(Failure::Status(404)));
         recorder.record(Kind::Sysinfo, Duration::ZERO, Err(Failure::Timeout));
 
-        // Assert
         let steady = recorder.summary(Phase::Steady, Kind::Heartbeat);
         assert_eq!(steady.ok, 3);
         assert_eq!(steady.p50, Some(Duration::from_millis(2)));

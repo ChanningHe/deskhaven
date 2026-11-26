@@ -10,8 +10,6 @@ use super::pins::SETTINGS_KEY;
 use super::schema::{Bootstrap, json_schema};
 use super::schema_facts::SchemaFacts;
 
-/// Every schema leaf (dotted path, from the serialized defaults) plus type
-/// facts from the JSON Schema.
 pub(crate) struct KnownKeys {
     leaves: BTreeSet<String>,
     facts: SchemaFacts,
@@ -37,16 +35,12 @@ impl KnownKeys {
         self.facts.is_secret(path)
     }
 
-    /// A schema leaf, or any well-formed key under `settings.` (pins).
     pub(crate) fn contains(&self, path: &str) -> bool {
         self.is_schema_leaf(path) || pin_key(path).is_some()
     }
 
-    /// The single parser for raw strings from env, `_FILE` and CLI. Shape
-    /// comes from the schema `type` (so `Option<Vec<_>>` is still a list):
-    /// lists accept `a,b` or `[a, b]`; string keys and pins stay verbatim
-    /// (pins are typed later by the settings registry); other keys use
-    /// figment's value syntax.
+    /// The one parser for raw env, `_FILE` and CLI strings. Shape comes from the schema `type`
+    /// (so `Option<Vec<_>>` is still a list); pins stay verbatim for the settings registry to type.
     pub(crate) fn typed_value(&self, path: &str, raw: &str) -> Value {
         if !self.is_schema_leaf(path) || self.facts.is_text(path) && !self.facts.is_list(path) {
             Value::from(raw.to_owned())
@@ -77,8 +71,7 @@ fn list_value(raw: &str) -> Value {
     Value::from(items)
 }
 
-/// Builds a nested dict from `(dotted path, value)` pairs. A path that is both
-/// a value and a table (`a` and `a.b`) is rejected rather than silently dropped.
+/// A path that is both a value and a table (`a` and `a.b`) is rejected, not silently dropped.
 pub(crate) fn dict_from(entries: Vec<(String, Value)>) -> Result<Dict, ConfigError> {
     let mut root = Dict::new();
     for (path, value) in entries {
@@ -107,13 +100,11 @@ fn insert_path(dict: &mut Dict, path: &str, value: Value) -> Result<(), ()> {
     }
 }
 
-/// The settings key of a pin path (`settings.auth.ttl` -> `auth.ttl`).
 fn pin_key(path: &str) -> Option<&str> {
     let rest = path.strip_prefix(SETTINGS_KEY)?.strip_prefix('.')?;
     (!rest.split('.').any(str::is_empty)).then_some(rest)
 }
 
-/// Leaves of a serialized `Bootstrap`, excluding the `settings` subtree.
 pub(crate) fn schema_leaves(root: Json) -> Vec<(String, Json)> {
     let mut out = Vec::new();
     if let Json::Object(mut map) = root {

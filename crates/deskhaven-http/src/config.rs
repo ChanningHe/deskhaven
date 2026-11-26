@@ -1,6 +1,3 @@
-//! Tunables for the HTTP stack and its listeners. See the crate docs for how
-//! they combine in an internet-facing deployment.
-
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
@@ -72,8 +69,8 @@ pub struct HttpConfig {
     pub drain_timeout: Duration,
     /// Share of the soft `RLIMIT_NOFILE` HTTP connections may use (1..=100).
     pub nofile_budget_percent: u8,
-    /// Hook for the web crate: `Content-Security-Policy` for responses that did
-    /// not set one. In single-listener mode the API and the SPA share it.
+    /// `Content-Security-Policy` for responses that did not set one. In single-listener mode
+    /// the API and the SPA share it.
     pub content_security_policy: Option<HeaderValue>,
     /// `Strict-Transport-Security` value; set it only when `public_url` is https.
     /// Single listener: applies to everything; split: the client API listener only.
@@ -106,7 +103,6 @@ impl Default for HttpConfig {
     }
 }
 
-/// A setting outside its allowed range.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid http setting {field}: must be {expected}")]
 pub struct ConfigError {
@@ -115,7 +111,6 @@ pub struct ConfigError {
 }
 
 impl HttpConfig {
-    /// Checked by [`crate::Listeners::serve`] before anything is served.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let checks = [
             (
@@ -175,7 +170,6 @@ mod tests {
         assert_eq!(HttpConfig::default().validate(), Ok(()));
     }
 
-    /// Review round 3 LOW: limits are validated, not silently turned into 431s.
     #[test]
     fn out_of_range_limits_are_rejected() {
         let base = HttpConfig::default;

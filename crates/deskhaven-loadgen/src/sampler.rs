@@ -1,5 +1,3 @@
-//! Samples the server process once a second, tagging each sample with the run phase.
-
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -17,7 +15,7 @@ const PEAK_WINDOW: Duration = Duration::from_secs(10);
 
 type Samples = Arc<Mutex<Vec<(Phase, ProcSample)>>>;
 
-/// The sampling task; aborted if dropped before [`Sampler::finish`].
+/// Aborted if dropped before [`Sampler::finish`].
 pub struct Sampler {
     samples: Samples,
     stop: CancellationToken,
@@ -54,7 +52,6 @@ impl Sampler {
     }
 }
 
-/// The largest RSS of process `pid`, sampled every second for `window` (first sample now).
 pub async fn max_rss(pid: u32, window: Duration) -> Result<u64, LoadgenError> {
     let deadline = tokio::time::Instant::now() + window;
     let mut every = interval(EVERY);
@@ -98,7 +95,6 @@ async fn sample_until(
     }
 }
 
-/// Server resource use per phase.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Usage {
     pub idle_rss_max: Option<u64>,
@@ -140,7 +136,6 @@ mod tests {
 
     #[test]
     fn usage_is_computed_per_phase() {
-        // Arrange
         let base = std::time::Instant::now();
         let sample = |secs: u64, cpu_ticks: u64, rss_mib: u64, written: u64| ProcSample {
             at: base + Duration::from_secs(secs),
@@ -156,10 +151,8 @@ mod tests {
             (Phase::Steady, sample(5, 260, 45, 4_000)),
         ];
 
-        // Act
         let usage = Usage::from_samples(&samples, 100);
 
-        // Assert
         assert_eq!(usage.idle_rss_max, Some(22 << 20));
         assert_eq!(usage.steady_rss_max, Some(45 << 20));
         assert!((usage.steady_cores.unwrap() - 0.3).abs() < 1e-9);

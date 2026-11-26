@@ -1,15 +1,8 @@
-//! Write-throughput floor for accepted connections (review H-a, round 3 M1).
-//!
-//! hyper's header-read timer and the request deadline do not cover writing the
-//! response: a client that never reads (or reads a few bytes now and then)
-//! keeps hyper blocked in `poll_write` and pins a connection slot.
-//!
-//! When a write is pending, a window of `window` length starts. Bytes written
-//! during the window count towards `min_bytes_per_sec * window`; reaching that
-//! closes the window. If the window ends short of it, the pending write (or
-//! flush / shutdown) fails with `TimedOut` and hyper closes the connection.
-//! Writes that complete without ever blocking never open a window, and reads
-//! are not timed, so idle keep-alive stays governed by `header_read_timeout`.
+//! hyper's header-read timer and the request deadline do not cover writing the response: a
+//! client that never reads keeps hyper blocked in `poll_write` and pins a connection slot.
+//! A pending write opens a window that must see `min_bytes_per_sec * window` bytes, or the
+//! write fails with `TimedOut`. Reads are not timed, so idle keep-alive stays governed by
+//! `header_read_timeout`.
 
 use std::future::Future;
 use std::io;
@@ -159,7 +152,6 @@ mod tests {
     const PIPE: usize = 64;
     const PAYLOAD: usize = 4 * 1024;
 
-    /// Reads `chunk` bytes every `every` until EOF or error; returns bytes read.
     async fn drip(mut far: DuplexStream, chunk: usize, every: Duration) -> usize {
         let mut buf = vec![0u8; chunk];
         let mut total = 0;
@@ -185,7 +177,6 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
     }
 
-    /// Review round 3 M1: progress below the floor does not keep the write alive.
     #[tokio::test(start_paused = true)]
     async fn drip_reader_below_the_floor_times_out() {
         let (near, far) = duplex(PIPE);

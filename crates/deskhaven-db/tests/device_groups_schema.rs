@@ -1,5 +1,3 @@
-//! `device_groups` and the `devices` foreign keys (M2-02), on every available backend,
-//! including the SQLite table rebuild over rows that already exist.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -259,9 +257,6 @@ async fn upgrade_does_not_reuse_deleted_device_ids() {
     .await;
 }
 
-/// Upgrading a database that already holds devices: rows survive the SQLite table rebuild
-/// unchanged, and references that could never have been valid (the tables did not exist
-/// yet) are cleared instead of failing the whole upgrade.
 #[tokio::test]
 async fn upgrade_keeps_devices_and_clears_dangling_references() {
     each_backend(async |db: &TestDb| {

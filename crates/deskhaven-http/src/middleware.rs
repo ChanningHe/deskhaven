@@ -1,12 +1,5 @@
-//! The middleware stack every listener gets (02-architecture §6, 06-security §6).
-//!
-//! Order, outermost first:
-//! request id -> trace span -> probe marker -> security headers -> API `Cache-Control` ->
-//! stack-error rendering + request deadline -> catch-panic -> trusted proxies
-//! extension -> body limit -> router.
-//! Everything inside the security-header layer (panics, timeouts, 413s, 404s)
-//! still carries the request id and the security headers. No CORS layer: the
-//! API is same-origin only.
+//! Everything inside the security-header layer (panics, timeouts, 413s, 404s) still carries
+//! the request id and the security headers. No CORS layer: the API is same-origin only.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -30,10 +23,9 @@ use crate::paths;
 use crate::request_id::{X_REQUEST_ID, propagate};
 use crate::stack_error::{ErrorBodies, render_stack_errors};
 
-/// Body of every 500 produced by this crate. Deliberately says nothing.
+/// Deliberately says nothing.
 pub const INTERNAL_ERROR_BODY: &str = "internal server error";
 
-/// Wrap `router` (routes and fallback) in the full middleware stack.
 pub fn apply_middleware<S>(router: Router<S>, cfg: &HttpConfig, errors: ErrorBodies) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -119,8 +111,8 @@ async fn api_no_store(req: Request, next: Next) -> Response<Body> {
     res
 }
 
-/// Method, path (never the query string), request id. Status and latency are
-/// recorded when the response is ready.
+/// Path only, never the query string. Status and latency are recorded when the response is
+/// ready.
 fn make_span<B>(req: &Request<B>) -> Span {
     let request_id = req
         .headers()

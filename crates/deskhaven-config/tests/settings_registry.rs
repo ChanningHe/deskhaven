@@ -1,5 +1,3 @@
-//! The settings registry: declarations, defaults, typed access, schema export.
-
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -15,7 +13,6 @@ const GOLDEN_SCHEMA: &str = concat!(
 );
 const UPDATE_ENV: &str = "DESKHAVEN_UPDATE_SNAPSHOTS";
 
-/// 05-config §3.6, one line per key: (key, public JSON form of the default).
 const P0_DEFAULTS: &[(&str, &str)] = &[
     ("auth.session_ttl", r#""30d""#),
     ("auth.session_idle_ttl", r#""7d""#),
@@ -135,8 +132,6 @@ fn unreadable_feature_rows_turn_the_feature_off() {
     }
 }
 
-/// ICE server URLs: `stun:` / `stuns:` / `turn:` / `turns:` with a host, an optional port and
-/// (TURN only) an optional transport, comma separated.
 #[test]
 fn ice_servers_accept_stun_and_turn_urls_only() {
     let setting = settings::lookup("web_client.ice_servers").unwrap();
@@ -183,8 +178,6 @@ fn schema_export_matches_snapshot() {
     );
 }
 
-/// The TURN credential goes to one TURN server only: with it set, every `turn:` / `turns:`
-/// URL must name the same host.
 #[test]
 fn a_turn_credential_needs_a_single_turn_host() {
     let check = |ice: &str, credential: &str| {

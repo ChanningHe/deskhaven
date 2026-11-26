@@ -1,21 +1,16 @@
-//! What one simulated device sends on each tick of its client API timer: the decisions of
-//! `start_hbbs_sync_async` (`src/hbbs_http/sync.rs:87-280`, client `23e5bb4`) plus the audit
-//! records of an occasional connection (`src/server/connection.rs`, 03 §2.3).
-//!
 //! Pure state: the device task performs the [`Plan`] and feeds the outcomes back.
 
 use std::time::Duration;
 
 use tokio::time::Instant;
 
-/// The client's timers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timing {
     /// `TIME_CONN`: the sync loop's tick.
     pub tick: Duration,
     /// `TIME_HEARTBEAT`: heartbeat period without live connections.
     pub heartbeat: Duration,
-    /// `REG_INTERVAL` (`hbb_common::config`): RegisterPeer period.
+    /// `REG_INTERVAL`: RegisterPeer period.
     pub register: Duration,
     /// `UPLOAD_SYSINFO_TIMEOUT`: wait after a sysinfo answer other than the two known ones.
     pub sysinfo_retry: Duration,
@@ -41,7 +36,6 @@ pub struct Rates {
     pub sysinfo_per_hour: f64,
 }
 
-/// Which audit record of a connection (03 §2.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AuditStep {
     New,
@@ -49,7 +43,6 @@ pub enum AuditStep {
     Close,
 }
 
-/// One `POST /api/audit/conn`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuditCall {
     pub step: AuditStep,
@@ -62,12 +55,11 @@ pub struct AuditCall {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Plan {
     pub sysinfo: bool,
-    /// The heartbeat's `conns`, when a heartbeat is due.
     pub heartbeat: Option<Vec<i32>>,
     pub audit: Option<AuditCall>,
 }
 
-/// How the client reads a sysinfo answer (`sync.rs:211-228`).
+/// How the client reads a sysinfo answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SysinfoOutcome {
     /// `SYSINFO_UPDATED`: uploaded.
@@ -99,7 +91,6 @@ struct Connection {
     next: AuditStep,
 }
 
-/// One device's client-side state.
 #[derive(Clone, Debug)]
 pub struct DeviceState {
     timing: Timing,
@@ -138,7 +129,7 @@ impl DeviceState {
         self.modified_at
     }
 
-    /// Decides this tick's calls (`now` is the tick's scheduled instant).
+    /// `now` is the tick's scheduled instant.
     pub fn tick(self, now: Instant) -> (Self, Plan) {
         let (state, sysinfo) = self.sysinfo_due(now);
         let (state, audit) = state.audit_due(now);
@@ -183,7 +174,7 @@ impl DeviceState {
         }
     }
 
-    /// `need_upload` of `sync.rs:126-131`, plus the occasional re-upload.
+    /// The client's `need_upload`, plus the occasional re-upload.
     fn sysinfo_due(self, now: Instant) -> (Self, bool) {
         let refresh_due = self.refresh_at.is_some_and(|at| at <= now);
         let mut rng = self.rng.clone();
@@ -208,7 +199,6 @@ impl DeviceState {
         (state, due)
     }
 
-    /// The next record of the live connection, or a new connection when one is due.
     fn audit_due(self, now: Instant) -> (Self, Option<AuditCall>) {
         let mut rng = self.rng.clone();
         if let Some(conn) = self.connection {

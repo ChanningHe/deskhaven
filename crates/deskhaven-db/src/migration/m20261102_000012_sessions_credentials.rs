@@ -1,13 +1,6 @@
-//! Sessions, API tokens, recovery codes and the short-lived login/OIDC/setup state
-//! (04-data-model §3, 06-security §3.2–3.4).
-//!
-//! Every bearer value is stored hashed: `sessions.token_hash`, `api_tokens.token_hash`,
-//! `setup_tokens.token_hash`, `auth_challenges.secret_hash`, `oidc_flows.state_hash` and
-//! `oidc_flows.client_code_hash` are SHA-256 of 256-bit random values (looked up by equality).
-//! `auth_challenges.code_hash` and `recovery_codes.code_hash` hold low-entropy secrets and are
-//! HMACs computed by the service; the columns are plain TEXT. `pkce_verifier_enc` is encrypted.
-//! Challenges and OIDC flows are single-use (`consumed_at`, conditional UPDATE). Every
-//! `expires_at` is indexed for the periodic cleanup job.
+//! Bearer values are stored as SHA-256 of 256-bit random values (looked up by equality);
+//! low-entropy secrets (emailed and recovery codes) are HMACs computed by the service.
+//! Challenges and OIDC flows are single-use (`consumed_at`, conditional UPDATE).
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{
@@ -121,8 +114,7 @@ const CHALLENGE_KINDS: &[&str] = &["email_code", "totp"];
 const FLOW_KINDS: &[&str] = &["client", "console"];
 const EMPTY_JSON_OBJECT: &str = "{}";
 
-/// `(col = value) = (other IS NOT NULL)`, spelled out with AND/OR so it reads the same on both
-/// backends.
+/// Spelled out with AND/OR so it reads the same on both backends.
 fn present_exactly_when(col: impl IntoIden, value: &str, other: impl IntoIden) -> Expr {
     let (col, other) = (col.into_iden(), other.into_iden());
     Expr::col(col.clone())
@@ -132,7 +124,7 @@ fn present_exactly_when(col: impl IntoIden, value: &str, other: impl IntoIden) -
 }
 
 fn sessions_table() -> TableCreateStatement {
-    // Client sessions are bound to a device (06 §3.2); console sessions are not.
+    // Client sessions are bound to a device; console sessions are not.
     let device_bound = Expr::col(Sessions::Kind)
         .eq("console")
         .or(Expr::col(Sessions::RustdeskId)
@@ -183,7 +175,7 @@ fn api_tokens_table() -> TableCreateStatement {
         .col(big_integer_null(ApiTokens::ExpiresAt))
         .col(big_integer_null(ApiTokens::LastUsedAt))
         .col(big_integer_null(ApiTokens::RevokedAt))
-        // A token carries its creator's authority, so it dies with them (06 §3.2).
+        // A token carries its creator's authority, so it dies with them.
         .foreign_key(&mut foreign_key(
             "fk_api_tokens_created_by",
             (ApiTokens::Table, ApiTokens::CreatedBy),

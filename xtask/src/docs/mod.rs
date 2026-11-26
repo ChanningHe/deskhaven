@@ -1,11 +1,5 @@
-//! `xtask docs [--check]`: write the configuration reference ([`CONFIG_REFERENCE`]) from the
-//! settings registry (`deskhaven_config::settings::schema`) and the bootstrap JSON Schema
-//! (`deskhaven_config::bootstrap::json_schema`), or with `--check` fail when the committed
-//! file differs from what the code generates (CI drift check).
-//!
-//! The prose around the tables is `configuration.template.md`; the tables are rendered by
-//! [`render`]. A schema shape the renderer does not know is an error, so a new setting kind
-//! cannot slip into the reference half-described.
+//! A schema shape the renderer does not know is an error, so a new setting kind cannot slip
+//! into the reference half-described.
 
 mod render;
 
@@ -15,7 +9,6 @@ use crate::error::XtaskError;
 use crate::sync;
 use crate::sync::Mode;
 
-/// The generated configuration reference, relative to the repository root.
 pub const CONFIG_REFERENCE: &str = "docs/reference/configuration.md";
 
 pub fn run(root: &Path, mode: Mode) -> Result<(), XtaskError> {
@@ -46,7 +39,6 @@ mod tests {
 
     use super::*;
 
-    /// The table row of `key` (a line starting with its key cell).
     fn row<'a>(text: &'a str, key: &str) -> &'a str {
         let cell = format!("| `{key}` |");
         text.lines()

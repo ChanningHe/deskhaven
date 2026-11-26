@@ -1,6 +1,4 @@
-//! Config errors never echo found values, for any key: only key path,
-//! expected type and source. Every case plants `HUNTER2` and checks it
-//! never appears in the error text.
+//! Every case plants `HUNTER2` and checks it never appears in the error text.
 
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(

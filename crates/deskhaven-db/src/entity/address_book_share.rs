@@ -1,6 +1,4 @@
-//! `address_book_shares`: a shared book granted to a user or a group with a rule.
-//!
-//! `subject_id` points at `users.id` or `groups.id` depending on `subject_type`, so it has no
+//! `subject_id` points at a user or a group depending on `subject_type`, so it has no
 //! foreign key; the address book service removes shares of deleted subjects.
 
 use sea_orm::entity::prelude::*;
@@ -14,7 +12,7 @@ pub enum SubjectType {
     Group,
 }
 
-/// Access level, stored as the number clients use.
+/// Stored as the number clients use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]
 pub enum Rule {

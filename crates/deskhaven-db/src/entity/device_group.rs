@@ -1,5 +1,3 @@
-//! `device_groups`: groups of devices (membership is `devices.device_group_id`).
-
 use sea_orm::entity::prelude::*;
 
 use super::managed_by::ManagedBy;

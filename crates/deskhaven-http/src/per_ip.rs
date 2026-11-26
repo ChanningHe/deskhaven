@@ -1,13 +1,6 @@
-//! Concurrent connection cap per client, enforced at accept (review H-a).
-//!
-//! A "client" is an IPv4 address (/32) or an IPv6 prefix (`/per_ip_ipv6_prefix`,
-//! default /64): one host usually owns a whole /64, so keying by /128 would let it
-//! open thousands of "different" clients. The cap per key is adaptive
-//! ([`per_key_limit`]) so a handful of keys can never fill the global cap.
-//!
-//! Trusted proxies are exempt: every client behind them shares their address.
-//! A broad `trusted_proxies` range therefore exempts every host inside it; keep
-//! trusted ranges as narrow as possible.
+//! IPv6 clients are keyed by prefix (default /64): one host usually owns a whole /64, so
+//! keying by /128 would let it open thousands of "different" clients. Trusted proxies are
+//! exempt: every client behind them shares their address.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -20,18 +13,14 @@ use crate::real_ip::TrustedProxies;
 
 /// At most one warning per interval; individual rejections are logged at debug.
 const WARN_INTERVAL: Duration = Duration::from_secs(60);
-/// The adaptive cap never goes below this many connections per key.
 const MIN_PER_KEY: usize = 16;
-/// ... and never above 1/64 of the listener's connection cap.
 const GLOBAL_SHARE_DIVISOR: usize = 64;
 
-/// `min(configured, max(16, max_connections / 64))`, at least 1.
 pub(crate) fn per_key_limit(configured: usize, max_connections: usize) -> usize {
     let share = (max_connections / GLOBAL_SHARE_DIVISOR).max(MIN_PER_KEY);
     configured.min(share).max(1)
 }
 
-/// The budget key for `addr`: the IPv4 address, or its IPv6 `/prefix` network.
 pub(crate) fn limit_key(addr: IpAddr, ipv6_prefix: u8) -> IpAddr {
     match addr.to_canonical() {
         IpAddr::V6(v6) => {
@@ -52,8 +41,7 @@ pub(crate) struct PerIpLimiter {
     last_warn: Option<Instant>,
 }
 
-/// Held by a connection task; releases the key's slot when dropped
-/// (normal close, error, abort or panic).
+/// Releases the key's slot when dropped (normal close, error, abort or panic).
 pub(crate) struct Slot(Option<(Counts, IpAddr)>);
 
 impl Drop for Slot {
@@ -72,7 +60,6 @@ impl Drop for Slot {
 }
 
 impl PerIpLimiter {
-    /// `limit` is the effective per-key cap (see [`per_key_limit`]).
     pub(crate) fn new(limit: usize, ipv6_prefix: u8, trusted: TrustedProxies) -> Self {
         Self {
             limit: limit.max(1),
@@ -84,7 +71,6 @@ impl PerIpLimiter {
         }
     }
 
-    /// A slot for a new connection from `peer`, or `None` if its key is over the cap.
     pub(crate) fn try_acquire(&mut self, peer: IpAddr) -> Option<Slot> {
         if self.trusted.is_trusted(peer) {
             return Some(Slot(None));
@@ -160,7 +146,6 @@ mod tests {
         assert!(limiter.try_acquire(ip("::ffff:192.0.2.1")).is_none());
     }
 
-    /// Review round 3 HIGH: rotating addresses inside one /64 gains nothing.
     #[test]
     fn ipv6_addresses_in_one_slash64_share_a_budget() {
         let mut limiter = limiter(2);

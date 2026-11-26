@@ -1,5 +1,3 @@
-//! `login_events`: every login attempt with its method and outcome.
-//!
 //! `user_id` is NULL for unknown usernames and cleared when the user is deleted;
 //! `username_attempted` keeps the audit trail readable either way.
 
@@ -24,7 +22,6 @@ pub enum Method {
     Recovery,
 }
 
-/// Which kind of client attempted the login.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Text")]
 pub enum Client {

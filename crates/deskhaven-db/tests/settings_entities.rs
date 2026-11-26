@@ -1,4 +1,3 @@
-//! `settings` / `settings_history` entities against the migrated schema.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -110,8 +109,6 @@ async fn history_ids_are_generated_and_increasing() {
     .await;
 }
 
-/// Migration 000026: a key's history never repeats a version (backstop for the service's
-/// version line), while other keys may use the same numbers.
 #[tokio::test]
 async fn history_rejects_a_duplicate_key_and_version() {
     each_migrated_backend(async |db: &TestDb| {
@@ -130,8 +127,6 @@ async fn history_rejects_a_duplicate_key_and_version() {
     .await;
 }
 
-/// Migration 000026: an entry is a plain change unless it says it is a reset, and a reset
-/// keeps the value that applies afterwards in the NOT NULL `new_value`.
 #[tokio::test]
 async fn history_reset_flag_defaults_to_false_and_round_trips() {
     each_migrated_backend(async |db: &TestDb| {

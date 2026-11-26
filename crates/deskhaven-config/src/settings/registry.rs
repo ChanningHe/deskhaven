@@ -1,7 +1,3 @@
-//! The settings registry: every runtime setting, declared exactly once
-//! (05-config §3.6). Defaults, validation, the exported schema and the read
-//! APIs all derive from these declarations.
-
 use super::def::{AnySetting, Setting, settings, strict};
 use super::enums::{AcceptPresets, AclAction, LinkEmailMaxRole, Registration, SmtpTls, TfaEnforce};
 use super::kind::{SettingType, max_items, range};

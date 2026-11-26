@@ -1,10 +1,7 @@
-//! `user_identities`: a user's account at an OIDC provider, keyed by `(provider, subject)`.
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;
 
-/// How an identity came to its account (M4-09).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Text")]
 pub enum LinkedVia {

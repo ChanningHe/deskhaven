@@ -1,5 +1,3 @@
-//! Semantic checks that serde types cannot express.
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use tracing_subscriber::EnvFilter;
@@ -16,14 +14,12 @@ enum Proto {
     Udp,
 }
 
-/// One socket the process will bind.
 struct Binding {
     name: &'static str,
     proto: Proto,
     addr: SocketAddr,
 }
 
-/// Returns all problems found (empty = valid) plus non-fatal warnings.
 pub(crate) fn validate(cfg: &Bootstrap) -> (Vec<String>, Vec<Warning>) {
     let mut problems = Vec::new();
     problems.extend(check_url("public_url", &cfg.public_url));
@@ -142,8 +138,7 @@ fn bindings(cfg: &Bootstrap) -> Vec<Binding> {
     out
 }
 
-/// Whether binding both addresses on one port can collide. `[::]` may be
-/// dual-stack, so it overlaps everything; `0.0.0.0` overlaps all IPv4.
+/// `[::]` may be dual-stack, so it overlaps everything; `0.0.0.0` overlaps all IPv4.
 fn ips_overlap(a: IpAddr, b: IpAddr) -> bool {
     let v6_any = |ip: IpAddr| ip.is_ipv6() && ip.is_unspecified();
     let v4_any_covers =
@@ -201,7 +196,6 @@ mod tests {
         );
     }
 
-    /// Re-review LOW-6: clients and proxies need a known port.
     #[test]
     fn signal_ws_listen_needs_a_port() {
         let (problems, _) = validate(&with_ws_listen("127.0.0.1:0"));

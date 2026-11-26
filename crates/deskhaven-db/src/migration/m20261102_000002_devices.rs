@@ -1,11 +1,6 @@
-//! Device registry (04-data-model §4): the single source of truth for registered devices,
-//! also the signal server's peer store (07-hbbs-fork §3.1).
-//!
-//! `owner_user_id` / `device_group_id` will reference `users(id)` / `device_groups(id)`; this
-//! migration runs before those tables exist, so the columns carry no FK until M2-02 adds them
-//! (on SQLite that means rebuilding the table: FKs cannot be added to an existing one).
-//! `uuid` / `pk` are the raw bytes of the device's RegisterPk (`BLOB` / `BYTEA`): opaque
-//! binary, never displayed, compared byte for byte.
+//! `owner_user_id` / `device_group_id` get their foreign keys in migration 000021: their
+//! tables do not exist yet. `uuid` / `pk` are the raw RegisterPk bytes: opaque, compared byte
+//! for byte.
 
 use super::{enum_check, unique_index};
 use sea_orm_migration::prelude::*;
@@ -44,7 +39,6 @@ enum Devices {
     UpdatedAt,
 }
 
-/// Values of `devices.status` (`DeviceStatus` in the entity).
 const STATUSES: [&str; 2] = ["active", "disabled"];
 const DEFAULT_STATUS: &str = "active";
 
@@ -55,7 +49,6 @@ fn devices_table() -> TableCreateStatement {
         .col(text(Devices::RustdeskId))
         .col(blob(Devices::Uuid))
         .col(blob(Devices::Pk))
-        // sysinfo, self-reported by the device
         .col(text_null(Devices::Hostname))
         .col(text_null(Devices::Username))
         .col(text_null(Devices::Os))
@@ -63,7 +56,6 @@ fn devices_table() -> TableCreateStatement {
         .col(text_null(Devices::Memory))
         .col(text_null(Devices::Version))
         .col(text_null(Devices::SysinfoHash))
-        // FK users(id) / device_groups(id) added in M2-02
         .col(big_integer_null(Devices::OwnerUserId))
         .col(big_integer_null(Devices::DeviceGroupId))
         .col(text_null(Devices::Note))

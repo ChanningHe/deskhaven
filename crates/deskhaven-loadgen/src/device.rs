@@ -1,6 +1,3 @@
-//! One simulated device: its identity and the task that registers it with the signal
-//! server and runs its client API timer ([`crate::plan`]).
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +20,7 @@ use crate::stats::{Failure, Kind, Recorder};
 /// RustDesk ids of the simulated devices start here (nine digits, like real ones).
 const FIRST_ID: u64 = 100_000_000;
 
-/// Who a simulated device is; derived from its index, so runs are reproducible.
+/// Derived from its index, so runs are reproducible.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
     pub index: usize,
@@ -69,7 +66,6 @@ impl Identity {
     }
 }
 
-/// What every device task shares.
 pub struct Shared {
     pub api: SocketAddr,
     pub signal: SocketAddr,
@@ -96,7 +92,6 @@ struct Api {
     shared: Arc<Shared>,
 }
 
-/// Waits for `start_at`; `false` when the run stopped first.
 async fn started(shared: &Shared, start_at: Instant) -> bool {
     tokio::select! {
         () = shared.stop.cancelled() => false,
@@ -104,8 +99,7 @@ async fn started(shared: &Shared, start_at: Instant) -> bool {
     }
 }
 
-/// Registers device `identity` from `start_at` until `shared.stop`: `RegisterPk` first (a
-/// fresh install), then `RegisterPeer` every `register` interval.
+/// `RegisterPk` first (a fresh install), then `RegisterPeer` every `register` interval.
 pub async fn run_signal(identity: Identity, shared: Arc<Shared>, start_at: Instant) {
     if !started(&shared, start_at).await {
         return;
@@ -140,7 +134,6 @@ pub async fn run_signal(identity: Identity, shared: Arc<Shared>, start_at: Insta
     }
 }
 
-/// Runs the client API timer of device `identity` from `start_at` until `shared.stop`.
 pub async fn run_api(identity: Identity, shared: Arc<Shared>, start_at: Instant, seed: u64) {
     if !started(&shared, start_at).await {
         return;
@@ -252,7 +245,6 @@ impl Api {
     }
 }
 
-/// Files a finished call, its latency measured from `started`.
 fn record<T>(shared: &Shared, kind: Kind, started: std::time::Instant, result: Result<T, Failure>) {
     let latency = started.elapsed();
     shared.recorder.record(kind, latency, result.map(|_| ()));

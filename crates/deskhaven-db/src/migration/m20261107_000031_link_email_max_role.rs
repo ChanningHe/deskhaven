@@ -1,10 +1,6 @@
-//! `auth.oidc.link_verified_email` (bool) becomes `auth.oidc.link_email_max_role`
-//! (`off | user | admin | owner`, M4-09). A stored `true` becomes `user` (the old link only
-//! ever reached `user` accounts), `false` becomes `off`; the old row is removed. An
-//! unreadable old value is dropped and the new default (`user`) applies. The new row starts
-//! at version 1 with a history entry saying where it came from (no history exists for the
-//! new key, so the version cannot repeat). Pins under the old key are refused at startup by
-//! the settings registry.
+//! A stored `true` becomes `user` (the old link only reached `user` accounts), `false` becomes
+//! `off`; an unreadable old value is dropped and the default applies. The new row starts at
+//! version 1: the new key has no history, so the version cannot repeat.
 
 use sea_orm::FromQueryResult;
 use sea_orm_migration::prelude::*;
@@ -46,8 +42,6 @@ struct Row {
     updated_at: i64,
 }
 
-/// The new value's stored JSON text for an old one (JSON `true` / `false`); `None` when
-/// it is unreadable.
 fn converted(old: &str) -> Option<&'static str> {
     match old.trim() {
         "true" => Some("\"user\""),

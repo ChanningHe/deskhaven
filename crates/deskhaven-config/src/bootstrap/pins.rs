@@ -1,18 +1,7 @@
-//! The raw `[settings]` table: pinned runtime settings, not interpreted here.
-//!
-//! Files may write pins as dotted keys (`"auth.session_ttl" = "30d"`) or as
-//! nested tables; env always produces nested tables. [`normalize_root`]
-//! rewrites file pins into nested tables before merging so every layer agrees
-//! on one shape and figment precedence + `find_metadata` work per pin. An
-//! empty pin table is an error rather than silently dropped.
-//!
-//! Values from env, `_FILE` and CLI stay raw strings while TOML pins keep
-//! their TOML types; the settings registry coerces both against each
-//! setting's type. Pins whose real name ends in
-//! `_file` cannot be set via env (`<KEY>_FILE` always means indirection).
-//!
-//! Pin values may be sensitive (e.g. `smtp.password`), so `Debug` and
-//! `Serialize` show keys only; read values through [`Pin::value`].
+//! Files write pins as dotted keys or nested tables; env always nests. [`normalize_root`]
+//! nests file pins before merging so figment precedence works per pin.
+//! A pin whose name ends in `_file` cannot be set via env: `<KEY>_FILE` means indirection.
+//! Pin values may be sensitive, so `Debug` and `Serialize` show keys only.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -27,7 +16,6 @@ use crate::types::REDACTED;
 
 pub(crate) const SETTINGS_KEY: &str = "settings";
 
-/// One pinned setting with its provenance.
 #[derive(Clone, PartialEq)]
 pub struct Pin {
     value: serde_json::Value,
@@ -53,7 +41,6 @@ impl fmt::Debug for Pin {
     }
 }
 
-/// Pinned settings keyed by dotted name, e.g. `auth.session_ttl`.
 #[derive(Clone, Default, PartialEq)]
 pub struct Pins(BTreeMap<String, Pin>);
 
@@ -70,7 +57,6 @@ impl Pins {
         self.0.is_empty()
     }
 
-    /// Returns a copy with each pin's source resolved by `source_of(key)`.
     pub(crate) fn with_sources(self, source_of: impl Fn(&str) -> Source) -> Self {
         let resolved = self.0.into_iter().map(|(key, pin)| {
             let source = source_of(&key);
@@ -86,7 +72,6 @@ impl fmt::Debug for Pins {
     }
 }
 
-/// Keys with redacted values.
 impl Serialize for Pins {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut map = s.serialize_map(Some(self.0.len()))?;
@@ -128,7 +113,6 @@ fn flatten_into(out: &mut BTreeMap<String, Pin>, key: String, value: serde_json:
     }
 }
 
-/// Nests dotted keys inside a parsed file's `[settings]` table.
 pub(crate) fn normalize_root(mut root: Dict) -> Result<Dict, String> {
     let normalized = match root.remove(SETTINGS_KEY) {
         Some(Value::Dict(tag, table)) => Value::Dict(tag, nest_dotted(table, "")?),
@@ -164,7 +148,6 @@ fn nest_dotted(table: Dict, prefix: &str) -> Result<Dict, String> {
     Ok(out)
 }
 
-/// Deep-merges `src` into `target`, rejecting any key defined twice.
 fn merge_strict(target: &mut Dict, src: Dict, prefix: &str) -> Result<(), String> {
     for (key, value) in src {
         let path = join(prefix, &key);

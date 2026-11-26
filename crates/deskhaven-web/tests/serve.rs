@@ -1,5 +1,3 @@
-//! Asset serving, caching and the SPA fallback, against the fixture dist.
-
 mod common;
 
 use axum::http::{Method, StatusCode};

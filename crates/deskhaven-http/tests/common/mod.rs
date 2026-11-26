@@ -1,4 +1,3 @@
-//! Helpers for tests against real bound listeners.
 // Each test binary uses a different subset.
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 
@@ -46,8 +45,7 @@ pub fn request(path: &str) -> String {
     format!("GET {path} HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
 }
 
-/// Sends `request(path)` and reads until EOF. A connection the server closes
-/// without answering yields an empty string.
+/// A connection the server closes without answering yields an empty string.
 pub async fn send_on(mut stream: TcpStream, path: &str) -> String {
     if stream.write_all(request(path).as_bytes()).await.is_err() {
         return String::new();
@@ -68,7 +66,6 @@ pub async fn connect_from(source: [u8; 4], addr: SocketAddr) -> TcpStream {
     socket.connect(addr).await.unwrap()
 }
 
-/// Opens a connection that sends only a partial request line.
 pub async fn slow_header(addr: SocketAddr) -> TcpStream {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     stream.write_all(b"GET /api/ip HTTP/1.1\r\n").await.unwrap();
@@ -102,7 +99,6 @@ impl Running {
         }
     }
 
-    /// Cancels and returns how long `serve` took to return.
     pub async fn stop(self) -> Duration {
         let started = Instant::now();
         self.token.cancel();

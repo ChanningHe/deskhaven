@@ -1,7 +1,5 @@
-//! Facts about key paths read from the JSON Schema: secrets (`writeOnly`),
-//! lists (`type: array`) and text (`type: string`). Walks `$ref`, `anyOf` /
-//! `oneOf` / `allOf`, `items`, `additionalProperties` and `properties`, so
-//! wrappers like `Option<Secret>` or `Vec<Secret>` are found too.
+//! Walks `$ref`, `anyOf` / `oneOf` / `allOf`, `items`, `additionalProperties` and
+//! `properties`, so wrappers like `Option<Secret>` or `Vec<Secret>` are found too.
 
 use std::collections::BTreeSet;
 
@@ -27,7 +25,6 @@ impl SchemaFacts {
         facts
     }
 
-    /// A secret path or anything below one.
     pub(crate) fn is_secret(&self, path: &str) -> bool {
         self.secrets.iter().any(|secret| {
             path == secret

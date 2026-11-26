@@ -1,8 +1,5 @@
-//! Dual-backend test helpers (feature `testing`).
-//!
 //! Every test body runs on a fresh SQLite file and, when `DESKHAVEN_TEST_PG_URL` is set, on
-//! PostgreSQL in a private, uniquely named schema that is dropped afterwards (a panicking test
-//! leaves its `dh_test_*` schema behind; harmless in a throwaway database).
+//! PostgreSQL in a private schema that is dropped afterwards.
 
 use std::fmt;
 use std::io::Write as _;
@@ -16,19 +13,18 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::{DbOptions, connect, migrate};
 
-/// Env var holding an admin-capable PostgreSQL URL for tests.
+/// An admin-capable PostgreSQL URL.
 pub const PG_URL_ENV: &str = "DESKHAVEN_TEST_PG_URL";
-/// Set to `1` (CI) to fail instead of skipping when [`PG_URL_ENV`] is missing.
+/// Set to `1` to fail instead of skipping when [`PG_URL_ENV`] is missing.
 pub const REQUIRE_PG_ENV: &str = "DESKHAVEN_TEST_REQUIRE_PG";
 
 const SCHEMA_PREFIX: &str = "dh_test";
 
-/// PostgreSQL test databases one test process holds at once. libtest runs a test per core and CI's
-/// service container keeps the server default `max_connections` (100), so connections are budgeted:
-/// `PG_CONCURRENT_DBS * (1 + PG_POOL_CONNECTIONS)` = 72 stays under it. Under cargo-nextest
-/// (a process per test) the cap is the `postgres` test group instead.
+/// Test databases one process holds at once: `PG_CONCURRENT_DBS * (1 + PG_POOL_CONNECTIONS)`
+/// = 72 stays under PostgreSQL's default `max_connections` (100). Under cargo-nextest (a
+/// process per test) the cap is the `postgres` test group instead.
 const PG_CONCURRENT_DBS: usize = 8;
-/// Pool size of a test's schema connection; concurrency tests queue on it rather than fail.
+/// Concurrency tests queue on the pool rather than fail.
 const PG_POOL_CONNECTIONS: u32 = 8;
 static PG_SLOTS: Semaphore = Semaphore::const_new(PG_CONCURRENT_DBS);
 
@@ -47,7 +43,6 @@ impl fmt::Display for Backend {
     }
 }
 
-/// A fresh, isolated database for one test run.
 pub struct TestDb {
     pub conn: DatabaseConnection,
     pub backend: Backend,
@@ -66,9 +61,7 @@ enum Guard {
     },
 }
 
-/// Runs `test` against an empty database on every available backend.
 /// Each database is created right before its run, so a failure never leaks the next one.
-/// Any failure (setup or assertion) is reported with the backend it happened on.
 pub async fn each_backend<F: AsyncFn(&TestDb)>(test: F) {
     let ctx = FailureContext(Backend::Sqlite);
     let sqlite = sqlite_db().await;
@@ -95,7 +88,6 @@ impl Drop for FailureContext {
     }
 }
 
-/// Like [`each_backend`], with all migrations applied.
 pub async fn each_migrated_backend<F: AsyncFn(&TestDb)>(test: F) {
     each_backend(async |db: &TestDb| {
         must(migrate(&db.conn).await, "migrate");
@@ -108,7 +100,6 @@ pub async fn each_migrated_backend<F: AsyncFn(&TestDb)>(test: F) {
 enum PgTarget {
     Run(String),
     Skip,
-    /// PostgreSQL is required (CI) but no URL was given.
     Missing,
 }
 

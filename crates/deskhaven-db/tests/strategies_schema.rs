@@ -1,6 +1,3 @@
-//! Strategy schema (M2-02): one strategy per target, including the single global assignment
-//! (a partial unique index, because NULL target ids never conflict), on every available
-//! backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 

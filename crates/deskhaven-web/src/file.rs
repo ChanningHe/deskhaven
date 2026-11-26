@@ -1,6 +1,3 @@
-//! One embedded file as an HTTP response: Content-Type, strong ETag,
-//! `If-None-Match` -> 304, Cache-Control.
-
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
@@ -39,7 +36,6 @@ impl File {
         }
     }
 
-    /// 200 with the body (empty for HEAD), or 304 when the client's cache is current.
     pub(crate) fn respond(self, request_headers: &HeaderMap) -> Response {
         let Ok(etag) = HeaderValue::from_str(&self.etag) else {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -83,7 +79,7 @@ fn etag(hash: &[u8]) -> String {
     tag
 }
 
-/// RFC 9110 `If-None-Match`: `*` or any listed tag, weak comparison.
+/// RFC 9110: `*` or any listed tag, weak comparison.
 fn matches_etag(headers: &HeaderMap, etag: &str) -> bool {
     headers
         .get_all(IF_NONE_MATCH)

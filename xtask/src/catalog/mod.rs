@@ -1,21 +1,15 @@
-//! `xtask gen-strategy-catalog [--from <dir>] [--check]`: regenerate the client option
-//! catalog of the strategy editor (`deskhaven_core::strategies::catalog`) from the client
-//! source, merged with the human-written [`OVERLAY`]; `--check` fails when the committed
-//! [`GENERATED`] differs.
-//!
-//! The source is [`VENDOR`] unless `--from` names another directory. It holds the two files
-//! read (as text, never built), at their repository paths, each with a
-//! `// vendored-revision: <commit>` line that must match the overlay's `[source]`:
+//! The source is [`VENDOR`] unless `--from` names another directory: the two files below,
+//! read as text (never built), each with a `// vendored-revision: <commit>` line that must
+//! match the overlay's `[source]`:
 //!
 //! ```text
 //! <dir>/hbb_common/src/config.rs                  rustdesk/hbb_common at the client's pin
 //! <dir>/rustdesk/libs/base/src/config/keys.rs     rustdesk/rustdesk
 //! ```
 //!
-//! To move to a newer client: fetch the two files (e.g. `curl -sfL
-//! https://raw.githubusercontent.com/rustdesk/hbb_common/<rev>/src/config.rs`), trim them
-//! like the vendored copies (keep `option2bool`, the `keys` module and the key lists), update
-//! their header and revision line and the overlay's `[source]`, then regenerate.
+//! To move to a newer client: fetch the two files at the new revision, trim them like the
+//! vendored copies (keep `option2bool`, the `keys` module and the key lists), update their
+//! header and revision line and the overlay's `[source]`, then regenerate.
 
 mod overlay;
 mod render;
@@ -27,16 +21,12 @@ use std::path::{Path, PathBuf};
 
 use crate::error::XtaskError;
 
-/// The human-written half, relative to the repository root.
 pub const OVERLAY: &str = "crates/deskhaven-core/src/strategies/catalog/overlay.toml";
-/// The generated module, relative to the repository root.
 pub const GENERATED: &str = "crates/deskhaven-core/src/strategies/catalog/generated.rs";
-/// The vendored client source, relative to the repository root.
 pub const VENDOR: &str = "xtask/vendor/strategy-catalog";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
-    /// `None`: [`VENDOR`].
     pub from: Option<PathBuf>,
     pub check: bool,
 }
@@ -83,7 +73,6 @@ pub fn run(root: &Path, args: &Args) -> Result<(), XtaskError> {
     Ok(())
 }
 
-/// The `generated.rs` text for the sources in `from` and the overlay text.
 fn generate(from: &Path, overlay: &str) -> Result<String, XtaskError> {
     let config_rs = read(&from.join(source::CONFIG_RS))?;
     let keys_rs = read(&from.join(source::KEYS_RS))?;
@@ -94,7 +83,6 @@ fn generate(from: &Path, overlay: &str) -> Result<String, XtaskError> {
     Ok(render::render(&catalog))
 }
 
-/// The file's `// vendored-revision:` line names the commit the overlay records.
 fn check_revision(file: &str, src: &str, recorded: &str) -> Result<(), XtaskError> {
     match source::revision(src) {
         Some(rev) if rev == recorded => Ok(()),

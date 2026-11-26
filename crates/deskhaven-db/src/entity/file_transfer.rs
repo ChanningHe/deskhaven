@@ -1,5 +1,3 @@
-//! `file_transfers`: audit record of a file transfer reported by the controlled device.
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

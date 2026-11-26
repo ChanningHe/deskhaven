@@ -1,5 +1,3 @@
-//! Real bound listeners: ConnectInfo, split-admin topology, route composition
-//! and graceful shutdown.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -20,8 +18,8 @@ fn json_error(e: StackError) -> Response<Body> {
     ([(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
-/// Review L-d: even with a catch-all admin fallback (the future SPA), an
-/// unmatched `/api/*` path is the client API's JSON 404, never the SPA.
+/// Even with a catch-all admin fallback, an unmatched `/api/*` path is the client API's
+/// JSON 404.
 #[tokio::test]
 async fn unmatched_client_api_path_is_a_client_404_despite_admin_catch_all() {
     let mut apps = apps();
@@ -210,7 +208,6 @@ async fn admin_public_url_is_ignored_when_not_split() {
     srv.stop().await;
 }
 
-/// Review round 3 LOW: an invalid limit stops `serve` before anything is served.
 #[tokio::test]
 async fn invalid_config_is_rejected_before_serving() {
     let listeners = Listeners::bind(&single()).await.unwrap();

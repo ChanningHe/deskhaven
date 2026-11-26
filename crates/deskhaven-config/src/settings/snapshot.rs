@@ -1,5 +1,3 @@
-//! Immutable snapshot of every effective setting: pin > database > default.
-
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -15,7 +13,6 @@ use super::update::Accepted;
 use super::value::Value;
 use crate::Source;
 
-/// One effective value with its provenance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     value: Value,
@@ -44,15 +41,13 @@ impl Entry {
         self.pinned
     }
 
-    /// Optimistic-lock version of the stored row; 0 when no row exists.
-    /// Also set when the row was ignored (unreadable or invalid), so a
-    /// client can overwrite it.
+    /// 0 when no row exists. Also set when the row was ignored, so a client can overwrite it.
     pub fn version(&self) -> i64 {
         self.version
     }
 }
 
-/// A row as read from storage, with sensitive values already decrypted.
+/// Sensitive values are already decrypted.
 #[derive(Clone, PartialEq)]
 pub struct Stored {
     pub key: String,
@@ -75,7 +70,6 @@ impl fmt::Debug for Stored {
     }
 }
 
-/// A stored value that was ignored, or a cross-key rule that does not hold.
 /// Never contains values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadWarning {
@@ -89,7 +83,6 @@ impl fmt::Display for LoadWarning {
     }
 }
 
-/// Read-API form of one setting (`GET /admin/api/settings`, 05-config §3.5).
 /// Sensitive values are `{"set": bool}`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SettingView {
@@ -100,29 +93,23 @@ pub struct SettingView {
     pub source: Source,
     pub pinned: bool,
     pub sensitive: bool,
-    /// Send back as [`Change::version`](super::Change) when updating.
     pub version: i64,
 }
 
-/// Every setting's effective value. Immutable; a change builds a new one.
-/// Only [`Snapshot::build`] and [`Snapshot::with_accepted`] create entries,
-/// and both take values coerced by the setting's own declaration.
+/// Only [`Snapshot::build`] and [`Snapshot::with_accepted`] create entries, and both take
+/// values coerced by the setting's own declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
     entries: BTreeMap<&'static str, Entry>,
 }
 
 impl Snapshot {
-    /// Defaults only: no pins, nothing stored.
     pub fn defaults() -> Self {
         Self::build(&PinSet::empty(), Vec::new()).0
     }
 
-    /// Resolves pin > stored > default for every declared setting. Unknown
-    /// or invalid stored rows are ignored (the setting's bad-row fallback
-    /// applies, the row's version is kept) and reported, as are cross-key
-    /// rules that do not hold: a bad row must not keep the server, and with
-    /// it the settings UI, from starting.
+    /// Unknown or invalid stored rows are ignored (bad-row fallback, version kept) and reported:
+    /// a bad row must not keep the server, and with it the settings UI, from starting.
     pub fn build(
         pins: &PinSet,
         stored: impl IntoIterator<Item = Stored>,
@@ -151,7 +138,6 @@ impl Snapshot {
         (snapshot, warnings)
     }
 
-    /// The typed effective value of `setting`.
     pub fn get<T: SettingType>(&self, setting: &Setting<T>) -> T {
         // Entries hold only values coerced by the same declaration, so the
         // fallback is unreachable; it avoids a panic path.
@@ -165,8 +151,7 @@ impl Snapshot {
         self.entries.get(key)
     }
 
-    /// A copy with `accepted` applied as stored at version
-    /// `expected + 1` by `by` at `at` (unix ms). Pinned keys keep their pin.
+    /// Stored at version `expected + 1`; `at` is unix ms. Pinned keys keep their pin.
     pub fn with_accepted(&self, accepted: &[Accepted], by: Option<i64>, at: i64) -> Self {
         self.with_accepted_at(accepted, by, at, |change| change.expected_version() + 1)
     }
@@ -209,7 +194,6 @@ impl Snapshot {
         Self { entries }
     }
 
-    /// Cross-key rules that do not hold (also part of [`Snapshot::build`]'s warnings).
     pub fn rule_warnings(&self) -> Vec<LoadWarning> {
         rules::violations(self, None)
             .map(|p| LoadWarning {
@@ -234,7 +218,6 @@ impl Snapshot {
         })
     }
 
-    /// Every setting, in declaration order.
     pub fn views(&self) -> Vec<SettingView> {
         all().iter().filter_map(|s| self.view(s.key())).collect()
     }
@@ -294,7 +277,6 @@ fn resolve(
     }
 }
 
-/// Rows of unknown settings are reported and dropped.
 fn decode(row: Stored) -> Result<(&'static str, Stored), LoadWarning> {
     match lookup(&row.key) {
         Some(setting) => Ok((setting.key(), row)),

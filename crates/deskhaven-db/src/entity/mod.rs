@@ -1,6 +1,5 @@
-//! SeaORM entities. Conventions (04-data-model §1): time columns are
-//! [`TimestampMs`](crate::time::TimestampMs), JSON is stored as `TEXT` (serde in the app layer),
-//! enums are `TEXT` guarded by a CHECK constraint and mapped to Rust enums.
+//! Time columns are [`TimestampMs`](crate::time::TimestampMs), JSON is stored as `TEXT`, enums
+//! are `TEXT` guarded by a CHECK constraint.
 
 pub mod address_book;
 pub mod address_book_peer;

@@ -1,16 +1,10 @@
-//! Rows the server writes, per table, read from the database itself.
-//!
-//! - **PostgreSQL**: `pg_stat_user_tables` (`n_tup_ins` / `n_tup_upd` / `n_tup_del`) of the
-//!   connection's schema, plus `xact_commit` of the database (every committed transaction,
-//!   reads included). Backends report their counters when a transaction ends, at most once
-//!   a second, and an idle backend within about 10 s, so a snapshot can miss the last
-//!   seconds' writes; the window's bound allows for one flush.
-//! - **SQLite** has no such statistics. [`DbProbe::install`] adds `AFTER INSERT / UPDATE /
-//!   DELETE` triggers to every table (run once the server migrated, before load starts) that
-//!   bump a per-table counter in `loadgen_row_writes`. A trigger runs inside the statement
-//!   that fired it, so the count is exact whichever code path writes, and it rolls back with
-//!   a failed statement. Each written row costs one extra counter update in the same
-//!   transaction (no extra commit), which makes the SQLite figures slightly pessimistic.
+//! PostgreSQL: `pg_stat_user_tables` of the connection's schema plus the database's
+//! `xact_commit`. Backends report counters when a transaction ends, at most once a second
+//! (an idle one within about 10 s), so a snapshot can miss the last seconds' writes; the
+//! window's bound allows for one flush.
+//! SQLite has no such statistics: [`DbProbe::install`] adds triggers that bump a per-table
+//! counter inside the statement that fired them, so the count is exact and rolls back with a
+//! failed statement. The extra counter update makes the SQLite figures slightly pessimistic.
 
 use std::collections::BTreeMap;
 
@@ -20,10 +14,8 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Transac
 use crate::LoadgenError;
 
 const COUNTER_TABLE: &str = "loadgen_row_writes";
-/// Trigger events and the counter column each one bumps.
 const OPS: [(&str, &str); 3] = [("INSERT", "ins"), ("UPDATE", "upd"), ("DELETE", "del")];
 
-/// Rows written to one table.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RowWrites {
     pub inserted: i64,
@@ -45,7 +37,6 @@ impl RowWrites {
     }
 }
 
-/// Cumulative counters at one moment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub tables: BTreeMap<String, RowWrites>,
@@ -54,7 +45,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// What happened between `earlier` and `self`; tables without writes are left out.
+    /// Tables without writes are left out.
     pub fn since(&self, earlier: &Self) -> Self {
         let tables = self
             .tables
@@ -69,7 +60,6 @@ impl Snapshot {
         Self { tables, commits }
     }
 
-    /// Rows inserted, updated or deleted, all tables together.
     pub fn rows_written(&self) -> i64 {
         self.tables.values().map(RowWrites::total).sum()
     }
@@ -95,8 +85,6 @@ impl DbProbe {
         self.conn.get_database_backend()
     }
 
-    /// SQLite: creates the counter table and the triggers (see the module documentation).
-    /// PostgreSQL needs nothing.
     pub async fn install(&self) -> Result<(), LoadgenError> {
         if self.backend() != DbBackend::Sqlite {
             return Ok(());
@@ -125,7 +113,7 @@ impl DbProbe {
         }
     }
 
-    /// User tables with plain names (all of deskhaven's); others are skipped, never quoted.
+    /// Others are skipped, never quoted.
     async fn sqlite_tables(&self) -> Result<Vec<String>, LoadgenError> {
         let rows = self
             .conn
@@ -199,7 +187,6 @@ impl DbProbe {
     }
 }
 
-/// Seeds the three counter rows of `table` and creates its triggers.
 fn trigger_statements(table: &str) -> Vec<String> {
     let seed = format!(
         "INSERT OR IGNORE INTO {COUNTER_TABLE} (tbl, op, n) VALUES \

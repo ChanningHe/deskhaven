@@ -1,7 +1,5 @@
-//! The human-written half of the catalog (`overlay.toml`): group, control type, choices,
-//! defaults the source does not imply, secrecy and the en / zh texts. Merged onto the keys
-//! read from the client source; a key the overlay does not describe still appears (as a
-//! text option in `other`), an overlay entry whose key left the source is an error.
+//! A key the overlay does not describe still appears (as a text option in `other`); an
+//! overlay entry whose key left the source is an error.
 
 use std::collections::BTreeMap;
 
@@ -89,7 +87,6 @@ pub enum Kind {
     Text,
 }
 
-/// One option of the generated catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub key: String,
@@ -108,7 +105,6 @@ pub struct Catalog {
     pub entries: Vec<Entry>,
 }
 
-/// `keys` (source order) with the overlay `toml` merged on.
 pub fn merge(keys: &[SourceKey], toml: &str) -> Result<Catalog, OverlayError> {
     let file: OverlayFile =
         toml::from_str(toml).map_err(|e| OverlayError::Syntax(e.message().to_owned()))?;
@@ -129,8 +125,6 @@ pub fn merge(keys: &[SourceKey], toml: &str) -> Result<Catalog, OverlayError> {
     })
 }
 
-/// Name segments (split at `-` / `_`) that suggest a credential: one containing `pass`,
-/// `secret` or `token`, or the segment `key`.
 fn looks_secret(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
     lower.split(['-', '_']).any(|segment| {

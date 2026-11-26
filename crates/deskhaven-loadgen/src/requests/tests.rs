@@ -11,7 +11,6 @@ const FROM: Sender<'static> = Sender {
     uuid_b64: "bG9hZGdlbi0wMDAwMDAwMDA3",
 };
 
-/// The JSON request body of a contract fixture.
 fn fixture_body(endpoint: &str, case: &str) -> Map<String, Value> {
     let path = contract_dir()
         .join("fixtures")
@@ -88,7 +87,7 @@ fn audit_records_have_the_fixture_shapes() {
 
     assert_eq!(shape(&new), shape(&fixture_body("audit-conn", "new")));
     assert_eq!(shape(&close), shape(&fixture_body("audit-conn", "close")));
-    // A connection without a second factor leaves `two_factor` out (03 §2.3).
+    // A connection without a second factor leaves `two_factor` out.
     let mut expected = shape(&fixture_body("audit-conn", "authorized"));
     expected.remove("two_factor");
     assert_eq!(shape(&authorized), expected);

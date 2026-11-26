@@ -1,5 +1,3 @@
-//! Acceptance tests: effective view (redaction + provenance), validation, schema.
-
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::result_large_err)]
 
@@ -102,7 +100,6 @@ fn source_display_matches_cli_contract() {
     assert_eq!(file.to_string(), "file:/etc/deskhaven/deskhaven.toml");
 }
 
-/// Loads `toml` as the config file and returns the resulting error.
 fn load_error(toml: &str) -> ConfigError {
     let mut out = None;
     Jail::expect_with(|jail| {

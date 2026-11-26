@@ -1,5 +1,3 @@
-//! Millisecond timestamp convention.
-
 use deskhaven_db::time;
 
 #[test]

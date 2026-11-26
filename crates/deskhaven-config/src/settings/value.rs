@@ -1,5 +1,3 @@
-//! Type-erased setting values and the `host:port` list item.
-
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
@@ -8,15 +6,13 @@ use serde_json::{Value as Json, json};
 
 use crate::{Duration, Secret};
 
-/// An effective setting value, already validated against its declaration.
-/// `Debug` never reveals secrets.
+/// Already validated against its declaration. `Debug` never reveals secrets.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Value {
     Bool(bool),
     U32(u32),
     Duration(Duration),
-    /// One of the declared variants (always a `'static` variant name).
     Enum(&'static str),
     HostPorts(Vec<HostPort>),
     /// Plain text; empty means "not configured".
@@ -26,7 +22,6 @@ pub enum Value {
 }
 
 impl Value {
-    /// Public JSON form, as stored for plain values and shown by read APIs.
     /// Secrets render as `{"set": bool}`; use [`Value::secret`] to seal them.
     pub fn to_json(&self) -> Json {
         match self {
@@ -52,9 +47,7 @@ impl Value {
 const MAX_HOST_LEN: usize = 253;
 const MAX_LABEL_LEN: usize = 63;
 
-/// A relay or server address: DNS name, IPv4 or bracketed IPv6, plus a
-/// non-zero port. Stored canonically (lowercase name, normalized IP), so
-/// equal addresses compare equal.
+/// Stored canonically (lowercase name, normalized IP), so equal addresses compare equal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HostPort {
     host: String,
@@ -62,7 +55,6 @@ pub struct HostPort {
 }
 
 impl HostPort {
-    /// The host without IPv6 brackets.
     pub fn host(&self) -> &str {
         &self.host
     }
@@ -72,7 +64,7 @@ impl HostPort {
     }
 }
 
-/// Parse failure for [`HostPort`]. Never includes the input.
+/// Never includes the input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("expected host:port (DNS name, IPv4 or [IPv6], port 1-65535)")]
 pub struct HostPortError;
@@ -87,7 +79,6 @@ impl FromStr for HostPort {
     }
 }
 
-/// `[v6]:port` or `host:port`; returns the canonical host.
 fn split_host_port(s: &str) -> Option<(String, &str)> {
     if let Some(rest) = s.strip_prefix('[') {
         let (host, port) = rest.split_once("]:")?;
@@ -97,7 +88,6 @@ fn split_host_port(s: &str) -> Option<(String, &str)> {
     Some((canonical_host(host)?, port))
 }
 
-/// A host clients can connect to: DNS name, IPv4 or unbracketed IPv6.
 pub(crate) fn is_host(host: &str) -> bool {
     canonical_host(host).is_some() || canonical_ipv6(host).is_some()
 }
@@ -108,7 +98,6 @@ fn canonical_ipv6(host: &str) -> Option<String> {
     (!ip.is_unspecified()).then(|| ip.to_string())
 }
 
-/// Digits only (no sign), 1-65535.
 fn parse_port(port: &str) -> Option<u16> {
     if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -126,7 +115,6 @@ fn canonical_host(host: &str) -> Option<String> {
     is_dns_name(host).then(|| host.to_ascii_lowercase())
 }
 
-/// Labels of 1-63 letters, digits, `-` or `_`, not starting or ending with `-`.
 fn is_dns_name(host: &str) -> bool {
     host.len() <= MAX_HOST_LEN
         && host.split('.').all(|label| {

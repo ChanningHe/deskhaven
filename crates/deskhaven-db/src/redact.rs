@@ -1,9 +1,6 @@
-//! Credential redaction for database URLs (logs, `Debug`, errors).
-
 const MASK: &str = "***";
 
-/// Masks the userinfo password and any `*password*` query parameter.
-/// `sqlite:` URLs carry no credentials and are returned unchanged.
+/// Masks the userinfo password and any `*password*` query parameter; `sqlite:` URLs carry none.
 pub(crate) fn redact_url(url: &str) -> String {
     if url.starts_with("sqlite:") {
         return url.to_owned();

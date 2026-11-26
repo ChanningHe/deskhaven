@@ -1,4 +1,3 @@
-//! `auth_lockouts`: per-key login failure counter and exponential-backoff lockout.
 //! No foreign key to `users`: unknown usernames are counted the same way (anti-enumeration).
 
 use sea_orm::entity::prelude::*;
@@ -8,7 +7,7 @@ use crate::time::TimestampMs;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "auth_lockouts")]
 pub struct Model {
-    /// `user:<username_norm>`; built only by `deskhaven_core::auth::limiter::LockoutKey`.
+    /// `user:<username_norm>`.
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub key: String,
     /// Failures counted in the current window (reset when a lock starts).

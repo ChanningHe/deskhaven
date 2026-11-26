@@ -1,4 +1,3 @@
-//! Real client IP resolution (06-security §3.6).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -137,9 +136,8 @@ fn garbage_left_of_untrusted_entry_is_never_reached() {
     );
 }
 
-/// Review H1: nginx `$proxy_add_x_forwarded_for` turns a client-sent
-/// `X-Forwarded-For: \xff` into `"\xff, <real ip>"`. The obs-text byte sits in
-/// an entry the walk never reaches, so it must not affect the result.
+/// nginx turns a client-sent `X-Forwarded-For: \xff` into `"\xff, <real ip>"`; the obs-text
+/// byte sits in an entry the walk never reaches.
 #[test]
 fn obs_text_left_of_untrusted_entry_is_never_reached() {
     let proxies = trusted(&["10.0.0.0/8"]);
@@ -208,8 +206,6 @@ fn ipv6_any_does_not_trust_ipv4_or_mapped_peers() {
         client("10.0.0.1")
     );
 }
-
-// --- extractor ---------------------------------------------------------------
 
 fn ip_router() -> Router {
     Router::new().route(
@@ -300,8 +296,6 @@ async fn extractor_without_peer_is_500() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }
 
-// --- properties --------------------------------------------------------------
-
 fn arb_ip() -> impl Strategy<Value = IpAddr> {
     prop_oneof![
         any::<[u8; 4]>().prop_map(IpAddr::from),
@@ -315,7 +309,6 @@ fn arb_entry_bytes() -> impl Strategy<Value = Vec<u8>> {
     proptest::collection::vec(byte, 0..20)
 }
 
-/// Anything that does not parse as an address.
 fn arb_garbage() -> impl Strategy<Value = Vec<u8>> {
     arb_entry_bytes().prop_filter("not an ip", |b| {
         std::str::from_utf8(b).map_or(true, |s| s.trim().parse::<IpAddr>().is_err())

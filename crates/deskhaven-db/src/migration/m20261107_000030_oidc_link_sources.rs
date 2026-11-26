@@ -1,15 +1,6 @@
-//! Explicit OIDC linking (M4-09):
-//!
-//! - `user_identities.linked_via` (`provisioned | email | explicit`): how the identity came
-//!   to its account. Logins through an `email` identity re-check the email-link conditions
-//!   every time; the others do not. Existing rows: the first identity of each `oidc`
-//!   account was created with it (provisioning); every other identity was linked by
-//!   email, the only other way before this migration. When in doubt `email`: the strict
-//!   reading, it is re-checked.
-//! - `oidc_flows.flow` admits `link`: a signed-in user linking an identity to their own
-//!   account. PostgreSQL swaps the CHECK in place. SQLite cannot alter a CHECK, so the
-//!   table is rebuilt (create the new shape, copy the rows, drop the old table, rename,
-//!   re-create the indexes). Nothing references `oidc_flows`.
+//! Existing identities: the first of each `oidc` account was provisioned, every other one was
+//! linked by email (the only other way then); when in doubt `email`, which is re-checked.
+//! SQLite cannot alter a CHECK, so `oidc_flows` is rebuilt; nothing references it.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
@@ -124,8 +115,7 @@ async fn rebuild_flows_sqlite(manager: &SchemaManager<'_>) -> Result<(), DbErr> 
     Ok(())
 }
 
-/// `oidc_flows` as migration 000012 created it (same column order: the copy is
-/// `SELECT *`), with `link` among the flow kinds.
+/// Same column order as migration 000012: the copy is `SELECT *`.
 fn flows_table(name: DynIden) -> TableCreateStatement {
     Table::create()
         .table(name.clone())

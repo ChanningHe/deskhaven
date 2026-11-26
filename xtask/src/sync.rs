@@ -1,12 +1,9 @@
-//! Generated files: write them, or check that the committed copy is current.
-
 use std::fs;
 use std::io;
 use std::path::Path;
 
 use crate::error::XtaskError;
 
-/// Write the generated file, or (`--check`) only compare it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Write,
@@ -23,8 +20,7 @@ impl Mode {
     }
 }
 
-/// Makes `path` hold `content` (write mode) or checks that it does (check mode). A missing
-/// file counts as drift; `drift` builds the error from the path.
+/// A missing file counts as drift.
 pub fn file(
     path: &Path,
     content: &str,

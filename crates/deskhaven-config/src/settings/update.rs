@@ -1,5 +1,3 @@
-//! Validation of an update batch, before and after it meets current state.
-
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -12,12 +10,10 @@ use super::rules;
 use super::snapshot::Snapshot;
 use super::value::Value;
 
-/// One requested change. `version` is the version the caller last saw
-/// ([`SettingView::version`](super::SettingView), 0 = never stored).
+/// `version` is the version the caller last saw (0 = never stored).
 #[derive(Clone, PartialEq)]
 pub struct Change {
     pub key: String,
-    /// Native or text JSON; may be a plaintext secret.
     pub value: Json,
     pub version: i64,
 }
@@ -32,8 +28,6 @@ impl fmt::Debug for Change {
     }
 }
 
-/// A request to drop the stored value of a key, so its default applies again. `version`
-/// is as for [`Change`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reset {
     pub key: String,
@@ -68,7 +62,6 @@ impl Accepted {
         &self.value
     }
 
-    /// The version the caller expects the stored row to have.
     pub fn expected_version(&self) -> i64 {
         self.version
     }
@@ -85,7 +78,7 @@ impl fmt::Debug for Accepted {
     }
 }
 
-/// Why one key was rejected. Never contains the submitted value.
+/// Never contains the submitted value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Problem {
     pub key: String,
@@ -98,14 +91,10 @@ impl fmt::Display for Problem {
     }
 }
 
-/// A batch that must not be applied (nothing is written).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Rejection {
-    /// Keys fixed by, or only settable through, the bootstrap configuration
-    /// (API: 409 `setting_pinned`).
     #[error("settings pinned by the bootstrap configuration: {}", keys.join(", "))]
     Pinned { keys: Vec<String> },
-    /// Unknown keys, duplicates, invalid values or violated cross-key rules.
     #[error("invalid settings: {}", join(problems))]
     Invalid { problems: Vec<Problem> },
 }
@@ -115,14 +104,12 @@ fn join(problems: &[Problem]) -> String {
     rendered.join("; ")
 }
 
-/// Checks everything that does not depend on current state. Pinned keys
-/// take precedence over other problems; all problems are reported at once.
+/// Pinned keys take precedence over other problems; all problems are reported at once.
 pub fn prepare(pins: &PinSet, changes: &[Change]) -> Result<Vec<Accepted>, Rejection> {
     prepare_batch(pins, changes, &[])
 }
 
-/// [`prepare`] for a batch that also resets keys. A key may appear once in the whole batch,
-/// as a change or as a reset.
+/// A key may appear once in the whole batch, as a change or as a reset.
 pub fn prepare_batch(
     pins: &PinSet,
     changes: &[Change],
@@ -168,7 +155,6 @@ pub fn prepare_batch(
     }
 }
 
-/// The edit of an existing, unpinned setting: `value` coerced, or (`None`) the default.
 fn accept(
     setting: &'static dyn AnySetting,
     version: i64,
@@ -186,7 +172,6 @@ fn accept(
     })
 }
 
-/// Longest unknown key echoed back in a [`Problem`].
 const MAX_ECHOED_KEY: usize = 64;
 
 /// An unknown, caller-supplied key made safe for logs and responses:
@@ -203,8 +188,6 @@ pub(crate) fn echo_key(key: &str) -> String {
     echoed
 }
 
-/// Checks the cross-key rules that involve a `changed` key on the
-/// candidate snapshot (current state with the batch applied).
 pub fn check_rules(candidate: &Snapshot, changed: &[&str]) -> Result<(), Rejection> {
     let problems: Vec<Problem> = rules::violations(candidate, Some(changed)).collect();
     match problems.is_empty() {

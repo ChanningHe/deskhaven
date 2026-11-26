@@ -1,8 +1,5 @@
-//! `strategy_assignments`: which strategy applies to which target (at most one per target).
-//!
-//! `target_id` points at `devices.id`, `device_groups.id`, `users.id` or `groups.id`
-//! depending on `target_type`, so it has no foreign key; the strategy service removes
-//! assignments of deleted targets. The `global` target has no id.
+//! `target_id` points at a device, device group, user or group depending on `target_type`, so
+//! it has no foreign key; the strategy service removes assignments of deleted targets.
 
 use sea_orm::entity::prelude::*;
 

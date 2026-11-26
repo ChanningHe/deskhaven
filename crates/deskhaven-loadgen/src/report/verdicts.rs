@@ -1,5 +1,4 @@
-//! The NFR table: one [`Verdict`] per requirement, all of which must pass. Besides the
-//! 01-prd §4 thresholds, rows that keep a run from passing while part of the load fails
+//! Besides the NFR thresholds, rows that keep a run from passing while part of the load fails
 //! (load reached, registrations, sysinfo / audit, clean shutdowns).
 
 use std::time::Duration;
@@ -8,8 +7,7 @@ use super::{Measured, Targets, Verdict, mib};
 use crate::stats::Summary;
 
 const NA: &str = "n/a";
-/// Rows one audit call writes: its nonce, and the connection row it creates or completes
-/// (03 §2.3, M2-15).
+/// Rows one audit call writes: its nonce, and the connection row it creates or completes.
 const AUDIT_ROWS_PER_CALL: f64 = 2.0;
 /// Rows one sysinfo call writes at most: the device row.
 const SYSINFO_ROWS_PER_CALL: f64 = 1.0;
@@ -61,7 +59,6 @@ fn per_second(count: u64, window: Duration) -> f64 {
     }
 }
 
-/// A rate verdict: `ok` calls in the window against `devices / interval`.
 fn rate(nfr: &'static str, m: &Measured, ok: u64, interval: Duration, t: &Targets) -> Verdict {
     let nominal = m.devices as f64 / interval.as_secs_f64().max(f64::MIN_POSITIVE);
     let measured = per_second(ok, m.window);

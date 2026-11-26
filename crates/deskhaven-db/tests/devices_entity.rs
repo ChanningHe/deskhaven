@@ -1,4 +1,3 @@
-//! `devices` schema and entity against the migrated database, on every available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -14,7 +13,6 @@ fn ts(ms: i64) -> TimestampMs {
     time::from_millis(ms).unwrap()
 }
 
-/// A row with only the required columns set.
 fn device_row(rustdesk_id: &str) -> device::ActiveModel {
     let at = ts(1_700_000_000_123);
     device::ActiveModel {
@@ -57,8 +55,6 @@ async fn device_round_trips_with_binary_keys_and_nullable_columns() {
     .await;
 }
 
-/// `display_name` / `display_username` (M2-19): the administrator's names for the device,
-/// NULL until set, independent of the self-reported hostname / username.
 #[tokio::test]
 async fn display_names_are_nullable_and_separate_from_the_reported_ones() {
     each_migrated_backend(async |db: &TestDb| {
@@ -115,7 +111,7 @@ async fn rustdesk_id_is_unique() {
     .await;
 }
 
-/// The required columns of a raw insert, plus `extra` (bypasses the entity's status enum).
+/// Bypasses the entity's status enum.
 fn raw_insert(rustdesk_id: &str, extra: Option<(device::Column, &str)>) -> InsertStatement {
     use device::Column as C;
     let mut columns = vec![
@@ -153,7 +149,6 @@ fn raw_insert(rustdesk_id: &str, extra: Option<(device::Column, &str)>) -> Inser
         .to_owned()
 }
 
-/// The column defaults to `active` and its CHECK rejects anything else.
 #[tokio::test]
 async fn status_defaults_to_active_and_rejects_unknown_values() {
     each_migrated_backend(async |db: &TestDb| {

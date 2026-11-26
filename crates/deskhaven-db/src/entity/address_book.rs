@@ -1,5 +1,3 @@
-//! `address_books`: a user's personal book (at most one) or a shared book.
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

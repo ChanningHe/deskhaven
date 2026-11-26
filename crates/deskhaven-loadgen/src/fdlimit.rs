@@ -1,14 +1,12 @@
-//! Open-file limit preflight. Each device holds a UDP socket for the whole run and at most
-//! one TCP connection at a time, so N devices need about 2N descriptors. A soft limit below
-//! that is raised up to the hard limit (no privileges needed); if even the hard limit is too
-//! low the run fails before starting the server, instead of failing devices mid-run.
+//! N devices need about 2N descriptors (a UDP socket each, at most one TCP connection). A
+//! low soft limit is raised up to the hard limit; if even that is too low the run fails
+//! before starting the server instead of failing devices mid-run.
 
 use crate::LoadgenError;
 
 /// Descriptors for everything besides the devices: runtime, database probe, logs, stdio.
 const RESERVE: u64 = 256;
 
-/// Descriptors `devices` simulated devices need.
 pub fn needed(devices: usize) -> u64 {
     u64::try_from(devices)
         .unwrap_or(u64::MAX)
@@ -16,8 +14,7 @@ pub fn needed(devices: usize) -> u64 {
         .saturating_add(RESERVE)
 }
 
-/// The soft limit to set (`None`: the current one suffices) for `soft` / `hard` limits
-/// (`None` = unlimited), or why it cannot work.
+/// `None` limits are unlimited; `Ok(None)`: the current soft limit suffices.
 pub fn plan(soft: Option<u64>, hard: Option<u64>, needed: u64) -> Result<Option<u64>, String> {
     let enough = |limit: Option<u64>| limit.is_none_or(|l| l >= needed);
     match (enough(soft), enough(hard)) {
@@ -31,7 +28,7 @@ pub fn plan(soft: Option<u64>, hard: Option<u64>, needed: u64) -> Result<Option<
     }
 }
 
-/// Applies [`plan`] to `RLIMIT_NOFILE` of this process (inherited by the server it starts).
+/// Inherited by the server it starts.
 #[cfg(unix)]
 pub fn ensure(devices: usize) -> Result<(), LoadgenError> {
     use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};

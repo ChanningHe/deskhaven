@@ -1,5 +1,3 @@
-//! Turns what a run recorded into its [`Report`].
-
 use std::time::Duration;
 
 use super::{Config, Counters};
@@ -17,7 +15,7 @@ const KINDS: [Kind; 5] = [
     Kind::RegisterPk,
 ];
 
-/// The report of the load phases; the idle restart fills in its two fields afterwards.
+/// The idle restart fills in its two fields afterwards.
 pub(super) fn report(
     config: &Config,
     recorder: &Recorder,

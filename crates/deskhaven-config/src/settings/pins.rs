@@ -1,5 +1,3 @@
-//! Validated pins: settings fixed by the bootstrap configuration (05-config §3.4).
-
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -9,8 +7,8 @@ use super::value::Value;
 use crate::Source;
 use crate::bootstrap::Pins;
 
-/// Pinned settings, coerced against the registry. A pinned key is read-only
-/// at runtime: its effective value is the pin, any stored value is ignored.
+/// A pinned key is read-only at runtime: its effective value is the pin, any stored value
+/// is ignored.
 #[derive(Debug, Clone, Default)]
 pub struct PinSet {
     pins: BTreeMap<&'static str, Pinned>,
@@ -27,9 +25,8 @@ impl PinSet {
         Self::default()
     }
 
-    /// Coerces every raw pin (TOML-native or text) against its setting.
-    /// Unknown keys and invalid values are all reported together; reasons
-    /// name the key and source, never the value.
+    /// All unknown keys and invalid values are reported together; reasons name the key and
+    /// source, never the value.
     pub fn from_bootstrap(raw: &Pins) -> Result<Self, PinError> {
         let mut pins = BTreeMap::new();
         let mut problems = Vec::new();
@@ -71,7 +68,6 @@ impl PinSet {
     }
 }
 
-/// One rejected pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinProblem {
     pub key: String,
@@ -89,7 +85,6 @@ impl fmt::Display for PinProblem {
     }
 }
 
-/// Startup error: some pins are unknown or invalid.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid settings pins: {}", join(problems))]
 pub struct PinError {

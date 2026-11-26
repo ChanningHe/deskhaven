@@ -1,4 +1,4 @@
-//! `settings_history`: append-only log of setting changes.
+//! Append-only.
 
 use sea_orm::entity::prelude::*;
 
@@ -22,7 +22,7 @@ pub struct Model {
     pub updated_at: TimestampMs,
     #[sea_orm(column_type = "Text", nullable)]
     pub reason: Option<String>,
-    /// A reset to the default: the stored row was deleted (migration 000026).
+    /// A reset to the default: the stored row was deleted.
     pub reset: bool,
 }
 

@@ -1,5 +1,3 @@
-//! Identity & access schema (M2-01): uniqueness, CHECK and foreign-key behavior, on every
-//! available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 

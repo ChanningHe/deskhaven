@@ -1,5 +1,3 @@
-//! The host a run was measured on (Linux `/proc`); unknown fields read "unknown".
-
 use std::thread::available_parallelism;
 
 const UNKNOWN: &str = "unknown";
@@ -26,7 +24,6 @@ impl Machine {
     }
 }
 
-/// The value of the first `key: value` line with this key.
 fn first_value(text: &str, key: &str) -> String {
     text.lines()
         .filter_map(|line| line.split_once(':'))

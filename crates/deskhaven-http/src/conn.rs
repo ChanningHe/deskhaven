@@ -1,18 +1,4 @@
-//! Accept loop for one listener on hyper's HTTP/1.1 server (`axum::serve` sets
-//! no timer, so it has no header-read timeout; review H2).
-//!
-//! - a client must send a complete request head within `header_read_timeout`
-//!   (hyper keeps that timer running while a keep-alive connection is idle) and
-//!   it may not exceed `max_header_bytes` / `max_headers`;
-//! - a client whose response writes block must read at least
-//!   `min_write_bytes_per_sec` averaged over `write_stall_timeout`, or the
-//!   connection is closed ([`crate::io`]);
-//! - at most `max_connections` are served at once (the rest wait in the
-//!   backlog), and at most the adaptive per-client cap per untrusted IPv4
-//!   address / IPv6 prefix (excess connections are closed at once,
-//!   [`crate::per_ip`]);
-//! - on shutdown: stop accepting, let in-flight requests finish, and drop whatever
-//!   is still open after `drain_timeout`.
+//! Own accept loop: `axum::serve` sets no timer, so it has no header-read timeout.
 
 use std::io;
 use std::net::SocketAddr;
@@ -35,7 +21,6 @@ use crate::config::HttpConfig;
 use crate::io::MinWriteRate;
 use crate::per_ip::{PerIpLimiter, Slot, per_key_limit};
 
-/// Pause after `accept` fails for lack of resources before retrying.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 /// hyper panics on a smaller read buffer.
 const MIN_BUF_SIZE: usize = 8 * 1024;
@@ -102,7 +87,6 @@ pub(crate) async fn serve_listener(
 }
 
 impl Server {
-    /// Serve the connection, or close it at once if its address is over the cap.
     fn admit(&mut self, stream: TcpStream, peer: SocketAddr) {
         match self.per_ip.try_acquire(peer.ip()) {
             Some(slot) => self.spawn(stream, peer, slot),

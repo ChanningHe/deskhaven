@@ -1,5 +1,3 @@
-//! Address book schema (M2-02): the personal-book partial unique index, composite keys,
-//! CHECKs and cascades, on every available backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 
@@ -487,8 +485,8 @@ async fn peer_round_trips_with_json_and_credentials() {
     .await;
 }
 
-/// Migration 000025: the personal-book hash is a credential and lives sealed in `hash_enc`;
-/// the clear `hash` column is gone.
+/// The personal-book hash is a credential and lives sealed in `hash_enc`; the clear `hash`
+/// column is gone.
 #[tokio::test]
 async fn peer_hash_column_is_replaced_by_hash_enc() {
     each_migrated_backend(async |db: &TestDb| {

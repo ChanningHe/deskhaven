@@ -1,5 +1,3 @@
-//! Pure update validation and snapshot building (no database).
-
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -34,7 +32,6 @@ fn invalid_keys(rejection: Rejection) -> Vec<String> {
     }
 }
 
-/// Applies accepted changes as database updates and checks cross-key rules.
 fn candidate(base: &Snapshot, changes: &[Change]) -> Result<Snapshot, Rejection> {
     let accepted = prepare(&PinSet::empty(), changes)?;
     let next = base.with_accepted(&accepted, None, 0);

@@ -1,7 +1,5 @@
-//! Classification of `DESKHAVEN_*` variables and `<KEY>_FILE` indirection.
-//!
-//! Env values never go through figment's own `Env` provider: they are typed
-//! by [`KnownKeys::typed_value`], the single parser shared with `_FILE` and CLI.
+//! Env values bypass figment's `Env` provider: [`KnownKeys::typed_value`] is the one parser
+//! shared with `_FILE` and CLI.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -18,16 +16,13 @@ pub(crate) const KEY_SEPARATOR: &str = "__";
 pub(crate) const CONFIG_VAR: &str = "DESKHAVEN_CONFIG";
 const FILE_SUFFIX: &str = "_file";
 
-/// How every `DESKHAVEN_*` variable is interpreted, keyed by dotted path.
 #[derive(Default)]
 pub(crate) struct EnvPlan {
     /// path -> (variable, value).
     pub plain: BTreeMap<String, (String, String)>,
     /// path -> (variable, file to read the value from).
     pub indirect: BTreeMap<String, (String, PathBuf)>,
-    /// `$DESKHAVEN_CONFIG`, if set and non-empty.
     pub config_path: Option<PathBuf>,
-    /// The variable name that carried the config path (even if empty).
     config_var: Option<String>,
     pub warnings: Vec<Warning>,
 }
@@ -50,7 +45,6 @@ impl fmt::Debug for EnvPlan {
 }
 
 impl EnvPlan {
-    /// The variable that supplied `path`, for provenance.
     pub(crate) fn var_for(&self, path: &str) -> Option<&str> {
         let plain = self.plain.get(path).map(|(var, _)| var);
         plain
@@ -59,7 +53,6 @@ impl EnvPlan {
     }
 }
 
-/// The env layers: (plain values, `_FILE` values).
 pub(crate) struct EnvLayers {
     pub plain: Dict,
     pub indirect: Dict,
@@ -162,8 +155,7 @@ fn reject_conflicts(plan: &EnvPlan) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Types plain values and reads `_FILE` targets. Both layers are also checked
-/// together so a pin cannot be shadowed across them (`A` vs `A__B_FILE`).
+/// Both layers are checked together so a pin cannot be shadowed across them (`A` vs `A__B_FILE`).
 pub(crate) fn layers(plan: &EnvPlan, known: &KnownKeys) -> Result<EnvLayers, ConfigError> {
     let plain: Vec<(String, Value)> = plan
         .plain
@@ -203,8 +195,6 @@ fn to_path(rest: &str) -> String {
     rest.to_ascii_lowercase().replace(KEY_SEPARATOR, ".")
 }
 
-/// The variable that sets the dotted `path`: `listen.client_api` ->
-/// `DESKHAVEN_LISTEN__CLIENT_API`.
 pub fn env_var(path: &str) -> String {
     format!(
         "{ENV_PREFIX}{}",

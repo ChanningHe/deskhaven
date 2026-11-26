@@ -1,11 +1,7 @@
-//! `device_strategy_keys`: the strategy option keys the heartbeat last sent to a device with a
-//! non-empty value (M2-14), so that a key which later disappears from the device's effective
-//! strategy can be sent once more as `""` (the client only touches the keys it receives).
-//!
-//! A superset of what the device may hold: grown before a strategy is sent, shrunk once the
-//! device confirms it. Keyed by RustDesk id with no foreign key: deleting a device does not
-//! reset its client, which re-registers as a new `devices` row and must still get the keys it
-//! holds deleted.
+//! Option keys last sent to a device with a non-empty value, so a key that later leaves its
+//! effective strategy can be sent once more as `""` (the client only touches keys it receives).
+//! No foreign key: deleting a device does not reset its client, which re-registers as a new
+//! `devices` row and must still get the keys it holds deleted.
 
 use sea_orm::entity::prelude::*;
 

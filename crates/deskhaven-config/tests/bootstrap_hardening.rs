@@ -1,6 +1,3 @@
-//! Review-driven tests: schema-aware typing, secret hygiene, pin `_FILE`,
-//! list syntax, log filter validation.
-
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(
     clippy::unwrap_used,

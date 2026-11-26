@@ -1,5 +1,3 @@
-//! Startup migration runner.
-
 use std::collections::BTreeSet;
 
 use sea_orm::{
@@ -14,17 +12,13 @@ use crate::{DbError, begin_write};
 /// (ASCII "dhmigrat").
 const PG_MIGRATION_LOCK_KEY: i64 = 0x6468_6d69_6772_6174;
 
-/// Applies all pending migrations of the built-in [`Migrator`].
 pub async fn migrate(conn: &DatabaseConnection) -> Result<(), DbError> {
     migrate_with::<Migrator>(conn).await
 }
 
-/// Applies all pending migrations of `M` in a single transaction: either every pending
-/// migration and its version record is committed, or nothing is (both backends support
-/// transactional DDL). Fails if the database has versions unknown to `M` (newer binary).
-///
-/// Concurrent starters serialize: SQLite via `BEGIN IMMEDIATE` (see [`begin_write`]),
-/// PostgreSQL via `pg_advisory_xact_lock`; the second one then finds nothing pending.
+/// One transaction: every pending migration and its version record commit, or nothing does.
+/// Fails if the database has versions unknown to `M` (newer binary). Concurrent starters
+/// serialize (SQLite `BEGIN IMMEDIATE`, PostgreSQL `pg_advisory_xact_lock`).
 pub async fn migrate_with<M: MigratorTrait>(conn: &DatabaseConnection) -> Result<(), DbError> {
     let txn = begin_write(conn).await.map_err(DbError::Migration)?;
     // On error the uncommitted transaction is rolled back when dropped.
@@ -33,10 +27,8 @@ pub async fn migrate_with<M: MigratorTrait>(conn: &DatabaseConnection) -> Result
     txn.commit().await.map_err(DbError::Migration)
 }
 
-/// Migrations of the built-in [`Migrator`] compared with what the database recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationStatus {
-    /// Known to this binary, not yet applied (in migration order).
     pub pending: Vec<String>,
     /// Applied, but unknown to this binary: the database was migrated by a newer version.
     pub unknown: Vec<String>,

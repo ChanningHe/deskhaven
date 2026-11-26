@@ -1,7 +1,3 @@
-//! M4-09 migrations on existing data: `user_identities.linked_via` (the first identity of an
-//! `oidc` account is `provisioned`, every other one `email`), `oidc_flows` admitting `link`
-//! flows (SQLite rebuilds the table: rows and indexes survive), and
-//! `auth.oidc.link_verified_email` becoming `auth.oidc.link_email_max_role`. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

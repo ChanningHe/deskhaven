@@ -1,6 +1,3 @@
-//! Bind the client API listener (always) and the admin listener (when split),
-//! serve both with `ConnectInfo<SocketAddr>` and shut down gracefully.
-
 use std::io;
 use std::net::SocketAddr;
 
@@ -24,35 +21,24 @@ use crate::stack_error::ErrorBodies;
 const CLIENT_API: &str = "client_api";
 const ADMIN: &str = "admin";
 
-/// Listener topology, already resolved by the caller (e.g. from
-/// `deskhaven_config::bootstrap::Listen::admin_addr()`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListenConfig {
     pub client_api: SocketAddr,
-    /// `Some` = admin console/API on its own listener.
     pub admin: Option<SocketAddr>,
     /// Split mode only: client_api `GET /` redirects (302) here; `None` = 404.
     /// Must be an absolute http(s) URL. Ignored (with a warning) when not split.
     pub admin_public_url: Option<String>,
 }
 
-/// Bare routers (no middleware): [`Listeners::serve`] applies the stack.
-///
-/// Single listener: requests not matched by `client_api` fall through to
-/// `admin`, so a path defined in both is served by `client_api` (any fallback
-/// on `client_api` is replaced), except under `/api`: an unmatched `/api/*`
-/// path is a 404 rendered by the client renderer and never reaches `admin`.
-/// Keep the APIs on disjoint prefixes: `/api/*` (client) and `/admin/api/*` +
-/// console (admin). The SPA fallback of the admin router (deskhaven-web) must
-/// exclude both API prefixes so unknown API paths keep their JSON 404.
-/// Split: each router is served on its own listener.
+/// Bare routers: [`Listeners::serve`] applies the stack. Single listener: requests not
+/// matched by `client_api` fall through to `admin`, except under `/api`, whose unmatched
+/// paths are the client API's 404. Keep the APIs on disjoint prefixes; the admin SPA
+/// fallback must exclude both so unknown API paths keep their JSON 404.
 pub struct Apps {
     pub client_api: Router,
     pub admin: Router,
-    /// Bodies for stack-generated errors; only paths under the API prefixes are
-    /// re-rendered (see [`ErrorBodies`]). Single listener: `/api/*` uses
-    /// `client_api`, `/admin/api/*` uses `admin`. Split: each listener uses its
-    /// own API's renderer for both prefixes.
+    /// Only paths under the API prefixes are re-rendered. Split: each listener uses its own
+    /// API's renderer for both prefixes.
     pub errors: ErrorBodies,
 }
 
@@ -116,7 +102,7 @@ impl Listeners {
         Ok(Self { client_api, admin })
     }
 
-    /// Actual bound address (resolves port 0).
+    /// Resolves port 0.
     pub fn client_api_addr(&self) -> SocketAddr {
         self.client_api.addr
     }
@@ -125,9 +111,8 @@ impl Listeners {
         self.admin.as_ref().map(|a| a.bound.addr)
     }
 
-    /// Validate `cfg`, then serve until `shutdown` is cancelled and drain (see
-    /// [`HttpConfig`]). Accept errors are logged and retried, so after a valid
-    /// config this only returns on shutdown.
+    /// Accept errors are logged and retried, so after a valid config this only returns on
+    /// shutdown.
     pub async fn serve(
         self,
         apps: Apps,
@@ -173,7 +158,6 @@ impl Listeners {
     }
 }
 
-/// `cfg` with `max_connections` clamped to this listener's `RLIMIT_NOFILE` share.
 fn fit_descriptor_budget(cfg: &HttpConfig, share: Share) -> HttpConfig {
     let soft = nofile::current_soft_limit();
     let max_connections =
@@ -193,8 +177,6 @@ fn fit_descriptor_budget(cfg: &HttpConfig, share: Share) -> HttpConfig {
     }
 }
 
-/// The routers as one listener serves them: `client_api` first; unmatched
-/// paths go to `admin`, except under `/api`.
 pub fn single_listener_router(client_api: Router, admin: Router) -> Router {
     client_api.fallback(move |req: Request| {
         let admin = admin.clone();
@@ -207,8 +189,7 @@ pub fn single_listener_router(client_api: Router, admin: Router) -> Router {
     })
 }
 
-/// An absolute http(s) URL that is also a valid header value (the raw input is
-/// checked too: the URL parser silently drops tabs and newlines).
+/// The raw input is checked too: the URL parser silently drops tabs and newlines.
 fn redirect_target(url: Option<&str>) -> Result<Option<HeaderValue>, ServeError> {
     let Some(raw) = url else {
         return Ok(None);
@@ -223,9 +204,7 @@ fn redirect_target(url: Option<&str>) -> Result<Option<HeaderValue>, ServeError>
         .map_err(|_| ServeError::InvalidAdminPublicUrl)
 }
 
-/// The client API router of a split deployment: `GET`/`HEAD /` answers 302 to
-/// `admin_public_url`, validated as `Listeners::bind` does. Exposed so the
-/// contract tests replay the topology a client sees.
+/// Exposed so the contract tests replay the topology a client sees.
 pub fn redirect_client_root(
     client_api: Router,
     admin_public_url: &str,

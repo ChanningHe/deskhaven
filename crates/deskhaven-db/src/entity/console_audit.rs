@@ -1,8 +1,5 @@
-//! `console_audit`: who changed what through the console, API or CLI.
-//!
 //! `actor_id` names a user or an API token depending on `actor_kind`, so it has no foreign
-//! key; the log must outlive its actors. Secret values are masked before they are written to
-//! `before` / `after`.
+//! key: the log must outlive its actors. Secret values are masked before they are written.
 
 use sea_orm::entity::prelude::*;
 
@@ -33,9 +30,7 @@ pub struct Model {
     pub target_type: String,
     /// Empty when the action has no single target.
     pub target_id: String,
-    /// JSON snapshot before the change.
     pub before: Option<String>,
-    /// JSON snapshot after the change.
     pub after: Option<String>,
     pub ip: Option<String>,
     pub created_at: TimestampMs,

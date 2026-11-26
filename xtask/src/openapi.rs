@@ -1,7 +1,3 @@
-//! `xtask gen-openapi [--check]`: write the admin API's OpenAPI document to its committed
-//! path (`deskhaven_admin_api::SPEC_PATH`), or with `--check` fail when the committed file
-//! differs from what the code generates (CI drift check).
-
 use std::path::Path;
 
 use crate::error::XtaskError;

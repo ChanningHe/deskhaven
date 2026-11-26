@@ -1,7 +1,5 @@
-//! `devices.display_name` / `devices.display_username` (M2-19): the names an administrator
-//! gave the device (`rustdesk --assign --device_name / --device_username`, later the
-//! console). NULL until set. The device's own sysinfo never writes them, unlike `hostname` /
-//! `username`, which it overwrites with every changed upload.
+//! Names an administrator gave the device; NULL until set. Sysinfo never writes them, unlike
+//! `hostname` / `username`.
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::text_null;

@@ -1,4 +1,3 @@
-//! Identity & access entities: insert + select round trips and relations, on every backend.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used)]
 

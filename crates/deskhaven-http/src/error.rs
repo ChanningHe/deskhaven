@@ -1,9 +1,7 @@
-//! Helpers shared by the API error types.
-
 use std::error::Error;
 use std::fmt::Write;
 
-/// `outer: cause: root cause` — the full source chain for server-side logs.
+/// `outer: cause: root cause`, for server-side logs only.
 pub fn error_chain(err: &(dyn Error + 'static)) -> String {
     let mut out = err.to_string();
     let mut source = err.source();

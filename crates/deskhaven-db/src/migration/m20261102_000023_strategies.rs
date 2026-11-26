@@ -1,12 +1,6 @@
-//! Strategies and their assignments (04-data-model §6).
-//!
-//! Each target has at most one strategy: `UNIQUE(target_type, target_id)`. The `global`
-//! target has no id, and NULLs never conflict in a unique index, so a second partial unique
-//! index over `target_type` for the global row keeps it single; a CHECK ties the NULL id to
-//! the `global` type. `target_id` points at a device, device group, user or group depending
-//! on `target_type`, so it has no foreign key; the strategy service removes assignments of
-//! deleted targets. The table gets a surrogate `id` (the logical model has no key because
-//! `target_id` is nullable).
+//! The `global` target has no id and NULLs never conflict in a unique index, so a second
+//! partial unique index keeps the global row single. `target_id` points at one of four tables,
+//! so it has no foreign key; the strategy service removes assignments of deleted targets.
 
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_integer, big_integer_null, big_pk_auto, text};
@@ -60,7 +54,6 @@ fn strategies_table() -> TableCreateStatement {
         .to_owned()
 }
 
-/// `target_id` is NULL exactly for the global target.
 fn global_has_no_id() -> Expr {
     let is_global = Expr::col(StrategyAssignments::TargetType).eq(GLOBAL);
     is_global

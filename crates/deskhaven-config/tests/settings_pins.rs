@@ -1,5 +1,3 @@
-//! Pins from the bootstrap `[settings]` table / `DESKHAVEN_SETTINGS__*` env.
-
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::result_large_err)]
 
@@ -184,8 +182,7 @@ fn unknown_pin_keys_are_listed() {
     });
 }
 
-/// M4-09 replaced the boolean with a role ceiling: an old configuration fails to start
-/// and names the new key, from the file and the environment alike.
+/// An old configuration with the removed boolean fails to start and names the new key.
 #[test]
 fn the_replaced_email_link_key_names_its_successor() {
     Jail::expect_with(|jail| {

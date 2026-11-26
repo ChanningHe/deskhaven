@@ -1,5 +1,3 @@
-//! Acceptance tests: file lookup, unknown keys, precedence, pins.
-
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::result_large_err)]
 

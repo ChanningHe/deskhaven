@@ -61,7 +61,6 @@ fn only_plain_identifiers_are_spliced_into_sql() {
 
 #[tokio::test]
 async fn sqlite_triggers_count_every_written_row() {
-    // Arrange
     let dir = tempfile::tempdir().unwrap();
     let url = format!("sqlite://{}", dir.path().join("t.db").display());
     let probe = DbProbe::open(&url).await.unwrap();
@@ -76,7 +75,7 @@ async fn sqlite_triggers_count_every_written_row() {
     probe.install().await.unwrap(); // idempotent
     let before = probe.snapshot().await.unwrap();
 
-    // Act: 3 inserts, one statement updating 2 rows, 1 delete.
+    // 3 inserts, one statement updating 2 rows, 1 delete.
     for sql in [
         "INSERT INTO devices (id, seen) VALUES (1, 0), (2, 0), (3, 0)",
         "UPDATE devices SET seen = 1 WHERE id <= 2",
@@ -88,7 +87,6 @@ async fn sqlite_triggers_count_every_written_row() {
     }
     let after = probe.snapshot().await.unwrap();
 
-    // Assert
     let delta = after.since(&before);
     assert_eq!(delta.table("devices"), writes(3, 2, 1));
     assert!(

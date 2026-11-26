@@ -1,4 +1,4 @@
-//! `oidc_flows`: in-flight OIDC authorization state (never kept in process memory).
+//! In-flight OIDC authorization state, never kept in process memory.
 
 use sea_orm::entity::prelude::*;
 
@@ -11,7 +11,7 @@ pub enum Flow {
     Client,
     #[sea_orm(string_value = "console")]
     Console,
-    /// A signed-in console user linking an identity to their own account (M4-09).
+    /// A signed-in console user linking an identity to their own account.
     #[sea_orm(string_value = "link")]
     Link,
 }
@@ -26,7 +26,7 @@ pub struct Model {
     /// SHA-256 of the code the client polls with; `Some` exactly for client flows.
     pub client_code_hash: Option<String>,
     pub provider_id: i64,
-    /// Encrypted PKCE verifier (`v1:<key_id>:<nonce>:<ct>`).
+    /// Encrypted PKCE verifier.
     pub pkce_verifier_enc: String,
     pub nonce: String,
     pub flow: Flow,

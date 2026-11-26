@@ -1,5 +1,3 @@
-//! Cross-key rules, checked on a whole candidate snapshot.
-
 use serde_json::{Value as Json, json};
 
 use super::def::AnySetting;
@@ -69,9 +67,8 @@ fn lockout_window_within_global_reach(s: &Snapshot) -> bool {
     s.get(&AUTH_LOCKOUT_WINDOW).as_std() <= duration.saturating_mul(LOCKOUT_GLOBAL_FACTOR)
 }
 
-/// Rules that do not hold on `snapshot`; with `changed`, only rules that
-/// involve at least one changed key (so a violation caused by pins does not
-/// block unrelated updates).
+/// With `changed`, only rules that involve a changed key, so a violation caused by pins does
+/// not block unrelated updates.
 pub(crate) fn violations<'a>(
     snapshot: &'a Snapshot,
     changed: Option<&'a [&'a str]>,
@@ -89,7 +86,6 @@ pub(crate) fn violations<'a>(
         })
 }
 
-/// Exported form: `[{"keys": [...], "message": "..."}]`.
 pub(crate) fn schema() -> Json {
     RULES
         .iter()

@@ -1,6 +1,5 @@
-//! A tiny HTML start-tag tokenizer, enough to find what a strict CSP blocks.
-//! It understands quoted attribute values (so `>` inside one does not end the
-//! tag) and skips comments, doctypes and end tags.
+//! A tiny HTML start-tag tokenizer: a `>` inside a quoted attribute value does not end the
+//! tag; comments, doctypes and end tags are skipped.
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Tag {
@@ -16,7 +15,6 @@ impl Tag {
     }
 }
 
-/// What in `html` a CSP with `script-src 'self'; style-src 'self'` blocks.
 pub fn csp_violations(html: &str) -> Vec<String> {
     let mut found = Vec::new();
     for tag in start_tags(html) {

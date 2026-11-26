@@ -1,6 +1,4 @@
-//! Failures that a retry of the same operation can cure: PostgreSQL aborts one of two
-//! transactions that wait for each other's locks (`deadlock_detected`) and may refuse a
-//! transaction that cannot be serialized (`serialization_failure`). Nothing was written.
+//! Failures a retry of the same operation can cure; nothing was written.
 
 use std::error::Error;
 
@@ -8,18 +6,14 @@ use sea_orm::DbErr;
 
 use crate::constraint::database_code;
 
-/// PostgreSQL `deadlock_detected`.
 const PG_DEADLOCK: &str = "40P01";
-/// PostgreSQL `serialization_failure`.
 const PG_SERIALIZATION_FAILURE: &str = "40001";
 
-/// Whether `err` is a deadlock or serialization failure reported by the database.
 pub fn is_transient_conflict(err: &DbErr) -> bool {
     database_code(err).is_some_and(|code| code == PG_DEADLOCK || code == PG_SERIALIZATION_FAILURE)
 }
 
-/// Whether `err`, or anything in its `source()` chain, is a [`DbErr`] for which
-/// [`is_transient_conflict`] holds (services wrap the database error in their own type).
+/// Services wrap the database error in their own type.
 pub fn chain_has_transient_conflict(err: &(dyn Error + 'static)) -> bool {
     let mut current = Some(err);
     while let Some(error) = current {

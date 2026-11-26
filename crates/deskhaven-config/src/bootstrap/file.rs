@@ -9,7 +9,6 @@ use figment::value::Dict;
 use super::error::ConfigError;
 use super::pins::normalize_root;
 
-/// Reads `path` and returns its table with `[settings]` pins normalized.
 pub(crate) fn read(path: &Path) -> Result<Dict, ConfigError> {
     let content = std::fs::read_to_string(path).map_err(|source| ConfigError::ConfigFileRead {
         path: path.to_owned(),
@@ -21,7 +20,6 @@ pub(crate) fn read(path: &Path) -> Result<Dict, ConfigError> {
     })
 }
 
-/// Position plus toml's short message; the source excerpt is never included.
 fn syntax_error(path: &Path, content: &str, err: &toml::de::Error) -> ConfigError {
     let (line, column) = err
         .span()
@@ -40,7 +38,7 @@ fn syntax_error(path: &Path, content: &str, err: &toml::de::Error) -> ConfigErro
     }
 }
 
-/// 1-based line and column (in characters) of byte `offset`.
+/// 1-based, column in characters.
 fn line_col(content: &str, offset: usize) -> (usize, usize) {
     let before = content.get(..offset).unwrap_or(content);
     let line = before.matches('\n').count() + 1;

@@ -1,18 +1,7 @@
-//! Address books, their shares, peers and tags (04-data-model §5).
-//!
-//! A user has at most one `personal` book: a partial unique index over the owner, which only
-//! covers `kind = 'personal'` rows (PostgreSQL and SQLite both support partial indexes). A
-//! book's owner becomes NULL when that user is deleted, which leaves a shared book unowned
-//! (admin-managed) with its peers, tags and shares. A personal book must keep its owner
-//! (CHECK) and holds encrypted peer passwords, so the user delete in `deskhaven_core::users`
-//! removes it first; deleting a user row that still has a personal book is refused by the
-//! database. Shares point at a user or a
-//! group through `(subject_type, subject_id)`, so `subject_id` has no foreign key and the
-//! address book service removes shares of deleted subjects. Peers have no foreign key to
-//! `devices`: a book may list devices this server has never seen. Text columns the client
-//! echoes back default to the empty string; `hash` (personal books) and `password_enc`
-//! (shared books) are the only optional ones, and which of the two is set is service logic
-//! because `kind` lives in another table.
+//! A personal book must keep its owner (CHECK) and holds encrypted peer passwords, so the user
+//! delete removes it first; a shared book whose owner is deleted stays, unowned. Shares (user
+//! or group) and peers (devices this server may never have seen) have no foreign key. Which of
+//! `hash` / `password_enc` is set is service logic because `kind` lives in another table.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;

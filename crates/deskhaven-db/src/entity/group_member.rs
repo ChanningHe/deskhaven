@@ -1,5 +1,3 @@
-//! `group_members`: user <-> group membership (composite primary key).
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

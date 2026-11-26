@@ -1,11 +1,6 @@
-//! URL prefixes the stack needs to know about.
-
-/// RustDesk client API (03).
 pub const CLIENT_API_PREFIX: &str = "/api";
-/// Admin API (08 §6).
 pub const ADMIN_API_PREFIX: &str = "/admin/api";
 
-/// Liveness and readiness probes ([`crate::health_routes`]).
 pub(crate) const HEALTHZ: &str = "/healthz";
 pub(crate) const READYZ: &str = "/readyz";
 

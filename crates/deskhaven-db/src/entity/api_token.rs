@@ -1,4 +1,4 @@
-//! `api_tokens`: automation tokens (`dhk_` prefix); only the SHA-256 of the token is stored.
+//! Only the SHA-256 of the token is stored.
 
 use sea_orm::entity::prelude::*;
 
@@ -10,7 +10,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub name: String,
-    /// Leading characters of the token, shown in the UI to tell tokens apart.
     pub token_prefix: String,
     pub token_hash: String,
     /// JSON array of scopes.

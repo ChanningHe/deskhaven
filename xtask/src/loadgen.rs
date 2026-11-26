@@ -1,7 +1,5 @@
-//! `xtask loadgen [args]`: build the server and the load generator in release mode, then run
-//! `deskhaven-loadgen --server-bin target/release/deskhaven [args]` (M4-04). The generator
-//! is its own crate so xtask keeps its few dependencies and the simulated clients run
-//! optimized; `deskhaven-loadgen --help` lists the arguments.
+//! The generator is its own crate so xtask keeps its few dependencies and the simulated
+//! clients run optimized.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -17,10 +15,8 @@ const BUILD_ARGS: [&str; 6] = [
     "-p",
     "deskhaven-loadgen",
 ];
-/// Read by the generator to print how the run was started.
 const INVOCATION_ENV: &str = "DESKHAVEN_LOADGEN_INVOCATION";
 
-/// The generator binary and its arguments.
 pub fn loadgen_command(target_dir: &Path, args: &[String]) -> (PathBuf, Vec<OsString>) {
     let release = target_dir.join("release");
     let server = release.join("deskhaven");
@@ -69,7 +65,6 @@ pub fn run(root: &Path, cargo: &OsString, args: &[String]) -> Result<(), XtaskEr
     }
 }
 
-/// `$CARGO_TARGET_DIR` (relative to the root) or `<root>/target`.
 fn target_dir(root: &Path) -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), |dir| root.join(dir))
 }

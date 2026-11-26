@@ -1,29 +1,22 @@
-//! CPU time, RSS and storage writes of one process, from `/proc/<pid>` (Linux).
-//!
 //! Only the server's own counters: the load generator runs on the same host, so host-wide
-//! figures would count the simulated clients too. `utime + stime` of `/proc/<pid>/stat`
-//! cover every thread of the process.
+//! figures would count the simulated clients too.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::LoadgenError;
 
-/// One reading of a process's counters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProcSample {
     pub at: Instant,
     /// User + system CPU time, in clock ticks.
     pub cpu_ticks: u64,
-    /// Resident set size (`VmRSS`).
     pub rss_bytes: u64,
-    /// Bytes the process caused to be sent to storage (`/proc/<pid>/io`); `None` where the
-    /// kernel does not expose it.
+    /// `None` where the kernel does not expose it.
     pub write_bytes: Option<u64>,
 }
 
-/// `utime + stime` (fields 14 and 15) of a `/proc/<pid>/stat` line. The command name (field
-/// 2) is parenthesized and may contain spaces, so fields are counted after its last `)`.
+/// The command name (field 2) may contain spaces, so fields are counted after its last `)`.
 pub fn parse_cpu_ticks(stat: &str) -> Option<u64> {
     /// Fields 14 (utime) and 15 (stime), counted from field 3 (state), the first after `)`.
     const UTIME: usize = 14 - 3;
@@ -44,19 +37,16 @@ pub fn parse_rss_bytes(status: &str) -> Option<u64> {
     kib.checked_mul(1024)
 }
 
-/// `write_bytes` of `/proc/<pid>/io`.
 pub fn parse_write_bytes(io: &str) -> Option<u64> {
     field(io, "write_bytes:")?.parse().ok()
 }
 
-/// The trimmed rest of the line starting with `key`.
 fn field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     text.lines()
         .find_map(|line| line.strip_prefix(key))
         .map(str::trim)
 }
 
-/// Average cores used between two samples: CPU seconds over wall seconds.
 pub fn cores_between(earlier: &ProcSample, later: &ProcSample, ticks_per_second: u64) -> f64 {
     let wall = later.at.saturating_duration_since(earlier.at).as_secs_f64();
     if wall <= 0.0 || ticks_per_second == 0 {
@@ -78,7 +68,6 @@ pub fn ticks_per_second() -> u64 {
     100
 }
 
-/// Reads the counters of process `pid` now.
 pub fn sample(pid: u32) -> Result<ProcSample, LoadgenError> {
     let at = Instant::now();
     let stat = read(pid, "stat")?;
@@ -157,10 +146,9 @@ mod tests {
 
     #[test]
     fn cores_are_cpu_seconds_over_wall_seconds() {
-        // Arrange: 150 ticks at 100 Hz over 3 s = 0.5 cores.
+        // 150 ticks at 100 Hz over 3 s = 0.5 cores.
         let base = Instant::now();
 
-        // Act + Assert
         let cores = cores_between(&at(base, 0, 1000), &at(base, 3, 1150), 100);
         assert!((cores - 0.5).abs() < 1e-9, "{cores}");
         assert!(cores_between(&at(base, 3, 1150), &at(base, 3, 1150), 100).abs() < 1e-9);
@@ -168,7 +156,7 @@ mod tests {
 
     #[test]
     fn peak_cores_is_the_busiest_window() {
-        // Arrange: 1 s samples; a 2-core burst between t=2 and t=4.
+        // 1 s samples; a 2-core burst between t=2 and t=4.
         let base = Instant::now();
         let ticks = [0, 10, 20, 220, 420, 430];
         let samples: Vec<ProcSample> = ticks
@@ -177,10 +165,8 @@ mod tests {
             .map(|(i, &t)| at(base, u64::try_from(i).unwrap(), t))
             .collect();
 
-        // Act
         let peak = peak_cores(&samples, Duration::from_secs(2), 100).unwrap();
 
-        // Assert
         assert!((peak - 2.0).abs() < 1e-9, "{peak}");
         assert_eq!(peak_cores(&samples[..1], Duration::from_secs(2), 100), None);
     }

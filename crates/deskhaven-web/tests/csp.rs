@@ -1,5 +1,3 @@
-//! The CSP and the markup it has to admit: the SPA entry point must work under
-//! it without inline script or style.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -22,16 +20,14 @@ fn none() -> Vec<String> {
     Vec::new()
 }
 
-/// Set to `1` by the release pipeline: a missing `web/dist` then fails the built-dist
-/// checks instead of skipping them (normal CI does not build the console for the Rust
-/// jobs). Same convention as `DESKHAVEN_TEST_REQUIRE_PG`.
+/// Set to `1` to fail the built-dist checks instead of skipping them when `web/dist` is
+/// missing.
 const REQUIRE_DIST_ENV: &str = "DESKHAVEN_TEST_REQUIRE_WEB_DIST";
 
 fn dist_required() -> bool {
     std::env::var(REQUIRE_DIST_ENV).is_ok_and(|v| v == "1")
 }
 
-/// The frontend is not built: skip with a note, or panic when a build is required.
 fn dist_missing(required: bool, path: &Path) {
     assert!(
         !required,
@@ -104,8 +100,6 @@ fn the_spa_source_entry_point_is_csp_clean() {
     assert!(!start_tags(&html).is_empty());
 }
 
-/// Skipped (with a note) when the frontend has not been built, unless
-/// `DESKHAVEN_TEST_REQUIRE_WEB_DIST=1` (the release pipeline) turns that into a failure.
 #[test]
 fn the_built_index_is_csp_clean() {
     let path = repo_file("web/dist/index.html");

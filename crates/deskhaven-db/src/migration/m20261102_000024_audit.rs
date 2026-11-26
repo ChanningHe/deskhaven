@@ -1,16 +1,7 @@
-//! Audit tables (04-data-model §7): connection sessions, file transfers, alarms, audit nonces,
-//! login events and the console audit log.
-//!
-//! The audit trail must outlive what it describes, so devices are referenced by their RustDesk
-//! id as plain text (no foreign key to `devices`) and `console_audit.actor_id` has none to
-//! users or tokens. Where a user is referenced and meaningful (`connection_sessions.
-//! controller_user_id`, `login_events.user_id`) the foreign key is `ON DELETE SET NULL`.
-//! A connection is reported in up to three messages that may arrive in any order, and the
-//! first one creates the row: apart from its identity (device, `conn_id`, `session_id`, guid)
-//! every `connection_sessions` column is optional, and `created_at` (first message received)
-//! is added because `started_at` may be missing. Messages are de-duplicated by
-//! `audit_nonces`, which is pruned by `received_at`. Every `created_at` / `received_at` is
-//! indexed for retention pruning and listing.
+//! The audit trail must outlive what it describes: devices are referenced by RustDesk id as
+//! text and `console_audit.actor_id` has no foreign key; referenced users are `ON DELETE SET
+//! NULL`. A connection's messages may arrive in any order and the first creates the row, so
+//! its columns are optional and `created_at` exists because `started_at` may be missing.
 
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
@@ -133,7 +124,7 @@ fn connection_sessions_table() -> TableCreateStatement {
         .col(text_null(ConnectionSessions::PeerRustdeskId))
         .col(text_null(ConnectionSessions::PeerName))
         .col(big_integer_null(ConnectionSessions::ControllerUserId))
-        // 0 remote control .. 4 terminal today; no CHECK, so a newer client's value is stored.
+        // No CHECK, so a newer client's value is stored.
         .col(integer_null(ConnectionSessions::ConnType))
         .col(integer_null(ConnectionSessions::PrimaryAuth))
         .col(integer_null(ConnectionSessions::TwoFactor))

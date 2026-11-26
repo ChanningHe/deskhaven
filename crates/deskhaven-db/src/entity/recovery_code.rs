@@ -1,5 +1,3 @@
-//! `recovery_codes`: one-time 2FA recovery codes, stored hashed.
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

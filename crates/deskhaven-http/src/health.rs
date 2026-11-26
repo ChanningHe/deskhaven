@@ -1,5 +1,3 @@
-//! `GET /healthz` (liveness, always 200) and `GET /readyz` (readiness, pluggable).
-
 use std::sync::Arc;
 
 use axum::Router;
@@ -8,7 +6,7 @@ use axum::routing::get;
 
 use crate::paths;
 
-/// Why the service is not ready. Logged, never sent to the client.
+/// Logged, never sent to the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotReady(String);
 
@@ -22,8 +20,6 @@ impl NotReady {
     }
 }
 
-/// Readiness probe (the bin plugs in DB reachability + migration status).
-/// Implemented for any `Fn() -> impl Future<Output = Result<(), NotReady>>`.
 pub trait ReadinessCheck: Send + Sync + 'static {
     fn check(&self) -> impl Future<Output = Result<(), NotReady>> + Send;
 }

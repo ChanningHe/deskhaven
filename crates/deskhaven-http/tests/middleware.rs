@@ -1,4 +1,3 @@
-//! Middleware stack behaviour (06-security §6, 02-architecture §6).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -23,8 +22,6 @@ async fn boom() -> &'static str {
     panic!("handler exploded with internal detail")
 }
 
-/// Error-producing routes, mounted at the root, under `/api` and under
-/// `/admin/api` (re-rendering only applies to the API prefixes).
 fn fixtures(prefix: &str) -> Router {
     let at = |path: &str| format!("{prefix}{path}");
     Router::new()
@@ -122,8 +119,6 @@ async fn status_and_body(app: Router, req: Request<Body>) -> (StatusCode, String
     (res.status(), body_text(res).await)
 }
 
-// --- panics, headers ------------------------------------------------------------
-
 #[tokio::test]
 async fn panic_returns_generic_500_and_router_keeps_serving() {
     let app = app(&HttpConfig::default());
@@ -200,8 +195,6 @@ async fn non_api_responses_keep_their_cache_policy() {
     assert_eq!(res.headers()[header::CACHE_CONTROL], "max-age=5");
 }
 
-// --- request id -----------------------------------------------------------------
-
 fn id_request(id: &str) -> Request<Body> {
     Request::get("/ok")
         .header(X_REQUEST_ID, id)
@@ -241,7 +234,6 @@ async fn incoming_request_id_from_trusted_proxy_is_echoed() {
     assert_eq!(response_id(&res), "abc-123_x.y:z");
 }
 
-/// Review L-b: in-process dispatch carries client-controlled headers.
 #[tokio::test]
 async fn incoming_request_id_is_ignored_for_internal_peer() {
     let app = behind_proxy();
@@ -275,8 +267,6 @@ async fn invalid_request_id_from_trusted_proxy_is_replaced() {
         assert_eq!(id.len(), 36);
     }
 }
-
-// --- timeout and body limit ---------------------------------------------------------
 
 fn timing_out() -> HttpConfig {
     HttpConfig {
@@ -373,8 +363,6 @@ async fn body_limit_overrides_axum_default_of_2mib() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
-// --- error bodies (review M1) -----------------------------------------------------------
-
 #[tokio::test]
 async fn api_stack_errors_are_rendered_by_prefix_keeping_status() {
     let cases = [
@@ -411,7 +399,6 @@ async fn api_stack_errors_are_rendered_by_prefix_keeping_status() {
     }
 }
 
-/// Future SPA routes and static assets keep whatever the stack produced.
 #[tokio::test]
 async fn non_api_errors_pass_through_untouched() {
     let cases = [

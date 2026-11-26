@@ -1,8 +1,5 @@
-//! `connection_sessions`: one remote connection as reported by the controlled device in up to
-//! three audit messages (new, authorized, close) plus the controller's note.
-//!
-//! The messages may arrive in any order and the first one creates the row, so everything but
-//! the identity of the connection is optional. No foreign key to `devices`: the audit trail
+//! Audit messages may arrive in any order and the first creates the row, so everything but
+//! the connection's identity is optional. No foreign key to `devices`: the audit trail
 //! outlives the device record.
 
 use sea_orm::entity::prelude::*;

@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// A duration written with explicit units, e.g. `"15m"`, `"7d"`, `"1h30m"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duration(std::time::Duration);
 
@@ -21,7 +20,7 @@ impl From<Duration> for std::time::Duration {
     }
 }
 
-/// Parse failure for [`Duration`]. Never includes the input.
+/// Never includes the input.
 #[derive(Debug, thiserror::Error)]
 #[error("invalid duration: expected a number with units, e.g. \"15m\", \"7d\", \"1h30m\"")]
 pub struct DurationError;
@@ -41,7 +40,7 @@ impl FromStr for Duration {
 const UNITS: [(&str, u64); 4] = [("d", 86_400), ("h", 3_600), ("m", 60), ("s", 1)];
 const SUBSEC_UNITS: [(&str, u32); 3] = [("ms", 1_000_000), ("us", 1_000), ("ns", 1)];
 
-/// Exact and compact (`"30d"`, `"1h30m"`, `"1m"`, `"0s"`); parses back to the same value.
+/// Exact and compact; parses back to the same value.
 impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0.is_zero() {

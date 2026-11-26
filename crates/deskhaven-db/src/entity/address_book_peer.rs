@@ -1,5 +1,3 @@
-//! `address_book_peers`: a device entry of an address book, keyed by `(book, rustdesk_id)`.
-//!
 //! No foreign key to `devices`: entries may name devices this server has never seen.
 
 use sea_orm::entity::prelude::*;
@@ -17,8 +15,8 @@ pub struct Model {
     pub note: String,
     /// JSON array of tag names.
     pub tags: String,
-    /// Personal books: the client's salted password hash, encrypted. It is a login
-    /// credential (the client sends it as the password), hence sealed (migration 000025).
+    /// The client's salted password hash is a login credential (the client sends it as the
+    /// password), hence sealed.
     pub hash_enc: Option<String>,
     /// Shared books: encrypted password.
     pub password_enc: Option<String>,

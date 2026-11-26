@@ -1,5 +1,3 @@
-//! `alarms`: security alarms raised by a device (blocked IP, too many attempts, ...).
-
 use sea_orm::entity::prelude::*;
 
 use crate::time::TimestampMs;

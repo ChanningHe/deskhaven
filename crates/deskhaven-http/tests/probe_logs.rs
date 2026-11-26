@@ -1,6 +1,5 @@
-//! Health probes run every few seconds; their per-request log line is debug,
-//! everything else stays info. Its own test binary: `tracing` caches callsite
-//! interest process-wide, so a scoped subscriber races with parallel tests.
+//! Its own test binary: `tracing` caches callsite interest process-wide, so a scoped
+//! subscriber races with parallel tests.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
