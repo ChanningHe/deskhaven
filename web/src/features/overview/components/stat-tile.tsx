@@ -4,17 +4,12 @@ import { cn } from '@/lib/utils'
 
 interface StatTileProps {
   label: string
-  /** The headline number, already formatted. */
   value: ReactNode
-  /** Small print under the number (the window, what the number counts). */
   hint?: ReactNode
-  /** A share to draw under the number: `value` of `max`. */
   meter?: { value: number; max: number; label: string }
-  /** Draw the number in the warning colour (something needs a look). */
   attention?: boolean
 }
 
-/** One headline number of the overview. */
 export function StatTile({ label, value, hint, meter, attention = false }: StatTileProps) {
   return (
     <div className="space-y-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs sm:px-6 sm:py-5">

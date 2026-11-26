@@ -24,7 +24,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { invalidateAddressBooks } from '../invalidate'
 
 const DEVICES_PER_PAGE = 20
-/** Most devices one import takes (the API refuses more). */
+/** The API refuses more. */
 const MAX_IMPORT_DEVICES = 500
 
 interface ImportDevicesDialogProps {
@@ -33,7 +33,6 @@ interface ImportDevicesDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-/** Pick devices of the inventory (any page, any search) and add them as entries. */
 export function ImportDevicesDialog({ guid, open, onOpenChange }: ImportDevicesDialogProps) {
   const { t } = useTranslation()
   return (

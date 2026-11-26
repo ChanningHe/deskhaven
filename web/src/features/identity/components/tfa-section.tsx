@@ -24,10 +24,6 @@ import type { DirtyReporter } from '../report-dirty'
 import { isTfaChoice, TFA_CHOICES, TFA_KEY } from '../tfa-policy'
 import type { TfaChoice } from '../tfa-policy'
 
-/**
- * The 2FA enforcement policy: the `auth.tfa.enforce` setting, through the settings API
- * (owner only, versioned, read-only while the server configuration pins it).
- */
 interface TfaSectionProps {
   isOwner: boolean
   onDirtyChange: DirtyReporter

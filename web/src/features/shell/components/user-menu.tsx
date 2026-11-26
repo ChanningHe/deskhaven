@@ -15,7 +15,6 @@ import {
 import { useLogout } from '@/features/auth/api'
 import { useMe } from '@/features/auth/session'
 
-// Sign-out revokes the session server-side, then drops the cache (M3-02).
 export function UserMenu() {
   const { t } = useTranslation()
   const me = useMe()

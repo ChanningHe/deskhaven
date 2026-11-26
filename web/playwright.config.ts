@@ -2,8 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 import { OWNER_STATE, resultsDir } from './e2e/support/env.ts'
 
-// End-to-end flows of the console against the real binary (e2e/README.md). One server per
-// run and flows that build on each other (the owner first), so one worker, in order.
+// Flows build on each other against one server: one worker, in order.
 const results = resultsDir()
 
 export default defineConfig({

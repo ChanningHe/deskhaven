@@ -30,7 +30,6 @@ function modified(value: unknown, version = 3): Partial<SettingView> {
   }
 }
 
-/** A stateful stub of the settings endpoints: GET lists, PATCH answers with `onPatch`. */
 function settingsApi(initial: SettingView[], onPatch: (body: unknown) => ReturnType<MockHandler>) {
   const state = { settings: initial, patches: [] as unknown[] }
   const api = {
@@ -235,7 +234,6 @@ describe('settings page conflicts', () => {
     const theirsList = withSetting(sampleSettings(), TTL, modified('90d', 5))
     const theirs = one(theirsList, TTL)
     const { user, state } = await openPage(sampleSettings(), () => CONFLICT(theirs))
-    // The reload shows the server's list from here on.
     state.settings = theirsList
 
     const input = field(TTL)
@@ -341,7 +339,6 @@ describe('settings page failed saves', () => {
     })
     let refreshed = false
     const { user, state } = await openPage(sampleSettings(), () => {
-      // The server pinned the key meanwhile: the next list shows it.
       refreshed = true
       return {
         status: 409,

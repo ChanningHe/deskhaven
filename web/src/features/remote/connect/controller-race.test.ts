@@ -36,7 +36,6 @@ function race(opened: WebClientSession = ANSWERED) {
   return { ...f, w, controller, pc }
 }
 
-/** The peer's first frame on the relay: it has paired. */
 function pair(relay: MemoryTransport | undefined) {
   relay?.inbox.push(msg({ case: 'testDelay', value: create(TestDelaySchema, { time: 1n }) }))
 }

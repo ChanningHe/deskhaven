@@ -89,7 +89,6 @@ describe('drafts', () => {
       change: { kind: 'set', editor: '60d' },
     })
 
-    // A refetch moved the setting on; the draft still answers for the version it was started from.
     const again = editSetting(edited, { ...ttl, version: 5 }, '90d')
     expect(again['auth.session_ttl']?.version).toBe(4)
 

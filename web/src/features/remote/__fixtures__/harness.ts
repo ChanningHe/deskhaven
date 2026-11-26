@@ -19,7 +19,6 @@ import { RelayTransport } from '../transport/relay'
 import type { KeyedTransport } from '../transport/transport'
 import { fixtureBytes, fixtureSession, type FixtureVersion } from './fixtures'
 
-/** Stands in for the browser WebSocket; the test plays the relay server through it. */
 export class FakeSocket {
   binaryType: BinaryType = 'blob'
   onopen: (() => void) | null = null
@@ -81,7 +80,6 @@ export function relayWith(
   })
 }
 
-/** An in-memory link for handshake tests that do not need the relay framing. */
 export class MemoryTransport implements KeyedTransport {
   readonly sent: Message[] = []
   readonly inbox = new AsyncQueue<Message>()
@@ -137,7 +135,6 @@ export class ManualTimers {
     return () => this.#running.delete(timer)
   }
 
-  /** Duration of the running timer, or null when none runs. */
   get running(): number | null {
     const [timer] = this.#running
     return timer?.ms ?? null
@@ -158,9 +155,7 @@ export interface Started {
 }
 
 export interface Replay extends Started {
-  /** The controlled side's cipher; seal what it sends with this. */
   peer: FrameCipher
-  /** Everything we sent after keying, opened in order as the controlled side would. */
   peerReceived: () => Message[]
 }
 
@@ -170,7 +165,6 @@ export interface ReplayOptions {
   credentials?: CredentialSlot
 }
 
-/** Starts a handshake with the fixture's identity over an open fake relay socket. */
 export function startFixture(version: FixtureVersion, options: ReplayOptions = {}): Started {
   const s = fixtureSession(version)
   const socket = new FakeSocket('wss://console.test/ws/relay')

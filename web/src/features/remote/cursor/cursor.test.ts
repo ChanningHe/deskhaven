@@ -21,7 +21,6 @@ function cursor(fields: Partial<CursorData> = {}): CursorData {
   })
 }
 
-// Rules of rustdesk 1.5.0 src/client/io_loop.rs:2790-2828 (`decode_cursor_data`).
 describe('decodeCursor', () => {
   it('inflates the colors to width × height RGBA with the hotspot', () => {
     const shape = decodeCursor(cursor())

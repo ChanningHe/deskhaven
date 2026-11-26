@@ -21,7 +21,6 @@ import { OwnerPicker } from '@/features/devices/components/owner-picker'
 
 import { invalidateAddressBooks } from '../invalidate'
 
-/** "New address book"; opens the new book's drawer when created. */
 export function CreateBookButton({ onCreated }: { onCreated: (guid: string) => void }) {
   const { t } = useTranslation()
   const id = useId()

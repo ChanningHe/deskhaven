@@ -9,10 +9,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { httpStatusOf } from '@/lib/http-error'
 
-/**
- * Missing permission (route guard, or the API's `forbidden`): retrying cannot
- * help, so only offer a way out. Other 403s (`csrf_failed`) get their message.
- */
+/** Missing permission: retrying cannot help, so only offer a way out. */
 function Forbidden() {
   const { t } = useTranslation()
   return (
@@ -32,11 +29,7 @@ function Forbidden() {
   )
 }
 
-/**
- * Default error boundary for every route. Raw error messages are not shown:
- * they are untranslated and may contain server internals; API errors are
- * described by their translated code.
- */
+/** Raw error messages are not shown: they are untranslated and may contain server internals. */
 export function RouteError({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation()
   const router = useRouter()

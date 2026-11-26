@@ -9,7 +9,6 @@ import { useLogin } from '../api'
 import { AuthError } from './auth-error'
 import { TextField } from './text-field'
 
-/** The password step answered with a TOTP challenge. */
 export interface Challenge {
   username: string
   challenge: string

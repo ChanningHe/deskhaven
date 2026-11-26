@@ -19,7 +19,6 @@ import { IdPkSchema, RendezvousMessageSchema } from '../proto/gen/rendezvous_pb.
 // those bytes carry nothing the identity check relies on. The survivors are pinned so a decoder
 // change shows up here.
 
-/** Offset of the signed blob, which is the last field of both frames. */
 function blobStart(frame: Uint8Array, blob: Uint8Array): number {
   return frame.length - blob.length
 }

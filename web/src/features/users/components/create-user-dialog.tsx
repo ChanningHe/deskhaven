@@ -55,7 +55,6 @@ function toBody(draft: Draft): NewUserBody {
   }
 }
 
-/** "New user": a local account; the generated temporary password is shown once. */
 export function CreateUserButton() {
   const { t } = useTranslation()
   const me = useMe()

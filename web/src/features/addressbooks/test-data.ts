@@ -50,12 +50,10 @@ export function tag(name: string, color = 0xff9e9e9e): TagView {
   return { name, color }
 }
 
-/** A paged list response. */
 export function page(items: unknown[]): MockHandler {
   return () => ({ body: { items, total: items.length, page: 1, page_size: 20 } })
 }
 
-/** A non-paged `{items}` response. */
 export function items(list: unknown[]): MockHandler {
   return () => ({ body: { items: list } })
 }

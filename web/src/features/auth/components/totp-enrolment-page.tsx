@@ -18,11 +18,6 @@ import { AuthLayout } from './auth-layout'
 import { QrCode } from './qr-code'
 import { TextField } from './text-field'
 
-/**
- * `/account/two-factor`: `auth.tfa.enforce` requires TOTP and the account has
- * none. Scan (or type) the new seed, confirm a code, save the recovery codes;
- * the answer carries a fresh session.
- */
 export function TotpEnrolmentPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

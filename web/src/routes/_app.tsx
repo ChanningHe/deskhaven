@@ -14,10 +14,6 @@ function ShellNotFound() {
   )
 }
 
-// Pathless layout: every console page renders inside the sidebar + top bar
-// shell, and so do unknown console URLs (see `_app/$.tsx`). The guard loads the
-// session (or redirects to /login) and hands `me` to every child route, which
-// checks its own page permission in `beforeLoad`.
 export const Route = createFileRoute('/_app')({
   beforeLoad: async ({ context, location }) => ({
     me: await requireSession(context.queryClient, location.href),

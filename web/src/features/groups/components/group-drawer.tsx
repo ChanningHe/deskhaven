@@ -33,7 +33,6 @@ interface GroupDrawerProps {
   onClose: () => void
 }
 
-/** Side drawer of one group: name and note, members, delete. */
 export function GroupDrawer({ groupId, onClose }: GroupDrawerProps) {
   const { t } = useTranslation()
   return (

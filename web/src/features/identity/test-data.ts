@@ -1,5 +1,3 @@
-// Fixtures of the identity page tests.
-
 import type { LdapDirectoryView, OidcProviderView, SettingView } from '@/api/generated/model'
 
 export const PROVIDERS_PATH = '/admin/api/v1/oidc-providers'

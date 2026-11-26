@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 
 import { Step } from './panels'
 
-/** Connecting failed or the session ended; the user may try again or leave. */
 export function ProblemPanel({
   title,
   message,

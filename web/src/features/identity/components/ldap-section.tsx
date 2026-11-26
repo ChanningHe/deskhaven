@@ -17,10 +17,6 @@ import { LdapDiagnostics } from './ldap-diagnostics'
 
 const ignore = () => undefined
 
-/**
- * The LDAP directory. Only the owner may change it or run tests (06 §3.6); admins see it
- * read-only. A directory from the configuration file is read-only for everyone.
- */
 interface LdapSectionProps {
   isOwner: boolean
   onDirtyChange: DirtyReporter

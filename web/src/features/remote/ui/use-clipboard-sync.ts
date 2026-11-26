@@ -14,7 +14,6 @@ export interface ClipboardSyncControl {
   /** Writing needs a gesture: call inside a pointerdown or keydown handler. */
   onGesture: () => void
   onPaste: (text: string) => void
-  /** Sends a text the user picked, sync on or off; false when the session refuses it. */
   send: (text: string) => boolean
 }
 

@@ -1,13 +1,9 @@
-// How a setting's value is edited: the schema decides the control, this module the shape
-// of what the control holds (a string or a boolean), how it turns back into the value the
-// API takes, and what the browser can already tell is wrong. The server stays the judge.
+// The server stays the judge; the browser only flags what it can already tell is wrong.
 
 import type { SchemaBound, SettingView } from '@/api/generated/model'
 
-/** What a control holds: booleans for switches, text for everything else. */
 export type Editor = string | boolean
 
-/** One line per item in the host:port list editor. */
 const LIST_SEPARATOR = '\n'
 const LIST_SPLIT = /[\n,]/
 /** `15m`, `1h30m`, `7d`, `2 weeks` or a plain `0`; a bare number has no unit. */
@@ -23,7 +19,6 @@ export type Problem =
   | { kind: 'max_items'; max: number }
   | { kind: 'variant' }
 
-/** The list items of a host:port list editor value. */
 export function listItems(text: string): string[] {
   return text
     .split(LIST_SPLIT)
@@ -31,7 +26,6 @@ export function listItems(text: string): string[] {
     .filter((item) => item !== '')
 }
 
-/** The editor value that stands for the setting as the server reports it. */
 export function toEditor(setting: SettingView): Editor {
   const { value } = setting
   switch (setting.schema.type) {
@@ -51,7 +45,6 @@ function isString(value: unknown): value is string {
   return typeof value === 'string'
 }
 
-/** The value to send for `editor` (a number for whole numbers, an array for lists). */
 export function fromEditor(setting: SettingView, editor: Editor): unknown {
   switch (setting.schema.type) {
     case 'bool':
@@ -65,7 +58,6 @@ export function fromEditor(setting: SettingView, editor: Editor): unknown {
   }
 }
 
-/** Whether a secret is set, from the value the API shows for it. */
 export function isSecretSet(setting: SettingView): boolean {
   const { value } = setting
   return typeof value === 'object' && value !== null && 'set' in value && value.set === true
@@ -75,7 +67,6 @@ function bound(value: SchemaBound | null | undefined, fallback: number): number 
   return typeof value === 'number' ? value : fallback
 }
 
-/** What the browser can tell is wrong with `editor`, if anything. */
 export function problemOf(setting: SettingView, editor: Editor): Problem | undefined {
   const { schema } = setting
   const text = String(editor)
@@ -112,7 +103,6 @@ function numberProblem(setting: SettingView, text: string): Problem | undefined 
   return inRange ? undefined : { kind: 'range', min, max, zero }
 }
 
-/** Whether two editor values mean the same thing (list items and number text normalised). */
 export function sameEditor(setting: SettingView, a: Editor, b: Editor): boolean {
   switch (setting.schema.type) {
     case 'host_port_list':

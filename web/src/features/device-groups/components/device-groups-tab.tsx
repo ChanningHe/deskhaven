@@ -58,7 +58,6 @@ function groupColumns(t: TFunction, onOpen: (id: number) => void) {
   ])
 }
 
-/** The device groups tab: list, create, and a drawer per group. */
 export function DeviceGroupsTab() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/_app/groups' })

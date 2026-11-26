@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 interface PageHeaderProps {
   title: string
   description?: string
-  /** Primary page actions, rendered on the right. */
   actions?: ReactNode
 }
 

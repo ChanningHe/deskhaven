@@ -14,13 +14,11 @@ interface OptionFieldProps {
   option: CatalogOptionView
   value: OptionValue | undefined
   onChange: (value: OptionValue | undefined) => void
-  /** The server holds a withheld secret for this option. */
   hasSaved: boolean
   problem: ValueProblem | undefined
   disabled: boolean
 }
 
-/** Whether the option is edited with a select of its values (bool, choice). */
 function isFixed(option: CatalogOptionView): boolean {
   return option.kind === 'bool' || option.kind === 'choice'
 }
@@ -40,7 +38,6 @@ function decode(raw: string, option: CatalogOptionView): OptionValue | undefined
   return setTo(option.kind === 'number' ? (option.default ?? '') : '')
 }
 
-/** The label of a value of `option` (Y / N, a choice) or the value itself. */
 function valueLabel(option: CatalogOptionView, value: string, t: TFunction, language: string) {
   if (option.kind === 'bool') {
     return value === 'Y' ? t('strategies.option.on') : t('strategies.option.off')
@@ -49,7 +46,6 @@ function valueLabel(option: CatalogOptionView, value: string, t: TFunction, lang
   return choice === undefined ? value : textOf(choice.label, language)
 }
 
-/** The choices of the mode select. */
 function ModeOptions({ option, value, hasSaved }: OptionFieldProps) {
   const { t, i18n } = useTranslation()
   const fixed = isFixed(option)
@@ -75,7 +71,6 @@ function ModeOptions({ option, value, hasSaved }: OptionFieldProps) {
   )
 }
 
-/** Description and client default of an option. */
 function OptionHelp({ option }: { option: CatalogOptionView }) {
   const { t, i18n } = useTranslation()
   const description = textOf(option.description, i18n.language)
@@ -93,7 +88,6 @@ function OptionHelp({ option }: { option: CatalogOptionView }) {
   )
 }
 
-/** The value input of a text or number option that is set. */
 function ValueInput({ option, value, onChange, disabled }: OptionFieldProps) {
   const { t, i18n } = useTranslation()
   if (isFixed(option) || value?.kind !== 'set') return null
@@ -113,7 +107,6 @@ function ValueInput({ option, value, onChange, disabled }: OptionFieldProps) {
   )
 }
 
-/** One catalog option: label, description, client default and a typed control. */
 export function OptionField(props: OptionFieldProps) {
   const { option, value, onChange, problem, disabled } = props
   const { t, i18n } = useTranslation()

@@ -16,11 +16,6 @@ import { TextField } from './text-field'
 
 const EMPTY = { current: '', next: '', confirm: '' }
 
-/**
- * `/account/password`: a temporary password must be replaced before anything
- * else (the server restricts the session until then). The answer carries a
- * fresh session.
- */
 export function ChangePasswordPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

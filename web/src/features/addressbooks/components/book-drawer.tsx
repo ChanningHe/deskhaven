@@ -27,7 +27,6 @@ interface BookDrawerProps {
   onClose: () => void
 }
 
-/** Side drawer of one shared book: entries, tags, grants, the book's own details and delete. */
 export function BookDrawer({ guid, onClose }: BookDrawerProps) {
   const { t } = useTranslation()
   return (

@@ -13,7 +13,6 @@ interface CheckFieldProps {
   onChange: (checked: boolean) => void
 }
 
-/** A checkbox with its label. */
 export function CheckField({ label, checked, disabled, onChange }: CheckFieldProps) {
   return (
     <label className="flex items-center gap-2 text-sm">
@@ -28,7 +27,6 @@ const WARNING_TONE = {
   destructive: 'bg-destructive/10 text-destructive',
 } as const
 
-/** A prominent caution (security trade-offs the admin must read); `destructive` in red. */
 export function Warning({
   children,
   tone = 'warning',
@@ -44,7 +42,6 @@ export function Warning({
   )
 }
 
-/** The server's reasons per field of a refused form (`validation_failed` details). */
 export function FieldProblems({ error }: { error: unknown }) {
   const { t } = useTranslation()
   const problems = Object.entries(fieldProblemsOf(error))

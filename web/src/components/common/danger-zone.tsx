@@ -9,14 +9,10 @@ type DangerZoneProps = Pick<
   ConfirmDialogProps,
   'title' | 'description' | 'confirmLabel' | 'confirmText' | 'onConfirm'
 > & {
-  /** The button that opens the confirmation. */
   label: string
 }
 
-/**
- * The irreversible action of a drawer, kept last and apart from everyday actions. Render it
- * outside any form: React bubbles the dialog's submit through the portal.
- */
+/** Render it outside any form: React bubbles the dialog's submit through the portal. */
 export function DangerZone({ label, ...confirm }: DangerZoneProps) {
   const { t } = useTranslation()
   const headingId = useId()

@@ -7,12 +7,7 @@ interface EmptyStateProps {
   icon: LucideIcon
   title: string
   description?: string
-  /** The next step for the user (08 §4: every empty state offers one). */
   action?: ReactNode
-  /**
-   * Level of the title heading. 2 under a page header (default); 1 when the
-   * empty state *is* the page (not found, route error).
-   */
   headingLevel?: keyof typeof HEADING_TAGS
 }
 

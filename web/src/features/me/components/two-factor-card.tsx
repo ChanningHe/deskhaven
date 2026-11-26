@@ -22,11 +22,6 @@ import { ReauthDialog } from './reauth-dialog'
 
 type Dialog = 'enrol' | 'disable' | 'regenerate'
 
-/**
- * TOTP: enrol (QR, password and code, recovery codes once), turn off (password; refused
- * while `auth.tfa.enforce` requires it) and regenerate the recovery codes (password).
- * Single sign-on accounts have no local second factor.
- */
 export function TwoFactorCard({ account }: { account: MyAccount }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

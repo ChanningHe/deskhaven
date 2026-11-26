@@ -13,7 +13,6 @@ import { Brand } from './brand'
 import { SidebarNav } from './sidebar-nav'
 import { VersionInfo } from './version-info'
 
-/** Navigation drawer for small screens (below md). */
 export function MobileNav() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)

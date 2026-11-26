@@ -10,23 +10,17 @@ export const RELAY_PATH = '/ws/relay'
 
 const NORMAL_CLOSURE = 1000
 
-/**
- * Largest frame accepted from the relay: what the peer's own WebSocket stream accepts
- * (hbb_common fae47e0 src/websocket.rs:40, `DEFAULT_MAX_MESSAGE_SIZE`).
- */
+/** What the peer's own WebSocket stream accepts (`DEFAULT_MAX_MESSAGE_SIZE`). */
 export const MAX_FRAME_BYTES = 64 << 20
 
 /**
- * Backlog of frames received but not yet pulled. The consumer drains as frames arrive, so a
- * backlog means it stalled. Frames: ten times the client's own video queue (rustdesk 1.5.0
- * src/client.rs:111, `VIDEO_QUEUE_SIZE` = 120), since cursor, misc and TestDelay frames
- * share this queue; about 20 s of 60 fps video. Bytes: one largest frame, so an empty
- * backlog always has room for any frame the peer may legally send.
+ * A backlog means the consumer stalled. Frames: ten times the client's own video queue, since
+ * cursor, misc and TestDelay frames share this queue; about 20 s of 60 fps video. Bytes: one
+ * largest frame, so an empty backlog always has room for any frame the peer may legally send.
  */
 export const MAX_QUEUED_FRAMES = 1200
 export const MAX_QUEUED_BYTES = MAX_FRAME_BYTES
 
-/** The same-origin relay endpoint the reverse proxy forwards to the relay server. */
 export function relayUrl(location: Pick<Location, 'protocol' | 'host'>): string {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${scheme}//${location.host}${RELAY_PATH}`
@@ -36,16 +30,12 @@ export interface RelayOptions {
   url: string
   /** The rendezvous server's public key, base64, exactly as the relay server checks it. */
   licenceKey: string
-  /** Pairing id the controlled side chose (RelayResponse.uuid). */
   uuid: string
   targetId: string
   createSocket?: (url: string) => WebSocket
 }
 
-/**
- * The relay link: the first frame asks the relay server to pair us with the controlled side by
- * `uuid`; after that, every binary WebSocket message is one protocol frame, both ways.
- */
+/** The first frame asks the relay server to pair us by `uuid`; then every binary message is one frame. */
 export class RelayTransport implements KeyedTransport {
   readonly messages: AsyncIterable<Message>
   readonly #socket: WebSocket

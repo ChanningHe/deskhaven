@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { type BrowserAbilities, limitHints } from './limit-hints'
 import { ToolbarPopover } from './toolbar-controls'
 
-/** What this browser cannot pass on to the device. */
 export function LimitsHint(abilities: BrowserAbilities) {
   const { t } = useTranslation()
   return (

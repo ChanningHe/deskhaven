@@ -4,7 +4,6 @@ import type { SettingView } from '@/api/generated/model'
 
 import type { Editor, Problem } from '../editor'
 
-/** The accepted range or shape of a value, under its control. */
 export function RangeHint({ setting }: { setting: SettingView }) {
   const { t } = useTranslation()
   const { schema } = setting
@@ -28,7 +27,6 @@ const RISKY_VALUES: Readonly<Record<string, readonly string[]>> = {
   'auth.oidc.link_email_max_role': ['admin', 'owner'],
 }
 
-/** A standing warning while the shown value is a risky one (see `RISKY_VALUES`). */
 export function RiskHint({ setting, editor }: { setting: SettingView; editor: Editor }) {
   const { t } = useTranslation()
   const risky = RISKY_VALUES[setting.key] ?? []
@@ -40,7 +38,6 @@ export function RiskHint({ setting, editor }: { setting: SettingView; editor: Ed
   )
 }
 
-/** A client-side finding about the edited value, as a message. */
 export function ProblemText({ problem }: { problem: Problem }) {
   const { t } = useTranslation()
   let message: string

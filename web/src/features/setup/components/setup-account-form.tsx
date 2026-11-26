@@ -11,13 +11,11 @@ import { TextField } from '@/features/auth/components/text-field'
 
 interface SetupAccountFormProps {
   token: string
-  /** The owner exists and is signed in. */
   onCreated: (me: Me) => void
 }
 
 const EMPTY = { username: '', displayName: '', email: '', password: '', confirm: '' }
 
-/** Step 1: the owner account, created with the setup link's token. */
 export function SetupAccountForm({ token, onCreated }: SetupAccountFormProps) {
   const { t } = useTranslation()
   const create = useMutation({ mutationFn: (body: SetupRequest) => completeSetup(body) })

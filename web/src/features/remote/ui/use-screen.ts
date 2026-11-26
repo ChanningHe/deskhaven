@@ -20,7 +20,6 @@ import type { Session, SessionState } from '../session/session'
 import { canvasPoint, drawCursor, drawFrame, type Rect, type Size } from './draw'
 import { useStore } from './use-remote'
 
-/** A copy of the canvas's pixels, detached from the page; null where it cannot be drawn. */
 function snapshot(source: HTMLCanvasElement): HTMLCanvasElement | null {
   const copy = document.createElement('canvas')
   copy.width = source.width
@@ -32,11 +31,7 @@ function snapshot(source: HTMLCanvasElement): HTMLCanvasElement | null {
   return copy
 }
 
-/**
- * Draws the session's frames on `canvas`; returns the frame size once the first one is drawn.
- * `onFrozen` hears null when the first frame is drawn, and a copy of the last one when drawing
- * stops: the page shows that copy until the next session draws.
- */
+/** `onFrozen` hears null on the first frame drawn, and a copy of the last one when drawing stops. */
 export function useVideo(
   session: Session,
   canvas: RefObject<HTMLCanvasElement | null>,
@@ -75,7 +70,6 @@ export function useVideo(
   return size
 }
 
-/** The last frame of a session that dropped, kept while the page reconnects. */
 export interface Frozen {
   canvas: HTMLCanvasElement
   hostname: string | undefined
@@ -95,10 +89,6 @@ function useSessionKind(phase: RemotePhase): SessionState['kind'] | undefined {
   return useSyncExternalStore(subscribe, () => session?.state.get().kind)
 }
 
-/**
- * The frozen frame the page holds: shown while it reconnects and until the new session draws,
- * dropped whenever the page shows anything else.
- */
 export function useFrozenFrame(phase: RemotePhase): FrozenFrame {
   const [held, setHeld] = useState<Frozen | null>(null)
   const kind = useSessionKind(phase)
@@ -111,7 +101,6 @@ export function useFrozenFrame(phase: RemotePhase): FrozenFrame {
   return { frozen: holds ? held : null, hold: setHeld }
 }
 
-/** The content size of `element`, followed as it changes. */
 export function useElementSize(element: RefObject<HTMLElement | null>): Size | null {
   const [size, setSize] = useState<Size | null>(null)
   useEffect(() => {
@@ -224,11 +213,7 @@ export function useCursor(
   return { cursor: localCursor(scene), moveTo }
 }
 
-/**
- * Captures mouse and wheel on the screen canvas and sends them to the peer. A press focuses
- * `keys`, the screen's keyboard input, which follows the pointer so that an IME opens its
- * candidate window where the user is.
- */
+/** A press focuses `keys`, which follows the pointer so that an IME opens its candidate window there. */
 export function useScreenInput(
   session: Session,
   canvas: RefObject<HTMLCanvasElement | null>,

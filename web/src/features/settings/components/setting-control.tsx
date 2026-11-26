@@ -11,7 +11,6 @@ import type { Editor } from '../editor'
 
 interface SettingControlProps {
   setting: SettingView
-  /** Element id, for the row's label and help text. */
   id: string
   editor: Editor
   disabled: boolean
@@ -23,7 +22,6 @@ interface SettingControlProps {
 const TEXTAREA_CLASS =
   'min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive dark:bg-input/30'
 
-/** The form control for one setting, chosen by its schema type (read-only when `disabled`). */
 export function SettingControl({
   setting,
   id,

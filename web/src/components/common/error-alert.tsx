@@ -7,13 +7,11 @@ import { cn } from '@/lib/utils'
 
 interface ErrorAlertProps {
   error: unknown
-  /** Short context, e.g. "Could not load the list"; the code's message follows. */
   title?: string
   onRetry?: () => void
   className?: string
 }
 
-/** An inline, translated error (by API error code) with an optional retry. */
 export function ErrorAlert({ error, title, onRetry, className }: ErrorAlertProps) {
   const { t } = useTranslation()
   return (

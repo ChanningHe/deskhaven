@@ -10,7 +10,6 @@ interface StrategyDetailsProps {
   disabled: boolean
 }
 
-/** Name and note of a strategy. */
 export function StrategyDetails({ draft, onChange, disabled }: StrategyDetailsProps) {
   const { t } = useTranslation()
   const id = useId()

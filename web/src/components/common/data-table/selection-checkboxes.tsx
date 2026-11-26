@@ -8,7 +8,6 @@ interface SelectAllCheckboxProps {
   onChange: (checked: boolean) => void
 }
 
-/** Header checkbox: selects every row on the current page. */
 export function SelectAllCheckbox({ checked, indeterminate, onChange }: SelectAllCheckboxProps) {
   const { t } = useTranslation()
   return (
@@ -22,7 +21,6 @@ export function SelectAllCheckbox({ checked, indeterminate, onChange }: SelectAl
 }
 
 interface SelectRowCheckboxProps {
-  /** The row's name ("Select <name>"); a generic label without it. */
   name: string | undefined
   checked: boolean
   onChange: (checked: boolean) => void

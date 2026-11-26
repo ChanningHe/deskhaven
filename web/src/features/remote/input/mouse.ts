@@ -19,7 +19,6 @@ export interface Modifiers {
 
 export const NO_MODIFIERS: Modifiers = { alt: false, ctrl: false, shift: false, meta: false }
 
-/** A display's rectangle in the peer's virtual screen (DisplayInfo / SwitchDisplay). */
 export interface DisplayRect {
   x: number
   y: number
@@ -35,8 +34,7 @@ export interface ViewPoint {
   height: number
 }
 
-// MouseEvent.mask: the event type in the low 3 bits, the button above them (rustdesk 1.5.0
-// src/common.rs:67-91, combined as in src/flutter_ffi.rs:2031-2048).
+// MouseEvent.mask: the event type in the low 3 bits, the button above them.
 const MOUSE_TYPE: Readonly<Record<MouseAction, number>> = { move: 0, down: 1, up: 2, wheel: 3 }
 const MOUSE_BUTTON: Readonly<Record<MouseButton, number>> = {
   left: 0x01,
@@ -61,9 +59,8 @@ export function buttonFromDom(button: number): MouseButton | null {
 const PLATFORM_WINDOWS = 'Windows'
 
 /**
- * The peer screen pixel under `point`, clamped into `rect`. A Windows peer takes one pixel past
- * the right and bottom edges, for window snapping (rustdesk 1.5.0
- * flutter/lib/models/input_model.dart:2068-2075).
+ * Clamped into `rect`. A Windows peer takes one pixel past the right and bottom edges, for
+ * window snapping.
  */
 export function toRemote(
   point: ViewPoint,
@@ -80,7 +77,6 @@ export function toRemote(
   }
 }
 
-/** Where a peer screen point (such as CursorPosition) falls in a view of `rect`. */
 export function toView(
   remote: { x: number; y: number },
   rect: DisplayRect,
@@ -92,17 +88,14 @@ export function toView(
   }
 }
 
-/**
- * One wheel notch on the dominant axis per event; the peer reads a positive y as scrolling up
- * (rustdesk 1.5.0 flutter/lib/models/input_model.dart:1683-1698).
- */
+/** One wheel notch on the dominant axis per event; the peer reads a positive y as scrolling up. */
 export function wheelNotches(deltaX: number, deltaY: number): { x: number; y: number } | null {
   if (deltaX === 0 && deltaY === 0) return null
   if (Math.abs(deltaX) > Math.abs(deltaY)) return { x: -Math.sign(deltaX), y: 0 }
   return { x: 0, y: -Math.sign(deltaY) }
 }
 
-/** Held modifiers in the order rustdesk 1.5.0 src/client.rs:4343-4354 lists them. */
+/** Held modifiers in the order the client lists them. */
 export function modifierKeys(m: Modifiers): ControlKey[] {
   const keys: ControlKey[] = []
   if (m.alt) keys.push(ControlKey.Alt)

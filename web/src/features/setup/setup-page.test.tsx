@@ -24,7 +24,6 @@ describe('first-run setup', () => {
     await user.type(await screen.findByLabelText('用户名'), 'root')
     await user.type(screen.getByLabelText('密码'), 'first owner password')
     await user.type(screen.getByLabelText('确认密码'), 'first owner password')
-    // The token left the address bar.
     await waitFor(() => {
       expect(router.state.location.hash).toBe('')
     })

@@ -1,12 +1,4 @@
-// The one fetch wrapper every admin API call goes through; orval's generated
-// client uses it as its mutator (orval.config.ts). It
-// - sends cookies same-origin only and asks for JSON,
-// - adds the CSRF header to state-changing requests,
-// - throws ApiError (a HttpError) for non-2xx responses, parsed from the error
-//   envelope, with Retry-After surfaced as `retryAfterSeconds`.
-// Network failures reject with the browser's TypeError (no status): the query
-// policy retries those once. 401 handling (redirect to /login) lives in the
-// query client, so it also covers requests made outside React Query.
+// 401 handling lives in the query client, so it also covers requests made outside React Query.
 
 import { ApiError, parseErrorEnvelope, parseRetryAfter } from './api-error'
 import { ANONYMOUS_CSRF_TOKEN, CSRF_HEADER, needsCsrfHeader, readCsrfToken } from './csrf'
@@ -47,11 +39,7 @@ function requestHeaders(init: RequestInit, method: string): Headers {
   return headers
 }
 
-/**
- * Performs an admin API request and returns the parsed JSON body. The body is
- * typed by the caller (the generated client, from openapi.json); it comes from
- * our own same-origin server and is not validated at runtime.
- */
+/** The body comes from our own same-origin server: typed by the caller, not validated. */
 export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase()
   const response = await fetch(url, {
@@ -71,10 +59,6 @@ export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<
   }
 }
 
-/**
- * Error type of the generated hooks (orval reads this export from the mutator):
- * apiFetch never rejects with the raw envelope, only with ApiError or a network
- * error. Orval passes the documented error body as the type argument.
- */
+/** Orval reads the hooks' error type from this mutator export. */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the signature is orval's contract
 export type ErrorType<_Envelope> = ApiError | Error

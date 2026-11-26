@@ -12,13 +12,9 @@ import { SECRET_MUTATION } from '@/features/users/secret-mutation'
 import { DiagnosticResult } from './diagnostic-result'
 import { FieldProblems } from './form-controls'
 
-/** What to test: the saved directory, or the form as typed. */
 export type TestTarget = { directory_id: number } | { directory: NewLdapDirectoryBody }
 
-/**
- * The tests card: "test connection" and "test user" with their step-by-step result. Owner
- * only. It stays outside the directory form: its buttons must never submit the directory.
- */
+/** Kept outside the directory form: its buttons must never submit the directory. */
 export function LdapDiagnostics({ target }: { target: TestTarget }) {
   const { t } = useTranslation()
   const id = useId()

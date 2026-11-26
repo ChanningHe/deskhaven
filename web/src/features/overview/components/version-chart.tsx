@@ -9,11 +9,7 @@ import { cn } from '@/lib/utils'
 
 import { versionBars } from '../bars'
 
-/**
- * The client versions as horizontal bars: one series, so one colour; the counts are printed
- * next to the bars. Plain markup (no chart library, no inline scripts: CSP-safe). The
- * versions are what the devices say about themselves, so they are isolated text.
- */
+/** Plain markup (no chart library, no inline scripts) for the CSP; versions are isolated text. */
 export function VersionChart({
   versions,
   format,

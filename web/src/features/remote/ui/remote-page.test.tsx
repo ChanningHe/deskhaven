@@ -28,7 +28,6 @@ function page(f: ReturnType<typeof fakeDeps>) {
   )
 }
 
-/** After userEvent.setup, which installs a clipboard of its own. */
 function stubClipboard(clipboard: Pick<Clipboard, 'readText' | 'writeText'>) {
   Object.defineProperty(window.navigator, 'clipboard', { value: clipboard, configurable: true })
 }
@@ -43,7 +42,6 @@ async function open(f = fakeDeps()) {
   return { ...view, f, session }
 }
 
-/** Focuses the screen's keyboard input, as a click on the screen does. */
 function focusScreen(): HTMLTextAreaElement {
   const keys = screen.getByRole<HTMLTextAreaElement>('textbox', { name: /远程屏幕/ })
   act(() => {
@@ -52,7 +50,6 @@ function focusScreen(): HTMLTextAreaElement {
   return keys
 }
 
-/** A cancelable key event on `target` at `time` (KeyboardEvent.timeStamp). */
 function key(target: Element, type: 'keydown' | 'keyup', init: KeyboardEventInit, time = 0) {
   const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init })
   Object.defineProperty(event, 'timeStamp', { value: time })

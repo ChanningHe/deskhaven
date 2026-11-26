@@ -1,6 +1,3 @@
-// M4-09: `auth.oidc.link_email_max_role` warns while it lets the identity provider reach
-// administrator or owner accounts by email.
-
 import { screen } from '@testing-library/react'
 import i18n from 'i18next'
 import { describe, expect, it } from 'vitest'

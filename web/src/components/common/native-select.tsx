@@ -2,11 +2,6 @@ import type { ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
 
-/**
- * A styled native `<select>`: accessible and keyboard-friendly out of the box,
- * for short option lists (filters, roles). Give it a label (`aria-label` or a
- * `<Label htmlFor>`).
- */
 export function NativeSelect({ className, ...props }: ComponentProps<'select'>) {
   return (
     <select

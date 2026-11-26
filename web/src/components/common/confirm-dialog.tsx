@@ -20,20 +20,10 @@ export interface ConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  /** What happens if the user confirms (08 §1.4: say what the impact is). */
   description?: ReactNode
   confirmLabel: string
-  /**
-   * The name the user must type exactly (e.g. the device or user name) before
-   * the confirm button is enabled. Omit for a plain yes/no confirmation.
-   */
   confirmText?: string
-  /** Styles the confirm button as destructive (default true). */
   destructive?: boolean
-  /**
-   * Performs the action (sync or a promise). The dialog stays open while it runs, closes when it
-   * resolves, and shows the translated error (and stays open) when it rejects.
-   */
   onConfirm: () => unknown
 }
 
@@ -113,12 +103,7 @@ function ConfirmBody({
   )
 }
 
-/**
- * Confirmation for dangerous actions (08 §1.4, §4): explains the impact and,
- * with `confirmText`, makes the user type the target's name first. Focus starts
- * on the first tabbable element: the name field, or Cancel for a plain
- * confirmation, never the destructive button.
- */
+/** Focus starts on the name field or Cancel, never on the destructive button. */
 export function ConfirmDialog({
   open,
   onOpenChange,

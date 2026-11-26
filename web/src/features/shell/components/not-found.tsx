@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/empty-state'
 import { buttonVariants } from '@/components/ui/button'
 
-/** Not-found content; rendered inside the console shell by the `_app` layout. */
 export function NotFound() {
   const { t } = useTranslation()
   return (
@@ -23,7 +22,6 @@ export function NotFound() {
   )
 }
 
-/** Full-page variant for URLs outside the shell (root route). */
 export function NotFoundPage() {
   return (
     <main className="mx-auto flex min-h-svh max-w-lg items-center px-4">

@@ -15,27 +15,21 @@ const DOT: Record<BarStatus, string> = {
   ended: 'bg-muted-foreground/60',
 }
 
-/** What every state of the remote page shares: the way back, the device, its link state. */
 export interface BarFrame {
   deviceId: string
   /** The way back to the console; the route supplies it so the page needs no router. */
   back?: ReactNode
-  /** The link the session runs over, once the race has a winner. */
   transport?: TransportChoice | undefined
 }
 
 interface RemoteBarProps extends BarFrame {
   status: BarStatus
   viewOnly?: boolean
-  /** The peer's own name, once it has said it. */
   hostname?: string | undefined
-  /** The session's controls; they drop to a second row on narrow screens. */
   tools?: ReactNode
-  /** The last control, kept on the first row: the session's way out. */
   end?: ReactNode
 }
 
-/** The thin bar over the remote area: the page's only chrome. */
 export function RemoteBar({
   deviceId,
   back,

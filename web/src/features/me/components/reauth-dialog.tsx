@@ -20,11 +20,8 @@ interface ReauthDialogProps {
   title: string
   description: ReactNode
   submitLabel: string
-  /** Also ask for an authenticator or recovery code (default); without it the code is ''. */
   askCode?: boolean
-  /** Shows a rejection (default: the generic alert). */
   renderError?: (error: unknown) => ReactNode
-  /** Performs the action with the typed password and code; a rejection is shown and keeps the dialog open. */
   onSubmit: (currentPassword: string, code: string) => Promise<unknown>
 }
 
@@ -99,7 +96,6 @@ function ReauthForm({
   )
 }
 
-/** Asks for the current password again before a sensitive account change (06 §3.3). */
 export function ReauthDialog({
   open,
   onOpenChange,

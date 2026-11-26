@@ -38,7 +38,6 @@ function session(s: Setup, index: number) {
   return found
 }
 
-/** Over WebRTC, logged in with a typed password. */
 async function live(s: Setup) {
   s.controller.connect()
   await vi.advanceTimersByTimeAsync(0)

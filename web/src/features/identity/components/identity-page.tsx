@@ -15,10 +15,6 @@ import { LdapSection } from './ldap-section'
 import { OidcSection } from './oidc-section'
 import { TfaSection } from './tfa-section'
 
-/**
- * Identity configuration (08 §3.2): OIDC providers, the LDAP directory, the 2FA policy, one
- * tab each (the tab is in the URL).
- */
 export function IdentityPage() {
   const { t } = useTranslation()
   const me = useMe()

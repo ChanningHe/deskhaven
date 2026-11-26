@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils'
 export interface CategoryNavItem {
   name: string
   label: string
-  /** How many settings of the category have an unsaved draft. */
   unsaved: number
 }
 
@@ -15,10 +14,7 @@ interface CategoryNavProps {
   onJump: (name: string) => void
 }
 
-/**
- * Jumps within the page to a category. Buttons, not links: changing the URL (even only its
- * hash) would trip the unsaved-changes guard on every click while there are drafts.
- */
+/** Buttons, not links: changing the URL (even its hash) would trip the unsaved-changes guard. */
 export function CategoryNav({ items, onJump }: CategoryNavProps) {
   const { t } = useTranslation()
   return (

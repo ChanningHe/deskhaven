@@ -7,7 +7,6 @@ import { MessageSchema, type VideoFrame as VideoFrameMessage } from '../proto/ge
 
 const VIDEO_FRAME_SEQ = 6n
 
-/** The captured VP9 key frame (peer frame 6 of the fixture), opened with the capture's key. */
 export function fixtureKeyFrame(version: FixtureVersion = '1.5.0'): VideoFrameMessage {
   const sealed = fixtureBytes(version, 'hbbr-enc-06-VideoFrame')
   const key = fixtureSession(version).symmetricKey

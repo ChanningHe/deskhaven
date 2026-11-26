@@ -5,10 +5,6 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-/**
- * Where a value comes from (05 §3: Default / Database / File / Env; 04
- * `managed_by = config` resources are `file`). Map the API's DTO onto this.
- */
 export type ValueSource =
   | { kind: 'default' }
   | { kind: 'modified'; by?: string; at?: string }
@@ -33,7 +29,6 @@ function formatTime(iso: string, language: string): string {
   return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-/** The sentence behind the badge: who changed it when, or what locks it. */
 function sourceDetail(source: ValueSource, t: TFunction, language: string): string {
   switch (source.kind) {
     case 'default':
@@ -51,11 +46,7 @@ function sourceDetail(source: ValueSource, t: TFunction, language: string): stri
   }
 }
 
-/**
- * Source badge (08 §4): grey "default", blue "modified", amber "locked by
- * config". The detail is a tooltip on a focusable trigger, so keyboard and
- * screen reader users get it too.
- */
+/** The detail is a tooltip on a focusable trigger, so keyboard and screen reader users get it. */
 export function SourceBadge({ source, className }: { source: ValueSource; className?: string }) {
   const { t, i18n } = useTranslation()
   const tone = source.kind === 'file' || source.kind === 'env' ? 'locked' : source.kind

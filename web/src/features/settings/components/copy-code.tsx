@@ -11,7 +11,6 @@ type CopyState = 'idle' | 'copied' | 'failed'
 // Long keys and variable names wrap after a `.` or `__` before breaking inside a word.
 const SEGMENT_END = /(?<=\.|__)/
 
-/** A monospace value with a copy button; selects itself when the clipboard is unavailable. */
 export function CopyCode({ value }: { value: string }) {
   const { t } = useTranslation()
   const codeRef = useRef<HTMLElement>(null)

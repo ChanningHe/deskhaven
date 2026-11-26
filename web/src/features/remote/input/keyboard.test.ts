@@ -28,7 +28,6 @@ function mods(m: Partial<Modifiers>): Modifiers {
   return { ...NO_MODIFIERS, ...m }
 }
 
-/** The fields the peer acts on, without protobuf bookkeeping. */
 function brief(e: KeyEvent): Record<string, unknown> {
   return {
     mode: e.mode,
@@ -38,8 +37,6 @@ function brief(e: KeyEvent): Record<string, unknown> {
   }
 }
 
-// rustdesk 1.5.0 src/common.rs:1910-1927 (is_keyboard_mode_supported) and the Map default of
-// src/keyboard.rs:758-764.
 describe('keyboard mode', () => {
   it.each([
     ['Windows', '1.5.0', KeyboardMode.Map],
@@ -61,7 +58,7 @@ describe('keyboard mode', () => {
 })
 
 describe('Map mode', () => {
-  // Spot checks against rdev a361d86 src/keycodes/{windows,linux,macos_virtual_keycodes}.rs.
+  // Spot checks against rdev's keycode tables.
   it.each([
     ['KeyA', [0x1e, 38, 0]],
     ['ArrowUp', [0xe048, 111, 126]],
@@ -184,7 +181,6 @@ describe('Translate mode', () => {
   })
 })
 
-// rustdesk 1.5.0 src/keyboard.rs:1018-1245 (legacy_keyboard_mode).
 describe('Legacy mode', () => {
   const encoder = () => new KeyboardEncoder(KeyboardMode.Legacy, 'Linux')
 
@@ -263,7 +259,7 @@ describe('any mode', () => {
 })
 
 // Windows browsers report AltGr as a ControlLeft keydown and an AltRight keydown at the same
-// time; rustdesk 1.5.0 drops that ControlLeft (src/keyboard.rs:1062-1071, 1499-1501).
+// time; the desktop client drops that ControlLeft.
 describe('AltGr on a Windows browser', () => {
   const ctrl = (time: number) =>
     press('Control', 'ControlLeft', { time, modifiers: mods({ ctrl: true }) })

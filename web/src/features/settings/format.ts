@@ -1,11 +1,8 @@
-// Display forms of settings: the source badge's model and a value as short text.
-
 import type { TFunction } from 'i18next'
 
 import type { SettingView, SourceView } from '@/api/generated/model'
 import type { ValueSource } from '@/components/common/source-badge'
 
-/** The badge model of an API source: pins read "locked", stored values "modified". */
 export function valueSource(source: SourceView): ValueSource {
   switch (source.kind) {
     case 'default':
@@ -31,10 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * A value as short text. Secrets are never shown, only whether they are set; empty text and
- * empty lists read as "none".
- */
+/** Secrets are never shown, only whether they are set. */
 export function displayValue(setting: SettingView, value: unknown, t: TFunction): string {
   if (setting.schema.type === 'secret' || isRecord(value)) {
     const set = isRecord(value) && value.set === true

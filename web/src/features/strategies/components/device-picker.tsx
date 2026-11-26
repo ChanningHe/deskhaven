@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 
-/** Devices offered at once; typing narrows them. */
 const CANDIDATES = 20
 
 interface DevicePickerProps {
@@ -16,7 +15,6 @@ interface DevicePickerProps {
   onChange: (id: number | undefined) => void
 }
 
-/** A device search (id, name) with a select of the matches. */
 export function DevicePicker({ value, onChange }: DevicePickerProps) {
   const { t } = useTranslation()
   const id = useId()

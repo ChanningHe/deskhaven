@@ -7,8 +7,7 @@ function text(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-// The OIDC callback (`<public_url>/api/oidc/callback`) hands a console login on
-// to this page with the identity provider's query; not nested under /login.
+// The OIDC callback hands a console login on here; not nested under /login.
 export const Route = createFileRoute('/login_/oidc')({
   validateSearch: (search: Record<string, unknown>): OidcAnswer => ({
     state: text(search.state),

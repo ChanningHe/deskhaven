@@ -1,22 +1,15 @@
-/**
- * The `webrtc://` endpoints the controlled side exchanges (hbb_common fae47e0 src/webrtc.rs):
- * `webrtc://` + base64 of the JSON session description `{type, sdp, ice_policy?}`.
- */
+/** `webrtc://` + base64 of the JSON session description `{type, sdp, ice_policy?}`. */
 
 const SCHEME = 'webrtc://'
 
 /**
- * A device registered over UDP receives the offer inside one PunchHole datagram, and one that
- * needs IP fragmentation is dropped on paths that discard fragments (webrtc.rs:984,
- * `UDP_ENDPOINT_BUDGET`). The relay request rides in the same PunchHole, so an oversize offer
- * would cost the relay too: it is not sent at all.
+ * A device registered over UDP receives the offer inside one PunchHole datagram, and one that needs
+ * IP fragmentation is dropped on paths that discard fragments. The relay request rides in the same
+ * PunchHole, so an oversize offer would cost the relay too: it is not sent at all.
  */
 export const MAX_OFFER_BYTES = 1024
 
-/**
- * The offer without its candidates (webrtc.rs:993-1004, `trickle_endpoint`): they trickle as
- * separate messages, and `end-of-candidates` would tell the peer to stop waiting for them.
- */
+/** Candidates trickle separately, and `end-of-candidates` would tell the peer to stop waiting. */
 export function trickleSdp(sdp: string): string {
   return sdpLines(sdp)
     .filter((line) => !line.startsWith('a=candidate:') && !line.startsWith('a=end-of-candidates'))
@@ -24,10 +17,7 @@ export function trickleSdp(sdp: string): string {
     .join('')
 }
 
-/**
- * `ice_policy: all` says our ICE is not relay-only, so the peer answers with full ICE even if
- * the request is marked force_relay (webrtc.rs:1010-1023, `encode_endpoint`).
- */
+/** `ice_policy: all` says our ICE is not relay-only, so the peer answers with full ICE even under force_relay. */
 export function encodeOffer(sdp: string): string {
   const json = JSON.stringify({ type: 'offer', sdp: trickleSdp(sdp), ice_policy: 'all' })
   const endpoint = SCHEME + toBase64(new TextEncoder().encode(json))
@@ -37,7 +27,6 @@ export function encodeOffer(sdp: string): string {
   return endpoint
 }
 
-/** The SDP of the peer's answer endpoint; throws on anything else. */
 export function decodeAnswer(endpoint: string): string {
   if (!endpoint.startsWith(SCHEME)) throw new Error('WebRTC answer is not a webrtc:// endpoint')
   let envelope: unknown
@@ -58,10 +47,9 @@ export function decodeAnswer(endpoint: string): string {
 }
 
 /**
- * The DTLS fingerprint the peer signs into SignedId (webrtc.rs:299-320), or null unless the
- * description carries exactly one value. Firefox completes DTLS when any listed fingerprint
- * matches, so a second, different one would let a signalling party bind its own certificate
- * while the signed value still compares equal; webrtc-rs rejects such descriptions too.
+ * Null unless the description carries exactly one fingerprint: Firefox completes DTLS when any
+ * listed one matches, so a second would let a signalling party bind its own certificate while the
+ * signed value still compares equal.
  */
 export function sdpFingerprint(sdp: string): string | null {
   const values = new Set(

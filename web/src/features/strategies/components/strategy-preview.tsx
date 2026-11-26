@@ -7,10 +7,7 @@ import { DeviceStrategy } from '@/features/devices/components/device-strategy'
 
 import { DevicePicker } from './device-picker'
 
-/**
- * What a device ends up with: every strategy that applies to it merged, each option with
- * its source, as its next heartbeat delivers it (saved changes only).
- */
+/** As the device's next heartbeat delivers it: saved changes only. */
 export function StrategyPreview() {
   const { t } = useTranslation()
   const [device, setDevice] = useState<number | undefined>(undefined)

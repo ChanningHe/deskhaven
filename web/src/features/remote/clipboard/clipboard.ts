@@ -13,10 +13,7 @@ import {
 /** Text clipboard limit, both ways; far above what people copy, far below the 64 MiB frame. */
 export const MAX_CLIPBOARD_BYTES = 16 << 20
 
-/**
- * Our clipboard text for the peer, or null when it is over the limit. A plain `Clipboard`
- * message: every peer version takes it (rustdesk 1.5.0 src/server/connection.rs:3346).
- */
+/** Null over the limit. A plain `Clipboard` message: every peer version takes it. */
 export function clipboardMessage(text: string): Message | null {
   const content = utf8(text)
   if (content.length > MAX_CLIPBOARD_BYTES) return null
@@ -29,9 +26,8 @@ export function clipboardMessage(text: string): Message | null {
 }
 
 /**
- * The text the peer copied, from `Clipboard` or the Text entry of `MultiClipboards` (as the
- * peer reads them, rustdesk 1.5.0 src/clipboard.rs:742-749); null for other formats and for
- * content that is not valid (compressed) UTF-8.
+ * From `Clipboard` or the Text entry of `MultiClipboards`, as the peer reads them; null for
+ * other formats and for content that is not valid (compressed) UTF-8.
  */
 export function clipboardText(message: Message): string | null {
   const { union } = message

@@ -54,10 +54,7 @@ const SLIDER_KEYS = new Set([
   'PageDown',
 ])
 
-/**
- * The custom level, set when the slider is let go: each change reaches the peer, so a drag
- * must not send one per step.
- */
+/** Set when the slider is let go: each change reaches the peer, so a drag must not send one per step. */
 function CustomLevel({
   level,
   rate,
@@ -114,10 +111,6 @@ function CustomLevel({
   )
 }
 
-/**
- * Each choice with the bitrate the peer aims at for it: kbps at the streamed size, or the ratio
- * to the base bitrate while the size is unknown; nothing for a codec that bitrate does not model.
- */
 export function QualityGroup({
   quality,
   size,

@@ -12,7 +12,6 @@ interface StrategyDangerZoneProps {
   onDeleted: () => void
 }
 
-/** Deletes the strategy after the admin types its name. */
 export function StrategyDangerZone({ strategy, onDeleted }: StrategyDangerZoneProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

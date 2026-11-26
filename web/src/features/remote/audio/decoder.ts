@@ -71,7 +71,7 @@ export const webCodecsAudio: AudioDecoders = {
   supports: webCodecsSupports,
 }
 
-// The peer encodes stereo at 48 kHz (rustdesk 1.5.1 src/server/audio_service.rs:113-117).
+// The peer encodes stereo at 48 kHz.
 export function webCodecsDecodesOpus(): Promise<boolean> {
   return webCodecsSupports({ sampleRate: 48000, channels: 2 })
 }

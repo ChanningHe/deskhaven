@@ -8,7 +8,7 @@ import {
   trickleSdp,
 } from './webrtc-sdp'
 
-// A Firefox 148 offer as createOffer returns it (s0 spike), plus candidate lines to strip.
+// A Firefox 148 offer as createOffer returns it, plus candidate lines to strip.
 const FIREFOX_OFFER = [
   'v=0',
   'o=mozilla...THIS_IS_SDPARTA-99.0 4372513290474452352 0 IN IP4 0.0.0.0',

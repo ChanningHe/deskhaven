@@ -52,7 +52,6 @@ export interface EncodedFrames {
   frames: readonly EncodedVideoFrame[]
 }
 
-/** The codec and frames of a VideoFrame message, or null for an encoding we do not decode. */
 export function encodedFrames(message: VideoFrameMessage): EncodedFrames | null {
   const { union } = message
   switch (union.case) {
@@ -67,7 +66,6 @@ export function encodedFrames(message: VideoFrameMessage): EncodedFrames | null 
   }
 }
 
-/** Whether this browser decodes `codec`; false where WebCodecs is missing or refuses it. */
 export async function isCodecSupported(codec: string): Promise<boolean> {
   if (typeof VideoDecoder === 'undefined') return false
   try {
@@ -78,12 +76,10 @@ export async function isCodecSupported(codec: string): Promise<boolean> {
   }
 }
 
-/** What to declare in LoginRequest.option.supported_decoding. */
 export function probeVideoDecoders(): Promise<DecoderSupport> {
   return probeDecoders(isCodecSupported)
 }
 
-/** What the video pipeline tells about each codec, and asks before decoding one. */
 export interface CodecEvents {
   accepts(codec: VideoCodec): boolean
   received(codec: VideoCodec): void
@@ -91,43 +87,33 @@ export interface CodecEvents {
   failed(codec: VideoCodec): void
 }
 
-/**
- * Why a codec cannot be picked: this browser, the peer, or it was given up in this session,
- * because its frames did not decode (`failed`) or the peer went on sending another (`ignored`).
- */
+/** Given up in this session: its frames did not decode (`failed`) or the peer sent another (`ignored`). */
 export type CodecSupport = 'ok' | 'browser' | 'peer' | 'failed' | 'ignored'
 
 export interface CodecView {
   support: Readonly<Record<VideoCodec, CodecSupport>>
   /** What we last asked the peer to encode: the login's codec (VP9) until a switch. */
   requested: VideoCodec
-  /** The codec of the last video frame received. */
   receiving: VideoCodec | null
-  /** The codec last given up for the login's, and when; `support` says why. */
   failed?: VideoCodec
   failedAt?: number
 }
 
 /**
- * The peer restarts its video service on a codec change and waits up to 1 s after it
- * (rustdesk 1.5.1 src/server/video_service.rs:772-778, src/server/service.rs:45,309-317), then
- * encodes a key frame (AV1 must manage one at 1080p within 90 ms, libs/scrap/src/common/codec.rs
- * test_av1). Five times that leaves room for a slow link and a key frame request.
+ * The peer restarts its video service on a codec change and waits up to 1 s after it, then encodes
+ * a key frame (AV1 must manage one at 1080p within 90 ms). Five times that leaves room for a slow
+ * link and a key frame request.
  */
 export const SWITCH_TIMEOUT_MS = 5000
 
-/**
- * Decode errors in a row before giving a codec up: below the pipeline's MAX_FAILURES, which ends
- * the session. The official client marks a decoder unsupported after 3 (src/client.rs:113,4093-4108).
- */
+/** Below the pipeline's MAX_FAILURES, which ends the session; the official client gives up after 3. */
 export const SWITCH_ERRORS = 2
 
 export interface CodecSwitchOptions {
   support: DecoderSupport
   now(): number
-  /** Sends Misc.option with only supported_decoding set (src/client.rs:3889-3903). */
+  /** Sends Misc.option with only supported_decoding set. */
   send(decoding: SupportedDecoding): void
-  /** Asks the peer to send its screen again, unchanged or not. */
   refresh(): void
   onChange(view: CodecView): void
 }
@@ -142,7 +128,6 @@ interface Watch {
    * frames may have been in flight, and a still screen after the encoder restart sends none.
    */
   late: boolean
-  /** Frames of `codec` itself came. */
   arrived: boolean
 }
 
@@ -155,10 +140,9 @@ const NO_PEER_CODECS: Readonly<Record<VideoCodec, boolean>> = {
 }
 
 /**
- * Moves the peer to the codec the user picked, once both sides can, and back to the login's
- * codec (VP9) when its frames do not come out of the decoder while the peer is sending: then the
- * codec is withdrawn from the abilities for the rest of the session, as the official client marks
- * a failed decoder unsupported. A peer that sends nothing is asked for a refresh, not judged.
+ * Falls back to VP9 when the picked codec's frames do not come out of the decoder while the peer
+ * is sending, and withdraws it for the rest of the session. A silent peer is asked for a refresh,
+ * not judged.
  */
 export class CodecSwitch implements CodecEvents {
   readonly #options: CodecSwitchOptions
@@ -180,7 +164,7 @@ export class CodecSwitch implements CodecEvents {
     return this.#view
   }
 
-  /** PeerInfo.encoding: what the peer can encode (rustdesk 1.5.1 codec.rs:331-355). */
+  /** PeerInfo.encoding: what the peer can encode. */
   peerEncodes(encoding: SupportedEncoding | undefined): void {
     this.#peerCan({
       vp9: true,
@@ -192,9 +176,8 @@ export class CodecSwitch implements CodecEvents {
   }
 
   /**
-   * Misc.supported_encoding: what the peer can encode that every connection declared
-   * (codec.rs:192-253). H264 and H265 stay as PeerInfo said: we declare them only once asked for,
-   * so this says nothing about them before.
+   * H264 and H265 stay as PeerInfo said: we declare them only once asked for, so this says nothing
+   * about them before.
    */
   peerUsable(encoding: SupportedEncoding): void {
     this.#peerCan({ ...this.#peer, av1: encoding.av1, vp8: encoding.vp8 })
@@ -222,8 +205,8 @@ export class CodecSwitch implements CodecEvents {
     if (codec === this.#view.requested) this.#errors = 0
     const watch = this.#watch
     if (!watch) return
-    // Asked for H264/H265, a third codec is the peer's Auto pick for a codec not every
-    // connection declared (rustdesk 1.5.1 codec.rs:272-302): a refusal, like the old codec.
+    // Asked for H264/H265, a third codec is the peer's Auto pick for a codec not every connection
+    // declared: a refusal, like the old codec.
     const elsewhere = codec !== watch.from && !EXPERIMENTAL_CODECS.includes(watch.codec)
     if (codec === watch.codec || elsewhere) this.#watch = null
     else this.#sawOther(watch)

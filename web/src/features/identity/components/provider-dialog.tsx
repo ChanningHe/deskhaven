@@ -25,17 +25,14 @@ import { EMPTY_PROVIDER, newProviderBody, providerDraft, providerPatch } from '.
 import { FieldProblems } from './form-controls'
 import { ProviderFields } from './provider-fields'
 
-/** What the dialog shows: a new provider, or a stored one (from the polled list). */
 export type ProviderTarget = { kind: 'new' } | { kind: 'stored'; provider: OidcProviderView }
 
 interface ProviderDialogProps {
   target: ProviderTarget | undefined
-  /** Shown without editing (an admin; writes are the owner's). */
   readOnly: boolean
   onClose: () => void
 }
 
-/** Creates or edits an OIDC provider; config-managed ones (and any, for admins) read-only. */
 export function ProviderDialog({ target, readOnly, onClose }: ProviderDialogProps) {
   const { t } = useTranslation()
   const title =

@@ -16,37 +16,25 @@ import {
 } from '@/components/ui/autocomplete'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 
-/** Candidates offered at once; typing more narrows them. */
 const CANDIDATES = 8
 
 export interface UserComboboxProps {
-  /** Accessible name of the search field. */
   label: string
-  /** Accessible name of the list of suggestions. */
   listLabel: string
   placeholder?: string
-  /** Narrows the search (e.g. `not_group`); `q`, `page_size` and `sort` are the combobox's. */
   filter?: Omit<ListUsersParams, 'q' | 'page_size' | 'sort' | 'page'>
-  /** An earlier pick is still being handled: picks are ignored meanwhile. */
   busy?: boolean
   disabled?: boolean
-  /** Status line for `count` suggestions (screen readers announce it). */
   foundText: (count: number) => string
   noMatchText: string
-  /** Handles the picked user; `false` keeps the typed text (the pick failed). */
+  /** `false` keeps the typed text (the pick failed). */
   onPick: (user: UserView) => boolean | undefined | Promise<boolean | undefined>
   inputRef?: Ref<HTMLInputElement>
 }
 
 /**
- * A search-as-you-type combobox over the accounts. Clicking the field lists the first
- * accounts by username in a floating list that overlays the content around it; typing narrows
- * them. Focus alone never opens the list: while it is open Base UI hides the rest of the page
- * from assistive technology, which must not happen on programmatic focus. Arrow keys move
- * through the suggestions, Enter or a click picks one. Enter picks only
- * once the list answers the text as typed, so a fast typist never gets a stale suggestion.
- * Enter with text in the field never submits a surrounding form, and Escape closes the list
- * and clears the text without closing the drawer or dialog around it.
+ * Focus alone never opens the list: while it is open Base UI hides the rest of the page from
+ * assistive technology. Enter picks only once the list answers the text as typed.
  */
 export function UserCombobox(props: UserComboboxProps) {
   const { label, listLabel, placeholder, filter, busy = false, disabled = false } = props
@@ -68,7 +56,6 @@ export function UserCombobox(props: UserComboboxProps) {
   const pick = async (user: UserView) => {
     if (busy || disabled) return
     const kept = (await onPick(user)) === false
-    // A kept text stays as it is; the next click, key press or arrow reopens the list.
     if (!kept) setQ('')
   }
 

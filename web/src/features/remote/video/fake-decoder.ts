@@ -11,7 +11,6 @@ import type { CreateDecoder, DecoderCallbacks, EncodedChunk, FrameDecoder } from
 
 export { fixtureKeyFrame } from './fixture-frame'
 
-/** A synthetic frame; the fake decoder never looks inside. */
 export function vp9Frame(
   key: boolean,
   data = Uint8Array.of(0x86, 0, key ? 1 : 0),
@@ -53,7 +52,6 @@ export class FakeDecoder implements FrameDecoder {
     this.closed = true
   }
 
-  /** Emits the frame decoded from the chunk at `index` of what this decoder took. */
   output(index = this.decoded.length - 1): FakeFrame {
     const chunk = this.decoded[index]
     if (!chunk) throw new Error(`no chunk ${index}`)

@@ -13,7 +13,6 @@ import type { OidcAnswer } from '@/features/auth/components/oidc-callback-page'
 import { refreshAccount } from '../invalidate'
 import { LinkFailure } from './link-failure'
 
-/** Asking again while another request verifies the same answer (409 `verifying`). */
 const RETRY_DELAY_MS = 1000
 const MAX_RETRIES = 10
 
@@ -30,7 +29,6 @@ function BackLink() {
   )
 }
 
-/** The IdP account about to be linked, as the provider asserted it. */
 function Shown({ shown }: { shown: OidcLinkPreview }) {
   const { t } = useTranslation()
   const rows = [
@@ -98,12 +96,7 @@ function Confirmation({ state, shown }: { state: string; shown: OidcLinkPreview 
   )
 }
 
-/**
- * `/me/oidc-link`: the identity provider's answer to a link started on the account page.
- * The server exchanges it once and names the IdP account and this account; confirming
- * links exactly that IdP account (only in this browser and for this account). The code
- * and state leave the address bar at once; an IdP refusal is shown without a request.
- */
+/** Confirming links exactly the IdP account the server named; the code and state leave the URL at once. */
 export function OidcLinkPage({ answer }: { answer: OidcAnswer }) {
   const { t } = useTranslation()
   const navigate = useNavigate()

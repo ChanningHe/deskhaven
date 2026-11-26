@@ -31,12 +31,11 @@ const TEXT_FIELDS: readonly TextField[] = ['alias', 'hostname', 'username', 'pla
 
 interface PeerFormDialogProps {
   guid: string
-  /** The entry to edit, `'new'` to add one, `null` for closed. */
   peer: PeerView | 'new' | null
   onClose: () => void
 }
 
-/** Add or edit one entry. The password is write-only: it is never shown, only replaced. */
+/** The password is write-only: never shown, only replaced. */
 export function PeerFormDialog({ guid, peer, onClose }: PeerFormDialogProps) {
   const { t } = useTranslation()
   return (

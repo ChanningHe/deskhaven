@@ -9,7 +9,6 @@ import { formatDateTime } from '@/lib/format'
 
 const column = createDataTableColumnHelper<UserView>()
 
-/** Columns of the user table; `onOpen` shows an account in the drawer. */
 export function userColumns(
   t: TFunction,
   language: string,

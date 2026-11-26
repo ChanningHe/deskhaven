@@ -38,7 +38,6 @@ export default defineConfig([
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
-      // Inline styles are banned except CSS custom properties: style={{ '--x': v }}.
       'no-restricted-syntax': [
         'error',
         {
@@ -49,7 +48,7 @@ export default defineConfig([
     },
   },
 
-  // Components stay small (08 §5). shadcn primitives in components/ui are vendored.
+  // shadcn primitives in components/ui are vendored.
   {
     files: ['src/**/*.tsx'],
     ignores: ['src/components/ui/**', 'src/**/*.test.tsx'],
@@ -67,13 +66,11 @@ export default defineConfig([
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 
-  // Node-side TypeScript (config, scripts) and tests.
   {
     files: ['vite.config.ts', 'scripts/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
 
-  // Plain JS: this config file and the pre-paint theme script.
   {
     files: ['**/*.js'],
     extends: [js.configs.recommended],

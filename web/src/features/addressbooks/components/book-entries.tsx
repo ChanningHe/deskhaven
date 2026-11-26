@@ -86,7 +86,6 @@ function peerColumns(t: TFunction, onEdit: (peer: PeerView) => void) {
   ])
 }
 
-/** The entries of one book: search, page, add, edit, import from devices, remove. */
 export function BookEntries({ book }: { book: BookView }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

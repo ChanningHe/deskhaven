@@ -8,10 +8,6 @@ import { ErrorAlert } from '@/components/common/error-alert'
 import { UserCombobox } from '@/components/common/user-combobox'
 import { invalidateAccounts } from '@/features/users/invalidate'
 
-/**
- * "Add a member": a combobox searching the accounts outside the group (the server leaves
- * the members out, whatever page of them the drawer shows).
- */
 export function AddMember({ groupId }: { groupId: number }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

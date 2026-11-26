@@ -13,14 +13,9 @@ import { invalidateAccounts } from '../invalidate'
 interface UserIdentitiesProps {
   user: UserView
   identities: IdentityView[]
-  /** The viewer may manage the account (only an owner manages an owner). */
   editable: boolean
 }
 
-/**
- * The account's linked OIDC identities. Administrators view and unlink; linking is the
- * account holder's own step on their account page.
- */
 export function UserIdentities({ user, identities, editable }: UserIdentitiesProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

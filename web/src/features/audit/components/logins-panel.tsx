@@ -69,7 +69,6 @@ function loginColumns(t: TFunction, language: string, onOpen: (id: number) => vo
   ])
 }
 
-/** Login attempts of the console and of RustDesk clients, successful or not. */
 export function LoginsPanel({ search, onSearchChange }: PanelProps) {
   const { t, i18n } = useTranslation()
   const query = useListLoginAudit(auditListParams(search), {

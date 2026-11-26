@@ -4,15 +4,9 @@ import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface RouteAnnouncerProps {
-  /** The <main> element (tabIndex=-1) that receives focus after navigation. */
   mainRef: RefObject<HTMLElement | null>
 }
 
-/**
- * SPA route-change accessibility: after each client-side navigation, move
- * focus to <main> and announce the new page title (its h1) politely. The
- * document title follows the h1 on every render, including the first.
- */
 export function RouteAnnouncer({ mainRef }: RouteAnnouncerProps) {
   const { t } = useTranslation()
   const router = useRouter()

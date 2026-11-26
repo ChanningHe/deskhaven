@@ -1,27 +1,20 @@
 import { CONNECT_TIMEOUT_MS } from '../handshake/handshake'
 import { TransportError, type KeyedTransport } from '../transport/transport'
 
-/**
- * How long a paired relay waits for WebRTC before it is taken: the relay connects an order of
- * magnitude faster than ICE + DTLS + SCTP (rustdesk 1.5.0 src/client.rs:624,
- * `RELAY_FALLBACK_DELAY_MS`).
- */
+/** The relay connects an order of magnitude faster than ICE + DTLS + SCTP. */
 export const RELAY_FALLBACK_DELAY_MS = 2500
 
-/** The client's bound on the data channel opening (client.rs:1146, `wait_connected`). */
+/** The client's own bound on the data channel opening. */
 export const WEBRTC_CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_MS
 
-/** WebRTC when the relay was taken: still pending after the grace period, or failed. */
 export type WebRtcOutcome = 'pending' | { failed: unknown }
 
 export type RaceResult<W, R> =
   { winner: 'webrtc'; value: W } | { winner: 'relay'; value: R; webrtc: WebRtcOutcome }
 
 /**
- * Races WebRTC against the relay, preferring WebRTC (client.rs:220-332,
- * `race_transports_prefer_webrtc`): WebRTC wins as soon as it is ready; a relay that is ready
- * first is held for `graceMs` and taken when WebRTC fails or the time is up. Rejects only when
- * both fail. The caller closes the loser.
+ * WebRTC wins as soon as it is ready; a relay that is ready first is held for `graceMs` and
+ * taken when WebRTC fails or the time is up. The caller closes the loser.
  */
 export function preferWebRtc<W, R>(
   webrtc: Promise<W>,
@@ -81,7 +74,6 @@ export function preferWebRtc<W, R>(
   })
 }
 
-/** Rejects with `reason` when `promise` has not settled within `ms`. */
 export function withTimeout<T>(promise: Promise<T>, ms: number, reason: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -100,10 +92,6 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, reason: string):
   })
 }
 
-/**
- * Resolves once the relay has paired, i.e. the peer's first frame arrived, with a transport
- * that hands that frame to the handshake first.
- */
 export async function paired(relay: KeyedTransport): Promise<KeyedTransport> {
   const frames = relay.messages[Symbol.asyncIterator]()
   const first = await frames.next()

@@ -6,10 +6,7 @@ interface FieldGroupProps {
   children: ReactNode
 }
 
-/**
- * A set of related fields inside a card: name and description on the left, fields on the right.
- * Two columns only from `lg`: from `md` the sidebar leaves too little width for both.
- */
+/** Two columns only from `lg`: from `md` the sidebar leaves too little width for both. */
 export function FieldGroup({ title, description, children }: FieldGroupProps) {
   return (
     <div className="grid gap-4 not-first:border-t not-first:pt-6 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] lg:gap-10">

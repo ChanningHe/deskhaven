@@ -4,10 +4,7 @@ import type { QueryClient } from '@tanstack/react-query'
 const STRATEGY_PATHS = ['/admin/api/v1/strategies', '/admin/api/v1/strategy-preview'] as const
 const DEVICE_PATH = '/admin/api/v1/devices/'
 
-/**
- * Refetches every strategy query (lists, details, assignments, previews) and the device
- * details, whose effective strategy a strategy change moves.
- */
+/** Device details too: a strategy change moves their effective strategy. */
 export function invalidateStrategies(queryClient: QueryClient): Promise<void> {
   return queryClient.invalidateQueries({
     predicate: ({ queryKey }) => {

@@ -19,7 +19,6 @@ import { Label } from '@/components/ui/label'
 
 import { invalidateStrategies } from '../invalidate'
 
-/** "New strategy" (name and note; options are edited in the drawer it opens). */
 export function CreateStrategyButton({ onCreated }: { onCreated: (id: number) => void }) {
   const { t } = useTranslation()
   const id = useId()

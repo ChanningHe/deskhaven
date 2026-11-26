@@ -55,7 +55,6 @@ function alarmColumns(t: TFunction, language: string, onOpen: (id: number) => vo
   ])
 }
 
-/** Alarms raised by devices (blocked addresses, repeated login attempts, ...). */
 export function AlarmsPanel({ search, onSearchChange }: PanelProps) {
   const { t, i18n } = useTranslation()
   const query = useListAlarmAudit(auditListParams(search), {

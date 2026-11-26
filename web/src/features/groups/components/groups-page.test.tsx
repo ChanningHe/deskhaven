@@ -89,7 +89,6 @@ describe('groups page', () => {
         [`GET ${GROUPS}`]: page([ops]),
         [`GET ${GROUPS}/7`]: { body: ops },
         [`GET ${GROUPS}/7/members`]: page([member(5, 'bob')]),
-        // The server leaves the members out (`not_group`).
         'GET /admin/api/v1/users': page([member(6, 'carol'), member(8, 'dave')]),
         [`POST ${GROUPS}/7/members`]: ({ init }) => {
           added = JSON.parse(init.body as string)
@@ -166,7 +165,6 @@ describe('groups page', () => {
     expect(methods.filter((method) => method === 'DELETE')).toHaveLength(1)
     expect(methods).not.toContain('PATCH')
 
-    // The drawer was closed without a history entry: Back does not reopen the deleted group.
     act(() => {
       router.history.back()
     })

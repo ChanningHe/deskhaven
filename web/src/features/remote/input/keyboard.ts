@@ -19,21 +19,16 @@ import {
 import { KEY_CODES } from './keymap'
 import { modifierKeys, type Modifiers } from './mouse'
 
-/** One key going down or up, as the browser reports it (KeyboardEvent). */
 export interface KeyInput {
   down: boolean
-  /** KeyboardEvent.key: what the local layout produces. */
   key: string
-  /** KeyboardEvent.code: the physical key. */
   code: string
-  /** An IME is composing; its result arrives as text. */
   composing: boolean
   /** AltGr is held: Ctrl and Alt then belong to it, not to a shortcut. */
   altGraph: boolean
   capsLock: boolean
   numLock: boolean
   modifiers: Modifiers
-  /** KeyboardEvent.timeStamp, in milliseconds. */
   time: number
 }
 
@@ -44,13 +39,12 @@ const TABLE_COLUMN: Readonly<Record<string, 0 | 1 | 2>> = {
   [PLATFORM_MACOS]: 2,
 }
 
-// Peers before 1.2.0 know only Legacy (rustdesk 1.5.0 src/common.rs:1910-1927).
+// Peers before 1.2.0 know only Legacy.
 const MIN_VERSION_MAP_TRANSLATE = '1.2.0'
 
 // Windows reports AltGr as a ControlLeft keydown from the OS and the AltRight keydown, both at
-// the same moment. The desktop client drops that ControlLeft by its 0x021D scan code in Legacy
-// and Translate modes (rustdesk 1.5.0 src/keyboard.rs:1062-1071, 1499-1501); a browser has no
-// scan code, so the pair is told apart by time instead.
+// the same moment. The desktop client drops that ControlLeft by its 0x021D scan code; a browser
+// has no scan code, so the pair is told apart by time instead.
 const ALTGR_CTRL_GAP_MS = 10
 
 function isAltGrPair(ctrl: KeyInput, next: KeyInput): boolean {
@@ -72,9 +66,9 @@ export function supportedKeyboardModes(platform: string, version: string): Keybo
 }
 
 /**
- * Map when the peer takes it, as the desktop client defaults (rustdesk 1.5.0
- * src/keyboard.rs:758-764): position codes keep shortcuts and the peer's layout intact.
- * Otherwise Translate, which still types any character the local layout produces.
+ * Map when the peer takes it, as the desktop client defaults: position codes keep shortcuts and
+ * the peer's layout intact. Otherwise Translate, which still types any character the local
+ * layout produces.
  */
 export function keyboardModeFor(platform: string, version: string): KeyboardMode {
   const modes = supportedKeyboardModes(platform, version)
@@ -87,10 +81,7 @@ function keyEvent(fields: MessageInitShape<typeof KeyEventSchema>): KeyEvent {
   return create(KeyEventSchema, fields)
 }
 
-/**
- * The modifiers a legacy event lists: those held, except the key itself. Ctrl held with AltGr is
- * AltGr's own (rustdesk 1.5.0 src/keyboard.rs:1037-1049).
- */
+/** Ctrl held with AltGr is AltGr's own. */
 function legacyModifiers(input: KeyInput, controlKey: ControlKey | null): ControlKey[] {
   const own: Readonly<Partial<Record<ControlKey, ControlKey>>> = {
     [ControlKey.RAlt]: ControlKey.Alt,
@@ -106,10 +97,7 @@ function legacyModifiers(input: KeyInput, controlKey: ControlKey | null): Contro
   ]
 }
 
-/**
- * Turns browser key events into KeyEvent messages in one keyboard mode, and remembers which
- * keys it holds down on the peer so that each key goes up exactly as it went down.
- */
+/** Remembers which keys it holds down on the peer so that each goes up exactly as it went down. */
 export class KeyboardEncoder {
   readonly mode: KeyboardMode
   readonly #platform: string
@@ -165,7 +153,6 @@ export class KeyboardEncoder {
     ]
   }
 
-  /** Key-up for everything held down on the peer, for when the view loses focus. */
   releaseAll(): KeyEvent[] {
     this.#heldCtrl = null
     const released = [...this.#pressed.keys()].flatMap((code) => this.#release(code))
@@ -191,8 +178,7 @@ export class KeyboardEncoder {
     }
   }
 
-  // rustdesk 1.5.0 src/keyboard.rs:1247-1359 (map_keyboard_mode). Pause has no scancode on a
-  // Windows peer and goes as a legacy control key (src/keyboard.rs:1257-1289); so does any other
+  // Pause has no scancode on a Windows peer and goes as a legacy control key; so does any other
   // key rdev has no position code for.
   #map(input: KeyInput): KeyEvent | null {
     const isWindowsPause = this.#platform === PLATFORM_WINDOWS && input.code === 'Pause'
@@ -206,9 +192,8 @@ export class KeyboardEncoder {
     })
   }
 
-  // rustdesk 1.5.0 src/keyboard.rs:1459-1529 (translate_keyboard_mode), except that keys without
-  // a character go as legacy control keys: the peer's Translate handler takes only sequences and
-  // position codes (src/server/input_service.rs:2254-2375), and position codes need Map's tables.
+  // Keys without a character go as legacy control keys: the peer's Translate handler takes only
+  // sequences and position codes, and position codes need Map's tables.
   #translate(input: KeyInput): KeyEvent | null {
     if (input.key === 'Dead' || (input.altGraph && input.code === 'AltRight')) return null
     if (isNumpadKey(input.code)) return this.#legacyControl(input)
@@ -224,7 +209,6 @@ export class KeyboardEncoder {
     })
   }
 
-  // rustdesk 1.5.0 src/keyboard.rs:1018-1245 (legacy_keyboard_mode).
   #legacy(input: KeyInput): KeyEvent | null {
     if (LOCK_KEYS.has(input.key) || LOCK_KEYS.has(input.code)) return null
     if (controlKeyOf(input.key, input.code) !== null) return this.#legacyControl(input)

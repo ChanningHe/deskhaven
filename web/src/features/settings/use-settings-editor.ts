@@ -28,7 +28,6 @@ function forget(typed: Typed, keys: readonly string[]): Typed {
   return Object.fromEntries(Object.entries(typed).filter(([key]) => !keys.includes(key)))
 }
 
-/** Everything the page does with unsaved edits: stage, save, resolve a conflict. */
 export function useSettingsEditor(settings: readonly SettingView[]) {
   const queryClient = useQueryClient()
   // The secrets in the request are dropped from the mutation cache as soon as it settles.
@@ -55,7 +54,6 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
     }),
   )
 
-  /** Saves `batch` (the drafts, possibly rebased); the outcome lands in the state below. */
   const run = async (batch: Drafts) => {
     const changes = toChanges(batch, settings)
     setProblems({})
@@ -113,13 +111,11 @@ export function useSettingsEditor(settings: readonly SettingView[]) {
       setFailure(undefined)
     },
     save: () => run(drafts),
-    /** Keep my values: save again against the versions the server has now. */
     overwrite: () => {
       const versions = Object.fromEntries(conflicts.map((c) => [c.key, c.version]))
       setConflicts([])
       return run(rebase(drafts, versions))
     },
-    /** Take the server's values: drop my edits of the conflicting keys and reload. */
     reload: () => {
       const keys = conflicts.map((c) => c.key)
       setDrafts((current) => discardDrafts(current, keys))

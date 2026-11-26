@@ -33,12 +33,8 @@ export function frameContentSize(data: Uint8Array): number | null {
 }
 
 /**
- * Decompresses one zstd frame of at most `maxBytes`, as the peer's compressor writes it (with
- * its content size). Null for anything else: no declared size, a size over the limit, a second
- * frame or corrupt data.
- *
- * The output buffer is allocated from the checked header size and handed to the decoder, which
- * then never allocates by what the stream claims; a stream that overruns it fails.
+ * Null for no declared size, a size over `maxBytes`, a second frame or corrupt data. The output
+ * buffer comes from the checked header size: the decoder never allocates by what the stream claims.
  */
 export function inflate(data: Uint8Array, maxBytes: number): Uint8Array | null {
   const size = frameContentSize(data)

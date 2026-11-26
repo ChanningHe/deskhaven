@@ -20,7 +20,6 @@ export class FrameQueue implements AsyncIterable<VideoFrame> {
     this.#notify()
   }
 
-  /** Closes the frames still waiting; the consumer's loop then ends. */
   end(): void {
     if (this.#ended) return
     this.#ended = true

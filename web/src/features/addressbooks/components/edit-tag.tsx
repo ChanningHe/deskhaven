@@ -18,17 +18,14 @@ interface EditTagProps {
   guid: string
   tag: TagView
   onDone: () => void
-  /** The rename was applied but the recolour that followed failed. */
   onRenamed: (name: string) => void
 }
 
-/** The name the server says it already applied before a failure (`details.renamed_to`). */
 function keptName(error: unknown): string | undefined {
   const kept = error instanceof ApiError ? error.details?.renamed_to : undefined
   return typeof kept === 'string' ? kept : undefined
 }
 
-/** Rename and / or recolour one tag, inline. */
 export function EditTag({ guid, tag, onDone, onRenamed }: EditTagProps) {
   const { t } = useTranslation()
   const id = useId()

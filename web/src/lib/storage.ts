@@ -1,6 +1,4 @@
-// Guarded localStorage access. Storage can be unavailable (privacy mode,
-// disabled cookies, quota exceeded); preferences are best-effort, so failures
-// degrade to "not persisted" instead of crashing the console.
+// Preferences are best-effort: unavailable storage degrades to "not persisted".
 
 export function readStorage(key: string): string | null {
   try {

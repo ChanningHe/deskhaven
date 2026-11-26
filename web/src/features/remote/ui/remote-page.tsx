@@ -156,10 +156,6 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
   }
 }
 
-/**
- * Remote control of one device from the browser, over WebRTC or the relay: a full-viewport workspace
- * with one thin bar, outside the console's sidebar and top bar.
- */
 export function RemotePage({
   deviceId,
   back,

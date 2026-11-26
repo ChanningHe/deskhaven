@@ -13,8 +13,7 @@ import {
   type MouseButton,
 } from './mouse'
 
-// rustdesk 1.5.0 src/common.rs:67-91 (types in the low 3 bits, buttons above them) and
-// src/flutter_ffi.rs:2031-2048 (mask = type | button << 3).
+// Types in the low 3 bits, buttons above them: mask = type | button << 3.
 describe('mouseMask', () => {
   it.each<[MouseAction, MouseButton | null, number]>([
     ['move', null, 0],
@@ -45,8 +44,8 @@ describe('buttonFromDom', () => {
 
 const DISPLAY = { x: 1920, y: -200, width: 1280, height: 800 }
 
-// The point in the display rect, as rustdesk 1.5.0 flutter/lib/models/input_model.dart:2033-2083
-// computes it: scale, add the display origin, clamp to the last pixel (Windows: one past it).
+// The point in the display rect, as the client computes it: scale, add the display origin,
+// clamp to the last pixel (Windows: one past it).
 describe('toRemote', () => {
   it.each([
     ['top-left corner', 0, 0, 'Linux', { x: 1920, y: -200 }],
@@ -74,8 +73,7 @@ describe('toRemote', () => {
   })
 })
 
-// rustdesk 1.5.0 flutter/lib/models/input_model.dart:1683-1698: one notch per event on the
-// dominant axis, scrolling down (positive delta) sent as -1.
+// One notch per event on the dominant axis, scrolling down (positive delta) sent as -1.
 describe('wheelNotches', () => {
   it.each([
     [0, 120, { x: 0, y: -1 }],

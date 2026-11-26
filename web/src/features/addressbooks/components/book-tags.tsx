@@ -20,7 +20,6 @@ import { invalidateAddressBooks } from '../invalidate'
 import { argbToHex, DEFAULT_TAG_HEX, hexToArgb } from '../tag-color'
 import { EditTag } from './edit-tag'
 
-/** The tags of one book: add, rename / recolour, delete (they leave the entries too). */
 export function BookTags({ guid }: { guid: string }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

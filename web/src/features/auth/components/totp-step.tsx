@@ -14,11 +14,9 @@ import { TextField } from './text-field'
 interface TotpStepProps {
   challenge: Challenge
   onSignedIn: (me: Me) => void
-  /** Back to the password step (the challenge expired, or the user wants to). */
   onRestart: () => void
 }
 
-/** The second factor: a TOTP code, or one of the recovery codes. */
 export function TotpStep({ challenge, onSignedIn, onRestart }: TotpStepProps) {
   const { t } = useTranslation()
   const verify = useTotpLogin()

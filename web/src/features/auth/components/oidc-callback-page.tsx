@@ -11,7 +11,6 @@ import { LOGIN_PATH, landingPath } from '../session'
 import { AuthError } from './auth-error'
 import { AuthLayout } from './auth-layout'
 
-/** The identity provider's answer, as the callback forwarded it. */
 export interface OidcAnswer {
   state?: string | undefined
   code?: string | undefined
@@ -37,11 +36,7 @@ function reasonOf(error: unknown): Reason | undefined {
   return REASONS.find((known) => known === reason)
 }
 
-/**
- * `/login/oidc`: completes a console OIDC login in this browser (the server
- * checks the flow's binding cookie). The code and state leave the address bar
- * and history at once.
- */
+/** The code and state leave the address bar and history at once. */
 export function OidcCallbackPage({ answer }: { answer: OidcAnswer }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

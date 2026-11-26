@@ -4,18 +4,13 @@ import type { ReactNode, Ref } from 'react'
 interface SectionCardProps {
   title: string
   description?: string
-  /** Badges next to the title: saved facts (source, enabled state), never controls. */
   status?: ReactNode
-  /** The card's primary actions, at the right end of the title bar. */
   actions?: ReactNode
-  /** Bottom action bar (save button, result notice). */
   footer?: ReactNode
-  /** Makes the heading a programmatic focus target (in-page navigation lands on it). */
   titleRef?: Ref<HTMLHeadingElement>
   children: ReactNode
 }
 
-/** One self-contained part of a page: a bordered card whose h2 names the region. */
 export function SectionCard({
   title,
   description,

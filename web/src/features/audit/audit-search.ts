@@ -1,7 +1,3 @@
-// URL state of the audit page: the tab, the table keys, the filters of the tab and the open
-// drawer (`item`). The filter keys are the admin API's query parameters (08 §6), so the
-// validated search is also the request.
-
 import type {
   ListAlarmAuditParams,
   ListConnectionAuditParams,
@@ -12,7 +8,6 @@ import type {
 import { applyTableSearch, parseTableSearch, toListParams } from '@/components/common/data-table'
 import type { TableSearch } from '@/components/common/data-table'
 
-/** Only the creation time orders the audit lists. */
 export const AUDIT_SORTABLE = ['created_at'] as const
 
 export const AUDIT_TABS = ['connections', 'files', 'alarms', 'logins', 'console'] as const
@@ -22,7 +17,6 @@ export const LOGIN_METHODS = ['password', 'totp', 'email_code', 'oidc', 'ldap', 
 export const LOGIN_CLIENTS = ['rustdesk', 'console', 'api'] as const
 export const ACTOR_KINDS = ['user', 'api_token', 'cli', 'system'] as const
 export const DIRECTIONS = ['send', 'receive'] as const
-/** The outcome labels the login flows write (`login_events.result`). */
 export const LOGIN_RESULTS = [
   'success',
   'invalid_credentials',
@@ -40,7 +34,6 @@ export const LOGIN_RESULTS = [
   'provisioning_failed',
 ] as const
 
-/** Filters of the list endpoints other than the time window. */
 interface TabFilters {
   device?: string | undefined
   user?: number | undefined
@@ -58,17 +51,14 @@ interface TabFilters {
 export type FilterKey = keyof TabFilters
 
 export interface AuditSearch extends TableSearch, TabFilters {
-  /** Absent: connections. */
   tab?: AuditTab | undefined
   /** Created at or after (unix ms). */
   from?: number | undefined
   /** Created before (unix ms). */
   to?: number | undefined
-  /** Id of the record shown in the drawer. */
   item?: number | undefined
 }
 
-/** Which filters each tab has; anything else in the URL is dropped. */
 export const TAB_FILTER_KEYS: Record<AuditTab, readonly FilterKey[]> = {
   connections: ['device', 'user', 'conn_type'],
   files: ['device', 'direction'],
@@ -128,7 +118,6 @@ function tabOf(search: AuditSearch): AuditTab {
   return search.tab ?? 'connections'
 }
 
-/** The filters of `tab` among `filters`, the rest dropped. */
 function forTab(tab: AuditTab, filters: TabFilters): TabFilters {
   const allowed = TAB_FILTER_KEYS[tab]
   return Object.fromEntries(
@@ -136,7 +125,6 @@ function forTab(tab: AuditTab, filters: TabFilters): TabFilters {
   )
 }
 
-/** Validates the raw URL search; anything malformed is dropped. */
 export function parseAuditSearch(raw: Record<string, unknown>): AuditSearch {
   const tab = oneOf(AUDIT_TABS, raw.tab)
   const shown = tab ?? 'connections'
@@ -150,34 +138,26 @@ export function parseAuditSearch(raw: Record<string, unknown>): AuditSearch {
   }
 }
 
-/** The tab's own filters in effect (the time window is counted by the caller). */
 export function activeFilters(search: AuditSearch): number {
   const keys = TAB_FILTER_KEYS[tabOf(search)]
   return keys.filter((key) => search[key] !== undefined).length
 }
 
-/** Whether any filter other than `q` is set. */
 export function hasAuditFilters(search: AuditSearch): boolean {
   return activeFilters(search) > 0 || search.from !== undefined || search.to !== undefined
 }
 
-/** A search that keeps the tab's filters and clears them. */
 export function clearedFilters(search: AuditSearch): Partial<AuditSearch> {
   const cleared = Object.fromEntries(TAB_FILTER_KEYS[tabOf(search)].map((key) => [key, undefined]))
   return { ...cleared, q: undefined, from: undefined, to: undefined }
 }
 
-/** A list request: every endpoint takes the keys of its own filters and ignores none. */
 export type AuditListParams = ListConnectionAuditParams &
   ListFileAuditParams &
   ListAlarmAuditParams &
   ListLoginAuditParams &
   ListConsoleAuditParams
 
-/**
- * The list request for a search: the table keys, the time window and the tab's own
- * filters; keys the endpoint of the tab does not have are absent.
- */
 export function auditListParams(search: AuditSearch): AuditListParams {
   const filters = forTab(tabOf(search), search)
   const window = { from: search.from, to: search.to }
@@ -187,10 +167,7 @@ export function auditListParams(search: AuditSearch): AuditListParams {
   return { ...toListParams(search), ...Object.fromEntries(defined) }
 }
 
-/**
- * The next search after a change. Opening or closing a record's drawer (`item`) is not a
- * filter change, so it keeps the page; every other change goes through `applyTableSearch`.
- */
+/** Opening or closing a record (`item`) is not a filter change, so it keeps the page. */
 export function applyAuditSearch(previous: AuditSearch, patch: Partial<AuditSearch>): AuditSearch {
   if (!Object.keys(patch).every((key) => key === 'item')) return applyTableSearch(previous, patch)
   return { ...previous, item: patch.item }

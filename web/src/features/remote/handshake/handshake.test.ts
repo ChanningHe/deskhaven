@@ -42,7 +42,6 @@ import {
 const s = fixtureSession('1.4.5')
 const peerInfo = create(PeerInfoSchema, { platform: 'Windows', version: '1.4.5' })
 
-/** Keyed against the captured 1.4.5 peer, its captured Hash answered, waiting for the verdict. */
 async function awaitingVerdict(password?: string): Promise<Replay> {
   const r = await replayToKeyed('1.4.5', password === undefined ? {} : { password })
   r.socket.receive(fixtureBytes('1.4.5', 'hbbr-enc-01-Hash'))

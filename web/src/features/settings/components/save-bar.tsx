@@ -6,18 +6,14 @@ import { cn } from '@/lib/utils'
 
 interface SaveBarProps {
   count: number
-  /** How many settings the last save wrote; shown until the next edit. */
   savedCount: number | undefined
   saving: boolean
-  /** Hold back the save: some edit is invalid in the browser already. */
   blocked: boolean
-  /** The save's failure, unless something else (conflict, field reasons) explains it. */
   error: unknown
   onSave: () => void
   onDiscard: () => void
 }
 
-/** The page's save area: what is pending, Save and Discard, the last outcome. */
 export function SaveBar({
   count,
   savedCount,

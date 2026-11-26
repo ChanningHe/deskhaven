@@ -12,11 +12,7 @@ import { isTfaChoice, TFA_KEY } from './tfa-policy'
 
 export type TabSummaries = Record<IdentityTab, string | undefined>
 
-/**
- * One line of saved state per tab, from the queries the cards use. Undefined while loading,
- * after a failure, and for the 2FA policy unless the viewer is the owner (only the owner may
- * read the settings).
- */
+/** Undefined while loading, after a failure, and for the 2FA policy unless the viewer is the owner. */
 export function useTabSummaries(isOwner: boolean): TabSummaries {
   const { t } = useTranslation()
   const providers = useListOidcProviderConfigs()

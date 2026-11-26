@@ -29,10 +29,6 @@ export interface Remote {
   disconnect: () => void
 }
 
-/**
- * Connects to `deviceId` while the page is shown. Leaving it (another route, or the tab
- * going away: pagehide) hangs up and closes the server session.
- */
 export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
   const controller = useMemo(() => new RemoteController(deviceId, deps), [deviceId, deps])
 

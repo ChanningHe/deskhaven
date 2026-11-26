@@ -67,7 +67,6 @@ function bookColumns(t: TFunction, language: string, onOpen: (guid: string) => v
   ])
 }
 
-/** Shared address books: list, create, and a drawer per book (entries, tags, grants). */
 export function AddressBooksPage() {
   const { t, i18n } = useTranslation()
   const search = useSearch({ from: '/_app/address-books' })

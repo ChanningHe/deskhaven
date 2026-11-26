@@ -11,7 +11,6 @@ import { CommandsSection } from './commands-section'
 import { ConfigStringSection } from './config-string-section'
 import { WindowsNameSection } from './windows-name-section'
 
-/** Client configuration (08 §3.2, 05 §5): what to give RustDesk clients to use this server. */
 export function ClientSetupPage() {
   const { t } = useTranslation()
   const query = useGetClientConfig()
@@ -47,7 +46,6 @@ function ClientSetup({ config }: { config: ClientConfigView }) {
   )
 }
 
-/** Why the ID server address may be wrong or missing: `public_url` is not set. */
 function HostWarning({ source }: { source: ClientConfigView['host_source'] }) {
   const { t } = useTranslation()
   if (source === 'public_url') return null

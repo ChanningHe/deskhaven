@@ -7,10 +7,8 @@ export interface VideoPipelineOptions {
   createDecoder: CreateDecoder
   /** A decoded frame; the receiver owns it and must close it. */
   onFrame(frame: VideoFrame): void
-  /** Ask the peer for a key frame (Misc.refresh_video). */
   requestKeyFrame(): void
   mayRefresh(): boolean
-  /** Decoding keeps failing; the pipeline has stopped. */
   onFatal(error: Error): void
   meter?: VideoMeter
   codecs?: CodecEvents
@@ -45,7 +43,6 @@ export class VideoPipeline {
   #decoder: FrameDecoder | null = null
   #codec: VideoCodec | null = null
   #received: VideoCodec | null = null
-  /** The codec of the last decoder opened, kept after it is closed. */
   #lastCodec: VideoCodec | null = null
   #generation = 0
   #awaitingKey = true
@@ -92,7 +89,6 @@ export class VideoPipeline {
     this.#keyRequested = false
   }
 
-  /** The WebCodecs string of the last frame received. */
   get codec(): string | null {
     return this.#received && webCodecsString(this.#received)
   }

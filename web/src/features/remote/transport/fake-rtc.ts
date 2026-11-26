@@ -1,6 +1,6 @@
 import type { DataChannelLike, PeerConnectionLike } from './webrtc'
 
-/** An offer as Chromium 147 creates it (s0 spike), without candidates. */
+/** An offer as Chromium 147 creates it, without candidates. */
 export const OFFER_SDP = [
   'v=0',
   'o=- 3905815367653238493 2 IN IP4 127.0.0.1',
@@ -87,7 +87,6 @@ export class FakeDataChannel implements DataChannelLike {
   }
 }
 
-/** Records what the transport asks of the connection; the test plays the network. */
 export class FakePeerConnection implements PeerConnectionLike {
   readonly calls: string[] = []
   readonly added: RTCIceCandidateInit[] = []
@@ -142,7 +141,6 @@ export class FakePeerConnection implements PeerConnectionLike {
     this.connectionState = 'closed'
   }
 
-  /** A gathered candidate (`text` its SDP line), or null for the end of gathering. */
   gather(text: string | null): void {
     const candidate =
       text === null

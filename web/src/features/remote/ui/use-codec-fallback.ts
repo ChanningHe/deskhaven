@@ -11,7 +11,6 @@ interface Fallback {
   back: VideoCodec
 }
 
-/** What to tell the user for `showMs` after the session gave a codec up; null otherwise. */
 export function useCodecFallback(session: Session, showMs: number): string | null {
   const { t } = useTranslation()
   const [fallback, setFallback] = useState<Fallback | null>(null)

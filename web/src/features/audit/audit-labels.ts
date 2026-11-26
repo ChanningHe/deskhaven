@@ -1,5 +1,4 @@
-// Names for the numeric codes the RustDesk clients send (03 §2.3, §2.6). A code this
-// console does not know (a newer client) is shown as the number, never hidden.
+// A code this console does not know (a newer client) is shown as the number, never hidden.
 
 import type { TFunction } from 'i18next'
 
@@ -34,7 +33,6 @@ const ALARM_TYPE = {
   10: 'audit.alarmType.idAllowList',
 } as const
 
-/** Codes with a name, for the filter dropdowns. */
 export const CONN_TYPE_CODES = Object.keys(CONN_TYPE).map(Number)
 export const ALARM_TYPE_CODES = Object.keys(ALARM_TYPE).map(Number)
 

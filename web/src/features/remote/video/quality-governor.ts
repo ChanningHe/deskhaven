@@ -11,11 +11,11 @@ const GROWTH = 1.5
 const BACKOFF = 0.5
 const RECOVERY = 0.85
 const COOL_TICKS = 3
-// rustdesk 1.5.0 src/server/connection.rs:1180-1187 sends the next TestDelay only once the last
-// came back, so one missing this long sits in a queue.
+// The peer sends the next TestDelay only once the last came back, so one missing this long sits
+// in a queue.
 const OVERDUE_TICKS = 3
-// The peer takes a quality at once (rustdesk 1.5.1 src/server/video_qos.rs:452-453): above
-// LINEAR_FROM a geometric step would add megabits in one tick, so it grows by at most MAX_STEP.
+// The peer takes a quality at once: above LINEAR_FROM a geometric step would add megabits in one
+// tick, so it grows by at most MAX_STEP.
 const LINEAR_FROM = 100
 const MAX_STEP = 25
 

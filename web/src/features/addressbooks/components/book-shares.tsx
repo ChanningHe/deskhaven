@@ -19,10 +19,7 @@ import { invalidateAddressBooks } from '../invalidate'
 import { RULES } from '../rules'
 import { AddShare } from './add-share'
 
-/**
- * Who a book is granted to. A rule 1 grant already hands the sharee's client every entry's
- * password (it connects with them), so the warning is always on screen (06 §4.2).
- */
+/** A rule 1 grant already hands the sharee's client every entry's password, so the warning stays. */
 export function BookShares({ guid }: { guid: string }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

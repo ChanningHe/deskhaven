@@ -10,7 +10,6 @@ function layerLabel(layer: StrategyLayerView, t: TFunction) {
   })
 }
 
-/** The strategy the device ends up with and the layer each option comes from (05 §4.3). */
 export function DeviceStrategy({ strategy }: { strategy: EffectiveStrategyView }) {
   const { t } = useTranslation()
   return (

@@ -22,16 +22,13 @@ export const accountStatusVariant = (status: StatusView): StatusVariant => ACCOU
 
 export const tokenStatusVariant = (status: TokenStatusView): StatusVariant => TOKEN[status]
 
-/** Login audit results are open-ended strings: anything but success or a lockout failed. */
 export function loginResultVariant(result: string): StatusVariant {
   if (result === 'success') return 'success'
   if (result === 'locked') return 'warning'
   return 'destructive'
 }
 
-/** A fact that is either in effect or not: 2FA enabled, email verified, current session. */
 export const flagVariant = (on: boolean): StatusVariant => (on ? 'success' : 'outline')
 
-/** A switch someone turns on or off: an OIDC provider, the LDAP directory. */
 export const enabledVariant = (enabled: boolean): StatusVariant =>
   enabled ? 'success' : 'secondary'

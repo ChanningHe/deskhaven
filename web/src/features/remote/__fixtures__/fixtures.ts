@@ -4,7 +4,6 @@ import session150 from './1.5.0/session.json'
 
 export type FixtureVersion = '1.5.0' | '1.4.5'
 
-/** Captured wire frames, one per file, stored as base64 of the raw bytes. */
 export type FixtureFile =
   | 'hbbs-relay-response'
   | 'hbbr-signed-id'

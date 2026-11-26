@@ -1,6 +1,5 @@
 import type { SVGProps } from 'react'
 
-/** The deskhaven mark (assets/logo/mark.svg), drawn in the current text colour. */
 export function LogoMark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" {...props}>

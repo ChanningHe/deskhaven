@@ -12,7 +12,6 @@ import {
 const KEEPING_UP = { fps: 60, backlog: 0 }
 const BACKED_UP = { fps: 60, backlog: BACKLOG }
 
-/** Ticks until the governor has nothing more to send; returns what it sent. */
 function settle(g: FpsGovernor, tick = KEEPING_UP): number[] {
   const sent: number[] = []
   for (let i = 0; i < 100; i++) {

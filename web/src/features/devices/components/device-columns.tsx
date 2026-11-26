@@ -9,7 +9,6 @@ import { DeviceStatusBadge } from './device-status-badge'
 
 const column = createDataTableColumnHelper<DeviceView>()
 
-/** Columns of the device table; `onOpen` shows a device in the drawer. */
 export function deviceColumns(
   t: TFunction,
   language: string,

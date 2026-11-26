@@ -1,6 +1,3 @@
-// State of the strategy editor: two rebased drafts over the server copy (name and note,
-// and the option map) saved together as one merge patch of the edited fields only.
-
 import { useQueryClient } from '@tanstack/react-query'
 import type { SubmitEvent } from 'react'
 
@@ -44,7 +41,6 @@ function formKeysOf(options: CatalogOptionView[]): Set<string> {
   return new Set(options.filter((o) => !o.advanced_only).map((o) => o.key))
 }
 
-/** Options whose value must not be shown: catalog secrets and withheld saved values. */
 function secretKeysOf(options: CatalogOptionView[], strategy: StrategyView): Set<string> {
   const secret = options.filter((o) => o.secret).map((o) => o.key)
   return new Set([...secret, ...strategy.secret_options])
@@ -100,7 +96,6 @@ export function useStrategyEditor(strategy: StrategyView) {
     tooMany: optionCount(options.draft) > MAX_OPTIONS,
     dirty: details.changed.length > 0 || changedKeys.length > 0,
     conflicts: details.conflicts.length + options.conflicts.length > 0,
-    /** Options outside the typed form that the draft sets. */
     free: Object.entries(options.draft).filter(
       (entry): entry is [string, OptionValue] => entry[1] !== undefined && !formKeys.has(entry[0]),
     ),

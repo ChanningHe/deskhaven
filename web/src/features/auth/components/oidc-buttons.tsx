@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { useOidcProviders, useStartOidc } from '../api'
 import { AuthError } from './auth-error'
 
-/** One button per enabled OIDC provider; nothing when there is none. */
 export function OidcButtons() {
   const { t } = useTranslation()
   const providers = useOidcProviders()

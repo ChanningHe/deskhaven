@@ -13,10 +13,6 @@ function isRowError(value: unknown): value is ImportRowError {
   )
 }
 
-/**
- * The per-row problems of a rejected import (`details.rows` of a 422, see the
- * `ImportRejected` schema); empty for any other error.
- */
 export function importRowErrors(error: unknown): ImportRowError[] {
   if (!isApiError(error) || error.status !== HTTP_UNPROCESSABLE) return []
   const rows = error.details?.rows

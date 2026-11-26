@@ -7,7 +7,6 @@ import type { ErrorCode } from '@/api/generated/model'
 import type { ConnectFailure } from '../connect/controller'
 import { TIMEOUT_REASON, type CloseCause } from '../handshake/handshake'
 
-/** The codes POST sessions answers with that get their own, remote-specific copy. */
 const SESSION_ERRORS = [
   'web_client_disabled',
   'device_offline',
@@ -35,7 +34,6 @@ function apiFailureMessage(error: unknown, t: TFunction): string {
   return errorMessage(error, t)
 }
 
-/** Why connecting failed before the peer session started. */
 export function failureMessage(failure: ConnectFailure, t: TFunction): string {
   switch (failure.kind) {
     case 'api':
@@ -47,10 +45,7 @@ export function failureMessage(failure: ConnectFailure, t: TFunction): string {
   }
 }
 
-/**
- * Why the peer session ended. Reasons are the session's: ours (closed, timeout, the link)
- * or the peer's own words (close_reason, a login error), shown as given.
- */
+/** Reasons are ours (closed, timeout, the link) or the peer's own words, shown as given. */
 export function endingMessage(cause: CloseCause, t: TFunction): string {
   switch (cause.by) {
     case 'user':

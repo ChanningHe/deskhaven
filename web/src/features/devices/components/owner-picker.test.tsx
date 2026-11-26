@@ -30,7 +30,6 @@ describe('owner picker in the device drawer', () => {
     expect(within(drawer).getByLabelText('备注')).toHaveValue('front desk more')
     expect(router.state.location.search).toEqual({ device: 1 })
 
-    // Nothing left to clear: now Escape closes the drawer as usual.
     await user.keyboard('{Escape}')
     await waitFor(() => {
       expect(router.state.location.search).toEqual({})

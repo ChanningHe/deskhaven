@@ -2,7 +2,6 @@ import type { ClipboardAccess } from './use-clipboard-sync'
 
 export interface BrowserAbilities {
   keyboardLock: boolean
-  /** Read access to the local clipboard; null while the browser has not answered. */
   clipboard: ClipboardAccess | null
 }
 

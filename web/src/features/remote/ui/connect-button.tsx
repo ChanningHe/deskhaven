@@ -11,10 +11,6 @@ import { useMe } from '@/features/auth/session'
 // This file is the remote feature's only import outside its lazy route: it must not pull in
 // the protocol code.
 
-/**
- * Opens the browser remote page for a device, when the server offers it. An offline or
- * disabled device shows the action greyed out, with the reason.
- */
 export function RemoteConnectButton({
   device,
 }: {

@@ -5,7 +5,6 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
-// Backend (deskhaven) default HTTP listener during development.
 const BACKEND_URL = 'http://127.0.0.1:21114'
 
 export default defineConfig({

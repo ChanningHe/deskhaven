@@ -11,7 +11,6 @@ import { TextField } from '@/features/auth/components/text-field'
 
 import type { WindowsSessionChoice } from '../session/windows-sessions'
 
-/** A card in the middle of the remote stage: the steps before the screen shows. */
 export function Step({
   title,
   description,
@@ -34,7 +33,6 @@ export function Step({
   )
 }
 
-/** Something is under way; `onCancel` gives up on it. */
 export function ProgressPanel({ text, onCancel }: { text: string; onCancel?: () => void }) {
   const { t } = useTranslation()
   return (
@@ -74,13 +72,11 @@ export function ApprovalPanel({ onCancel }: { onCancel: () => void }) {
 
 interface SecretPanelProps {
   kind: 'password' | 'twoFactor'
-  /** The last attempt was wrong. */
   wrong: boolean
   onSubmit: (value: string) => void
   onCancel: () => void
 }
 
-/** The device password, or its two-factor code. */
 export function SecretPanel({ kind, wrong, onSubmit, onCancel }: SecretPanelProps) {
   const { t } = useTranslation()
   const id = useId()
@@ -132,7 +128,6 @@ export function SecretPanel({ kind, wrong, onSubmit, onCancel }: SecretPanelProp
   )
 }
 
-/** Which of the device's Windows sessions to control; its current one is picked first. */
 export function WindowsSessionPanel({
   choice,
   onChoose,

@@ -14,7 +14,6 @@ import { ConsolePanel } from './console-panel'
 import { FilesPanel } from './files-panel'
 import { LoginsPanel } from './logins-panel'
 
-/** What devices and clients report is not verified by the server (06 §2): said above the table. */
 const SELF_REPORTED_NOTE = {
   connections: 'audit.selfReportedNote',
   files: 'audit.selfReportedNote',
@@ -22,7 +21,6 @@ const SELF_REPORTED_NOTE = {
   logins: 'audit.loginSelfReportedNote',
 } as const
 
-/** Audit: one tab per kind of record; the tab, filters and open record are in the URL. */
 export function AuditPage() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/_app/audit' })

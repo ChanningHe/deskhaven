@@ -10,7 +10,6 @@ const STATUS_STYLE = {
   skipped: { icon: CircleMinus, className: 'text-muted-foreground' },
 } as const satisfies Record<LdapStepStatus, unknown>
 
-/** The steps of an LDAP test, each with its status and message, then the user found. */
 export function DiagnosticResult({ result }: { result: LdapDiagnosticView }) {
   const { t } = useTranslation()
   return (

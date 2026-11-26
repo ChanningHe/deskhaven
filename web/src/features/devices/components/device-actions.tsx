@@ -17,10 +17,6 @@ import { RemoteConnectButton } from '@/features/remote/ui/connect-button'
 
 import { invalidateDevices } from '../invalidate'
 
-/**
- * Browser remote control, and disable / enable in the drawer; disabling asks for confirmation
- * first (08 §1.4).
- */
 export function DeviceActions({ device }: { device: DeviceView }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -30,7 +26,6 @@ export function DeviceActions({ device }: { device: DeviceView }) {
   // Opening the drawer checks again whether the browser remote is on.
   useFreshMe()
 
-  /** Enabling needs no confirmation; the button stays disabled until it settles. */
   const enable = () => {
     if (update.isPending) return
     update.mutate(
@@ -82,7 +77,6 @@ export function DeviceActions({ device }: { device: DeviceView }) {
   )
 }
 
-/** Deleting the device, at the bottom of the drawer; asks for its RustDesk ID first. */
 export function DeviceDangerZone({
   device,
   onDeleted,

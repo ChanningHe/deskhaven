@@ -13,7 +13,6 @@ import {
   type ViewPoint,
 } from './mouse'
 
-/** What the view hands the session; built from DOM events by the helpers in `dom.ts`. */
 export type RemoteInput =
   | {
       kind: 'pointer'
@@ -30,7 +29,6 @@ export type RemoteInput =
 
 export interface InputContext {
   keyboard: KeyboardEncoder
-  /** The displayed screen of the peer; pointer input needs it. */
   display: DisplayRect | null
   platform: string
 }

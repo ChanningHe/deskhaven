@@ -1,6 +1,4 @@
-// Error code -> translated message (08 §6: the console translates by `code`,
-// never shows the server's English `message`). Exhaustive over the generated
-// ErrorCode union: a new backend code fails `tsc` here until it gets a key.
+// Exhaustive over ErrorCode: a new backend code fails `tsc` here until it gets a key.
 
 import type { TFunction } from 'i18next'
 
@@ -59,7 +57,6 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   too_many_sessions: 'errors.codes.too_many_sessions',
 }
 
-// For responses without a (known) code: a proxy error page, a future code.
 const STATUS_CODES: Readonly<Record<number, ErrorCode>> = {
   400: 'bad_request',
   401: 'unauthorized',
@@ -77,7 +74,6 @@ const STATUS_CODES: Readonly<Record<number, ErrorCode>> = {
   504: 'timeout',
 }
 
-/** The error code an error stands for: its own, else one derived from the HTTP status. */
 export function errorCodeOf(error: unknown): ErrorCode | undefined {
   if (isApiError(error) && error.code !== undefined) return error.code
   const status = httpStatusOf(error)
@@ -88,10 +84,7 @@ export function errorCodeKey(code: ErrorCode): CodeKey {
   return CODE_KEYS[code]
 }
 
-/**
- * A user-facing, translated message for any error thrown by the API layer.
- * Raw messages are never shown: they are English and may contain internals.
- */
+/** Raw server messages are never shown: they are English and may contain internals. */
 export function errorMessage(error: unknown, t: TFunction): string {
   if (isApiError(error) && error.retryAfterSeconds !== undefined && error.status === 429) {
     return t('errors.rateLimitedRetry', { seconds: error.retryAfterSeconds })

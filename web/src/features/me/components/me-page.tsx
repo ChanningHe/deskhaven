@@ -13,7 +13,6 @@ import { ProfileCard } from './profile-card'
 import { SessionsTab } from './sessions-tab'
 import { TwoFactorCard } from './two-factor-card'
 
-/** `/me`: the signed-in user's own account (permission `self`: every role). */
 export function MePage() {
   const { t } = useTranslation()
   const query = useGetMyAccount()

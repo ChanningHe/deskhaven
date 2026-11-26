@@ -18,10 +18,7 @@ import { refreshAccount } from '../invalidate'
 
 const NAME_MAX_LENGTH = 128
 
-/**
- * The display name is editable. The email is shown read-only: an administrator changes it
- * (an address typed by its holder would be unverified yet reserve the real owner's).
- */
+/** The email is read-only: an address typed by its holder would be unverified yet reserve the real owner's. */
 export function ProfileCard({ account }: { account: MyAccount }) {
   const { t } = useTranslation()
   const id = useId()

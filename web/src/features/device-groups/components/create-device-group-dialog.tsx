@@ -18,7 +18,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { invalidateDevices } from '@/features/devices/invalidate'
 
-/** "New device group"; opens the new group's drawer when created. */
 export function CreateDeviceGroupButton({ onCreated }: { onCreated: (id: number) => void }) {
   const { t } = useTranslation()
   const id = useId()

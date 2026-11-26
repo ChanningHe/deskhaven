@@ -20,11 +20,9 @@ import { groupedSecret } from '@/features/auth/secret-format'
 interface EnrolDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The pending seed; `undefined` while it is being created (or failed: see `beginError`). */
   enrolment: TotpEnrolment | undefined
   beginError: unknown
   onRetry: () => void
-  /** Confirms with a code; a rejection is shown and keeps the dialog open. */
   onConfirm: (body: TotpConfirm) => Promise<unknown>
 }
 
@@ -88,7 +86,6 @@ function ConfirmForm({ onConfirm }: Pick<EnrolDialogProps, 'onConfirm'>) {
   )
 }
 
-/** Scan (or type) the new seed, then confirm with the current password and a code. */
 export function EnrolDialog({
   open,
   onOpenChange,

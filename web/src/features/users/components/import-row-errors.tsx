@@ -16,7 +16,6 @@ function describe(row: ImportRowError, t: TFunction): string {
   return t('users.import.fieldProblem', { field: row.field, problem })
 }
 
-/** Why an import was rejected, one line per CSV row problem (nothing was created). */
 export function ImportRowErrors({ rows }: { rows: ImportRowError[] }) {
   const { t } = useTranslation()
   return (

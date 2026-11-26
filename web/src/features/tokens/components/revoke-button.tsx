@@ -11,10 +11,6 @@ interface RevokeButtonProps {
   onRevoke: (token: ApiTokenView) => void
 }
 
-/**
- * The revoke button of a row. A token that no longer works has nothing to revoke; an admin
- * sees it disabled, with the reason, on an owner's token or a system token.
- */
 export function RevokeButton({ me, token, onRevoke }: RevokeButtonProps) {
   const { t } = useTranslation()
   if (token.status !== 'active') return null

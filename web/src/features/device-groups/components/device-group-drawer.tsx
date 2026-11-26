@@ -35,7 +35,6 @@ interface DeviceGroupDrawerProps {
   onClose: () => void
 }
 
-/** Side drawer of one device group: name and note, its devices, delete. */
 export function DeviceGroupDrawer({ groupId, onClose }: DeviceGroupDrawerProps) {
   const { t } = useTranslation()
   return (

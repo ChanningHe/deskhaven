@@ -7,10 +7,7 @@ function scrollBehavior(): ScrollBehavior {
   return window.matchMedia(REDUCED_MOTION).matches ? 'auto' : 'smooth'
 }
 
-/**
- * In-page jumps to a category heading: scrolls it into view and moves focus to it, so a
- * screen reader continues from there. The URL is left alone on purpose (see CategoryNav).
- */
+/** Moves focus to the heading so a screen reader continues from there; the URL is left alone. */
 export function useCategoryJump() {
   const headings = useRef(new Map<string, HTMLHeadingElement>())
 

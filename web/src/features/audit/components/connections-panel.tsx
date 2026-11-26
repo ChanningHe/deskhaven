@@ -73,7 +73,6 @@ function connectionColumns(t: TFunction, language: string, onOpen: (id: number) 
   ])
 }
 
-/** Connections: who connected to which device, how, and for how long. */
 export function ConnectionsPanel({ search, onSearchChange }: PanelProps) {
   const { t, i18n } = useTranslation()
   const params = auditListParams(search)

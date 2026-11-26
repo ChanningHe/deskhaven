@@ -3,10 +3,6 @@ import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 
-/**
- * Stops leaving (in-app navigation, closing or reloading the tab) while there are unsaved
- * edits: the browser asks on its own, in-app navigation gets a confirmation.
- */
 export function UnsavedGuard({ dirty }: { dirty: boolean }) {
   const { t } = useTranslation()
   const blocker = useBlocker({

@@ -20,7 +20,6 @@ import { SnapshotView } from './snapshot-view'
 
 const column = createDataTableColumnHelper<ConsoleAuditView>()
 
-/** The actor as a name when it still exists, else its kind (and id). */
 function actorText(t: TFunction, actor: ConsoleAuditView['actor']): string {
   if (actor.name != null) return actor.name
   const kind = actorKindLabel(t, actor.kind)
@@ -68,7 +67,6 @@ function consoleColumns(t: TFunction, language: string, onOpen: (id: number) => 
   ])
 }
 
-/** Changes made through the console, the admin API or the CLI, and the retention runs. */
 export function ConsolePanel({ search, onSearchChange }: PanelProps) {
   const { t, i18n } = useTranslation()
   const query = useListConsoleAudit(auditListParams(search), {

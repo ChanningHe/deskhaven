@@ -51,7 +51,6 @@ export function session(id: number, overrides: Partial<MySession> = {}): MySessi
   }
 }
 
-/** The first (and only fetched) page of the session list. */
 export function sessionsPage(items: MySession[], total = items.length): PaginatedMySession {
   return { items, total, page: 1, page_size: 200 }
 }

@@ -122,8 +122,7 @@ export class SessionMeter implements VideoMeter {
     this.#moves++
   }
 
-  // rustdesk 1.5.0 src/server/connection.rs:601,1184: the first TestDelay carries the
-  // network_delay the peer starts with, 0, before it measured any.
+  // The first TestDelay carries the network_delay the peer starts with, 0, before it measured any.
   delay(ms: number): void {
     if (this.#probes++ === 0) return
     this.#delayMs = ms

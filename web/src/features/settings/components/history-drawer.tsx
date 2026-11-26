@@ -17,16 +17,13 @@ import { formatDateTime } from '@/lib/format'
 
 import { displayValue } from '../format'
 
-/** Entries per page of the history. */
 const HISTORY_PAGE_SIZE = 20
 
 interface HistoryDrawerProps {
-  /** The setting whose history is open; closed when undefined. */
   setting: SettingView | undefined
   onClose: () => void
 }
 
-/** Side drawer with the changes of one setting, newest first (secrets: only set / unset). */
 export function HistoryDrawer({ setting, onClose }: HistoryDrawerProps) {
   const { t } = useTranslation()
   return (

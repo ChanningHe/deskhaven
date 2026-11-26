@@ -13,7 +13,6 @@ interface DeviceFiltersProps {
 
 const ONLINE_VALUES = { true: true, false: false } as const
 
-/** Online status, device group and status filters of the device list (URL-synced). */
 export function DeviceFilters({ search, onChange }: DeviceFiltersProps) {
   const { t } = useTranslation()
   const groups = useDeviceGroupOptions()

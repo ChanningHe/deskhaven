@@ -124,7 +124,6 @@ describe('My account: two-factor authentication', () => {
     await actor.type(within(dialog).getByLabelText('验证码或恢复码'), '123456')
     await actor.click(within(dialog).getByRole('button', { name: '确认关闭' }))
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument()
-    // A failed attempt clears both secrets.
     expect(within(dialog).getByLabelText('验证码或恢复码')).toHaveValue('')
     await actor.type(within(dialog).getByLabelText('当前密码'), 'right')
     await actor.type(within(dialog).getByLabelText('验证码或恢复码'), ' abcd-efgh ')

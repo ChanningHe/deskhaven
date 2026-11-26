@@ -17,7 +17,6 @@ import type { WindowsSessionChoice } from './windows-sessions'
 
 export type SessionState =
   | Exclude<LoginState, { kind: 'active' } | { kind: 'failed' }>
-  /** Logged in to a peer that waits for us to pick one of its Windows sessions. */
   | ({ kind: 'choose_session' } & WindowsSessionChoice)
   | { kind: 'active' }
   | { kind: 'closed'; cause: CloseCause }
@@ -28,18 +27,14 @@ export interface Session {
   readonly cursor: Store<CursorView>
   readonly cursorImages: CursorImages
   readonly permissions: Store<Permissions>
-  /** The text the peer last copied; null until it copies some. */
   readonly remoteClipboard: Store<string | null>
   readonly stats: Store<SessionStats>
-  /** Which codecs can be asked for, which was, and which arrives. */
   readonly codecs: Store<CodecView>
-  /** How far recordSample has got. */
   readonly sampling: Store<SampleProgress>
   readonly audio: AudioPlayback
   /**
-   * Decoded frames of the peer's screen; the consumer closes each one. Ends on close. Draw with
-   * drawImage at displayWidth × displayHeight: codedWidth carries padding and the pixel format
-   * differs between browsers.
+   * The consumer closes each frame. Draw at displayWidth × displayHeight: codedWidth carries
+   * padding and the pixel format differs between browsers.
    */
   readonly frames: AsyncIterable<VideoFrame>
   login(password: string): Promise<void>
@@ -49,7 +44,6 @@ export interface Session {
   chooseWindowsSession(sid: number): void
   /** One of supportedKeyboardModes for the peer; keys held in the old mode go up first. */
   setKeyboardMode(mode: KeyboardMode): void
-  /** Asks the peer to stream display `index` of PeerView.displays. */
   switchDisplay(index: number): void
   changeResolution(width: number, height: number): void
   action(kind: SessionAction): void
@@ -57,10 +51,7 @@ export interface Session {
   setOptions(patch: OptionPatch): void
   /** Keyboard and mouse; dropped unless active and the peer allows keyboard (and mouse) input. */
   input(input: RemoteInput): void
-  /**
-   * Asks for a key frame and records the peer's encoded frames from it on, before decoding, for
-   * a test fixture. Null when not active, cancelled, started again or closed first.
-   */
+  /** Null when not active, cancelled, started again or closed first. */
   recordSample(): Promise<VideoSample | null>
   cancelSample(): void
   /** Sends our clipboard text; false when not active, not allowed or too long. */

@@ -17,7 +17,6 @@ type FieldLabel = keyof TranslationResources['identity']['ldap']['fields']
 type GroupTitle = keyof TranslationResources['identity']['ldap']['groups']
 type CheckKey = 'enabled' | 'start_tls' | 'tls_verify'
 
-/** The search and mapping groups in form order: draft key, label, optional hint. */
 const SEARCH_GROUPS: readonly (readonly [
   GroupTitle,
   readonly (readonly [TextKey, FieldLabel, FieldLabel?])[],
@@ -50,14 +49,12 @@ const SEARCH_GROUPS: readonly (readonly [
 interface DirectoryFieldsProps {
   draft: DirectoryDraft
   set: (change: Partial<DirectoryDraft>) => void
-  /** A stored directory: whether it has a bind password (never shown). */
   stored: { hasPassword: boolean } | undefined
   /** The edit moves the stored password: it must be typed again. */
   needsPassword: boolean
   disabled: boolean
 }
 
-/** The inputs of the LDAP directory form, in five titled groups. */
 export function DirectoryFields(props: DirectoryFieldsProps) {
   const { draft, set, disabled } = props
   const { t } = useTranslation()

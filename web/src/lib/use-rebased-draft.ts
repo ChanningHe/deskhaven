@@ -1,7 +1,6 @@
 import { useState } from 'react'
 
 interface DraftState<T> {
-  /** The last server copy seen. */
   server: T
   /** The server copy the draft was seeded from (field by field). */
   baseline: T
@@ -10,16 +9,10 @@ interface DraftState<T> {
 
 export interface RebasedDraft<T> {
   draft: T
-  /** Fields the user edited: they differ from the baseline the draft was seeded from. */
   changed: (keyof T)[]
-  /** Edited fields whose server value has changed since the edit began. */
   conflicts: (keyof T)[]
   set: (change: Partial<T>) => void
-  /**
-   * A save succeeded: `saved` is the server's copy and `sent` the values it was sent with.
-   * Only the sent fields are rebased; what the user typed meanwhile (in other fields, or
-   * further in a sent one) stays in the draft.
-   */
+  /** Only the sent fields are rebased; what the user typed meanwhile stays in the draft. */
   reset: (saved: T, sent: Partial<T>) => void
 }
 
@@ -35,11 +28,7 @@ function isUntouched<T extends object>(state: DraftState<T>, key: keyof T): bool
   return same(state.draft[key], state.baseline[key])
 }
 
-/**
- * Untouched fields follow the server copy, edited ones keep the user's text. A field the
- * user edited and then typed back to its baseline is untouched again, so it follows too.
- * A key the server copy no longer has (a record of options) is dropped when untouched.
- */
+/** A field typed back to its baseline is untouched again; an untouched key the server dropped goes. */
 function rebase<T extends object>(state: DraftState<T>, server: T): DraftState<T> {
   const baseline = { ...state.baseline }
   const draft = { ...state.draft }
@@ -60,7 +49,6 @@ function rebase<T extends object>(state: DraftState<T>, server: T): DraftState<T
   return { server, baseline, draft }
 }
 
-/** Whether `state` lags behind `server`: a new copy, or an untouched field out of date. */
 function isStale<T extends object>(state: DraftState<T>, server: T): boolean {
   if (!same(state.server, server)) return true
   return keysOf(server).some(
@@ -69,11 +57,8 @@ function isStale<T extends object>(state: DraftState<T>, server: T): boolean {
 }
 
 /**
- * A form draft over a polled server copy (a lost-update guard). The draft is diffed against
- * the baseline it was seeded from, never against the live server copy: when another admin
- * changes a field the user did not touch, the field follows the server, and saving an
- * unrelated field cannot write the stale value back. A field the user did edit keeps their
- * text and shows up in `conflicts` when the server changed it meanwhile.
+ * Diffed against the baseline it was seeded from, never the live copy: saving an unrelated field
+ * cannot write a stale value back, and an edited field the server changed shows in `conflicts`.
  */
 export function useRebasedDraft<T extends object>(server: T): RebasedDraft<T> {
   const [state, setState] = useState<DraftState<T>>(() => ({

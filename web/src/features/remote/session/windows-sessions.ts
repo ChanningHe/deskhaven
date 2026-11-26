@@ -16,10 +16,9 @@ export interface WindowsSessionChoice {
 }
 
 /**
- * rustdesk 1.5.1 src/server/connection.rs:2300-2324: an installed Windows peer that shares RDP
- * sessions, with more than one session and this as its only connection, lists its sessions in
- * PeerInfo and starts no service until the client answers with Misc.selected_sid (4040-4066).
- * Picking another session restarts the peer there and drops this connection.
+ * An installed Windows peer sharing RDP sessions, with more than one session and this as its only
+ * connection, starts no service until the client answers with Misc.selected_sid. Picking another
+ * session restarts the peer there and drops this connection.
  */
 export function windowsSessionChoice(info: PeerInfo): WindowsSessionChoice | null {
   const offered = info.windowsSessions?.sessions ?? []

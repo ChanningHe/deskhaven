@@ -1,6 +1,5 @@
-// Ported from RustDesk (AGPL-3.0), tag 1.5.1: libs/scrap/src/common/codec.rs:893-895 (BR_*),
-// codec.rs:929-959 (base_bitrate), libs/scrap/src/common/vpxcodec.rs:325-327 (bitrate) and
-// src/server/video_qos.rs:443 (a custom level q is the ratio q·2/100).
+// Ported from RustDesk 1.5.1 (AGPL-3.0): the BR_* presets, base_bitrate, the VPX bitrate, and a
+// custom level q as the ratio q·2/100.
 import { DECODER_PROBES, LOGIN_CODECS } from '../handshake/login'
 import type { Preset, Quality } from '../settings/settings'
 

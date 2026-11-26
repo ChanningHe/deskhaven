@@ -44,7 +44,6 @@ function SheetContent({
 }: SheetPrimitive.Popup.Props & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   showCloseButton?: boolean
-  /** Accessible name of the close button (pass a translated string). */
   closeLabel?: string
 }) {
   return (

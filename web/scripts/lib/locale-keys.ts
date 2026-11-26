@@ -1,5 +1,4 @@
-// Pure helpers behind `pnpm i18n:check`. Kept free of I/O so they can be unit
-// tested and run directly by Node's TypeScript type stripping.
+// No I/O: Node runs this directly through type stripping, and it is unit tested.
 
 export interface LocaleProblem {
   locale: string
@@ -18,7 +17,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** [dotted key, string value] for every leaf; throws on any non-string leaf. */
 export function flattenEntries(tree: unknown, prefix = ''): [string, string][] {
   if (!isPlainObject(tree)) {
     throw new TypeError(`expected an object at "${prefix || '<root>'}"`)
@@ -35,13 +33,11 @@ export function flattenKeys(tree: unknown): string[] {
   return flattenEntries(tree).map(([key]) => key)
 }
 
-/** Sorted, de-duplicated interpolation variable names used in a message. */
 export function placeholdersOf(message: string): string[] {
   const names = [...message.matchAll(PLACEHOLDER_PATTERN)].map((match) => match[1] ?? '')
   return [...new Set(names)].sort()
 }
 
-/** For each locale, the keys that exist in some other locale but not in it. */
 export function findMissingKeys(locales: Record<string, unknown>): LocaleProblem[] {
   const keySets = Object.entries(locales).map(
     ([locale, tree]) => [locale, new Set(flattenKeys(tree))] as const,
@@ -56,7 +52,6 @@ export function findMissingKeys(locales: Record<string, unknown>): LocaleProblem
     .filter((problem) => problem.missing.length > 0)
 }
 
-/** Keys present in every locale whose placeholder sets differ between locales. */
 export function findPlaceholderMismatches(locales: Record<string, unknown>): PlaceholderMismatch[] {
   const catalogs = Object.entries(locales).map(
     ([locale, tree]) => [locale, new Map(flattenEntries(tree))] as const,

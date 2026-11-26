@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 
 import { RemoteBar, type BarFrame, type BarStatus } from './remote-bar'
 
-/** A step before (or after) the screen: the bar, and one panel in the middle of the stage. */
 export function Waiting({
   frame,
   status,

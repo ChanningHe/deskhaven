@@ -43,7 +43,6 @@ function DialogContent({
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
-  /** Accessible name of the close button; defaults to the translated "Close". */
   closeLabel?: string
 }) {
   const { t } = useTranslation()

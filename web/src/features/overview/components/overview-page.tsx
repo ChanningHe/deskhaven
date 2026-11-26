@@ -30,7 +30,6 @@ export function OverviewPage() {
         )
       ) : (
         <>
-          {/* A failed refresh keeps the last numbers and says so. */}
           {query.error ? (
             <ErrorAlert error={query.error} title={t('overview.refreshFailed')} />
           ) : null}

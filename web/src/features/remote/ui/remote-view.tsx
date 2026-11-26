@@ -23,7 +23,6 @@ type Notice = 'sent' | 'copiedFromDevice' | null
 
 const NOTICE_MS = 3000
 
-/** Reads the local clipboard; null when the browser does not let the page (no gesture, denied). */
 async function readClipboard(): Promise<string | null> {
   if (typeof navigator.clipboard === 'undefined') return null
   try {
@@ -57,7 +56,6 @@ function useFullscreen() {
   return { fullscreen, toggle }
 }
 
-/** Why some controls are greyed out: the device turned them off. */
 function PermissionNotice({ keyboard, clipboard }: { keyboard: boolean; clipboard: boolean }) {
   const { t } = useTranslation()
   if (keyboard && clipboard) return null
@@ -72,7 +70,6 @@ function PermissionNotice({ keyboard, clipboard }: { keyboard: boolean; clipboar
   )
 }
 
-/** The active session: the bar with its controls, and the screen filling the rest. */
 export function RemoteView({
   session,
   frame,

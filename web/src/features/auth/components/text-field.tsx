@@ -9,7 +9,6 @@ interface TextFieldProps extends Omit<ComponentProps<'input'>, 'id'> {
   hint?: string | undefined
 }
 
-/** A labelled input with an optional hint below it. */
 export function TextField({ id, label, hint, ...input }: TextFieldProps) {
   const hintId = `${id}-hint`
   return (

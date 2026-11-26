@@ -25,7 +25,6 @@ interface SearchBoxProps {
   onChange: (q: string) => void
 }
 
-/** Free-text search (`q`), applied after a short pause or on Enter. */
 function SearchBox({ value = '', placeholder, onChange }: SearchBoxProps) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(value)

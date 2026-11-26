@@ -11,11 +11,6 @@ interface OwnerPickerProps {
   disabled?: boolean
 }
 
-/**
- * The owner of a device: the chosen user with a way to remove them, or a combobox searching
- * the accounts. Focus follows the change: removing the owner focuses the search field,
- * picking one focuses the remove button.
- */
 export function OwnerPicker({ value, onChange, disabled = false }: OwnerPickerProps) {
   const { t } = useTranslation()
   const searchRef = useRef<HTMLInputElement>(null)

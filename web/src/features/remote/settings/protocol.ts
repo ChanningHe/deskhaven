@@ -16,8 +16,7 @@ const PRESETS = {
   best: ImageQuality.Best,
 } as const
 
-// rustdesk 1.5.1 src/server/connection.rs:4929-4945: the peer reads custom_image_quality only
-// while image_quality is NotSet, and as the value `q << 8` (video_qos.rs:435-446).
+// The peer reads custom_image_quality only while image_quality is NotSet, and as `q << 8`.
 export function qualityFields(
   quality: Quality,
 ): Pick<OptionMessage, 'imageQuality' | 'customImageQuality'> {
@@ -53,7 +52,7 @@ function disableAudio(settings: RemoteSettings): OptionMessage_BoolOption {
   return settings.audio ? No : Yes
 }
 
-// rustdesk 1.5.0 src/client.rs:3304-3324,3422-3449: view only disables keyboard and clipboard, no lock
+// View only disables keyboard and clipboard, no lock.
 function intentFields(intent: SessionIntent) {
   return {
     disableKeyboard: intent.viewOnly,
@@ -62,7 +61,7 @@ function intentFields(intent: SessionIntent) {
   }
 }
 
-// Without it the peer sends no CursorPosition (rustdesk 1.5.1 src/server/connection.rs:4968-4990).
+// Without it the peer sends no CursorPosition.
 export function loginOption(
   settings: RemoteSettings,
   intent: SessionIntent = NO_INTENT,

@@ -12,7 +12,6 @@ import type { NavItem, NavSection } from '../nav-items'
 
 interface SidebarNavProps {
   collapsed: boolean
-  /** Called after a link is activated (the mobile drawer closes itself). */
   onNavigate?: () => void
 }
 

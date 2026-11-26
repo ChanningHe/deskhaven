@@ -9,7 +9,6 @@ import { buttonVariants } from '@/components/ui/button'
 import { alarmTypeLabel } from '@/features/audit/audit-labels'
 import { formatDateTime } from '@/lib/format'
 
-/** The latest alarms; the device ids and details are what the devices reported. */
 export function RecentAlarms({ alarms }: { alarms: AlarmAuditView[] }) {
   const { t, i18n } = useTranslation()
   return (

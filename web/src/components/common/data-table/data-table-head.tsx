@@ -17,10 +17,6 @@ interface DataTableHeadProps<TData extends RowData> {
 
 const ARIA_SORT = { asc: 'ascending', desc: 'descending' } as const
 
-/**
- * A column header. Sortable columns render a button that cycles the sort and
- * expose the current direction through `aria-sort` on the header cell.
- */
 export function DataTableHead<TData extends RowData>({
   header,
   sortable,

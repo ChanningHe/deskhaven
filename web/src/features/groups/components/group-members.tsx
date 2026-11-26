@@ -11,16 +11,13 @@ import { invalidateAccounts } from '@/features/users/invalidate'
 
 import { AddMember } from './add-member'
 
-/** Members per page of the drawer's list. */
 const MEMBER_PAGE_SIZE = 50
 
 interface GroupMembersProps {
   groupId: number
-  /** False for groups managed by the configuration file. */
   editable: boolean
 }
 
-/** A group's members, page by page, with remove (confirmed) and add (search). */
 export function GroupMembers({ groupId, editable }: GroupMembersProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

@@ -6,7 +6,6 @@ import { buttonVariants } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-/** Back to the console; leaving the page ends the session. */
 export function BackLink() {
   const { t } = useTranslation()
   const label = t('remote.back')
@@ -28,7 +27,6 @@ export function BackLink() {
   )
 }
 
-/** The same way back, spelled out for the panels where the session is over. */
 export function LeaveLink() {
   const { t } = useTranslation()
   return (

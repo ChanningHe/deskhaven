@@ -33,7 +33,6 @@ describe('useRebasedDraft', () => {
     act(() => {
       result.current.set({ note: 'b' })
     })
-    // The poll brings c; the edited field is skipped, its baseline stays a.
     rerender({ server: { note: 'c', group: null } })
     expect(result.current.draft.note).toBe('b')
 
@@ -41,7 +40,6 @@ describe('useRebasedDraft', () => {
       result.current.set({ note: 'a' })
     })
 
-    // Untouched now, so it shows what the server has, with no later poll needed.
     expect(result.current.draft.note).toBe('c')
     expect(result.current.changed).toEqual([])
   })
@@ -51,7 +49,6 @@ describe('useRebasedDraft', () => {
     act(() => {
       result.current.set({ note: 'sent' })
     })
-    // The user keeps typing while the save is in flight, and edits another field.
     act(() => {
       result.current.set({ note: 'sent, and more', group: 7 })
     })

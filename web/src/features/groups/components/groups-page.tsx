@@ -8,7 +8,6 @@ import { DeviceGroupsTab } from '@/features/device-groups/components/device-grou
 import type { GroupsTab } from '../groups-search'
 import { UserGroupsTab } from './user-groups-tab'
 
-/** Groups: user groups and device groups, one tab each (the tab is in the URL). */
 export function GroupsPage() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/_app/groups' })

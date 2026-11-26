@@ -26,7 +26,6 @@ export class FakePage implements PageVisibility {
   }
 }
 
-/** Deps that open OPENED (or `open`'s result) and start FakeSessions; the mocks are exposed. */
 export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.resolve(OPENED)) {
   const sessions: FakeSession[] = []
   const relays: MemoryTransport[] = []
@@ -78,7 +77,6 @@ export function fakeDeps(open: () => Promise<WebClientSession> = () => Promise.r
   }
 }
 
-/** WebRTC deps over FakePeerConnections; candidate polls hang until the test stops them. */
 export function fakeWebRtc() {
   const pcs: FakePeerConnection[] = []
   const polls: AbortSignal[] = []

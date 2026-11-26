@@ -1,7 +1,6 @@
 import { LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-/** Default pending UI, shown when a route takes longer than the router's pendingMs. */
 export function RoutePending() {
   const { t } = useTranslation()
   return (

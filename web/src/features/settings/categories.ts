@@ -29,7 +29,6 @@ export interface Category {
   settings: SettingView[]
 }
 
-/** The settings grouped by category, in the order the server lists them. */
 export function groupByCategory(settings: readonly SettingView[]): Category[] {
   const groups: Category[] = []
   for (const setting of settings) {
@@ -40,7 +39,6 @@ export function groupByCategory(settings: readonly SettingView[]): Category[] {
   return groups
 }
 
-/** How many settings of `category` have an unsaved draft. */
 export function unsavedCount(category: Category, drafts: Drafts): number {
   return category.settings.filter((setting) => drafts[setting.key] !== undefined).length
 }

@@ -2,9 +2,8 @@ import { HttpError } from '@/lib/http-error'
 import type { WebClientCandidates } from '@/api/generated/model'
 
 /**
- * Each local candidate goes out once more after this delay: the server's hop to the
- * controlled side can be UDP, and the peer's ICE agent drops duplicates (rustdesk 1.5.0
- * src/client.rs:666, `WEBRTC_ICE_RESEND_DELAY`).
+ * Each local candidate goes out once more after this delay: the server's hop to the controlled
+ * side can be UDP, and the peer's ICE agent drops duplicates.
  */
 export const ICE_RESEND_DELAY_MS = 400
 
@@ -12,7 +11,6 @@ const GONE = 410
 
 export interface TrickleApi {
   postCandidate(sessionId: string, candidate: string): Promise<void>
-  /** Long poll: the peer's candidates from index `after` on. */
   pollCandidates(
     sessionId: string,
     after: number,
@@ -30,10 +28,7 @@ export interface Trickle {
   stop(): void
 }
 
-/**
- * Exchanges ICE candidates over the server session once the answer is applied. A 410 means
- * the server's route is over (closed or expired): that direction stops, nothing else does.
- */
+/** A 410 means the server's route is over (closed or expired): that direction stops, nothing else does. */
 export function startTrickle(api: TrickleApi, sessionId: string, peer: TricklePeer): Trickle {
   const trickle = new CandidateTrickle(api, sessionId, peer)
   void trickle.send()

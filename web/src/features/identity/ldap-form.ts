@@ -1,5 +1,4 @@
-// The LDAP directory form: its draft and the request bodies built from it. The bind
-// password is write-only: the draft starts empty and only a typed password is sent.
+// The bind password is write-only: the draft starts empty and only a typed password is sent.
 
 import type {
   LdapDirectoryPatch,
@@ -47,7 +46,6 @@ export const EMPTY_DIRECTORY: DirectoryDraft = {
 /** Fields that decide where the bind password goes: changing one needs it again. */
 const CONNECTION_FIELDS = ['url', 'start_tls', 'tls_verify', 'bind_dn'] as const
 
-/** The directory P0 uses: the enabled one, else the first. */
 export function shownDirectory(
   directories: readonly LdapDirectoryView[],
 ): LdapDirectoryView | undefined {
@@ -79,7 +77,6 @@ function optional(value: string): string | null {
   return trimmed === '' ? null : trimmed
 }
 
-/** The whole form, to create a directory or to test it unsaved. */
 export function newDirectoryBody(draft: DirectoryDraft): NewLdapDirectoryBody {
   return {
     name: draft.name.trim(),
@@ -100,7 +97,6 @@ export function newDirectoryBody(draft: DirectoryDraft): NewLdapDirectoryBody {
   }
 }
 
-/** Only the edited fields, and the password when one was typed. */
 export function directoryPatch(
   draft: DirectoryDraft,
   changed: readonly (keyof DirectoryDraft)[],

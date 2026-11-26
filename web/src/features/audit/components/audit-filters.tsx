@@ -16,7 +16,6 @@ interface ChangeProps {
   onChange: (patch: Partial<AuditSearch>) => void
 }
 
-/** The first and last day of the window (the browser's time zone). */
 export function WindowFilter({ search, onChange }: ChangeProps) {
   const { t } = useTranslation()
   return (
@@ -56,7 +55,6 @@ interface TextFilterProps {
   onCommit: (value: string | undefined) => void
 }
 
-/** A text filter applied on Enter or when the field loses focus (not per keystroke). */
 export function TextFilter({ label, value, onCommit }: TextFilterProps) {
   const [draft, setDraft] = useState(value ?? '')
   const [seen, setSeen] = useState(value)
@@ -93,7 +91,6 @@ interface SelectFilterProps<T extends string | number> {
   onChange: (value: T | undefined) => void
 }
 
-/** A dropdown over a short fixed list; the first entry is "no filter". */
 export function SelectFilter<T extends string | number>(props: SelectFilterProps<T>) {
   const { label, value, options, onChange } = props
   return (
@@ -115,7 +112,6 @@ export function SelectFilter<T extends string | number>(props: SelectFilterProps
   )
 }
 
-/** The user filter: the chosen account with a way to clear it, or a search over accounts. */
 export function UserFilter({ search, onChange }: ChangeProps) {
   const { t } = useTranslation()
   const chosen = search.user

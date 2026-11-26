@@ -22,10 +22,6 @@ import { CopyField } from '@/features/client-setup/components/copy-field'
 
 import { useProviderDialogs } from './use-provider-dialogs'
 
-/**
- * OIDC providers: the callback URL to register, the list, create / edit / delete. Writes are
- * the owner's (a provider can mint administrators); admins see the providers read-only.
- */
 export function OidcSection({ isOwner }: { isOwner: boolean }) {
   const { t } = useTranslation()
   const query = useListOidcProviderConfigs()
@@ -95,7 +91,6 @@ export function OidcSection({ isOwner }: { isOwner: boolean }) {
 
 interface ProviderTableProps {
   providers: readonly OidcProviderView[]
-  /** Admins only view providers: no delete, "view" instead of "edit". */
   isOwner: boolean
   onEdit: (provider: OidcProviderView) => void
   onDelete: (provider: OidcProviderView) => void

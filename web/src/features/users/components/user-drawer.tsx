@@ -22,10 +22,8 @@ import { UserEditForm } from './user-edit-form'
 import { UserIdentities } from './user-identities'
 
 interface UserDrawerProps {
-  /** The account to show; undefined closes the drawer. */
   userId: number | undefined
   onClose: () => void
-  /** Page-level password reset (its reveal outlives the drawer). */
   onResetPassword: UserActionHandlers['onResetPassword']
 }
 
@@ -33,7 +31,6 @@ interface DetailHandlers extends UserActionHandlers {
   onDeleted: () => void
 }
 
-/** Side drawer of one account: details, edit form, actions, groups and sessions. */
 export function UserDrawer({ userId, onClose, onResetPassword }: UserDrawerProps) {
   const handlers: DetailHandlers = { onDeleted: onClose, onResetPassword }
   const { t } = useTranslation()

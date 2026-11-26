@@ -47,11 +47,7 @@ function IdentityRow({
   )
 }
 
-/**
- * "Linked sign-ins": the OIDC identities that sign in to this account, linking one more
- * (password, and a code while TOTP is on, then the identity provider) and unlinking
- * (password). Signing in through a linked identity asks for no local second factor.
- */
+/** Signing in through a linked identity asks for no local second factor. */
 export function IdentitiesCard({ account }: { account: MyAccount }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

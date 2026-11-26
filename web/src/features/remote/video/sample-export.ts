@@ -5,7 +5,6 @@ import { ValueStore, type Store } from '../session/store'
 export const SAMPLE_VERSION = 1
 export const SAMPLE_FRAMES = 30
 
-/** The VideoFrame union case of each codec, whether we decode it or not. */
 export type SampleCodec = `${VideoCodec}s`
 
 export function sampleCodecOf(codec: VideoCodec): SampleCodec {
@@ -21,7 +20,6 @@ export const REVOKE_AFTER_MS = 40_000
 export interface SampleFrame {
   key: boolean
   pts: number
-  /** Standard base64 of EncodedVideoFrame.data, as it came. */
   data: string
 }
 
@@ -67,11 +65,7 @@ function encoded(
   }
 }
 
-/**
- * Records the peer's encoded frames of the codec the session asks for, from its key frame on, for
- * a test fixture. Frames of other codecs (in flight, or what the peer sends instead) are passed
- * over.
- */
+/** Frames of other codecs (in flight, or what the peer sends instead) are passed over. */
 export class SampleRecorder {
   readonly #progress = new ValueStore<SampleProgress>(IDLE)
   readonly #source: () => SampleSource
@@ -87,7 +81,6 @@ export class SampleRecorder {
     return this.#progress
   }
 
-  /** Resolves with SAMPLE_FRAMES frames, or null when cancelled or started again. */
   start(): Promise<VideoSample | null> {
     this.cancel()
     return new Promise((resolve) => {
@@ -182,7 +175,6 @@ export function encodeBase64(bytes: Uint8Array): string {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-/** `video-sample-<codec>-<yyyymmdd>-<hhmmss>.json`, in local time. */
 export function sampleFileName(codec: SampleCodec, at: Date): string {
   const day = `${String(at.getFullYear())}${pad(at.getMonth() + 1)}${pad(at.getDate())}`
   const time = `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`

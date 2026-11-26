@@ -1,5 +1,3 @@
-// Fixtures of the API token page tests.
-
 import type { ApiTokenView } from '@/api/generated/model'
 import type { MockHandler } from '@/test/mock-api'
 
@@ -25,7 +23,6 @@ export function tokenView(
   }
 }
 
-/** A list endpoint answering `items` for every page (`total` defaults to their count). */
 export function pageOf(items: unknown[], total = items.length): MockHandler {
   return ({ url }) => ({
     body: {

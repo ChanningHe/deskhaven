@@ -11,11 +11,7 @@ interface SnapshotViewProps {
   after: unknown
 }
 
-/**
- * What a console audit row changed, read-only. A retention purge gets its one-line summary;
- * object snapshots a changed-members list; anything else the stored JSON whole. Values are
- * text nodes only: they may carry text a device or a user typed.
- */
+/** Values are text nodes only: they may carry text a device or a user typed. */
 export function SnapshotView({ action, before, after }: SnapshotViewProps) {
   const { t, i18n } = useTranslation()
   const purge = purgeSummary(action, after)

@@ -21,32 +21,24 @@ import {
 import { clearedFilters, hasAuditFilters } from '../audit-search'
 import type { AuditSearch } from '../audit-search'
 
-/** What every tab's panel gets from the page. */
 export interface PanelProps {
   search: AuditSearch
-  /** Applies a change to the route search (see `applyTableSearch`). */
   onSearchChange: (patch: Partial<AuditSearch>, options?: SearchChangeOptions) => void
 }
 
 interface AuditPanelProps<T extends { id: number }> extends PanelProps {
-  /** Table id (keys the persisted column visibility) and accessible name. */
   id: string
   label: string
   query: { data: ListPage<T> | undefined; error: unknown; refetch: () => Promise<unknown> }
   columns: readonly DataTableColumnDef<T>[]
   filters: ReactNode
-  /** Placeholder of the free-text search; absent: the list has none. */
   searchPlaceholder?: string
   empty: { icon: LucideIcon; title: string; description: string }
-  /** Title of the drawer for the open record. */
   detailTitle: (item: T) => ReactNode
   detail: (item: T) => ReactNode
 }
 
-/**
- * One audit list: the table with its filters and, for the record named by `item` in the
- * URL, a read-only drawer. A record that is not on the current page shows no drawer.
- */
+/** A record that is not on the current page shows no drawer. */
 export function AuditPanel<T extends { id: number }>(props: AuditPanelProps<T>) {
   const { t } = useTranslation()
   const { search, onSearchChange, query, detailTitle, detail } = props

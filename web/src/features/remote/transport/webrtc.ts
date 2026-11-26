@@ -7,10 +7,9 @@ import { MAX_QUEUED_BYTES, MAX_QUEUED_FRAMES } from './relay'
 import { TransportError, type Transport } from './transport'
 import { decodeAnswer, encodeOffer, sdpFingerprint } from './webrtc-sdp'
 
-/** The label the controlled side expects (hbb_common fae47e0 src/webrtc.rs). */
+/** The label the controlled side expects. */
 export const DATA_CHANNEL_LABEL = 'bootstrap'
 
-/** The parts of RTCDataChannel this transport uses. */
 export interface DataChannelLike {
   binaryType: BinaryType
   send(data: Uint8Array<ArrayBuffer>): void
@@ -21,7 +20,6 @@ export interface DataChannelLike {
   onmessage: ((event: MessageEvent) => unknown) | null
 }
 
-/** The parts of RTCPeerConnection this transport uses. */
 export interface PeerConnectionLike {
   createDataChannel(label: string, init: RTCDataChannelInit): DataChannelLike
   createOffer(): Promise<RTCSessionDescriptionInit>
@@ -36,14 +34,10 @@ export interface PeerConnectionLike {
   close(): void
 }
 
-/** The offering side of one WebRTC attempt, as the connect controller races it. */
 export interface WebRtcOfferer extends Transport {
-  /** The `webrtc://` offer endpoint for POST sessions. */
   readonly offer: string
-  /** Settles when the data channel opens; rejects when the attempt fails or is closed first. */
   readonly opened: Promise<void>
   readonly connectionState: RTCPeerConnectionState
-  /** Our candidates as `RTCIceCandidate.toJSON()` text; ends when gathering does. */
   readonly localCandidates: AsyncIterable<string>
   /** Applies the peer's answer; resolves with the DTLS fingerprint it commits the peer to. */
   accept(answer: string, iceServers: RTCIceServer[]): Promise<string>
@@ -53,10 +47,7 @@ export interface WebRtcOfferer extends Transport {
 
 export type CreatePeerConnection = () => PeerConnectionLike
 
-/**
- * A WebRTC data channel to the controlled side, carrying whole protocol messages split into
- * fragments. DTLS keys it, so the handshake runs on it without a stream cipher.
- */
+/** DTLS keys it, so the handshake runs on it without a stream cipher. */
 export class WebRtcTransport implements WebRtcOfferer {
   readonly offer: string
   readonly opened: Promise<void>
@@ -74,8 +65,8 @@ export class WebRtcTransport implements WebRtcOfferer {
   #queuedFrames = 0
 
   /**
-   * Creates the connection and its offer. ICE servers come with the answer, so gathering
-   * (setLocalDescription) waits for `accept`: servers set later only apply to a later gathering.
+   * ICE servers come with the answer, so gathering (setLocalDescription) waits for `accept`:
+   * servers set later only apply to a later gathering.
    */
   static async create(
     createPeerConnection: CreatePeerConnection = () => new RTCPeerConnection(),

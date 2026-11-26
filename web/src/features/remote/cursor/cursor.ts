@@ -1,7 +1,6 @@
 import type { CursorData } from '../proto/gen/message_pb.js'
 import { compressBound, inflate } from './zstd'
 
-/** A cursor image in RGBA, ready for ImageData; the hotspot is the pixel that points. */
 export interface CursorShape {
   id: string
   width: number
@@ -11,14 +10,12 @@ export interface CursorShape {
   rgba: Uint8ClampedArray<ArrayBuffer>
 }
 
-/** What the peer's cursor looks like and where it is, in the peer's screen coordinates. */
 export interface CursorView {
   shape: CursorShape | null
   position: { x: number; y: number } | null
 }
 
-// The controller's own limits (rustdesk 1.5.0 src/client/io_loop.rs:2794-2796): at most
-// 512×512 RGBA, 1 MiB once decoded.
+// The controller's own limits: at most 512×512 RGBA, 1 MiB once decoded.
 export const MAX_CURSOR_SIZE = 512
 const RGBA_CHANNELS = 4
 /** Shapes kept for CursorId; a peer could otherwise grow the cache without bound. */
@@ -28,7 +25,7 @@ function inRange(value: number, low: number, high: number): boolean {
   return Number.isInteger(value) && value >= low && value <= high
 }
 
-/** The peer compresses `colors` with zstd (rustdesk 1.5.0 src/server/input_service.rs:562). */
+/** The peer compresses `colors` with zstd. */
 export function decodeCursor(data: CursorData): CursorShape | null {
   const { width, height, hotx, hoty } = data
   if (!inRange(width, 1, MAX_CURSOR_SIZE) || !inRange(height, 1, MAX_CURSOR_SIZE)) return null
@@ -57,7 +54,6 @@ interface Cached {
   image: { scale: number; url: string } | null
 }
 
-/** Follows CursorData, CursorId and CursorPosition from the peer. */
 export class CursorTracker implements CursorImages {
   readonly #shapes = new Map<string, Cached>()
   #view: CursorView = { shape: null, position: null }

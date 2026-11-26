@@ -1,6 +1,4 @@
-// Screenshot harness: the console as main.tsx starts it, with the remote page's server and
-// device replaced by a FakeSession that a Playwright script drives through
-// `window.__remoteShots`. Served by the Vite dev server only; the app never imports it.
+// Screenshot harness, served by the Vite dev server only; the app never imports it.
 import '@/index.css'
 import '@/i18n'
 
@@ -24,12 +22,9 @@ interface Failure {
 
 interface Shots {
   session: FakeSession | null
-  /** POST sessions fails with this while set. */
   failWith: Failure | null
-  /** Logs the session in and shows a synthetic 1280×800 frame with the peer's cursor. */
   activate(displays: number): void
   navigate(href: string): Promise<void>
-  /** Whether a click lets the fake AudioContext run; false keeps the sound switch suspended. */
   audioResumes: boolean
 }
 
@@ -58,7 +53,6 @@ function fixtureFrame(): VideoFrame {
   ctx.fillStyle = '#18181b'
   ctx.font = '28px sans-serif'
   ctx.fillText('Fixture frame 1280 × 800', 200, 220)
-  // A taskbar along the bottom edge, so the frame's own edge reads as part of the desktop.
   ctx.fillStyle = '#27272a'
   ctx.fillRect(0, HEIGHT - 48, WIDTH, 48)
   ctx.fillStyle = '#52525b'
@@ -69,7 +63,6 @@ function fixtureFrame(): VideoFrame {
   return new VideoFrame(canvas, { timestamp: 0 })
 }
 
-/** A 12×18 arrow: white with a black outline, hotspot at its tip. */
 function arrow(): Uint8ClampedArray<ArrayBuffer> {
   const w = 12
   const h = 18

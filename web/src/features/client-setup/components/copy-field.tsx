@@ -9,15 +9,12 @@ import { copyToClipboard } from '@/lib/clipboard'
 interface CopyFieldProps {
   label: string
   value: string
-  /** Shown under the field (what it is for, why it is empty). */
   hint?: string | undefined
-  /** A text area for long values (strings, commands). */
   multiline?: boolean
 }
 
 type CopyState = 'idle' | 'copied' | 'failed'
 
-/** A read-only value with a copy button; selects itself on focus for manual copying. */
 export function CopyField({ label, value, hint, multiline = false }: CopyFieldProps) {
   const { t } = useTranslation()
   // The outcome belongs to the value that was copied: a different value starts afresh.

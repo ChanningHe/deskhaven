@@ -9,7 +9,6 @@ import { copyToClipboard } from '@/lib/clipboard'
 const TEXTAREA_CLASS =
   'w-full rounded-lg border border-input bg-background px-2.5 py-1.5 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
 
-/** A card floating over the top right of the screen, under the clipboard controls. */
 function Strip({ label, children }: { label: string; children: ReactNode }) {
   return (
     <section
@@ -21,12 +20,10 @@ function Strip({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** Where the user pastes text by hand when the page may not read the clipboard. */
 export function PastePanel({
   onSend,
   onClose,
 }: {
-  /** Sends the text; false when it was not sent (too long, or not allowed). */
   onSend: (text: string) => boolean
   onClose: () => void
 }) {

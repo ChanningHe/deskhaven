@@ -58,10 +58,6 @@ function PublicUrlStep({ publicUrl, onNext }: { publicUrl: string | null; onNext
   )
 }
 
-/**
- * `/setup#token=…`: first-run setup in three steps (08 §3.2): create the owner
- * (who is then signed in), review the public URL, finish.
- */
 export function SetupPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

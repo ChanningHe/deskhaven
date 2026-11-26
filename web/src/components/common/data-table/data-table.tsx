@@ -18,43 +18,30 @@ import type { ListPage, TableSearch } from './table-search'
 import { useColumnVisibility } from './use-column-visibility'
 
 export interface SearchChangeOptions {
-  /** Replace the current history entry instead of pushing one. */
   replace?: boolean
 }
 
 export interface DataTableProps<TData extends RowData> {
   /** Stable id: keys the persisted column visibility. */
   id: string
-  /** Accessible name of the table, usually the page title. */
   label: string
   /** Column definitions; keep the array stable (module scope or useMemo). */
   columns: readonly DataTableColumnDef<TData>[]
-  /** Column ids the server can sort by (the same list the route validates). */
   sortable?: readonly string[]
-  /** The current page from the list endpoint; undefined while loading. */
   data: ListPage<TData> | undefined
   getRowId: (row: TData) => string
   /** Names a row for its selection checkbox ("Select <name>"); keep it stable. */
   getRowLabel?: (row: TData) => string
-  /** The table's part of the route search (page, page_size, sort, q). */
   search: TableSearch
-  /**
-   * Applies a change to the route search; pages call `applyTableSearch` and pass
-   * `replace` through to `navigate` (corrections must not add history entries).
-   */
+  /** Pass `replace` through to `navigate`: corrections must not add history entries. */
   onSearchChange: (patch: TableSearch, options?: SearchChangeOptions) => void
   error?: unknown
   onRetry?: () => void
-  /** Shows the free-text search box (`q`) with this placeholder. */
   searchPlaceholder?: string
-  /** Page-specific filter controls, rendered next to the search box. */
   filters?: ReactNode
-  /** Whether page-specific filters are active (`q` is detected automatically). */
   isFiltered?: boolean
   onClearFilters?: () => void
-  /** Enables row selection; renders the actions for the selected row ids. */
   bulkActions?: (selectedIds: string[], clearSelection: () => void) => ReactNode
-  /** Shown instead of the table when the list is empty without any filter. */
   emptyState: ReactNode
 }
 

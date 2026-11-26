@@ -1,7 +1,5 @@
-// Sign-in, sign-out and account setup requests (M3-02). The generated client
-// makes every operation a query (orval.config.ts); state-changing calls are
-// wrapped in mutations here. Whoever signs in or out drops the whole query
-// cache first, so nothing fetched under one session leaks into the next.
+// Signing in or out drops the whole query cache first, so nothing fetched under one session
+// leaks into the next.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -27,7 +25,6 @@ import { assignLocation } from '@/lib/browser-location'
 
 import { LOGIN_PATH, ME_QUERY_KEY } from './session'
 
-/** A new session exists: forget everything cached, keep its user. */
 export function acceptSession(queryClient: QueryClient, me: Me): void {
   queryClient.clear()
   queryClient.setQueryData(ME_QUERY_KEY, me)
@@ -48,7 +45,6 @@ export function useOidcProviders() {
   })
 }
 
-/** Starts an OIDC login and leaves for the identity provider. */
 export function useStartOidc() {
   return useMutation({
     mutationFn: (body: OidcStartRequest) => startOidcLogin(body),
@@ -69,7 +65,6 @@ export function useSetupStatus() {
   })
 }
 
-/** Signs out (the server clears the cookies), goes to /login, drops the cache. */
 export function useLogout() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()

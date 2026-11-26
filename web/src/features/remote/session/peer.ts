@@ -1,4 +1,3 @@
-// PeerInfo.platform values (rustdesk 1.5.0 src/common.rs:56-59).
 export const PLATFORM_WINDOWS = 'Windows'
 export const PLATFORM_LINUX = 'Linux'
 export const PLATFORM_MACOS = 'Mac OS'
@@ -10,10 +9,7 @@ function part(text: string | undefined): number {
   return text !== undefined && VERSION_PART.test(text) ? Number(text) : 0
 }
 
-/**
- * hbb_common `get_version_number` (fae47e0 src/lib.rs:264-290): "1.2.3" is 1002030 and
- * "1.2.3-4" is 1002034; anything unparsable counts as 0.
- */
+/** hbb_common `get_version_number`: "1.2.3" is 1002030, "1.2.3-4" is 1002034, anything unparsable 0. */
 export function versionNumber(version: string): number {
   const [release, build] = version.split('-')
   let n = 0

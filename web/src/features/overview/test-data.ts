@@ -1,5 +1,3 @@
-// Fixtures of the overview page tests.
-
 import type { OverviewView } from '@/api/generated/model'
 import { alarmView } from '@/features/audit/test-data'
 

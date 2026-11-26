@@ -26,12 +26,10 @@ const HTTP_NOT_FOUND = 404
 const DETAIL_REFRESH_MS = 10_000
 
 interface DeviceDrawerProps {
-  /** The device to show; undefined closes the drawer. */
   deviceId: number | undefined
   onClose: () => void
 }
 
-/** Side drawer of one device: ownership, self-reported data, connections, strategy, actions. */
 export function DeviceDrawer({ deviceId, onClose }: DeviceDrawerProps) {
   const { t } = useTranslation()
   return (

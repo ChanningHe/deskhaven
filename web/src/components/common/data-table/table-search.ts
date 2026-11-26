@@ -1,8 +1,4 @@
-// List state that lives in the URL (08 §4: filters, sort and page go into the
-// query string so a view can be shared and the back button works). The keys are
-// the admin API's list query parameters (08 §6), so the validated search is
-// also the request: `page`, `page_size` (<= 200), `sort` (`field` ascending,
-// `-field` descending), `q`, plus page-specific filters.
+// The keys are the list query parameters, so the validated search is also the request.
 
 export const PAGE_SIZES = [10, 20, 50, 100, 200] as const
 export const DEFAULT_PAGE_SIZE = 20
@@ -16,7 +12,6 @@ export interface TableSearch {
   q?: string | undefined
 }
 
-/** TableSearch with defaults filled in: what a list request sends. */
 export interface ListParams {
   page: number
   page_size: number
@@ -24,7 +19,6 @@ export interface ListParams {
   q?: string
 }
 
-/** One page of a list response (`{items, total, page, page_size}`, 08 §6). */
 export interface ListPage<T> {
   items: T[]
   total: number
@@ -52,17 +46,12 @@ export function formatSort(sort: SortState | undefined): string | undefined {
   return sort.desc ? `-${sort.id}` : sort.id
 }
 
-/** Sort cycle of a header click: none -> ascending -> descending -> none. */
 export function nextSort(current: SortState | undefined, id: string): SortState | undefined {
   if (current?.id !== id) return { id, desc: false }
   return current.desc ? undefined : { id, desc: true }
 }
 
-/**
- * Validates the table keys of a raw URL search: anything malformed or out of
- * range is dropped (not an error page), and defaults are left implicit. Use it
- * in a route's `validateSearch`, spreading page-specific filters next to it.
- */
+/** Anything malformed or out of range is dropped (not an error page); defaults stay implicit. */
 export function parseTableSearch(
   raw: Record<string, unknown>,
   { sortable }: { sortable: readonly string[] },
@@ -84,7 +73,7 @@ export function parseTableSearch(
   }
 }
 
-/** Number of pages for `total` rows (at least 1, so "page 1 of 1" when empty). */
+/** At least 1, so an empty list reads "page 1 of 1". */
 export function pageCount(total: number, pageSize: number): number {
   return Math.max(1, Math.ceil(total / pageSize))
 }
@@ -105,11 +94,7 @@ function isDefault(key: string, value: unknown): boolean {
   return false
 }
 
-/**
- * The next search after a change. Any change other than the page itself goes
- * back to page 1 (the old page may no longer exist), and defaults or emptied
- * filters are removed so URLs stay short and canonical. Returns a new object.
- */
+/** Any change other than the page goes back to page 1: the old page may no longer exist. */
 export function applyTableSearch<T extends TableSearch>(previous: T, patch: Partial<T>): T {
   const changesMoreThanPage = Object.keys(patch).some(
     (key) => key !== 'page' && patch[key as keyof T] !== previous[key as keyof T],

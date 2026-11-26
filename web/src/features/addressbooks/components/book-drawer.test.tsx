@@ -38,7 +38,6 @@ function device(id: number, rustdeskId: string, hostname: string): DeviceView {
   }
 }
 
-/** Routes every drawer test needs: the book itself and (empty) lists for the rest. */
 function drawerApi(extra: Record<string, MockHandler | { status?: number; body?: unknown }> = {}) {
   const ops = book(GUID, 'ops', { peer_count: 1 })
   return {
@@ -203,7 +202,6 @@ describe('address book tags', () => {
   })
 })
 
-/** The inline form editing a tag (the add form is another one). */
 function editForm(drawer: HTMLElement) {
   const form = within(drawer).getByRole('button', { name: '保存标签' }).closest('form')
   if (form === null) throw new Error('no edit form')

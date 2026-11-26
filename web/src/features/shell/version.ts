@@ -1,6 +1,5 @@
-// The running server's version and where its source lives (AGPL-3.0 section 13).
-// `GET /api/version` is the public client-API endpoint, not part of the admin
-// OpenAPI, so it is fetched by hand and validated here.
+// `GET /api/version` is a client-API endpoint, not in the admin OpenAPI, so it is fetched by
+// hand and validated here.
 
 import { useQuery } from '@tanstack/react-query'
 
@@ -15,7 +14,6 @@ export interface ServerVersion {
   sourceUrl: string
 }
 
-/** The https URL as normalised by the URL parser, or undefined for anything else. */
 export function httpsUrlOf(value: string): string | undefined {
   try {
     const url = new URL(value)
@@ -25,7 +23,6 @@ export function httpsUrlOf(value: string): string | undefined {
   }
 }
 
-/** Accepts only a body whose two fields are strings and whose source is https. */
 export function parseServerVersion(body: unknown): ServerVersion | undefined {
   if (typeof body !== 'object' || body === null) return undefined
   const { version, source_url: sourceUrl } = body as Record<string, unknown>
@@ -36,11 +33,7 @@ export function parseServerVersion(body: unknown): ServerVersion | undefined {
   return safeUrl === undefined ? undefined : { version, sourceUrl: safeUrl }
 }
 
-/**
- * The server version, or undefined while loading and on any failure: this is a
- * footnote, never worth an error state. A version cannot change without a
- * restart, so it is fetched once per page load and not retried.
- */
+/** A version cannot change without a restart: fetched once per page load, not retried. */
 export function useServerVersion(): ServerVersion | undefined {
   const { data } = useQuery({
     queryKey: ['server', 'version'],

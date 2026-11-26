@@ -3,7 +3,6 @@ import { cn } from 'cn'
 
 import { Input } from '@/components/ui/input'
 
-/** The text field; it anchors the floating list. */
 function AutocompleteInput({
   className,
   ...props
@@ -17,7 +16,6 @@ function AutocompleteInput({
   )
 }
 
-/** The floating list: portalled, so it overlays whatever surrounds the field, drawers included. */
 function AutocompleteContent({
   align = 'start',
   alignOffset = 0,
@@ -59,7 +57,6 @@ function AutocompleteList({ className, ...props }: AutocompletePrimitive.List.Pr
   )
 }
 
-/** Announced politely to screen readers; pass `sr-only` to hide it visually, padding to show it. */
 function AutocompleteStatus({ className, ...props }: AutocompletePrimitive.Status.Props) {
   return (
     <AutocompletePrimitive.Status

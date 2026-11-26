@@ -4,11 +4,11 @@ import type { ErrorCode } from '@/api/generated/model'
 import type { CloseBy } from '../handshake/handshake'
 import type { ConnectFailure } from './controller'
 
-// 27 s ± 20 %; the peer keeps a lost session for 30 s (connection.rs:510,2671-2697).
+// 27 s ± 20 %; the peer keeps a lost session for 30 s.
 export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000, 8000, 12_000]
 
 export const RECENT_MS = 30_000
-// Our last message heard only approximates the peer's last_recv_time (connection.rs:2671-2697).
+// Our last message heard only approximates the peer's last receive time.
 export const RECENT_MARGIN_MS = 5000
 const JITTER = 0.2
 
@@ -33,7 +33,7 @@ export function retryDelay(attempt: number, random: () => number): number | null
   return Math.round(base * (1 + JITTER * (2 * random() - 1)))
 }
 
-// Retries only fill a rate limit up (crates/deskhaven-core/src/web_client/limits.rs).
+// Retries only fill the server's rate limit up.
 const FINAL_API_ERRORS = new Set<ErrorCode | undefined>(['rate_limited', 'too_many_sessions'])
 
 export function retriesFailure(failure: ConnectFailure): boolean {

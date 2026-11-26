@@ -11,10 +11,8 @@ import { formatDateTime } from '@/lib/format'
 
 import { invalidateDevices } from '../invalidate'
 
-/** Connection types the console names (`conn_type` of the audit message). */
 const KNOWN_TYPES = [0, 1, 2, 3, 4] as const
 
-/** Live connections with a way to close each one, and the recent connection history. */
 export function DeviceConnections({ detail }: { detail: DeviceDetail }) {
   return (
     <>

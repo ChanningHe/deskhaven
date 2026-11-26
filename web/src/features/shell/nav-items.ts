@@ -26,14 +26,12 @@ export interface NavItem {
 }
 
 export interface NavSection {
-  /** `nav.sections.*`; the self-service fallback is never titled (it is always alone). */
   title?: 'manage' | 'configure'
   items: readonly NavItem[]
 }
 
 type NavSections = readonly NavSection[]
 
-/** Sidebar sections (08 §3.1): daily operations, then configuration. */
 export const NAV_SECTIONS: NavSections = [
   {
     title: 'manage',
@@ -58,13 +56,9 @@ export const NAV_SECTIONS: NavSections = [
   },
 ]
 
-/** The self-service page; reachable from the account menu (and the palette). */
 export const ME_NAV_ITEM: NavItem = { key: 'me', to: '/me', icon: UserRound }
 
-/**
- * The sections `role` may see. A plain user sees none of the admin pages, so
- * the sidebar shows their own page instead of an empty list.
- */
+/** A plain user sees none of the admin pages, so the sidebar shows their own page instead. */
 export function navSectionsFor(role: RoleView): NavSections {
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,

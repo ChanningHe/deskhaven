@@ -1,6 +1,3 @@
-// URL state of the devices page: the table keys plus the list filters (the admin API's
-// query parameters, 08 §6) and the open drawer (`device`).
-
 import { parseTableSearch } from '@/components/common/data-table'
 import type { TableSearch } from '@/components/common/data-table'
 import type { DeviceStatusView, ListDevicesParams } from '@/api/generated/model'
@@ -13,7 +10,6 @@ export interface DevicesSearch extends TableSearch {
   online?: boolean | undefined
   device_group?: number | undefined
   status?: DeviceStatusView | undefined
-  /** Id of the device shown in the drawer. */
   device?: number | undefined
 }
 
@@ -31,7 +27,6 @@ function parseBoolean(value: unknown): boolean | undefined {
   return undefined
 }
 
-/** Validates the raw URL search; anything malformed is dropped. */
 export function parseDevicesSearch(raw: Record<string, unknown>): DevicesSearch {
   return {
     ...parseTableSearch(raw, { sortable: DEVICE_SORTABLE }),
@@ -42,14 +37,12 @@ export function parseDevicesSearch(raw: Record<string, unknown>): DevicesSearch 
   }
 }
 
-/** Whether any page-specific filter is set (`q` is detected by the table). */
 export function hasDeviceFilters(search: DevicesSearch): boolean {
   return (
     search.online !== undefined || search.device_group !== undefined || search.status !== undefined
   )
 }
 
-/** The list request for a search (the drawer id is not a filter). */
 export function devicesListParams(
   search: DevicesSearch,
   base: ListDevicesParams,

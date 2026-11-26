@@ -59,10 +59,6 @@ function PaletteList({ onRun }: { onRun: (item: CommandItem) => void }) {
   )
 }
 
-/**
- * ⌘K command palette (08 §3.1): the top-bar search button opens it, and so
- * does ⌘K / Ctrl+K from anywhere in the console.
- */
 export function CommandPalette() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)

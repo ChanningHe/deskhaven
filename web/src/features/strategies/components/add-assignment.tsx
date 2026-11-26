@@ -17,7 +17,7 @@ import { invalidateStrategies } from '../invalidate'
 import { DevicePicker } from './device-picker'
 
 const KINDS: TargetKind[] = ['global', 'group', 'user', 'device_group', 'device']
-/** Most user groups offered in the select (the API's page size limit). */
+/** The API's page size limit. */
 const MAX_GROUPS = 200
 
 interface Picked {
@@ -25,7 +25,6 @@ interface Picked {
   label?: string
 }
 
-/** Assigns the strategy to one more target (replacing the strategy that target had). */
 export function AddAssignment({ strategyId }: { strategyId: number }) {
   const { t } = useTranslation()
   const id = useId()

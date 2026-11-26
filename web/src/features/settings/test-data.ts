@@ -30,7 +30,6 @@ function setting(key: string, spec: Spec, patch: Partial<SettingView> = {}): Set
   }
 }
 
-/** A small, varied registry: one setting of every control kind. */
 export function sampleSettings(): SettingView[] {
   return [
     setting('auth.session_ttl', {
@@ -62,7 +61,6 @@ export function sampleSettings(): SettingView[] {
   ]
 }
 
-/** `settings` with `patch` applied to the one named `key`. */
 export function withSetting(
   settings: readonly SettingView[],
   key: string,

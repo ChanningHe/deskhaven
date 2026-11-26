@@ -6,9 +6,8 @@ interface QrCodeProps {
 }
 
 /**
- * A QR code from the server's SVG path data: React elements only (no markup
- * injection, no inline style, no `data:` URL, as the CSP requires). Always dark
- * on light, which every scanner reads, whatever the theme.
+ * React elements only: no markup injection, inline style or `data:` URL, as the CSP requires.
+ * Always dark on light, which every scanner reads, whatever the theme.
  */
 export function QrCode({ qr, label }: QrCodeProps) {
   return (

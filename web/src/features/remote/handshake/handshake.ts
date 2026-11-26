@@ -51,14 +51,12 @@ export interface CloseCause {
 
 export interface HandshakeParams {
   targetId: string
-  /** The rendezvous server's ed25519 public key (32 bytes). */
   serverPk: Uint8Array
-  /** The server-signed IdPk of the target (RelayResponse.pk / PunchHoleResponse.pk). */
   signedPeerPk: Uint8Array
   /** Who we are to the peer's user; issued by the console server, never typed by the user. */
   myId: string
   myName: string
-  /** Reused across reconnects: the peer's recent-session key (client.rs:2961-2974). */
+  /** Reused across reconnects: the peer's recent-session key. */
   sessionId: bigint
   decoders: DecoderSupport
   loginOption: OptionMessage
@@ -66,7 +64,6 @@ export interface HandshakeParams {
   onHeard?: (at: number) => void
 }
 
-/** Starts a one-shot timer and returns the function that cancels it. */
 export type StartTimer = (ms: number, onExpire: () => void) => () => void
 
 export interface HandshakeDeps {
@@ -74,14 +71,12 @@ export interface HandshakeDeps {
   startTimer?: StartTimer
 }
 
-// The client bounds each handshake step with hbb_common config.rs:44-45 (CONNECT_TIMEOUT and
-// READ_TIMEOUT, 18 s each), e.g. the SignedId read at rustdesk 1.5.0 src/client.rs:1690.
+// The client bounds each handshake step at 18 s (CONNECT_TIMEOUT, READ_TIMEOUT).
 export const CONNECT_TIMEOUT_MS = 18_000
 export const READ_TIMEOUT_MS = 18_000
-/** Opening the relay link (connect), then pairing and the SignedId (one read). */
 export const IDENTITY_TIMEOUT_MS = CONNECT_TIMEOUT_MS + READ_TIMEOUT_MS
 export const TIMEOUT_REASON = 'timeout'
-// The peer sends TestDelay every second (connection.rs:504,703): silence this long is a dead link.
+// The peer sends TestDelay every second: silence this long is a dead link.
 export const SILENCE_MS = 8000
 export const SILENCE_REASON = 'no message from the device for 8 s'
 
@@ -105,7 +100,6 @@ export type HandshakeEvent =
 
 export interface Handshake {
   readonly link: LinkKind
-  /** State changes and every peer message the handshake does not consume; ends with `closed`. */
   readonly events: AsyncIterable<HandshakeEvent>
   /** Before the peer's Hash arrives, the password is kept for it; afterwards it is sent. */
   login(password: string): Promise<void>
@@ -117,10 +111,7 @@ export interface Handshake {
 
 type Phase = 'identity' | 'auth' | 'active' | 'closed'
 
-/**
- * Runs the controller side of the peer handshake over `link`: verify both signatures, key the
- * stream, then log in. Every check fails closed: there is no unauthenticated fallback.
- */
+/** Every check fails closed: there is no unauthenticated fallback. */
 export function startHandshake(
   link: Link,
   params: HandshakeParams,
@@ -347,7 +338,7 @@ class PeerHandshake implements Handshake {
     if (union.case === 'error') {
       const state = loginStateForError(union.value)
       if (state.kind === 'wrong_password') this.#password = null
-      // The peer asks for a 2FA code only past the password (connection.rs:1860-1876).
+      // The peer asks for a 2FA code only past the password.
       if (state.kind !== 'need_2fa') this.#proven = null
       if (state.kind === 'failed') this.#close({ by: 'peer', reason: state.reason })
       else this.#awaitUser(state)
@@ -400,7 +391,6 @@ class PeerHandshake implements Handshake {
   }
 }
 
-/** Opens a signed IdPk under `signerPk` and checks it names `expectedId`. */
 function verifyIdPk(
   blob: Uint8Array,
   signerPk: Uint8Array,

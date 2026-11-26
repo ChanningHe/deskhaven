@@ -17,7 +17,7 @@ import { deviceColumns } from './device-columns'
 import { DeviceDrawer } from './device-drawer'
 import { DeviceFilters } from './device-filters'
 
-/** Online status changes within seconds; the list follows (08 §2). */
+/** Online status changes within seconds; the list follows. */
 const LIST_REFRESH_MS = 15_000
 
 export function DevicesPage() {

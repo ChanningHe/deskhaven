@@ -1,6 +1,3 @@
-// Supported UI languages and browser-language detection. Pure: no i18next,
-// DOM or storage access, so it is trivially unit-testable.
-
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en'] as const
 export type Language = (typeof SUPPORTED_LANGUAGES)[number]
 
@@ -16,7 +13,6 @@ export function isLanguage(value: unknown): value is Language {
   return typeof value === 'string' && (SUPPORTED_LANGUAGES as readonly string[]).includes(value)
 }
 
-/** Maps a BCP 47 tag (e.g. "zh-TW", "en-GB") to a supported language. */
 export function matchLanguageTag(tag: string): Language | undefined {
   const primary = tag.toLowerCase().split('-')[0]
   // Only a Simplified Chinese catalog exists, so every Chinese variant
@@ -26,7 +22,6 @@ export function matchLanguageTag(tag: string): Language | undefined {
   return undefined
 }
 
-/** Saved choice first, then the browser's preference order, then English. */
 export function detectLanguage(
   stored: string | null,
   browserLanguages: readonly string[],

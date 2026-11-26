@@ -58,7 +58,6 @@ function groupColumns(t: TFunction, onOpen: (id: number) => void) {
   ])
 }
 
-/** The user groups tab: list, create, and a drawer per group with its members. */
 export function UserGroupsTab() {
   const { t } = useTranslation()
   const search = useSearch({ from: '/_app/groups' })

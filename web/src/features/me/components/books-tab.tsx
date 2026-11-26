@@ -13,13 +13,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-/** The label key of a rule number: 1 read-only, 2 read-write, 3 full control. */
 function ruleKey(rule: number) {
   if (rule >= 3) return 'fullControl'
   return rule === 2 ? 'readWrite' : 'readOnly'
 }
 
-/** The personal book and the shared books the user holds a rule on (edited in the client). */
 export function BooksTab() {
   const { t } = useTranslation()
   const query = useListMyAddressBooks()

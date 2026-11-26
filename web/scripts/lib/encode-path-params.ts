@@ -1,10 +1,6 @@
-// Orval interpolates path parameters into the request URL as they are. A name or id with
-// `/`, `?`, `#` or `..` (entry ids and tag names are chosen by sharees, not only by
-// administrators) would then address another resource. This rewrites the generated URL
-// templates so every path parameter goes through `encodeURIComponent`.
-// Run by `pnpm gen:api` after orval; unit tested in encode-path-params.test.ts.
+// Orval interpolates path parameters as they are. A `/`, `?`, `#` or `..` in a name chosen by a
+// sharee would then address another resource, so every one goes through `encodeURIComponent`.
 
-/** Template literals of generated URLs: they start at the admin API root. */
 const URL_TEMPLATE = /`(\/admin\/api\/v1[^`]*)`/g
 const PATH_PARAM = /\$\{(\w+)\}/g
 

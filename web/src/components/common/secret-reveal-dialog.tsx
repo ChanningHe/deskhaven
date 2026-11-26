@@ -19,14 +19,8 @@ export interface SecretRevealDialogProps {
   open: boolean
   title: string
   description?: ReactNode
-  /** The secret, shown exactly once (API token, recovery codes, setup link). */
   secret: string
-  /**
-   * Called when the user confirmed they saved it; the only way to close. Drop
-   * every copy of the secret here: it must not be shown again. When it came from
-   * a mutation, call `mutation.reset()` (the mutation cache keeps `data`
-   * otherwise), or create the secret with `gcTime: 0`; clear any state holding it.
-   */
+  /** Drop every copy of the secret here; call `mutation.reset()`, the mutation cache keeps `data`. */
   onDone: () => void
 }
 
@@ -94,11 +88,7 @@ function SecretBody({
   )
 }
 
-/**
- * Shows a secret once (08 §4): copy button, and closing requires confirming it
- * was saved. Escape and outside clicks do not close it, so the secret cannot be
- * lost by accident.
- */
+/** Escape and outside clicks do not close it, so the secret cannot be lost by accident. */
 export function SecretRevealDialog({
   open,
   title,

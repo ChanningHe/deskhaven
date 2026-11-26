@@ -31,7 +31,6 @@ function SaveBar({ dirty, blocked, pending, saved }: SaveBarProps) {
   )
 }
 
-/** Name, note and options of a strategy, saved together as one merge patch. */
 export function StrategyEditor({ strategy }: { strategy: StrategyView }) {
   const { t } = useTranslation()
   const editor = useStrategyEditor(strategy)

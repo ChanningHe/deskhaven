@@ -5,7 +5,6 @@ import { SectionCard } from '@/components/common/section-card'
 import { assignCommand, configCommand, deployCommand } from '../commands'
 import { CopyField } from './copy-field'
 
-/** `--config`, `--deploy` and `--assign` examples; the API token is a placeholder. */
 export function CommandsSection({ configString }: { configString: string | null }) {
   const { t } = useTranslation()
   return (

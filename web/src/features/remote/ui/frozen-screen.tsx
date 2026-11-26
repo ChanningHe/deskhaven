@@ -6,10 +6,6 @@ import { cn } from '@/lib/utils'
 
 import type { RemoteSettings } from '../settings/settings'
 
-/**
- * The last frame of a dropped session, dimmed and placed as the screen placed it, under a note
- * that the page is reconnecting. It takes no input.
- */
 export function FrozenScreen({
   canvas,
   scale,

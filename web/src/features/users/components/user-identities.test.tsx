@@ -1,6 +1,3 @@
-// M4-09: the drawer lists an account's linked sign-ins (unlink only, never link), shows
-// whether its email is verified, and marks it verified after a confirmation.
-
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -21,7 +18,6 @@ const LINKED = {
   created_at: 1_800_000_000_000,
 }
 
-/** A drawer whose detail is fetched again after each change (counted). */
 function drawer(detail: UserDetail, extra: Record<string, MockResponse | MockHandler> = {}) {
   const counter = { details: 0 }
   const app = renderApp('/users?user=5', {

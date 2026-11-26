@@ -35,17 +35,11 @@ import type { TestTarget } from './ldap-diagnostics'
 
 interface DirectoryFormProps {
   directory: LdapDirectoryView | undefined
-  /** The card's saved-state badges. */
   status: ReactNode
-  /** A failed reload of the directories, shown above the fields. */
   alert: ReactNode
   onDirtyChange: DirtyReporter
 }
 
-/**
- * The owner's directory card: create or edit, delete, and the tests card. Tests run against
- * the saved directory, or against the form as typed while it has unsaved changes.
- */
 export function DirectoryForm({ directory, status, alert, onDirtyChange }: DirectoryFormProps) {
   const { t } = useTranslation()
   const form = useRebasedDraft(
@@ -108,7 +102,6 @@ export function DirectoryForm({ directory, status, alert, onDirtyChange }: Direc
   )
 }
 
-/** Creates or patches the directory, then rebases the draft on what the server stored. */
 function useSaveDirectory(
   directory: LdapDirectoryView | undefined,
   { draft, changed, reset }: RebasedDraft<DirectoryDraft>,

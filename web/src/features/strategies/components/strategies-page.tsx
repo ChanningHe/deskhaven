@@ -16,7 +16,6 @@ import { CreateStrategyButton } from './create-strategy-dialog'
 import { strategyColumns } from './strategy-columns'
 import { StrategyDrawer } from './strategy-drawer'
 
-/** Strategies: the list, "new strategy", and a drawer per strategy. */
 export function StrategiesPage() {
   const { t, i18n } = useTranslation()
   const search = useSearch({ from: '/_app/strategies' })

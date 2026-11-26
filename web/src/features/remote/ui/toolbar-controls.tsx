@@ -14,7 +14,6 @@ import { cn } from '@/lib/utils'
 // Below lg the toolbar has a row of its own and is often touched: larger targets fit there.
 const TOOL = 'max-lg:size-10'
 
-/** A control with its hint below it; the hint repeats or extends the control's name. */
 function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
   return (
     <Tooltip>
@@ -24,7 +23,6 @@ function Hinted({ hint, render }: { hint: string; render: ReactElement }) {
   )
 }
 
-/** An icon-only button: its label is its accessible name, and its tooltip unless a hint is given. */
 export function IconButton({
   label,
   hint = label,
@@ -77,7 +75,6 @@ export function ToolbarMenu({
   )
 }
 
-/** Opens on hover, click or tap; titled by its label so screen readers announce it. */
 export function ToolbarPopover({
   label,
   icon,

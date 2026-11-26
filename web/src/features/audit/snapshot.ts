@@ -1,5 +1,4 @@
-// Reading the before / after snapshots of console audit rows. They are stored redacted, so
-// everything here is display logic: nothing is parsed out of them that was not already text.
+// Snapshots are stored redacted: everything here is display logic.
 
 export interface SnapshotChange {
   key: string
@@ -10,7 +9,6 @@ export interface SnapshotChange {
 
 export interface SnapshotDiff {
   changes: SnapshotChange[]
-  /** Members present on both sides with the same value. */
   unchanged: number
 }
 
@@ -18,13 +16,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** An absent snapshot (a create has no `before`, a delete no `after`) is an empty object. */
 function members(value: unknown): Record<string, unknown> | undefined {
   if (value === null || value === undefined) return {}
   return isRecord(value) ? value : undefined
 }
 
-/** The value as indented JSON text; the empty string for an absent one. */
 export function showValue(value: unknown): string {
   if (value === undefined) return ''
   return JSON.stringify(value, null, 2)
@@ -36,10 +32,7 @@ function kindOf(key: string, before: Record<string, unknown>, after: Record<stri
   return 'changed'
 }
 
-/**
- * The top-level members that differ between two snapshots, in the order they appear;
- * `undefined` when either side is not an object (then the snapshots are shown whole).
- */
+/** `undefined` when either side is not an object (then the snapshots are shown whole). */
 export function diffSnapshots(beforeRaw: unknown, afterRaw: unknown): SnapshotDiff | undefined {
   const before = members(beforeRaw)
   const after = members(afterRaw)
@@ -65,10 +58,8 @@ export interface PurgeSummary {
   batch: number
 }
 
-/** `console_audit.action` of a retention batch (04 §7). */
 export const RETENTION_ACTION = 'audit.retention.purge'
 
-/** The `{kind, deleted, cutoff, batch}` of a retention purge row, when `after` has that shape. */
 export function purgeSummary(action: string, after: unknown): PurgeSummary | undefined {
   if (action !== RETENTION_ACTION || !isRecord(after)) return undefined
   const { kind, deleted, cutoff, batch } = after

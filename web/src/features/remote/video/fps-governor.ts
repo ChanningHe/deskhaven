@@ -25,9 +25,8 @@ export interface FpsTick {
   backlog: number
 }
 
-// rustdesk 1.5.1 src/client/io_loop.rs:1557-1655, decode rate src/client.rs:4164-4193. Unlike
-// there, the decode rate does not cap the fps: a WebCodecs decoder pipelines frames, so the time
-// one frame spends in it is latency, not throughput. Only a backlog says it is falling behind.
+// Unlike the client, the decode rate does not cap the fps: a WebCodecs decoder pipelines frames,
+// so the time one frame spends in it is latency, not throughput. Only a backlog says it is behind.
 export class FpsGovernor {
   #userFps: number
   #userChanged = false

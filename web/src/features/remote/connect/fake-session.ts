@@ -45,7 +45,6 @@ export class FakeAudio implements AudioPlayback {
   }
 }
 
-/** A Session the test drives by hand; it records what the page asks of it. */
 export class FakeSession implements Session {
   readonly state = new ValueStore<SessionState>({ kind: 'connecting' })
   readonly peer = new ValueStore<PeerView | null>(null)
@@ -133,7 +132,6 @@ export class FakeSession implements Session {
     this.finishSample(null)
   }
 
-  /** Ends the recording recordSample started with `sample`. */
   finishSample(sample: VideoSample | null): void {
     this.#sample?.(sample)
     this.#sample = null
@@ -170,7 +168,6 @@ export class FakeSession implements Session {
     if (peer?.display) this.peer.set({ ...peer, display: { ...peer.display, width, height } })
   }
 
-  /** Logs in: the peer is a 1.5.0 with `displays` screens of 1280×800. */
   activate(displays = 1, platform = 'Linux'): void {
     const peerInfo = create(PeerInfoSchema, {
       platform,

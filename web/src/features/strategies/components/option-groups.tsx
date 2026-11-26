@@ -9,14 +9,12 @@ import { OptionField } from './option-field'
 interface OptionGroupsProps {
   options: CatalogOptionView[]
   draft: OptionDraft
-  /** Secret options whose value the server holds and withholds. */
   saved: Set<string>
   problems: Map<string, ValueProblem>
   onChange: (key: string, value: OptionValue | undefined) => void
   disabled: boolean
 }
 
-/** The catalog options, one section per group (security, permissions, …). */
 export function OptionGroups({
   options,
   draft,

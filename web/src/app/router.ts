@@ -10,7 +10,6 @@ export interface RouterContext {
   queryClient: QueryClient
 }
 
-/** Router-wide defaults, shared with tests that build ad-hoc route trees. */
 export const ROUTER_DEFAULTS = {
   defaultPreload: 'intent',
   // Loaders should read through TanStack Query, which owns caching.

@@ -6,7 +6,6 @@ import { QrCode } from '@/features/auth/components/qr-code'
 
 import { CopyField } from './copy-field'
 
-/** The config string for the client's import box, and its QR code for the mobile apps. */
 export function ConfigStringSection({ config }: { config: ClientConfigView }) {
   const { t } = useTranslation()
   const { config_string: configString, qr } = config

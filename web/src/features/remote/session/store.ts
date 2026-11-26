@@ -1,7 +1,6 @@
 /** A value that changes over time; fits React's useSyncExternalStore. */
 export interface Store<T> {
   get(): T
-  /** Calls `listener` after each change; returns the function that stops it. */
   subscribe(listener: () => void): () => void
 }
 

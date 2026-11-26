@@ -1,6 +1,3 @@
-// URL state of the users page: the table keys plus the list filters (the
-// admin API's query parameters, 08 §6) and the open drawer (`user`).
-
 import { parseTableSearch } from '@/components/common/data-table'
 import type { TableSearch } from '@/components/common/data-table'
 import type { AuthSourceView, ListUsersParams, RoleView, StatusView } from '@/api/generated/model'
@@ -22,7 +19,6 @@ export interface UsersSearch extends TableSearch {
   role?: RoleView | undefined
   status?: StatusView | undefined
   auth_source?: AuthSourceView | undefined
-  /** Id of the account shown in the drawer. */
   user?: number | undefined
 }
 
@@ -37,7 +33,6 @@ function positiveId(value: unknown): number | undefined {
     : undefined
 }
 
-/** Validates the raw URL search; anything malformed is dropped. */
 export function parseUsersSearch(raw: Record<string, unknown>): UsersSearch {
   return {
     ...parseTableSearch(raw, { sortable: USER_SORTABLE }),
@@ -48,14 +43,12 @@ export function parseUsersSearch(raw: Record<string, unknown>): UsersSearch {
   }
 }
 
-/** Whether any page-specific filter is set (`q` is detected by the table). */
 export function hasUserFilters(search: UsersSearch): boolean {
   return (
     search.role !== undefined || search.status !== undefined || search.auth_source !== undefined
   )
 }
 
-/** The list request for a search (the drawer id is not a filter). */
 export function usersListParams(search: UsersSearch, base: ListUsersParams): ListUsersParams {
   return {
     ...base,

@@ -1,5 +1,3 @@
-// Fixtures of the users and groups page tests.
-
 import type { QueryClient } from '@tanstack/react-query'
 
 import type { UserDetail, UserView } from '@/api/generated/model'
@@ -27,7 +25,6 @@ export function userView(id: number, username: string, patch: Partial<UserView> 
   }
 }
 
-/** A list endpoint answering `items` for every page (`total` defaults to their count). */
 export function pageOf(items: unknown[], total = items.length): MockHandler {
   return ({ url }) => ({
     body: {
@@ -49,7 +46,6 @@ export function userDetail(target: UserView): UserDetail {
   }
 }
 
-/** Mutations in the cache whose result still holds a temporary password. */
 export function cachedSecrets(queryClient: QueryClient): unknown[] {
   return queryClient
     .getMutationCache()

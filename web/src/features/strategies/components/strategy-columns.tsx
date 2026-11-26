@@ -7,7 +7,6 @@ import { formatDateTime } from '@/lib/format'
 
 const column = createDataTableColumnHelper<StrategyView>()
 
-/** Options the strategy sets, secret ones included. */
 export function optionCount(strategy: StrategyView): number {
   return Object.keys(strategy.options).length + strategy.secret_options.length
 }

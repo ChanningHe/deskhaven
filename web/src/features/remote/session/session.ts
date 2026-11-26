@@ -52,7 +52,7 @@ export type { Session, SessionOptions, SessionState } from './types'
 
 const VP9_ONLY = { vp9: true, av1: false, vp8: false, h264: false, h265: false }
 
-// rustdesk 1.5.0 src/client.rs:110 RESTART_REMOTE_DEVICE_GRACE
+// The client's RESTART_REMOTE_DEVICE_GRACE.
 export const RESTART_GRACE_MS = 5 * 60_000
 
 /** What a peer streams only once it serves the connection. */
@@ -63,7 +63,6 @@ const SERVED = new Set<Message['union']['case']>([
   'cursorPosition',
 ])
 
-/** Runs a remote control session over a handshake from `startHandshake`, from login on. */
 export function startSession(handshake: Handshake, options: SessionOptions = {}): Session {
   const session = new RemoteSession(handshake, options)
   void session.run()
@@ -240,7 +239,7 @@ class RemoteSession implements Session {
     this.peer.set({ ...peer, keyboardMode: mode })
   }
 
-  // rustdesk 1.5.0 src/ui_session_interface.rs:857-877: switch, then capture only that display.
+  // Switch, then capture only that display.
   switchDisplay(index: number): void {
     const peer = this.peer.get()
     if (!peer || !this.#active() || !Number.isInteger(index)) return
@@ -450,7 +449,6 @@ class RemoteSession implements Session {
     }
   }
 
-  /** Ends the session from our side and drops the link. */
   #hangUp(by: CloseBy, error: unknown): void {
     const cause = { by, reason: error instanceof Error ? error.message : String(error) }
     this.#finish(cause)

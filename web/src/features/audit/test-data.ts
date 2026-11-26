@@ -1,5 +1,3 @@
-// Fixtures of the audit page tests.
-
 import type { AlarmAuditView, ConnectionAuditView } from '@/api/generated/model'
 
 export const AUDIT_PATH = '/admin/api/v1/audit'

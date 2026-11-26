@@ -8,10 +8,7 @@ const HTTP_FORBIDDEN = 403
 const FIRST_SERVER_ERROR = 500
 export const MAX_QUERY_RETRIES = 1
 
-/**
- * Retry network errors and 5xx at most once. Anything else with a status (4xx,
- * or a 2xx whose body was not the expected JSON) fails the same way again.
- */
+/** Network errors and 5xx retry once; any other status would fail the same way again. */
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
   const status = httpStatusOf(error)
   if (status !== undefined && status < FIRST_SERVER_ERROR) return false
@@ -19,15 +16,7 @@ export function shouldRetryQuery(failureCount: number, error: unknown): boolean 
 }
 
 export interface QueryClientOptions {
-  /**
-   * Called when any query or mutation fails with 401. The app wires this to
-   * clearing the cache and a redirect to /login (see create-app.ts).
-   */
   onUnauthorized?: () => void
-  /**
-   * Called when any query or mutation fails with 403, with the failing query's
-   * key (undefined for mutations). The app re-checks the session's role.
-   */
   onForbidden?: (failedQueryKey: QueryKey | undefined, error: unknown) => void
 }
 

@@ -99,7 +99,6 @@ function Harness({ session, enabled = true, viewOnly = false }: Props) {
   )
 }
 
-/** Lets the clipboard and permission promises settle. */
 async function settle() {
   await act(async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve()

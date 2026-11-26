@@ -5,7 +5,6 @@ export function modifiersOf(e: MouseEvent | KeyboardEvent): Modifiers {
   return { alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey, meta: e.metaKey }
 }
 
-/** A keydown or keyup of the focused view. */
 export function keyInput(e: KeyboardEvent): RemoteInput {
   return {
     kind: 'key',
@@ -21,7 +20,6 @@ export function keyInput(e: KeyboardEvent): RemoteInput {
   }
 }
 
-/** The committed text of an IME composition (compositionend). */
 export function textInput(e: CompositionEvent): RemoteInput {
   return { kind: 'text', text: e.data }
 }
@@ -35,7 +33,6 @@ const POINTER_ACTIONS: Readonly<Record<string, 'move' | 'down' | 'up'>> = {
   pointerup: 'up',
 }
 
-/** A mouse or pointer event over `view`, the element the peer's screen is drawn in. */
 export function pointerInput(e: MouseEvent, view: Element): RemoteInput | null {
   const action = POINTER_ACTIONS[e.type]
   if (!action) return null

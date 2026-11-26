@@ -38,7 +38,7 @@ export interface AudioPlayback {
   play(output: AudioOutput | null): void
 }
 
-// Misc.audio_format comes first, then Opus in AudioFrame (rustdesk 1.5.1 audio_service.rs:614-708).
+// Misc.audio_format comes first, then Opus in AudioFrame.
 export class AudioPipeline implements AudioPlayback {
   readonly state = new ValueStore<AudioState>('ok')
   readonly #decoders: AudioDecoders

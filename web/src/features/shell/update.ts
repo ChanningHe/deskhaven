@@ -1,6 +1,4 @@
-// A newer deskhaven release than the running server, as the server learnt it
-// from GitHub. The server builds the release link itself; the console still
-// accepts only an https one before using it as an href.
+// The server builds the release link itself; the console still accepts only an https one.
 
 import { useGetUpdateCheck } from '@/api/generated/update-check/update-check'
 import type { UpdateCheckView } from '@/api/generated/model'
@@ -26,11 +24,7 @@ function parseUpdate({
   return safeUrl === undefined ? undefined : { version: latest, releaseUrl: safeUrl }
 }
 
-/**
- * The newer release, or undefined while loading, when there is none and on any
- * failure: a footnote, never worth an error state. `enabled: false` (users
- * without admin rights) sends no request.
- */
+/** Undefined on any failure: a footnote, never worth an error state. */
 export function useAvailableUpdate(enabled: boolean): AvailableUpdate | undefined {
   const { data } = useGetUpdateCheck({
     query: { enabled, staleTime: UPDATE_STALE_TIME_MS, retry: false, select: parseUpdate },

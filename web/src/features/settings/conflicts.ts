@@ -1,5 +1,3 @@
-// Reading the details of the settings endpoint's 409 and 422 answers.
-
 import { isApiError } from '@/api/api-error'
 import type { SettingView } from '@/api/generated/model'
 
@@ -17,14 +15,12 @@ function isSettingView(value: unknown): value is SettingView {
   )
 }
 
-/** The current settings of the stale keys of a `version_conflict` (empty for other errors). */
 export function conflictsOf(error: unknown): SettingView[] {
   if (!isApiError(error) || error.code !== 'version_conflict') return []
   const conflicts = error.details?.conflicts
   return Array.isArray(conflicts) ? conflicts.filter(isSettingView) : []
 }
 
-/** The server's reasons per setting key of a `validation_failed` (empty for other errors). */
 export function fieldProblemsOf(error: unknown): Readonly<Record<string, readonly string[]>> {
   if (!isApiError(error) || error.code !== 'validation_failed') return {}
   const fields = error.details?.fields

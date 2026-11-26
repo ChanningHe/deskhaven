@@ -21,7 +21,6 @@ import { HistoryDrawer } from './history-drawer'
 import { SaveBar } from './save-bar'
 import { SettingRow } from './setting-row'
 
-/** Settings (05 §3): grouped by category, edited as one batch, with source and history. */
 export function SettingsPage() {
   const { t } = useTranslation()
   const query = useListSettings({ query: { placeholderData: keepPreviousData } })
@@ -132,7 +131,6 @@ function CategoryCard({ category, editor, titleRef, onHistory }: CategoryCardPro
   )
 }
 
-/** The page-wide save bar and the conflict dialog a save can open. */
 function SaveArea({
   settings,
   editor,

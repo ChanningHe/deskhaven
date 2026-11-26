@@ -1,19 +1,14 @@
 import { concatBytes } from '../bytes'
 import { MAX_FRAME_BYTES } from './relay'
 
-// Framing of one logical message on the data channel (hbb_common fae47e0 src/webrtc.rs:143-155):
-// each data-channel message is a 1-byte header and up to MAX_FRAGMENT_PAYLOAD bytes.
+// Framing of one logical message on the data channel, as hbb_common does it: each data-channel
+// message is a 1-byte header and up to MAX_FRAGMENT_PAYLOAD bytes.
 
-/** More fragments of this message follow. */
 export const FRAG_MORE = 1
-/** The final (or only) fragment of a message. */
 export const FRAG_END = 0
 /** Kept well under the SCTP 65536-byte message size, header included. */
 export const MAX_FRAGMENT_PAYLOAD = 60_000
-/**
- * One session's messages must fit either transport, so the data channel takes what the relay
- * takes (relay.ts `MAX_FRAME_BYTES`).
- */
+/** One session's messages must fit either transport, so the data channel takes what the relay takes. */
 export const MAX_MESSAGE_BYTES = MAX_FRAME_BYTES
 
 /** Always at least one fragment: a zero-length data-channel message reads as end of stream. */
@@ -41,7 +36,6 @@ export class Reassembler {
     this.#limit = limit
   }
 
-  /** The whole message once its FRAG_END arrives, else null. */
   push(chunk: Uint8Array): Uint8Array | null {
     const header = chunk[0]
     if (header === undefined) throw new Error('empty data channel message')

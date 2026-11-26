@@ -13,7 +13,6 @@ import type { Session } from '../../session/session'
 import { CODEC_NAMES } from '../../video/codec'
 import { useStore } from '../use-remote'
 
-/** The codec picked, with what keeps the others from being picked and what actually arrives. */
 export function CodecSubmenu({
   session,
   codec,

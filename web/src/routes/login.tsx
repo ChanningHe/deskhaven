@@ -4,7 +4,6 @@ import { LoginPage } from '@/features/auth/components/login-page'
 import { safeRedirectTarget } from '@/features/auth/session'
 
 interface LoginSearch {
-  /** Same-origin path to return to after signing in (validated). */
   redirect?: string | undefined
 }
 

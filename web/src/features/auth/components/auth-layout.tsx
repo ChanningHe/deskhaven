@@ -8,11 +8,9 @@ interface AuthLayoutProps {
   title: string
   description?: ReactNode
   children: ReactNode
-  /** Wider card (setup, TOTP enrolment). */
   wide?: boolean
 }
 
-/** The centred card of the pages outside the console shell (sign-in, setup). */
 export function AuthLayout({ title, description, children, wide = false }: AuthLayoutProps) {
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-muted/40 px-4 py-12">

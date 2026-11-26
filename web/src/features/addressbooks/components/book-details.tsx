@@ -18,7 +18,6 @@ import { useRebasedDraft } from '@/lib/use-rebased-draft'
 
 import { invalidateAddressBooks } from '../invalidate'
 
-/** Name and note of a book. */
 export function BookDetails({ book }: { book: BookView }) {
   const { t } = useTranslation()
   const id = useId()
@@ -80,7 +79,6 @@ export function BookDetails({ book }: { book: BookView }) {
   )
 }
 
-/** Deleting the book, at the bottom of the drawer; asks for its name first. */
 export function BookDangerZone({ book, onDeleted }: { book: BookView; onDeleted: () => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

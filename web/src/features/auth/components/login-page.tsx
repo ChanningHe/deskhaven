@@ -16,7 +16,6 @@ import type { Challenge } from './password-step'
 import { PasswordStep } from './password-step'
 import { TotpStep } from './totp-step'
 
-/** While no owner exists, points at the one-time setup link. */
 function SetupHint() {
   const { t } = useTranslation()
   const status = useSetupStatus()
@@ -29,11 +28,6 @@ function SetupHint() {
   )
 }
 
-/**
- * Sign-in: password, then (with TOTP) a code step; OIDC buttons. A signed-in
- * user goes to the pending account setup step, the remembered page, or the
- * overview.
- */
 export function LoginPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

@@ -18,7 +18,6 @@ interface UserFiltersProps {
   onChange: (patch: Partial<UsersSearch>) => void
 }
 
-/** Role, status and source filters of the user list (URL-synced through `onChange`). */
 export function UserFilters({ search, onChange }: UserFiltersProps) {
   const { t } = useTranslation()
   const filters: Filter[] = [

@@ -29,7 +29,7 @@ function draftOf(device: DeviceView): Draft {
   }
 }
 
-/** Only the fields the user edited (`null` removes the owner or the group). */
+/** `null` removes the owner or the group. */
 function patchOf(draft: Draft, changed: (keyof Draft)[]): DevicePatch {
   return {
     ...(changed.includes('owner') ? { owner_user_id: draft.owner?.id ?? null } : {}),
@@ -38,7 +38,6 @@ function patchOf(draft: Draft, changed: (keyof Draft)[]): DevicePatch {
   }
 }
 
-/** Owner, device group and note of a device, saved in one request. */
 export function DeviceManageForm({ device }: { device: DeviceView }) {
   const { t } = useTranslation()
   const id = useId()

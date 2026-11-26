@@ -1,5 +1,3 @@
-// Fixtures of the strategy page tests.
-
 import type {
   CatalogOptionView,
   CatalogView,

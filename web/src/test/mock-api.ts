@@ -11,7 +11,6 @@ export type MockHandler = (request: {
   init: RequestInit
 }) => MockResponse | Promise<MockResponse>
 
-/** A JSON response (or an empty one for 204 / undefined body). */
 export function toResponse({ status = 200, body, headers = {} }: MockResponse): Response {
   if (body === undefined) return new Response(null, { status, headers })
   return new Response(JSON.stringify(body), {
@@ -29,11 +28,7 @@ export function errorEnvelope(code: string, message = code) {
   return { error: { code, message } }
 }
 
-/**
- * Stubs global fetch with handlers keyed by `"METHOD /path"` (query string
- * ignored). Unmatched requests answer 404 `not_found`. Returns the spy so
- * tests can inspect calls.
- */
+/** Keyed by `"METHOD /path"` (query ignored); unmatched requests answer 404 `not_found`. */
 export function mockApi(routes: Record<string, MockResponse | MockHandler>) {
   const spy = vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = urlOf(input)
@@ -49,12 +44,10 @@ export function mockApi(routes: Record<string, MockResponse | MockHandler>) {
   return spy
 }
 
-/** How many fetch calls went to `pathname`. */
 export function callsTo(spy: ReturnType<typeof mockApi>, pathname: string): number {
   return spy.mock.calls.filter(([input]) => urlOf(input).pathname === pathname).length
 }
 
-/** The URL of the n-th fetch call, parsed against a dummy origin. */
 export function requestedUrl(spy: ReturnType<typeof mockApi>, index: number): URL {
   const call = spy.mock.calls[index]
   if (!call) throw new Error(`no fetch call #${index}`)

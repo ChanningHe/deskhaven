@@ -11,8 +11,8 @@ import {
 } from './bitrate'
 
 describe('baseBitrate', () => {
-  // Expected values worked by hand from rustdesk 1.5.1 libs/scrap/src/common/codec.rs:929-959:
-  // the preset whose pixel count is nearest, scaled by the pixel ratio, then rounded.
+  // Expected values worked by hand from the peer's base_bitrate: the preset whose pixel count is
+  // nearest, scaled by the pixel ratio, then rounded.
   it.each([
     ['1920×1080 is its own preset', 1920, 1080, 2073],
     ['3840×2160 is its own preset', 3840, 2160, 5000],
@@ -29,7 +29,7 @@ describe('baseBitrate', () => {
 })
 
 describe('targetKbps', () => {
-  // base × ratio, truncated (rustdesk 1.5.1 libs/scrap/src/common/vpxcodec.rs:325-327).
+  // base × ratio, truncated, as the peer's VPX encoder does.
   it.each<[string, Quality, number, number, number]>([
     ['1080p best: 2073 × 1.5 = 3109.5', 'best', 1920, 1080, 3109],
     ['1080p balanced: 2073 × 0.67 = 1388.9', 'balanced', 1920, 1080, 1388],

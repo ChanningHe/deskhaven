@@ -19,7 +19,6 @@ interface AppSidebarProps {
   onToggle: () => void
 }
 
-/** Desktop sidebar (md and up). Small screens use <MobileNav> instead. */
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const { t } = useTranslation()
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose

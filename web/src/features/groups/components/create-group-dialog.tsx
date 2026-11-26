@@ -18,7 +18,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { invalidateAccounts } from '@/features/users/invalidate'
 
-/** "New group"; opens the new group's drawer when created. */
 export function CreateGroupButton({ onCreated }: { onCreated: (id: number) => void }) {
   const { t } = useTranslation()
   const id = useId()

@@ -38,7 +38,6 @@ function toggled(scopes: readonly ScopeView[], scope: ScopeView, on: boolean): S
   return on ? SCOPES.filter((s) => s === scope || others.includes(s)) : others
 }
 
-/** "New token": the form, then the secret exactly once (the API returns it only here). */
 export function CreateTokenButton() {
   const { t } = useTranslation()
   const id = useId()

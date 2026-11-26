@@ -15,7 +15,6 @@ function dateOrDash(at: number | null | undefined, language: string, empty: stri
   return at === null || at === undefined ? empty : formatDateTime(at, language)
 }
 
-/** Columns of the token table; `onRevoke` asks to revoke one. */
 export function tokenColumns(
   t: TFunction,
   language: string,

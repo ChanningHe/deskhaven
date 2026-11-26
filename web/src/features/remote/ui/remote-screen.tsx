@@ -16,12 +16,7 @@ import { pasteKey, useScreenKeys } from './use-screen-keys'
 
 const noPaste = () => undefined
 
-/**
- * The peer's screen, scaled to fit with its aspect ratio kept, or one peer pixel to a CSS pixel
- * with scroll bars when that is larger: the wheel goes to the peer. The video canvas, and over it
- * the cursor canvas, which takes the pointer. Keys go to an invisible text field on the screen,
- * so that IMEs work there; `onLeave` takes focus elsewhere when the user asks to leave the screen.
- */
+/** Keys go to an invisible text field on the screen, so that IMEs work there. */
 export function RemoteScreen({
   session,
   scale,
@@ -42,7 +37,6 @@ export function RemoteScreen({
   onPointerEnter?: () => void
   onGesture?: () => void
   onPaste?: (text: string) => void
-  /** The last session's frame, shown until this one draws its first. */
   frozen?: HTMLCanvasElement | null | undefined
   onFrozen?: (frame: HTMLCanvasElement | null) => void
 }) {

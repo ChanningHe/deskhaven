@@ -61,7 +61,6 @@ function fileColumns(t: TFunction, language: string, onOpen: (id: number) => voi
   ])
 }
 
-/** File transfers, as the controlled device reported them. */
 export function FilesPanel({ search, onSearchChange }: PanelProps) {
   const { t, i18n } = useTranslation()
   const query = useListFileAudit(auditListParams(search), {

@@ -5,7 +5,6 @@ export interface Size {
   height: number
 }
 
-/** The largest size of `frame`'s aspect ratio that fits in `box`, in whole CSS pixels. */
 export function fitSize(frame: Size, box: Size): Size | null {
   if (frame.width <= 0 || frame.height <= 0 || box.width <= 0 || box.height <= 0) return null
   const scale = Math.min(box.width / frame.width, box.height / frame.height)
@@ -15,7 +14,6 @@ export function fitSize(frame: Size, box: Size): Size | null {
   }
 }
 
-/** Where a client point over `view` falls in the canvas's own pixels. */
 export function canvasPoint(
   canvas: { width: number; height: number },
   view: DOMRect,
@@ -36,10 +34,7 @@ export interface Rect {
   height: number
 }
 
-/**
- * Paints the peer's cursor with its hotspot at `at` (canvas pixels) on a cleared overlay.
- * putImageData copies alpha as is, which is right on an otherwise transparent layer.
- */
+/** putImageData copies alpha as is, which is right on an otherwise transparent layer. */
 export function drawCursor(
   ctx: CanvasRenderingContext2D,
   shape: CursorShape | null,
@@ -54,7 +49,6 @@ export function drawCursor(
   return { x, y, width: shape.width, height: shape.height }
 }
 
-/** Draws one decoded frame at its display size, resizing the canvas when that changes. */
 export function drawFrame(canvas: HTMLCanvasElement, frame: VideoFrame): Size | null {
   const width = frame.displayWidth
   const height = frame.displayHeight

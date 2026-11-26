@@ -14,13 +14,9 @@ import { Label } from '@/components/ui/label'
 import { invalidateAddressBooks } from '../invalidate'
 import { DEFAULT_RULE, RULES } from '../rules'
 
-/** Most groups offered in the select (the API's page size limit). */
+/** The API's page size limit. */
 const MAX_GROUPS = 200
 
-/**
- * "Grant to": a user (searched) or a group (chosen), with a rule. Picking a user grants at
- * once; a group needs the button.
- */
 export function AddShare({ guid }: { guid: string }) {
   const { t } = useTranslation()
   const id = useId()

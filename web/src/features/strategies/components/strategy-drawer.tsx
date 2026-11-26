@@ -29,7 +29,6 @@ interface StrategyDrawerProps {
   onClose: () => void
 }
 
-/** Side drawer of one strategy: its options, its targets and a device preview. */
 export function StrategyDrawer({ strategyId, onClose }: StrategyDrawerProps) {
   const { t } = useTranslation()
   return (

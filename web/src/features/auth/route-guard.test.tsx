@@ -85,7 +85,6 @@ describe('console route guard', () => {
     })
     expect(router.state.location.search).toEqual({ redirect: '/devices' })
     expect(queryClient.getQueryData(ME_QUERY_KEY)).toBeUndefined()
-    // Data fetched under the old session must not survive into the next one.
     expect(queryClient.getQueryData(['users', { page: 1 }])).toBeUndefined()
   })
 
@@ -97,7 +96,6 @@ describe('console route guard', () => {
     await screen.findByRole('heading', { level: 1, name: '设备' })
     expect(navLabels()).toContain('设置')
 
-    // An owner demoted to admin elsewhere; the next owner-only call is refused.
     session.current = ADMIN_ME
     await expect(
       queryClient.query({
@@ -138,7 +136,6 @@ describe('login redirect target', () => {
   it('accepts same-origin paths with query and hash', () => {
     expect(safeRedirectTarget('/devices?page=2')).toBe('/devices?page=2')
     expect(safeRedirectTarget('/users?q=a%20b#row-3')).toBe('/users?q=a%20b#row-3')
-    // An encoded tab stays an encoded path character, still on this origin.
     expect(safeRedirectTarget('/%09/x')).toBe('/%09/x')
   })
 
@@ -168,7 +165,6 @@ describe('login redirect target', () => {
     const { router } = renderApp('/login?redirect=%2F%2Fevil.example', { me: null })
 
     await screen.findByRole('heading', { name: '登录 deskhaven' })
-    // The page reads the validated search of its match, not the raw URL.
     expect(router.state.matches.at(-1)?.search).toEqual({ redirect: undefined })
   })
 })

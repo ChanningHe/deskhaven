@@ -39,7 +39,6 @@ export function optionMessage(option: OptionMessage): Message {
   return misc({ case: 'option', value: option })
 }
 
-/** Asks for another codec mid-session (rustdesk 1.5.1 src/client.rs:3889-3903). */
 export function decodingOption(supportedDecoding: SupportedDecoding): Message {
   return optionMessage(create(OptionMessageSchema, { supportedDecoding }))
 }
@@ -48,18 +47,16 @@ export function customFps(fps: number): Message {
   return optionMessage(create(OptionMessageSchema, { customFps: fps }))
 }
 
-// Peers from 1.2.4 refresh one display (rustdesk 1.5.0 src/ui_session_interface.rs:442-450,
-// MIN_VER_MULTI_UI_SESSION at src/common.rs:65).
+// Peers from 1.2.4 refresh one display.
 const MIN_VERSION_REFRESH_DISPLAY = '1.2.4'
 
-/** Asks the peer to start its stream over with a key frame. */
 export function refreshVideo(display: number, peerVersion: string): Message {
   return atLeast(peerVersion, MIN_VERSION_REFRESH_DISPLAY)
     ? misc({ case: 'refreshVideoDisplay', value: display })
     : misc({ case: 'refreshVideo', value: true })
 }
 
-/** Sent before we hang up; empty, as the client sends it (src/client/io_loop.rs:726-728). */
+/** Sent before we hang up; empty, as the client sends it. */
 export function closeReason(reason = ''): Message {
   return misc({ case: 'closeReason', value: reason })
 }
@@ -68,7 +65,6 @@ export function restartRemote(): Message {
   return misc({ case: 'restartRemoteDevice', value: true })
 }
 
-/** Answers PeerInfo.windows_sessions (rustdesk 1.5.1 src/ui_session_interface.rs:1629-1636). */
 export function selectedSid(sid: number): Message {
   return misc({ case: 'selectedSid', value: sid })
 }
@@ -85,7 +81,7 @@ export function captureDisplay(display: number): Message {
   return misc({ case: 'captureDisplays', value: create(CaptureDisplaysSchema, { set: [display] }) })
 }
 
-// message.proto:847-861: change_resolution is deprecated since 1.2.4 for change_display_resolution.
+// change_resolution is deprecated since 1.2.4 for change_display_resolution.
 const MIN_VERSION_DISPLAY_RESOLUTION = '1.2.4'
 
 export function changeResolution(
@@ -126,12 +122,11 @@ function legacyKey(
 
 /**
  * Always Legacy, as the official client sends them. `press` is down then up on the peer, except
- * for a modifier: a Linux peer reads its press as a release (rustdesk 1.5.1 src/server/connection.rs:3367).
+ * for a modifier: a Linux peer reads its press as a release.
  */
 export function actionKeys(kind: SessionAction, platform: string): KeyEvent[] {
   switch (kind) {
     case 'ctrl_alt_del':
-      // rustdesk 1.5.1 src/keyboard.rs:487-500
       return [
         platform === PLATFORM_WINDOWS
           ? legacyKey(ControlKey.CtrlAltDel, { down: true })
@@ -141,16 +136,15 @@ export function actionKeys(kind: SessionAction, platform: string): KeyEvent[] {
             }),
       ]
     case 'lock_screen':
-      // rustdesk 1.5.1 src/keyboard.rs:473-478
       return [legacyKey(ControlKey.LockScreen, { down: true })]
     case 'win':
-      // no official menu entry; Meta is ControlKey.Meta at src/keyboard.rs:1149
+      // no official menu entry; Meta is ControlKey.Meta
       return [
         legacyKey(ControlKey.Meta, { down: true }),
         legacyKey(ControlKey.Meta, { down: false }),
       ]
     case 'alt_tab':
-      // no official menu entry; press as src/keyboard.rs:487-500, Cmd is the Meta modifier (:450-454)
+      // no official menu entry; Cmd is the Meta modifier
       return [
         legacyKey(ControlKey.Tab, {
           press: true,
@@ -158,7 +152,7 @@ export function actionKeys(kind: SessionAction, platform: string): KeyEvent[] {
         }),
       ]
     case 'print_screen':
-      // no official menu entry; the peer maps Snapshot to PrintScreen at src/server/input_service.rs:2697
+      // no official menu entry; the peer maps Snapshot to PrintScreen
       return [legacyKey(ControlKey.Snapshot, { press: true })]
   }
 }

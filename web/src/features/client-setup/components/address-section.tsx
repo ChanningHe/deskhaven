@@ -5,7 +5,6 @@ import { SectionCard } from '@/components/common/section-card'
 
 import { CopyField } from './copy-field'
 
-/** ID server, relay, API server and public key, as a client's server dialog takes them. */
 export function AddressSection({ config }: { config: ClientConfigView }) {
   const { t } = useTranslation()
   const relayHint =

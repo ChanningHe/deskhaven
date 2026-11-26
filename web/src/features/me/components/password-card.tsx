@@ -14,16 +14,12 @@ import { refreshAccount } from '../invalidate'
 
 const EMPTY = { current: '', next: '', confirm: '' }
 
-/** Why the account has no local password to change. */
 function ExternalNotice({ source }: { source: MyAccount['auth_source'] }) {
   const { t } = useTranslation()
   return <p className="text-sm text-muted-foreground">{t(`me.password.external.${source}`)}</p>
 }
 
-/**
- * Password change for local accounts. The server revokes every session and hands this
- * browser a fresh one, so other devices sign in again.
- */
+/** The server revokes every session and hands this browser a fresh one. */
 export function PasswordCard({ account }: { account: MyAccount }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

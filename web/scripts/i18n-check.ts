@@ -33,7 +33,6 @@ function settingKeys(): string[] {
   return snapshot.settings.map((setting) => setting.key)
 }
 
-/** Per locale, the `settings.items` keys missing for a registry setting, and those for none. */
 function settingItemProblems(locales: Record<string, unknown>): number {
   const expected = new Set(
     settingKeys().flatMap((key) =>

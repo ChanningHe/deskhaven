@@ -1,7 +1,7 @@
 import { ControlKey } from '../proto/gen/message_pb.js'
 
 // DOM KeyboardEvent.code → ControlKey where the key's position matters (left/right modifiers,
-// numpad), after the rdev Key → ControlKey match of rustdesk 1.5.0 src/keyboard.rs:1059-1150.
+// numpad), as the client's rdev Key → ControlKey match.
 const BY_CODE: Readonly<Record<string, ControlKey>> = {
   AltLeft: ControlKey.Alt,
   AltRight: ControlKey.RAlt,
@@ -85,8 +85,7 @@ export function controlKeyOf(key: string, code: string): ControlKey | null {
   return BY_CODE[code] ?? BY_KEY[key] ?? null
 }
 
-// Keys that carry the CapsLock state (rustdesk 1.5.0 src/keyboard.rs:817-858) and the NumLock
-// state (src/keyboard.rs:795-815).
+// Keys that carry the CapsLock state and the NumLock state, as the client lists them.
 const CAPS_LOCK_KEYS: ReadonlySet<string> = new Set([
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => `Key${c}`),
   'BracketLeft',
@@ -116,8 +115,7 @@ export function isNumpadKey(code: string): boolean {
   return code.startsWith('Numpad')
 }
 
-// The character of a key by position when the layout gives none we can send
-// (rustdesk 1.5.0 src/keyboard.rs:1172-1224).
+// The character of a key by position when the layout gives none we can send.
 const BY_POSITION: Readonly<Record<string, string>> = {
   ...Object.fromEntries('0123456789'.split('').map((d) => [`Digit${d}`, d])),
   ...Object.fromEntries(
@@ -137,11 +135,10 @@ const BY_POSITION: Readonly<Record<string, string>> = {
 }
 
 // The client sends the produced character only when it is one or two UTF-8 bytes, to keep CJK
-// input out of this path, and '·' (Chinese layouts' backquote) as '`' (src/keyboard.rs:1154-1171).
+// input out of this path, and '·' (Chinese layouts' backquote) as '`'.
 const MAX_LEGACY_CODE_POINT = 0x7ff
 const MIDDLE_DOT = 0xb7
 
-/** The character code a legacy key event carries, or null for a key without one. */
 export function legacyChar(key: string, code: string): number | null {
   const point = singleCodePoint(key)
   if (point === MIDDLE_DOT) return '`'.charCodeAt(0)
@@ -149,7 +146,6 @@ export function legacyChar(key: string, code: string): number | null {
   return BY_POSITION[code]?.charCodeAt(0) ?? null
 }
 
-/** The code point of `text` when it is exactly one, else null. */
 export function singleCodePoint(text: string): number | null {
   const point = text.codePointAt(0)
   if (point === undefined) return null

@@ -12,7 +12,6 @@ const BROWSER_KEYS: ReadonlySet<string> = new Set(['F11', 'F12'])
 /** A second Escape within this time leaves the screen; the first one still reaches the peer. */
 const LEAVE_ESCAPE_MS = 500
 
-/** How long the hint on leaving the screen shows after it takes focus. */
 const HINT_MS = 4000
 
 /**
@@ -41,11 +40,7 @@ function plainEscape(e: KeyboardEvent): boolean {
   )
 }
 
-/**
- * Sends the keys typed into `input`, the screen's hidden text field, to the peer. Composed text
- * goes as text. Escape twice in quick succession leaves the screen through `onLeave` (Tab stays
- * with the peer). Returns whether the hint on leaving is showing.
- */
+/** Escape twice in quick succession leaves the screen through `onLeave`; Tab stays with the peer. */
 export function useScreenKeys(
   session: Session,
   input: RefObject<HTMLTextAreaElement | null>,
@@ -108,8 +103,8 @@ export function useScreenKeys(
       area.blur()
       onLeave()
     }
-    // connection.rs:3404 applies the clipboard and the key on different threads; sent back to back
-    // the new text won 20 of 20 pastes (1.4.3 relay, 1.5.0 WebRTC).
+    // The peer applies the clipboard and the key on different threads; sent back to back, the new
+    // text still won 20 of 20 pastes.
     const onPasteEvent = (e: ClipboardEvent) => {
       e.preventDefault()
       if (!held) return

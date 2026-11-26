@@ -63,7 +63,6 @@ function DeviceRow({
   )
 }
 
-/** The devices the user owns, read only, with their online state. */
 export function DevicesTab() {
   const { t, i18n } = useTranslation()
   const remote = useFreshMe().web_client_enabled

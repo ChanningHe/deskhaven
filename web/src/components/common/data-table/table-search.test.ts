@@ -56,7 +56,6 @@ describe('applyTableSearch', () => {
       online: true,
     })
     expect(applyTableSearch(previous, { page: 5 })).toEqual({ page: 5, sort: 'name' })
-    // Re-applying the same value is not a change.
     expect(applyTableSearch(previous, { sort: 'name' })).toEqual({ page: 4, sort: 'name' })
   })
 

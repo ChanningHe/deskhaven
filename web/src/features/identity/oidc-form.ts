@@ -1,6 +1,5 @@
-// The OIDC provider form: its draft and the request bodies built from it. The client
-// secret is write-only: the draft starts empty, and only a typed secret (or the explicit
-// "public client" choice) is ever sent.
+// The client secret is write-only: only a typed secret (or the explicit "public client"
+// choice) is ever sent.
 
 import type {
   NewOidcProviderBody,

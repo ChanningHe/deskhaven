@@ -1,11 +1,7 @@
 import { ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-/**
- * Why sign-in cannot work here: the session cookies are `Secure`, and browsers
- * drop them on a plain-HTTP page. Shown when the server answers
- * `insecure_transport` (or the page itself is not a secure context).
- */
+/** The session cookies are `Secure`: browsers drop them on a plain-HTTP page. */
 export function InsecureTransportNotice() {
   const { t } = useTranslation()
   return (

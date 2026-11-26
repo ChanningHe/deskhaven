@@ -150,8 +150,7 @@ describe('FrameCipher', () => {
 })
 
 describe('key exchange version 1', () => {
-  // Expected values from hbb_common fae47e0 `tcp::Encrypt::new_split` (throwaway Rust program,
-  // see the slice report), over the 1.5.0 fixture's one-shot keys.
+  // Expected values from hbb_common `tcp::Encrypt::new_split` over the 1.5.0 fixture's one-shot keys.
   const s = fixtureSession('1.5.0')
   const transcript = (advertised: number): KxTranscript => ({
     initiatorPk: s.controllerBoxPk,

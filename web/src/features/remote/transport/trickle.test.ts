@@ -8,7 +8,6 @@ import { ICE_RESEND_DELAY_MS, startTrickle, type TrickleApi } from './trickle'
 
 const SESSION = 'sess-1'
 
-/** A poll the test answers by hand, one at a time. */
 class Polls {
   readonly calls: { after: number; signal: AbortSignal }[] = []
   #pending: { resolve: (page: WebClientCandidates) => void; reject: (e: Error) => void }[] = []

@@ -18,7 +18,6 @@ import { fromEditor } from '../editor'
 import { displayValue } from '../format'
 
 interface ConflictDialogProps {
-  /** The current server state of the keys that changed since they were read. */
   conflicts: readonly SettingView[]
   drafts: Drafts
   busy: boolean
@@ -27,7 +26,6 @@ interface ConflictDialogProps {
   onCancel: () => void
 }
 
-/** What my draft would make the value (secrets: only that they would be replaced). */
 function mine(setting: SettingView, draft: Draft | undefined, t: TFunction): string {
   if (draft === undefined) return ''
   if (draft.change.kind === 'reset') return t('settings.conflict.resetToDefault')
@@ -42,10 +40,6 @@ function changedBy(setting: SettingView, t: TFunction, language: string): string
   return t('settings.conflict.changedBy', { by, at: formatDateTime(source.at, language) })
 }
 
-/**
- * The answer to a 409: for each key someone else changed first, my value next to the
- * server's, then reload (take theirs), overwrite (keep mine on top of theirs) or go back.
- */
 export function ConflictDialog({
   conflicts,
   drafts,

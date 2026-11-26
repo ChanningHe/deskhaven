@@ -1,6 +1,3 @@
-// The open drawer follows the server (polling) without losing the user's edits or writing back
-// values the user never touched, and says so when it can no longer refresh.
-
 import { act, screen, waitFor, within } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +11,6 @@ import { ALPHA, ALPHA_PATH, deviceDetail, drawerApi } from '../test-data'
 const CAROL = { id: 6, username: 'carol' }
 const OFFICE_REF = { id: 3, name: 'Office' }
 
-/** The next poll, as a user of the page would trigger it by waiting. */
 async function poll(queryClient: QueryClient) {
   await act(async () => {
     await queryClient.refetchQueries({ queryKey: getGetDeviceQueryKey(1) })
@@ -42,7 +38,6 @@ describe('device drawer: polling', () => {
     await user.clear(note)
     await user.type(note, 'rack 4')
 
-    // Another administrator hands the device to carol and puts it in a group.
     served = deviceDetail({ ...ALPHA, owner: CAROL, device_group: OFFICE_REF })
     await poll(queryClient)
 

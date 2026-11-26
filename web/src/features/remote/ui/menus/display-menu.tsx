@@ -106,9 +106,7 @@ function MonitorGroup({ session }: { session: Session }) {
   )
 }
 
-/**
- * What the user asked for, not what the governors use right now: the stats overlay shows that.
- */
+/** What the user asked for, not what the governors use right now: the stats overlay shows that. */
 export function DisplayMenu({
   session,
   viewOnly,

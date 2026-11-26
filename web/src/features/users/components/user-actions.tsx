@@ -20,12 +20,9 @@ import { useMe } from '@/features/auth/session'
 
 import { invalidateAccounts } from '../invalidate'
 
-/** Actions that ask for confirmation first (08 §1.4). */
 type Confirmed = 'disable' | 'revoke' | 'reset2fa' | 'resetPassword' | 'markVerified'
 
-/** What the page does for the drawer's actions. */
 export interface UserActionHandlers {
-  /** Resets the password; the page shows the temporary one (see `useResetPasswordReveal`). */
   onResetPassword: (user: UserView) => Promise<unknown>
 }
 
@@ -38,7 +35,6 @@ interface UserActionsProps extends UserActionHandlers {
 /** Resets that leave linked sign-ins working (they ask for no local password or factor). */
 const IDENTITIES_UNTOUCHED: readonly Confirmed[] = ['resetPassword', 'reset2fa']
 
-/** Account actions of the drawer; only shown to someone who may manage the account. */
 export function UserActions({ user, identityCount, onResetPassword }: UserActionsProps) {
   const { t } = useTranslation()
   const me = useMe()
@@ -51,7 +47,6 @@ export function UserActions({ user, identityCount, onResetPassword }: UserAction
   const [unlocked, setUnlocked] = useState(false)
   const refresh = () => invalidateAccounts(queryClient)
 
-  /** A direct (unconfirmed) action; its button stays disabled until it settles. */
   const run = async (work: () => Promise<unknown>) => {
     if (busy) return
     setBusy(true)
@@ -164,7 +159,6 @@ export function UserActions({ user, identityCount, onResetPassword }: UserAction
   )
 }
 
-/** Deleting the account, at the bottom of the drawer; asks for the username first. */
 export function UserDangerZone({ user, onDeleted }: { user: UserView; onDeleted: () => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

@@ -11,18 +11,14 @@ import { KEY_MAX_LENGTH, keyProblem, setTo, VALUE_MAX_LENGTH, valueProblem } fro
 import type { KeyProblem, OptionValue, ValueProblem } from '../option-draft'
 
 interface AdvancedOptionsProps {
-  /** Options outside the typed form that the draft sets, by name. */
   entries: [string, OptionValue][]
-  /** Option names the typed form above covers. */
   known: Set<string>
-  /** Option names whose value is never shown (password inputs, withheld saved values). */
   secret: Set<string>
   problems: Map<string, ValueProblem>
   onChange: (key: string, value: OptionValue | undefined) => void
   disabled: boolean
 }
 
-/** Free option names and values, for options the typed form does not cover. */
 export function AdvancedOptions(props: AdvancedOptionsProps) {
   const { entries, problems } = props
   const { t } = useTranslation()
@@ -46,7 +42,6 @@ interface FreeRowProps extends AdvancedOptionsProps {
   value: OptionValue
 }
 
-/** One free option: its value (a password input for secrets, a note for a withheld one). */
 function FreeRow({ optionKey: key, value, secret, onChange, disabled }: FreeRowProps) {
   const { t } = useTranslation()
   return (
@@ -112,7 +107,6 @@ type AddProblem =
   | `strategies.advanced.problems.${KeyProblem | 'known' | 'taken'}`
   | `strategies.problems.${ValueProblem}`
 
-/** Why `key` cannot be added, as an i18n key. */
 function addProblem(
   key: string,
   value: string,

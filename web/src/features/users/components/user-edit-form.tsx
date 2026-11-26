@@ -31,7 +31,7 @@ function draftOf(user: UserView): Draft {
   }
 }
 
-/** Only the fields that changed (`email: ""` removes the address). */
+/** `email: ""` removes the address. */
 function patchOf(user: UserView, draft: Draft): UserPatch {
   const before = draftOf(user)
   return {
@@ -45,11 +45,9 @@ function patchOf(user: UserView, draft: Draft): UserPatch {
 
 interface UserEditFormProps {
   user: UserView
-  /** False: the fields are shown read-only (an admin looking at an owner). */
   editable: boolean
 }
 
-/** Profile and role of an account, saved in one request. */
 export function UserEditForm({ user, editable }: UserEditFormProps) {
   const { t } = useTranslation()
   const me = useMe()

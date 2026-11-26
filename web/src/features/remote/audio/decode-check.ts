@@ -34,7 +34,7 @@ function pause(ms = POLL_MS): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// As the peer encodes: a packet per 10 ms (rustdesk 1.5.1 audio_service.rs:213).
+// As the peer encodes: a packet per 10 ms.
 async function encodeTone({ sampleRate, channels }: AudioFormat): Promise<Uint8Array[]> {
   const packets: Uint8Array[] = []
   const failures: Error[] = []

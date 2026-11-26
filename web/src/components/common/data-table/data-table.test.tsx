@@ -44,7 +44,6 @@ const COLUMNS = column.columns([
 const SORTABLE = ['name'] as const
 const deviceName = (device: Device) => device.name
 
-/** A fake list endpoint over `devices`: filter, sort, paginate. */
 function listDevices(
   devices: readonly Device[],
   { page, page_size, sort, q }: ListParams,
@@ -57,9 +56,7 @@ function listDevices(
 
 interface RenderTableOptions {
   empty?: boolean
-  /** Extra history entries before `url` (the last entry is the current one). */
   before?: string[]
-  /** The server's rows; tests may change them and refetch. */
   rows?: { current: readonly Device[] }
 }
 
@@ -222,7 +219,6 @@ describe('DataTable URL sync', () => {
       expect(router.state.location.search).toEqual({ page: 3 })
     })
     await screen.findByText('Device 41')
-    // The correction replaced ?page=5 instead of pushing ?page=3 on top of it.
     expect(router.history.length).toBe(2)
 
     router.history.back()
@@ -271,7 +267,6 @@ describe('DataTable columns and selection', () => {
     await user.click(rowCheckbox(0))
     await user.click(rowCheckbox(2))
 
-    // Someone else deletes Device 01; the list refetches on the same page.
     rows.current = DEVICES.filter((device) => device.id !== 'd1')
     await queryClient.invalidateQueries({ queryKey: ['devices'] })
 

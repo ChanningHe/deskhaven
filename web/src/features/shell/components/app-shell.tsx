@@ -11,7 +11,6 @@ import { TopBar } from './top-bar'
 const MAIN_ID = 'main-content'
 
 interface AppShellProps {
-  /** Content in place of the matched child route (used by the not-found page). */
   children?: ReactNode
 }
 

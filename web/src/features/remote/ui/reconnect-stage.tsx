@@ -19,7 +19,6 @@ export function DisconnectButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-/** The page reconnecting after the link dropped: the bar, and the session's last frame. */
 export function ReconnectStage({
   frame,
   frozen,

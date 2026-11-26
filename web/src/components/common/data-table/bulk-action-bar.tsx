@@ -10,10 +10,7 @@ interface BulkActionBarProps {
   children: ReactNode
 }
 
-/**
- * Shown above the table while rows are selected. The region keeps a fixed
- * name; only the count text is a live region, so each change is announced once.
- */
+/** Only the count is a live region, so each change is announced once. */
 export function BulkActionBar({ count, onClear, children }: BulkActionBarProps) {
   const { t } = useTranslation()
   return (

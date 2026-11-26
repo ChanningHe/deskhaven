@@ -12,7 +12,6 @@ export class AsyncQueue<T> {
     this.#notify()
   }
 
-  /** The consumer drains what is queued, then its loop ends (or throws `error`). */
   end(error?: Error): void {
     if (this.#ended) return
     this.#ended = true

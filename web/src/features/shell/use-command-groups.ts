@@ -12,7 +12,6 @@ import { ME_NAV_ITEM, navSectionsFor } from './nav-items'
 export interface CommandItem {
   /** Unique id; also what Base UI uses as the item's identity. */
   value: string
-  /** Searchable, visible label. */
   label: string
   run: () => void
 }
@@ -22,11 +21,6 @@ export interface CommandGroup {
   items: CommandItem[]
 }
 
-/**
- * Everything the command palette (08 §3.1) offers: the pages the user may
- * open, then preferences. Device / user search and common actions join here
- * once their APIs exist (M3-04, M3-05).
- */
 export function useCommandGroups(): CommandGroup[] {
   const { t } = useTranslation()
   const navigate = useNavigate()

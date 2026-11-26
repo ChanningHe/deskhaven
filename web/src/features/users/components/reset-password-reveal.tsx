@@ -9,16 +9,14 @@ import { SecretRevealDialog } from '@/components/common/secret-reveal-dialog'
 import { SECRET_MUTATION } from '../secret-mutation'
 
 interface ResetPasswordReveal {
-  /** Resets `user`'s password; the temporary one is then shown by `dialog`. */
   resetPassword: (user: UserView) => Promise<unknown>
   /** The reveal; render it where it outlives the drawer (the page). */
   dialog: ReactNode
 }
 
 /**
- * Password reset with its show-once reveal, owned by the page rather than the drawer: the
- * drawer closes with the URL (Back, Escape), and must not take the only copy of the
- * temporary password with it.
+ * Owned by the page, not the drawer: the drawer closes with the URL (Back, Escape) and must not
+ * take the only copy of the temporary password with it.
  */
 export function useResetPasswordReveal(): ResetPasswordReveal {
   const { t } = useTranslation()

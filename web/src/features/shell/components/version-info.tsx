@@ -9,11 +9,10 @@ import { useServerVersion } from '../version'
 
 interface VersionInfoProps {
   className?: string
-  /** A newer release, shown as a small link next to the version. */
   update?: AvailableUpdate | undefined
 }
 
-/** The server version and the source link (AGPL-3.0 section 13); nothing until known. */
+/** The source link is required by AGPL-3.0 section 13. */
 export function VersionInfo({ className, update }: VersionInfoProps) {
   const { t } = useTranslation()
   const info = useServerVersion()

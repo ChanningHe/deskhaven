@@ -12,10 +12,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ProviderDialog } from './provider-dialog'
 import type { ProviderTarget } from './provider-dialog'
 
-/**
- * The OIDC section's dialogs: create / edit (or view) a provider and confirm deleting one.
- * `providers` is the polled list, so an open edit follows a concurrent change.
- */
+/** `providers` is the polled list, so an open edit follows a concurrent change. */
 export function useProviderDialogs(
   providers: readonly OidcProviderView[] | undefined,
   readOnly: boolean,

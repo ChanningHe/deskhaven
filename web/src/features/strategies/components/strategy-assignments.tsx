@@ -13,7 +13,6 @@ import { invalidateStrategies } from '../invalidate'
 import { targetLabel } from '../target-label'
 import { AddAssignment } from './add-assignment'
 
-/** The targets of a strategy: list, remove, add. */
 export function StrategyAssignments({ strategy }: { strategy: StrategyView }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

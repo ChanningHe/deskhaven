@@ -94,7 +94,6 @@ function SessionRow({
 
 type Target = MySession | 'others'
 
-/** Client and console sessions of the user; revoke one, or all but this one. */
 export function SessionsTab() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()

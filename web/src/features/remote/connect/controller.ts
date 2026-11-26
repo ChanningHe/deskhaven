@@ -51,15 +51,12 @@ import {
 } from './reconnect'
 
 export type ConnectFailure =
-  /** POST sessions failed; the error carries the API error code. */
   | { kind: 'api'; error: unknown }
-  /** This browser decodes none of the codecs a peer can send. */
   | { kind: 'no_decoder' }
   /** The opened session could not be started (malformed keys or relay URL, no link at all). */
   | { kind: 'error'; reason: string }
 
 export type RemotePhase =
-  /** Not connecting: before the first connect, or after a disconnect while opening. */
   | { kind: 'idle' }
   | { kind: 'opening' }
   | { kind: 'reconnecting'; attempt: number; at: number }
@@ -67,21 +64,15 @@ export type RemotePhase =
   | { kind: 'session'; session: Session }
   | { kind: 'failed'; failure: ConnectFailure }
 
-/** Why a session runs over the relay. */
 export type FallbackReason =
-  /** The settings ask for the relay. */
   | { kind: 'chosen' }
   /** A handshake over WebRTC failed earlier, with `error`: the relay alone until one succeeds. */
   | { kind: 'after-failure'; error: string }
-  /** The browser cannot make an offer. */
   | { kind: 'unsupported'; error?: string }
-  /** The device gave no WebRTC answer. */
   | { kind: 'no-answer' }
   | { kind: 'webrtc-failed'; error: string }
-  /** The relay paired and WebRTC, in `state`, was not ready by the end of the grace period. */
   | { kind: 'relay-first'; state: RTCPeerConnectionState }
 
-/** How the session reaches the peer, and for the relay why. */
 export type TransportChoice = { kind: 'webrtc' } | { kind: 'relay'; why: FallbackReason }
 
 interface Linked {
@@ -102,14 +93,12 @@ export interface PageVisibility {
 }
 
 export interface ConnectDeps {
-  /** `offer` asks the device for a WebRTC answer alongside the relay. */
   openSession(deviceId: string, offer?: string): Promise<WebClientSession>
   closeSession(sessionId: string): Promise<void>
   probeDecoders(): Promise<DecoderSupport>
   createRelay(options: RelayOptions): KeyedTransport
   startSession(link: Link, params: HandshakeParams, intent: SessionIntent, maxFps: number): Session
   location: Pick<Location, 'protocol' | 'host'>
-  /** Without it, the relay only. */
   webrtc?: WebRtcDeps
   storage?: Storage | null
   random?: () => number
@@ -163,10 +152,7 @@ export const browserDeps: ConnectDeps = {
   audio: browserAudio,
 }
 
-/**
- * The relay's WebSocket URL from POST sessions: a bare path is on the console's own origin;
- * anything else must be an absolute ws(s) URL.
- */
+/** A bare path is on the console's own origin; anything else must be an absolute ws(s) URL. */
 export function resolveRelayUrl(relayUrl: string, location: Pick<Location, 'protocol' | 'host'>) {
   if (relayUrl.startsWith('/')) {
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -179,12 +165,10 @@ export function resolveRelayUrl(relayUrl: string, location: Pick<Location, 'prot
   return url.href
 }
 
-/** One connect: the server session it opened (to close) and the peer session it started. */
 interface Attempt {
   serverSession: string | null
   released: boolean
   session: Session | null
-  /** Closes what the attempt holds until a peer session owns the link. */
   readonly pending: Set<() => void>
   told: RemoteSettings | null
   toldIntent: SessionIntent | null
@@ -193,13 +177,8 @@ interface Attempt {
 }
 
 /**
- * Connects the browser to one device: opens the server session (with a WebRTC offer where the
- * browser can make one and the settings do not ask for the relay), takes the data channel or the
- * relay, starts the handshake and the peer session on it, and closes the server session again
- * once the peer session ends or the page leaves. Each connect replaces the previous attempt.
  * After a handshake fails over WebRTC, connects go by the relay alone until a handshake over it
- * succeeds: such a failure (a fingerprint mismatch, a peer that drops the channel) tends to
- * repeat.
+ * succeeds: such a failure (a fingerprint mismatch, a peer that drops the channel) tends to repeat.
  */
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
@@ -210,7 +189,6 @@ export class RemoteController {
   readonly #deviceId: string
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
-  /** Why the last handshake over WebRTC failed, while connects go by the relay alone. */
   #relayOnly: string | null = null
   #sessionId = randomSessionId()
   #credential: Credential | null = null
@@ -260,7 +238,6 @@ export class RemoteController {
     return this.#phase
   }
 
-  /** The current attempt's transport; null until the race between the two is decided. */
   get transport(): Store<TransportChoice | null> {
     return this.#transport
   }
@@ -292,7 +269,6 @@ export class RemoteController {
     this.#release(attempt)
   }
 
-  /** Connecting, reconnecting, or in a session that has not ended. */
   #live(): boolean {
     const phase = this.#phase.get()
     if (phase.kind === 'session') return phase.session.state.get().kind !== 'closed'
@@ -300,9 +276,8 @@ export class RemoteController {
   }
 
   /**
-   * Starts over on the link the settings now ask for. Once logged in, it goes on like a
-   * reconnect (same peer session, the kept credential within its window) but at once: the user
-   * asked for it, so it neither waits nor counts as an attempt.
+   * Once logged in, it goes on like a reconnect but at once: the user asked for it, so it neither
+   * waits nor counts as an attempt.
    */
   #relink(): void {
     if (!this.#armed) {
@@ -442,7 +417,6 @@ export class RemoteController {
     this.#sync(attempt)
   }
 
-  /** The session gave the picked codec up for VP9: so does the setting. */
   #codecFailed(attempt: Attempt, session: Session): void {
     const { failed } = session.codecs.get()
     if (this.#stale(attempt) || failed === undefined) return
@@ -510,7 +484,7 @@ export class RemoteController {
     this.#cancelSteady = null
   }
 
-  // Once, within 30 s: a stale proof counts toward lockout (connection.rs:1914-1917,4571-4583).
+  // Once, within 30 s: a stale proof counts toward the peer's lockout.
   #credentials(attempt: Attempt): CredentialSlot {
     return {
       take: () => {
@@ -526,7 +500,6 @@ export class RemoteController {
     }
   }
 
-  /** A WebRTC offer, or why the relay goes alone. */
   async #offer(): Promise<Offer> {
     if (this.#settings.get().transport === 'relay') return { why: { kind: 'chosen' } }
     if (this.#relayOnly !== null) return { why: { kind: 'after-failure', error: this.#relayOnly } }
@@ -587,10 +560,6 @@ export class RemoteController {
     }
   }
 
-  /**
-   * Brings up WebRTC and the relay side by side and keeps the one `preferWebRtc` picks, closing
-   * the other. Throws when both fail. The handshake then runs once, on the winner.
-   */
   async #race(
     attempt: Attempt,
     opened: WebClientSession,
@@ -635,12 +604,11 @@ export class RemoteController {
       relay.close()
       throw error
     } finally {
-      // Once a link is chosen, candidates no longer matter (client.rs:1181 stops the bridge).
+      // Once a link is chosen, candidates no longer matter.
       exchange.trickle?.stop()
     }
   }
 
-  /** A later connect or a disconnect replaced the attempt. */
   #stale(attempt: Attempt): boolean {
     return attempt !== this.#current
   }

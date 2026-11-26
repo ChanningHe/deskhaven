@@ -29,11 +29,9 @@ export const PEER_INFO = create(PeerInfoSchema, {
 export interface ActiveSession extends Replay {
   session: Session
   decoders: FakeDecoders
-  /** Seals and delivers a message from the peer. */
   peerSends(message: Message): void
   /** Delivers the captured VP9 key frame (peer frame 6), sealing fillers up to it. */
   peerSendsCapturedFrame(): void
-  /** What we sent the peer after logging in, opened as the peer would. */
   sentAfterLogin(): Message[]
 }
 
@@ -43,10 +41,6 @@ export function misc(union: Misc['union']): Message {
 
 const CAPTURED_FRAME_SEQ = 6
 
-/**
- * Replays the captured 1.4.5 peer through the real relay transport and handshake, then logs in
- * with a synthetic LoginResponse: the session is active over the fixture's keys.
- */
 export async function activeSession(
   peerInfo: PeerInfo = PEER_INFO,
   until: SessionState['kind'] = 'active',
@@ -88,7 +82,6 @@ export async function activeSession(
   }
 }
 
-/** Waits until the session has handled everything delivered so far. */
 export async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }

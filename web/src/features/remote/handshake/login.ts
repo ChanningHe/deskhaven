@@ -12,19 +12,17 @@ import {
   type SupportedDecoding,
 } from '../proto/gen/message_pb.js'
 
-/** Protocol version we claim; the message.proto this client is generated from is the 1.5.0 tag. */
+/** Protocol version we claim: message.proto is generated from the 1.5.0 tag. */
 export const CLIENT_VERSION = '1.5.0'
 export const CLIENT_PLATFORM = 'Web'
 
 export type VideoCodec = 'vp9' | 'av1' | 'vp8' | 'h264' | 'h265'
 
-/** Declared at login, in the order we prefer them. */
 export const LOGIN_CODECS: readonly VideoCodec[] = ['vp9', 'av1', 'vp8']
 
 /**
  * Declared only while picked: a peer encodes them in hardware alone, and once every connection
- * declares one, its Auto choice takes H265 > H264 over the rest for all of them (rustdesk 1.5.1
- * libs/scrap/src/common/codec.rs:194-309).
+ * declares one, its Auto choice takes H265 > H264 over the rest for all of them.
  */
 export const EXPERIMENTAL_CODECS: readonly VideoCodec[] = ['h264', 'h265']
 
@@ -32,11 +30,7 @@ export const VIDEO_CODECS: readonly VideoCodec[] = [...LOGIN_CODECS, ...EXPERIME
 
 export type DecoderSupport = Record<VideoCodec, boolean>
 
-/**
- * Codec strings probed with VideoDecoder.isConfigSupported, one per codec we can declare. H264
- * High 5.1 and H265 Main 5.1 cover a 4K screen; with no description the decoder takes Annex B
- * (WebCodecs AVC and HEVC codec registrations §3).
- */
+/** H264 High 5.1 and H265 Main 5.1 cover a 4K screen; with no description the decoder takes Annex B. */
 export const DECODER_PROBES: Readonly<Record<VideoCodec, string>> = {
   vp9: 'vp09.00.10.08',
   av1: 'av01.0.04M.08',
@@ -66,15 +60,10 @@ const PREFER: Readonly<Record<VideoCodec, SupportedDecoding_PreferCodec>> = {
   h265: SupportedDecoding_PreferCodec.H265,
 }
 
-/** The codecs of `declared` this browser decodes, in VIDEO_CODECS order. */
 export function decodable(support: DecoderSupport, declared: readonly VideoCodec[]): VideoCodec[] {
   return VIDEO_CODECS.filter((codec) => support[codec] && declared.includes(codec))
 }
 
-/**
- * The abilities to declare: the decodable codecs of `declared`, preferring VP9 (AV1, then VP8,
- * where VP9 is not decodable). Null when none is decodable.
- */
 export function supportedDecoding(
   support: DecoderSupport,
   declared: readonly VideoCodec[],
@@ -93,7 +82,6 @@ export function supportedDecoding(
   })
 }
 
-/** `decoding` asking the peer to encode `codec`. */
 export function preferring(decoding: SupportedDecoding, codec: VideoCodec): SupportedDecoding {
   const copy = clone(SupportedDecodingSchema, decoding)
   copy.prefer = PREFER[codec]
@@ -139,8 +127,7 @@ export type LoginState =
   | { kind: 'active'; peerInfo: PeerInfo }
   | { kind: 'failed'; reason: string }
 
-// LoginResponse.error strings the peer sends (rustdesk 1.5.0 src/client.rs:114-118, emitted
-// by src/server/connection.rs). Anything else ends the session, as in handle_login_error.
+// LoginResponse.error strings the peer sends; anything else ends the session.
 const LOGIN_ERRORS: ReadonlyMap<string, LoginState> = new Map<string, LoginState>([
   ['Empty Password', { kind: 'need_password' }],
   ['Wrong Password', { kind: 'wrong_password' }],

@@ -7,10 +7,6 @@ import { formatDateTime, nonBlank } from '@/lib/format'
 
 const REPORTED = ['hostname', 'username', 'os', 'cpu', 'memory', 'version'] as const
 
-/**
- * What the device says about itself, labelled as such (06 §2), and below it what the
- * server itself observed (addresses and times).
- */
 export function DeviceReported({ detail }: { detail: DeviceDetail }) {
   const { t, i18n } = useTranslation()
   const headingId = useId()

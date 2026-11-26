@@ -22,7 +22,6 @@ interface SettingRowProps {
   draft: Draft | undefined
   /** The text as typed, which the draft may have normalised away. */
   typed: Editor | undefined
-  /** The server's reasons for refusing this key's draft. */
   serverProblems: readonly string[]
   disabled: boolean
   onEdit: (editor: Editor) => void
@@ -31,7 +30,6 @@ interface SettingRowProps {
   onHistory: () => void
 }
 
-/** The editor value to show: the default for a staged reset, else what was typed, else the setting. */
 function shownEditor(
   setting: SettingView,
   draft: Draft | undefined,
@@ -43,7 +41,6 @@ function shownEditor(
   return toEditor(setting)
 }
 
-/** One setting: name, key and variable, help, source badge, control, and its actions. */
 export function SettingRow({
   setting,
   draft,

@@ -1,12 +1,10 @@
-// The option map of a strategy as a form draft, and the checks the admin API applies to it
-// (option names `[A-Za-z0-9._-]`, values of catalog options typed, sizes bounded).
+// Mirrors the admin API's checks: option names `[A-Za-z0-9._-]`, typed catalog values, bounded sizes.
 
 import type { CatalogOptionView, StrategyView } from '@/api/generated/model'
 
 /**
- * One option in the draft: a value, an empty value that makes the client delete the option
- * (`reset`), or a secret the server holds and withholds (`kept`). An absent key is not
- * managed by the strategy.
+ * An empty value makes the client delete the option (`reset`); `kept` is a secret the server holds
+ * and withholds. An absent key is not managed by the strategy.
  */
 export type OptionValue = { kind: 'set'; value: string } | { kind: 'reset' } | { kind: 'kept' }
 
@@ -21,7 +19,7 @@ export function setTo(value: string): OptionValue {
 
 export const KEY_MAX_LENGTH = 128
 export const VALUE_MAX_LENGTH = 4096
-/** Most options one strategy may carry (the admin API's limit). */
+/** The admin API's limit. */
 export const MAX_OPTIONS = 256
 const KEY_PATTERN = /^[A-Za-z0-9._-]+$/
 /** Unicode `Cc` (C0, DEL and C1), as Rust's `char::is_control`: the admin API rejects them. */
@@ -29,12 +27,10 @@ const LAST_C0 = 0x1f
 const FIRST_DEL_C1 = 0x7f
 const LAST_C1 = 0x9f
 
-/** Options the draft keeps in the strategy (set, reset or a withheld secret). */
 export function optionCount(draft: OptionDraft): number {
   return Object.values(draft).filter((value) => value !== undefined).length
 }
 
-/** The draft of a server copy. */
 export function draftOf(strategy: StrategyView): OptionDraft {
   const draft: OptionDraft = {}
   for (const [key, value] of Object.entries(strategy.options)) {
@@ -98,7 +94,6 @@ function kindProblem(option: CatalogOptionView, value: string): ValueProblem | u
   }
 }
 
-/** Why `value` cannot be saved for `option` (a catalog entry, or undefined for free keys). */
 export function valueProblem(
   option: CatalogOptionView | undefined,
   value: string,

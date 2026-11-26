@@ -9,12 +9,10 @@ import { CheckField, Warning } from './form-controls'
 interface ProviderFieldsProps {
   draft: ProviderDraft
   set: (change: Partial<ProviderDraft>) => void
-  /** Editing a stored provider: the issuer is fixed, the secret may be kept. */
   stored: { hasSecret: boolean } | undefined
   disabled: boolean
 }
 
-/** The inputs of the OIDC provider form. */
 export function ProviderFields({ draft, set, stored, disabled }: ProviderFieldsProps) {
   const { t } = useTranslation()
   const id = useId()

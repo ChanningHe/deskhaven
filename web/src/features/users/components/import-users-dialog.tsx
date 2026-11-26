@@ -31,10 +31,8 @@ function utf8Bytes(text: string): number {
   return new TextEncoder().encode(text).length
 }
 
-/** Why `csv` cannot be sent as it is, or undefined. */
 type CsvProblem = 'tooLarge' | 'readFailed'
 
-/** "Import CSV": all or nothing; created accounts' temporary passwords are shown once. */
 export function ImportUsersButton() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
