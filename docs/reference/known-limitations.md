@@ -64,7 +64,9 @@ Everything deskhaven does not do, or does differently than you might expect, in 
   connected.
 - **The relay refuses devices that reach it over loopback** (hbbr treats loopback TCP as its
   console): a device on the same host as the relay must use the host's network address.
-- **Not supported**: audio, file transfer, chat, several displays at once, H.264 / H.265.
+- **Not supported**: file transfer, chat, several displays at once. H.264 / H.265 are
+  experimental: offered only when the device encodes them in hardware and the browser can
+  decode them.
 
 ## Client addresses
 
