@@ -1,4 +1,4 @@
-import * as React from 'react'
+import type * as React from 'react'
 import { cn } from 'cn'
 
 // `htmlFor` is passed explicitly (not via the spread) so jsx-a11y can verify

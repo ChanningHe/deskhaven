@@ -1,16 +1,3 @@
-# pnpm 12 refuses to install package versions younger than its minimumReleaseAge
-# (a supply-chain guard against freshly published, possibly compromised
-# releases). The versions below were pinned within that window when the console
-# was scaffolded (2026-11), so pnpm recorded them as explicit exceptions.
-# Remove each entry once that version is older than minimumReleaseAge (or when
-# the dependency is bumped); `pnpm install --frozen-lockfile` must still pass.
-minimumReleaseAgeExclude:
-  - '@tanstack/query-core@5.105.1'
-  - '@tanstack/react-query@5.105.1'
-  - i18next@26.7.1
-  - react-i18next@17.1.11
-  - globals@17.14.0
-
 # esbuild arrives through orval (API client generation, dev only). Its install
 # script only re-checks the platform binary that pnpm already installs as an
 # optional dependency, so it stays disabled.
@@ -28,7 +15,7 @@ allowBuilds:
 # GHSA-qrxm-fqhp-jwvm, GHSA-9fm3-97px-rjf6, GHSA-55wc-3pg8-jfw6); 7.30.1 is the same major.
 overrides:
   'undici@>=7.0.0 <7.30.1': ^7.30.1
-  # minimatch 10 (eslint, typescript-eslint, ts-morph via the shadcn CLI) is hit by
+  # minimatch 10 (ts-morph via the shadcn CLI) is hit by
   # GHSA-g3hv-75wg-m249 (denial of service by globparts amplification); 11.0.1 is the fix.
   'minimatch@>=7.0.0 <11.0.1': ^11.0.1
 
