@@ -321,7 +321,7 @@
       "setting_pinned": "This setting is fixed by the server configuration and cannot be changed here.",
       "version_conflict": "The setting was changed by someone else. Reload and try again.",
       "last_identity": "This account signs in only through this identity, so it cannot be removed.",
-      "web_client_disabled": "Remote control from the browser is turned off on this server.",
+      "web_client_disabled": "Remote control from the browser is turned off on this server. It is turned on in the server's configuration file or environment variables.",
       "device_offline": "The device is offline.",
       "device_no_answer": "The device did not answer in time. Try again.",
       "foreign_relay": "The device uses a relay server of its own, which the browser cannot reach.",
@@ -1015,7 +1015,8 @@
     "pinned": {
       "env": "Fixed by environment variable {{name}}; read-only here.",
       "file": "Fixed by config file {{path}}; read-only here.",
-      "other": "Fixed by the server configuration; read-only here."
+      "other": "Fixed by the server configuration; read-only here.",
+      "configOnly": "Set only in the server's configuration file ([settings]) or with environment variable {{name}}, then restart; read-only here."
     },
     "control": {
       "enabled": "Enabled",
@@ -1743,7 +1744,7 @@
     },
     "errors": {
       "title": "Could not connect",
-      "web_client_disabled": "Remote control from the browser is turned off on this server. An administrator can turn it on in Settings.",
+      "web_client_disabled": "Remote control from the browser is turned off on this server. An administrator can turn it on in the server's configuration file or environment variables.",
       "device_offline": "The device is offline. Start it, or wait until it reconnects to the server.",
       "device_no_answer": "The device did not answer the connection request in time. Check that it is online and try again.",
       "foreign_relay": "The device is set to use another relay server ({{relay}}), which the browser cannot reach. Clear the relay server in the device's network settings, or set it to this server's relay.",

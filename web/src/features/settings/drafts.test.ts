@@ -55,9 +55,10 @@ describe('client-side checks', () => {
   })
 
   it('accept zero where the setting allows it', () => {
+    const length = find('auth.password.min_length')
     const forever = {
-      ...find('auth.password.min_length'),
-      schema: { type: 'u32', min: 1, max: 9, zero_allowed: true },
+      ...length,
+      schema: { ...length.schema, type: 'u32', min: 1, max: 9, zero_allowed: true },
     } as const
     expect(problemOf(forever, '0')).toBeUndefined()
   })

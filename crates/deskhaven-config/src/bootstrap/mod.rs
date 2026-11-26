@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 pub use cli::CliOverrides;
 pub use effective::EffectiveEntry;
+pub use env::env_var;
 pub use error::{ConfigError, Warning};
 pub use pins::{Pin, Pins};
 pub use schema::{Bootstrap, Database, Listen, Log, LogFormat, Security, Signal, json_schema};
@@ -26,7 +27,7 @@ pub use schema::{Bootstrap, Database, Listen, Log, LogFormat, Security, Signal, 
 use crate::Source;
 use env::CONFIG_VAR;
 use keys::KnownKeys;
-use pins::SETTINGS_KEY;
+pub(crate) use pins::SETTINGS_KEY;
 
 /// Config file candidates when neither `--config` nor `$DESKHAVEN_CONFIG` is set.
 pub const DEFAULT_SEARCH_PATHS: [&str; 2] = ["deskhaven.toml", "/etc/deskhaven/deskhaven.toml"];

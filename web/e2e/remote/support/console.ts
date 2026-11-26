@@ -5,8 +5,6 @@ import { expect } from '@playwright/test'
 import { DEVICE_PASSWORD, OWNER, stackInfo } from './env.ts'
 import type { ClientKey, DeviceInfo } from './env.ts'
 
-export const WEB_CLIENT_KEY = 'web_client.enabled'
-
 export function device(key: ClientKey): DeviceInfo | undefined {
   return stackInfo().devices[key]
 }
@@ -17,18 +15,6 @@ export async function signIn(page: Page) {
   await page.getByLabel('Password').fill(OWNER.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
-}
-
-/** Turns `web_client.enabled` on or off on the settings page (the switch row, then Save). */
-export async function setWebClient(page: Page, on: boolean) {
-  await page.goto('/settings')
-  const row = page.locator(`li[data-setting="${WEB_CLIENT_KEY}"]`)
-  const toggle = row.getByRole('checkbox', { name: 'Enabled' })
-  await expect(toggle).toBeVisible()
-  if ((await toggle.isChecked()) === on) return
-  await toggle.setChecked(on)
-  await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Saved 1 setting.')).toBeVisible()
 }
 
 /** The console's device row action for `id`: the drawer's "Connect in browser" link. */

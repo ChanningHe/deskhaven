@@ -42,7 +42,7 @@ pub async fn list_settings(
 /// `setting.reset` when it only resets). Every change names the `version` it was read at:
 /// a stored row that moved on makes the batch a 409 `version_conflict` (nothing is
 /// written; `details.conflicts` has the current settings of the stale keys). Pinned keys
-/// are 409 `setting_pinned`; invalid values and violated cross-key rules are 422 with
+/// and keys only the configuration file or environment can set are 409 `setting_pinned`; invalid values and violated cross-key rules are 422 with
 /// `details.fields` keyed by setting key. A change that leaves the value as it is writes
 /// nothing. Returns all settings, as after the batch.
 #[utoipa::path(
@@ -54,7 +54,7 @@ pub async fn list_settings(
     request_body = SettingsPatch,
     responses(
         (status = 200, description = "All settings after the batch", body = Vec<SettingView>),
-        (status = 409, description = "A key is pinned (`setting_pinned`, `details.keys`) or changed since it was read (`version_conflict`, `details.conflicts`)", body = Problem),
+        (status = 409, description = "A key is pinned or configuration-only (`setting_pinned`, `details.keys`) or changed since it was read (`version_conflict`, `details.conflicts`)", body = Problem),
         (status = 422, description = "Unknown key, invalid value, both or neither of `value` and `reset`, or a violated cross-key rule", body = Problem),
     )
 )]

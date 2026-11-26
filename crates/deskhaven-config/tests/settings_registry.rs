@@ -94,6 +94,8 @@ fn keys_are_unique_and_well_formed() {
         assert!(segments.len() >= 2, "{key}: needs a category prefix");
         assert!(
             segments.iter().all(|s| !s.is_empty()
+                && !s.contains("__")
+                && !s.ends_with('_')
                 && s.chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')),
             "{key}: segments must be lower_snake_case"

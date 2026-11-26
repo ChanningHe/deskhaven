@@ -10,6 +10,8 @@ import type { TextFormat } from './textFormat'
  * What a form needs to edit one setting (derived from the registry declaration).
  */
 export interface SettingSchema {
+  /** The environment variable that pins the setting. */
+  env: string
   format?: TextFormat | null
   max?: SchemaBound | null
   /**
@@ -24,6 +26,8 @@ export interface SettingSchema {
    */
   max_length?: number | null
   min?: SchemaBound | null
+  /** Only the configuration file or the environment sets it: never editable here. */
+  pin_only: boolean
   type: SettingKind
   /** @nullable */
   variants?: string[] | null

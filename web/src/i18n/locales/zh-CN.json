@@ -321,7 +321,7 @@
       "setting_pinned": "该设置由服务器配置固定，无法在此修改。",
       "version_conflict": "该设置已被他人修改，请重新载入后再试。",
       "last_identity": "此账号只能通过这个身份登录，无法移除。",
-      "web_client_disabled": "此服务器未开启浏览器远程。",
+      "web_client_disabled": "此服务器未开启浏览器远程，需在服务器配置文件或环境变量中开启。",
       "device_offline": "设备离线。",
       "device_no_answer": "设备未及时响应，请重试。",
       "foreign_relay": "设备使用自己的中继服务器，浏览器无法连接。",
@@ -1015,7 +1015,8 @@
     "pinned": {
       "env": "由环境变量 {{name}} 固定，此处只读。",
       "file": "由配置文件 {{path}} 固定，此处只读。",
-      "other": "由服务器配置固定，此处只读。"
+      "other": "由服务器配置固定，此处只读。",
+      "configOnly": "只能在服务器配置文件的 [settings] 中或用环境变量 {{name}} 设置，改后需重启；此处只读。"
     },
     "control": {
       "enabled": "启用",
@@ -1743,7 +1744,7 @@
     },
     "errors": {
       "title": "无法连接",
-      "web_client_disabled": "此服务器未开启浏览器远程。管理员可在“设置”中开启。",
+      "web_client_disabled": "此服务器未开启浏览器远程。管理员需在服务器配置文件或环境变量中开启。",
       "device_offline": "设备离线。请启动设备，或等它重新连上服务器。",
       "device_no_answer": "设备未及时响应连接请求。请确认设备在线后重试。",
       "foreign_relay": "设备被设置为使用另一台中继服务器（{{relay}}），浏览器无法连接。请在设备的网络设置中清空中继服务器，或改为本服务器的中继。",

@@ -10,10 +10,9 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use common::web_client::{
-    ALICE_DEVICE, OWNER_DEVICE, SESSIONS, candidates_path, open, opened, setup,
+    ALICE_DEVICE, OWNER_DEVICE, SESSIONS, candidates_path, enabled_harness,
+    enabled_harness_on_clock, open, opened, setup,
 };
-use common::{harness, harness_on_clock};
-use deskhaven_admin_api::AdminRoutes;
 use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
 use deskhaven_core::users::Role;
 use deskhaven_core::web_client::{
@@ -27,7 +26,7 @@ use serde_json::json;
 async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.alice, ALICE_DEVICE).await;
         let route = s.fake.take().pop().unwrap();
@@ -88,7 +87,7 @@ async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
 async fn a_closed_route_and_refused_candidates_answer_their_codes() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.owner, OWNER_DEVICE).await;
         drop(s.fake.take());
@@ -148,7 +147,7 @@ async fn a_closed_route_and_refused_candidates_answer_their_codes() {
 async fn a_session_answers_only_the_user_who_opened_it() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.alice, ALICE_DEVICE).await;
         let path = candidates_path(&id);
@@ -181,7 +180,7 @@ async fn sessions_are_capped_per_user_and_expire() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
         let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
-        let h = harness_on_clock(db, clock.clone()).await;
+        let h = enabled_harness_on_clock(db, clock.clone()).await;
         let s = setup(&h).await;
         let mut ids = Vec::new();
         for _ in 0..MAX_SESSIONS_PER_USER {
@@ -221,7 +220,7 @@ async fn sessions_are_capped_per_user_and_expire() {
 async fn sessions_to_one_device_are_rate_limited() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let admin = h.console("admin", Role::Admin).await;
         let mut statuses = Vec::new();
@@ -254,7 +253,7 @@ async fn sessions_to_one_device_are_rate_limited() {
 async fn sessions_of_one_user_are_rate_limited() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let mut statuses = Vec::new();
 

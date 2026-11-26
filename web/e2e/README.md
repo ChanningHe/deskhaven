@@ -83,12 +83,13 @@ its own config and specs named `*.remote.ts`, so `pnpm e2e` and CI's `e2e` job n
 it is a manual and nightly check (`.github/workflows/remote-e2e.yml`).
 
 `remote/global-setup.ts` starts, once per run, all with throwaway state: `deskhaven serve`
-(relay list pointing at the local hbbr, no public STUN, update check off), the upstream
+(relay list pointing at the local hbbr, no public STUN, update check off, `web_client.enabled`
+pinned on by its environment variable), the upstream
 `hbbr` (`-k` = the server's public key), a same-origin Node proxy (`/ws/relay` to hbbr's
 WebSocket port, the rest to the console: the shape of `deploy/compose/Caddyfile`), and one
 `rustdesk --server` per client version, each on its own Xvfb with a fixed permanent password.
-The owner is created through the setup API, then `login.setup.remote.ts` signs in, turns
-`web_client.enabled` on and waits for the devices.
+The owner is created through the setup API, then `login.setup.remote.ts` signs in and waits
+for the devices.
 
 | spec                   | covers                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------- |
@@ -103,7 +104,7 @@ The owner is created through the setup API, then `login.setup.remote.ts` signs i
 | `paste.remote.ts`      | Chromium and Firefox: three paste shortcuts paste the local text into the device's xterm           |
 | `keys.remote.ts`       | Input > Send keys: Alt+Tab, PrintScreen and Win show up in a device xterm; 1.4 and 1.5             |
 | `viewonly.remote.ts`   | Actions > View only: mouse and keys reach no device (X pointer, xterm) until it is off; 1.4, 1.5   |
-| `errors.remote.ts`     | (e) offline device shows `device_offline`; `web_client.enabled` off hides the entry                |
+| `errors.remote.ts`     | (e) offline device shows `device_offline`                                                          |
 | `zz-release.remote.ts` | closing the tab releases its session (5 connections in a row, limit 4 at once)                     |
 | `stability.remote.ts`  | (f) `@slow`: 5-minute session, first-frame time and end-to-end latency once a minute               |
 | `perf.remote.ts`       | `@slow`: performance baseline, three network conditions × client × transport (below)               |

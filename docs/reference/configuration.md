@@ -8,7 +8,8 @@ There are two kinds:
 
 - **Bootstrap keys** are read at startup. A change needs a restart.
 - **Settings** change at runtime, in the console under **Settings**, and every change is
-  recorded. A few settings come ahead of the feature that uses them; see
+  recorded. A few can only be set in the configuration file or the environment; the table
+  marks them. A few settings come ahead of the feature that uses them; see
   [Known limitations](known-limitations.md#features-not-there-yet).
 
 ## Setting a value
@@ -92,81 +93,81 @@ Apply changes with `docker compose up -d --wait`.
 
 ### auth
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `auth.session_ttl` | `5m`–`365d` | `30d` | Absolute lifetime of client and console sessions. |
-| `auth.session_idle_ttl` | `5m`–`365d` | `7d` | Sliding idle timeout of client and console sessions. |
-| `auth.max_sessions_per_user` | `1`–`10000` | `1000` | Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session. Every RustDesk client signed in to an account holds one session, so an account shared by more devices than this logs the least recently used device out. |
-| `auth.password.min_length` | `8`–`256` | `10` | Minimum password length (the maximum is fixed at 256). |
-| `auth.lockout.max_failures` | `1`–`100` | `5` | Failed logins per account within the window before it is locked. |
-| `auth.lockout.window` | `1m`–`1d` | `15m` | Window in which failed logins are counted. |
-| `auth.lockout.duration` | `1m`–`1d` | `15m` | Base lockout duration (exponential backoff is capped at 24h). |
-| `auth.ip_rate_limit.per_minute` | `1`–`10000` | `20` | Requests per minute per IP on login-type endpoints. |
-| `auth.registration` | `disabled`, `invite`, `open` | `disabled` | Self-service registration mode. |
-| `auth.tfa.enforce` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask for it). A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in. |
-| `auth.email_code.enabled` | `true`, `false` | `false` | Allow email one-time codes as a second factor (requires SMTP). |
-| `auth.oidc.link_email_max_role` | `off`, `user`, `admin`, `owner` | `user` | Highest role an OIDC login may reach by linking an existing account by email (both sides verified, no TOTP, not LDAP); `off` never links by email. `admin` and `owner` let the identity provider take those accounts over by email: only with an IdP whose users cannot change their own email address. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `auth.session_ttl` | `DESKHAVEN_SETTINGS__AUTH__SESSION_TTL` | `5m`–`365d` | `30d` | Absolute lifetime of client and console sessions. |
+| `auth.session_idle_ttl` | `DESKHAVEN_SETTINGS__AUTH__SESSION_IDLE_TTL` | `5m`–`365d` | `7d` | Sliding idle timeout of client and console sessions. |
+| `auth.max_sessions_per_user` | `DESKHAVEN_SETTINGS__AUTH__MAX_SESSIONS_PER_USER` | `1`–`10000` | `1000` | Most usable client and console sessions one user holds; signing in once more ends the user's least recently used session. Every RustDesk client signed in to an account holds one session, so an account shared by more devices than this logs the least recently used device out. |
+| `auth.password.min_length` | `DESKHAVEN_SETTINGS__AUTH__PASSWORD__MIN_LENGTH` | `8`–`256` | `10` | Minimum password length (the maximum is fixed at 256). |
+| `auth.lockout.max_failures` | `DESKHAVEN_SETTINGS__AUTH__LOCKOUT__MAX_FAILURES` | `1`–`100` | `5` | Failed logins per account within the window before it is locked. |
+| `auth.lockout.window` | `DESKHAVEN_SETTINGS__AUTH__LOCKOUT__WINDOW` | `1m`–`1d` | `15m` | Window in which failed logins are counted. |
+| `auth.lockout.duration` | `DESKHAVEN_SETTINGS__AUTH__LOCKOUT__DURATION` | `1m`–`1d` | `15m` | Base lockout duration (exponential backoff is capped at 24h). |
+| `auth.ip_rate_limit.per_minute` | `DESKHAVEN_SETTINGS__AUTH__IP_RATE_LIMIT__PER_MINUTE` | `1`–`10000` | `20` | Requests per minute per IP on login-type endpoints. |
+| `auth.registration` | `DESKHAVEN_SETTINGS__AUTH__REGISTRATION` | `disabled`, `invite`, `open` | `disabled` | Self-service registration mode. |
+| `auth.tfa.enforce` | `DESKHAVEN_SETTINGS__AUTH__TFA__ENFORCE` | `off`, `admins`, `all` | `off` | Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask for it). A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in. |
+| `auth.email_code.enabled` | `DESKHAVEN_SETTINGS__AUTH__EMAIL_CODE__ENABLED` | `true`, `false` | `false` | Allow email one-time codes as a second factor (requires SMTP). |
+| `auth.oidc.link_email_max_role` | `DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_EMAIL_MAX_ROLE` | `off`, `user`, `admin`, `owner` | `user` | Highest role an OIDC login may reach by linking an existing account by email (both sides verified, no TOTP, not LDAP); `off` never links by email. `admin` and `owner` let the identity provider take those accounts over by email: only with an IdP whose users cannot change their own email address. |
 
 ### smtp
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `smtp.host` | host name, at most 254 characters | empty | SMTP server host name; empty = SMTP not configured. |
-| `smtp.port` | `1`–`65535` | `587` | SMTP server port. |
-| `smtp.tls` | `starttls`, `tls`, `none` | `starttls` | SMTP transport security. |
-| `smtp.username` | text, at most 254 characters | empty | SMTP user name; empty = no authentication. |
-| `smtp.password` | secret, at most 255 characters | unset | SMTP password. |
-| `smtp.from` | email address, at most 254 characters | empty | Sender address of outgoing mail. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `smtp.host` | `DESKHAVEN_SETTINGS__SMTP__HOST` | host name, at most 254 characters | empty | SMTP server host name; empty = SMTP not configured. |
+| `smtp.port` | `DESKHAVEN_SETTINGS__SMTP__PORT` | `1`–`65535` | `587` | SMTP server port. |
+| `smtp.tls` | `DESKHAVEN_SETTINGS__SMTP__TLS` | `starttls`, `tls`, `none` | `starttls` | SMTP transport security. |
+| `smtp.username` | `DESKHAVEN_SETTINGS__SMTP__USERNAME` | text, at most 254 characters | empty | SMTP user name; empty = no authentication. |
+| `smtp.password` | `DESKHAVEN_SETTINGS__SMTP__PASSWORD` | secret, at most 255 characters | unset | SMTP password. |
+| `smtp.from` | `DESKHAVEN_SETTINGS__SMTP__FROM` | email address, at most 254 characters | empty | Sender address of outgoing mail. |
 
 ### devices
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `devices.verify_uuid` | `true`, `false` | `true` | Device endpoints check that id and uuid match the registered device. |
-| `devices.require_deploy` | `true`, `false` | `false` | Accept `rustdesk --deploy` registrations. Refusing devices that were not deployed (`NOT_DEPLOYED`) is not in effect yet. |
-| `devices.last_seen_flush` | `5s`–`1h` | `1m` | Interval for batch-writing device last-seen times. |
-| `devices.accept_presets` | `off`, `row`, `all` | `off` | Apply the `preset-*` fields of a device's first sysinfo: `row` = owner, device group, note and strategy; `all` = also the address book entry (written as the owner). Presets let a device choose its own placement: enable only for controlled custom-client rollouts. Never applied while `devices.verify_uuid` is off. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `devices.verify_uuid` | `DESKHAVEN_SETTINGS__DEVICES__VERIFY_UUID` | `true`, `false` | `true` | Device endpoints check that id and uuid match the registered device. |
+| `devices.require_deploy` | `DESKHAVEN_SETTINGS__DEVICES__REQUIRE_DEPLOY` | `true`, `false` | `false` | Accept `rustdesk --deploy` registrations. Refusing devices that were not deployed (`NOT_DEPLOYED`) is not in effect yet. |
+| `devices.last_seen_flush` | `DESKHAVEN_SETTINGS__DEVICES__LAST_SEEN_FLUSH` | `5s`–`1h` | `1m` | Interval for batch-writing device last-seen times. |
+| `devices.accept_presets` | `DESKHAVEN_SETTINGS__DEVICES__ACCEPT_PRESETS` | `off`, `row`, `all` | `off` | Apply the `preset-*` fields of a device's first sysinfo: `row` = owner, device group, note and strategy; `all` = also the address book entry (written as the owner). Presets let a device choose its own placement: enable only for controlled custom-client rollouts. Never applied while `devices.verify_uuid` is off. |
 
 ### addressbook
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `addressbook.max_peers` | `1`–`100000` | `1000` | Maximum peers per address book returned to clients (`max_peer_one_ab`). |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `addressbook.max_peers` | `DESKHAVEN_SETTINGS__ADDRESSBOOK__MAX_PEERS` | `1`–`100000` | `1000` | Maximum peers per address book returned to clients (`max_peer_one_ab`). |
 
 ### audit
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `audit.retention.connection` | `1d`–`3650d`, or `0` | `365d` | Retention of connection audit records; 0 = forever. |
-| `audit.retention.file` | `1d`–`3650d`, or `0` | `365d` | Retention of file-transfer audit records; 0 = forever. |
-| `audit.retention.alarm` | `1d`–`3650d`, or `0` | `365d` | Retention of alarm audit records; 0 = forever. |
-| `audit.retention.login` | `1d`–`3650d`, or `0` | `180d` | Retention of login audit records; 0 = forever. |
-| `audit.retention.console` | `1d`–`3650d`, or `0` | `730d` | Retention of console audit records; 0 = forever. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `audit.retention.connection` | `DESKHAVEN_SETTINGS__AUDIT__RETENTION__CONNECTION` | `1d`–`3650d`, or `0` | `365d` | Retention of connection audit records; 0 = forever. |
+| `audit.retention.file` | `DESKHAVEN_SETTINGS__AUDIT__RETENTION__FILE` | `1d`–`3650d`, or `0` | `365d` | Retention of file-transfer audit records; 0 = forever. |
+| `audit.retention.alarm` | `DESKHAVEN_SETTINGS__AUDIT__RETENTION__ALARM` | `1d`–`3650d`, or `0` | `365d` | Retention of alarm audit records; 0 = forever. |
+| `audit.retention.login` | `DESKHAVEN_SETTINGS__AUDIT__RETENTION__LOGIN` | `1d`–`3650d`, or `0` | `180d` | Retention of login audit records; 0 = forever. |
+| `audit.retention.console` | `DESKHAVEN_SETTINGS__AUDIT__RETENTION__CONSOLE` | `1d`–`3650d`, or `0` | `730d` | Retention of console audit records; 0 = forever. |
 
 ### signal
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `signal.relay_servers` | list of `host:port`, at most 32 | empty | Relay servers handed to clients by the signal server. |
-| `signal.always_use_relay` | `true`, `false` | `false` | Force all connections through a relay. |
-| `signal.require_kx_v1` | `true`, `false` | `false` | Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected. |
-| `signal.acl.default` | `allow`, `deny` | `allow` | Connection ACL decision when no rule matches (not in effect yet). |
-| `signal.acl.on_error` | `allow`, `deny` | `deny` | Connection ACL decision when the control plane fails (fail closed; not in effect yet). |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `signal.relay_servers` | `DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS` | list of `host:port`, at most 32 | empty | Relay servers handed to clients by the signal server. |
+| `signal.always_use_relay` | `DESKHAVEN_SETTINGS__SIGNAL__ALWAYS_USE_RELAY` | `true`, `false` | `false` | Force all connections through a relay. |
+| `signal.require_kx_v1` | `DESKHAVEN_SETTINGS__SIGNAL__REQUIRE_KX_V1` | `true`, `false` | `false` | Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected. |
+| `signal.acl.default` | `DESKHAVEN_SETTINGS__SIGNAL__ACL__DEFAULT` | `allow`, `deny` | `allow` | Connection ACL decision when no rule matches (not in effect yet). |
+| `signal.acl.on_error` | `DESKHAVEN_SETTINGS__SIGNAL__ACL__ON_ERROR` | `allow`, `deny` | `deny` | Connection ACL decision when the control plane fails (fail closed; not in effect yet). |
 
 ### updates
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `updates.check` | `true`, `false` | `true` | While on, admins using the console make the server ask GitHub (api.github.com) for the latest deskhaven release at most once a day; off sends no request. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `updates.check` | `DESKHAVEN_SETTINGS__UPDATES__CHECK` | `true`, `false` | `true` | While on, admins using the console make the server ask GitHub (api.github.com) for the latest deskhaven release at most once a day; off sends no request. |
 
 ### web_client
 
-| Key | Allowed values | Default | Description |
-| --- | --- | --- | --- |
-| `web_client.enabled` | `true`, `false` | `false` | Let console users control their own devices from the browser (administrators and owners: every device). Off refuses every web client session. |
-| `web_client.ice_servers` | text, at most 1024 characters | `stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443` | ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:` or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN servers. |
-| `web_client.turn_username` | text, at most 255 characters | empty | User name for the `turn:` / `turns:` servers of `web_client.ice_servers`; empty: none. Handed to every browser that opens a web client session. |
-| `web_client.turn_credential` | secret, at most 255 characters | unset | Credential for the TURN server of `web_client.ice_servers` (while it is set, every `turn:` / `turns:` URL there must name that one host, which receives it). Handed to every browser that opens a web client session: use a TURN account for that alone. |
+| Key | Environment variable | Allowed values | Default | Description |
+| --- | --- | --- | --- | --- |
+| `web_client.enabled` | `DESKHAVEN_SETTINGS__WEB_CLIENT__ENABLED` | `true`, `false` | `false` | Let console users control their own devices from the browser (administrators and owners: every device). Off refuses every web client session. Set only in the configuration file or the environment; the console cannot change it. |
+| `web_client.ice_servers` | `DESKHAVEN_SETTINGS__WEB_CLIENT__ICE_SERVERS` | text, at most 1024 characters | `stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.nextcloud.com:443` | ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:` or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN servers. |
+| `web_client.turn_username` | `DESKHAVEN_SETTINGS__WEB_CLIENT__TURN_USERNAME` | text, at most 255 characters | empty | User name for the `turn:` / `turns:` servers of `web_client.ice_servers`; empty: none. Handed to every browser that opens a web client session. |
+| `web_client.turn_credential` | `DESKHAVEN_SETTINGS__WEB_CLIENT__TURN_CREDENTIAL` | secret, at most 255 characters | unset | Credential for the TURN server of `web_client.ice_servers` (while it is set, every `turn:` / `turns:` URL there must name that one host, which receives it). Handed to every browser that opens a web client session: use a TURN account for that alone. |
 
 ### Rules across settings
 

@@ -14,7 +14,11 @@ function apiFailure(status: number, code?: ErrorCode, details?: Record<string, u
 
 describe('failureMessage', () => {
   it.each([
-    [403, 'web_client_disabled', '此服务器未开启浏览器远程。管理员可在“设置”中开启。'],
+    [
+      403,
+      'web_client_disabled',
+      '此服务器未开启浏览器远程。管理员需在服务器配置文件或环境变量中开启。',
+    ],
     [409, 'device_offline', '设备离线。请启动设备，或等它重新连上服务器。'],
     [504, 'device_no_answer', '设备未及时响应连接请求。请确认设备在线后重试。'],
     [409, 'no_relay', '此服务器未配置中继服务器，浏览器无法连接设备。'],

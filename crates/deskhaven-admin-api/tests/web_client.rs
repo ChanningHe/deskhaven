@@ -7,7 +7,7 @@ mod common;
 
 use axum::http::Method;
 use common::web_client::{
-    ALICE_DEVICE, ANSWER, FakePunches, OFFER, OWNER_DEVICE, SESSIONS, UUID, enable, open,
+    ALICE_DEVICE, ANSWER, FakePunches, OFFER, OWNER_DEVICE, SESSIONS, UUID, enabled_harness, open,
     owned_device, setup,
 };
 use common::{Harness, PEER, harness};
@@ -61,13 +61,14 @@ async fn a_session_needs_a_console_session_and_the_switch_on() {
 async fn me_tells_every_role_whether_the_switch_is_on() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
-        let user = h.console("uma", Role::User).await;
+        let off_h = harness(db, AdminRoutes::new()).await;
+        let off_user = off_h.console("uma", Role::User).await;
+        let on_h = enabled_harness(db).await;
+        let on_user = on_h.console("ulla", Role::User).await;
 
         // Act
-        let off = h.get("/admin/api/v1/me", &user).await;
-        enable(&h).await;
-        let on = h.get("/admin/api/v1/me", &user).await;
+        let off = off_h.get("/admin/api/v1/me", &off_user).await;
+        let on = on_h.get("/admin/api/v1/me", &on_user).await;
 
         // Assert
         let b = db.backend;
@@ -81,8 +82,7 @@ async fn me_tells_every_role_whether_the_switch_is_on() {
 async fn without_a_signal_server_in_the_process_it_is_unavailable() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
-        enable(&h).await;
+        let h = enabled_harness(db).await;
         let owner = h.console("owner", Role::Owner).await;
         owned_device(&h, &owner, OWNER_DEVICE, owner.user_id).await;
 
@@ -100,7 +100,7 @@ async fn without_a_signal_server_in_the_process_it_is_unavailable() {
 async fn users_reach_their_own_devices_and_admins_every_device() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let admin = h.console("admin", Role::Admin).await;
 
@@ -129,7 +129,7 @@ async fn users_reach_their_own_devices_and_admins_every_device() {
 async fn an_opened_session_carries_what_the_browser_needs() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
 
         // Act
@@ -168,7 +168,7 @@ async fn an_opened_session_carries_what_the_browser_needs() {
 async fn turn_credentials_go_with_turn_urls_only() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let urls = "stun:stun.example.com,turns:turn.example.com:5349?transport=tcp";
         h.set_setting("web_client.ice_servers", json!(urls)).await;
@@ -204,7 +204,7 @@ async fn turn_credentials_go_with_turn_urls_only() {
 async fn signal_server_failures_answer_stable_codes() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let foreign = PunchError::ForeignRelay {
             relay_server: "203.0.113.9:21117".to_owned(),
@@ -254,7 +254,7 @@ async fn signal_server_failures_answer_stable_codes() {
 async fn the_audit_row_names_user_device_ip_offer_and_outcome_but_no_sdp() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
 
         // Act
@@ -297,7 +297,7 @@ async fn the_audit_row_names_user_device_ip_offer_and_outcome_but_no_sdp() {
 async fn malformed_requests_are_refused_before_any_punch() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let long_offer = "x".repeat(4097);
         let bodies = [

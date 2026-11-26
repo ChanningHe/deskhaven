@@ -8,7 +8,8 @@ There are two kinds:
 
 - **Bootstrap keys** are read at startup. A change needs a restart.
 - **Settings** change at runtime, in the console under **Settings**, and every change is
-  recorded. A few settings come ahead of the feature that uses them; see
+  recorded. A few can only be set in the configuration file or the environment; the table
+  marks them. A few settings come ahead of the feature that uses them; see
   [Known limitations](known-limitations.md#features-not-there-yet).
 
 ## Setting a value

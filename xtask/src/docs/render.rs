@@ -7,6 +7,7 @@
 //! (secrets excepted) that the tables cannot describe is an error. Fields the tables do not
 //! show (`format`, `minimum`, `examples`, `on_bad_row`, ...) are ignored on purpose.
 
+use deskhaven_config::bootstrap;
 use serde_json::Value as Json;
 
 const TEMPLATE: &str = include_str!("configuration.template.md");
@@ -14,14 +15,14 @@ const BOOTSTRAP_SLOT: &str = "@BOOTSTRAP@";
 const SETTINGS_SLOT: &str = "@SETTINGS@";
 const RULES_SLOT: &str = "@RULES@";
 
-const ENV_PREFIX: &str = "DESKHAVEN_";
-const ENV_SEPARATOR: &str = "__";
 const DEFS_PREFIX: &str = "#/$defs/";
 /// Guards against self-referential schemas.
 const MAX_DEPTH: usize = 16;
 const COMPOSITION: [&str; 3] = ["anyOf", "oneOf", "allOf"];
 /// The kind of a `writeOnly` value.
 const SECRET: &str = "secret";
+const PIN_ONLY_NOTE: &str =
+    "Set only in the configuration file or the environment; the console cannot change it.";
 
 pub fn configuration(bootstrap: &Json, settings: &Json) -> Result<String, String> {
     let bootstrap = bootstrap_table(bootstrap)?;
@@ -177,13 +178,9 @@ fn description(node: &Json, target: &Json) -> String {
 /// `listen.client_api` -> `DESKHAVEN_LISTEN__CLIENT_API`; a table takes one more segment
 /// per entry (`DESKHAVEN_SETTINGS__<KEY>`).
 fn env_var(leaf: &Leaf) -> String {
-    let base = format!(
-        "{ENV_PREFIX}{}",
-        leaf.key.to_ascii_uppercase().replace('.', ENV_SEPARATOR)
-    );
     match leaf.kind.as_str() {
-        "table" => format!("{base}{ENV_SEPARATOR}<KEY>"),
-        _ => base,
+        "table" => bootstrap::env_var(&format!("{}.<key>", leaf.key)),
+        _ => bootstrap::env_var(&leaf.key),
     }
 }
 
@@ -205,7 +202,7 @@ fn text<'a>(entry: &'a Json, field: &str) -> Result<&'a str, String> {
 
 fn settings_tables(settings: &Json) -> Result<String, String> {
     let entries = entries(settings, "settings")?;
-    let mut categories: Vec<(&str, Vec<[String; 4]>)> = Vec::new();
+    let mut categories: Vec<(&str, Vec<[String; 5]>)> = Vec::new();
     for entry in entries {
         let category = text(entry, "category")?;
         let row = setting_row(entry)?;
@@ -217,23 +214,36 @@ fn settings_tables(settings: &Json) -> Result<String, String> {
     Ok(categories
         .into_iter()
         .map(|(category, rows)| {
-            let header = ["Key", "Allowed values", "Default", "Description"];
+            let header = [
+                "Key",
+                "Environment variable",
+                "Allowed values",
+                "Default",
+                "Description",
+            ];
             format!("### {category}\n\n{}", table(header, rows.into_iter()))
         })
         .collect::<Vec<_>>()
         .join("\n"))
 }
 
-fn setting_row(entry: &Json) -> Result<[String; 4], String> {
+fn setting_row(entry: &Json) -> Result<[String; 5], String> {
+    let allowed = allowed(entry)?;
     let default = match entry.get("sensitive") {
         Some(Json::Bool(true)) => "unset".to_owned(),
         _ => default_cell(entry.get("default").unwrap_or(&Json::Null)),
     };
+    let description = text(entry, "description")?;
+    let description = match entry.get("pin_only") {
+        Some(Json::Bool(true)) => format!("{description} {PIN_ONLY_NOTE}"),
+        _ => description.to_owned(),
+    };
     Ok([
         code(text(entry, "key")?),
-        allowed(entry)?,
+        code(text(entry, "env")?),
+        allowed,
         default,
-        cell(text(entry, "description")?),
+        cell(&description),
     ])
 }
 

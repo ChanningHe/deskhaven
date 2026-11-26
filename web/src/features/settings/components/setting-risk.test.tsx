@@ -23,7 +23,12 @@ function withCeiling(value: string): SettingView[] {
     pinned: false,
     sensitive: false,
     version: 0,
-    schema: { type: 'enum', variants: ['off', 'user', 'admin', 'owner'] },
+    schema: {
+      type: 'enum',
+      variants: ['off', 'user', 'admin', 'owner'],
+      env: 'DESKHAVEN_SETTINGS__AUTH__OIDC__LINK_EMAIL_MAX_ROLE',
+      pin_only: false,
+    },
   }
   return [...sampleSettings(), ceiling]
 }

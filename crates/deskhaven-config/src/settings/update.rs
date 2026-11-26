@@ -40,7 +40,7 @@ pub struct Reset {
     pub version: i64,
 }
 
-/// A change whose key exists, is not pinned, and whose value is valid.
+/// A change whose key exists, is neither pinned nor pin-only, and whose value is valid.
 #[derive(Clone)]
 pub struct Accepted {
     setting: &'static dyn AnySetting,
@@ -101,7 +101,8 @@ impl fmt::Display for Problem {
 /// A batch that must not be applied (nothing is written).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Rejection {
-    /// Keys fixed by the bootstrap configuration (API: 409 `setting_pinned`).
+    /// Keys fixed by, or only settable through, the bootstrap configuration
+    /// (API: 409 `setting_pinned`).
     #[error("settings pinned by the bootstrap configuration: {}", keys.join(", "))]
     Pinned { keys: Vec<String> },
     /// Unknown keys, duplicates, invalid values or violated cross-key rules.
@@ -149,7 +150,7 @@ pub fn prepare_batch(
         };
         if !seen.insert(setting.key()) {
             problems.push(problem("set more than once in one update"));
-        } else if pins.is_pinned(setting.key()) {
+        } else if pins.is_pinned(setting.key()) || setting.is_pin_only() {
             pinned.push(setting.key().to_owned());
         } else {
             match accept(setting, version, value) {

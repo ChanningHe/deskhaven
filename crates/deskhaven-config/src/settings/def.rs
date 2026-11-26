@@ -7,6 +7,13 @@ use serde_json::{Map, Value as Json};
 
 use super::kind::SettingType;
 use super::value::Value;
+use crate::bootstrap::{SETTINGS_KEY, env_var};
+
+/// The environment variable that pins `key`, e.g. `auth.session_ttl` ->
+/// `DESKHAVEN_SETTINGS__AUTH__SESSION_TTL`.
+pub(crate) fn env_name(key: &str) -> String {
+    env_var(&format!("{SETTINGS_KEY}.{key}"))
+}
 
 /// A declared setting whose values are `T`. Declared only through
 /// `settings!` (see `registry.rs`); read with
@@ -20,6 +27,9 @@ pub struct Setting<T: SettingType> {
     /// the default. Set for security-relevant settings, so corruption or a
     /// lost master key fails closed rather than open.
     on_bad_row: Option<T::Default>,
+    /// Only a pin sets the value: a stored row is ignored and every write is
+    /// refused, so the console cannot turn it on.
+    pin_only: bool,
     _type: PhantomData<fn() -> T>,
 }
 
@@ -35,6 +45,7 @@ impl<T: SettingType> Setting<T> {
         default: T::Default,
         rule: T::Rule,
         on_bad_row: Option<T::Default>,
+        pin_only: bool,
     ) -> Self {
         Self {
             key,
@@ -42,6 +53,7 @@ impl<T: SettingType> Setting<T> {
             default,
             rule,
             on_bad_row,
+            pin_only,
             _type: PhantomData,
         }
     }
@@ -68,6 +80,8 @@ pub trait AnySetting: Send + Sync {
     fn description(&self) -> &'static str;
     /// Sensitive values are encrypted at rest and never shown.
     fn is_sensitive(&self) -> bool;
+    /// Only the bootstrap configuration sets it; a stored row is ignored.
+    fn is_pin_only(&self) -> bool;
     fn default_value(&self) -> Value;
     /// Effective value when a stored row exists but cannot be used.
     fn bad_row_value(&self) -> Value;
@@ -89,6 +103,10 @@ impl<T: SettingType> AnySetting for Setting<T> {
 
     fn is_sensitive(&self) -> bool {
         T::SENSITIVE
+    }
+
+    fn is_pin_only(&self) -> bool {
+        self.pin_only
     }
 
     fn default_value(&self) -> Value {
@@ -120,6 +138,8 @@ impl<T: SettingType> AnySetting for Setting<T> {
             ("type".to_owned(), Json::from(T::TYPE_NAME)),
             ("sensitive".to_owned(), Json::Bool(T::SENSITIVE)),
             ("default".to_owned(), default),
+            ("env".to_owned(), Json::from(env_name(self.key))),
+            ("pin_only".to_owned(), Json::Bool(self.pin_only)),
         ]);
         map.extend(T::describe(&self.rule));
         if self.on_bad_row.is_some() {
@@ -131,19 +151,23 @@ impl<T: SettingType> AnySetting for Setting<T> {
 
 /// Declares settings and the [`all`](super::all) list in one place, so a
 /// setting cannot exist without being registered. The doc comment is the
-/// description; `rule` (default: the kind's rule) and `on_bad_row`
-/// (default: the declared default) are optional, in that order.
+/// description; `rule` (default: the kind's rule), `on_bad_row` (default:
+/// the declared default) and `pin_only` (default: false) are optional, in
+/// that order.
 macro_rules! settings {
     (@rule $ty:ty) => { <$ty as SettingType>::DEFAULT_RULE };
     (@rule $ty:ty, $rule:expr) => { $rule };
     (@bad_row) => { None };
     (@bad_row $policy:expr) => { $policy };
+    (@pin_only) => { false };
+    (@pin_only $pin_only:literal) => { $pin_only };
     ($(
         $(#[doc = $doc:literal])+
         $name:ident: $ty:ty = $key:literal {
             default: $default:expr
             $(, rule: $rule:expr)?
             $(, on_bad_row: $policy:expr)?
+            $(, pin_only: $pin_only:literal)?
             $(,)?
         }
     )*) => {
@@ -156,6 +180,7 @@ macro_rules! settings {
                 $default,
                 settings!(@rule $ty $(, $rule)?),
                 settings!(@bad_row $($policy)?),
+                settings!(@pin_only $($pin_only)?),
             );
         )*
 

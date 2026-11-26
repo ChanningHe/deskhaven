@@ -6,7 +6,7 @@ use std::fmt;
 use serde::Serialize;
 use serde_json::Value as Json;
 
-use super::def::{AnySetting, Setting};
+use super::def::{AnySetting, Setting, env_name};
 use super::kind::SettingType;
 use super::pins::PinSet;
 use super::registry::{all, lookup};
@@ -241,7 +241,8 @@ impl Snapshot {
 }
 
 /// Pin, else a readable valid row, else the bad-row fallback (row exists
-/// but is unusable; keeps the row version), else the default.
+/// but is unusable; keeps the row version), else the default. A pin-only
+/// setting skips its row (reported) and takes the default.
 fn resolve(
     setting: &dyn AnySetting,
     pins: &PinSet,
@@ -262,6 +263,16 @@ fn resolve(
     let Some(row) = row else {
         return entry(setting.default_value(), Source::Default, false, false);
     };
+    if setting.is_pin_only() {
+        warnings.push(LoadWarning {
+            problem: format!(
+                "stored value ignored: set it in the configuration file's [settings] or with {}",
+                env_name(setting.key())
+            ),
+            key: row.key,
+        });
+        return entry(setting.default_value(), Source::Default, false, false);
+    }
     match row.value.as_ref().map(|raw| setting.coerce(raw)) {
         Some(Ok(value)) => {
             let source = Source::Database {

@@ -480,3 +480,43 @@ fn a_reset_is_checked_against_the_cross_key_rules() {
 
     assert_eq!(invalid_keys(rejected), ["auth.email_code.enabled"]);
 }
+
+#[test]
+fn a_pin_only_setting_ignores_its_stored_row() {
+    let rows = vec![stored("web_client.enabled", json!(true), 3)];
+
+    let (s, warnings) = Snapshot::build(&PinSet::empty(), rows);
+
+    assert!(!s.get(&settings::WEB_CLIENT_ENABLED));
+    assert_eq!(
+        s.view("web_client.enabled").unwrap().source,
+        Source::Default
+    );
+    let [warning] = warnings.as_slice() else {
+        panic!("expected one warning, got {warnings:?}");
+    };
+    assert_eq!(warning.key, "web_client.enabled");
+    assert!(
+        warning
+            .to_string()
+            .contains("DESKHAVEN_SETTINGS__WEB_CLIENT__ENABLED"),
+        "{warning}"
+    );
+}
+
+#[test]
+fn a_pin_only_setting_refuses_changes_and_resets() {
+    let pinned_keys = |result: Result<_, Rejection>| match result {
+        Err(Rejection::Pinned { keys }) => keys,
+        other => panic!("expected Pinned, got {other:?}"),
+    };
+
+    let set = prepare(
+        &PinSet::empty(),
+        &[change("web_client.enabled", json!(true))],
+    );
+    let reset = prepare_batch(&PinSet::empty(), &[], &[reset("web_client.enabled", 3)]);
+
+    assert_eq!(pinned_keys(set), ["web_client.enabled"]);
+    assert_eq!(pinned_keys(reset), ["web_client.enabled"]);
+}

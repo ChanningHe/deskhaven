@@ -62,7 +62,8 @@ export function SettingRow({
   const problem = draft?.change.kind === 'set' ? problemOf(setting, editor) : undefined
   const invalid = problem !== undefined || serverProblems.length > 0
   const source = setting.source
-  const canReset = source.kind === 'database' && !setting.pinned && draft === undefined
+  const readOnly = setting.pinned || setting.schema.pin_only
+  const canReset = source.kind === 'database' && !readOnly && draft === undefined
 
   return (
     <li
@@ -91,7 +92,13 @@ export function SettingRow({
         <p id={helpId} className="text-xs text-muted-foreground">
           {setting.description}
         </p>
-        {setting.pinned ? <PinnedNote source={source} /> : null}
+        {setting.pinned ? (
+          <PinnedNote source={source} />
+        ) : setting.schema.pin_only ? (
+          <p className="text-xs text-warning">
+            {t('settings.pinned.configOnly', { name: setting.schema.env })}
+          </p>
+        ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -99,7 +106,7 @@ export function SettingRow({
             setting={setting}
             id={id}
             editor={editor}
-            disabled={disabled || setting.pinned || staged}
+            disabled={disabled || readOnly || staged}
             invalid={invalid}
             describedBy={`${helpId} ${problemId}`}
             onChange={onEdit}

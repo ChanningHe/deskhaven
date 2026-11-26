@@ -5,7 +5,7 @@ export const SETTINGS_PATH = '/admin/api/v1/settings'
 interface Spec {
   value: unknown
   default?: unknown
-  schema: SettingSchema
+  schema: Omit<SettingSchema, 'env' | 'pin_only'>
   category?: string
   description?: string
 }
@@ -21,7 +21,11 @@ function setting(key: string, spec: Spec, patch: Partial<SettingView> = {}): Set
     pinned: false,
     sensitive: spec.schema.type === 'secret',
     version: 0,
-    schema: spec.schema,
+    schema: {
+      env: `DESKHAVEN_SETTINGS__${key.toUpperCase().replaceAll('.', '__')}`,
+      pin_only: false,
+      ...spec.schema,
+    },
     ...patch,
   }
 }

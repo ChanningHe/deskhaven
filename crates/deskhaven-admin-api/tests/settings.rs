@@ -64,12 +64,26 @@ async fn the_list_carries_value_default_source_version_category_and_schema() {
         assert!(!ttl["description"].as_str().unwrap().is_empty());
         assert_eq!(
             ttl["schema"],
-            json!({ "type": "duration", "min": "5m", "max": "365d", "zero_allowed": false })
+            json!({
+                "type": "duration",
+                "env": "DESKHAVEN_SETTINGS__AUTH__SESSION_TTL",
+                "pin_only": false,
+                "min": "5m",
+                "max": "365d",
+                "zero_allowed": false,
+            })
         );
         let min_length = find(&reply.body, "auth.password.min_length");
         assert_eq!(
             min_length["schema"],
-            json!({ "type": "u32", "min": 8, "max": 256, "zero_allowed": false })
+            json!({
+                "type": "u32",
+                "env": "DESKHAVEN_SETTINGS__AUTH__PASSWORD__MIN_LENGTH",
+                "pin_only": false,
+                "min": 8,
+                "max": 256,
+                "zero_allowed": false,
+            })
         );
         let registration = find(&reply.body, "auth.registration");
         assert_eq!(registration["schema"]["type"], "enum");
@@ -79,7 +93,15 @@ async fn the_list_carries_value_default_source_version_category_and_schema() {
         );
         assert_eq!(
             find(&reply.body, "devices.verify_uuid")["schema"],
-            json!({ "type": "bool" })
+            json!({
+                "type": "bool",
+                "env": "DESKHAVEN_SETTINGS__DEVICES__VERIFY_UUID",
+                "pin_only": false,
+            })
+        );
+        assert_eq!(
+            find(&reply.body, "web_client.enabled")["schema"]["pin_only"],
+            true
         );
         let relays = find(&reply.body, "signal.relay_servers");
         assert_eq!(relays["schema"]["type"], "host_port_list");

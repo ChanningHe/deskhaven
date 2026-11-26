@@ -94,7 +94,12 @@ export function tfaSetting(patch: Partial<SettingView> = {}): SettingView {
     sensitive: false,
     pinned: false,
     version: 3,
-    schema: { type: 'enum', variants: ['off', 'admins', 'all'] },
+    schema: {
+      type: 'enum',
+      variants: ['off', 'admins', 'all'],
+      env: 'DESKHAVEN_SETTINGS__AUTH__TFA__ENFORCE',
+      pin_only: false,
+    },
     source: { kind: 'default' },
     ...patch,
   }

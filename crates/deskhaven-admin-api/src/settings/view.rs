@@ -73,6 +73,10 @@ pub enum TextFormat {
 pub struct SettingSchema {
     #[serde(rename = "type")]
     pub kind: SettingKind,
+    /// The environment variable that pins the setting.
+    pub env: String,
+    /// Only the configuration file or the environment sets it: never editable here.
+    pub pin_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min: Option<SchemaBound>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

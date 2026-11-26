@@ -203,6 +203,7 @@ export async function startStack(resultsDir: string): Promise<Stack> {
       env: {
         [NO_UPDATE_CHECK.env]: NO_UPDATE_CHECK.value,
         DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS: relayAddr,
+        DESKHAVEN_SETTINGS__WEB_CLIENT__ENABLED: 'true',
         // No public STUN: the run needs no outbound network, host candidates connect.
         DESKHAVEN_SETTINGS__WEB_CLIENT__ICE_SERVERS: process.env.RD_E2E_ICE_SERVERS ?? '',
       },

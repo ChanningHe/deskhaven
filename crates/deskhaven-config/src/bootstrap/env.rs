@@ -203,6 +203,15 @@ fn to_path(rest: &str) -> String {
     rest.to_ascii_lowercase().replace(KEY_SEPARATOR, ".")
 }
 
+/// The variable that sets the dotted `path`: `listen.client_api` ->
+/// `DESKHAVEN_LISTEN__CLIENT_API`.
+pub fn env_var(path: &str) -> String {
+    format!(
+        "{ENV_PREFIX}{}",
+        path.to_ascii_uppercase().replace('.', KEY_SEPARATOR)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

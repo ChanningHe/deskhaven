@@ -95,15 +95,8 @@ pub async fn harness_with_updates(db: &TestDb, pins: PinSet, fetch: Arc<dyn Http
 }
 
 /// The production routes with every service on `clock` (e.g. a `ManualClock`).
-pub async fn harness_on_clock(db: &TestDb, clock: SharedClock) -> Harness {
-    build_on(
-        db,
-        AdminRoutes::new(),
-        PinSet::empty(),
-        Arc::new(OfflineFetch),
-        clock,
-    )
-    .await
+pub async fn harness_on_clock(db: &TestDb, pins: PinSet, clock: SharedClock) -> Harness {
+    build_on(db, AdminRoutes::new(), pins, Arc::new(OfflineFetch), clock).await
 }
 
 async fn build(

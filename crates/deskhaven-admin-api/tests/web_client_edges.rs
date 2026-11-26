@@ -7,9 +7,8 @@ mod common;
 use std::time::Duration;
 
 use axum::http::Method;
-use common::web_client::{ALICE_DEVICE, SESSIONS, open, opened, setup};
-use common::{auth_headers, harness, request};
-use deskhaven_admin_api::AdminRoutes;
+use common::web_client::{ALICE_DEVICE, SESSIONS, enabled_harness, open, opened, setup};
+use common::{auth_headers, request};
 use deskhaven_core::devices::DeviceRepository;
 use deskhaven_core::web_client::MAX_SESSIONS_PER_USER;
 use deskhaven_db::entity::device::{self, DeviceStatus};
@@ -26,7 +25,7 @@ const POLL: Duration = Duration::from_millis(10);
 async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let release = s.fake.park_next();
         let body = json!({ "device_id": ALICE_DEVICE });
@@ -75,7 +74,7 @@ async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
 async fn a_disabled_device_is_not_found_for_its_owner_and_for_admins() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
-        let h = harness(db, AdminRoutes::new()).await;
+        let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let repo = DeviceRepository::new(h.state.db.clone());
         let row = repo

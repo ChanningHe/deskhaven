@@ -223,6 +223,7 @@ settings! {
     WEB_CLIENT_ENABLED: bool = "web_client.enabled" {
         default: false,
         on_bad_row: strict(false),
+        pin_only: true,
     }
     /// ICE servers the browser uses for WebRTC: comma-separated `stun:`, `stuns:`, `turn:`
     /// or `turns:` URLs; empty: none. The defaults are the RustDesk client's public STUN

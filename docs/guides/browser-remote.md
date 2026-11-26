@@ -21,9 +21,18 @@ client.
 
 ## Turn it on
 
-In the console, **Settings → Browser remote control**: switch on `web_client.enabled`. It is
-off by default; while it is off the server refuses every browser session and the console shows no
-**Connect in browser** action.
+Set `web_client.enabled` to `true` in the configuration file and restart deskhaven:
+
+```toml
+[settings]
+"web_client.enabled" = true
+```
+
+or with the environment variable `DESKHAVEN_SETTINGS__WEB_CLIENT__ENABLED=true` (in the compose
+deployment, under `environment:` in `compose.override.yaml`). It is off by default; while it is
+off the server refuses every browser session and the console shows no **Connect in browser**
+action. Only the configuration turns it on: the console shows the setting read-only, and the
+admin API refuses to change it.
 
 Who can connect:
 
@@ -37,8 +46,10 @@ for a desktop client. Disabled devices cannot be opened. Every session the brows
 the audit log (`web_client.session.open`), with the user, the device, the address it came
 from and the result. The server only takes part while the connection is set up, so it does not
 know when a session ends: `web_client.session.close` only appears for sessions closed within
-that first minute. Turning `web_client.enabled` off refuses new sessions; it does not end
-sessions already running.
+that first minute. To turn it off, remove the setting (or set it to `false`) and restart
+deskhaven. New sessions are refused from then on; a session already running between the browser
+and the device is not ended. A value turned on in **Settings** before this became a
+configuration-only setting is ignored, and deskhaven logs a warning about it at every start.
 
 ## WebRTC and TURN
 
@@ -90,6 +101,6 @@ Not supported yet: audio, file transfer, chat, more than one display at a time.
 | The device is set to use another relay server | clear the relay server in the device's network settings, or set it to this server's relay |
 | No relay server is configured | `signal.relay_servers` |
 | The device did not answer | the device's RustDesk service is running; its version |
-| Remote control from the browser is turned off | `web_client.enabled` |
+| Remote control from the browser is turned off | `web_client.enabled` in the configuration file or `DESKHAVEN_SETTINGS__WEB_CLIENT__ENABLED`, then restart |
 
 See also [Known limitations](../reference/known-limitations.md#browser-remote-control).

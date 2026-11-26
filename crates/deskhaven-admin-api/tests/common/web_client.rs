@@ -8,16 +8,21 @@
 use std::sync::{Arc, Mutex};
 
 use axum::http::Method;
+use deskhaven_admin_api::AdminRoutes;
+use deskhaven_config::bootstrap::{LoadOptions, load};
+use deskhaven_config::settings::PinSet;
+use deskhaven_core::clock::SharedClock;
 use deskhaven_core::users::Role;
 use deskhaven_core::web_client::{
     CandidateRejected, CandidateSink, CandidateSource, NextCandidate, PunchError, PunchFuture,
     PunchRequest, Punched, WebPunches,
 };
+use deskhaven_db::testing::TestDb;
 use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 
 use super::devices::register;
-use super::{Console, Harness, Reply};
+use super::{Console, Harness, Reply, harness_on_clock, harness_pinned};
 
 pub const SESSIONS: &str = "/admin/api/v1/web-client/sessions";
 pub const OFFER: &str = "webrtc://eyJ0eXBlIjoib2ZmZXIifQ==";
@@ -140,9 +145,28 @@ impl WebPunches for FakePunches {
     }
 }
 
-/// Turns the web client on.
-pub async fn enable(h: &Harness) {
-    h.set_setting("web_client.enabled", json!(true)).await;
+/// `web_client.enabled` pinned on by a real configuration file: the only way to turn it on.
+pub fn enabled() -> PinSet {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("deskhaven.toml");
+    std::fs::write(&path, "[settings]\n\"web_client.enabled\" = true\n").unwrap();
+    let options = LoadOptions {
+        config_path: Some(path),
+        search_paths: Vec::new(),
+        cli: Default::default(),
+    };
+    let loaded = load(&options).unwrap();
+    PinSet::from_bootstrap(&loaded.config.settings).unwrap()
+}
+
+/// The production routes with the web client on.
+pub async fn enabled_harness(db: &TestDb) -> Harness {
+    harness_pinned(db, AdminRoutes::new(), enabled()).await
+}
+
+/// [`enabled_harness`] with every service on `clock`.
+pub async fn enabled_harness_on_clock(db: &TestDb, clock: SharedClock) -> Harness {
+    harness_on_clock(db, enabled(), clock).await
 }
 
 /// Registers `rustdesk_id` and gives it to `owner` (through the admin API, as `admin`).
@@ -160,7 +184,7 @@ pub async fn owned_device(h: &Harness, admin: &Console, rustdesk_id: &str, owner
     assert_eq!(done.status, 200, "{:?}", done.body);
 }
 
-/// An enabled harness with a fake signal server, an owner and a plain user `alice` who owns
+/// On an [`enabled_harness`]: a fake signal server, an owner and a plain user `alice` who owns
 /// device `111111111` (the owner owns `222222222`).
 pub struct Setup {
     pub fake: Arc<FakePunches>,
@@ -173,7 +197,6 @@ pub const OWNER_DEVICE: &str = "222222222";
 
 pub async fn setup(h: &Harness) -> Setup {
     let fake = FakePunches::install(h);
-    enable(h).await;
     let owner = h.console("owner", Role::Owner).await;
     let alice = h.console("alice", Role::User).await;
     owned_device(h, &owner, ALICE_DEVICE, alice.user_id).await;
