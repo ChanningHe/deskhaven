@@ -1,6 +1,4 @@
-//! The signal server's peer store over the device registry (07-hbbs-fork §3.1): what
-//! hbbs registers lands in `devices`, the single source of truth for registered devices.
-//! `serve` starts the signal server on it (`signal_server`, M1-06).
+//! What hbbs registers lands in `devices`, the single source of truth for registered devices.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9,7 +7,6 @@ use deskhaven_core::devices::{DeviceError, DeviceRepository, Registration};
 use deskhaven_db::time::{self, TimestampMs};
 use deskhaven_signal::{PeerRecord, PeerStore, PeerUpsert, StoreError};
 
-/// [`PeerStore`] backed by [`DeviceRepository`].
 pub struct SignalPeerStore {
     devices: DeviceRepository,
 }

@@ -1,8 +1,5 @@
-//! Source keys of the accept gate (M4-05): IPv4 addresses and IPv6 /64s, IPv6 /48s.
-
 use std::net::{IpAddr, Ipv6Addr};
 
-/// Where a connection is counted: its source and, for IPv6, its /48.
 #[derive(Clone, Copy)]
 pub(super) struct Loc {
     pub(super) key: IpAddr,
@@ -26,7 +23,6 @@ pub(crate) fn source_key(ip: IpAddr) -> IpAddr {
     }
 }
 
-/// The /48 of an IPv6 address; `None` for IPv4.
 fn net_key(ip: IpAddr) -> Option<IpAddr> {
     match ip.to_canonical() {
         IpAddr::V6(v6) => Some(prefix(v6, 48)),

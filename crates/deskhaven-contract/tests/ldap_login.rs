@@ -1,8 +1,3 @@
-//! `/api/login` with directory accounts (06 §3.5) through the real client API and the fake
-//! directory: the directory password logs in, wrong and unknown answer the same 401 and
-//! are counted, an unreachable directory is a 503 for directory accounts that is neither
-//! counted nor answered by a local password (and a counted 401 for unknown names), TOTP
-//! applies to directory accounts, login events say `ldap`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 #[path = "../../deskhaven-core/tests/common/ldap_fake.rs"]

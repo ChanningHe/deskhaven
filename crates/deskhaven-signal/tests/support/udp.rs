@@ -1,6 +1,3 @@
-//! UDP client: the controlled side's registration channel (RegisterPeer / RegisterPk) and
-//! where hbbs delivers PunchHole / FetchLocalAddr / RequestRelay to it.
-
 use super::{Conn, PeerKeys, Recv, msg, next_client_ip};
 use hbb_common::{
     protobuf::Message as _,
@@ -20,7 +17,6 @@ pub struct UdpClient {
 }
 
 impl UdpClient {
-    /// Binds a fresh loopback source address ([`next_client_ip`]).
     pub async fn bind(server: SocketAddr) -> Self {
         Self::bind_ip(next_client_ip(), server).await
     }
@@ -45,7 +41,6 @@ impl UdpClient {
         res.result.enum_value().unwrap()
     }
 
-    /// Sends a datagram that need not be a valid protobuf.
     pub async fn send_raw(&mut self, bytes: &[u8]) {
         self.socket.send_to(bytes, self.server).await.unwrap();
     }

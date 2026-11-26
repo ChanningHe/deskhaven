@@ -1,8 +1,3 @@
-//! s5: the core's web client port ([`WebPunches`]) over a real, supervised signal server. A
-//! relay-only punch reaches a simulated device as a PunchHole that forces relay; the device's
-//! RelayResponse comes back as the session's uuid and the device key the server signed, which
-//! the server's public key verifies.
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -28,16 +23,14 @@ use super::tests::{POLL, STEP, TARGET, TARGET_IP, Target, memory_store, start_la
 
 /// TEST-NET-1: never probed healthy, never replaced.
 const RELAY: &str = "192.0.2.1:21117";
-/// The browser's IP as the HTTP stack resolved it.
 const BROWSER_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 7));
 const RELAY_UUID: &str = "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12";
 /// Any non-empty client version makes the server sign the device key into its answer.
 const CLIENT_VERSION: &str = "1.4.0";
-/// The key `Target::register` registers.
 const TARGET_PK: [u8; 32] = [9; 32];
 
-/// The device's answer to `ph` (`create_relay`), sent the way a device does: on a new TCP
-/// connection from its own address, after the server's KeyExchange offer.
+/// Sent the way a device does: on a new TCP connection from its own address, after the
+/// server's KeyExchange offer.
 async fn answer_from_device(port: u16, ph: &PunchHole) {
     let socket = TcpSocket::new_v4().unwrap();
     socket.bind(SocketAddr::new(TARGET_IP, 0)).unwrap();
@@ -67,9 +60,8 @@ async fn answer_from_device(port: u16, ph: &PunchHole) {
         .unwrap();
 }
 
-/// A punch of [`TARGET`] in flight, started once the relay settings reached the server
-/// (they apply asynchronously after it starts; before, a punch fails at once with
-/// `NoRelay`).
+/// Started once the relay settings reached the server: they apply asynchronously, and before
+/// that a punch fails at once with `NoRelay`.
 async fn punch_once_relays_apply(port: &Arc<dyn WebPunches>) -> JoinHandle<PunchResult> {
     let deadline = Instant::now() + STEP;
     loop {
@@ -103,7 +95,6 @@ fn request(device_id: &str) -> PunchRequest {
 
 #[tokio::test]
 async fn a_web_punch_through_the_port_returns_a_relay_session_with_a_signed_device_key() {
-    // Arrange
     let settings = with(&[("signal.relay_servers", json!([RELAY]))]);
     let (_tx, rx) = watch::channel(Arc::new(settings));
     let token = CancellationToken::new();
@@ -112,7 +103,6 @@ async fn a_web_punch_through_the_port_returns_a_relay_session_with_a_signed_devi
     let mut target = Target::register(port).await;
     let port_impl: Arc<dyn WebPunches> = Arc::new(running.status.clone());
 
-    // Act
     let punch = punch_once_relays_apply(&port_impl).await;
     let ph = match target.recv().await.union {
         Some(rendezvous_message::Union::PunchHole(ph)) => ph,
@@ -122,7 +112,6 @@ async fn a_web_punch_through_the_port_returns_a_relay_session_with_a_signed_devi
     let punched = timeout(STEP, punch).await.unwrap().unwrap().unwrap();
     let unknown = port_impl.punch(request("987654321")).await;
 
-    // Assert
     assert_eq!(ph.relay_server, RELAY);
     assert_eq!(ph.nat_type.enum_value(), Ok(NatType::SYMMETRIC));
     assert_eq!(ph.webrtc_sdp_offer, "");

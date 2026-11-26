@@ -1,9 +1,7 @@
-//! Background tasks of one server instance: all of them stop when it stops.
-
 use std::future::Future;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
-/// Spawns tasks that end on `stop` and can all be awaited, so nothing outlives `run`.
+/// Nothing outlives `run`: every task ends on `stop` and can be awaited.
 #[derive(Clone)]
 pub(crate) struct Tasks {
     tracker: TaskTracker,
@@ -29,8 +27,7 @@ impl Tasks {
         });
     }
 
-    /// For a task with work to finish when stopped (flushing a queue): it is not dropped but
-    /// gets the stop token, and must end promptly (bounded) once it fires.
+    /// Not dropped when stopped but handed the stop token; must end promptly once it fires.
     pub(crate) fn spawn_draining<T, F>(&self, task: T)
     where
         T: FnOnce(CancellationToken) -> F,
@@ -39,7 +36,6 @@ impl Tasks {
         self.tracker.spawn(task(self.stop.clone()));
     }
 
-    /// Stops every task and waits until all of them have finished.
     pub(crate) async fn shutdown(&self) {
         self.stop.cancel();
         self.tracker.close();

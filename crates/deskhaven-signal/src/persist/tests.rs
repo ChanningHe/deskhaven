@@ -1,6 +1,4 @@
-//! Preload, coalesced write-behind, store outages (circuit breaker), UuidMismatch rebinding
-//! and the stop. Time-dependent tests run on tokio's paused clock (sleeps and timeouts
-//! advance instantly when every task is idle).
+//! Time-dependent tests run on tokio's paused clock.
 
 use super::*;
 use crate::peer::PeerMap;
@@ -14,23 +12,17 @@ const ID: &str = "123456789";
 const UUID: &[u8] = b"owner-uuid";
 const PK1: &[u8] = &[1; 32];
 const PK2: &[u8] = &[2; 32];
-/// Upper bound for anything the writer must get done in a test (paused clock).
 const SETTLE: Duration = Duration::from_secs(120);
 
-/// A memory store with scripted failures, recording every upsert attempt.
 #[derive(Default)]
 struct ScriptedStore {
     inner: MemoryPeerStore,
     /// Upcoming upserts that fail with a backend error (`usize::MAX`: store down).
     fail_next: AtomicUsize,
-    /// Upserts and loads never complete.
     hang: AtomicBool,
-    /// (id, pk) of every upsert attempt.
     attempts: Mutex<Vec<(String, Vec<u8>)>>,
     gets: AtomicUsize,
-    /// (after, limit) of every `load_page` call.
     pages: Mutex<Vec<(Option<String>, usize)>>,
-    /// Ids `get` no longer finds (deleted out of band).
     deleted: Mutex<Vec<String>>,
 }
 
@@ -117,7 +109,6 @@ fn server_with_queue(store: &Arc<ScriptedStore>, cap: usize) -> (PeerMap, Tasks)
     (pm, tasks)
 }
 
-/// What the RegisterPk path does for an accepted registration from `from`.
 async fn accept_from(
     pm: &mut PeerMap,
     id: &str,
@@ -135,7 +126,6 @@ async fn accept(pm: &mut PeerMap, id: &str, uuid: &[u8], pk: &[u8]) -> Result<()
     accept_from(pm, id, uuid, pk, addr()).await
 }
 
-/// Polls `done` until it holds; panics after [`SETTLE`] (paused clock: instant).
 async fn eventually<F: AsyncFn() -> bool>(what: &str, done: F) {
     let deadline = Instant::now() + SETTLE;
     while !done().await {
@@ -172,8 +162,6 @@ async fn stop_flushes_queued_writes_to_the_store() {
     assert_eq!(pm.persist().lost_at_stop(), 0);
 }
 
-/// M-B: the preload walks the store in pages of [`PRELOAD_PAGE`], each starting after the last
-/// id of the previous one, and ends on a short page.
 #[tokio::test]
 async fn preload_streams_pages_with_a_keyset_cursor() {
     let store = Arc::new(ScriptedStore::default());
@@ -214,7 +202,6 @@ async fn preload_fails_when_the_store_is_too_slow() {
     tasks.shutdown().await;
 }
 
-/// Lookups after the preload are memory only: hits and misses alike.
 #[tokio::test]
 async fn lookups_never_ask_the_store() {
     let store = Arc::new(ScriptedStore::default());
@@ -230,8 +217,6 @@ async fn lookups_never_ask_the_store() {
     tasks.shutdown().await;
 }
 
-/// A transient failure keeps the accepted entry in memory; the writer retries it itself
-/// until it lands.
 #[tokio::test(start_paused = true)]
 async fn transient_backend_failure_is_retried_and_keeps_the_peer() {
     let store = Arc::new(ScriptedStore::default());
@@ -253,8 +238,6 @@ async fn transient_backend_failure_is_retried_and_keeps_the_peer() {
     tasks.shutdown().await;
 }
 
-/// H-A.1: registrations accepted before the writer gets to the id collapse into one write
-/// of the latest state.
 #[tokio::test]
 async fn registrations_before_the_write_collapse_into_the_latest_state() {
     let store = Arc::new(ScriptedStore::default());
@@ -269,8 +252,6 @@ async fn registrations_before_the_write_collapse_into_the_latest_state() {
     assert_eq!(stored_pk(&store, ID).await.as_deref(), Some(PK2));
 }
 
-/// H-A.1: while the store is down, any number of registrations of one peer keep exactly one
-/// pending write; after the recovery that peer is written exactly once, with its latest pk.
 #[tokio::test(start_paused = true)]
 async fn duplicate_writes_are_impossible_during_an_outage() {
     let store = Arc::new(ScriptedStore::default());
@@ -297,9 +278,6 @@ async fn duplicate_writes_are_impossible_during_an_outage() {
     tasks.shutdown().await;
 }
 
-/// H-A.4: after [`BREAKER_THRESHOLD`] consecutive failures no write is attempted for the
-/// cool-down; a failed probe doubles it; a successful probe closes the breaker and the
-/// backlog is written at once, each peer once.
 #[tokio::test(start_paused = true)]
 async fn breaker_opens_after_consecutive_failures_and_closes_after_a_successful_probe() {
     const PEERS: usize = 20;
@@ -311,16 +289,13 @@ async fn breaker_opens_after_consecutive_failures_and_closes_after_a_successful_
         accept(&mut pm, &id, UUID, PK1).await.unwrap();
     }
 
-    // Open: three attempts, then nothing for COOL_DOWN_MIN (1 s).
     sleep(COOL_DOWN_MIN / 2).await;
     assert_eq!(store.attempt_count(), BREAKER_THRESHOLD as usize);
-    // The probe at 1 s fails: open again, for 2 s.
     sleep_until(start + COOL_DOWN_MIN + COOL_DOWN_MIN / 2).await;
     assert_eq!(store.attempt_count(), BREAKER_THRESHOLD as usize + 1);
     sleep_until(start + COOL_DOWN_MIN * 3 - Duration::from_millis(100)).await;
     assert_eq!(store.attempt_count(), BREAKER_THRESHOLD as usize + 1);
 
-    // Recovered: the probe at 3 s succeeds and closes the breaker.
     store.set_down(false);
     sleep_until(start + COOL_DOWN_MIN * 3 + Duration::from_millis(100)).await;
 
@@ -335,10 +310,6 @@ async fn breaker_opens_after_consecutive_failures_and_closes_after_a_successful_
     tasks.shutdown().await;
 }
 
-/// H-A: a fleet keeps re-registering (new IPs) through a 10-minute outage. Every registration
-/// is accepted and served from memory, the queue never holds more than one entry per peer,
-/// the breaker keeps attempts to a few per minute, and after the recovery every peer is saved
-/// with its latest address, written once.
 #[tokio::test(start_paused = true)]
 async fn fleet_outage_keeps_peers_accepted_and_the_queue_bounded() {
     const PEERS: usize = 50;
@@ -393,10 +364,6 @@ async fn fleet_outage_keeps_peers_accepted_and_the_queue_bounded() {
     tasks.shutdown().await;
 }
 
-/// Backstop behind RegisterPk's id check: an id that is not a peer id is never queued
-/// (PostgreSQL refuses a NUL, and the writer would retry it forever), leaves no cached entry,
-/// and never reaches the store; valid ids next to it, a non-ASCII custom id included, are
-/// saved.
 #[tokio::test]
 async fn malformed_ids_are_never_queued_or_stored() {
     const UNICODE_ID: &str = "a\u{e9}12345";
@@ -424,8 +391,6 @@ async fn malformed_ids_are_never_queued_or_stored() {
     assert_eq!(ids, [ID, UNICODE_ID]);
 }
 
-/// H-A.3: a full queue still accepts bound peers (memory updated, write owed) and refuses
-/// only ids that are not bound yet, before touching them.
 #[tokio::test(start_paused = true)]
 async fn full_queue_accepts_bound_peers_and_refuses_only_new_ids() {
     let store = Arc::new(ScriptedStore::default());
@@ -442,7 +407,7 @@ async fn full_queue_accepts_bound_peers_and_refuses_only_new_ids() {
     let bound_in_flight = accept(&mut pm, "peer-a", UUID, PK2).await;
 
     assert!(new_id.is_err(), "new id refused");
-    // M1-07 review (H1): the default entry `get_or` created is dropped, no empty-pk peer stays.
+    // The default entry `get_or` created is dropped: no empty-pk peer stays.
     assert!(
         pm.get("peer-d").await.is_none(),
         "refused new id leaves no entry"
@@ -462,9 +427,6 @@ async fn full_queue_accepts_bound_peers_and_refuses_only_new_ids() {
     tasks.shutdown().await;
 }
 
-/// M-A: the store binds the id to another uuid (changed out of band after the preload). Its
-/// binding is loaded into the cached peer in place: same entry, the store's keys, the
-/// rate-limit counter kept, nothing owed.
 #[tokio::test]
 async fn uuid_mismatch_rebinds_the_store_record_in_place() {
     let store = Arc::new(ScriptedStore::default());
@@ -494,8 +456,6 @@ async fn uuid_mismatch_rebinds_the_store_record_in_place() {
     tasks.shutdown().await;
 }
 
-/// LOW: one deadline covers the whole flush; a write stuck in the store is cancelled with it
-/// and, like everything still queued, counted as unsaved.
 #[tokio::test(start_paused = true)]
 async fn stop_deadline_cancels_an_in_flight_write_and_counts_the_unsaved() {
     let store = Arc::new(ScriptedStore::default());
@@ -517,8 +477,6 @@ async fn stop_deadline_cancels_an_in_flight_write_and_counts_the_unsaved() {
     assert_eq!(pm.persist().lost_at_stop(), 3);
 }
 
-/// LOW: on stop each queued write gets one attempt, without breaker or backoff, even while the
-/// breaker is open; the failed ones are counted as unsaved.
 #[tokio::test(start_paused = true)]
 async fn stop_gives_each_queued_write_a_single_attempt() {
     const PEERS: usize = 5;
@@ -545,7 +503,6 @@ async fn stop_gives_each_queued_write_a_single_attempt() {
     assert_eq!(pm.persist().lost_at_stop(), PEERS);
 }
 
-/// M-A: `reload` changes the cached peer in place or forgets a deleted id.
 #[tokio::test]
 async fn reload_replaces_cached_keys_in_place_or_forgets_the_id() {
     let store = Arc::new(ScriptedStore::default());
@@ -558,7 +515,6 @@ async fn reload_replaces_cached_keys_in_place_or_forgets_the_id() {
     let (pm, tasks) = server(&store);
     pm.preload(SETTLE).await.unwrap();
     let cached = pm.get(ID).await.unwrap();
-    // Changed and deleted out of band.
     store.inner.upsert_pk(&record(ID, UUID, PK2)).await.unwrap();
     store.deleted.lock().unwrap().push("gone-peer".to_owned());
 

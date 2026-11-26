@@ -1,6 +1,3 @@
-//! `SignalPeerStore`: field mapping on both backends, and a real signal server persisting
-//! registrations to SQLite across a restart.
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -70,9 +67,6 @@ async fn upsert_then_get_round_trips_through_devices() {
     .await;
 }
 
-/// The signal server registers the client's non-ASCII custom ids (`is_peer_id`); they are
-/// stored and found as written, and the preload's keyset paging (one row per page here)
-/// visits each exactly once.
 #[tokio::test]
 async fn non_ascii_custom_ids_round_trip_through_devices() {
     const IDS: [&str; 4] = [
@@ -157,7 +151,6 @@ async fn other_uuid_maps_to_uuid_mismatch() {
     .await;
 }
 
-/// A signal server on free loopback ports.
 struct Server {
     addr: SocketAddr,
     shutdown: CancellationToken,
@@ -196,7 +189,6 @@ impl Server {
     }
 }
 
-/// The NAT test port is `port - 1`, the websocket port `port + 2`.
 fn free_base_port() -> u16 {
     loop {
         let port = std::net::TcpListener::bind((LOCALHOST, 0))
@@ -215,8 +207,8 @@ fn free_base_port() -> u16 {
     }
 }
 
-/// `false` if `run` ended first (lost a port race). The UDP socket is bound before the TCP
-/// listeners, so an accepting main TCP port means UDP is ready too.
+/// The UDP socket is bound before the TCP listeners, so an accepting main TCP port means UDP is
+/// ready too.
 async fn wait_until_listening(
     addr: SocketAddr,
     task: &JoinHandle<Result<(), SignalError>>,
@@ -263,11 +255,8 @@ async fn register_pk(server: SocketAddr, uuid: &[u8], pk: &[u8]) -> register_pk_
     }
 }
 
-/// The acceptance check of M1-05: a restart (new server, new connection pool, same SQLite
-/// file) keeps the id bound to its uuid, so another uuid still gets UUID_MISMATCH.
 #[tokio::test]
 async fn registration_survives_restart_on_the_same_database() {
-    // Arrange
     let dir = tempfile::tempdir().unwrap();
     let url = format!("sqlite://{}", dir.path().join("deskhaven.db").display());
     let options = DbOptions::new(url);
@@ -279,14 +268,12 @@ async fn registration_survives_restart_on_the_same_database() {
     server.stop().await;
     conn.close().await.unwrap();
 
-    // Act
     let conn = connect(&options).await.unwrap();
     let server = Server::start(&key, &store(&conn)).await;
     let thief = register_pk(server.addr, b"thief-uuid", PK2).await;
     let owner = register_pk(server.addr, OWNER_UUID, PK1).await;
     server.stop().await;
 
-    // Assert
     assert_eq!(first, register_pk_response::Result::OK);
     assert_eq!(thief, register_pk_response::Result::UUID_MISMATCH);
     assert_eq!(owner, register_pk_response::Result::OK);

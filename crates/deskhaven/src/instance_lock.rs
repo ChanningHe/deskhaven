@@ -1,22 +1,17 @@
-//! One server process per data_dir: an exclusive, non-blocking advisory lock
-//! (`flock`) on `{data_dir}/deskhaven.lock`, held for the process lifetime.
-//! The kernel drops it when the process exits, so a crash never leaves a
-//! stale lock behind. Two instances on separate data_dirs sharing one
-//! PostgreSQL database are not detected.
+//! The kernel drops the `flock` when the process exits, so a crash never leaves a stale lock.
+//! Two instances on separate data_dirs sharing one PostgreSQL database are not detected.
 
 use std::path::Path;
 
 /// Lock file name inside data_dir; its content is unused.
 pub const LOCK_FILE: &str = "deskhaven.lock";
 
-/// Held lock; released on drop.
 #[derive(Debug)]
 pub struct InstanceLock {
     #[cfg(unix)]
     _fd: rustix::fd::OwnedFd,
 }
 
-/// Takes the lock, or fails at once if another process holds it.
 #[cfg(unix)]
 pub fn acquire(data_dir: &Path) -> anyhow::Result<InstanceLock> {
     use anyhow::{Context, bail};

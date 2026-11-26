@@ -1,10 +1,5 @@
-//! First-run setup link (05 §2.4): while the instance has no owner, startup logs a
-//! one-time link to the console's `/setup` page once; `deskhaven admin create-setup-link`
-//! issues a new one (retiring the old) when it was lost or expired.
-//!
-//! The token travels in the URL fragment (`/setup#token=`), which browsers never send to
-//! a server, so it stays out of reverse-proxy access logs and `Referer` headers. No
-//! password is ever printed: the owner chooses one on the page.
+//! The token travels in the URL fragment, which browsers never send to a server, so it stays
+//! out of reverse-proxy access logs and `Referer` headers. No password is ever printed.
 
 use std::io::Write;
 
@@ -15,12 +10,8 @@ use deskhaven_core::setup::{self, SetupError, SetupService, SetupToken, StartupS
 
 use crate::{config_cmd, database};
 
-/// Path of the console's setup page.
 pub const SETUP_PATH: &str = "/setup";
 
-/// The link for `token`: on the console's public URL when one is configured
-/// (`admin_public_url` with a split admin listener, else `public_url`), else just the
-/// path, to open on whatever address reaches the console.
 pub fn link(config: &Bootstrap, token: &str) -> String {
     let base = if config.listen.admin_addr().is_some() {
         config.listen.admin_public_url.as_str()
@@ -33,7 +24,6 @@ pub fn link(config: &Bootstrap, token: &str) -> String {
     )
 }
 
-/// Startup: logs the setup state; issues and logs a link when none is live.
 pub async fn announce(config: &Bootstrap, setup: &SetupService) -> anyhow::Result<()> {
     match setup
         .on_startup()
@@ -59,8 +49,7 @@ fn log_issued(config: &Bootstrap, token: &SetupToken) {
     );
 }
 
-/// `deskhaven admin create-setup-link`: issues a new link on the configured database and
-/// prints it. Works while the server runs (it only writes `setup_tokens`).
+/// Works while the server runs: it only writes `setup_tokens`.
 pub fn create(options: &LoadOptions) -> anyhow::Result<()> {
     let loaded = config_cmd::load_reporting(options)?;
     let config = &loaded.config;

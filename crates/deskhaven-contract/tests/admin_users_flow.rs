@@ -1,8 +1,3 @@
-//! Console user administration end to end, through the real single-listener server:
-//! an owner creates a user and puts it in a group via the admin API, the user logs in with
-//! the official client's request, the owner revokes its sessions, and the client's token
-//! is refused (401) on its next call. (The browser version of this flow is M3-15's
-//! Playwright suite.)
 #![allow(clippy::unwrap_used)]
 
 use deskhaven_admin_api::{SESSION_COOKIE, csrf_token};
@@ -49,7 +44,6 @@ async fn owner(app: &TestApp) -> Owner {
     }
 }
 
-/// An admin API request as the console sends it.
 fn console(method: &str, path: &str, owner: &Owner, body: Option<Value>) -> Request {
     let mut request = Request::new(method, path);
     request
@@ -73,7 +67,6 @@ fn json_of(reply: &Reply) -> Value {
 
 #[tokio::test]
 async fn revoking_a_users_sessions_in_the_console_logs_its_client_out() {
-    // Arrange: the real server on one listener, an owner signed in to the console.
     let app = TestApp::start_with_options(TestOptions {
         listen: Listen::Single,
         ..TestOptions::default()
@@ -82,7 +75,6 @@ async fn revoking_a_users_sessions_in_the_console_logs_its_client_out() {
     .unwrap();
     let owner = owner(&app).await;
 
-    // Act 1: create the user and a group, add the user to it.
     let body = json!({ "username": "flow-user", "password": USER_PASSWORD, "must_change_password": false });
     let created = app
         .send(&console("POST", "/admin/api/v1/users", &owner, Some(body)))
@@ -117,7 +109,6 @@ async fn revoking_a_users_sessions_in_the_console_logs_its_client_out() {
         .unwrap();
     assert_eq!(added.status, 204);
 
-    // Act 2: the user logs in from a client and uses its token.
     let reply = app.send(&login("flow-user", USER_PASSWORD)).await.unwrap();
     assert_eq!(
         reply.status,
@@ -133,14 +124,12 @@ async fn revoking_a_users_sessions_in_the_console_logs_its_client_out() {
         "flow-user"
     );
 
-    // Act 3: the owner revokes every session of the user.
     let path = format!("/admin/api/v1/users/{user_id}/revoke-sessions");
     let revoked = app
         .send(&console("POST", &path, &owner, None))
         .await
         .unwrap();
 
-    // Assert: one session revoked; the client's next call is a 401.
     assert_eq!(revoked.status, 200);
     assert_eq!(json_of(&revoked), json!({ "revoked": 1 }));
     let after = app.send(&bearer("/api/currentUser", &token)).await.unwrap();

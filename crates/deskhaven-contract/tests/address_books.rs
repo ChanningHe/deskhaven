@@ -1,7 +1,3 @@
-//! Multi-step address book flows (03 §5.1): write then read back as the client does,
-//! personal guid stability, shared passwords, tag renames reaching peers, refused writes
-//! leaving the book unchanged, and books out of reach answering exactly like missing ones.
-//! Every reply is decoded with the client mirror types.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_client_api::MAX_AB_BODY;
@@ -15,7 +11,6 @@ use deskhaven_db::entity::address_book_peer;
 use sea_orm::EntityTrait;
 use serde_json::{Value, json};
 
-/// An address book request as `ab_model.dart` sends it: bearer, JSON content type.
 fn ab(method: &str, path: &str, token: &str, body: Option<Value>) -> Request {
     let mut request = Request::new(method, path);
     request

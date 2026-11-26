@@ -1,5 +1,4 @@
-//! Fixture `expect.shape` names → "does the client mirror type parse these
-//! exact bytes". Add an entry when an endpoint needs a new shape.
+//! Add an entry when an endpoint needs a new shape.
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -10,13 +9,10 @@ use crate::mirror::{
     LoginResponse, OidcAuthUrl, PagedResponse, PeerPayload, SecondFactorChallenge,
 };
 
-/// Parses a response body; `Err` is serde's message (with line/column).
 pub type ShapeCheck = fn(&[u8]) -> Result<(), String>;
 
-/// Types the Rust client reads through `HbbHttpResponse`, and the address book
-/// bodies Flutter refuses when they contain an `error` key
-/// (`flutter/lib/models/ab_model.dart:244-247`), are registered as `HbbData<T>`
-/// (object only, no top-level `error` key).
+/// Types the Rust client reads through `HbbHttpResponse`, and address book bodies Flutter
+/// refuses with an `error` key, are registered as `HbbData<T>`.
 const SHAPES: &[(&str, ShapeCheck)] = &[
     ("AuthBody", parse::<HbbData<AuthBody>>),
     ("ClientUserPayload", object::<ClientUserPayload>),
@@ -60,10 +56,8 @@ fn parse<T: DeserializeOwned>(body: &[u8]) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
-/// For struct mirrors. serde's derive also accepts a JSON array as a
-/// positional struct, while the clients decode a map (`Map<String,
-/// dynamic>`, `HashMap`) and reject it. Only the top level is checked: the
-/// server serializes nested structs as objects as well.
+/// serde's derive also accepts a JSON array as a positional struct, while the clients decode a
+/// map and reject it. Only the top level is checked: nested structs serialize as objects too.
 fn object<T: DeserializeOwned>(body: &[u8]) -> Result<(), String> {
     let value: Value = serde_json::from_slice(body).map_err(|err| err.to_string())?;
     if !value.is_object() {

@@ -1,5 +1,3 @@
-//! Multi-step protocol flows shared by several test binaries.
-
 use super::{Conn, Rendezvous, STEP, TcpClient, TestServer, UdpClient};
 use hbb_common::{
     rendezvous_proto::PunchHoleRequest,
@@ -8,7 +6,6 @@ use hbb_common::{
 
 const RELAY_POLL: Duration = Duration::from_millis(50);
 
-/// The relay_server of the PunchHole forwarded to `target` for `req` sent on `controller`.
 pub async fn relay_via(
     controller: &mut TcpClient,
     target: &mut UdpClient,
@@ -18,9 +15,7 @@ pub async fn relay_via(
     expect_msg!(target.recv().await, PunchHole).relay_server
 }
 
-/// [`relay_via`] a new controller connection. (Upstream connections kept the relay list of
-/// their accept time, rs:1174-1182; since M1-06 every connection reads the shared list, but a
-/// fresh connection per sample keeps the baseline tests transport-neutral.)
+/// A fresh connection per sample keeps the baseline tests transport-neutral.
 pub async fn next_relay(
     server: &TestServer,
     target: &mut UdpClient,
@@ -29,8 +24,8 @@ pub async fn next_relay(
     relay_via(&mut server.tcp().await, target, req).await
 }
 
-/// Repeats [`next_relay`] until the relay satisfies `accept`: relay lists apply asynchronously
-/// (initial config at the first timer tick, handle updates through the server loop).
+/// Relay lists apply asynchronously: the initial config at the first timer tick, handle updates
+/// through the server loop.
 pub async fn wait_for_relay(
     server: &TestServer,
     target: &mut UdpClient,

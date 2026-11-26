@@ -1,5 +1,3 @@
-//! End-to-end tests of `deskhaven key show` and the key-material config check.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
@@ -33,9 +31,7 @@ fn run(dir: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// `--config none.toml` must exist: defaults, except an OS-assigned client
-/// API port and no signal server so the port check of parallel `config check`
-/// runs never collides.
+/// No signal server, so the port checks of parallel `config check` runs never collide.
 fn prepare(name: &str) -> (PathBuf, PathBuf) {
     let dir = workdir(name);
     std::fs::write(

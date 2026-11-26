@@ -1,7 +1,4 @@
-//! M4-05 review (LOW-1): running out of file descriptors must not cost the connections
-//! waiting in the main port's backlog. Upstream rebound the listener on any accept error, which
-//! reset them (and could fail to create the new socket at all). Its own test binary: it lowers
-//! the process's open-file limit.
+//! Its own test binary: it lowers the process's open-file limit.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -15,7 +12,6 @@ use support::{TcpClient, TestServer, read_offer};
 /// Longer than one accept back-off, so the server certainly hits EMFILE meanwhile.
 const STARVED: Duration = Duration::from_millis(600);
 
-/// The highest open descriptor number.
 fn max_fd() -> u64 {
     std::fs::read_dir("/proc/self/fd")
         .unwrap()
@@ -26,7 +22,7 @@ fn max_fd() -> u64 {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_connection_queued_while_descriptors_ran_out_is_served_afterwards() {
-    // Arrange: no descriptor left but one, which the client's socket takes.
+    // No descriptor left but one, which the client's socket takes.
     let server = TestServer::start().await;
     let limit = getrlimit(Resource::Nofile);
     let mut starved = limit;
@@ -38,13 +34,12 @@ async fn a_connection_queued_while_descriptors_ran_out_is_served_afterwards() {
     }
     fillers.pop();
 
-    // Act: the server's accept fails with EMFILE while the client waits in the backlog.
+    // The server's accept fails with EMFILE while the client waits in the backlog.
     let mut client = TcpClient::connect(server.main_addr()).await;
     tokio::time::sleep(STARVED).await;
     setrlimit(Resource::Nofile, limit).unwrap();
     drop(fillers);
 
-    // Assert
     read_offer(&mut client).await;
     server.stop().await;
 }

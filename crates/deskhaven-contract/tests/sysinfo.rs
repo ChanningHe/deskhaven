@@ -1,5 +1,4 @@
-//! `POST /api/sysinfo` flows (03 §2.2): what the replies of the fixtures leave behind.
-//! The client only reads the text; these tests read the registry through the app's state.
+//! The client only reads the text; these tests read the registry.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_client_api::TRY_LATER_MESSAGE;
@@ -19,7 +18,6 @@ use deskhaven_db::entity::device_group;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 
-/// The body `sync.rs` builds (get_sysinfo + version, id, uuid), plus `extra` keys.
 fn sysinfo_request(hostname: &str, extra: Value) -> Request {
     let mut body = json!({
         "cpu": "8/4 cores", "memory": "15.5GB", "os": "windows / Windows 11 Pro - 10.0.22631",
@@ -57,20 +55,15 @@ fn every_preset() -> Value {
     })
 }
 
-/// `devices.accept_presets` is off by default: presets are self-reported, so the reply is
-/// the same and nothing is placed.
 #[tokio::test]
 async fn presets_are_ignored_unless_accepted() {
-    // Arrange
     let app = app_with(&["registered-device", "device-preset-targets"]).await;
 
-    // Act
     let reply = app
         .send(&sysinfo_request("reception-01", every_preset()))
         .await
         .unwrap();
 
-    // Assert
     assert_eq!((reply.status, text(&reply)), (200, "SYSINFO_UPDATED"));
     let row = DeviceRepository::new(app.state.db.clone())
         .find_by_rustdesk_id(DEVICE_ID)
@@ -86,7 +79,6 @@ async fn presets_are_ignored_unless_accepted() {
 
 #[tokio::test]
 async fn presets_of_the_first_sysinfo_place_the_device() {
-    // Arrange
     let seeds = [
         "registered-device",
         "device-preset-targets",
@@ -95,13 +87,11 @@ async fn presets_of_the_first_sysinfo_place_the_device() {
     let app = app_with(&seeds).await;
     let presets = every_preset();
 
-    // Act
     let reply = app
         .send(&sysinfo_request("reception-01", presets))
         .await
         .unwrap();
 
-    // Assert
     assert_eq!((reply.status, text(&reply)), (200, "SYSINFO_UPDATED"));
     let state = &app.state;
     let row = DeviceRepository::new(state.db.clone())
@@ -148,32 +138,25 @@ async fn presets_of_the_first_sysinfo_place_the_device() {
     assert_eq!(peers[0].tags, ["printers"]);
 }
 
-/// The client uploads again after every restart and username change: the same content is
-/// answered SYSINFO_UPDATED without touching the row.
+/// The client uploads again after every restart and username change.
 #[tokio::test]
 async fn an_unchanged_upload_is_acknowledged_without_a_write() {
-    // Arrange
     let app = app_with(&["registered-device"]).await;
     let first = app.send(&sysinfo_request("pc", json!({}))).await.unwrap();
     let repo = DeviceRepository::new(app.state.db.clone());
     let before = repo.find_by_rustdesk_id(DEVICE_ID).await.unwrap().unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
-    // Act
     let second = app.send(&sysinfo_request("pc", json!({}))).await.unwrap();
 
-    // Assert
     assert_eq!(text(&first), "SYSINFO_UPDATED");
     assert_eq!((second.status, text(&second)), (200, "SYSINFO_UPDATED"));
     let after = repo.find_by_rustdesk_id(DEVICE_ID).await.unwrap().unwrap();
     assert_eq!(after, before);
 }
 
-/// With `devices.verify_uuid` off, a wrong uuid is accepted for a registered id; an unknown
-/// id still is not.
 #[tokio::test]
 async fn verify_uuid_off_accepts_any_uuid_of_a_registered_id() {
-    // Arrange
     let app = app_with(&["registered-device"]).await;
     app.set_setting("devices.verify_uuid", json!(false))
         .await
@@ -181,44 +164,33 @@ async fn verify_uuid_off_accepts_any_uuid_of_a_registered_id() {
     let wrong_uuid = sysinfo_request("pc", json!({ "uuid": "b3RoZXI=" }));
     let unknown = sysinfo_request("pc", json!({ "id": "555555555" }));
 
-    // Act
     let accepted = app.send(&wrong_uuid).await.unwrap();
     let refused = app.send(&unknown).await.unwrap();
 
-    // Assert
     assert_eq!(text(&accepted), "SYSINFO_UPDATED");
     assert_eq!(text(&refused), "ID_NOT_FOUND");
 }
 
-/// The route-level body limit answers 413 before anything is parsed.
 #[tokio::test]
 async fn an_oversized_body_is_refused() {
-    // Arrange
     let app = app_with(&["registered-device"]).await;
     let filler = "x".repeat(deskhaven_client_api::MAX_SYSINFO_BODY);
     let request = sysinfo_request("pc", json!({ "padding": filler }));
 
-    // Act
     let reply = app.send(&request).await.unwrap();
 
-    // Assert
     assert_eq!(reply.status, 413);
 }
 
-/// A second changing upload within 30 s is answered 429 (not stored): the client's next try
-/// is 120 s later (`sync.rs:221-228`), past the window, so it never loops. Unchanged
-/// uploads stay `SYSINFO_UPDATED`.
+/// The client's next try is 120 s later, past the window, so it never loops.
 #[tokio::test]
 async fn a_changing_upload_right_after_another_is_answered_429() {
-    // Arrange
     let app = app_with(&["registered-device"]).await;
     app.send(&sysinfo_request("one", json!({}))).await.unwrap();
 
-    // Act
     let changed = app.send(&sysinfo_request("two", json!({}))).await.unwrap();
     let same = app.send(&sysinfo_request("one", json!({}))).await.unwrap();
 
-    // Assert
     assert_eq!(changed.status, 429);
     assert_eq!(
         changed.json::<ErrorBody>().unwrap().error,
@@ -228,25 +200,20 @@ async fn a_changing_upload_right_after_another_is_answered_429() {
     assert_eq!((same.status, text(&same)), (200, "SYSINFO_UPDATED"));
 }
 
-/// Requests from one client network beyond the sysinfo quota are answered 429; another
-/// network is unaffected.
 #[tokio::test]
 async fn requests_beyond_the_per_ip_quota_are_answered_429() {
-    // Arrange
     let app = app_with(&["registered-device"]).await;
     let request = sysinfo_request("pc", json!({}));
     for _ in 0..SYSINFO_PER_IP_PER_MINUTE {
         app.send(&request).await.unwrap();
     }
 
-    // Act
     let over = app.send(&request).await.unwrap();
     let elsewhere = app
         .send(&from(request.clone(), "198.51.100.9:40000"))
         .await
         .unwrap();
 
-    // Assert
     assert_eq!(over.status, 429);
     assert_eq!(text(&elsewhere), "SYSINFO_UPDATED");
 }

@@ -1,10 +1,5 @@
-//! Startup gate and supervised restarts of the signal server.
-//!
-//! Every error `SignalServer::run` returns is terminal (bind / rebind failure, UDP self-test,
-//! peer registry preload). [`start`] turns a failure of the first attempt into a startup
-//! failure (a clear error and exit 1, e.g. for a taken port). Once serving, a failed server is
-//! logged and restarted with exponential backoff ([`Backoff`]), re-reading the settings and
-//! re-loading the peer registry, until shutdown.
+//! A first attempt that fails before serving fails startup (a clear error and exit 1); once
+//! serving, a failed server is restarted with exponential backoff until shutdown.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,15 +25,12 @@ pub struct Backoff {
 }
 
 impl Backoff {
-    /// 1 s doubling to 60 s.
     pub const DEFAULT: Self = Self {
         initial: Duration::from_secs(1),
         max: Duration::from_secs(60),
     };
 }
 
-/// The delay before restarting an attempt that ran for `ran` (launch to failure), given the
-/// delay waited before it (`None`: it was the first attempt).
 pub(super) fn next_delay(backoff: Backoff, previous: Option<Duration>, ran: Duration) -> Duration {
     match previous {
         Some(previous) if ran < backoff.max => previous.saturating_mul(2).min(backoff.max),
@@ -46,7 +38,6 @@ pub(super) fn next_delay(backoff: Backoff, previous: Option<Duration>, ran: Dura
     }
 }
 
-/// Builds one server per attempt from fixed parts and the latest settings.
 pub struct Launcher {
     base: SignalConfig,
     store: Arc<dyn PeerStore>,
@@ -69,8 +60,6 @@ impl Launcher {
         }
     }
 
-    /// Starts a server on the current settings, with a relay sync task that applies every
-    /// later change to it.
     fn launch(&mut self, token: &CancellationToken) -> Attempt {
         let runtime = SignalSettings::from_snapshot(&self.settings.borrow_and_update());
         let server = SignalServer::new(
@@ -98,7 +87,6 @@ impl Launcher {
     }
 }
 
-/// One running server and its relay sync task.
 struct Attempt {
     handle: SignalHandle,
     run: JoinHandle<Result<(), deskhaven_signal::SignalError>>,
@@ -108,8 +96,7 @@ struct Attempt {
 }
 
 impl Attempt {
-    /// Waits for the server to stop, then stops the relay sync. `Ok` only after a requested
-    /// shutdown.
+    /// `Ok` only after a requested shutdown.
     async fn finish(self) -> anyhow::Result<()> {
         let res = self.run.await;
         self.sync_stop.cancel();
@@ -123,11 +110,9 @@ impl Attempt {
     }
 }
 
-/// Whether the current server is serving, across restarts (for `/readyz`).
 #[derive(Clone, Debug)]
 pub struct SignalStatus(watch::Receiver<SignalHandle>);
 
-/// How long `--deploy` waits for the signal server's live registration of an id.
 pub const LIVE_UUID_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl LiveRegistrations for SignalStatus {
@@ -141,18 +126,15 @@ impl SignalStatus {
         self.0.borrow().is_serving()
     }
 
-    /// Makes the current server re-read `id` from the peer store (a deleted device is
-    /// forgotten). A server between restarts reloads everything when it starts anyway, so a
-    /// stopped one is only logged.
+    /// A server between restarts reloads everything when it starts, so a stopped one is only
+    /// logged.
     pub fn reload_peer(&self, id: &str) {
         if let Err(err) = self.0.borrow().reload_peer(id) {
             tracing::debug!(error = %err, "signal server not running; peer reload skipped");
         }
     }
 
-    /// The uuid the current server holds in memory for `id` (stored yet or not): `Ok(None)` when
-    /// it holds none or is not running (it preloads the database when it starts), `Err` when
-    /// it does not answer within [`LIVE_UUID_TIMEOUT`] (logged).
+    /// `Ok(None)` also when no server runs: it preloads the database when it starts.
     pub async fn live_uuid(&self, id: &str) -> Result<Option<Vec<u8>>, LiveUnknown> {
         let handle = self.0.borrow().clone();
         match tokio::time::timeout(LIVE_UUID_TIMEOUT, handle.live_uuid(id)).await {
@@ -168,15 +150,13 @@ impl SignalStatus {
         }
     }
 
-    /// Waits until the current server (the last one launched) has stopped and drained,
-    /// even if its supervisor is gone (a panic drops the supervisor's join handle, not the
-    /// server, which then stops on the shutdown token): close the database only after this.
+    /// A panic drops the supervisor's join handle, not the server: close the database only
+    /// after this.
     pub async fn stopped(&self) {
         let current = self.0.borrow().clone();
         current.stopped().await;
     }
 
-    /// The current server's handle.
     pub(super) fn current(&self) -> SignalHandle {
         self.0.borrow().clone()
     }
@@ -187,10 +167,8 @@ impl SignalStatus {
     }
 }
 
-/// A supervised signal server.
 pub struct RunningSignal {
     pub status: SignalStatus,
-    /// Ends once `token` was cancelled and the current server stopped.
     pub task: JoinHandle<()>,
 }
 
@@ -210,8 +188,6 @@ impl RunningSignal {
     }
 }
 
-/// Starts the server and waits until it serves. A first attempt that fails before serving
-/// fails startup; later failures are restarted with `backoff`.
 pub async fn start(
     mut launcher: Launcher,
     backoff: Backoff,
@@ -229,8 +205,6 @@ pub async fn start(
     Ok(RunningSignal::spawn(launcher, attempt, backoff, token))
 }
 
-/// Supervises from the first attempt on, without the startup gate: a first attempt that
-/// fails is retried like any later failure.
 pub fn spawn_supervised(
     mut launcher: Launcher,
     backoff: Backoff,

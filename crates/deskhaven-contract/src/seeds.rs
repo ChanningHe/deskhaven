@@ -1,13 +1,5 @@
-//! Fixture `seed` names → functions that prepare the fresh app before the
-//! request is replayed (users, sessions, devices, settings, ...).
-//!
-//! Seeds write through the real services/database of the app's one
-//! [`AppState`] (the instance the routers serve). Each returns named outputs
-//! (e.g. `session_token` → the token the real service issued) that the
-//! fixture's request refers to as `${session_token}` (see
-//! [`crate::fixture::Request::resolve`]). Prefer fixed, documented values
-//! where the service allows it. Keep each seed small and named after what it
-//! creates.
+//! Seeds write through the real services of the app's one [`AppState`]; their named outputs
+//! fill the fixture's `${name}` placeholders.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -26,7 +18,6 @@ use deskhaven_core::users::{Credential, NewUser, Password, Status};
 use crate::app::DEFAULT_PEER;
 use crate::{ab_seeds, device_seeds, group_seeds, token_seeds};
 
-/// Output name → value, substituted into `${name}` placeholders.
 pub type SeedOutputs = BTreeMap<String, String>;
 pub type SeedFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<SeedOutputs>> + Send + 'a>>;
 pub type Seed = for<'a> fn(&'a AppState) -> SeedFuture<'a>;
@@ -95,19 +86,14 @@ const BUILTIN: &[(&str, Seed)] = &[
     }),
 ];
 
-/// `client-session` / `local-user` values (fixed, so fixtures may also spell
-/// them out). Every seeded account has [`SEED_PASSWORD`].
+/// Fixed, so fixtures may also spell them out. Every seeded account has [`SEED_PASSWORD`].
 pub const SEED_USERNAME: &str = "alice";
 pub const SEED_PASSWORD: &str = "contract-Seed-pass-1";
 pub const SEED_RUSTDESK_ID: &str = "123456789";
 pub const SEED_UUID: &str = "contract-seed-device-uuid";
-/// `disabled-user`.
 pub const DISABLED_USERNAME: &str = "dave";
-/// `unverified-user`.
 pub const UNVERIFIED_USERNAME: &str = "erin";
-/// `console-session`.
 pub const CONSOLE_USERNAME: &str = "carol";
-/// A username no seed creates.
 pub const UNKNOWN_USERNAME: &str = "nobody";
 
 async fn create_user(state: &AppState, username: &str, status: Status) -> anyhow::Result<i64> {
@@ -119,20 +105,16 @@ async fn create_user(state: &AppState, username: &str, status: Status) -> anyhow
     Ok(state.users.create(new).await?.id)
 }
 
-/// An active local user [`SEED_USERNAME`] with [`SEED_PASSWORD`], not logged
-/// in. No outputs.
 async fn local_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
     create_user(state, SEED_USERNAME, Status::Active).await?;
     Ok(SeedOutputs::new())
 }
 
-/// A disabled local user [`DISABLED_USERNAME`]. No outputs.
 async fn disabled_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
     create_user(state, DISABLED_USERNAME, Status::Disabled).await?;
     Ok(SeedOutputs::new())
 }
 
-/// An unverified local user [`UNVERIFIED_USERNAME`]. No outputs.
 async fn unverified_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
     create_user(state, UNVERIFIED_USERNAME, Status::Unverified).await?;
     Ok(SeedOutputs::new())
@@ -156,10 +138,8 @@ async fn console_session(state: &AppState) -> anyhow::Result<SeedOutputs> {
     )]))
 }
 
-/// Spends the whole `auth.lockout.max_failures` budget of [`SEED_USERNAME`]
-/// and of [`UNKNOWN_USERNAME`] from the default peer through the real login
-/// throttle (failed attempts), so the next login of either from that peer is
-/// locked out. Creates no user. No outputs.
+/// Spends the lockout budget of [`SEED_USERNAME`] and [`UNKNOWN_USERNAME`] from the default
+/// peer through the real login throttle. Creates no user.
 async fn login_locked_out(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let client = ClientAddr {
         addr: DEFAULT_PEER.ip(),
@@ -175,10 +155,8 @@ async fn login_locked_out(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// An active local user [`SEED_USERNAME`] with TOTP enabled through the real
-/// 2FA service. The enrolment is confirmed with the code of the **previous**
-/// time step, so the authenticator's current and next codes both still log in.
-/// Outputs `totp_secret` (base32 seed) and `recovery_code` (one of its codes).
+/// The enrolment is confirmed with the code of the **previous** time step, so the current and
+/// next codes both still log in. Outputs `totp_secret` and `recovery_code`.
 async fn totp_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let user_id = create_user(state, SEED_USERNAME, Status::Active).await?;
     let enrolment = state.tfa.begin_enrolment(user_id).await?;
@@ -196,7 +174,6 @@ async fn totp_user(state: &AppState) -> anyhow::Result<SeedOutputs> {
     ]))
 }
 
-/// Sets `auth.tfa.enforce` to `all` through the settings service. No outputs.
 async fn tfa_enforce_all(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let key = "auth.tfa.enforce";
     let settings = &state.settings;
@@ -220,10 +197,7 @@ async fn tfa_enforce_all(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// An active local user [`SEED_USERNAME`] logged in from device
-/// [`SEED_RUSTDESK_ID`] / [`SEED_UUID`] through the real user and session
-/// services. Outputs `session_token` (the bearer token the service issued),
-/// `username`, `rustdesk_id` and `uuid`.
+/// Outputs `session_token`, `username`, `rustdesk_id` and `uuid`.
 async fn client_session(state: &AppState) -> anyhow::Result<SeedOutputs> {
     create_user(state, SEED_USERNAME, Status::Active).await?;
     let login = state
@@ -247,7 +221,6 @@ async fn client_session(state: &AppState) -> anyhow::Result<SeedOutputs> {
     ]))
 }
 
-/// A seed registry: the built-ins, plus test-only seeds of runner tests.
 #[derive(Clone)]
 pub struct Seeds {
     entries: Vec<(&'static str, Seed)>,
@@ -266,8 +239,7 @@ impl Seeds {
         }
     }
 
-    /// The registry plus `name`. The first registration of a name wins, so
-    /// a test seed cannot shadow a built-in.
+    /// The first registration of a name wins, so a test seed cannot shadow a built-in.
     #[must_use]
     pub fn with(self, name: &'static str, seed: Seed) -> Self {
         let entries = self.entries.into_iter().chain([(name, seed)]).collect();
@@ -281,9 +253,7 @@ impl Seeds {
             .map(|(_, seed)| *seed)
     }
 
-    /// Runs `names` in order against `state` and collects their outputs. An
-    /// output name produced twice is an error (a placeholder must have one
-    /// meaning).
+    /// An output name produced twice is an error: a placeholder must have one meaning.
     pub async fn apply(&self, names: &[String], state: &AppState) -> anyhow::Result<SeedOutputs> {
         let mut outputs = SeedOutputs::new();
         for name in names {

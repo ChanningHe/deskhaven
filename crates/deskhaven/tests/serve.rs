@@ -1,5 +1,3 @@
-//! End-to-end tests of `deskhaven serve`: the real binary with a temporary
-//! data_dir and SQLite, JSON logs on stderr, plain HTTP/1.1 over TCP.
 #![cfg(unix)]
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
@@ -39,7 +37,6 @@ fn serves_health_and_shuts_down_cleanly_on_sigterm() {
     );
 }
 
-/// Review M3: umask 0077, so the database (and any side file) is owner-only.
 #[test]
 fn database_files_are_owner_only() {
     let dir = workdir("umask");
@@ -59,7 +56,6 @@ fn database_files_are_owner_only() {
     assert_eq!(status.code(), Some(0), "{}", server.logs());
 }
 
-/// Review M1: one process per data_dir (advisory lock).
 #[test]
 fn second_instance_on_the_same_data_dir_is_refused() {
     let dir = workdir("second-instance");
@@ -81,8 +77,6 @@ fn second_instance_on_the_same_data_dir_is_refused() {
     assert_eq!(status.code(), Some(0), "{}", first.logs());
 }
 
-/// Review M1: listeners are bound before the database is opened, so an
-/// instance that cannot bind never creates or migrates a database.
 #[test]
 fn occupied_port_fails_before_the_database_is_touched() {
     let dir = workdir("port-taken");
@@ -101,8 +95,6 @@ fn occupied_port_fails_before_the_database_is_touched() {
     assert!(!dir.join("data/deskhaven.db").exists(), "{logs}");
 }
 
-/// Review H1: `config check` on a stopped server's WAL database creates no
-/// `-wal`/`-shm` files and changes nothing.
 #[test]
 fn config_check_leaves_a_stopped_server_database_untouched() {
     let dir = workdir("check-after-stop");
@@ -154,8 +146,6 @@ fn second_start_reuses_key_material() {
     }
 }
 
-/// M3-02 (M0-09 deferred): the first start logs a one-time setup link (token in the
-/// fragment, no password); the next start issues none while that one is live.
 #[test]
 fn first_start_logs_a_setup_link_once() {
     let dir = workdir("setup-link");
@@ -261,7 +251,6 @@ fn split_admin_listener_serves_version_and_404s_other_api_paths() {
     assert_eq!(status.code(), Some(0), "{}", server.logs());
 }
 
-/// The header value for `name` (case-insensitive) in a raw response head.
 fn header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
     let head = response.split("\r\n\r\n").next()?;
     head.lines().skip(1).find_map(|line| {
@@ -272,7 +261,6 @@ fn header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-/// The `<title>` line of the built `web/dist/index.html`.
 fn index_html_title() -> String {
     let index = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist/index.html");
     let html = std::fs::read_to_string(index).unwrap();
@@ -288,8 +276,6 @@ fn single_listener_serves_the_console_with_csp_and_keeps_api_404s() {
     let addr = server.listening("client_api");
 
     // index.html with a built web/dist, the 503 "not built" page without one.
-    // Local runs usually lack web/dist; CI builds it before testing (M4-06),
-    // so both branches are exercised there and here.
     let (expected_status, marker) = if deskhaven_web::is_built() {
         (200, index_html_title())
     } else {
@@ -333,7 +319,7 @@ fn unreachable_postgres_fails_startup_without_leaking_the_url() {
     assert!(logs.contains("failed to connect to the database"), "{logs}");
     assert!(!logs.contains(password), "password leaked:\n{logs}");
     assert!(!logs.contains("postgres://"), "URL leaked:\n{logs}");
-    // Listeners bind first (review M1); serving never starts.
+    // Listeners bind first; serving never starts.
     assert!(!logs.contains("\"ready\""), "{logs}");
 }
 

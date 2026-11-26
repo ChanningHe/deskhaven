@@ -1,9 +1,5 @@
-//! deskhaven-contract may only be a dev-dependency (09-testing §2.2). Asked
-//! of Cargo itself (`cargo metadata --no-deps`), so workspace inheritance,
-//! renames (`name` is the package, `rename` the alias) and `[target.*]`
-//! tables are already resolved: no workspace package may depend on it with a
-//! kind other than `dev`. (Crates the server depends on could not anyway:
-//! that would be a cycle.)
+//! Asked of Cargo itself (`cargo metadata --no-deps`), so workspace inheritance, renames and
+//! `[target.*]` tables are already resolved.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::Path;
@@ -41,8 +37,7 @@ fn packages(metadata: &Value) -> &[Value] {
     metadata["packages"].as_array().unwrap()
 }
 
-/// `package: kind (target)` for every non-dev dependency on the contract
-/// crate. `kind` is `null` for normal dependencies, `"build"`, or `"dev"`.
+/// `kind` is `null` for normal dependencies, `"build"`, or `"dev"`.
 fn offenders(metadata: &Value) -> Vec<String> {
     packages(metadata)
         .iter()

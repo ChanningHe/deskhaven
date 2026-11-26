@@ -1,16 +1,12 @@
-//! Rate limit for log lines of events a client can trigger at will (deskhaven code, not
-//! vendored).
+//! Rate limit for log lines of events a client can trigger at will.
 
 use std::{
     sync::{Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
-/// Counts events and says when to log them: the first one, then at most once per `every`,
-/// with the number of events since the last line.
 pub(crate) struct LogLimit {
     every: Duration,
-    /// Events since the last line, and when that line was logged.
     state: Mutex<(u64, Option<Instant>)>,
 }
 
@@ -22,7 +18,6 @@ impl LogLimit {
         }
     }
 
-    /// Records one event at `now`; `Some(count)` if a line should be logged now.
     pub(crate) fn hit(&self, now: Instant) -> Option<u64> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let (count, last) = &mut *state;
@@ -35,9 +30,7 @@ impl LogLimit {
     }
 }
 
-/// How a device uuid appears in logs: its length only. The uuid is what device endpoints
-/// accept as proof of identity (deskhaven 06 §2), so logs must never carry it, neither the
-/// one a client sent nor the stored one.
+/// The uuid is what device endpoints accept as proof of identity, so logs carry only its length.
 pub(crate) struct Redacted<'a>(pub(crate) &'a [u8]);
 
 impl std::fmt::Display for Redacted<'_> {

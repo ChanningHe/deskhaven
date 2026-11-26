@@ -1,5 +1,3 @@
-//! End-to-end tests of the signal server inside `deskhaven serve` (M1-06): the real binary
-//! on free ports, RustDesk wire protocol (hbb_common protobufs) over UDP and TCP.
 //! Requires Linux routing all of 127.0.0.0/8 to `lo` (the controlled peer uses 127.0.0.2).
 #![cfg(unix)]
 // Test code: panicking helpers are fine.
@@ -27,7 +25,7 @@ use support::*;
 const TARGET: &str = "123456789";
 const TARGET_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
-/// TEST-NET-1 (RFC 5737): resolves without DNS, never passes a health probe.
+/// TEST-NET-1: resolves without DNS, never passes a health probe.
 const PINNED_RELAY: &str = "192.0.2.1:21117";
 const NET_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIENT_VERSION: &str = "1.4.2";
@@ -57,13 +55,8 @@ fn key_show(dir: &Path) -> String {
         .to_owned()
 }
 
-/// The signal ports answer (TCP NAT test on port-1, UDP RegisterPeer); RegisterPk persists to
-/// `devices` and binds the id to its uuid across a restart; the key the server checks licence
-/// keys against and signs peer keys with is `key show`'s; a pinned relay list reaches punch
-/// holes; `/readyz` reports ready with the signal server serving; SIGTERM stops it cleanly.
 #[test]
 fn signal_server_serves_persists_and_uses_the_key_show_key() {
-    // Arrange
     let dir = workdir("signal-e2e");
     let port = free_signal_port();
     let config = signal_config(
@@ -79,7 +72,6 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
     let pk = vec![7; 32];
 
     rt.block_on(async {
-        // Act + Assert: NAT test port and UDP registration.
         let nat = request(
             port - 1,
             &rv(|m| m.set_test_nat_request(TestNatRequest::default())),
@@ -113,7 +105,6 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
             register_pk_response::Result::OK
         );
 
-        // Licence key = `key show`: accepted, and the pinned relay is handed out.
         let mut controller = Tcp::connect(port).await;
         controller.send(&punch_request(&licence_key)).await;
         match udp_recv(&target).union {
@@ -132,7 +123,6 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
             other => panic!("expected PunchHoleResponse, got {other:?}"),
         }
 
-        // Peer keys are signed with the private half of `key show`'s key.
         let signed = relayed_pk(port, &licence_key, &target).await;
         let public = sign::PublicKey::from_slice(&base64_decode(&licence_key)).unwrap();
         let id_pk = IdPk::parse_from_bytes(&sign::verify(&signed, &public).unwrap()).unwrap();
@@ -163,7 +153,7 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
         (&b"owner-uuid"[..], pk.as_slice())
     );
 
-    // Act: same data_dir, another device claims the id.
+    // Same data_dir, another device claims the id.
     let mut again = start(&dir, &config, &[]);
     wait_ready(again.listening("client_api"));
     let thief = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)), 0)).unwrap();
@@ -171,24 +161,19 @@ fn signal_server_serves_persists_and_uses_the_key_show_key() {
     thief.connect((LOCALHOST, port)).unwrap();
     let res = register_pk(&thief, b"thief-uuid", &[8; 32]);
 
-    // Assert
     assert_eq!(res, register_pk_response::Result::UUID_MISMATCH);
     let (status, _) = again.terminate();
     assert_eq!(status.code(), Some(0), "{}", again.logs());
 }
 
-/// Startup fails, naming the port, when a signal port is taken (here the WebSocket port).
 #[test]
 fn taken_signal_port_fails_startup_with_a_clear_error() {
-    // Arrange
     let dir = workdir("signal-port-taken");
     let (port, _taken) = signal_port_with_ws_taken();
     let mut server = start(&dir, &signal_config(&dir, port, ""), &[]);
 
-    // Act
     let (status, _) = server.wait_exit(SHUTDOWN_LIMIT);
 
-    // Assert
     let logs = server.logs();
     assert!(!status.success(), "{logs}");
     assert!(logs.contains("signal server failed to start"), "{logs}");
@@ -201,16 +186,13 @@ fn taken_signal_port_fails_startup_with_a_clear_error() {
 
 #[test]
 fn disabled_signal_server_starts_without_signal_ports() {
-    // Arrange
     let dir = workdir("signal-disabled");
     let port = free_signal_port();
     let config = config_with_signal(&dir, "", &format!("enabled = false\nport = {port}"));
 
-    // Act
     let mut server = start(&dir, &config, &[]);
     let addr = server.listening("client_api");
 
-    // Assert
     wait_ready(addr);
     assert!(
         TcpStream::connect((LOCALHOST, port)).is_err(),
@@ -224,13 +206,11 @@ fn disabled_signal_server_starts_without_signal_ports() {
 
 #[test]
 fn config_check_reports_busy_signal_ports() {
-    // Arrange
     let dir = workdir("signal-check");
     let port = free_signal_port();
     std::fs::write(dir.join("deskhaven.toml"), signal_config(&dir, port, "")).unwrap();
     let any = |port| SocketAddr::from(([0, 0, 0, 0], port));
 
-    // Act
     let free = config_check(&dir);
     let nat_taken = {
         let _taken = TcpListener::bind(any(port - 1)).unwrap();
@@ -241,7 +221,6 @@ fn config_check_reports_busy_signal_ports() {
         config_check(&dir)
     };
 
-    // Assert
     assert!(
         free.status.success(),
         "{}",
@@ -261,10 +240,8 @@ fn config_check_reports_busy_signal_ports() {
     );
 }
 
-/// With `signal.ws_listen` set, `config check` probes that address instead of port+2.
 #[test]
 fn config_check_probes_signal_ws_listen_instead_of_port_plus_two() {
-    // Arrange
     let dir = workdir("signal-check-ws-listen");
     let port = free_signal_port();
     let ws_port = free_signal_port();
@@ -275,7 +252,6 @@ fn config_check_probes_signal_ws_listen_instead_of_port_plus_two() {
     );
     std::fs::write(dir.join("deskhaven.toml"), base).unwrap();
 
-    // Act
     let plus_two_taken = {
         let _taken = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port + 2))).unwrap();
         config_check(&dir)
@@ -285,7 +261,6 @@ fn config_check_probes_signal_ws_listen_instead_of_port_plus_two() {
         config_check(&dir)
     };
 
-    // Assert
     let stderr = String::from_utf8_lossy(&plus_two_taken.stderr);
     assert!(plus_two_taken.status.success(), "{stderr}");
     let stderr = String::from_utf8_lossy(&ws_taken.stderr);
@@ -294,11 +269,8 @@ fn config_check_probes_signal_ws_listen_instead_of_port_plus_two() {
     assert!(stderr.contains(&expected), "{stderr}");
 }
 
-/// A holder of a signal port on IPv6 only (here `[::1]`) does not collide with the `0.0.0.0`
-/// probe; the `[::]` probe reports it. Skipped where the host has no IPv6 loopback.
 #[test]
 fn config_check_reports_an_ipv6_only_holder_of_a_signal_port() {
-    // Arrange
     let dir = workdir("signal-check-v6");
     let port = free_signal_port();
     std::fs::write(dir.join("deskhaven.toml"), signal_config(&dir, port, "")).unwrap();
@@ -307,10 +279,8 @@ fn config_check_reports_an_ipv6_only_holder_of_a_signal_port() {
         return;
     };
 
-    // Act
     let out = config_check(&dir);
 
-    // Assert
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success(), "{stderr}");
     let expected = format!(
@@ -319,8 +289,6 @@ fn config_check_reports_an_ipv6_only_holder_of_a_signal_port() {
     );
     assert!(stderr.contains(&expected), "{stderr}");
 }
-
-// --- protocol helpers ----------------------------------------------------------------------
 
 fn rv(set: impl FnOnce(&mut RendezvousMessage)) -> RendezvousMessage {
     let mut msg = RendezvousMessage::new();
@@ -373,7 +341,6 @@ fn register_pk(socket: &UdpSocket, uuid: &[u8], pk: &[u8]) -> register_pk_respon
     }
 }
 
-/// One length-framed TCP connection (hbb_common `BytesCodec`, as RustDesk clients use).
 struct Tcp(Framed<tokio::net::TcpStream, BytesCodec>);
 
 impl Tcp {
@@ -391,8 +358,7 @@ impl Tcp {
             .unwrap();
     }
 
-    /// The next message, skipping the server's KeyExchange offer like a client that does not
-    /// secure the connection (main port, M1-07).
+    /// Skips the server's KeyExchange offer like a client that does not secure the connection.
     async fn recv(&mut self) -> RendezvousMessage {
         loop {
             let frame = tokio::time::timeout(NET_TIMEOUT, self.0.next())
@@ -412,8 +378,6 @@ async fn request(port: u16, msg: &RendezvousMessage) -> RendezvousMessage {
     conn.recv().await
 }
 
-/// The target's pk as the server signs it: RequestRelay from a controller, forwarded to the
-/// target over UDP, answered by the target over TCP, delivered to the controller.
 async fn relayed_pk(port: u16, licence_key: &str, target: &UdpSocket) -> Vec<u8> {
     let mut controller = Tcp::connect(port).await;
     controller

@@ -1,10 +1,6 @@
-//! Shutdown trigger: SIGTERM or SIGINT cancels the process-wide token.
-
 use anyhow::Context;
 use tokio_util::sync::CancellationToken;
 
-/// Spawns a task that cancels `token` on SIGTERM/SIGINT. Must run inside the
-/// runtime; fails only if the signal handlers cannot be registered.
 #[cfg(unix)]
 pub fn spawn_signal_listener(token: CancellationToken) -> anyhow::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};

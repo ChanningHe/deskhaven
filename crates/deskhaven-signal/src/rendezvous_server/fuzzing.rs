@@ -1,30 +1,19 @@
-//! Fuzzing entry points (deskhaven code, feature `fuzzing`, M4-05): untrusted bytes through the
-//! same handlers the server runs, without sockets for the stream side.
-//!
-//! - [`Harness::udp`]: one datagram through `handle_udp` (replies go to a local socket nobody
-//!   reads);
-//! - [`Harness::tcp`]: the frames of one main-port connection: the KeyExchange state machine
-//!   (an offer is made first, as at accept), then `handle_tcp` for every message frame, then
-//!   the end-of-connection cleanup. There is no sink, so answers are dropped.
-//!
-//! The harness keeps its server across calls (state-dependent paths are reachable) and can be
-//! [`Harness::reset`] to bound memory.
+//! Fuzzing entry points: untrusted bytes through the same handlers the server runs. The
+//! harness keeps its server across calls, so state-dependent paths are reachable.
 
 use super::*;
 
-/// A rendezvous server without listeners.
 pub struct Harness {
     rs: RendezvousServer,
     rx: Receiver,
     socket: FramedSocket,
-    /// Source of every datagram and connection: a socket that only collects replies.
     client: std::net::UdpSocket,
     key: String,
     stop: tokio_util::sync::CancellationToken,
 }
 
 impl Harness {
-    /// A fresh server on loopback. Must run inside a tokio runtime.
+    /// Must run inside a tokio runtime.
     pub async fn new() -> ResultType<Self> {
         let cfg = SignalConfig {
             punch_req_max: 0,
@@ -50,13 +39,11 @@ impl Harness {
         })
     }
 
-    /// Replaces the server with a fresh one (its tasks are stopped).
     pub async fn reset(&mut self) -> ResultType<()> {
         *self = Self::new().await?;
         Ok(())
     }
 
-    /// The licence key clients of this server must send.
     pub fn licence_key(&self) -> &str {
         &self.key
     }
@@ -67,7 +54,6 @@ impl Harness {
             .unwrap_or_else(|_| SocketAddr::from((Ipv4Addr::LOCALHOST, 9)))
     }
 
-    /// One datagram on the UDP port.
     pub async fn udp(&mut self, datagram: &[u8]) {
         let from = self.source();
         let key = self.key.clone();
@@ -79,7 +65,6 @@ impl Harness {
         self.drain();
     }
 
-    /// One main-port connection that sends `frames`, in order.
     pub async fn tcp<'a>(&mut self, frames: impl IntoIterator<Item = &'a [u8]>) {
         let addr = self.source();
         let key = self.key.clone();
@@ -116,7 +101,6 @@ impl Harness {
         self.drain();
     }
 
-    /// Runs what the handlers queued for the server loop, as `io_loop` does.
     fn drain(&mut self) {
         while self.rx.try_recv().is_ok() {}
         let mut buf = [0u8; 2048];

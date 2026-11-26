@@ -1,7 +1,3 @@
-//! Embedding API (deskhaven code, not vendored): configuration, lifecycle and runtime control
-//! of the signal server. Replaces upstream's command line, environment variables, process
-//! signal handling and loopback console.
-
 use crate::accept_gate::AcceptLimits;
 use crate::common::{RESOLVE_TIMEOUT, resolve_servers};
 use crate::control::ControlPlane;
@@ -31,11 +27,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// Upstream default of `MAX_PUNCH_REQUESTS`.
 pub const DEFAULT_PUNCH_REQ_MAX: usize = 100_000;
-/// Default bound of loading the peer registry at start.
 pub const DEFAULT_PEER_PRELOAD_TIMEOUT: Duration = Duration::from_secs(30);
-/// Upstream default port (`hbb_common::config::RENDEZVOUS_PORT`).
 const DEFAULT_PORT: u16 = 21116;
 /// Upstream rejects main ports below 3; the NAT test port is `port - 1`.
 const MIN_PORT: u16 = 3;
@@ -44,75 +37,52 @@ const MAX_PORT: u16 = u16::MAX - 2;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-/// Everything the server needs; nothing is read from the environment or the working directory.
 #[derive(Clone, Debug)]
 pub struct SignalConfig {
-    /// Address every listener binds to. `None`: all interfaces (IPv6 dual-stack, falling back
-    /// to IPv4), like upstream without `--bind`.
+    /// `None`: all interfaces (IPv6 dual-stack, falling back to IPv4).
     pub bind: Option<IpAddr>,
-    /// Main TCP + UDP port (upstream `-p`). The server also listens on TCP `port - 1` (NAT
-    /// test and online queries) and TCP `port + 2` (websocket); valid range 3..=65533.
+    /// Main TCP + UDP port; the server also listens on TCP `port - 1` (NAT test) and
+    /// `port + 2` (websocket).
     pub port: u16,
-    /// UDP receive buffer size in bytes, 0 = OS default (upstream `--rmem`).
+    /// UDP receive buffer size in bytes, 0 = OS default.
     pub rmem: usize,
-    /// LAN range (upstream `--mask`): peers inside it are handed `local_ip` as relay.
+    /// LAN range: peers inside it are handed `local_ip` as relay.
     pub mask: Option<Ipv4Network>,
-    /// Relay address for LAN peers when `mask` is set (upstream `LOCAL_IP`). `None` or empty:
-    /// the detected local IP. A string because it stands in for a `relay_servers` entry.
+    /// Relay for LAN peers when `mask` is set; `None` or empty: the detected local IP.
     pub local_ip: Option<String>,
-    /// Initial relay servers, `host[:port]` (upstream `-r`); empty entries are dropped. They
-    /// are resolved off the server loop after the listeners are bound (each lookup bounded by
-    /// 3 s); entries that do not resolve are logged, left out, and retried every 3 s until they
-    /// do or the list is replaced with [`SignalHandle::set_relay_servers`].
+    /// `host[:port]`; entries that do not resolve are left out and retried every 3 s.
     pub relay_servers: Vec<String>,
-    /// Force relayed connections (upstream `ALWAYS_USE_RELAY`). Change at runtime with
-    /// [`SignalHandle::set_always_use_relay`].
     pub always_use_relay: bool,
-    /// Refuse KeyExchange replies that pick version 0 (clients from before Kx v1, one key for
-    /// both directions) by closing the connection (M1-07). Clients that skip the exchange
-    /// (not logged in) are not affected. Change at runtime with
-    /// [`SignalHandle::set_require_kx_v1`].
+    /// Refuse KeyExchange replies that pick version 0 (one key for both directions); clients
+    /// that skip the exchange are not affected.
     pub require_kx_v1: bool,
-    /// Bound of the in-memory punch request log, 0 disables it (upstream `MAX_PUNCH_REQUESTS`).
+    /// Bound of the in-memory punch request log, 0 disables it.
     pub punch_req_max: usize,
-    /// Bound of loading every registration from the [`PeerStore`] at start, before the
-    /// listeners are bound; exceeding it (or a store error) fails [`SignalServer::run`] with
-    /// [`SignalError::PeerPreload`].
     pub peer_preload_timeout: Duration,
-    /// hbbs ed25519 key: signs peer public keys (`IdPk`), and clients must present its public
-    /// key as licence key (upstream default `-k -`). Loading/generating the key file is the
-    /// caller's job.
+    /// Signs peer public keys; clients present its public key as licence key.
     pub secret_key: sign::SecretKey,
-    /// Who a websocket client is when a reverse proxy sits in front of the websocket port
-    /// (`X-Forwarded-For` and the like): the server never trusts those headers itself. The
-    /// default, [`SocketPeerIp`], ignores them.
+    /// The server never trusts forwarding headers itself; this decides who a websocket client is.
     pub ws_client_ip: Arc<dyn ClientIpResolver>,
-    /// Admission limits of the main TCP port, checked at accept before the KeyExchange offer
-    /// is computed (M4-05).
+    /// Checked at accept, before the KeyExchange offer is computed.
     pub accept_limits: AcceptLimits,
-    /// Address of the websocket listener (M4-05), e.g. loopback for a reverse proxy on the
-    /// same host. `None`: `bind` and `port + 2`, like upstream.
+    /// `None`: `bind` and `port + 2`.
     pub ws_listen: Option<SocketAddr>,
 }
 
-/// The handshake headers of a websocket connection.
 pub type WsHeaders = tungstenite::http::HeaderMap;
 
-/// Decides a websocket client's IP from the socket peer and the handshake headers. The IP
-/// feeds per-IP registration limits, the anti id-hijack IP check, LAN detection and relay
-/// choice, so only headers from trusted proxies may change it.
+/// Only trusted proxies may change the IP: it feeds per-IP limits, the anti id-hijack check,
+/// LAN detection and relay choice.
 pub trait ClientIpResolver: std::fmt::Debug + Send + Sync + 'static {
-    /// The client's IP: `peer` itself unless `peer` is a trusted proxy.
     fn client_ip(&self, peer: IpAddr, headers: &WsHeaders) -> IpAddr;
 
-    /// Whether `peer` is a trusted proxy, whose websocket connections carry many clients: the
-    /// accept gate exempts them from the per-source pending limits (M4-05).
+    /// Trusted proxies carry many clients, so the accept gate exempts them from the per-source
+    /// pending limits.
     fn is_trusted_proxy(&self, _peer: IpAddr) -> bool {
         false
     }
 }
 
-/// Trusts no header: the client is the socket peer.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SocketPeerIp;
 
@@ -123,7 +93,6 @@ impl ClientIpResolver for SocketPeerIp {
 }
 
 impl SignalConfig {
-    /// Upstream defaults around the given key.
     pub fn new(secret_key: sign::SecretKey) -> Self {
         Self {
             bind: None,
@@ -143,7 +112,6 @@ impl SignalConfig {
         }
     }
 
-    /// The licence key clients must send: base64 of the public key.
     pub fn licence_key(&self) -> String {
         base64::encode(self.secret_key.public_key())
     }
@@ -160,13 +128,11 @@ impl SignalConfig {
         })
     }
 
-    /// The IP the websocket listener binds: `ws_listen`'s, else `bind`.
     pub(crate) fn ws_bind(&self) -> Option<IpAddr> {
         self.ws_listen.map(|a| a.ip()).or(self.bind)
     }
 }
 
-/// The three ports derived from [`SignalConfig::port`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Ports {
     pub(crate) main: u16,
@@ -174,48 +140,33 @@ pub(crate) struct Ports {
     pub(crate) ws: u16,
 }
 
-/// Why the server could not start, stopped serving, or rejected a handle call. Every error
-/// returned by [`SignalServer::run`] is terminal: the server is gone and nothing restarts it, so
-/// the embedding process must supervise it (restart or exit).
+/// Every error returned by [`SignalServer::run`] is terminal: the embedder must restart or exit.
 #[derive(Debug, thiserror::Error)]
 pub enum SignalError {
-    /// [`SignalConfig::port`] leaves no room for the derived NAT test / websocket ports.
     #[error(
         "invalid signal port {0}: must be within {MIN_PORT}..={MAX_PORT} \
          (TCP port-1 serves NAT tests, TCP port+2 websocket)"
     )]
     InvalidPort(u16),
-    /// A listener could not be bound, at startup or when re-created after an accept / receive
-    /// failure (e.g. the port is taken).
     #[error("cannot listen on {proto} port {port}")]
     Bind {
-        /// `"tcp"` or `"udp"`.
         proto: &'static str,
-        /// The port that could not be bound.
         port: u16,
-        /// The underlying bind error.
         #[source]
         source: BoxError,
     },
-    /// The periodic UDP self-test got no answer from the server's own port for 12 s
-    /// (upstream's guard against a wedged UDP socket; upstream exited the process).
+    /// No answer from the server's own UDP port for 12 s (a wedged UDP socket).
     #[error("UDP self-test failed")]
     SelfTest(#[source] BoxError),
-    /// Unexpected internal failure (e.g. reading a listener's local address).
     #[error("signal server failed")]
     Internal(#[source] BoxError),
-    /// The peer registry could not be loaded from the [`PeerStore`] at start (store error or
-    /// [`SignalConfig::peer_preload_timeout`] exceeded); nothing was bound.
     #[error("cannot load the peer registry")]
     PeerPreload(#[source] StoreError),
-    /// [`SignalHandle::set_relay_servers`] got entries that do not resolve; nothing was applied.
     #[error("relay servers do not resolve: {}", rejected.join(", "))]
     RelayServersRejected {
         /// The offending entries, in input order.
         rejected: Vec<String>,
     },
-    /// The server behind a [`SignalHandle`] is not running any more: its `run` future finished
-    /// or was dropped, or its [`SignalServer`] was dropped without running.
     #[error("signal server is not running")]
     Stopped,
 }
@@ -243,12 +194,7 @@ impl SignalError {
     }
 }
 
-/// Runtime control and state of a server; replaces upstream's loopback console commands `rs`
-/// and `aur`.
-///
-/// Calls fail with [`SignalError::Stopped`] once the server's `run` future has finished or been
-/// dropped. Updates travel to the server loop over an unbounded channel; that is fine because
-/// they are rare, admin-driven events.
+/// Updates travel over an unbounded channel: they are rare, admin-driven events.
 #[derive(Clone, Debug)]
 pub struct SignalHandle {
     tx: Sender,
@@ -256,8 +202,8 @@ pub struct SignalHandle {
     serving: watch::Receiver<bool>,
 }
 
-/// deskhaven (M2-19): a one-shot reply carried in the loop's `Data` (which is `Clone` +
-/// `Debug`): the first `send` delivers, later ones and clones find it taken.
+/// A one-shot reply carried in the loop's `Clone` data: the first `send` delivers, later ones
+/// and clones find it taken.
 pub(crate) struct ReplySlot<T>(Arc<std::sync::Mutex<Option<oneshot::Sender<T>>>>);
 
 // Not derived: clones share the slot, so `T` need not be `Clone` (a `WebRoute` is not).
@@ -292,16 +238,13 @@ impl<T> std::fmt::Debug for ReplySlot<T> {
     }
 }
 
-/// The runtime switches the handle sets and every connection reads (lock-free).
 #[derive(Clone, Debug)]
 pub(crate) struct Switches {
     pub(crate) always_use_relay: Arc<AtomicBool>,
-    // deskhaven (M1-07): read when a KeyExchange reply arrives.
     pub(crate) require_kx_v1: Arc<AtomicBool>,
 }
 
 impl Switches {
-    /// The initial values of `cfg`.
     pub(crate) fn new(cfg: &SignalConfig) -> Self {
         Self {
             always_use_relay: Arc::new(AtomicBool::new(cfg.always_use_relay)),
@@ -319,23 +262,17 @@ impl SignalHandle {
         }
     }
 
-    /// Whether the server is serving: every listener was bound and `run` has not returned.
-    /// False while the peer registry is still being loaded.
     pub fn is_serving(&self) -> bool {
         // A dropped `run` future never resets the flag, but it closes the channel.
         self.serving.has_changed().is_ok() && *self.serving.borrow()
     }
 
-    /// Waits until the server's `run` has returned (every task it spawned finished, the
-    /// registration writer included) or its future was dropped; at once if it never ran
-    /// because the [`SignalServer`] was dropped.
     pub async fn stopped(&self) {
         let mut serving = self.serving.clone();
         // Never true: resolves when the last sender (dropped as `run` returns) is gone.
         let _ = serving.wait_for(|_| false).await;
     }
 
-    /// Test-only: makes the running server fail as if it hit `fault`.
     #[cfg(any(test, feature = "testing"))]
     #[doc(hidden)]
     pub fn inject_fault(&self, fault: Fault) -> Result<(), SignalError> {
@@ -344,8 +281,6 @@ impl SignalHandle {
             .map_err(|_| SignalError::Stopped)
     }
 
-    /// Waits until the server is serving; [`SignalError::Stopped`] if its `run` ends first
-    /// (or already ended, or never started because the [`SignalServer`] was dropped).
     pub async fn serving(&self) -> Result<(), SignalError> {
         let mut serving = self.serving.clone();
         serving
@@ -355,16 +290,9 @@ impl SignalHandle {
             .map_err(|_| SignalError::Stopped)
     }
 
-    /// Replaces the relay list (`host[:port]`). Every entry is resolved here, on the caller's
-    /// task, never on the server loop: concurrently, each bounded by a 3 s timeout; empty
-    /// entries are dropped. If any entry does not resolve in time nothing is applied and
-    /// [`SignalError::RelayServersRejected`] names them; otherwise the accepted list is
-    /// returned and every relay choice from then on uses it, on new and already open
-    /// connections alike (until the health check narrows it).
-    ///
-    /// Concurrent callers must be serialized by the caller (the control plane does): two
-    /// overlapping calls are applied in the order their lookups finish, not the order they
-    /// were made.
+    /// Resolves every entry on the caller's task, never on the server loop, and applies nothing
+    /// if any entry does not resolve. Concurrent callers must serialize: overlapping calls are
+    /// applied in the order their lookups finish.
     pub async fn set_relay_servers(
         &self,
         servers: Vec<String>,
@@ -382,7 +310,6 @@ impl SignalHandle {
         Ok(accepted)
     }
 
-    /// Takes effect immediately for every connection.
     pub fn set_always_use_relay(&self, on: bool) -> Result<(), SignalError> {
         self.ensure_running()?;
         self.switches.always_use_relay.store(on, Ordering::SeqCst);
@@ -390,9 +317,6 @@ impl SignalHandle {
         Ok(())
     }
 
-    /// See [`SignalConfig::require_kx_v1`]. Applies to every KeyExchange reply received from
-    /// then on, on new and already open connections alike; connections secured before keep
-    /// their cipher.
     pub fn set_require_kx_v1(&self, on: bool) -> Result<(), SignalError> {
         self.ensure_running()?;
         self.switches.require_kx_v1.store(on, Ordering::SeqCst);
@@ -400,19 +324,14 @@ impl SignalHandle {
         Ok(())
     }
 
-    /// Re-reads the registration of `id` from the [`PeerStore`](crate::PeerStore), for a
-    /// registry change made behind the server's back: a deleted device is forgotten (its next
-    /// RegisterPk registers it again, as a new device), a changed one takes the stored keys.
-    /// Asynchronous: returns once queued; the store read runs in its own task.
+    /// For registry changes made behind the server's back; returns once queued.
     pub fn reload_peer(&self, id: &str) -> Result<(), SignalError> {
         self.tx
             .send(Data::ReloadPeer(id.to_owned()))
             .map_err(|_| SignalError::Stopped)
     }
 
-    /// The uuid of `id`'s registration in the server's memory (`None`: not registered, or no
-    /// uuid yet), whether or not the store has it yet: registrations are written behind.
-    /// For changes made behind the server's back that must not contradict a live device.
+    /// May be ahead of the store: registrations are written behind.
     pub async fn live_uuid(&self, id: &str) -> Result<Option<Vec<u8>>, SignalError> {
         let (slot, rx) = ReplySlot::new();
         self.tx
@@ -421,12 +340,7 @@ impl SignalHandle {
         rx.await.map_err(|_| SignalError::Stopped)
     }
 
-    /// Punches `req.target` on behalf of a browser (deskhaven, s4): sends the device a
-    /// PunchHole that forces relay to the first relay server and carries `req.offer`, and waits
-    /// up to [`WEB_PUNCH_TIMEOUT`](crate::WEB_PUNCH_TIMEOUT) for its RelayResponse. The
-    /// returned [`WebRoute`](crate::WebRoute) carries the relay session and, while it lives,
-    /// the WebRTC session's ICE candidates both ways. No [`ControlPlane`] hook is consulted,
-    /// like for a PunchHoleRequest: authorizing the browser is the caller's job.
+    /// No [`ControlPlane`] hook is consulted: authorizing the browser is the caller's job.
     pub async fn web_punch(
         &self,
         req: crate::WebPunch,
@@ -446,18 +360,14 @@ impl SignalHandle {
     }
 }
 
-/// Test-only faults for [`SignalHandle::inject_fault`] (feature `testing`).
 #[cfg(any(test, feature = "testing"))]
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
-    /// The server loop returns an internal error, like a failed rebind.
     Error,
-    /// The server loop panics.
     Panic,
 }
 
-/// A configured server that is not running yet.
 pub struct SignalServer {
     cfg: SignalConfig,
     store: Arc<dyn PeerStore>,
@@ -468,15 +378,8 @@ pub struct SignalServer {
 }
 
 impl SignalServer {
-    /// Prepares a server that keeps peer registrations in `store`; nothing is bound or
-    /// resolved until [`SignalServer::run`].
-    ///
-    /// The store is what binds a registered id to its device uuid across restarts (the
-    /// UUID_MISMATCH anti id-hijack check); with a non-persistent store such as
-    /// [`MemoryPeerStore`](crate::MemoryPeerStore), any uuid can claim any id after a process
-    /// restart.
-    ///
-    /// `control` makes the policy decisions ([`AllowAll`](crate::AllowAll): upstream's).
+    /// The store binds ids to device uuids across restarts (the anti id-hijack check); with a
+    /// non-persistent store any uuid can claim any id after a restart.
     pub fn new(
         cfg: SignalConfig,
         store: Arc<dyn PeerStore>,
@@ -495,24 +398,13 @@ impl SignalServer {
         }
     }
 
-    /// A handle for changing relay settings and watching the state while the server runs;
-    /// take it before `run`.
     pub fn handle(&self) -> SignalHandle {
         self.handle.clone()
     }
 
-    /// Resolves the initial relay list, binds, then serves on the caller's runtime until
-    /// `shutdown` is cancelled (`Ok`) or a listener cannot be (re)created or the UDP self-test
-    /// fails (`Err`). When it returns, every listener is closed, every task it spawned has
-    /// finished, and every accepted registration has been handed to the store (bounded by a
-    /// few seconds; anything left is logged as lost).
-    ///
-    /// Errors are terminal: the server does not restart itself, and the embedding process
-    /// must supervise it (restart it or exit).
     pub async fn run(self, shutdown: CancellationToken) -> Result<(), SignalError> {
         let ports = self.cfg.ports()?;
-        // deskhaven (M1-07 review): libsodium is initialised before any connection generates
-        // KeyExchange keys (thread-safe, idempotent; its RNG is otherwise set up lazily).
+        // libsodium must be initialised before any connection generates KeyExchange keys.
         sodiumoxide::init()
             .map_err(|()| SignalError::internal("libsodium failed to initialise"))?;
         let stop = shutdown.child_token();
@@ -520,9 +412,8 @@ impl SignalServer {
         let _stop_on_drop = stop.clone().drop_guard();
         let tasks = Tasks::new(stop);
         let serving = self.serving.clone();
-        // deskhaven (M1-06): a panic of the server loop must not skip the drain below (a
-        // registration writer still flushing would race a restarted instance or the
-        // database close); it becomes an internal error, which the embedder restarts.
+        // A panicking loop must still drain: a registration writer still flushing would race a
+        // restarted instance or the database close.
         let res = AssertUnwindSafe(self.serve_until(ports, tasks.clone(), &shutdown))
             .catch_unwind()
             .await
@@ -578,7 +469,6 @@ fn panic_message(panic: &(dyn Any + Send)) -> String {
     format!("signal server panicked: {text}")
 }
 
-/// [`SignalServer::run`] for callers that never change relay settings at runtime.
 pub async fn run(
     cfg: SignalConfig,
     store: Arc<dyn PeerStore>,
@@ -641,9 +531,6 @@ mod tests {
         );
     }
 
-    // deskhaven (M1-06): a panicking server loop still drains before `run` returns (the
-    // registration writer finishes its in-flight write), readiness drops before that drain,
-    // `stopped` resolves only after it, and the panic becomes an internal error.
     #[hbb_common::tokio::test]
     async fn panic_in_the_server_loop_drains_before_run_returns() {
         use crate::store::{PeerRecord, PeerUpsert};
@@ -651,7 +538,6 @@ mod tests {
         use hbb_common::rendezvous_proto::{RegisterPk, RendezvousMessage};
         use std::sync::atomic::AtomicUsize;
 
-        /// Every write takes `WRITE`; counts writes started and finished.
         #[derive(Default)]
         struct SlowStore {
             started: AtomicUsize,
@@ -687,7 +573,6 @@ mod tests {
             panic!("condition never held");
         }
 
-        // Arrange: a serving server with a registration write in flight.
         let localhost = IpAddr::from([127, 0, 0, 1]);
         let store = Arc::new(SlowStore::default());
         let (handle, task, port) = loop {
@@ -721,10 +606,8 @@ mod tests {
             .unwrap();
         until(|| store.started.load(Ordering::SeqCst) == 1).await;
 
-        // Act
         handle.inject_fault(Fault::Panic).unwrap();
 
-        // Assert
         until(|| !handle.is_serving()).await;
         assert_eq!(
             store.finished.load(Ordering::SeqCst),

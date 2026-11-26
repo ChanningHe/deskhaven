@@ -1,6 +1,3 @@
-//! API token seeds (03 §2.8 / §2.9): tokens issued by the real token service, and the
-//! setting that turns `--deploy` on.
-
 use anyhow::Context;
 use deskhaven_config::settings::{Change, DEVICES_REQUIRE_DEPLOY};
 use deskhaven_core::api_tokens::{NewApiToken, Scope};
@@ -38,8 +35,7 @@ async fn issue(state: &AppState, scopes: &[Scope]) -> anyhow::Result<SeedOutputs
     )]))
 }
 
-/// `deploy-required`: sets `devices.require_deploy` (off by default, when `--deploy`
-/// answers `NOT_ENABLED`). No outputs.
+/// Sets `devices.require_deploy` (off by default: `--deploy` then answers `NOT_ENABLED`).
 pub async fn deploy_required(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let key = DEVICES_REQUIRE_DEPLOY.key();
     let version = state

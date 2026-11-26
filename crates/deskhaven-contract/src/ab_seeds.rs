@@ -1,5 +1,4 @@
-//! Address book seeds (03 §5.1). Each runs after `client-session` (user `alice`) and writes
-//! through the real `AddressBookService` over the app's state.
+//! Each runs after `client-session` (user `alice`).
 
 use std::sync::Arc;
 
@@ -15,12 +14,9 @@ use serde_json::{Value, json};
 
 use crate::seeds::{SEED_PASSWORD, SEED_USERNAME, SeedOutputs};
 
-/// Peer of `ab-personal`.
 pub const PERSONAL_PEER: &str = "111111111";
-/// Peer of each `ab-shared-*` book, and its password.
 pub const SHARED_PEER: &str = "222222222";
 pub const SHARED_PASSWORD: &str = "shared-Peer-pw";
-/// The owner of the `ab-foreign` books.
 pub const FOREIGN_USERNAME: &str = "bob";
 
 fn service(state: &AppState) -> AddressBookService {

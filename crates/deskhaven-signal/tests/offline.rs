@@ -1,9 +1,5 @@
-//! Upstream-behavior baseline (M1-04): peers going stale.
-//!
-//! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). The server
-//! measures liveness with `std::time::Instant` against REG_TIMEOUT (30 s), which cannot be
-//! faked, so these tests wait 30 s of real time. They share this binary and run in parallel,
-//! so the suite pays the wait once.
+//! Liveness uses `std::time::Instant`, which cannot be faked, so these tests wait 30 s of real
+//! time; they share this binary and run in parallel, so the suite pays the wait once.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -22,7 +18,7 @@ use support::{
 };
 
 const TARGET: &str = "stale-target-1";
-/// rs:750 `elapsed >= REG_TIMEOUT`, plus a margin.
+/// REG_TIMEOUT plus a margin.
 const GO_STALE: Duration = REG_TIMEOUT.saturating_add(Duration::from_millis(500));
 /// Checked before REG_TIMEOUT: the peer must still be online here.
 const STILL_ONLINE: Duration = REG_TIMEOUT.saturating_sub(Duration::from_secs(2));
@@ -32,13 +28,8 @@ async fn is_online(server: &TestServer, id: &str) -> bool {
     online_bits(&res.states, 1)[0]
 }
 
-/// rs:745-757 and rs:836-842: a peer silent for less than REG_TIMEOUT is still online (punch
-/// holes are forwarded, the online bit is set); silent for REG_TIMEOUT it gets
-/// PunchHoleResponse{OFFLINE} and a clear online bit; a RegisterPeer heartbeat (pk known,
-/// rs:627-630) brings it back.
 #[tokio::test]
 async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     assert!(
@@ -46,7 +37,6 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
         "online right after RegisterPk"
     );
 
-    // Act + Assert: still online shortly before REG_TIMEOUT.
     sleep(STILL_ONLINE).await;
     assert!(
         is_online(&server, TARGET).await,
@@ -56,10 +46,8 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
     early.punch_hole_request(server.punch_req(TARGET)).await;
     expect_msg!(target.recv().await, PunchHole);
 
-    // Act
     sleep(GO_STALE - STILL_ONLINE).await;
 
-    // Assert
     assert!(!is_online(&server, TARGET).await, "stale");
     let mut controller = server.tcp().await;
     controller
@@ -73,15 +61,8 @@ async fn peer_silent_for_reg_timeout_is_offline_until_it_registers_again() {
     server.stop().await;
 }
 
-/// Changed in M1-08. Upstream (rs:546) looked the peer up with `get_in_memory` and never checked
-/// REG_TIMEOUT: a stale peer still got the RequestRelay (lost, it is gone) and the controller
-/// heard nothing until its attempts timed out. Now, like PunchHoleRequest (rs:750-757), a peer
-/// silent for REG_TIMEOUT is refused at once with RelayResponse{refuse_reason}, worded like
-/// the client's PunchHoleResponse OFFLINE message (a translation key, client.rs:1840-1841,
-/// 1010); once it registers again its RequestRelays are forwarded again.
 #[tokio::test]
 async fn request_relay_to_stale_peer_is_refused_as_offline() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     sleep(GO_STALE).await;
@@ -89,11 +70,9 @@ async fn request_relay_to_stale_peer_is_refused_as_offline() {
     let mut controller = server.tcp().await;
     let req = request_relay(TARGET, &server.licence_key);
 
-    // Act
     controller.request_relay(req.clone()).await;
     let res = expect_msg!(controller.recv().await, RelayResponse);
 
-    // Assert
     assert_eq!(res.refuse_reason, "Remote desktop is offline");
     assert_eq!(res.uuid, req.uuid);
     target.assert_silent().await;

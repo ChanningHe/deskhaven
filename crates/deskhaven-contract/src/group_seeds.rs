@@ -1,4 +1,4 @@
-//! Group panel seeds (03 §4, 06 §4.2). Runs after `client-session` (user `alice`).
+//! Runs after `client-session` (user `alice`).
 
 use std::net::{IpAddr, Ipv4Addr};
 
@@ -13,18 +13,13 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
 use crate::seeds::{SEED_PASSWORD, SEED_USERNAME, SeedOutputs};
 
-/// Shares the group `Team` with `alice`; active.
 pub const TEAMMATE: &str = "tess";
-/// Shares `Team` with `alice`; disabled.
 pub const DISABLED_TEAMMATE: &str = "tom";
-/// In the group `Elsewhere` only: nothing of hers is visible to `alice`.
 pub const STRANGER: &str = "sam";
-/// Shares `Team` with `alice`; unverified.
 pub const UNVERIFIED_TEAMMATE: &str = "uma";
 /// Every seeded user has the email `<name>@example.com` and the note `admin note on <name>`.
 pub const EMAIL_DOMAIN: &str = "example.com";
 
-/// Devices of `group-scope`, by RustDesk id.
 pub const ALICE_DEVICE: &str = "700000001";
 pub const ALICE_DISABLED_DEVICE: &str = "700000006";
 pub const TEAMMATE_DEVICE: &str = "700000002";
@@ -32,7 +27,6 @@ pub const DISABLED_TEAMMATE_DEVICE: &str = "700000003";
 pub const STRANGER_DEVICE: &str = "700000004";
 pub const UNOWNED_DEVICE: &str = "700000005";
 
-/// What a seeded device looks like.
 struct Spec {
     id: &'static str,
     owner: Option<i64>,
@@ -74,7 +68,6 @@ async fn create_team(state: &AppState, name: &str, members: &[i64]) -> anyhow::R
     Ok(())
 }
 
-/// Registers the device, then gives it the sysinfo, owner, group and status of `spec`.
 async fn add_device(state: &AppState, spec: Spec) -> anyhow::Result<()> {
     let registration = Registration {
         rustdesk_id: spec.id.to_owned(),
@@ -200,7 +193,6 @@ pub async fn group_scope(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// Sets the administrator's `display_name` / `display_username` of the device.
 async fn name_device(
     state: &AppState,
     rustdesk_id: &str,

@@ -34,16 +34,15 @@ crate_dir=$(dirname "$script_dir")
 manifest=$crate_dir/UPSTREAM
 failures=0
 
-fail() { # fail <subject> <reason>
+fail() {
   echo "FAIL  $1  $2" >&2
   failures=$((failures + 1))
 }
 
-manifest_value() { # manifest_value <key>
+manifest_value() {
   sed -n "s/^$1: //p" "$manifest" | head -n 1
 }
 
-# blob_sha <repo> <rev> <path>: print sha256 of the blob, return non-zero if it cannot be read.
 blob_sha() {
   local out
   out=$(git -C "$1" show "$2:$3" | sha256sum) || return 1
@@ -137,8 +136,7 @@ if [[ ${#listed[@]} -eq 0 ]]; then
   fail "UPSTREAM" "no files listed"
 fi
 
-# Unlisted files: the vendoring commit must contain exactly the listed files under the dir.
-is_listed() { # is_listed <path>
+is_listed() {
   local p
   for p in "${listed[@]}"; do [[ $p == "$1" ]] && return 0; done
   return 1

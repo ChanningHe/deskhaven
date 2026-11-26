@@ -1,6 +1,3 @@
-//! Harness for the end-to-end tests of `deskhaven serve`: the real binary in a temporary
-//! working directory, its JSON logs captured, plain HTTP/1.1 requests.
-
 // Each test binary uses a different subset.
 #![allow(dead_code)]
 
@@ -39,14 +36,11 @@ pub fn workdir(name: &str) -> PathBuf {
     dir
 }
 
-/// JSON logs, client API on an OS-assigned loopback port, signal server
-/// disabled (its fixed ports would collide between parallel tests);
-/// `listen_extra` is appended to the `[listen]` table.
+/// Signal server disabled: its fixed ports would collide between parallel tests.
 pub fn config(dir: &Path, listen_extra: &str) -> String {
     config_with_signal(dir, listen_extra, "enabled = false")
 }
 
-/// [`config`] with `signal` as the `[signal]` table.
 pub fn config_with_signal(dir: &Path, listen_extra: &str, signal: &str) -> String {
     format!(
         "data_dir = \"{}\"\n\n[listen]\nclient_api = \"127.0.0.1:0\"\n{listen_extra}\n\n[signal]\n{signal}\n\n[log]\nformat = \"json\"\n",
@@ -54,7 +48,6 @@ pub fn config_with_signal(dir: &Path, listen_extra: &str, signal: &str) -> Strin
     )
 }
 
-/// A port that was free a moment ago.
 pub fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -63,8 +56,6 @@ pub fn free_port() -> u16 {
         .port()
 }
 
-/// Lowest port the kernel hands out for ephemeral sockets (listeners on port 0 and the source
-/// ports of outgoing connections), from `ip_local_port_range`; the IANA default if unreadable.
 fn ephemeral_floor() -> u16 {
     const IANA_FLOOR: u16 = 49152;
     std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
@@ -78,19 +69,13 @@ const SIGNAL_PORT_FLOOR: u16 = 10_000;
 /// Ports from `base - 1` to `base + 2` belong to one signal server; blocks are this far apart.
 const SIGNAL_BLOCK: u16 = 4;
 
-/// A signal base port whose TCP port-1, port, port+2 and UDP port are free on all IPv4
-/// interfaces (the server binds all interfaces).
-///
-/// Probing alone is racy: the probe releases the ports again, and an ephemeral socket of a
-/// parallel test (a `:0` listener, a client's source port) can take one before the caller
-/// binds it. So blocks are drawn from below the ephemeral range, where the kernel never
-/// allocates on its own, and handed out once per process by a shared cursor that starts at
-/// a per-process offset (concurrent test processes rarely overlap); the probe still skips
-/// ports some other program holds.
+/// Probing alone is racy: an ephemeral socket of a parallel test can take a probed port. So
+/// blocks come from below the ephemeral range, handed out once per process from a per-process
+/// offset.
 pub fn free_signal_port() -> u16 {
     static CURSOR: AtomicU16 = AtomicU16::new(0);
-    // Random per process, not pid-derived: CI jobs in separate containers have similar small
-    // pids but may share the host network, and would otherwise walk the same blocks at once.
+    // Random per process, not pid-derived: concurrent test processes would otherwise walk the
+    // same blocks.
     static START: OnceLock<u32> = OnceLock::new();
     let any = |port: u16| SocketAddr::from(([0, 0, 0, 0], port));
     let blocks = (ephemeral_floor().saturating_sub(SIGNAL_PORT_FLOOR + 2) / SIGNAL_BLOCK).max(1);
@@ -113,9 +98,7 @@ pub fn free_signal_port() -> u16 {
     panic!("no free signal port block below the ephemeral range");
 }
 
-/// A free signal port block whose WebSocket port (`port + 2`) the caller then holds. Another
-/// process can take a probed port before the test binds it, so a lost race moves on to the
-/// next block instead of failing the test.
+/// A lost race moves on to the next block instead of failing the test.
 pub fn signal_port_with_ws_taken() -> (u16, TcpListener) {
     const ATTEMPTS: usize = 32;
     for _ in 0..ATTEMPTS {
@@ -175,7 +158,6 @@ impl Server {
         self.output.lock().unwrap().clone()
     }
 
-    /// The first JSON log event whose `fields` satisfy `pred`.
     pub fn wait_for_event(&mut self, pred: impl Fn(&Value) -> bool) -> Value {
         let started = Instant::now();
         loop {
@@ -252,7 +234,6 @@ impl Drop for Server {
     }
 }
 
-/// Status code and the raw response (head + body).
 pub fn get(addr: SocketAddr, path: &str) -> (u16, String) {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.set_read_timeout(Some(HTTP_TIMEOUT)).unwrap();
@@ -312,7 +293,6 @@ pub fn side_file(db: &Path, suffix: &str) -> PathBuf {
     name.into()
 }
 
-/// Size and mtime of the database file and its WAL side files.
 pub fn fingerprint(db: &Path) -> Vec<Option<(u64, std::time::SystemTime)>> {
     ["", "-wal", "-shm"]
         .iter()

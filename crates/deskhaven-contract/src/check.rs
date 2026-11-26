@@ -1,5 +1,3 @@
-//! Compares a response with a fixture's `expect`.
-
 use std::collections::BTreeMap;
 
 use axum::http::HeaderMap;
@@ -12,7 +10,6 @@ use crate::shapes;
 /// Separator for a header sent more than once (RFC 9110 §5.3).
 const HEADER_JOIN: &str = ", ";
 
-/// What the router answered.
 #[derive(Debug)]
 pub struct Reply {
     pub status: u16,
@@ -21,7 +18,6 @@ pub struct Reply {
 }
 
 impl Reply {
-    /// The body as a client mirror type (multi-step tests).
     pub fn json<T: DeserializeOwned>(&self) -> serde_json::Result<T> {
         serde_json::from_slice(&self.body)
     }
@@ -122,8 +118,6 @@ fn same_number(want: &serde_json::Number, got: &serde_json::Number) -> bool {
     want.as_f64().is_some_and(|w| got.as_f64() == Some(w))
 }
 
-/// Mismatches of `want` inside `got`, located by JSON pointer. Numbers
-/// compare by value ([`same_number`]).
 fn subset(want: &Value, got: &Value, at: &str) -> Vec<String> {
     match (want, got) {
         (Value::Object(want), Value::Object(got)) => want
@@ -275,7 +269,6 @@ mod tests {
         assert!(subset(&json!({ "total": 1.0, "ratio": 1.5 }), &got, "").is_empty());
         assert_eq!(subset(&json!({ "total": 2.0 }), &got, "").len(), 1);
         assert_eq!(subset(&json!({ "ratio": 1 }), &got, "").len(), 1);
-        // Integers compare exactly (no detour through f64).
         assert_eq!(
             subset(&json!({ "big": 9_007_199_254_740_992_u64 }), &got, "").len(),
             1

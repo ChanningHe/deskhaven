@@ -1,6 +1,4 @@
-//! The runner must fail loudly when a fixture is wrong: these fixtures live
-//! in a temporary contract directory and are expected to fail. A test-only
-//! echo route and test-only seeds prove what reaches the wire.
+//! These fixtures live in a temporary contract directory and are expected to fail.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::Path;
@@ -43,8 +41,6 @@ fn seeded(seed: &[&str], request: Value, expect: Value) -> Value {
     fixture
 }
 
-/// Echoes what the handler received, plus `smtp.port` as the shared state
-/// holds it (written by the `smtp-port` seed).
 async fn echo(
     State(state): State<Arc<AppState>>,
     uri: Uri,
@@ -65,7 +61,6 @@ async fn echo(
     )
 }
 
-/// Writes through the real settings service, outputs what it wrote.
 async fn smtp_port(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let change = Change {
         key: "smtp.port".to_owned(),
@@ -208,7 +203,6 @@ async fn seed_outputs_are_substituted_into_path_headers_and_body() {
         json!({ "method": "POST", "path": "/test/echo?port=${smtp_port}",
                 "headers": { "authorization": "Bearer ${smtp_port}" },
                 "body": { "json": { "port": ["${smtp_port}", "x${smtp_port}", 1] } } }),
-        // smtp_port: the handler sees what the seed wrote (one shared state).
         json!({ "status": 200, "body_kind": "json", "json_subset": {
             "uri": "/test/echo?port=2525",
             "headers": { "authorization": "Bearer 2525" },

@@ -1,5 +1,3 @@
-//! `SignalConfig` from the bootstrap configuration, the hbbs key pair and the settings.
-
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -14,10 +12,7 @@ use deskhaven_http::TrustedProxies;
 use deskhaven_signal::{AcceptLimits, ClientIpResolver, SignalConfig, WsHeaders};
 use sodiumoxide::crypto::sign;
 
-/// The server configuration of `[signal]`, before relay settings: upstream defaults, all
-/// interfaces, the configured port, the hbbs key, and `security.trusted_proxies` for the
-/// websocket port's proxy headers. The global connection caps of the signal ports follow the
-/// open-file soft limit (call after `raise_nofile_limit`).
+/// Call after `raise_nofile_limit`: the global connection caps follow the open-file soft limit.
 pub fn base_config(
     signal: &Signal,
     security: &Security,
@@ -35,7 +30,6 @@ pub fn base_config(
     })
 }
 
-/// The open-file soft limit; `None` when unlimited or unknown.
 #[cfg(unix)]
 fn open_file_limit() -> Option<u64> {
     rustix::process::getrlimit(rustix::process::Resource::Nofile).current
@@ -46,8 +40,6 @@ fn open_file_limit() -> Option<u64> {
     None
 }
 
-/// The HTTP API's real-IP rule (`X-Forwarded-For` from `security.trusted_proxies` only) for
-/// the signal server's websocket port.
 #[derive(Debug)]
 struct ProxyHeaders(TrustedProxies);
 
@@ -61,21 +53,17 @@ impl ClientIpResolver for ProxyHeaders {
     }
 }
 
-/// The pair in sodiumoxide's `sign::SecretKey` layout (seed || public key, as upstream's
-/// `id_ed25519`). The copy is wiped on drop by sodiumoxide; the scratch buffer by `Zeroizing`.
+/// sodiumoxide's layout (seed || public key); the copy is wiped on drop by sodiumoxide, the
+/// scratch buffer by `Zeroizing`.
 pub fn secret_key(key: &SignalKeyPair) -> anyhow::Result<sign::SecretKey> {
     sign::SecretKey::from_slice(key.keypair_bytes().as_slice())
         .context("the hbbs key pair does not have the libsodium secret key length")
 }
 
-/// The settings the running signal server follows (relays, KeyExchange policy).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SignalSettings {
-    /// `signal.relay_servers` as `host:port` strings.
     pub servers: Vec<String>,
-    /// `signal.always_use_relay`.
     pub always_use_relay: bool,
-    /// `signal.require_kx_v1`.
     pub require_kx_v1: bool,
 }
 
@@ -92,7 +80,6 @@ impl SignalSettings {
         }
     }
 
-    /// `base` with these settings as its initial runtime configuration.
     pub fn apply_to(&self, base: &SignalConfig) -> SignalConfig {
         SignalConfig {
             relay_servers: self.servers.clone(),

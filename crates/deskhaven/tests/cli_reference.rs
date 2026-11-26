@@ -1,15 +1,5 @@
-//! `docs/reference/cli.md` is written by hand; this keeps it and the clap definition in
-//! step, in both directions:
-//!
-//! - every visible leaf command has a `### `deskhaven …`` section and every section names a
-//!   real command;
-//! - each section documents exactly the command's own options and positionals and those of
-//!   its parent commands (global ones excluded);
-//! - the Global options table documents exactly the root's options.
-//!
-//! An option is its `--long` name, else its `-s` short name; a positional is `<NAME>` (its
-//! value name, else its id in capitals). Tokens are matched whole; fenced code blocks
-//! (example shell commands) are not read.
+//! `docs/reference/cli.md` is written by hand; this keeps it and the clap definition in step,
+//! in both directions.
 
 use std::collections::BTreeSet;
 
@@ -24,8 +14,6 @@ const FENCE: &str = "```";
 const AUTO_ARGS: [&str; 2] = ["help", "version"];
 
 type Items = BTreeSet<String>;
-
-// --- clap side ---
 
 fn item(arg: &Arg) -> Option<String> {
     if arg.is_positional() {
@@ -42,7 +30,6 @@ fn item(arg: &Arg) -> Option<String> {
     }
 }
 
-/// The visible, non-global arguments of `command` itself.
 fn own_items(command: &Command) -> Items {
     command
         .get_arguments()
@@ -52,7 +39,6 @@ fn own_items(command: &Command) -> Items {
         .collect()
 }
 
-/// `command path -> items` for every visible leaf, parents' items included.
 fn clap_commands(command: &Command, path: &str, inherited: &Items, out: &mut Vec<(String, Items)>) {
     let items: Items = inherited.union(&own_items(command)).cloned().collect();
     let subcommands: Vec<&Command> = command
@@ -75,9 +61,6 @@ fn clap_globals(root: &Command) -> Items {
         .collect()
 }
 
-// --- reference side ---
-
-/// `(heading, body lines)` per `##` / `###` section, fenced code blocks dropped.
 fn sections(text: &str) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
     let mut in_fence = false;
@@ -118,8 +101,7 @@ fn is_placeholder(token: &str) -> bool {
             .all(|c| c.is_ascii_uppercase() || c == '_')
 }
 
-/// Whole option and positional tokens: `--long`, `-s`, `<NAME>`. A `<NAME>` right after an
-/// option is that option's value, not a positional.
+/// A `<NAME>` right after an option is that option's value, not a positional.
 fn tokens(text: &str) -> Items {
     let words = text
         .split(|c: char| !(c.is_ascii_alphanumeric() || "-_<>".contains(c)))
@@ -135,8 +117,7 @@ fn tokens(text: &str) -> Items {
     out
 }
 
-/// `command path -> documented items` per command section. The heading is exactly one code
-/// span: the path, then optionally positionals and options.
+/// The heading is exactly one code span: the path, then optionally positionals and options.
 fn documented_commands(text: &str) -> Result<Vec<(String, Items)>, String> {
     sections(text)
         .into_iter()
@@ -158,7 +139,6 @@ fn documented_commands(text: &str) -> Result<Vec<(String, Items)>, String> {
         .collect()
 }
 
-/// Options in the first column of the Global options table.
 fn documented_globals(text: &str) -> Result<Items, String> {
     let (_, body) = sections(text)
         .into_iter()

@@ -1,6 +1,4 @@
-//! The accept gate's bookkeeping: per-source and per-/48 counters, the pending sets of both
-//! ports and the eviction order of every connection. All updates are O(log n) except the
-//! batched source pruning when the source table is full.
+//! All updates are O(log n) except the batched source pruning when the source table is full.
 
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
@@ -21,11 +19,8 @@ const FORGET_DIVISOR: usize = 10;
 /// What a connection is worth keeping; eviction takes the smallest first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Class {
-    /// Has not sent its first frame (main port) or finished its handshake (websocket).
     Pending,
-    /// Established, no registered peer on it.
     Idle,
-    /// A registered peer's channel.
     Peer,
 }
 
@@ -41,9 +36,7 @@ struct Conn {
     port: Port,
     /// Pending-set group (the socket peer's source, trusted proxies included).
     group: IpAddr,
-    /// Counted as pending there (tracked sources only).
     pending_at: Option<Loc>,
-    /// Counted as a connection there.
     conn_at: Option<Loc>,
     token: CancellationToken,
 }
@@ -98,8 +91,6 @@ impl State {
         }
     }
 
-    /// Makes sure `ip`'s source is tracked (bucket refilled); `false` if the table is full of
-    /// sources that all hold connections.
     pub(crate) fn track(&mut self, ip: IpAddr, limits: &AcceptLimits, now: Instant) -> bool {
         let key = source_key(ip);
         if !self.sources.contains_key(&key) && self.sources.len() >= MAX_TRACKED {
@@ -120,7 +111,6 @@ impl State {
         true
     }
 
-    /// Forgets the least recently seen tenth of the sources without connections.
     fn forget_idle_sources(&mut self) {
         let mut seen: Vec<Instant> = (self.sources.values())
             .filter(|s| s.pending == 0 && s.connections == 0)
@@ -270,7 +260,6 @@ impl State {
             .unwrap_or_default()
     }
 
-    /// A pending connection becomes established (idle); nothing for any other.
     pub(crate) fn establish(&mut self, id: u64) {
         if self
             .conns
@@ -281,8 +270,6 @@ impl State {
         }
     }
 
-    /// Moves a connection to `class` with a fresh stamp (it was just active); leaving
-    /// `Pending` releases its pending slot.
     pub(crate) fn set_class(&mut self, id: u64, class: Class) {
         let stamp = self.next();
         let Some(conn) = self.conns.get_mut(&id) else {
@@ -303,7 +290,6 @@ impl State {
         }
     }
 
-    /// Counts a websocket connection against the client `ip` once it is known.
     pub(crate) fn bind(&mut self, id: u64, ip: IpAddr, tracked: bool) {
         if !tracked || self.conns.get(&id).is_none_or(|c| c.conn_at.is_some()) {
             return;
@@ -335,7 +321,6 @@ impl State {
         self.remove(id).map(|token| token.cancel()).is_some()
     }
 
-    /// Closes the oldest pending connection of `port`'s heaviest source.
     pub(crate) fn evict_pending(&mut self, port: Port) -> bool {
         let victim = match port {
             Port::Main => self.main_pending.victim(),
@@ -344,7 +329,6 @@ impl State {
         victim.is_some_and(|id| self.evict(id))
     }
 
-    /// Closes the least valuable connection of all.
     pub(crate) fn evict_least_valuable(&mut self) -> bool {
         let victim = self.order.first().map(|&(_, _, id)| id);
         victim.is_some_and(|id| self.evict(id))

@@ -1,6 +1,4 @@
-//! The client half of the rendezvous KeyExchange (M1-07), mirroring RustDesk: client 23e5bb4
-//! src/common.rs `key_exchange` (2292-2358) and `create_symmetric_key_msg` (2435-2442),
-//! hbb_common fae47e0 `Stream::set_negotiated_key` (stream.rs 87-106).
+//! The client half of the rendezvous KeyExchange, mirroring RustDesk's.
 
 use super::{STEP_MS, TcpClient, io};
 use hbb_common::{
@@ -14,7 +12,6 @@ use sodiumoxide::crypto::{box_, secretbox, sign};
 /// Bit 255 of the signed X25519 key: the server signs its parameters (`signed_params`).
 pub const SIGNED_PARAMS_FLAG: u8 = 0x80;
 
-/// Which client generation runs the exchange.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KxClient {
     /// Before Kx v1 (e.g. 1.4.1): checks only the signature over `keys[0]`, replies without a
@@ -25,8 +22,6 @@ pub enum KxClient {
     Current,
 }
 
-/// The server's ephemeral public key (as signed, high bit included) if `ex` passes `client`'s
-/// checks, else the client's error.
 pub fn verify_offer(
     ex: &KeyExchange,
     rs_pk: &sign::PublicKey,
@@ -56,7 +51,6 @@ pub fn verify_offer(
     Ok(pk)
 }
 
-/// The version `client` answers an offer advertising `advertised` with.
 fn picked_by(client: KxClient, advertised: u32) -> u32 {
     match client {
         KxClient::Legacy => 0,
@@ -64,8 +58,6 @@ fn picked_by(client: KxClient, advertised: u32) -> u32 {
     }
 }
 
-/// The client's reply to `their_pk`: a fresh X25519 key pair, a random symmetric key sealed to
-/// `their_pk` (nonce 0), and `picked`.
 pub struct Reply {
     pub msg: RendezvousMessage,
     pub our_pk: Bytes,
@@ -87,8 +79,6 @@ pub fn reply(their_pk: [u8; 32], picked: u32) -> Reply {
     Reply { msg, our_pk, key }
 }
 
-/// The first frame from the server, which must be its KeyExchange offer (read in plain text,
-/// before any cipher is installed).
 pub async fn read_offer(client: &mut TcpClient) -> KeyExchange {
     let bytes = io(
         "the KeyExchange offer",
@@ -104,8 +94,6 @@ pub async fn read_offer(client: &mut TcpClient) -> KeyExchange {
     }
 }
 
-/// Runs `client`'s whole exchange on `conn` like a RustDesk client (`secure_tcp`): reads the
-/// offer, checks it, replies and installs the cipher. Returns the picked version.
 pub async fn secure(
     conn: &mut TcpClient,
     rs_pk: &sign::PublicKey,
@@ -115,8 +103,7 @@ pub async fn secure(
     answer(conn, rs_pk, client, &ex).await
 }
 
-/// The rest of [`secure`] for an `offer` read earlier: lets a test read the offer at once and
-/// answer it after a (virtual) delay.
+/// Lets a test read the offer at once and answer it after a (virtual) delay.
 pub async fn answer(
     conn: &mut TcpClient,
     rs_pk: &sign::PublicKey,
@@ -134,7 +121,6 @@ pub async fn answer(
     Ok(picked)
 }
 
-/// Installs the cipher of `reply` on `conn` as the initiator (`set_negotiated_key`).
 fn install(
     conn: &mut TcpClient,
     reply: Reply,
@@ -157,7 +143,6 @@ fn install(
         .map_err(|e| e.to_string())
 }
 
-/// A TCP connection to the main port secured by a current client (v1).
 pub async fn secured_tcp(server: &super::TestServer) -> TcpClient {
     let mut conn = server.tcp().await;
     let picked = secure(&mut conn, &server.public_key, KxClient::Current)

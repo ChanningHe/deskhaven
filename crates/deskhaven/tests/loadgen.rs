@@ -1,6 +1,3 @@
-//! The load generator (M4-04, `cargo xtask loadgen`) against the real binary: a handful of
-//! devices for a few seconds on every test backend, with shortened client timers. The 10k
-//! run is manual (docs/reference/performance.md).
 //! Requires Linux routing all of 127.0.0.0/8 to `lo` (each device has its own address).
 #![cfg(unix)]
 // Test code: panicking helpers are fine.
@@ -147,16 +144,13 @@ fn assert_server_side(report: &Report, backend: Backend) {
 #[tokio::test(flavor = "multi_thread")]
 async fn loadgen_drives_devices_and_measures_the_server() {
     each_backend(async |db: &TestDb| {
-        // Arrange
         let config = config(db);
 
-        // Act
         let report = tokio::time::timeout(RUN_LIMIT, run(&config))
             .await
             .expect("run timed out")
             .unwrap_or_else(|err| panic!("loadgen failed: {err:?}"));
 
-        // Assert
         assert_client_side(&report);
         assert_server_side(&report, db.backend);
     })

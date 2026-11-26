@@ -1,7 +1,3 @@
-//! Multi-step account flows (03 §3.2-3.4): login -> currentUser -> logout, request
-//! boundary checks, lockout and enumeration resistance across attempts, hasher overload and
-//! a credential change during login. Every reply is decoded with the client mirror types.
-//! Per-IP bearer limiting: `tests/bearer_limits.rs`; login events: `tests/login_events.rs`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -261,7 +257,6 @@ fn slow_single_slot_hasher(acquire_timeout: Duration) -> PasswordHasher {
     PasswordHasher::with_limits(params, limits).unwrap()
 }
 
-/// Waits until `hasher`'s only slot is taken (or `task` ended without taking it).
 async fn until_slot_taken<T>(hasher: &PasswordHasher, task: &tokio::task::JoinHandle<T>) {
     while hasher.available_slots() > 0 && !task.is_finished() {
         tokio::task::yield_now().await;

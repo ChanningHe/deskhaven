@@ -1,7 +1,3 @@
-//! Two-step TOTP login through the real router (03 §3.2), each reply decoded with the
-//! client mirror types: challenge -> code -> token, wrong / replayed / recovery codes,
-//! challenge expiry, attempt cap and binding, the shared lockout budget, enumeration and
-//! login events.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_contract::app::TestApp;
@@ -47,7 +43,6 @@ async fn env() -> Env {
 }
 
 impl Env {
-    /// The authenticator's code `delta` steps from now.
     fn code(&self, delta: i64) -> String {
         totp::code_at_step(&self.secret, totp::step_at(SystemClock.now_ms()) + delta)
     }
@@ -62,7 +57,6 @@ impl Env {
             .to_owned()
     }
 
-    /// Step 1 with the right password: the challenge.
     async fn challenge(&self) -> SecondFactorChallenge {
         let reply = self
             .app
@@ -217,7 +211,6 @@ async fn challenge_attempts_are_capped() {
     let right = env.answer(&challenge, &env.code(0)).await;
 
     assert_eq!(error_of(&right), (401, EXPIRED.to_owned()));
-    // A new login still works.
     token_of(&env.answer(&env.challenge().await, &env.code(0)).await);
 }
 
@@ -259,8 +252,8 @@ async fn a_recovery_code_logs_in_once() {
 
 #[tokio::test]
 async fn password_ok_with_wrong_codes_reaches_the_lockout() {
-    // M2-06 scenario over HTTP: default auth.lockout.max_failures = 5 counts the password
-    // step and the code guesses together.
+    // The default `auth.lockout.max_failures` = 5 counts the password step and the code guesses
+    // together.
     let env = env().await;
     let challenge = env.challenge().await;
     let mut statuses = Vec::new();

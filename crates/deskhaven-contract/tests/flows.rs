@@ -1,7 +1,5 @@
-//! Multi-step client flows (logout then 401, 2FA two-step, OIDC polling,
-//! nonce dedupe, expiry) do not fit one request per fixture: they are Rust
-//! tests on [`TestApp`], decoding every reply with the client mirror types.
-//! This file is the template (see the crate README).
+//! Multi-step client flows do not fit one request per fixture; this file is the template (see
+//! the crate README).
 #![allow(clippy::unwrap_used)]
 
 use deskhaven_contract::app::TestApp;

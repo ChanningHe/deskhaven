@@ -1,7 +1,5 @@
-//! The `last_seen_at` flush (02 §3, §7): every `devices.last_seen_flush` (hot-reloaded,
-//! read before each wait) it writes the presence table's contacts in batches
-//! ([`LastSeenFlusher`]). Its [`Job::finish`] writes what is left, after HTTP and the signal
-//! server stopped (so their last contacts are included) and before the database closes.
+//! [`Job::finish`] runs after HTTP and the signal server stopped, so their last contacts are
+//! included, and before the database closes.
 
 use std::time::Duration;
 
@@ -12,13 +10,11 @@ use sea_orm::DatabaseConnection;
 
 use super::scheduler::Job;
 
-/// The flush job; `I` reads the interval.
 pub struct LastSeen<I> {
     flusher: LastSeenFlusher,
     interval: I,
 }
 
-/// The job for `state`, on its `devices.last_seen_flush` setting.
 pub fn from_state(state: &AppState) -> LastSeen<impl Fn() -> Duration + Send + 'static> {
     let settings = state.settings.clone();
     LastSeen::new(
@@ -29,7 +25,6 @@ pub fn from_state(state: &AppState) -> LastSeen<impl Fn() -> Duration + Send + '
 }
 
 impl<I: Fn() -> Duration + Send + 'static> LastSeen<I> {
-    /// Flushes `presence` into `db` every `interval()`.
     pub fn new(db: DatabaseConnection, presence: Presence, interval: I) -> Self {
         Self {
             flusher: LastSeenFlusher::new(db, presence),
@@ -107,7 +102,6 @@ mod tests {
     #[tokio::test]
     async fn the_loop_flushes_periodically_and_finish_writes_the_rest() {
         each_migrated_backend(async |db: &TestDb| {
-            // Arrange
             register(db).await;
             let clock = Arc::new(ManualClock::at(T0_MS + 1_000));
             let presence = Presence::new(clock.clone());
@@ -115,7 +109,7 @@ mod tests {
             let mut scheduler = Scheduler::new(token.clone());
             scheduler.spawn(LastSeen::new(db.conn.clone(), presence.clone(), || TICK));
 
-            // Act: a contact is picked up by the loop on its own.
+            // A contact is picked up by the loop on its own.
             presence.heartbeat(ID, IP, &[]);
             let periodic = tokio::time::timeout(PATIENCE, async {
                 while last_seen(db).await != T0_MS + 1_000 {
@@ -128,7 +122,6 @@ mod tests {
             presence.heartbeat(ID, IP, &[]);
             let done = scheduler.finish(PATIENCE).await;
 
-            // Assert
             let b = db.backend;
             assert!(periodic.is_ok(), "{b}: the loop never flushed");
             assert!(done, "{b}");

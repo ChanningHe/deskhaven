@@ -1,6 +1,4 @@
-//! The harness mounts the whole admin API, `/update-check` included: an owner asking for
-//! updates must never make the test process contact GitHub. The request goes to the
-//! harness's offline fetcher instead, and the answer stays empty.
+//! An owner asking for updates must never make the test process contact GitHub.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::time::Duration;
@@ -49,7 +47,6 @@ async fn update_check(app: &TestApp, cookie: &str) -> Value {
 
 #[tokio::test]
 async fn asking_for_updates_stays_in_the_process() {
-    // Arrange
     let app = TestApp::start_with_options(TestOptions {
         listen: Listen::Single,
         ..TestOptions::default()
@@ -59,7 +56,6 @@ async fn asking_for_updates_stays_in_the_process() {
     let cookie = owner_cookie(&app).await;
     let nothing = json!({ "latest": null, "release_url": null });
 
-    // Act
     let first = update_check(&app, &cookie).await;
     for _ in 0..500 {
         if app.update_requests() > 0 {
@@ -70,7 +66,6 @@ async fn asking_for_updates_stays_in_the_process() {
     tokio::time::sleep(Duration::from_millis(20)).await;
     let second = update_check(&app, &cookie).await;
 
-    // Assert
     assert_eq!(app.update_requests(), 1);
     assert_eq!((first, second), (nothing.clone(), nothing));
 }

@@ -31,7 +31,7 @@ pub struct Fixture {
     pub expect: Expect,
 }
 
-/// The listener topology a fixture is replayed against (05 §2.2 `[listen]`).
+/// The listener topology a fixture is replayed against.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Listen {
@@ -131,7 +131,6 @@ impl Fixture {
         serde_json::from_str(text).map_err(|err| format!("invalid fixture: {err}"))
     }
 
-    /// Everything wrong with the fixture itself, before it is run.
     pub fn problems(&self, upstream_commit: &str, seeds: &Seeds) -> Vec<String> {
         [
             self.provenance_problems(upstream_commit),
@@ -178,7 +177,6 @@ impl Fixture {
 }
 
 impl Request {
-    /// No headers, no body, default peer (multi-step tests set the rest).
     pub fn new(method: &str, path: &str) -> Self {
         Self {
             method: method.to_owned(),
@@ -189,7 +187,6 @@ impl Request {
         }
     }
 
-    /// A copy with every `${name}` replaced from `outputs`.
     pub fn resolve(&self, outputs: &SeedOutputs) -> Result<Self, String> {
         let headers = self
             .headers
@@ -283,7 +280,6 @@ impl Expect {
 const PLACEHOLDER_OPEN: &str = "${";
 const PLACEHOLDER_CLOSE: char = '}';
 
-/// `text` with each `${name}` replaced by `outputs[name]`.
 fn substitute(text: &str, outputs: &SeedOutputs) -> Result<String, String> {
     let mut resolved = String::with_capacity(text.len());
     let mut rest = text;
@@ -347,7 +343,6 @@ fn substitute_json(value: &Value, outputs: &SeedOutputs) -> Result<Value, String
     })
 }
 
-/// `path:12` or `path:12-30`, path without whitespace.
 fn is_file_line(source: &str) -> bool {
     let Some((path, lines)) = source.rsplit_once(':') else {
         return false;
@@ -541,7 +536,6 @@ mod tests {
             panic!("json body expected");
         };
         assert_eq!(body, json!({ "${id}": ["t1", 1, { "n": "42" }] }));
-        // The original is untouched.
         assert_eq!(request.path, "/api/x/${id}");
     }
 

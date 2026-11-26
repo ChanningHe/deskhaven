@@ -1,6 +1,4 @@
-//! `--deploy` / `--assign` flows (03 §2.8, §2.9) through the real client API: what the
-//! fixtures' replies leave behind, and the heartbeat that follows an assignment.
-//! Both database backends are covered by the core tests (`deskhaven-core/tests/devices`).
+//! Both database backends are covered by the core tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -65,7 +63,6 @@ impl Harness {
         self.app.send(&request).await.unwrap()
     }
 
-    /// A heartbeat 3 s after the last, holding strategy version `modified_at`.
     async fn beat(&self, modified_at: i64) -> HeartbeatResponse {
         self.clock.advance(Duration::from_secs(3));
         let body = json!({
@@ -87,7 +84,6 @@ fn text(reply: &Reply) -> &str {
 
 #[tokio::test]
 async fn after_an_assignment_the_next_heartbeat_delivers_the_strategy() {
-    // Arrange
     let h = Harness::start(&[
         "registered-device",
         "device-sysinfo",
@@ -99,11 +95,9 @@ async fn after_an_assignment_the_next_heartbeat_delivers_the_strategy() {
     let held = before.modified_at.unwrap_or(0);
     assert!(before.strategy.is_none(), "no strategy applies yet");
 
-    // Act
     let reply = h.assign(json!({ "strategy_name": PRESET_STRATEGY })).await;
     let after = h.beat(held).await;
 
-    // Assert
     assert_eq!((reply.status, text(&reply)), (200, ""));
     let strategy = after.strategy.unwrap();
     assert_eq!(
@@ -118,10 +112,8 @@ async fn after_an_assignment_the_next_heartbeat_delivers_the_strategy() {
 
 #[tokio::test]
 async fn an_assignment_places_the_device_and_is_audited_as_the_token() {
-    // Arrange
     let h = Harness::start(&["registered-device", "device-preset-targets", "api-token"]).await;
 
-    // Act
     let reply = h
         .assign(json!({
             "user_name": PRESET_USER, "device_group_name": PRESET_DEVICE_GROUP,
@@ -130,7 +122,6 @@ async fn an_assignment_places_the_device_and_is_audited_as_the_token() {
         }))
         .await;
 
-    // Assert
     assert_eq!((reply.status, text(&reply)), (200, ""));
     let state = &h.app.state;
     let row = DeviceRepository::new(state.db.clone())
@@ -154,18 +145,15 @@ async fn an_assignment_places_the_device_and_is_audited_as_the_token() {
 
 #[tokio::test]
 async fn a_deploy_marks_the_device_deployed_and_is_audited() {
-    // Arrange
     let h = Harness::start(&["registered-device", "deploy-required", "api-token"]).await;
     let body = json!({ "id": DEVICE_ID, "uuid": DEVICE_UUID_B64, "pk": PK_B64 });
 
-    // Act
     let reply = h
         .app
         .send(&h.post("/api/devices/deploy", body, true))
         .await
         .unwrap();
 
-    // Assert
     let decoded: DeployResponse = reply.json().unwrap();
     assert_eq!(decoded.result, "OK");
     let state = &h.app.state;
@@ -185,16 +173,13 @@ async fn a_deploy_marks_the_device_deployed_and_is_audited() {
 
 #[tokio::test]
 async fn a_revoked_token_is_refused() {
-    // Arrange
     let h = Harness::start(&["registered-device", "deploy-required", "api-token"]).await;
     let tokens = &h.app.state.api_tokens;
     let id = tokens.list().await.unwrap()[0].id;
     tokens.revoke(id).await.unwrap();
 
-    // Act
     let reply = h.assign(json!({ "note": "front desk" })).await;
 
-    // Assert
     assert_eq!(reply.status, 401, "{}", text(&reply));
 }
 

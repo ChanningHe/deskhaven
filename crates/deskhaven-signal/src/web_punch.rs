@@ -1,12 +1,5 @@
-//! In-process web punch (deskhaven code, not vendored; s4): the server asks a device for a
-//! relay session, and with a browser offer for a WebRTC answer, on behalf of a caller in this
-//! process (the console's web client); wire clients cannot start one. Independent
-//! implementation; wire behavior and limits follow rustdesk-server PR #734 (39b1b3f).
-//!
-//! One PunchHole gets both transports: it forces relay (`nat_type` SYMMETRIC) to the
-//! deployment's first relay and carries the offer, and the device answers with a RelayResponse
-//! holding its relay uuid and, if it made one, the WebRTC answer. Answers and candidates are
-//! checked against the punch's route (`web_routes.rs`).
+//! In-process web punch for the console's web client; wire clients cannot start one.
+//! Independent implementation; wire behavior and limits follow rustdesk-server PR #734.
 
 use crate::claimed_addr::ClaimedAddr;
 use crate::rendezvous_server::{Data, REG_TIMEOUT, RendezvousServer, Sender};
@@ -28,75 +21,54 @@ use std::{
     time::Duration,
 };
 
-/// How long [`SignalHandle::web_punch`](crate::SignalHandle::web_punch) waits for the device.
 pub const WEB_PUNCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// The route's channel to its controller: one RelayResponse and the device's candidate budget.
 const LOCAL_SINK_LEN: usize = crate::web_routes::MAX_ICE_PER_DIRECTION as usize + 1;
 /// An ed25519 public key, what a registered device must hold to be vouched for.
 const DEVICE_PK_LEN: usize = 32;
 
-/// A punch on behalf of a browser.
 #[derive(Clone, Debug)]
 pub struct WebPunch {
-    /// The device id.
     pub target: String,
-    /// The browser's WebRTC offer endpoint (`webrtc://` + base64 of the JSON session
-    /// description, at most 4096 bytes); `None` for relay only. Not sent while
-    /// `always_use_relay` is on.
+    /// `None` for relay only; not sent while `always_use_relay` is on.
     pub offer: Option<String>,
-    /// The browser's IP as the HTTP stack resolved it (trusted proxies applied). The device
-    /// sees it, with a port unique to this punch, as the controller's address.
+    /// As the HTTP stack resolved it; the device sees it as the controller's address.
     pub client: IpAddr,
 }
 
-/// Why a web punch failed.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum WebPunchError {
-    /// No device with this id is registered.
     #[error("device not found")]
     NotFound,
-    /// The device has not been seen for 30 s.
     #[error("device is offline")]
     Offline,
-    /// The device sent no usable answer within [`WEB_PUNCH_TIMEOUT`].
     #[error("the device did not answer")]
     NoAnswer,
-    /// Too many web punches in flight (in total or from this browser IP).
     #[error("too many web punches in flight")]
     Busy,
-    /// The signal server is not running.
     #[error("signal server is not running")]
     Stopped,
-    /// The device relays through its own relay server (its local `relay-server` option),
-    /// which the browser cannot reach through this deployment.
+    /// The browser cannot reach the device's own relay server through this deployment.
     #[error("the device uses its own relay server {relay_server:?}")]
     ForeignRelay { relay_server: String },
-    /// No relay server is configured (or none resolved).
     #[error("no relay server is configured")]
     NoRelay,
-    /// The offer is not a WebRTC offer endpoint within the size limit.
     #[error("invalid WebRTC offer")]
     InvalidOffer,
 }
 
-/// An answered web punch. Its route lives until [`WEB_ROUTE_TTL`](crate::WEB_ROUTE_TTL) passes
-/// or both candidate halves ([`WebRoute::split`]) are dropped; from then on the device's
-/// candidates are dropped. A route without a WebRTC answer is revoked at once.
+/// A route lives until [`WEB_ROUTE_TTL`](crate::WEB_ROUTE_TTL) passes or both halves are
+/// dropped; one without a WebRTC answer is revoked at once.
 pub struct WebRoute {
-    /// The relay session's uuid (for `RequestRelay` to the relay server).
     pub uuid: String,
-    /// The relay the device connects to: the deployment's first relay server.
     pub relay_server: String,
-    /// `RelayResponse.pk` as the server sent it: `IdPk{id, pk}` signed with the server key,
-    /// for the browser to verify before trusting the device key.
+    /// Signed with the server key, for the browser to verify before trusting the device key.
     pub signed_pk: Vec<u8>,
-    /// The device's WebRTC answer endpoint, if an offer went out and it answered one.
     pub answer: Option<String>,
     sender: CandidateSender,
     receiver: CandidateReceiver,
 }
 
-/// The browser's half of a route's trickle ICE; clones share the route.
 #[derive(Clone)]
 pub struct CandidateSender(Option<SendHalf>);
 
@@ -106,7 +78,6 @@ struct SendHalf {
     server: Sender,
 }
 
-/// The device's half of a route's trickle ICE.
 pub struct CandidateReceiver(Option<RecvHalf>);
 
 struct RecvHalf {
@@ -155,26 +126,21 @@ impl std::fmt::Debug for CandidateReceiver {
 }
 
 impl WebRoute {
-    /// See [`CandidateSender::send`].
     pub fn send_candidate(&self, candidate: String) -> Result<(), CandidateError> {
         self.sender.send(candidate)
     }
 
-    /// See [`CandidateReceiver::next`].
     pub async fn next_candidate(&mut self) -> Option<String> {
         self.receiver.next().await
     }
 
-    /// The two halves of the trickle ICE, so that waiting for the device's next candidate
-    /// never holds up sending the browser's.
+    /// Split so waiting for the device's next candidate never holds up sending the browser's.
     pub fn split(self) -> (CandidateSender, CandidateReceiver) {
         (self.sender, self.receiver)
     }
 }
 
 impl CandidateSender {
-    /// Sends one of the browser's ICE candidates to the device (through its registration
-    /// channel, UDP or TCP). At most 128 per route, each at most 2048 bytes.
     pub fn send(&self, candidate: String) -> Result<(), CandidateError> {
         let half = self.0.as_ref().ok_or(CandidateError::Closed)?;
         let (id, msg) = half
@@ -188,8 +154,6 @@ impl CandidateSender {
 }
 
 impl CandidateReceiver {
-    /// The device's next ICE candidate; `None` once the route is closed: no WebRTC session,
-    /// [`WEB_ROUTE_TTL`](crate::WEB_ROUTE_TTL) passed, or the server stopped.
     pub async fn next(&mut self) -> Option<String> {
         let half = self.0.as_mut()?;
         if Instant::now() >= half.expires {
@@ -210,7 +174,6 @@ impl CandidateReceiver {
     }
 }
 
-/// The parts of the device's RelayResponse a web route keeps.
 struct Answer {
     uuid: String,
     signed_pk: Vec<u8>,
@@ -327,7 +290,6 @@ impl RendezvousServer {
         })
     }
 
-    /// Delivers a route's candidate to device `id` at its current address.
     pub(crate) async fn deliver_to_peer(&self, id: &str, msg: RendezvousMessage) {
         let Some(peer) = self.pm.get_in_memory(id).await else {
             return;
@@ -338,7 +300,6 @@ impl RendezvousServer {
     }
 }
 
-/// The device's RelayResponse on the punch's sink; candidates that come first are kept.
 async fn wait_answer(
     rx: &mut mpsc::Receiver<RendezvousMessage>,
     deadline: Instant,

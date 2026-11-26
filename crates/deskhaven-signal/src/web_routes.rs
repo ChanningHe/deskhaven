@@ -1,12 +1,5 @@
-//! Routes of in-process web punches (deskhaven code, not vendored; s4): who may answer a punch
-//! made by [`SignalHandle::web_punch`](crate::SignalHandle::web_punch), and the trickle ICE of
-//! its WebRTC session in both directions. Independent implementation; wire behavior and limits
-//! follow rustdesk-server PR #734 (39b1b3f).
-//!
-//! Only `web_punch` opens routes, keyed by the controller address its PunchHole carries (a
-//! claimed address, `claimed_addr.rs`, held for the route's life). A wire client can only use a
-//! route by answering as its device: from the device's registered IP, with its id (answers) or
-//! the offer's session key (candidates).
+//! Web punch routes. A wire client can only use a route by answering as its device: from the
+//! device's registered IP, with its id (answers) or the offer's session key (candidates).
 
 use hbb_common::{
     rendezvous_proto::{IceCandidate, RendezvousMessage},
@@ -21,30 +14,22 @@ use std::{
     time::Duration,
 };
 
-/// Largest WebRTC offer / answer endpoint passed on.
 pub(crate) const MAX_SDP_LEN: usize = 4096;
-/// Largest ICE candidate passed on.
 pub(crate) const MAX_CANDIDATE_LEN: usize = 2048;
 /// Largest session key (the offer's DTLS fingerprint).
 const MAX_SESSION_KEY_LEN: usize = 256;
-/// Candidates a route passes on per direction.
 pub(crate) const MAX_ICE_PER_DIRECTION: u32 = 128;
-/// IceCandidate frames one stream connection may send.
 const MAX_ICE_FRAMES: u32 = 256;
-/// IceCandidate frames without a route one stream connection may send.
 const MAX_ICE_MISSES: u32 = 16;
-/// How long a web punch route lives, from the punch.
 pub const WEB_ROUTE_TTL: Duration = Duration::from_secs(60);
 /// Routes alive at once, in total and per browser IP.
 const MAX_ROUTES: usize = 10_000;
 const MAX_ROUTES_PER_IP: usize = 64;
 
-/// One web punch: its device, and its WebRTC session if an offer went out.
 pub(crate) struct PunchRoute {
     pub(crate) peer_id: String,
     /// The device's registered IP at the punch: answers and candidates must come from it.
     pub(crate) peer_ip: IpAddr,
-    /// The offer's DTLS fingerprint (`a=fingerprint` value), `None` without an offer.
     pub(crate) session_key: Option<String>,
     pub(crate) to_peer: u32,
     pub(crate) to_ctl: u32,
@@ -66,42 +51,31 @@ impl PunchRoute {
     }
 }
 
-/// What a RelayResponse for a controller address may do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Reply {
-    /// No web punch route: a wire controller's answer.
     Unrouted,
-    /// From the route's device: passed on.
     Accept,
-    /// For a route, but not from its device: dropped.
     Refuse,
 }
 
-/// What happened to a candidate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Ice {
     Forwarded,
-    /// The route's budget for that direction is used up: dropped quietly.
     OverBudget,
-    /// Malformed, no live route, another session or another host.
     NoMatch,
 }
 
-/// Why [`WebRoute::send_candidate`](crate::WebRoute::send_candidate) refused a candidate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CandidateError {
-    /// The route has no WebRTC session, expired, or the server stopped.
     #[error("the route is closed")]
     Closed,
-    /// Empty or longer than 2048 bytes.
     #[error("invalid ICE candidate")]
     Invalid,
-    /// The route already passed 128 candidates to the device.
     #[error("too many ICE candidates for this route")]
     OverBudget,
 }
 
-/// The live web punch routes of one server. The lock is never held across an await.
+/// The lock is never held across an await.
 #[derive(Clone, Default)]
 pub(crate) struct WebRoutes(Arc<Mutex<HashMap<SocketAddr, PunchRoute>>>);
 
@@ -110,8 +84,6 @@ impl WebRoutes {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Adds the route of controller address `ctl`; `false` when the table or `ctl`'s IP is at
-    /// its cap, or `ctl` has a live route (cannot happen while claims are unique).
     pub(crate) fn open(&self, ctl: SocketAddr, route: PunchRoute, now: Instant) -> bool {
         let ctl = try_into_v4(ctl);
         let mut map = self.lock();
@@ -128,12 +100,10 @@ impl WebRoutes {
         self.lock().remove(&try_into_v4(ctl));
     }
 
-    /// Drops expired routes, which closes their controllers' candidate channels.
     pub(crate) fn sweep(&self, now: Instant) {
         self.lock().retain(|_, r| r.alive(now));
     }
 
-    /// Whether a RelayResponse naming `id`, sent from `from`, may reach controller `ctl`.
     pub(crate) fn reply(&self, ctl: SocketAddr, id: &str, from: IpAddr, now: Instant) -> Reply {
         match self.lock().get(&try_into_v4(ctl)) {
             None => Reply::Unrouted,
@@ -142,7 +112,6 @@ impl WebRoutes {
         }
     }
 
-    /// Passes the device's RelayResponse (`reply` accepted it) to controller `ctl`, once.
     pub(crate) fn answer(&self, ctl: SocketAddr, msg: RendezvousMessage) -> bool {
         let mut map = self.lock();
         let Some(r) = map.get_mut(&try_into_v4(ctl)).filter(|r| !r.answered) else {
@@ -152,8 +121,7 @@ impl WebRoutes {
         r.to_ctl_tx.try_send(msg).is_ok()
     }
 
-    /// Passes a candidate the device sent from `from` (`trusted`: on a KeyExchange-secured TCP
-    /// connection) to its route's controller.
+    /// `trusted`: the candidate came on a KeyExchange-secured TCP connection.
     pub(crate) fn to_controller(
         &self,
         ice: IceCandidate,
@@ -183,7 +151,6 @@ impl WebRoutes {
         Ice::Forwarded
     }
 
-    /// The device id and the message carrying `candidate` from controller `ctl` to it.
     pub(crate) fn to_peer(
         &self,
         ctl: SocketAddr,
@@ -235,7 +202,6 @@ fn same_ip(a: IpAddr, b: IpAddr) -> bool {
     a.to_canonical() == b.to_canonical()
 }
 
-/// IceCandidate frames seen on one stream connection.
 #[derive(Default)]
 pub(crate) struct IceCount {
     frames: u32,
@@ -243,8 +209,6 @@ pub(crate) struct IceCount {
 }
 
 impl IceCount {
-    /// Handles a candidate received on the connection; `false` closes the connection (more
-    /// than 256 candidate frames, or more than 16 that matched no route).
     pub(crate) fn on_candidate(
         &mut self,
         routes: &WebRoutes,
@@ -266,10 +230,8 @@ impl IceCount {
     }
 }
 
-/// The session key of a WebRTC offer endpoint (`webrtc://` + base64 of the JSON session
-/// description): its SDP's session-level `a=fingerprint` value, else the first one of an
-/// `application` media section, as the device derives it (hbb_common webrtc.rs
-/// `get_key_for_sdp`). `None` for anything else, or beyond the size limits.
+/// The SDP's session-level `a=fingerprint`, else the first one of an `application` media
+/// section, as the device derives it.
 pub(crate) fn offer_session_key(offer: &str) -> Option<String> {
     if offer.len() > MAX_SDP_LEN {
         return None;

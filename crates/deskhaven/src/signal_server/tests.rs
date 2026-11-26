@@ -1,6 +1,3 @@
-//! Signal server wiring: key conversion, relay settings, the settings -> server sync on a real
-//! server (also on connections that are already open), startup gate and supervised restarts.
-
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -41,14 +38,13 @@ use crate::http::signal_ready;
 use crate::signal_store::SignalPeerStore;
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
-/// The target registers from another loopback address than the controller connects from:
-/// the same source IP would make the server answer FetchLocalAddr instead of PunchHole
-/// (Linux routes all of 127.0.0.0/8 to `lo`).
+/// Another loopback address than the controller's: the same source IP would make the server
+/// answer FetchLocalAddr instead of PunchHole.
 pub(super) const TARGET_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
 pub(super) const STEP: Duration = Duration::from_secs(5);
 pub(super) const POLL: Duration = Duration::from_millis(20);
 const START_ATTEMPTS: usize = 10;
-/// TEST-NET-1 (RFC 5737): resolve without DNS, never pass a health probe.
+/// TEST-NET-1: resolves without DNS, never passes a health probe.
 const RELAY_1: &str = "192.0.2.1:21117";
 const RELAY_2: &str = "192.0.2.2:21117";
 pub(super) const TARGET: &str = "123456789";
@@ -57,14 +53,8 @@ pub(super) const FAST: Backoff = Backoff {
     max: Duration::from_millis(200),
 };
 
-// --- configuration -------------------------------------------------------------------------
-
-/// M1-08 review (HIGH-1): the websocket port honours `X-Forwarded-For` only from
-/// `security.trusted_proxies`, with the HTTP API's rule; with none configured (the default) the
-/// client is always the socket peer.
 #[test]
 fn websocket_proxy_headers_follow_security_trusted_proxies() {
-    // Arrange
     let pair = SignalKeyPair::generate().unwrap();
     let security = Security {
         trusted_proxies: vec!["10.0.0.0/8".parse().unwrap()],
@@ -75,11 +65,9 @@ fn websocket_proxy_headers_follow_security_trusted_proxies() {
     headers.insert("x-real-ip", "198.51.100.7".parse().unwrap());
     let ip = |s: &str| s.parse::<IpAddr>().unwrap();
 
-    // Act
     let trusting = base_config(&Default::default(), &security, &pair).unwrap();
     let default = base_config(&Default::default(), &Default::default(), &pair).unwrap();
 
-    // Assert
     let resolve = |cfg: &SignalConfig, peer: &str| cfg.ws_client_ip.client_ip(ip(peer), &headers);
     assert_eq!(
         resolve(&trusting, "10.1.2.3"),
@@ -96,7 +84,7 @@ fn websocket_proxy_headers_follow_security_trusted_proxies() {
         ip("10.1.2.3"),
         "default trusts none"
     );
-    // The accept gate exempts trusted proxies from the per-source pending limits (M4-05).
+    // The accept gate exempts trusted proxies from the per-source pending limits.
     assert!(trusting.ws_client_ip.is_trusted_proxy(ip("10.1.2.3")));
     assert!(!trusting.ws_client_ip.is_trusted_proxy(ip("11.0.0.1")));
     assert!(!default.ws_client_ip.is_trusted_proxy(ip("10.1.2.3")));
@@ -104,15 +92,12 @@ fn websocket_proxy_headers_follow_security_trusted_proxies() {
 
 #[test]
 fn signal_key_converts_to_the_same_sodiumoxide_key() {
-    // Arrange
     let pair = SignalKeyPair::generate().unwrap();
     let message = b"IdPk to sign";
 
-    // Act
     let sk = secret_key(&pair).unwrap();
     let cfg = base_config(&Default::default(), &Default::default(), &pair).unwrap();
 
-    // Assert
     assert_eq!(sk.public_key().0, pair.public_key());
     assert_eq!(
         cfg.licence_key(),
@@ -130,7 +115,6 @@ fn signal_key_converts_to_the_same_sodiumoxide_key() {
 
 #[test]
 fn signal_ws_listen_reaches_the_signal_config() {
-    // Arrange
     let pair = SignalKeyPair::generate().unwrap();
     let ws: std::net::SocketAddr = "127.0.0.1:21118".parse().unwrap();
     let signal = deskhaven_config::bootstrap::Signal {
@@ -138,26 +122,20 @@ fn signal_ws_listen_reaches_the_signal_config() {
         ..Default::default()
     };
 
-    // Act
     let cfg = base_config(&signal, &Default::default(), &pair).unwrap();
 
-    // Assert
     assert_eq!(cfg.ws_listen, Some(ws));
     assert_eq!(cfg.bind, None, "the other listeners stay on all interfaces");
 }
 
-/// M4-05 review H-A / M-A: the signal ports' global connection caps follow the open-file limit.
 #[cfg(unix)]
 #[test]
 fn the_accept_limits_follow_the_open_file_limit() {
-    // Arrange
     let pair = SignalKeyPair::generate().unwrap();
     let soft = rustix::process::getrlimit(rustix::process::Resource::Nofile).current;
 
-    // Act
     let cfg = base_config(&Default::default(), &Default::default(), &pair).unwrap();
 
-    // Assert
     assert_eq!(
         cfg.accept_limits,
         deskhaven_signal::AcceptLimits::for_open_files(soft)
@@ -166,7 +144,6 @@ fn the_accept_limits_follow_the_open_file_limit() {
 
 #[test]
 fn signal_settings_follow_the_snapshot() {
-    // Arrange
     let defaults = Snapshot::defaults();
     let changed = with(&[
         (
@@ -177,13 +154,11 @@ fn signal_settings_follow_the_snapshot() {
         ("signal.require_kx_v1", json!(true)),
     ]);
 
-    // Act
     let (before, after) = (
         SignalSettings::from_snapshot(&defaults),
         SignalSettings::from_snapshot(&changed),
     );
 
-    // Assert
     assert_eq!(before, SignalSettings::default());
     assert_eq!(after.servers, [RELAY_1, "relay.example.com:21117"]);
     assert!(after.always_use_relay && after.require_kx_v1);
@@ -192,7 +167,6 @@ fn signal_settings_follow_the_snapshot() {
     assert!(cfg.always_use_relay && cfg.require_kx_v1);
 }
 
-/// `Snapshot::defaults()` with the given settings applied.
 pub(super) fn with(changes: &[(&str, Json)]) -> Snapshot {
     let changes: Vec<Change> = changes
         .iter()
@@ -206,15 +180,9 @@ pub(super) fn with(changes: &[(&str, Json)]) -> Snapshot {
     Snapshot::defaults().with_accepted(&accepted, None, 0)
 }
 
-// --- settings -> running server ------------------------------------------------------------
-
-/// Settings changed through `SettingsService` reach the running server: subsequent punch
-/// holes, also on a controller connection opened before the change, name the new relay, and
-/// `always_use_relay` forces relayed connections. Registrations land in `devices`.
 #[tokio::test]
 async fn settings_changes_reach_new_and_open_connections() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let service = settings_service(db).await;
         update(&service, "signal.relay_servers", json!([RELAY_1]), 0).await;
         let store: Arc<dyn PeerStore> =
@@ -228,7 +196,6 @@ async fn settings_changes_reach_new_and_open_connections() {
         })
         .await;
 
-        // Act
         update(&service, "signal.relay_servers", json!([RELAY_2]), 1).await;
         let relayed = wait_punch(&mut controller, &mut target, |ph| {
             ph.relay_server == RELAY_2
@@ -240,7 +207,6 @@ async fn settings_changes_reach_new_and_open_connections() {
         });
         let forced = forced.await;
 
-        // Assert
         assert_eq!(forced.relay_server, RELAY_2, "{}", db.backend);
         token.cancel();
         timeout(STEP, running.task).await.unwrap().unwrap();
@@ -253,11 +219,8 @@ async fn settings_changes_reach_new_and_open_connections() {
     .await;
 }
 
-/// A relay list that does not resolve is rejected as a whole; the server keeps the previous
-/// list and the next valid change applies.
 #[tokio::test]
 async fn rejected_relay_list_keeps_the_previous_one() {
-    // Arrange
     let (tx, rx) = watch::channel(Arc::new(with(&[(
         "signal.relay_servers",
         json!([RELAY_1]),
@@ -271,7 +234,6 @@ async fn rejected_relay_list_keeps_the_previous_one() {
     })
     .await;
 
-    // Act
     tx.send_replace(Arc::new(with(&[(
         "signal.relay_servers",
         json!(["relay.invalid:21117"]),
@@ -283,7 +245,6 @@ async fn rejected_relay_list_keeps_the_previous_one() {
         json!([RELAY_2]),
     )])));
 
-    // Assert
     assert_eq!(kept.relay_server, RELAY_1, "previous list kept");
     wait_punch(&mut controller, &mut target, |ph| {
         ph.relay_server == RELAY_2
@@ -293,11 +254,8 @@ async fn rejected_relay_list_keeps_the_previous_one() {
     timeout(STEP, running.task).await.unwrap().unwrap();
 }
 
-// --- startup gate and supervision ----------------------------------------------------------
-
 #[tokio::test]
 async fn first_attempt_failure_fails_startup() {
-    // Arrange
     let store = Arc::new(FlakyStore::failing(usize::MAX));
     let token = CancellationToken::new();
     let launcher = Launcher::new(
@@ -307,12 +265,10 @@ async fn first_attempt_failure_fails_startup() {
         defaults(),
     );
 
-    // Act
     let res = timeout(STEP, super::start(launcher, FAST, &token))
         .await
         .unwrap();
 
-    // Assert
     let err = format!("{:#}", res.err().unwrap());
     assert!(err.contains("signal server failed to start"), "{err}");
     assert!(err.contains("cannot load the peer registry"), "{err}");
@@ -320,18 +276,15 @@ async fn first_attempt_failure_fails_startup() {
 
 #[tokio::test]
 async fn taken_port_fails_startup_naming_the_port() {
-    // Arrange
     let port = free_base_port();
     let _taken = std::net::TcpListener::bind((LOCALHOST, port + 2)).unwrap();
     let token = CancellationToken::new();
     let launcher = Launcher::new(local_config(port), memory_store(), allow_all(), defaults());
 
-    // Act
     let res = timeout(STEP, super::start(launcher, FAST, &token))
         .await
         .unwrap();
 
-    // Assert
     let err = format!("{:#}", res.err().unwrap());
     assert!(
         err.contains(&format!("cannot listen on tcp port {}", port + 2)),
@@ -339,11 +292,8 @@ async fn taken_port_fails_startup_naming_the_port() {
     );
 }
 
-/// A server that fails (here: its peer registry cannot be loaded) is restarted with growing
-/// delays until it serves; readiness follows.
 #[tokio::test]
 async fn failed_server_is_restarted_with_backoff_until_it_serves() {
-    // Arrange
     const FAILURES: usize = 3;
     let store = Arc::new(FlakyStore::failing(FAILURES));
     let token = CancellationToken::new();
@@ -354,7 +304,6 @@ async fn failed_server_is_restarted_with_backoff_until_it_serves() {
         defaults(),
     );
 
-    // Act
     let running = super::spawn_supervised(launcher, FAST, &token);
     assert!(
         signal_ready(Some(&running.status)).is_err(),
@@ -362,7 +311,6 @@ async fn failed_server_is_restarted_with_backoff_until_it_serves() {
     );
     wait_until(|| running.status.is_serving()).await;
 
-    // Assert
     assert!(signal_ready(Some(&running.status)).is_ok());
     let attempts = store.attempts();
     assert_eq!(attempts.len(), FAILURES + 1, "{attempts:?}");
@@ -377,7 +325,6 @@ async fn failed_server_is_restarted_with_backoff_until_it_serves() {
 
 #[tokio::test]
 async fn shutdown_during_backoff_stops_the_supervisor_promptly() {
-    // Arrange
     let store = Arc::new(FlakyStore::failing(usize::MAX));
     let token = CancellationToken::new();
     let slow = Backoff {
@@ -393,10 +340,8 @@ async fn shutdown_during_backoff_stops_the_supervisor_promptly() {
     let running = super::spawn_supervised(launcher, slow, &token);
     wait_until(|| !store.attempts().is_empty()).await;
 
-    // Act
     token.cancel();
 
-    // Assert
     timeout(STEP, running.task).await.unwrap().unwrap();
     assert_eq!(store.attempts().len(), 1, "no restart after shutdown");
 }
@@ -432,11 +377,8 @@ fn next_delay_doubles_up_to_max_and_resets_after_a_long_run() {
     assert_eq!(next_delay(b, Some(secs(8)), secs(61)), secs(1));
 }
 
-/// M1-06 acceptance, real path: a server that served longer than `max` and then fails is
-/// restarted after the initial delay, even when earlier quick failures had raised it.
 #[tokio::test]
 async fn long_running_server_failure_restarts_after_the_initial_delay() {
-    // Arrange
     let backoff = REAL_PATH;
     let store = Arc::new(FlakyStore::failing(0));
     let token = CancellationToken::new();
@@ -445,11 +387,10 @@ async fn long_running_server_failure_restarts_after_the_initial_delay() {
     let first = fail_and_measure_restart(&running, &store).await;
     let second = fail_and_measure_restart(&running, &store).await;
 
-    // Act: serve past `max`, then fail.
+    // Serve past `max`, then fail.
     sleep(backoff.max + backoff.initial).await;
     let after_long_run = fail_and_measure_restart(&running, &store).await;
 
-    // Assert
     assert!(first >= backoff.initial, "{first:?}");
     assert!(second >= backoff.initial * 2, "raised: {second:?}");
     assert!(
@@ -460,12 +401,8 @@ async fn long_running_server_failure_restarts_after_the_initial_delay() {
     timeout(STEP, running.task).await.unwrap().unwrap();
 }
 
-/// M2: when the supervisor is gone (here aborted, as a panic would drop it), its server is
-/// detached, not stopped; `SignalStatus::stopped` (what `serve` awaits before closing the
-/// database) still waits until that server drained its in-flight registration write.
 #[tokio::test]
 async fn status_stopped_waits_for_a_detached_server_to_drain() {
-    // Arrange
     let store = Arc::new(SlowStore::default());
     let token = CancellationToken::new();
     let (running, port, _) = start_launcher(defaults(), store.clone(), &token).await;
@@ -474,11 +411,9 @@ async fn status_stopped_waits_for_a_detached_server_to_drain() {
     running.task.abort();
     assert!(running.task.await.unwrap_err().is_cancelled());
 
-    // Act
     token.cancel();
     timeout(STEP, running.status.stopped()).await.unwrap();
 
-    // Assert
     assert_eq!(store.finished.load(Ordering::SeqCst), 1, "drained first");
     assert!(!running.status.is_serving());
 }
@@ -492,15 +427,12 @@ fn rejected_relay_list_warns_once_per_distinct_list() {
     assert!(is_new_rejection(Some(&a), &b));
 }
 
-// --- helpers -------------------------------------------------------------------------------
-
 /// Small enough for tests, far enough apart to tell reset (initial) from growth.
 const REAL_PATH: Backoff = Backoff {
     initial: Duration::from_millis(100),
     max: Duration::from_millis(400),
 };
 
-/// Makes the current (serving) server fail and returns the time until the next launch.
 async fn fail_and_measure_restart(running: &RunningSignal, store: &FlakyStore) -> Duration {
     wait_until(|| running.status.is_serving()).await;
     let launches = store.attempts().len();
@@ -510,7 +442,6 @@ async fn fail_and_measure_restart(running: &RunningSignal, store: &FlakyStore) -
     store.attempts()[launches] - failed_at
 }
 
-/// Every write takes `SLOW_WRITE`; counts writes started and finished.
 #[derive(Default)]
 struct SlowStore {
     started: AtomicUsize,
@@ -584,7 +515,6 @@ fn local_config(port: u16) -> SignalConfig {
     }
 }
 
-/// A base port whose TCP port-1, port, port+2 and UDP port were free a moment ago.
 fn free_base_port() -> u16 {
     loop {
         let probe = std::net::TcpListener::bind((LOCALHOST, 0)).unwrap();
@@ -611,7 +541,6 @@ async fn start_on_free_port(
     start_launcher(service.subscribe(), store, token).await
 }
 
-/// Starts on fresh free ports, retrying on a lost port race; also returns the licence key.
 pub(super) async fn start_launcher(
     settings: watch::Receiver<Arc<Snapshot>>,
     store: Arc<dyn PeerStore>,
@@ -620,7 +549,6 @@ pub(super) async fn start_launcher(
     start_launcher_with(settings, store, allow_all(), FAST, token).await
 }
 
-/// [`start_launcher`] with the given control plane and backoff.
 pub(super) async fn start_launcher_with(
     settings: watch::Receiver<Arc<Snapshot>>,
     store: Arc<dyn PeerStore>,
@@ -664,7 +592,6 @@ fn rv(set: impl FnOnce(&mut RendezvousMessage)) -> RendezvousMessage {
     msg
 }
 
-/// A controlled peer: registered over UDP, receives the forwarded PunchHoles.
 pub(super) struct Target(UdpSocket);
 
 impl Target {
@@ -691,8 +618,7 @@ impl Target {
         target
     }
 
-    /// Sends a RegisterPeer (the UDP keep-alive); `request_pk` of the answer (`true`: the
-    /// server holds no key for the id).
+    /// `true`: the server holds no key for the id.
     pub(super) async fn register_peer(&mut self) -> bool {
         let msg = rv(|m| {
             m.set_register_peer(RegisterPeer {
@@ -718,7 +644,6 @@ impl Target {
     }
 }
 
-/// A controller: one TCP connection to the main port, kept open across requests.
 struct Controller {
     conn: Framed<TcpStream, BytesCodec>,
     licence_key: String,
@@ -747,7 +672,6 @@ impl Controller {
     }
 }
 
-/// The PunchHole forwarded to `target` for a request on `controller`.
 async fn punch(controller: &mut Controller, target: &mut Target) -> PunchHole {
     controller.punch_hole_request().await;
     match target.recv().await.union {
@@ -756,8 +680,7 @@ async fn punch(controller: &mut Controller, target: &mut Target) -> PunchHole {
     }
 }
 
-/// Repeats [`punch`] on the same connection until `accept` holds (settings apply
-/// asynchronously).
+/// Settings apply asynchronously.
 async fn wait_punch(
     controller: &mut Controller,
     target: &mut Target,
@@ -774,7 +697,6 @@ async fn wait_punch(
     }
 }
 
-/// Fails the first `failures` preloads, recording when each preload started.
 struct FlakyStore {
     failures: usize,
     calls: AtomicUsize,

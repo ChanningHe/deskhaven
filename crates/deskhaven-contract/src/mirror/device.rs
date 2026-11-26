@@ -1,14 +1,9 @@
-//! Device endpoints (03 §2).
-
 use std::collections::HashMap;
 
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-/// `strategy` of a heartbeat response.
-///
-/// `src/hbbs_http/sync.rs:45-51`: both maps default to empty; values are
-/// strings, an empty one deletes the option (03 §2.1).
+/// Values are strings; an empty one deletes the option.
 #[derive(Debug, Deserialize)]
 pub struct StrategyOptions {
     #[serde(default)]
@@ -17,14 +12,8 @@ pub struct StrategyOptions {
     pub extra: HashMap<String, String>,
 }
 
-/// `POST /api/heartbeat` response (03 §2.1).
-///
-/// `src/hbbs_http/sync.rs:250-277`: the body is a JSON object; every key is
-/// optional. The client *ignores* a key whose value has the wrong type
-/// (`if let Ok(..)`); the mirror rejects it instead, since an ignored key
-/// is a lost disconnect, strategy or timestamp. That includes `null`:
-/// `from_value::<T>(null)` fails in the client, so `"strategy": null` is
-/// dropped like any other mistyped value (absent keys are fine).
+/// The client ignores a key of the wrong type, `null` included; the mirror rejects it instead,
+/// since an ignored key is a lost disconnect, strategy or timestamp.
 #[derive(Debug, Deserialize)]
 pub struct HeartbeatResponse {
     /// Presence is the signal (`rsp.remove("sysinfo").is_some()`), so even
@@ -39,12 +28,8 @@ pub struct HeartbeatResponse {
     pub modified_at: Option<i64>,
 }
 
-/// `POST /api/devices/deploy` response (03 §2.8).
-///
-/// `src/ui_interface.rs:1160-1199`: the client reads `parsed["result"].as_str()` and
-/// matches `OK` / `NOT_ENABLED` / `INVALID_INPUT` / `ID_TAKEN`; anything else (a missing or
-/// non-string `result` included) is "Unknown response" or the raw text. The mirror requires
-/// the string.
+/// Anything but the known `result` strings is "Unknown response" in the client, so the mirror
+/// requires the string.
 #[derive(Debug, Deserialize)]
 pub struct DeployResponse {
     pub result: String,

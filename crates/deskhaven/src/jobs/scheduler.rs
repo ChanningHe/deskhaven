@@ -1,15 +1,6 @@
-//! [`Scheduler`]: runs each [`Job`] in its own task, every [`Job::interval`], until the
-//! shutdown token is cancelled; [`Scheduler::finish`] then lets each job do its last work
-//! (the final `last_seen_at` flush) once the rest of the server has stopped.
-//!
-//! - **Independent**: one task per job, so a long retention purge never delays the
-//!   `last_seen_at` flush.
-//! - **Never dies**: every call into a job (its waits, runs and finish) is guarded; a panic
-//!   is logged with its message and the job goes on at its next tick, like a run that
-//!   failed (jobs log their own errors). So the loop always hands the job back and its
-//!   [`Job::finish`] (the final flush) always runs.
-//! - **Shutdown**: cancellation drops a run at its next await; jobs are cancel-safe (see
-//!   `deskhaven_core::jobs`).
+//! Each job runs in its own task, so a long retention purge never delays the `last_seen_at`
+//! flush. Every call into a job is guarded: a panic is logged and the job goes on at its next
+//! tick, so [`Job::finish`] (the final flush) always runs.
 
 use std::any::Any;
 use std::future::Future;
@@ -24,16 +15,12 @@ use tokio_util::sync::CancellationToken;
 /// The wait used when a job's [`Job::interval`] or [`Job::first_delay`] panicked.
 pub const FALLBACK_WAIT: Duration = Duration::from_secs(60);
 
-/// A periodic background job.
 pub trait Job: Send + 'static {
-    /// For the logs.
     const NAME: &'static str;
 
-    /// Wait between two runs; read before every wait, so a changed setting applies from the
-    /// next one.
+    /// Read before every wait, so a changed setting applies from the next one.
     fn interval(&self) -> Duration;
 
-    /// Wait before the first run.
     fn first_delay(&self) -> Duration {
         self.interval()
     }
@@ -49,14 +36,12 @@ pub trait Job: Send + 'static {
 
 type Finishing = Pin<Box<dyn Future<Output = ()> + Send>>;
 
-/// The running jobs.
 pub struct Scheduler {
     token: CancellationToken,
     finishing: Vec<Finishing>,
 }
 
 impl Scheduler {
-    /// Jobs added later run until `token` is cancelled.
     pub fn new(token: CancellationToken) -> Self {
         Self {
             token,
@@ -64,7 +49,6 @@ impl Scheduler {
         }
     }
 
-    /// Starts `job`'s loop.
     pub fn spawn<J: Job>(&mut self, job: J) {
         let handle: JoinHandle<J> = tokio::spawn(run_loop(job, self.token.clone()));
         self.finishing.push(Box::pin(async move {
@@ -83,8 +67,7 @@ impl Scheduler {
         }));
     }
 
-    /// Waits for every loop to stop (the token must be cancelled) and runs each job's
-    /// [`Job::finish`], within `timeout`; `false` if that ran out.
+    /// The token must be cancelled first; `false` if `timeout` ran out.
     pub async fn finish(self, timeout: Duration) -> bool {
         let all = async {
             for finishing in self.finishing {
@@ -119,7 +102,6 @@ async fn run_loop<J: Job>(mut job: J, token: CancellationToken) -> J {
     }
 }
 
-/// `read(job)`, or [`FALLBACK_WAIT`] if it panicked.
 fn wait_of<J: Job>(job: &J, read: fn(&J) -> Duration) -> Duration {
     std::panic::catch_unwind(AssertUnwindSafe(|| read(job))).unwrap_or_else(|panic| {
         tracing::error!(job = J::NAME, panic = panic_message(&panic), wait = ?FALLBACK_WAIT, "job interval panicked");
@@ -129,7 +111,6 @@ fn wait_of<J: Job>(job: &J, read: fn(&J) -> Duration) -> Duration {
 
 type Panic = Box<dyn Any + Send>;
 
-/// The message a panic was raised with, when it has one.
 fn panic_message(panic: &Panic) -> &str {
     if let Some(text) = panic.downcast_ref::<&'static str>() {
         text
@@ -140,7 +121,6 @@ fn panic_message(panic: &Panic) -> &str {
     }
 }
 
-/// `F`, with a panic while polling it turned into `Err` (it is not polled again).
 struct CatchUnwind<F>(Pin<Box<F>>);
 
 impl<F: Future> Future for CatchUnwind<F> {
@@ -166,7 +146,6 @@ mod tests {
     const TICK: Duration = Duration::from_millis(5);
     const PATIENCE: Duration = Duration::from_secs(5);
 
-    /// Counts its runs and finishes; panics on the runs `panic_on` says.
     struct Probe {
         runs: Arc<AtomicUsize>,
         finished: Arc<AtomicUsize>,
@@ -225,12 +204,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_job_runs_every_interval_until_cancelled_then_finishes_once() {
-        // Arrange
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let (probe, runs, finished) = Probe::new();
 
-        // Act
         scheduler.spawn(probe);
         until(|| runs.load(Ordering::SeqCst) >= 3).await;
         token.cancel();
@@ -238,7 +215,6 @@ mod tests {
         let after_finish = runs.load(Ordering::SeqCst);
         tokio::time::sleep(TICK * 4).await;
 
-        // Assert
         assert!(done);
         assert_eq!(finished.load(Ordering::SeqCst), 1);
         assert_eq!(
@@ -250,14 +226,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_panicking_run_neither_stops_its_job_nor_the_others() {
-        // Arrange
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let (mut flaky, flaky_runs, flaky_finished) = Probe::new();
         flaky.panic_on = |n| n % 2 == 1;
         let (steady, steady_runs, _) = Probe::new();
 
-        // Act
         scheduler.spawn(flaky);
         scheduler.spawn(steady);
         until(|| flaky_runs.load(Ordering::SeqCst) >= 4).await;
@@ -265,30 +239,25 @@ mod tests {
         token.cancel();
         let done = scheduler.finish(PATIENCE).await;
 
-        // Assert
         assert!(done);
         assert_eq!(flaky_finished.load(Ordering::SeqCst), 1, "still finished");
     }
 
     #[tokio::test]
     async fn the_first_run_waits_for_its_own_delay() {
-        // Arrange
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let (mut slow_start, runs, _) = Probe::new();
         slow_start.first = Duration::from_secs(3600);
 
-        // Act
         scheduler.spawn(slow_start);
         tokio::time::sleep(TICK * 10).await;
         token.cancel();
         scheduler.finish(PATIENCE).await;
 
-        // Assert
         assert_eq!(runs.load(Ordering::SeqCst), 0);
     }
 
-    /// A run that never ends unless dropped.
     struct Stuck {
         started: Arc<AtomicUsize>,
     }
@@ -308,7 +277,6 @@ mod tests {
 
     #[tokio::test]
     async fn cancellation_interrupts_a_run_in_progress() {
-        // Arrange
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let started = Arc::new(AtomicUsize::new(0));
@@ -317,32 +285,27 @@ mod tests {
         });
         until(|| started.load(Ordering::SeqCst) == 1).await;
 
-        // Act
         token.cancel();
         let done = scheduler.finish(PATIENCE).await;
 
-        // Assert
         assert!(done);
     }
 
     #[tokio::test]
     async fn finish_gives_up_after_its_timeout() {
-        // Arrange: never cancelled, so the loop never returns.
+        // Never cancelled, so the loop never returns.
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let (probe, _, finished) = Probe::new();
         scheduler.spawn(probe);
 
-        // Act
         let done = scheduler.finish(TICK * 4).await;
 
-        // Assert
         assert!(!done);
         assert_eq!(finished.load(Ordering::SeqCst), 0);
         token.cancel();
     }
 
-    /// Its interval panics after the first run; its finish counts.
     struct BadInterval {
         runs: Arc<AtomicUsize>,
         finished: Arc<AtomicUsize>,
@@ -370,7 +333,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_panicking_interval_keeps_the_job_and_its_finish() {
-        // Arrange
         let token = CancellationToken::new();
         let mut scheduler = Scheduler::new(token.clone());
         let runs = Arc::new(AtomicUsize::new(0));
@@ -380,13 +342,12 @@ mod tests {
             finished: Arc::clone(&finished),
         });
 
-        // Act: the first run, then a panicking interval (the loop waits the fallback).
+        // The first run, then a panicking interval (the loop waits the fallback).
         until(|| runs.load(Ordering::SeqCst) == 1).await;
         tokio::time::sleep(TICK * 4).await;
         token.cancel();
         let done = scheduler.finish(PATIENCE).await;
 
-        // Assert: the task survived, so the final work still ran.
         assert!(done);
         assert_eq!(finished.load(Ordering::SeqCst), 1);
     }

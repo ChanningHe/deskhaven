@@ -1,8 +1,3 @@
-//! M1-05: the injected `PeerStore` over the wire. Registrations are preloaded before the
-//! server listens, the UDP / TCP paths never wait for the store afterwards, a store that
-//! cannot be loaded fails `run`, a store outage keeps bound devices online, and failed writes
-//! neither weaken the anti id-hijack check nor get lost.
-
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -36,30 +31,24 @@ use support::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// After an outage the writer's breaker may still be open for up to its longest cool-down
-/// (30 s); writing the backlog follows at once.
+/// The writer's breaker may still be open for up to its longest cool-down after an outage.
 const RECOVERY: Duration = Duration::from_secs(40);
 const POLL: Duration = Duration::from_millis(100);
-/// How often a stalled upsert checks whether it may go on.
 const STALL_POLL: Duration = Duration::from_millis(10);
-/// The server's write queue bound for ids that are not bound yet (`persist.rs` `WRITE_QUEUE`).
+/// Mirrors the server's `WRITE_QUEUE`.
 const WRITE_QUEUE: usize = 1024;
-/// RegisterPk per source IP in the queue test, below the per-IP limit (`check_ip_block`: 30
-/// a minute).
+/// Below the per-IP RegisterPk limit (30 a minute).
 const REGISTRATIONS_PER_IP: usize = 25;
 
-/// A memory store that counts calls and can fail or hang.
 #[derive(Default)]
 struct TestStore {
     inner: MemoryPeerStore,
     loads: AtomicUsize,
     gets: AtomicUsize,
     upserts: AtomicUsize,
-    /// Upcoming upserts that fail with a backend error.
     fail_upserts: AtomicUsize,
     fail_load: AtomicBool,
     hang_load: AtomicBool,
-    /// Upserts wait while set (and then go through).
     stall_upserts: AtomicBool,
 }
 
@@ -141,11 +130,8 @@ async fn eventually(what: &str, wait: Duration, mut done: impl AsyncFnMut() -> b
     }
 }
 
-/// Every stored registration is enforced from the first packet: another uuid gets
-/// UUID_MISMATCH, while the owner (same uuid and pk, any IP) is OK and not asked for its pk.
 #[tokio::test]
 async fn preloaded_registrations_are_enforced_from_the_first_packet() {
-    // Arrange
     const DEVICES: usize = 200;
     let store = TestStore::shared();
     let mut devices = Vec::new();
@@ -156,7 +142,7 @@ async fn preloaded_registrations_are_enforced_from_the_first_packet() {
     }
     let server = start(&store).await;
 
-    // Act + Assert (a sample; each check uses fresh source IPs)
+    // A sample; each check uses fresh source IPs.
     for (id, keys) in devices.iter().step_by(DEVICES / 10) {
         let thief = server
             .udp()
@@ -172,17 +158,13 @@ async fn preloaded_registrations_are_enforced_from_the_first_packet() {
     server.stop().await;
 }
 
-/// After the preload nothing on the UDP / TCP paths reads the store: registrations of known
-/// and unknown ids, hijack attempts and punch holes to unknown ids only ever write.
 #[tokio::test]
 async fn hot_path_never_reads_the_store_after_preload() {
-    // Arrange
     let store = TestStore::shared();
     let known = PeerKeys::random();
     store.seed("known-peer", &known).await;
     let server = start(&store).await;
 
-    // Act
     let mut fresh = server.udp().await;
     assert!(fresh.register_peer("fresh-peer").await.request_pk);
     assert_eq!(
@@ -209,7 +191,6 @@ async fn hot_path_never_reads_the_store_after_preload() {
     .await;
     server.stop().await;
 
-    // Assert
     assert_eq!(thief, UUID_MISMATCH);
     assert_eq!(store.loads.load(Ordering::SeqCst), 1, "one preload");
     assert_eq!(store.gets.load(Ordering::SeqCst), 0, "no lookups");
@@ -220,16 +201,12 @@ async fn hot_path_never_reads_the_store_after_preload() {
     );
 }
 
-/// A store that cannot be loaded fails `run` before anything is bound (the embedding process
-/// supervises and restarts).
 #[tokio::test]
 async fn preload_failure_fails_run_before_binding() {
-    // Arrange
     let store = TestStore::shared();
     store.fail_load.store(true, Ordering::SeqCst);
     let port = free_base_port();
 
-    // Act
     let res = timeout(
         STEP,
         run(config(port), store, allow_all(), CancellationToken::new()),
@@ -237,14 +214,12 @@ async fn preload_failure_fails_run_before_binding() {
     .await
     .expect("run returns promptly");
 
-    // Assert
     assert!(matches!(res, Err(SignalError::PeerPreload(_))), "{res:?}");
     assert!(ports_free(port), "nothing was bound");
 }
 
 #[tokio::test]
 async fn preload_timeout_fails_run() {
-    // Arrange
     let store = TestStore::shared();
     store.hang_load.store(true, Ordering::SeqCst);
     let cfg = SignalConfig {
@@ -252,34 +227,26 @@ async fn preload_timeout_fails_run() {
         ..config(free_base_port())
     };
 
-    // Act
     let res = timeout(STEP, run(cfg, store, allow_all(), CancellationToken::new()))
         .await
         .expect("run returns once the preload times out");
 
-    // Assert
     assert!(matches!(res, Err(SignalError::PeerPreload(_))), "{res:?}");
 }
 
-/// Scenario a: the owner's first registration is answered OK while its write keeps failing
-/// for a while; the accepted entry stays in memory, so another uuid still gets UUID_MISMATCH,
-/// and the retried write eventually stores the owner's uuid.
 #[tokio::test]
 async fn transient_write_failure_still_rejects_another_uuid() {
-    // Arrange
     let store = TestStore::shared();
     store.fail_upserts.store(2, Ordering::SeqCst);
     let server = start(&store).await;
     let (_owner, owner_keys) = server.online_peer("owner-peer").await;
 
-    // Act
     let thief = server
         .udp()
         .await
         .register_pk("owner-peer", &PeerKeys::random())
         .await;
 
-    // Assert
     assert_eq!(thief, UUID_MISMATCH);
     eventually("the retried write lands", STEP, async || {
         store.stored_uuid("owner-peer").await.is_some()
@@ -292,16 +259,8 @@ async fn transient_write_failure_still_rejects_another_uuid() {
     server.stop().await;
 }
 
-/// H-A: with the store down, a bound fleet stays online like upstream. Over two rounds, two
-/// seconds apart (the writer's breaker opens meanwhile), every peer keeps refreshing over
-/// RegisterPeer without being asked for its pk, moves to a new source address with a
-/// RegisterPk that is
-/// answered OK (never SERVER_ERROR), shows online in OnlineRequest and receives punch holes at
-/// its new address. Once the store is back, every peer is saved with its latest IP, written
-/// once (the moves were coalesced).
 #[tokio::test]
 async fn store_outage_keeps_bound_fleet_online_and_persists_after_recovery() {
-    // Arrange
     const PEERS: usize = 20;
     let store = TestStore::shared();
     let server = start(&store).await;
@@ -315,7 +274,6 @@ async fn store_outage_keeps_bound_fleet_online_and_persists_after_recovery() {
     })
     .await;
 
-    // Act + Assert
     store.set_down(true);
     for round in 0..2 {
         for (id, (client, keys)) in ids.iter().zip(fleet.iter_mut()) {
@@ -360,14 +318,8 @@ async fn store_outage_keeps_bound_fleet_online_and_persists_after_recovery() {
     server.stop().await;
 }
 
-/// M-A: the store binds an id to another device (changed out of band after the preload) and
-/// answers the write of a freshly accepted registration with UuidMismatch. The store's
-/// binding is loaded back into memory (the writer re-reads it with `get`): right after that,
-/// an attacker with yet another uuid gets UUID_MISMATCH (eviction let the first comer claim the
-/// id), so does the device memory had accepted, and the store's owner is OK.
 #[tokio::test]
 async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
-    // Arrange
     const ID: &str = "contested-peer";
     let store = TestStore::shared();
     let server = start(&store).await;
@@ -380,7 +332,6 @@ async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
     .await;
     sleep(POLL).await;
 
-    // Act
     let attacker = server
         .udp()
         .await
@@ -389,7 +340,6 @@ async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
     let previously_accepted = accepted.register_pk(ID, &accepted_keys).await;
     let store_owner = server.udp().await.register_pk(ID, &owner).await;
 
-    // Assert
     assert_eq!(attacker, UUID_MISMATCH, "yet another uuid");
     assert_eq!(
         previously_accepted, UUID_MISMATCH,
@@ -400,13 +350,9 @@ async fn store_uuid_mismatch_rebinds_the_store_owner_in_memory() {
     server.stop().await;
 }
 
-/// M1-08 (07 §2.4): upstream answered RegisterPk OK whatever `update_pk` returned (rs:466).
-/// With the write-behind (M1-05) the one failure left on that path is a full write queue
-/// refusing an id that is not bound yet: it is answered SERVER_ERROR (the client retries), over
-/// UDP and over TCP alike, and nothing is registered; bound peers are still accepted.
 #[tokio::test]
 async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
-    // Arrange: the store stalls, so accepted registrations of new ids pile up in the queue.
+    // The store stalls, so accepted registrations of new ids pile up in the queue.
     let store = TestStore::shared();
     store.stall_upserts.store(true, Ordering::SeqCst);
     let server = start(&store).await;
@@ -414,7 +360,6 @@ async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
     let mut udp = server.udp().await;
     assert_eq!(udp.register_pk("queued-0", &first).await, OK);
 
-    // Act: new ids until one is refused.
     let mut refused_at = None;
     for n in 1..=WRITE_QUEUE + REGISTRATIONS_PER_IP {
         if n % REGISTRATIONS_PER_IP == 0 {
@@ -437,7 +382,6 @@ async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
     let mut target = server.udp().await;
     let bound = target.register_pk("queued-0", &first).await;
 
-    // Assert
     let refused_at = refused_at.expect("the write queue never filled up");
     assert!(refused_at >= WRITE_QUEUE, "refused after {refused_at}");
     assert_eq!(tcp, SERVER_ERROR, "over TCP");
@@ -448,9 +392,8 @@ async fn full_write_queue_answers_server_error_over_udp_and_tcp() {
         .online_request(&["queued-over-tcp"])
         .await;
     assert_eq!(online_bits(&online.states, 1), [false], "not registered");
-    // M1-07 review (H1): the refused id left no entry behind (a punch hole finds no such id,
-    // not an offline one), and a PunchHoleSent naming it gets no signed `IdPk{id, pk: ""}`
-    // (which encodes to 32 bytes for a 30-byte id: a forgeable KeyExchange key).
+    // The refused id left no entry behind, and a PunchHoleSent naming it gets no signed
+    // `IdPk{id, pk: ""}` (a forgeable KeyExchange key).
     let mut controller = server.tcp().await;
     controller
         .punch_hole_request(server.punch_req("queued-over-tcp"))

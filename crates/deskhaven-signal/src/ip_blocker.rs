@@ -1,19 +1,7 @@
-//! Per-source RegisterPk limits (deskhaven code; was upstream's `IP_BLOCKER` map and
-//! `check_ip_blocker`, M4-05).
-//!
-//! Upstream semantics per source: at most 31 RegisterPk within a 60 s window (the counter
-//! resets once 60 s passed since the last accepted one), and at most 301 distinct ids per day
-//! (known ids still pass once the set is full). deskhaven changes how sources are kept, not
-//! those limits:
-//!
-//! - a source is the IPv4 address (IPv4-mapped IPv6 included) or the IPv6 /64, so one host
-//!   cannot spread over its 2^64 addresses;
-//! - ids are kept as 64-bit keyed hashes (8 bytes each instead of a copy of an id of up to
-//!   253 bytes), which bounds an entry to a few KiB;
-//! - the table is capped at `max_entries` sources; when it is full, the least recently seen
-//!   tenth is evicted (one linear pass, amortised over the following inserts) instead of
-//!   refusing every new source, so a flood of addresses cannot lock new devices out. An
-//!   evicted source merely starts over with fresh counters.
+//! Per-source RegisterPk limits with upstream's numbers (31 within a 60 s window, 301 distinct
+//! ids a day). A source is an IPv4 address or an IPv6 /64, so one host cannot spread over its
+//! addresses; a full table evicts the least recently seen tenth instead of refusing new
+//! sources, so a flood of addresses cannot lock new devices out.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
@@ -30,7 +18,6 @@ const MAX_IDS: usize = 300;
 /// Sources tracked at once (one per source seen in the last day). Worst case about 125 MB:
 /// 301 id hashes of 8 bytes per source plus the map overhead.
 pub(crate) const MAX_ENTRIES: usize = 50_000;
-/// Share of the table evicted when it is full.
 const EVICT_DIVISOR: usize = 10;
 
 struct Entry {
@@ -41,7 +28,6 @@ struct Entry {
     ids_at: Instant,
 }
 
-/// The per-source RegisterPk accounting.
 pub(crate) struct IpBlocker {
     entries: HashMap<IpAddr, Entry>,
     max_entries: usize,
@@ -63,8 +49,6 @@ impl IpBlocker {
         }
     }
 
-    /// Whether a RegisterPk for `id` from `ip` at `now` may proceed (upstream
-    /// `check_ip_blocker`).
     pub(crate) fn check(&mut self, ip: IpAddr, id: &str, now: Instant) -> bool {
         let key = source_key(ip);
         if !self.entries.contains_key(&key) {
@@ -86,8 +70,6 @@ impl IpBlocker {
             .is_none_or(|entry| entry.check(hash, now))
     }
 
-    /// Forgets sources whose register window and id day have both passed (upstream's `ib`
-    /// predicate).
     pub(crate) fn prune(&mut self, now: Instant) {
         self.entries.retain(|_, entry| {
             !expired(entry.registered_at, now, IP_BLOCK_DUR)
@@ -95,7 +77,6 @@ impl IpBlocker {
         });
     }
 
-    /// Drops the least recently seen tenth of the entries.
     fn evict_oldest(&mut self) {
         let mut seen: Vec<Instant> = self.entries.values().map(Entry::last_seen).collect();
         let cut = (seen.len() / EVICT_DIVISOR).max(1).min(seen.len()) - 1;
@@ -144,8 +125,7 @@ impl Entry {
     }
 }
 
-/// Whether more than `secs` whole seconds passed from `at` to `now` (upstream compared
-/// `elapsed().as_secs() > secs`).
+/// More than `secs` whole seconds, as upstream compared them.
 fn expired(at: Instant, now: Instant, secs: u64) -> bool {
     now.saturating_duration_since(at).as_secs() > secs
 }
@@ -265,7 +245,6 @@ mod tests {
         assert_eq!(blocker.len(), 0);
     }
 
-    /// Re-review LOW-3: 50 000 sources of at most 301 id hashes each, about 125 MB at worst.
     #[test]
     fn the_default_table_tracks_at_most_50_000_sources() {
         let mut blocker = IpBlocker::default();

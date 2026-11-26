@@ -1,28 +1,7 @@
-//! Persistence of the peer map (deskhaven code, not vendored): startup preload, coalesced
-//! write-behind of accepted registrations, and an invalidation hook.
-//!
-//! - **Preload**: every stored registration is loaded, page by page (keyset on the id), before
-//!   the listeners are bound, so afterwards a cache miss means "unknown id" and the UDP / TCP
-//!   paths never wait for the store.
-//! - **Write-behind, coalesced per peer**: an accepted RegisterPk updates memory, bumps the
-//!   peer's [`SaveState::generation`] and is answered OK; the peer's *id* is queued for one
-//!   writer task. An id is queued at most once, and the writer reads the peer's current state
-//!   when it writes, so repeated registrations collapse into one write of the latest state
-//!   and the queue never holds more entries than there are peers.
-//! - **Store outage**: memory stays authoritative and devices stay online (upstream behaved
-//!   the same, it ignored write errors). A failed write re-queues the id; the writer retries it
-//!   itself, nothing is asked of the client. After [`BREAKER_THRESHOLD`] consecutive failures a
-//!   circuit breaker stops all attempts for a cool-down (doubling up to [`COOL_DOWN_MAX`]), then
-//!   probes with one write; so an outage costs a few attempts per minute, not a stall per
-//!   write. The queue's bound ([`WRITE_QUEUE`]) only refuses ids that are not bound yet
-//!   (SERVER_ERROR, the client retries); a bound peer is always accepted, its id coalesced.
-//! - **UuidMismatch** from the store (the id is bound to another device there, e.g. changed
-//!   out of band): the store wins; its record is re-read into the cached peer in place.
-//! - **Stop**: within one deadline, each queued write gets a single attempt (no breaker, no
-//!   backoff); what is left unsaved is counted and logged.
-//!
-//! Never-online `devices` rows are not cleaned up here; retention comes with admission (M5) and
-//! the device lifecycle (M2-20).
+//! Peer map persistence: preload before the listeners bind (so a cache miss means "unknown
+//! id"), then write-behind coalesced per peer id. Memory stays authoritative during a store
+//! outage: failed writes are retried behind a circuit breaker, and a full queue refuses only
+//! ids that are not bound yet. On UuidMismatch the store wins.
 
 use crate::peer::{LockPeer, Peer, PeerCache, PeerInfo, is_peer_id};
 use crate::store::{PeerRecord, PeerStore, PeerUpsert, StoreError};
@@ -46,30 +25,23 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// Queued ids beyond which ids that are not bound yet are refused. Registrations are
-/// rate-limited (3 RegisterPk per id per 6 s; per IP 30 per minute and 300 ids a day).
+/// Registrations are rate-limited (3 RegisterPk per id per 6 s, per IP 30 a minute), so only
+/// an outage fills this.
 pub(crate) const WRITE_QUEUE: usize = 1024;
 /// One store call; a slower one counts as a failure.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
-/// Consecutive failed writes that open the circuit breaker.
 pub(crate) const BREAKER_THRESHOLD: u32 = 3;
 /// First cool-down of an open breaker; doubled on every failed probe.
 pub(crate) const COOL_DOWN_MIN: Duration = Duration::from_secs(1);
-/// Longest cool-down.
 pub(crate) const COOL_DOWN_MAX: Duration = Duration::from_secs(30);
 /// Everything the writer still does after the stop, in-flight write included.
 pub(crate) const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-/// Registrations per preload query.
 pub(crate) const PRELOAD_PAGE: usize = 1000;
 
-/// Persistence bookkeeping of one cached peer.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SaveState {
-    /// Bumped on every accepted registration.
     pub(crate) generation: u64,
-    /// The generation last written to (or read from) the store.
     pub(crate) saved: u64,
-    /// When the last registration was accepted.
     pub(crate) registered_at: SystemTime,
 }
 
@@ -94,7 +66,6 @@ impl SaveState {
     }
 }
 
-/// Refused: the write queue is full and the id is not bound yet, or the id is not a peer id.
 #[derive(Debug)]
 pub(crate) struct Refused;
 
@@ -119,7 +90,6 @@ impl Pending {
     }
 }
 
-/// The store side of one server's peer map. Cheap to clone.
 #[derive(Clone)]
 pub(crate) struct Persist {
     store: Arc<dyn PeerStore>,
@@ -127,12 +97,10 @@ pub(crate) struct Persist {
     pending: Arc<Mutex<Pending>>,
     wake: Arc<Notify>,
     cap: usize,
-    /// Writes left unsaved when the writer stopped.
     lost: Arc<AtomicUsize>,
 }
 
 impl Persist {
-    /// Starts the writer task on `tasks`; `cap` bounds the queue for unbound ids.
     pub(crate) fn start(
         store: Arc<dyn PeerStore>,
         map: PeerCache,
@@ -161,12 +129,9 @@ impl Persist {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Queues `id` for the writer. Call with the peer's write lock held and change the peer
-    /// only on `Ok`: the writer reads the peer after taking its lock, so it sees the change.
-    /// An id already queued is not queued again. Only an unbound id (`is_new`) is refused, and
-    /// only when the queue is full. An id that is not a peer id ([`is_peer_id`]) is never
-    /// queued: the store would refuse it (e.g. a NUL in PostgreSQL text) and the writer retry
-    /// it forever. RegisterPk refuses such ids first, so this is only a backstop.
+    /// Call with the peer's write lock held and change the peer only on `Ok`: the writer reads
+    /// the peer after taking its lock. Ids that are not peer ids are never queued: the store
+    /// would refuse them and the writer retry forever.
     pub(crate) fn enqueue(&self, id: &str, is_new: bool) -> Result<(), Refused> {
         if !is_peer_id(id) {
             log::warn!("peer store: registration of malformed id {id:?} refused");
@@ -203,8 +168,6 @@ impl Persist {
         self.lost.load(Ordering::SeqCst)
     }
 
-    /// Loads every stored registration into the map, a page at a time; fails if the store
-    /// fails or the whole load takes longer than `limit`.
     pub(crate) async fn preload(&self, limit: Duration) -> Result<usize, StoreError> {
         let started = Instant::now();
         let count = timeout(limit, self.load_pages())
@@ -236,11 +199,9 @@ impl Persist {
         }
     }
 
-    /// Invalidation hook for registrations changed out of band (admin edits / deletes, M2;
-    /// also used on UuidMismatch): re-reads `id` from the store. A stored record replaces the
-    /// cached keys in place (address, liveness and rate-limit counters kept, the peer counts as
-    /// saved), unless the cached peer is an unsaved registration of the same uuid (newer: kept
-    /// for the writer); a missing one is forgotten.
+    /// For registrations changed out of band: a stored record replaces the cached keys unless
+    /// the cached peer is a newer unsaved registration of the same uuid; a missing one is
+    /// forgotten.
     pub(crate) async fn reload(&self, id: &str) -> Result<(), StoreError> {
         let stored = self.store.get(id).await?;
         let cached = self.map.read().await.get(id).cloned();
@@ -254,9 +215,8 @@ impl Persist {
             }
             (Some(rec), Some(peer)) => {
                 let mut p = peer.write().await;
-                // deskhaven (M2-19): an unsaved registration of the same device (e.g. a new
-                // key after a reinstall) is newer than the stored row: keep it, the writer
-                // still owes and stores it.
+                // An unsaved registration of the same device (e.g. a new key after a reinstall)
+                // is newer than the stored row: the writer still owes it.
                 if !p.save.is_saved() && p.uuid[..] == rec.uuid[..] {
                     return Ok(());
                 }
@@ -270,7 +230,6 @@ impl Persist {
     }
 }
 
-/// A stored registration as an offline cached peer.
 fn peer_from(rec: PeerRecord) -> Peer {
     Peer {
         uuid: rec.uuid.into(),
@@ -282,19 +241,13 @@ fn peer_from(rec: PeerRecord) -> Peer {
     }
 }
 
-/// Result of one write.
 #[derive(Debug, PartialEq, Eq)]
 enum Outcome {
-    /// The store answered (saved, or rebound on UuidMismatch).
     Stored,
-    /// Nothing to write (already saved, or the peer is gone).
     Skipped,
-    /// The store failed or timed out; the write is still owed.
     Failed,
 }
 
-/// Opens after [`BREAKER_THRESHOLD`] consecutive failures and stays open for a cool-down that
-/// doubles on every failed probe.
 struct Breaker {
     failures: u32,
     open_until: Option<Instant>,
@@ -312,7 +265,6 @@ impl Default for Breaker {
 }
 
 impl Breaker {
-    /// How long writes must still wait.
     fn wait(&self) -> Option<Duration> {
         let left = self.open_until?.saturating_duration_since(Instant::now());
         (!left.is_zero()).then_some(left)
@@ -343,7 +295,6 @@ impl Breaker {
 struct Writer {
     persist: Persist,
     in_flight: AtomicBool,
-    /// Writes that failed during the stop.
     failed: AtomicUsize,
 }
 
@@ -380,7 +331,6 @@ impl Writer {
         }
     }
 
-    /// Writes queued ids until the stop, behind the circuit breaker.
     async fn serve(&self, stop: &CancellationToken) {
         let mut breaker = Breaker::default();
         loop {
@@ -413,7 +363,6 @@ impl Writer {
         }
     }
 
-    /// After the stop: one attempt per queued id, no breaker.
     async fn drain(&self) {
         while let Some(id) = self.persist.pop() {
             if self.write(&id).await == Outcome::Failed {
@@ -429,7 +378,6 @@ impl Writer {
         outcome
     }
 
-    /// Writes the peer's current state, if not saved yet.
     async fn write_current(&self, id: &str) -> Outcome {
         let Some(peer) = self.persist.map.read().await.get(id).cloned() else {
             return Outcome::Skipped;
@@ -467,8 +415,6 @@ impl Writer {
     }
 }
 
-/// The upsert for the peer's current state and its generation, unless there is nothing to
-/// write.
 async fn snapshot(id: &str, peer: &LockPeer) -> Option<(PeerUpsert, u64)> {
     let p = peer.read().await;
     if p.uuid.is_empty() || p.save.is_saved() {

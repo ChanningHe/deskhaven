@@ -1,22 +1,17 @@
-//! `data_dir`: keys, the SQLite database and other private files.
-
 use std::fmt;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
-/// Owner-only, for directories this process creates.
 #[cfg(unix)]
 const DIR_MODE: u32 = 0o700;
-/// Group/other permission bits.
 #[cfg(unix)]
 const GROUP_OTHER_BITS: u32 = 0o077;
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
 
-/// An existing data_dir that group or others can access. Not fatal: the
-/// operator may have reasons (shared volumes), but should know.
+/// Not fatal: the operator may have reasons (shared volumes), but should know.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LooseMode {
     pub path: PathBuf,
@@ -34,7 +29,6 @@ impl fmt::Display for LooseMode {
     }
 }
 
-/// Creates `dir` (and missing parents) as 0700, or checks an existing one.
 /// Existing directories are never chmod-ed.
 pub fn prepare(dir: &Path) -> anyhow::Result<Option<LooseMode>> {
     match std::fs::metadata(dir) {

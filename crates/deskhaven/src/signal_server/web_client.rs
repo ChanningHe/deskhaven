@@ -1,6 +1,5 @@
-//! The core's web client port ([`WebPunches`]) over the current signal server: each punch
-//! goes to the server serving at that moment (`SignalHandle::web_punch`); a route dies with
-//! the server that made it.
+//! Each punch goes to the server serving at that moment; a route dies with the server that
+//! made it.
 
 use deskhaven_core::web_client::{
     CandidateRejected, CandidateSink, CandidateSource, NextCandidate, PunchError, PunchFuture,

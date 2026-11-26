@@ -1,5 +1,3 @@
-//! `signal.require_kx_v1` (M1-07) reaching the running signal server.
-
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -23,12 +21,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::tests::{POLL, STEP, memory_store, start_launcher, with};
 
-/// How long a refused connection takes at most to be closed after the reply.
 const QUIET: Duration = Duration::from_millis(500);
 
-/// Runs the KeyExchange of a client from before Kx v1 (version 0 reply) against the server
-/// on `port`; `true` if the server keeps the connection open afterwards, `false` if it closes
-/// it (refused).
 async fn legacy_exchange_is_served(port: u16, server_pk: &sign::PublicKey) -> bool {
     let stream = TcpStream::connect((IpAddr::V4(Ipv4Addr::LOCALHOST), port))
         .await
@@ -66,11 +60,8 @@ async fn legacy_exchange_is_served(port: u16, server_pk: &sign::PublicKey) -> bo
     }
 }
 
-/// Switching `signal.require_kx_v1` on makes the running server refuse version 0 replies;
-/// switching it off again serves them.
 #[tokio::test]
 async fn require_kx_v1_setting_reaches_the_running_server() {
-    // Arrange
     let (tx, rx) = watch::channel(Arc::new(Snapshot::defaults()));
     let token = CancellationToken::new();
     let (running, port, key) = start_launcher(rx, memory_store(), &token).await;
@@ -81,10 +72,8 @@ async fn require_kx_v1_setting_reaches_the_running_server() {
     assert!(legacy_exchange_is_served(port, &server_pk).await);
 
     for on in [true, false] {
-        // Act
         tx.send_replace(Arc::new(with(&[("signal.require_kx_v1", json!(on))])));
 
-        // Assert
         let deadline = Instant::now() + STEP;
         while legacy_exchange_is_served(port, &server_pk).await == on {
             assert!(

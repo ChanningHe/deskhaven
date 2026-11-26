@@ -1,14 +1,10 @@
-//! Database connection settings derived from the bootstrap `[database]` table.
-
 use anyhow::Context;
 use deskhaven_config::bootstrap::Bootstrap;
 use deskhaven_db::DbOptions;
 use sea_orm::DatabaseConnection;
 
-/// SQLite file inside data_dir when `database.url` is empty (05-config §2.2).
 pub const DEFAULT_SQLITE_FILE: &str = "deskhaven.db";
 
-/// `database.url`, or `sqlite://{data_dir}/deskhaven.db` when empty.
 /// May embed credentials: never log it (use [`backend`]).
 pub fn url(config: &Bootstrap) -> anyhow::Result<String> {
     let configured = config.database.url.expose();
@@ -29,15 +25,13 @@ fn escape_path(path: &str) -> String {
         .replace('#', "%23")
 }
 
-/// Pool settings for `url` (read-write).
 pub fn options(config: &Bootstrap, url: String) -> DbOptions {
     let mut options = DbOptions::new(url);
     options.max_connections = config.database.max_connections;
     options
 }
 
-/// [`deskhaven_db::connect`] with an operator hint (sqlx reports a refused or
-/// unroutable server only as a pool timeout).
+/// Adds an operator hint: sqlx reports a refused or unroutable server only as a pool timeout.
 pub async fn connect(options: &DbOptions) -> anyhow::Result<DatabaseConnection> {
     let backend = backend(&options.url);
     deskhaven_db::connect(options).await.with_context(|| {
@@ -45,8 +39,6 @@ pub async fn connect(options: &DbOptions) -> anyhow::Result<DatabaseConnection> 
     })
 }
 
-/// An in-memory SQLite database (`sqlite::memory:`, `mode=memory`): gone
-/// when the process exits.
 pub fn is_in_memory(url: &str) -> bool {
     url.starts_with("sqlite:") && (url.contains(":memory:") || url.contains("mode=memory"))
 }

@@ -1,6 +1,4 @@
-//! Replays every fixture in `tests/contract/fixtures` through the real
-//! client API. `CONTRACT_FILTER=login-options/` runs a subset;
-//! `-- --nocapture` lists each fixture.
+//! `CONTRACT_FILTER=login-options/` runs a subset; `-- --nocapture` lists each fixture.
 #![allow(clippy::panic)]
 
 use deskhaven_contract::runner::{contract_dir, run_dir};

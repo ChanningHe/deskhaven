@@ -1,21 +1,12 @@
-//! Account endpoints (03 §3): login options, login, current user, OIDC.
-
 use std::collections::HashMap;
 
 use serde::Deserialize;
 
-/// `GET /api/login-options` (03 §3.1).
-///
-/// `flutter/lib/models/user_model.dart:240-264`: `jsonDecode(resp.body)` is
-/// iterated and each item cast `as String` (a non-string throws); any non-2xx
-/// status throws. Items are `oidc/<name>` or `common-oidc/<json>`.
+/// Each item is cast `as String` (a non-string throws); items are `oidc/<name>` or
+/// `common-oidc/<json>`.
 pub type LoginOptions = Vec<String>;
 
-/// User status as an integer.
-///
-/// `src/hbbs_http/account.rs:71-77` (`Deserialize_repr`, `i64`: only 0, 1
-/// and -1 parse) and `:129-133` (missing means `Normal`);
-/// `flutter/lib/common/hbbs/hbbs.dart:43-47`.
+/// Only 0, 1 and -1 parse; missing means `Normal`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(try_from = "i64")]
 pub enum ClientUserStatus {
@@ -38,9 +29,7 @@ impl TryFrom<i64> for ClientUserStatus {
     }
 }
 
-/// `deviceInfo` of a whitelist entry.
-///
-/// `src/hbbs_http/account.rs:30-44`: every field defaults to `""`.
+/// Every field defaults to `""`.
 #[derive(Debug, Deserialize)]
 pub struct DeviceInfo {
     #[serde(default)]
@@ -51,7 +40,7 @@ pub struct DeviceInfo {
     pub name: String,
 }
 
-/// `src/hbbs_http/account.rs:46-51`: no field has a default.
+/// No field has a default.
 #[derive(Debug, Deserialize)]
 pub struct WhitelistItem {
     pub data: String,
@@ -59,11 +48,8 @@ pub struct WhitelistItem {
     pub exp: u64,
 }
 
-/// `user.info`.
-///
-/// `src/hbbs_http/account.rs:53-69` (`UserSettings` is flattened in, so its
-/// two flags sit next to the other keys). Present-but-`null` fails: serde
-/// defaults only cover a missing key.
+/// `UserSettings` is flattened in. Present-but-`null` fails: serde defaults only cover a
+/// missing key.
 #[derive(Debug, Deserialize)]
 pub struct UserInfo {
     #[serde(default)]
@@ -76,16 +62,8 @@ pub struct UserInfo {
     pub other: HashMap<String, String>,
 }
 
-/// UserPayload: `currentUser`, `user` of an auth body, items of `/api/users`.
-///
-/// The Rust client is the strict reader: `src/hbbs_http/account.rs:79-97`
-/// (`name` and `info` required). The Flutter reader,
-/// `flutter/lib/common/hbbs/hbbs.dart:36-48`, adds `verifier` (`String?`).
-///
-/// `info` is required on purpose, although Flutter never reads it (and
-/// defaults `name` to `''`): the same payload reaches the Rust client in the
-/// OIDC `AuthBody`, where a missing `info` fails the whole login. Requiring
-/// it everywhere keeps one server shape for every reader.
+/// `info` is required on purpose although Flutter never reads it: the same payload reaches the
+/// Rust client in the OIDC `AuthBody`, where a missing `info` fails the whole login.
 #[derive(Debug, Deserialize)]
 pub struct ClientUserPayload {
     pub name: String,
@@ -108,14 +86,8 @@ pub struct ClientUserPayload {
     pub verifier: Option<String>,
 }
 
-/// `POST /api/login` responses, read by Flutter (03 §3.2).
-///
-/// `flutter/lib/common/hbbs/hbbs.dart:180-197`: every key is optional, so
-/// the 2FA first step (`{type: "email_check", tfa_type, secret}`) parses too
-/// when it has no `user`; a challenge with its minimal `user` is checked with
-/// [`SecondFactorChallenge`], what the login dialog actually needs.
-/// Stricter than Flutter: `user` must be a full [`ClientUserPayload`], since
-/// the same user record is what the Rust client reads elsewhere.
+/// Every key is optional in Flutter; stricter here: `user` must be a full
+/// [`ClientUserPayload`], the record the Rust client reads elsewhere.
 #[derive(Debug, Deserialize)]
 pub struct LoginResponse {
     #[serde(default)]
@@ -130,18 +102,8 @@ pub struct LoginResponse {
     pub user: Option<ClientUserPayload>,
 }
 
-/// `POST /api/login` reply that asks for a second factor (03 §3.2), as the
-/// login dialog uses it rather than as `LoginResponse.fromJson` merely parses
-/// it (`flutter/lib/common/hbbs/hbbs.dart:180-197`, all optional there):
-///
-/// - `flutter/lib/common/widgets/login.dart:790-812`: `type` must be
-///   `email_check`; `tfa_type` `tfa_check` opens the 2FA dialog (null or
-///   `email_check` the email dialog, anything else is an error); `secret` and
-///   `user` are handed to `verificationCodeDialog`.
-/// - `login.dart:1003-1024`: the second request sends `secret` back and
-///   `user?.name` as `username`, so without `user.name` the second step has no
-///   username. `UserPayload.fromJson` (`hbbs.dart:36-47`) defaults every other
-///   field, so a user object with only `name` is complete for the dialog.
+/// As the login dialog uses it: `type` must be `email_check`, `tfa_type` picks the dialog, and
+/// the second request sends `secret` back with `user.name` as the username.
 #[derive(Debug, Deserialize)]
 pub struct SecondFactorChallenge {
     #[serde(rename = "type")]
@@ -151,30 +113,20 @@ pub struct SecondFactorChallenge {
     pub user: ChallengeUser,
 }
 
-/// The `user` of a [`SecondFactorChallenge`]: what `verificationCodeDialog` reads.
 #[derive(Debug, Deserialize)]
 pub struct ChallengeUser {
     pub name: String,
 }
 
-/// `POST /api/oidc/auth` response (03 §3.5).
-///
-/// `src/hbbs_http/account.rs:24-28`: both required; `url` is a `url::Url`,
-/// so it must be an absolute URL. Read through `HbbHttpResponse`
-/// (`:160-177`), hence the shape is `HbbData<OidcAuthUrl>`.
+/// `url` must be an absolute URL; read through `HbbHttpResponse`, hence `HbbData<OidcAuthUrl>`.
 #[derive(Debug, Deserialize)]
 pub struct OidcAuthUrl {
     pub code: String,
     pub url: url::Url,
 }
 
-/// Completed OIDC login, read by the Rust client (03 §3.6).
-///
-/// `src/hbbs_http/account.rs:99-108`: `access_token`, `type` and `user`
-/// required; `tfa_type` and `secret` default to `""` when missing, but a
-/// `null` fails the whole body (the client then polls until it times out).
-/// Read through `HbbHttpResponse` (`:179-198`), hence the shape is
-/// `HbbData<AuthBody>`.
+/// `tfa_type` and `secret` default when missing, but a `null` fails the whole body (the client
+/// then polls until it times out).
 #[derive(Debug, Deserialize)]
 pub struct AuthBody {
     pub access_token: String,
@@ -193,7 +145,6 @@ mod tests {
 
     use super::*;
 
-    /// The UserPayload example of 03 §3.3.
     fn user() -> Value {
         json!({
             "name": "alice", "display_name": "Alice", "avatar": "/avatars/1.png",

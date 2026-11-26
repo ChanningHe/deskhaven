@@ -1,14 +1,6 @@
-//! Settings -> running signal server: `signal.relay_servers`, `signal.always_use_relay` and
-//! `signal.require_kx_v1` (M1-07) changes are applied through the server's `SignalHandle`, debounced, one at a time (the
-//! handle requires serialized relay updates), on a task of their own so neither the settings
-//! writer nor the server loop ever waits for relay DNS.
-//!
-//! Runtime updates are all or nothing: `set_relay_servers` rejects the whole list if any entry
-//! does not resolve, and the server keeps its previous list (retried every
-//! [`RETRY_REJECTED`]). At (re)start the list is the server's initial configuration instead,
-//! where entries that resolve are used at once and the others are retried by the server
-//! itself until they resolve. Settings validation already guarantees well-formed `host:port`
-//! entries; only resolution can fail here.
+//! Settings changes reach the running server debounced and one at a time (relay updates must be
+//! serialized), on a task of their own, so neither the settings writer nor the server loop
+//! waits for relay DNS. A rejected list keeps the server's previous one and is retried.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,19 +15,15 @@ use super::SignalSettings;
 
 /// Changes arriving within this window are applied together, as the latest snapshot.
 pub(super) const DEBOUNCE: Duration = Duration::from_millis(200);
-/// A relay list the server rejected (entries that do not resolve) is retried this often
-/// while the settings still ask for it.
 pub(super) const RETRY_REJECTED: Duration = Duration::from_secs(30);
 
-/// What the server runs with, and the entries of the last rejected list (retried while set).
 struct State {
     applied: SignalSettings,
     rejected: Option<Vec<String>>,
 }
 
-/// Follows `settings` until `stop` fires, the server stops or the settings service is gone.
-/// `applied` is what the server was started with; only changes seen after `settings`'
-/// current version are applied. `stop` also interrupts an update waiting for DNS.
+/// Only changes seen after `settings`' current version are applied; `stop` also interrupts an
+/// update waiting for DNS.
 pub(super) async fn run(
     handle: SignalHandle,
     mut settings: watch::Receiver<Arc<Snapshot>>,
@@ -62,16 +50,13 @@ pub(super) async fn run(
             () = stop.cancelled() => return,
             next = apply(&handle, state, wanted) => match next {
                 Some(next) => next,
-                None => return, // the server is gone
+                None => return,
             },
         };
     }
 }
 
-/// Brings the server to `wanted`; `None` once the server has stopped. The switches go first
-/// (M1-07 review): they apply at once, so `require_kx_v1` never waits for the relay list's DNS
-/// in the same update. (A change arriving while an earlier relay update is resolving waits for
-/// that lookup, at most `RESOLVE_TIMEOUT`, 3 s.)
+/// The switches go first, so `require_kx_v1` never waits for the relay list's DNS.
 async fn apply(handle: &SignalHandle, state: State, wanted: SignalSettings) -> Option<State> {
     let State { applied, rejected } = state;
     if wanted.always_use_relay != applied.always_use_relay {
@@ -117,7 +102,6 @@ async fn apply(handle: &SignalHandle, state: State, wanted: SignalSettings) -> O
     }
 }
 
-/// Warns once per distinct rejected list; retries of the same list log at debug level.
 fn log_rejection(previous: Option<&[String]>, rejected: &[String]) {
     if is_new_rejection(previous, rejected) {
         tracing::warn!(

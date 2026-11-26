@@ -1,6 +1,3 @@
-//! `login_events` rows written by `/api/login`: one per verified attempt (success, wrong
-//! credentials, disabled, unverified, the failure that started a lockout), none for refused
-//! or malformed requests, never a secret; a failed write never changes the reply.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_contract::app::{DEFAULT_PEER, TestApp};

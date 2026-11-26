@@ -1,5 +1,3 @@
-//! Message builders and decoders.
-
 use hbb_common::{
     AddrMangle,
     bytes::Bytes,
@@ -12,7 +10,6 @@ use hbb_common::{
 use sodiumoxide::crypto::sign;
 use std::net::SocketAddr;
 
-/// What a RustDesk client registers: a machine uuid and its ed25519 public key.
 #[derive(Clone, Debug)]
 pub struct PeerKeys {
     pub uuid: Bytes,
@@ -27,7 +24,6 @@ impl PeerKeys {
         }
     }
 
-    /// Same uuid, new public key.
     pub fn with_new_pk(&self) -> Self {
         Self {
             pk: Self::random().pk,
@@ -36,7 +32,6 @@ impl PeerKeys {
     }
 }
 
-/// A `RendezvousMessage` built by one of its setters, e.g. `rv(|m| m.set_test_nat_request(..))`.
 pub fn rv(set: impl FnOnce(&mut RendezvousMessage)) -> RendezvousMessage {
     let mut msg = RendezvousMessage::new();
     set(&mut msg);
@@ -63,8 +58,7 @@ pub fn register_pk(id: &str, keys: &PeerKeys) -> RendezvousMessage {
     })
 }
 
-/// A controller's PunchHoleRequest as a 1.4 client sends it (fields hbbs does not forward
-/// are set too, so tests can see that they are dropped).
+/// Fields hbbs does not forward are set too, so tests can see that they are dropped.
 pub fn punch_hole_request(target: &str, licence_key: &str) -> PunchHoleRequest {
     PunchHoleRequest {
         id: target.to_owned(),
@@ -78,7 +72,6 @@ pub fn punch_hole_request(target: &str, licence_key: &str) -> PunchHoleRequest {
     }
 }
 
-/// A controller's RequestRelay carrying the secrets a logged-in client sends.
 pub fn request_relay(target: &str, licence_key: &str) -> RequestRelay {
     RequestRelay {
         id: target.to_owned(),
@@ -91,12 +84,11 @@ pub fn request_relay(target: &str, licence_key: &str) -> RequestRelay {
     }
 }
 
-/// The server's bound on the `uuid` it passes on (`MAX_RELAY_UUID_LEN`).
+/// Mirrors the server's `MAX_RELAY_UUID_LEN`.
 pub const MAX_RELAY_UUID_LEN: usize = 64;
-/// The server's bound on the `relay_server` it passes on (`MAX_RELAY_SERVER_LEN`).
+/// Mirrors the server's `MAX_RELAY_SERVER_LEN`.
 pub const MAX_RELAY_SERVER_LEN: usize = 259;
 
-/// [`request_relay`] with `uuid` and `relay_server` as long as the server passes on.
 pub fn max_size_request_relay(target: &str, licence_key: &str) -> RequestRelay {
     RequestRelay {
         uuid: "u".repeat(MAX_RELAY_UUID_LEN),
@@ -105,7 +97,6 @@ pub fn max_size_request_relay(target: &str, licence_key: &str) -> RequestRelay {
     }
 }
 
-/// The socket address hbbs encoded with `AddrMangle`.
 pub fn decode_addr(mangled: &[u8]) -> SocketAddr {
     AddrMangle::decode(mangled)
 }
@@ -114,25 +105,20 @@ pub fn encode_addr(addr: SocketAddr) -> Bytes {
     AddrMangle::encode(addr).into()
 }
 
-/// Opens an `IdPk` signed by the server key (`get_pk`), panicking if the signature is bad.
 pub fn open_id_pk(signed: &[u8], server_pk: &sign::PublicKey) -> IdPk {
     let raw = sign::verify(signed, server_pk).unwrap();
     IdPk::parse_from_bytes(&raw).unwrap()
 }
 
-/// OnlineResponse states: one bit per requested id, most significant bit first.
 pub fn online_bits(states: &[u8], n: usize) -> Vec<bool> {
     (0..n)
         .map(|i| states[i / 8] & (0x80 >> (i % 8)) != 0)
         .collect()
 }
 
-/// The version the simulated clients send; any non-empty value makes hbbs sign the target's
-/// pk into its answers (`get_pk`).
+/// Any non-empty value makes hbbs sign the target's pk into its answers.
 pub const CLIENT_VERSION: &str = "1.4.0";
 
-/// The target's answer to a PunchHole, sent over its own TCP connection; `controller` is the
-/// mangled address from the PunchHole.
 pub fn punch_hole_sent(controller: &Bytes, target: &str, relay_server: &str) -> PunchHoleSent {
     PunchHoleSent {
         socket_addr: controller.clone(),
@@ -144,7 +130,6 @@ pub fn punch_hole_sent(controller: &Bytes, target: &str, relay_server: &str) -> 
     }
 }
 
-/// The target's answer to a FetchLocalAddr: its LAN address for the controller.
 pub fn local_addr(controller: &Bytes, target: &str, lan: SocketAddr) -> LocalAddr {
     LocalAddr {
         socket_addr: controller.clone(),
@@ -156,7 +141,6 @@ pub fn local_addr(controller: &Bytes, target: &str, lan: SocketAddr) -> LocalAdd
     }
 }
 
-/// The target's answer to a forwarded RequestRelay.
 pub fn relay_response(forwarded: &RequestRelay, target: &str) -> RelayResponse {
     let mut res = RelayResponse {
         socket_addr: forwarded.socket_addr.clone(),

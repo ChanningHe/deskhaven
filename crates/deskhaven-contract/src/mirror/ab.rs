@@ -1,15 +1,8 @@
-//! Address book and group endpoints (03 §4, §5).
-
 use serde::Deserialize;
 use serde_json::Value;
 
-/// Paged list: `{total, data: [...]}` (03 §1.3).
-///
-/// `flutter/lib/models/ab_model.dart:1457-1471` (also `:333-337` and the
-/// group lists in `flutter/lib/models/group_model.dart`): nothing is read
-/// unless `total` is present, and `total` lands in an `int`. A non-list
-/// `data` is silently skipped by the client; the mirror requires a list
-/// when the key is present.
+/// Nothing is read unless `total` is present, and it lands in an `int`; the client skips a
+/// non-list `data`, the mirror requires a list when the key is present.
 #[derive(Debug, Deserialize)]
 pub struct PagedResponse<T> {
     pub total: i64,
@@ -17,13 +10,9 @@ pub struct PagedResponse<T> {
     pub data: Vec<T>,
 }
 
-/// Address book peer (03 §5.1).
-///
-/// `flutter/lib/models/peer_model.dart:33-48`: every key defaults (`?? ''`),
-/// but a present value of another type throws, except:
-/// - `forceAlwaysRelay` is compared with the *string* `'true'`; a JSON
-///   `true` would be read as `false`, so the mirror requires a string.
-/// - `note` of another type is read as `''`; the mirror requires a string.
+/// Every key defaults, but a present value of another type throws, except: `forceAlwaysRelay`
+/// is compared with the string `'true'` (so the mirror requires a string), and `note` of
+/// another type reads as `''`.
 #[derive(Debug, Deserialize)]
 pub struct AbPeer {
     #[serde(default)]
@@ -58,34 +47,22 @@ pub struct AbPeer {
     pub same_server: Option<bool>,
 }
 
-/// `POST /api/ab/personal` (03 §5.1).
-///
-/// `flutter/lib/models/ab_model.dart:262-292`: a body with an `error` key is an error
-/// (registered as `HbbData<AbPersonal>`); `json['guid']` lands in a `String?`, and a
-/// missing/null guid silently switches the client to legacy mode, so the mirror requires a
-/// string.
+/// A missing or null `guid` silently switches the client to legacy mode, so the mirror
+/// requires a string.
 #[derive(Debug, Deserialize)]
 pub struct AbPersonal {
     pub guid: String,
 }
 
-/// `POST /api/ab/settings` (03 §5.1).
-///
-/// `flutter/lib/models/ab_model.dart:230-258`: `json['max_peer_one_ab'] ?? 0` lands in an
-/// `int` (a non-integer throws); `0` means "no limit known". The mirror requires the key:
-/// deskhaven always has a limit.
+/// `max_peer_one_ab` lands in an `int`; `0` means "no limit known". Required: deskhaven always
+/// has a limit.
 #[derive(Debug, Deserialize)]
 pub struct AbSettings {
     pub max_peer_one_ab: i64,
 }
 
-/// A shared address book profile (03 §5.1).
-///
-/// `flutter/lib/common/hbbs/hbbs.dart:258-275`: `guid`, `name`, `owner`, `note` are
-/// `String` / `String?` with `?? ''` (another type throws); `info` is `dynamic`; `rule` is
-/// an `int` with `?? 0`. Rules other than 1/2/3 make the book read-only in the client
-/// (`ab_model.dart:1392-1408`); the mirror requires `guid`, `name` and a valid `rule`,
-/// without which the profile is useless.
+/// Rules other than 1/2/3 make the book read-only in the client; the mirror requires `guid`,
+/// `name` and a valid `rule`.
 #[derive(Debug, Deserialize)]
 pub struct AbProfile {
     pub guid: String,
@@ -99,7 +76,6 @@ pub struct AbProfile {
     pub rule: AbRule,
 }
 
-/// `ShareRule` (`flutter/lib/common/hbbs/hbbs.dart:210-216`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbRule {
     Read,
@@ -118,11 +94,7 @@ impl<'de> Deserialize<'de> for AbRule {
     }
 }
 
-/// An address book tag; `POST /api/ab/tags/<guid>` answers a JSON list of them.
-///
-/// `flutter/lib/models/ab_model.dart:1499-1531` (`_jsonDecodeRespList`, so the body must
-/// be a list) and `flutter/lib/common/hbbs/hbbs.dart:277-286`: `name ?? ''` into a
-/// `String`, `color ?? ''` into an `int`, so a missing color throws: required.
+/// `color ?? ''` lands in an `int`, so a missing color throws: required.
 #[derive(Debug, Deserialize)]
 pub struct AbTag {
     #[serde(default)]
@@ -157,7 +129,6 @@ mod tests {
         assert!(serde_json::from_value::<AbPersonal>(json!({ "guid": null })).is_err());
     }
 
-    /// The Peer example of 03 §5.1.
     fn peer() -> Value {
         json!({
             "id": "123", "hash": "", "password": "", "username": "", "hostname": "", "platform": "",

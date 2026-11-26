@@ -1,9 +1,4 @@
-//! Upstream-behavior baseline (M1-04): peer registration (RegisterPeer / RegisterPk).
-//!
-//! Each test pins a behavior of upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs,
-//! `peer.rs` = src/peer.rs at that commit; line numbers refer to it), minus the removals in
-//! CHANGES.md. Later tasks must keep these green unless their task explicitly changes the
-//! behavior (those tests say so in their name). Rate limits live in `rate_limits.rs`.
+//! Baseline of upstream hbbs registration behavior; tests that change it say so in their name.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -24,13 +19,11 @@ use support::{
 };
 
 const ID: &str = "123456789";
-/// peer.rs:27 `MAX_PEER_ID_LEN`.
 const MAX_ID_LEN: usize = 253;
-/// rs:396: RegisterPk ids shorter than this are refused.
+/// RegisterPk ids shorter than this are refused.
 const MIN_PK_ID_LEN: usize = 6;
-/// deskhaven: ids of a valid length that are not peer ids (`is_peer_id`): NUL, line breaks,
-/// zero-width space, zero-width joiner, right-to-left override, space, and a non-ASCII id the
-/// client's custom id rule refuses (first character not an ASCII letter).
+/// Valid lengths, but not peer ids: control and invisible characters, space, and a non-ASCII id
+/// the client's custom id rule refuses.
 const NOT_PEER_IDS: [&str; 8] = [
     "10\u{0}aaa",
     "abc\ndef",
@@ -41,8 +34,8 @@ const NOT_PEER_IDS: [&str; 8] = [
     "abc def",
     "\u{e9}bcdef",
 ];
-/// Peer ids: a default numeric id, `-` / `_`, a 16-character custom id (RustDesk's longest),
-/// and custom ids the client accepts with Unicode `\w` (letter, CJK, connector punctuation).
+/// A default numeric id, `-` / `_`, RustDesk's longest custom id, and custom ids the client
+/// accepts with Unicode `\w`.
 const PEER_IDS: [&str; 6] = [
     "123456789",
     "abc_def-12",
@@ -52,17 +45,13 @@ const PEER_IDS: [&str; 6] = [
     "a\u{203f}bcdef",
 ];
 
-/// rs:612-653 `update_addr`: an id without a stored pk is asked for it (`request_pk`), and a
-/// RegisterPeer alone stores nothing; after RegisterPk it only refreshes the address. Address
-/// changes between loopback IPs never count as an IP change (rs:621-625 `!ip.is_loopback()`),
-/// which is why the IP-change re-request cannot be exercised on loopback.
+/// Address changes between loopback IPs never count as an IP change, so the IP-change
+/// re-request cannot be exercised on loopback.
 #[tokio::test]
 async fn register_peer_requests_pk_until_the_peer_registered_its_key() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
 
-    // Act + Assert
     assert!(peer.register_peer(ID).await.request_pk, "unknown id");
     assert!(
         peer.register_peer(ID).await.request_pk,
@@ -78,14 +67,11 @@ async fn register_peer_requests_pk_until_the_peer_registered_its_key() {
     server.stop().await;
 }
 
-/// rs:376: RegisterPeer with an empty id or one longer than `MAX_PEER_ID_LEN` gets no answer.
 #[tokio::test]
 async fn register_peer_with_empty_or_overlong_id_is_ignored() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
 
-    // Act + Assert
     for id in [String::new(), "x".repeat(MAX_ID_LEN + 1)] {
         peer.send(&register_peer(&id)).await;
         peer.assert_silent().await;
@@ -94,10 +80,8 @@ async fn register_peer_with_empty_or_overlong_id_is_ignored() {
     server.stop().await;
 }
 
-/// rs:391-393: RegisterPk without uuid or without pk is dropped without an answer.
 #[tokio::test]
 async fn register_pk_without_uuid_or_pk_is_ignored() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
@@ -110,7 +94,6 @@ async fn register_pk_without_uuid_or_pk_is_ignored() {
         ..keys
     };
 
-    // Act + Assert
     for keys in [no_uuid, no_pk] {
         peer.send(&register_pk(ID, &keys)).await;
         peer.assert_silent().await;
@@ -118,12 +101,8 @@ async fn register_pk_without_uuid_or_pk_is_ignored() {
     server.stop().await;
 }
 
-/// M1-05 (deskhaven input validation): a pk that is not a 32-byte ed25519 public key, or a
-/// uuid over 128 bytes, is dropped without an answer like a missing one (rs:391-393), and
-/// nothing is registered; the bounds themselves are accepted.
 #[tokio::test]
 async fn register_pk_with_malformed_pk_or_overlong_uuid_is_ignored() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
@@ -137,7 +116,6 @@ async fn register_pk_with_malformed_pk_or_overlong_uuid_is_ignored() {
         with(vec![1; 129], keys.pk.to_vec()),
     ];
 
-    // Act + Assert
     for keys in malformed {
         peer.send(&register_pk(ID, &keys)).await;
         peer.assert_silent().await;
@@ -151,11 +129,9 @@ async fn register_pk_with_malformed_pk_or_overlong_uuid_is_ignored() {
     server.stop().await;
 }
 
-/// rs:396-397: ids shorter than 6 or longer than 253 bytes get UUID_MISMATCH (upstream never
-/// uses the protocol's INVALID_ID_FORMAT); the bounds themselves are accepted.
+/// Upstream answers bad lengths with UUID_MISMATCH, never the protocol's INVALID_ID_FORMAT.
 #[tokio::test]
 async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
@@ -166,7 +142,6 @@ async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
         ("4".repeat(MAX_ID_LEN), OK),
     ];
 
-    // Act + Assert
     for (id, expected) in cases {
         assert_eq!(
             peer.register_pk(&id, &keys).await,
@@ -178,18 +153,13 @@ async fn register_pk_with_invalid_id_length_gets_uuid_mismatch() {
     server.stop().await;
 }
 
-/// deskhaven (changes rs:396-397, which checked only the length): an id that is not a peer id
-/// gets UUID_MISMATCH like one of the wrong length, and is neither registered (no punch hole
-/// reaches it) nor stored; peer ids, non-ASCII custom ids included, are both.
 #[tokio::test]
 async fn register_pk_with_a_malformed_id_gets_uuid_mismatch() {
-    // Arrange
     let store = Arc::new(MemoryPeerStore::new());
     let server = TestServer::start_with_store(|cfg| cfg, store.clone()).await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
 
-    // Act + Assert
     for id in NOT_PEER_IDS {
         assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
     }
@@ -216,17 +186,14 @@ async fn register_pk_with_a_malformed_id_gets_uuid_mismatch() {
     assert_eq!(stored, expected);
 }
 
-/// deskhaven: UDP RegisterPeer keeps upstream's length-only check (rs:376; the server's own
-/// self-test probes with an id that is not a peer id), but such an id can never become known:
-/// after its RegisterPk was refused, RegisterPeer is still asked for the pk.
+/// RegisterPeer keeps the length-only check: the server's own self-test probes with an id that
+/// is not a peer id.
 #[tokio::test]
 async fn register_peer_with_a_malformed_id_stays_unknown() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
 
-    // Act + Assert
     for id in NOT_PEER_IDS {
         assert_eq!(peer.register_pk(id, &keys).await, UUID_MISMATCH, "{id:?}");
         assert!(peer.register_peer(id).await.request_pk, "{id:?}");
@@ -234,43 +201,28 @@ async fn register_peer_with_a_malformed_id_stays_unknown() {
     server.stop().await;
 }
 
-/// rs:401-405, 465-473: the first RegisterPk of an id stores uuid / pk / address and answers
-/// OK (the id is now reachable at the registering address, rs:745); repeating it unchanged
-/// answers OK again.
 #[tokio::test]
 async fn register_pk_stores_peer_and_repeat_is_ok() {
-    // Arrange
     let server = TestServer::start().await;
     let mut peer = server.udp().await;
     let keys = PeerKeys::random();
 
-    // Act
     let first = peer.register_pk(ID, &keys).await;
     let again = peer.register_pk(ID, &keys).await;
     let mut controller = server.tcp().await;
     controller.punch_hole_request(server.punch_req(ID)).await;
 
-    // Assert
     assert_eq!((first, again), (OK, OK));
     let ph = expect_msg!(peer.recv().await, PunchHole);
     assert_eq!(decode_addr(&ph.socket_addr), controller.local_addr());
     server.stop().await;
 }
 
-/// M1-05 (changes the M1-02 stub behavior, where a restart forgot every registration and any
-/// uuid could claim the id): registrations live in the injected `PeerStore`, which outlives a
-/// restart (same ports, key and store instance). Afterwards another uuid, or the right uuid
-/// with a new pk from a new IP (rs:408-428), still gets UUID_MISMATCH: both are checked
-/// against the registration preloaded from the store. With the pk known, the owner's next
-/// RegisterPeer refreshes its address (rs:612-653), punch holes reach it, and its RegisterPk
-/// with unchanged keys is OK.
 #[tokio::test]
 async fn restart_keeps_registrations_with_persistent_store() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut owner, keys) = server.online_peer(ID).await;
 
-    // Act
     let server = server.restart().await;
     let mut thief = server.udp().await;
     let other_uuid = thief.register_pk(ID, &PeerKeys::random()).await;
@@ -281,7 +233,6 @@ async fn restart_keeps_registrations_with_persistent_store() {
     let mut controller = server.tcp().await;
     controller.punch_hole_request(server.punch_req(ID)).await;
 
-    // Assert
     assert_eq!(other_uuid, UUID_MISMATCH, "another uuid");
     assert_eq!(new_ip_and_pk, UUID_MISMATCH, "same uuid, new IP and new pk");
     assert!(!asked_for_pk, "pk known from the store");
@@ -293,54 +244,42 @@ async fn restart_keeps_registrations_with_persistent_store() {
     server.stop().await;
 }
 
-/// rs:407, 420-428: another uuid for a registered id gets UUID_MISMATCH (anti id-hijack), and
-/// the owner keeps the id: punch holes still reach the owner's address.
 #[tokio::test]
 async fn register_pk_with_other_uuid_gets_uuid_mismatch_and_owner_keeps_id() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut owner, _) = server.online_peer(ID).await;
     let mut thief = server.udp().await;
 
-    // Act
     let res = thief.register_pk(ID, &PeerKeys::random()).await;
     let mut controller = server.tcp().await;
     controller.punch_hole_request(server.punch_req(ID)).await;
 
-    // Assert
     assert_eq!(res, UUID_MISMATCH);
     expect_msg!(owner.recv().await, PunchHole);
     thief.assert_silent().await;
     server.stop().await;
 }
 
-/// rs:408-419: the right uuid from a new IP with a new pk gets UUID_MISMATCH.
 #[tokio::test]
 async fn register_pk_same_uuid_new_ip_and_new_pk_gets_uuid_mismatch() {
-    // Arrange
     let server = TestServer::start().await;
     let (_owner, keys) = server.online_peer(ID).await;
     let mut moved = server.udp().await;
 
-    // Act
     let res = moved.register_pk(ID, &keys.with_new_pk()).await;
 
-    // Assert
     assert_eq!(res, UUID_MISMATCH);
     server.stop().await;
 }
 
-/// rs:408 needs both changes: a new pk from the same IP, then the same (new) pk from a new
-/// IP, are accepted, and the latter moves the peer (rs:466 `update_pk` stores the address).
 #[tokio::test]
 async fn register_pk_same_uuid_changing_only_pk_or_only_ip_is_ok() {
-    // Arrange: three RegisterPk for one id, the most rs:437-446 allows within 6 s.
+    // Three RegisterPk for one id, the most allowed within 6 s.
     let server = TestServer::start().await;
     let (mut owner, keys) = server.online_peer(ID).await;
     let rotated = keys.with_new_pk();
     let mut moved = server.udp().await;
 
-    // Act + Assert
     assert_eq!(owner.register_pk(ID, &rotated).await, OK, "new pk, same IP");
     assert_eq!(moved.register_pk(ID, &rotated).await, OK, "same pk, new IP");
     let mut controller = server.tcp().await;

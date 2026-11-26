@@ -1,5 +1,3 @@
-//! The pending connections of one port, for eviction at its budget (M4-05).
-
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
@@ -55,7 +53,6 @@ impl PendingSet {
         }
     }
 
-    /// The oldest pending connection of the group holding the most.
     pub(super) fn victim(&self) -> Option<u64> {
         let (_, Reverse(oldest), _) = self.heaviest.last()?;
         Some(*oldest)

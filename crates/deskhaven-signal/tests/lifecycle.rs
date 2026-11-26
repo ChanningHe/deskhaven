@@ -1,7 +1,3 @@
-//! Acceptance tests (M1-03): the signal server runs as a library on the caller's runtime,
-//! serves its TCP / UDP / websocket ports, and on cancellation returns `Ok`, stops every
-//! connection task and releases every port.
-
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -23,34 +19,29 @@ use support::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// Upper bound for an `.invalid` lookup to fail (the server's per-lookup timeout is 3 s).
+/// The server's per-lookup timeout is 3 s.
 const DNS_STEP: Duration = Duration::from_secs(10);
 /// Listening must not wait for relay DNS (well under the 3 s resolve timeout).
 const LISTEN_PROMPTLY: Duration = Duration::from_secs(2);
 /// Tries on fresh free ports before a lost port race fails the test.
 const START_ATTEMPTS: usize = 10;
 
-/// M1-06: the handle reports serving once every listener is bound and stops doing so when
-/// `run` returns (the embedding process gates its startup and readiness on it).
 #[tokio::test]
 async fn handle_reports_serving_while_listeners_are_bound() {
     for _ in 0..START_ATTEMPTS {
-        // Arrange
         let port = free_base_port();
         let server = SignalServer::new(config(port), memory_store(), allow_all());
         let handle = server.handle();
         assert!(!handle.is_serving(), "not before run");
         let shutdown = CancellationToken::new();
 
-        // Act
         let task = tokio::spawn(server.run(shutdown.clone()));
         if timeout(STEP, handle.serving()).await.unwrap().is_err() {
             let res = task.await.unwrap();
             assert!(matches!(res, Err(SignalError::Bind { .. })), "{res:?}");
-            continue; // lost a port race
+            continue;
         }
 
-        // Assert
         assert!(handle.is_serving());
         assert!(
             wait_until_ready(port, &task).await,
@@ -65,12 +56,10 @@ async fn handle_reports_serving_while_listeners_are_bound() {
     panic!("could not start the signal server");
 }
 
-/// Sends a TestNatRequest over TCP and returns the port the server saw us on.
 async fn test_nat(port: u16) -> i32 {
     TcpClient::connect(addr(port)).await.test_nat().await.port
 }
 
-/// Sends a RegisterPeer datagram and returns the server's `request_pk` answer.
 async fn register_peer_udp(port: u16) -> bool {
     let mut client = UdpClient::bind(addr(port)).await;
     client.register_peer("m103-udp-test").await.request_pk
@@ -78,13 +67,11 @@ async fn register_peer_udp(port: u16) -> bool {
 
 #[tokio::test]
 async fn serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports() {
-    // Arrange
     let server = TestServer::start().await;
     let port = server.port;
     // An idle connection: upstream keeps its task alive for 30 s waiting for a message.
     let mut idle = TcpStream::connect(addr(port)).await.unwrap();
 
-    // Act + Assert: every port answers.
     let local_port = test_nat(port).await;
     assert!(local_port > 0, "main TCP port answers TestNatRequest");
     assert!(test_nat(port - 1).await > 0, "NAT test port answers");
@@ -94,23 +81,19 @@ async fn serves_ports_then_cancel_returns_ok_stops_tasks_and_releases_ports() {
         "unknown peer is asked for its pk"
     );
 
-    // Act + Assert: cancel.
     server.stop().await;
     assert!(ports_free(port), "all ports are released");
-    // The server's KeyExchange offer (M1-07) is still unread; the stream must end (or be
-    // reset) right after it.
+    // The server's KeyExchange offer is still unread; the stream must end (or be reset) right
+    // after it.
     let mut rest = Vec::new();
     let _end_or_reset = timeout(STEP, idle.read_to_end(&mut rest))
         .await
         .expect("connection task ended with run");
 }
 
-/// Upstream accepted a ConfigureUpdate datagram from loopback and then pushed its serial and
-/// rendezvous servers to every client (RegisterPeer, TestNatResponse): an unauthenticated
-/// local backdoor like the removed console.
+/// Upstream's ConfigureUpdate from loopback was an unauthenticated local backdoor.
 #[tokio::test]
 async fn loopback_configure_update_has_no_effect() {
-    // Arrange
     let server = TestServer::start().await;
     let mut client = server.udp().await;
     let attack = rv(|m| {
@@ -121,11 +104,9 @@ async fn loopback_configure_update_has_no_effect() {
         })
     });
 
-    // Act
     client.send(&attack).await;
     let answer = client.register_peer("m103-udp-test").await;
 
-    // Assert: exactly one RegisterPeerResponse, no ConfigureUpdate pushed.
     assert!(answer.request_pk);
     client.assert_silent().await;
     let nat = server.tcp().await.test_nat().await;
@@ -133,11 +114,8 @@ async fn loopback_configure_update_has_no_effect() {
     server.stop().await;
 }
 
-/// Startup binds every listener before resolving the initial relay list, so an unresolvable
-/// relay cannot delay listening (it is retried on the timer).
 #[tokio::test]
 async fn unresolvable_initial_relay_does_not_delay_listening() {
-    // Arrange
     let port = free_base_port();
     let cfg = SignalConfig {
         relay_servers: vec!["relay.invalid".to_owned(), "192.0.2.1".to_owned()],
@@ -146,11 +124,9 @@ async fn unresolvable_initial_relay_does_not_delay_listening() {
     let shutdown = CancellationToken::new();
     let started = tokio::time::Instant::now();
 
-    // Act
     let task = tokio::spawn(run(cfg, memory_store(), allow_all(), shutdown.clone()));
     let ready = wait_until_ready(port, &task).await;
 
-    // Assert
     assert!(ready, "run ended early: {:?}", task.await);
     assert!(
         started.elapsed() < LISTEN_PROMPTLY,
@@ -163,16 +139,13 @@ async fn unresolvable_initial_relay_does_not_delay_listening() {
     assert!(matches!(res, Ok(Ok(()))), "{res:?}");
 }
 
-/// The handle resolves on the caller's task: all-or-nothing, the rejected entries are named,
-/// and the server keeps serving meanwhile.
 #[tokio::test]
 async fn relay_update_rejects_unresolvable_entries_and_keeps_serving() {
-    // Arrange
     let server = TestServer::start().await;
     let port = server.port;
     let handle = server.handle.clone();
 
-    // Act: an unresolvable name is being looked up while a client talks to the server.
+    // An unresolvable name is being looked up while a client talks to the server.
     let update = tokio::spawn(async move {
         handle
             .set_relay_servers(vec!["10.0.0.1".to_owned(), "relay.invalid".to_owned()])
@@ -181,7 +154,6 @@ async fn relay_update_rejects_unresolvable_entries_and_keeps_serving() {
     let answered = register_peer_udp(port).await;
     let res = timeout(DNS_STEP, update).await.unwrap().unwrap();
 
-    // Assert
     assert!(answered, "the server loop keeps serving");
     match res {
         Err(SignalError::RelayServersRejected { rejected }) => {
@@ -218,11 +190,10 @@ async fn rejects_ports_without_room_for_nat_and_ws_ports() {
 
 #[tokio::test]
 async fn port_in_use_fails_with_bind_error() {
-    // Arrange: hold the main TCP port without SO_REUSEPORT.
+    // Hold the main TCP port without SO_REUSEPORT.
     let port = free_base_port();
     let _taken = std::net::TcpListener::bind(addr(port)).unwrap();
 
-    // Act
     let res = timeout(
         STEP,
         run(
@@ -235,7 +206,6 @@ async fn port_in_use_fails_with_bind_error() {
     .await
     .expect("bind failure is reported promptly");
 
-    // Assert
     match res {
         Err(err @ SignalError::Bind { port: p, .. }) => {
             assert_eq!(p, port);
@@ -245,23 +215,18 @@ async fn port_in_use_fails_with_bind_error() {
     }
 }
 
-/// Whether `err`'s source is an `AddrInUse` I/O error.
 fn is_addr_in_use(err: &SignalError) -> bool {
     std::error::Error::source(err)
         .and_then(|source| source.downcast_ref::<std::io::Error>())
         .is_some_and(|io| io.kind() == std::io::ErrorKind::AddrInUse)
 }
 
-/// M1-08: upstream bound every listener with SO_REUSEPORT (hbb_common `listen_any`,
-/// `new_listener(.., true)`, `FramedSocket::new_reuse(.., true, ..)`), so a second instance
-/// (e.g. another data dir) on the same ports bound without error and the kernel spread the
-/// clients over both. Now the second instance fails with AddrInUse and the first keeps serving.
+/// Upstream bound with SO_REUSEPORT, so a second instance on the same ports silently split the
+/// clients with the first.
 #[tokio::test]
 async fn second_server_on_the_same_ports_fails_with_addr_in_use() {
-    // Arrange
     let first = TestServer::start().await;
 
-    // Act
     let res = timeout(
         STEP,
         run(
@@ -274,7 +239,6 @@ async fn second_server_on_the_same_ports_fails_with_addr_in_use() {
     .await
     .expect("bind failure is reported promptly");
 
-    // Assert
     match &res {
         Err(err @ SignalError::Bind { port, .. }) => {
             assert_eq!(*port, first.port);
@@ -287,12 +251,10 @@ async fn second_server_on_the_same_ports_fails_with_addr_in_use() {
     first.stop().await;
 }
 
-/// SO_REUSEADDR is kept on the TCP listeners: a server stopped while connections were open
-/// (its side of each accepted connection lingers in TIME_WAIT / FIN_WAIT) starts again on the
-/// same ports at the first attempt.
+/// A stopped server's connections linger in TIME_WAIT / FIN_WAIT; SO_REUSEADDR lets it start
+/// again on the same ports at once.
 #[tokio::test]
 async fn restart_right_after_stop_with_open_connections_binds_at_once() {
-    // Arrange
     let server = TestServer::start().await;
     let port = server.port;
     let mut main = server.tcp().await;
@@ -305,7 +267,6 @@ async fn restart_right_after_stop_with_open_connections_binds_at_once() {
     server.stop().await;
     drop((main, nat, ws));
 
-    // Act
     let shutdown = CancellationToken::new();
     let task = tokio::spawn(run(
         config(port),
@@ -314,7 +275,6 @@ async fn restart_right_after_stop_with_open_connections_binds_at_once() {
         shutdown.clone(),
     ));
 
-    // Assert
     assert!(
         wait_until_ready(port, &task).await,
         "rebind failed: {:?}",
@@ -328,16 +288,13 @@ async fn restart_right_after_stop_with_open_connections_binds_at_once() {
 
 #[tokio::test]
 async fn handle_reports_stopped_once_run_has_returned() {
-    // Arrange
     let server = SignalServer::new(config(free_base_port()), memory_store(), allow_all());
     let handle = server.handle();
     let shutdown = CancellationToken::new();
     shutdown.cancel();
 
-    // Act
     let res = timeout(STEP, server.run(shutdown)).await.unwrap();
 
-    // Assert
     assert!(res.is_ok(), "{res:?}");
     assert!(matches!(
         handle.set_relay_servers(vec!["10.0.0.1".to_owned()]).await,

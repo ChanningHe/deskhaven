@@ -4,14 +4,10 @@ use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
-/// Name of the key that turns any body into an error.
 const ERROR_KEY: &str = "error";
 
-/// `src/hbbs_http.rs:24-39`: the body must be a JSON object. If it has an
-/// `error` key, whatever its value (`""`, `null`, ...), the client takes it
-/// as an error (`Error` for a string, else `ErrorFormat`) and never reads the
-/// data. Otherwise the whole object must deserialize as `T`, else
-/// `DataTypeFormat`. So a success body must not carry `error` at all.
+/// Any `error` key, whatever its value, makes the client take the body as an error and never
+/// read the data, so a success body must not carry one.
 #[derive(Debug)]
 pub struct HbbData<T>(pub T);
 

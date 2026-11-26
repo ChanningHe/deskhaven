@@ -1,13 +1,4 @@
-//! Control-plane hooks (deskhaven code, not vendored; 07-hbbs-fork §3.2, §5): the decisions
-//! upstream hard-codes and Pro takes from its control plane, behind the [`ControlPlane`] trait
-//! injected into [`SignalServer::new`](crate::SignalServer::new). [`AllowAll`] reproduces the
-//! OSS behavior.
-//!
-//! Wired today: [`ControlPlane::pick_relay`] (every relay choice) and the liveness
-//! notifications [`ControlPlane::peer_online`] / [`ControlPlane::peer_offline`] (M2-12: they
-//! feed deskhaven's device presence table; no-ops by default). The other hooks are defined
-//! so M5 can implement them, but the server does not call them yet; their insertion points
-//! are marked `ControlPlane hook (M5)` in `rendezvous_server.rs`.
+//! Policy hooks of the signal server; [`AllowAll`] reproduces the OSS behavior.
 
 use async_trait::async_trait;
 use hbb_common::rendezvous_proto::{
@@ -18,18 +9,13 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-/// Answer to a RegisterPk that passed the protocol checks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegisterVerdict {
-    /// Register (upstream behavior).
     Ok,
-    /// The device must be deployed first (`RegisterPkResponse::NOT_DEPLOYED`).
     NotDeployed,
-    /// Refuse the id (`RegisterPkResponse::UUID_MISMATCH`).
     UuidMismatch,
 }
 
-/// A RegisterPk as seen by [`ControlPlane::register_pk`].
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct RegisterInfo<'a> {
@@ -40,43 +26,34 @@ pub struct RegisterInfo<'a> {
     pub no_register_device: bool,
 }
 
-/// What a connect request asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnKind {
-    /// `PunchHoleRequest`.
     Punch,
-    /// `RequestRelay`.
     Relay,
 }
 
-/// A connect request as seen by [`ControlPlane::authorize`]. It names no initiator id: the
-/// protocol has none, identity can only come from `token`.
+/// It names no initiator id: the protocol has none, identity can only come from `token`.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct ConnectReq<'a> {
     pub kind: ConnKind,
-    /// The id of the peer to connect to.
     pub target: &'a str,
     pub token: &'a str,
     pub switch_code: &'a str,
     pub conn_type: ConnType,
     pub from: SocketAddr,
-    /// Whether the request arrived on a KeyExchange-secured connection.
     pub secured: bool,
 }
 
-/// What an allowed connection carries to the controlled side.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grant {
     /// Injected into PunchHole / FetchLocalAddr / RequestRelay; `None` leaves the peer's own.
     pub permissions: Option<ControlPermissions>,
-    /// `conn_audit_ref` for the controlled side's audit log; empty for none.
     pub audit_ref: String,
     /// `feedback` for the controller (non-zero asks it to keep a HealthCheck connection).
     pub feedback: i32,
 }
 
-/// Decision of [`ControlPlane::authorize`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Authz {
     Allow(Grant),
@@ -84,50 +61,35 @@ pub enum Authz {
     Deny(String),
 }
 
-/// Policy decisions of the signal server. Implementations must be cheap: they run on the
-/// request paths.
+/// Implementations must be cheap: they run on the request paths.
 #[async_trait]
 pub trait ControlPlane: Send + Sync + 'static {
-    /// Admission of a RegisterPk. Called inline on the UDP loop: must answer from memory,
-    /// never await I/O. Not called yet (M5).
+    /// Called inline on the UDP loop: must answer from memory, never await I/O.
     fn register_pk(&self, r: &RegisterInfo<'_>) -> RegisterVerdict;
 
-    /// Admission of a punch-hole or relay request, on the connection's own task. Should answer
-    /// from an in-memory snapshot; never a network round trip per request. Not called yet (M5).
+    /// Should answer from an in-memory snapshot, never a network round trip per request.
     async fn authorize(&self, r: &ConnectReq<'_>) -> Authz;
 
-    /// Answers an `HttpProxyRequest` received on a secured connection. Not called yet (M5).
     async fn http_proxy(&self, from: SocketAddr, req: HttpProxyRequest) -> HttpProxyResponse;
 
-    /// Accepts a HealthCheck for `token`: `Some(keep_alive_secs)` keeps the connection open,
-    /// `None` refuses. Not called yet (M5).
+    /// `Some(keep_alive_secs)` keeps the connection open, `None` refuses.
     async fn health_check(&self, token: &str, from: SocketAddr) -> Option<i32>;
 
-    /// The relay to hand out to a session between `a` (controller) and `b` (controlled), chosen
-    /// from `relays`: the configured relays that resolved and passed the latest health check,
-    /// in configuration order. `None` hands out none (clients fall back to their own relay
-    /// setting). Called on every relay choice; must not block.
+    /// `relays` are the configured relays that resolved and passed the latest health check, in
+    /// order; `None` lets clients fall back to their own relay setting. Must not block.
     fn pick_relay(&self, a: IpAddr, b: IpAddr, relays: &[String]) -> Option<String>;
 
-    /// Registered peer `id` showed it is online at `ip`, i.e. the server just refreshed its
-    /// registration time (what OnlineRequest and punch holes compare with REG_TIMEOUT): a
-    /// RegisterPeer from its known address, an accepted RegisterPk that changed its entry, or
-    /// its TCP / websocket channel being bound or answering a heartbeat. Ids the server does
-    /// not hold a key for never get here. Called inline on the UDP loop and connection tasks,
-    /// for every registered peer every few seconds: must return at once (memory only, no
-    /// awaiting). Default: ignored.
+    /// Called inline on the UDP loop and connection tasks, for every registered peer every few
+    /// seconds: must return at once.
     fn peer_online(&self, _id: &str, _ip: IpAddr) {}
 
-    /// The TCP / websocket channel of peer `id` closed while it was the peer's address: the
-    /// server now treats the peer as offline until it registers again. Same constraints as
-    /// [`peer_online`](Self::peer_online). Default: ignored.
+    /// Same constraints as [`peer_online`](Self::peer_online).
     fn peer_offline(&self, _id: &str) {}
 }
 
-/// The OSS behavior: everything is allowed, relays rotate round-robin.
 #[derive(Debug, Default)]
 pub struct AllowAll {
-    /// Upstream `ROTATION_RELAY_SERVER`, per instance instead of process-wide.
+    /// Per instance, not process-wide.
     rotation: AtomicUsize,
 }
 
@@ -161,8 +123,6 @@ impl ControlPlane for AllowAll {
         None
     }
 
-    /// Upstream `get_relay_server` (rs:959-967): none for an empty list, the only one, or the
-    /// next one round-robin; the addresses are not used.
     fn pick_relay(&self, _: IpAddr, _: IpAddr, relays: &[String]) -> Option<String> {
         match relays {
             [] => None,

@@ -1,5 +1,3 @@
-//! A signal server on free loopback ports for one test.
-
 use super::{
     PeerKeys, Rendezvous, STEP, TcpClient, UdpClient, WsClient, addr, free_base_port, io, msg,
     read_offer,
@@ -29,7 +27,6 @@ const START_ATTEMPTS: usize = 10;
 
 type RunTask = JoinHandle<Result<(), SignalError>>;
 
-/// Loopback-only config with a fresh key.
 pub fn config(port: u16) -> SignalConfig {
     SignalConfig {
         bind: Some(super::LOCALHOST),
@@ -47,7 +44,6 @@ async fn all_tcp_ports_accept(port: u16, ws: SocketAddr) -> bool {
     true
 }
 
-/// The websocket listener of `cfg`: `ws_listen`, or port+2 on the loopback address.
 fn ws_listen_of(cfg: &SignalConfig) -> SocketAddr {
     cfg.ws_listen.unwrap_or_else(|| addr(cfg.port + 2))
 }
@@ -57,7 +53,6 @@ pub async fn wait_until_ready(port: u16, task: &RunTask) -> bool {
     wait_until_ready_at(port, addr(port + 2), task).await
 }
 
-/// [`wait_until_ready`] with the websocket listener at `ws`.
 async fn wait_until_ready_at(port: u16, ws: SocketAddr, task: &RunTask) -> bool {
     let deadline = Instant::now() + STEP;
     while Instant::now() < deadline {
@@ -72,9 +67,7 @@ async fn wait_until_ready_at(port: u16, ws: SocketAddr, task: &RunTask) -> bool 
     panic!("signal server on port {port} did not become ready");
 }
 
-/// Trusts the last `X-Forwarded-For` entry of websocket connections from `proxies` (what
-/// deskhaven's `security.trusted_proxies` does for a single proxy hop); other peers' headers
-/// are ignored.
+/// Trusts the last `X-Forwarded-For` entry from `proxies`, like a single trusted proxy hop.
 #[derive(Debug)]
 pub struct TrustXff(pub Vec<IpAddr>);
 
@@ -94,7 +87,6 @@ impl ClientIpResolver for TrustXff {
     }
 }
 
-/// A config whose websocket port trusts `X-Forwarded-For` from `proxies` ([`TrustXff`]).
 pub fn trusting(proxies: &[IpAddr]) -> impl Fn(SignalConfig) -> SignalConfig {
     let proxies = proxies.to_vec();
     move |cfg| SignalConfig {
@@ -103,19 +95,15 @@ pub fn trusting(proxies: &[IpAddr]) -> impl Fn(SignalConfig) -> SignalConfig {
     }
 }
 
-/// A fresh, empty, non-persistent store.
 pub fn memory_store() -> Arc<dyn PeerStore> {
     Arc::new(MemoryPeerStore::new())
 }
 
-/// Upstream's policy (a fresh relay rotation cursor).
 pub fn allow_all() -> Arc<dyn ControlPlane> {
     Arc::new(AllowAll::new())
 }
 
-/// Everything a server is built from, kept so [`TestServer::restart`] can rebuild the same
-/// server (same ports, same key, same `PeerStore` and `ControlPlane` instances and so the
-/// same registrations).
+/// Kept so [`TestServer::restart`] rebuilds the same server: ports, key, store and control plane.
 #[derive(Clone)]
 struct Setup {
     cfg: SignalConfig,
@@ -126,14 +114,11 @@ struct Setup {
 pub struct TestServer {
     pub port: u16,
     pub handle: SignalHandle,
-    /// What clients must send as `licence_key`.
     pub licence_key: String,
-    /// Verifies the `IdPk`s the server signs.
     pub public_key: sign::PublicKey,
     setup: Setup,
     shutdown: CancellationToken,
     task: RunTask,
-    /// Stops the server if a test panics before [`TestServer::stop`].
     _stop_on_drop: DropGuard,
 }
 
@@ -142,13 +127,10 @@ impl TestServer {
         Self::start_with(|cfg| cfg).await
     }
 
-    /// Starts with `customize(config(port))` on free ports and a fresh [`memory_store`],
-    /// retrying on a lost port race.
     pub async fn start_with(customize: impl Fn(SignalConfig) -> SignalConfig) -> Self {
         Self::start_with_store(customize, memory_store()).await
     }
 
-    /// [`TestServer::start_with`] on the given store.
     pub async fn start_with_store(
         customize: impl Fn(SignalConfig) -> SignalConfig,
         store: Arc<dyn PeerStore>,
@@ -156,7 +138,6 @@ impl TestServer {
         Self::start_with_parts(customize, store, allow_all()).await
     }
 
-    /// [`TestServer::start_with`] with the given control plane.
     pub async fn start_with_control(
         customize: impl Fn(SignalConfig) -> SignalConfig,
         control: Arc<dyn ControlPlane>,
@@ -183,7 +164,6 @@ impl TestServer {
         panic!("could not start the signal server");
     }
 
-    /// Starts with the given initial relay list (`SignalConfig::relay_servers`).
     pub async fn start_with_relays(relays: &[&str]) -> Self {
         let relays: Vec<String> = relays.iter().map(|r| (*r).to_owned()).collect();
         Self::start_with(|cfg| SignalConfig {
@@ -193,8 +173,6 @@ impl TestServer {
         .await
     }
 
-    /// Starts on exactly `cfg` (its port and key) with a fresh [`memory_store`], retrying
-    /// briefly while the ports are busy.
     pub async fn start_on(cfg: SignalConfig) -> Self {
         let setup = Setup {
             cfg,
@@ -204,7 +182,6 @@ impl TestServer {
         Self::start_setup(setup).await
     }
 
-    /// Stops the server and starts a new one on the same ports with the same key and store.
     pub async fn restart(self) -> Self {
         let setup = self.setup.clone();
         self.stop().await;
@@ -251,7 +228,6 @@ impl TestServer {
         })
     }
 
-    /// Cancels and checks that `run` returns `Ok` promptly.
     pub async fn stop(self) {
         self.shutdown.cancel();
         let res = timeout(STEP, self.task)
@@ -260,12 +236,10 @@ impl TestServer {
         assert!(matches!(res, Ok(Ok(()))), "run returns Ok: {res:?}");
     }
 
-    /// TCP + UDP main port.
     pub fn main_addr(&self) -> SocketAddr {
         addr(self.port)
     }
 
-    /// TCP NAT test / online query port.
     pub fn nat_addr(&self) -> SocketAddr {
         addr(self.port - 1)
     }
@@ -290,32 +264,25 @@ impl TestServer {
         WsClient::connect(self.ws_addr()).await
     }
 
-    /// A bare TCP connection to `addr` that sends nothing (for timeout tests).
     pub async fn raw_connect(addr: SocketAddr) -> TcpStream {
         io("raw tcp connect", TcpStream::connect(addr))
             .await
             .unwrap()
     }
 
-    /// Returns once the server has accepted and started serving every connection opened before
-    /// the call, on all three ports, so a paused clock can safely move on: the server's per-
-    /// connection timers exist and nothing of ours is still in flight. Each port gets a witness
-    /// connection with a full round trip (main: the KeyExchange offer, NAT: a TestNatRequest,
-    /// websocket: the handshake); a listener accepts and spawns in connection order, so the
-    /// witness being served means the earlier connections already are. Event driven: no
-    /// sleeps.
+    /// Returns once every connection opened before the call is served, so a paused clock can
+    /// move on safely: a witness connection per port gets a full round trip, and a listener
+    /// serves in connection order. Event driven, no sleeps.
     pub async fn settle(&self) {
         read_offer(&mut self.tcp().await).await;
         self.nat().await.test_nat().await;
         self.ws().await;
     }
 
-    /// A PunchHoleRequest for `target` with this server's licence key.
     pub fn punch_req(&self, target: &str) -> PunchHoleRequest {
         msg::punch_hole_request(target, &self.licence_key)
     }
 
-    /// A controlled peer that registered its key over UDP (RegisterPk OK) and is online.
     pub async fn online_peer(&self, id: &str) -> (UdpClient, PeerKeys) {
         let mut peer = self.udp().await;
         let keys = PeerKeys::random();

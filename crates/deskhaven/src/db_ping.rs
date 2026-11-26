@@ -1,7 +1,5 @@
-//! The readiness probe's database ping, shared for [`PING_TTL`] (M4-05). `/readyz` is public
-//! and probe logs are at debug, so without this every request (a flood included) took a pool
-//! connection for a ping. One ping now answers every probe within the TTL, and concurrent
-//! probes after it expired wait for a single ping instead of starting one each.
+//! `/readyz` is public, so one ping answers every probe within [`PING_TTL`], and concurrent
+//! probes after it expired wait for a single ping.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,7 +13,6 @@ use crate::log_safe;
 /// failure still shows within a second.
 pub const PING_TTL: Duration = Duration::from_secs(1);
 
-/// A ping result: `Err` carries the not-ready reason.
 type Outcome = Result<(), String>;
 
 #[derive(Clone)]
@@ -27,7 +24,6 @@ pub struct CachedPing {
 }
 
 impl CachedPing {
-    /// Pings `db` at most once per `ttl`; a ping slower than `timeout` fails.
     pub fn new(db: DatabaseConnection, ttl: Duration, timeout: Duration) -> Self {
         Self {
             db,
@@ -69,16 +65,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_result_answers_probes_until_it_expires() {
-        // Arrange
         let db = memory_db().await;
         let ttl = Duration::from_millis(200);
         let ping = CachedPing::new(db.clone(), ttl, TIMEOUT);
         assert_eq!(ping.ping().await, Ok(()));
 
-        // Act: the database goes away right after a successful ping.
+        // The database goes away right after a successful ping.
         db.close().await.unwrap();
 
-        // Assert
         assert_eq!(ping.ping().await, Ok(()), "cached");
         tokio::time::sleep(ttl * 2).await;
         let expired = ping.ping().await;

@@ -1,5 +1,3 @@
-//! End-to-end tests of `deskhaven healthcheck`: it resolves the listen address
-//! from the same configuration as `serve` and reports `/readyz` in its exit code.
 #![cfg(unix)]
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]

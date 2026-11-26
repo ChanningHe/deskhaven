@@ -1,5 +1,3 @@
-//! `deskhaven serve` with a lost master key: a database that already holds accounts makes
-//! startup refuse (and generate nothing) instead of starting with a new key.
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 
@@ -13,7 +11,6 @@ use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::Set;
 use support::*;
 
-/// An account row, as the console would have created it.
 async fn add_account(data: &Path) {
     let url = format!("sqlite://{}", data.join("deskhaven.db").display());
     let db = connect(&DbOptions::new(url)).await.unwrap();

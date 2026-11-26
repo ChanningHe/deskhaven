@@ -1,6 +1,4 @@
-//! Legacy `/api/ab` flows (03 §5.2): what one API writes the other reads, unchanged; refused
-//! pushes leave the book as it was; gzip is negotiated, not assumed. Documents are decoded
-//! with the client mirror types (`LegacyAbReply`), the new API's replies as raw JSON so
+//! Documents are decoded with the client mirror types, the new API's replies as raw JSON so
 //! every field is compared.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -46,7 +44,6 @@ fn text(reply: &Reply) -> String {
     String::from_utf8_lossy(&reply.body).into_owned()
 }
 
-/// `GET /api/ab` as the Flutter client sends it.
 async fn pull_reply(app: &TestApp, token: &str) -> Reply {
     let mut get = request("GET", "/api/ab", token, None);
     get.headers
@@ -54,7 +51,6 @@ async fn pull_reply(app: &TestApp, token: &str) -> Reply {
     send(app, get).await
 }
 
-/// The document a legacy client holds after a pull; `None` for `null`.
 async fn pull(app: &TestApp, token: &str) -> Option<LegacyAbData> {
     let reply = pull_reply(app, token).await;
     assert_eq!(reply.status, 200, "{}", text(&reply));
@@ -62,7 +58,7 @@ async fn pull(app: &TestApp, token: &str) -> Option<LegacyAbData> {
     parsed.map(|reply| reply.data)
 }
 
-/// The raw `data` string of a pull (the exact bytes a client re-parses).
+/// The exact bytes a client re-parses.
 async fn pull_data(app: &TestApp, token: &str) -> Option<String> {
     let reply = pull_reply(app, token).await;
     let value: Value = reply.json().unwrap();
@@ -108,7 +104,6 @@ fn assert_refused(reply: &Reply, status: u16) -> String {
     reply.json::<ErrorBody>().unwrap().error
 }
 
-/// The new API's view of the book: `(peers as the client reads them, tags)`.
 async fn new_api(app: &TestApp, token: &str, guid: &str) -> (Vec<Value>, Vec<Value>) {
     let path = format!("/api/ab/peers?current=1&pageSize=100&ab={guid}");
     let peers = send(app, request("POST", &path, token, None)).await;

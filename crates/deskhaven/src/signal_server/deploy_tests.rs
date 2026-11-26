@@ -1,8 +1,3 @@
-//! M2-19 review, end to end: `--deploy` through the core and the running signal server
-//! (`startup::share_registry_with_deploy`). A deployed new id is loaded into the server's
-//! memory at once (registry-changed hook -> `reload_peer`), and an id the server holds for
-//! another uuid is refused.
-
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
@@ -42,7 +37,6 @@ fn deploy(id: &str, uuid: &[u8]) -> DeployRequest {
 #[tokio::test]
 async fn deploy_follows_and_feeds_the_signal_servers_registry() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let state = state(db).await;
         state
             .settings
@@ -72,7 +66,6 @@ async fn deploy_follows_and_feeds_the_signal_servers_registry() {
         share_registry_with_deploy(&state, running.status.clone());
         Target::register(port).await;
 
-        // Act
         let taken = state
             .devices
             .deploy(deploy(TARGET, b"another-machine"))
@@ -80,7 +73,6 @@ async fn deploy_follows_and_feeds_the_signal_servers_registry() {
         let own = state.devices.deploy(deploy(TARGET, b"target-uuid")).await;
         let new = state.devices.deploy(deploy(NEW_ID, b"new-machine")).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(taken.unwrap(), DeployOutcome::IdTaken, "{b}");
         assert_eq!(own.unwrap(), DeployOutcome::Deployed, "{b}");

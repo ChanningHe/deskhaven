@@ -1,15 +1,10 @@
-//! Process logger: `tracing-subscriber` on stderr, filtered by `log.level`,
-//! human-readable or JSON per `log.format`. The `tracing-log` bridge forwards
-//! `log` records (hbb_common, sqlx) into the same pipeline; flexi_logger is
-//! never initialized (02 §5.1). Plain text without ANSI colors: logs mostly
-//! end up in journald or container logs (and the `ansi` feature would leak
-//! into every crate's log-capturing tests through feature unification).
+//! Plain text without ANSI colors: logs mostly end up in journald or container logs, and the
+//! `ansi` feature would leak into every crate's log-capturing tests through feature unification.
 
 use anyhow::anyhow;
 use deskhaven_config::bootstrap::{Log, LogFormat};
 use tracing_subscriber::EnvFilter;
 
-/// Installs the global subscriber (and the `log` bridge). Call once.
 pub fn init(log: &Log) -> anyhow::Result<()> {
     // Already validated with the bootstrap; the message never echoes the filter.
     let filter = EnvFilter::builder()

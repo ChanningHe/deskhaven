@@ -1,11 +1,5 @@
-//! Per-connection addresses for websocket clients whose IP comes from a reverse proxy's
-//! `X-Real-IP` / `X-Forwarded-For` header (deskhaven code, not vendored; M1-08).
-//!
-//! The server keys connection state by client address (`tcp_punch`, the address a target
-//! echoes back to reach the controller). Upstream gave every such client `<header ip>:0`, so
-//! all clients behind one proxy IP shared one key and overwrote each other's state. Each
-//! connection now holds `<header ip>:<port>` with a port no other live connection claiming that
-//! IP holds; the IP stays what the header says (LAN checks, relay choice, logs).
+//! Clients behind one proxy IP would share `<header ip>:0`, which keys connection state
+//! (`tcp_punch`); each connection claims a port unique among the live claims of that IP.
 
 use std::{
     collections::HashSet,
@@ -15,12 +9,10 @@ use std::{
 
 #[derive(Default)]
 struct Claims {
-    /// The last port handed out; the next claim tries the one after it.
     last: u16,
     live: HashSet<SocketAddr>,
 }
 
-/// Hands out addresses unique among the live connections of one server.
 #[derive(Clone, Default)]
 pub(crate) struct ClaimedAddrs(Arc<Mutex<Claims>>);
 
@@ -31,8 +23,6 @@ pub(crate) struct ClaimedAddr {
 }
 
 impl ClaimedAddrs {
-    /// `ip` with a port (1..=65535, in turn) that no live claim of `ip` holds; `None` if all
-    /// 65535 are held.
     pub(crate) fn claim(&self, ip: IpAddr) -> Option<ClaimedAddr> {
         let mut claims = self.lock();
         for _ in 0..u16::MAX {
@@ -75,13 +65,10 @@ mod tests {
 
     #[test]
     fn live_claims_of_one_ip_get_distinct_non_zero_ports() {
-        // Arrange
         let addrs = ClaimedAddrs::default();
 
-        // Act
         let claims: Vec<ClaimedAddr> = (0..100).filter_map(|_| addrs.claim(IP)).collect();
 
-        // Assert
         let ports: HashSet<u16> = claims.iter().map(|c| c.addr().port()).collect();
         assert_eq!(ports.len(), 100);
         assert!(!ports.contains(&0));
@@ -90,18 +77,15 @@ mod tests {
 
     #[test]
     fn a_dropped_claim_frees_its_port_and_every_port_is_used_before_none() {
-        // Arrange
         let addrs = ClaimedAddrs::default();
         let mut claims: Vec<ClaimedAddr> = (0..u16::MAX).filter_map(|_| addrs.claim(IP)).collect();
         assert_eq!(claims.len(), usize::from(u16::MAX));
 
-        // Act
         let exhausted = addrs.claim(IP).is_none();
         let other_ip = addrs.claim(OTHER_IP).map(|c| c.addr());
         let freed = claims.swap_remove(1234).addr();
         let reused = addrs.claim(IP).map(|c| c.addr());
 
-        // Assert
         assert!(exhausted, "all 65535 ports of the IP are held");
         assert_eq!(other_ip.map(|a| a.ip()), Some(OTHER_IP));
         assert_eq!(reused, Some(freed));

@@ -1,5 +1,4 @@
-//! `config check` probes beyond bootstrap validation. All read-only: nothing
-//! is created, migrated or generated, and sockets are released at once.
+//! All read-only: nothing is created, migrated or generated, and sockets are released at once.
 
 use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, UdpSocket};
@@ -14,14 +13,11 @@ use crate::database;
 /// `config check` gives up on the database sooner than startup does.
 const CHECK_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Every `[settings]` pin names a known setting and coerces to its type.
 pub fn settings_pins(loaded: &Loaded) -> anyhow::Result<()> {
     PinSet::from_bootstrap(&loaded.config.settings)?;
     Ok(())
 }
 
-/// The HTTP listen addresses and, when enabled, the signal ports can be
-/// bound now (another process may hold them, e.g. a running server).
 pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
     let listen = &loaded.config.listen;
     let admin = listen.admin_addr().map(|addr| ("listen.admin", addr));
@@ -39,13 +35,8 @@ pub fn listen_ports(loaded: &Loaded) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// What the signal server binds on all interfaces: TCP port-1 (NAT test),
-/// port (TCP and UDP) and, unless `signal.ws_listen` moves it, port+2
-/// (WebSocket). Each is probed on IPv4 `0.0.0.0` (collides with any IPv4 or
-/// dual-stack holder) and on IPv6 `[::]` (collides with any IPv6 holder, e.g.
-/// one bound to `[::1]` only). A host without usable IPv6 skips the IPv6
-/// probes. The bootstrap validation already rejected ports without room for
-/// port-1 and port+2.
+/// Each port is probed on `0.0.0.0` (collides with any IPv4 or dual-stack holder) and on `[::]`
+/// (collides with any IPv6 holder, e.g. one bound to `[::1]` only).
 fn signal_ports(port: u16, with_ws: bool) -> anyhow::Result<()> {
     let ws = with_ws.then(|| ("signal WebSocket (port+2)", port.saturating_add(2)));
     let tcp = [
@@ -58,7 +49,6 @@ fn signal_ports(port: u16, with_ws: bool) -> anyhow::Result<()> {
     probe("signal.port", "UDP", port, UdpSocket::bind)
 }
 
-/// Binds (and releases) `port` on `0.0.0.0`, then on `[::]`.
 fn probe<T>(
     name: &str,
     proto: &str,
@@ -77,12 +67,7 @@ fn probe<T>(
     }
 }
 
-/// The database is reachable over a read-only connection, and its schema is
-/// not newer than this binary. A missing SQLite file is fine (created on
-/// first start); pending migrations are reported, not applied.
-///
-/// PgBouncer in transaction-pool mode rejects the read-only startup parameter
-/// (`default_transaction_read_only`) unless it is listed in
+/// PgBouncer in transaction-pool mode rejects the read-only startup parameter unless it is in
 /// `ignore_startup_parameters`: this check then fails while `serve` works.
 pub fn database(loaded: &Loaded) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -139,7 +124,6 @@ mod tests {
 
     use super::*;
 
-    /// A bind that fails only on IPv6 with `kind`.
     fn v6_fails(kind: ErrorKind) -> impl Fn(SocketAddr) -> io::Result<()> {
         move |addr| match addr {
             SocketAddr::V6(_) => Err(io::Error::from(kind)),

@@ -1,6 +1,4 @@
-//! The group panel endpoints (03 §4) beyond single fixtures: the visibility scope follows
-//! group membership and ignores roles (06 §4.2), and paging walks the whole visible set
-//! the way the client's loop does. Every reply is decoded with the client mirror types.
+//! The visibility scope follows group membership and ignores roles.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::sync::Arc;

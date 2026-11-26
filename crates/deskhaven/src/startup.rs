@@ -1,6 +1,3 @@
-//! Startup steps (02 §7) up to bound listeners. Each failure aborts startup;
-//! warnings are logged and startup continues.
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,31 +28,24 @@ use crate::{data_dir, database, http, setup_link};
 #[cfg(unix)]
 const UMASK: u32 = 0o077;
 
-/// Results of the synchronous steps, consumed by [`start`].
 pub struct Prepared {
     lock: InstanceLock,
     pins: PinSet,
-    /// Read in `prepare`; `None`: none exists yet (`master_crypto`).
     master: Option<MasterKey>,
     signal_key: SignalKeyPair,
 }
 
-/// Everything needed to serve.
 pub struct Started {
     pub state: Arc<AppState>,
     pub listeners: Listeners,
     pub http: HttpConfig,
-    /// The admin API route set, assembled (and its permissions checked) before binding.
     pub admin_routes: AdminRoutes,
-    /// The supervised signal server; `None` with `[signal] enabled = false`.
     pub signal: Option<RunningSignal>,
     /// Held until the process exits.
     pub lock: InstanceLock,
 }
 
-/// Steps that need no runtime: pins (first, so a rejected configuration
-/// writes nothing), umask, the descriptor limit, data_dir, the instance lock,
-/// key material.
+/// Pins come first, so a rejected configuration writes nothing.
 pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     let pins = PinSet::from_bootstrap(&config.settings)?;
     restrict_umask();
@@ -87,11 +77,8 @@ pub fn prepare(config: &Bootstrap) -> anyhow::Result<Prepared> {
     })
 }
 
-/// Listeners first (an instance that cannot bind never touches the
-/// database), then database, migrations, settings, then the signal server
-/// (which loads the peer registry before binding its ports). Until serving
-/// starts, HTTP connections wait in the listen backlog. The signal server
-/// stops when `token` is cancelled.
+/// Listeners first, so an instance that cannot bind never touches the database; HTTP
+/// connections wait in the listen backlog until serving starts.
 pub async fn start(
     config: &Bootstrap,
     prepared: Prepared,
@@ -140,8 +127,6 @@ pub async fn start(
     })
 }
 
-/// The signal server over the device registry, following the settings;
-/// `None` when disabled.
 async fn start_signal(
     config: &Bootstrap,
     key: &SignalKeyPair,
@@ -164,17 +149,16 @@ async fn start_signal(
     Ok(Some(running))
 }
 
-/// A device deleted through the core is dropped from the signal server's memory too, so its
-/// next RegisterPk registers it again instead of the server answering it as registered.
+/// So a deleted device's next RegisterPk registers it again instead of being answered as
+/// registered.
 pub fn forget_deleted_devices(state: &AppState, signal: SignalStatus) {
     state
         .devices
         .on_device_deleted(Arc::new(move |id: &str| signal.reload_peer(id)));
 }
 
-/// `--deploy` writes registrations behind the signal server's back: it first checks the
-/// server's in-memory registrations (not all stored yet), and the server re-reads every id
-/// it wrote.
+/// `--deploy` writes registrations behind the signal server's back, so it checks the server's
+/// in-memory registrations first and the server re-reads every id it wrote.
 pub fn share_registry_with_deploy(state: &AppState, signal: SignalStatus) {
     let reload = signal.clone();
     state
@@ -183,9 +167,8 @@ pub fn share_registry_with_deploy(state: &AppState, signal: SignalStatus) {
     state.devices.set_live_registrations(Arc::new(signal));
 }
 
-/// Database, migrations, settings: the [`AppState`] the routers serve.
-/// Also the entry point of in-process harnesses (deskhaven-contract), which
-/// build the state without listeners, umask or instance lock.
+/// Also the entry point of in-process harnesses, which build the state without listeners,
+/// umask or instance lock.
 pub async fn open_state(
     config: &Bootstrap,
     pins: PinSet,
@@ -196,7 +179,6 @@ pub async fn open_state(
     state_on(db, config, pins, crypto, signal_public_key).await
 }
 
-/// Connects and applies the migrations.
 async fn open_database(config: &Bootstrap) -> anyhow::Result<DatabaseConnection> {
     let url = database::url(config)?;
     let backend = database::backend(&url);
@@ -207,8 +189,7 @@ async fn open_database(config: &Bootstrap) -> anyhow::Result<DatabaseConnection>
     Ok(db)
 }
 
-/// The master key `prepare` read, else one generated now, which the migrated `db` allows
-/// only while it holds no account (`load_or_generate_master_key_for`).
+/// A generated master key is allowed only while the database holds no account.
 async fn master_crypto(
     config: &Bootstrap,
     read: Option<MasterKey>,
@@ -226,7 +207,6 @@ async fn master_crypto(
     Ok(Arc::new(SecretBox::new(&key)))
 }
 
-/// Settings and services over the migrated `db`; legacy plaintext strategy secrets sealed.
 async fn state_on(
     db: DatabaseConnection,
     config: &Bootstrap,
@@ -255,7 +235,7 @@ async fn state_on(
             signal_port: config.signal.port,
         },
     );
-    // Rows from before secret strategy options were sealed at rest (06 §5).
+    // Rows from before secret strategy options were sealed at rest.
     let sealed = state.strategies.seal_plaintext_secrets().await?;
     if sealed > 0 {
         tracing::info!(

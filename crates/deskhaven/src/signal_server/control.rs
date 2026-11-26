@@ -1,13 +1,6 @@
-//! The control plane `serve` gives the signal server: upstream's policy ([`AllowAll`]) until
-//! M5, plus the liveness notifications, which feed the device presence table of the core
-//! (`deskhaven_core::devices::Presence`, M2-12).
-//!
-//! Why this path: the signal crate must not depend on the core (02 §2.1), and its only
-//! injected interfaces are `ControlPlane` and `PeerStore`. `PeerStore` only sees changed
-//! registrations, written behind and coalesced, never the keep-alives that make a peer
-//! online; `ControlPlane::peer_online` / `peer_offline` are called exactly where hbbs
-//! refreshes or expires a registration, inline and memory-only, which is what `Presence`
-//! is (a short mutex section, bounded).
+//! The signal crate must not depend on the core, and `PeerStore` never sees the keep-alives
+//! that make a peer online; `ControlPlane::peer_online` / `peer_offline` are called exactly
+//! where hbbs refreshes or expires a registration, inline and memory-only, as `Presence` is.
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -18,7 +11,6 @@ use deskhaven_signal::{
     RegisterVerdict,
 };
 
-/// [`AllowAll`] decisions; liveness goes to [`Presence`].
 pub struct CoreControl {
     policy: AllowAll,
     presence: Presence,
@@ -77,11 +69,8 @@ mod tests {
     };
     use super::*;
 
-    /// A real RegisterPk over UDP reaches the presence table through the signal server's
-    /// liveness notification: the device is online, seen from its source address.
     #[tokio::test]
     async fn a_signal_registration_marks_the_device_online_in_presence() {
-        // Arrange
         let presence = Presence::new(Arc::new(SystemClock));
         let control: Arc<dyn ControlPlane> = Arc::new(CoreControl::new(presence.clone()));
         let (_tx, settings) = tokio::sync::watch::channel(Arc::new(with(&[])));
@@ -89,10 +78,8 @@ mod tests {
         let (running, port, _) =
             start_launcher_with(settings, memory_store(), control, FAST, &token).await;
 
-        // Act
         Target::register(port).await;
 
-        // Assert
         wait_until(|| presence.is_online(TARGET)).await;
         assert_eq!(presence.get(TARGET).unwrap().ip, Some(TARGET_IP));
         token.cancel();

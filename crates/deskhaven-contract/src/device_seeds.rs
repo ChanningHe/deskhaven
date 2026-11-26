@@ -1,6 +1,3 @@
-//! Device seeds (03 §2): a device the signal server registered, and what its sysinfo
-//! presets can name. They write through the real registry and services of the app's state.
-
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
@@ -18,20 +15,18 @@ use deskhaven_core::users::{Credential, NewUser, Password};
 
 use crate::seeds::{SEED_PASSWORD, SeedOutputs};
 
-/// `registered-device`: the RustDesk id and the raw uuid it registered with.
 pub const DEVICE_ID: &str = "135792468";
 pub const DEVICE_UUID: &[u8] = b"contract-device-uuid";
-/// [`DEVICE_UUID`] as the client sends it (`crate::encode64(get_uuid())`, padded base64).
+/// As the client sends it: padded base64.
 pub const DEVICE_UUID_B64: &str = "Y29udHJhY3QtZGV2aWNlLXV1aWQ=";
 
-/// `device-preset-targets`: what the presets of a sysinfo fixture name.
 pub const PRESET_USER: &str = "pat";
 pub const PRESET_DEVICE_GROUP: &str = "Office";
 pub const PRESET_STRATEGY: &str = "Locked";
 pub const PRESET_BOOK: &str = "Team";
 
-/// A device registered through the signal server's store ([`DeviceRepository`]), with no
-/// sysinfo yet. Outputs `device_id` (RustDesk id) and `device_uuid` (base64).
+/// Registered through the signal server's store, with no sysinfo yet. Outputs `device_id` and
+/// `device_uuid` (base64).
 pub async fn registered_device(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let registration = Registration {
         rustdesk_id: DEVICE_ID.to_owned(),
@@ -79,7 +74,6 @@ pub async fn preset_targets(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// Sets `devices.accept_presets` to `all` (off by default). No outputs.
 pub async fn presets_accepted(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let key = DEVICES_ACCEPT_PRESETS.key();
     let version = state
@@ -102,18 +96,15 @@ pub async fn presets_accepted(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// `global-strategy`: what the global strategy [`GLOBAL_STRATEGY`] carries; the empty value
-/// tells the client to delete that option.
+/// The empty value tells the client to delete that option.
 pub const GLOBAL_STRATEGY: &str = "Defaults";
 pub const GLOBAL_OPTIONS: &[(&str, &str)] = &[
     ("enable-file-transfer", "N"),
     ("allow-remote-config-modification", ""),
 ];
-/// `device-disconnect`: the connections queued for closing on [`DEVICE_ID`].
 pub const QUEUED_DISCONNECTS: &[i32] = &[12, 13];
 
-/// `device-sysinfo`: stores a sysinfo of [`DEVICE_ID`] (after `registered-device`), so its
-/// heartbeat no longer asks for one. No outputs.
+/// So its heartbeat no longer asks for one.
 pub async fn device_sysinfo(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let report = SysinfoReport {
         rustdesk_id: DEVICE_ID.to_owned(),
@@ -134,8 +125,7 @@ pub async fn device_sysinfo(state: &AppState) -> anyhow::Result<SeedOutputs> {
     Ok(SeedOutputs::new())
 }
 
-/// `global-strategy`: strategy [`GLOBAL_STRATEGY`] with [`GLOBAL_OPTIONS`], assigned to
-/// every device. No outputs (it moves the strategy version: seed `strategy-version` after it).
+/// Moves the strategy version: seed `strategy-version` after it.
 pub async fn global_strategy(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let options: Options = GLOBAL_OPTIONS
         .iter()
@@ -157,8 +147,6 @@ pub async fn strategy_version(state: &AppState) -> anyhow::Result<SeedOutputs> {
     )]))
 }
 
-/// `device-disconnect`: queues [`QUEUED_DISCONNECTS`] for closing on [`DEVICE_ID`]. No
-/// outputs.
 pub async fn device_disconnect(state: &AppState) -> anyhow::Result<SeedOutputs> {
     let queue = state.devices.disconnects();
     queue.disconnect(DEVICE_ID, QUEUED_DISCONNECTS)?;

@@ -7,14 +7,11 @@ use serde_json::{Value, json};
 use crate::fixture::{Body, Request};
 use crate::seeds::{SEED_RUSTDESK_ID, SEED_UUID};
 
-/// `deviceInfo` of [`login`].
 pub fn device_info() -> Value {
     json!({ "os": "linux", "type": "client", "name": "flow-host" })
 }
 
-/// `POST /api/login`, account type: `LoginRequest.toJson`
-/// (`flutter/lib/common/hbbs/hbbs.dart:155-177`) with the default
-/// `Content-Type: application/json` (`flutter/lib/utils/http_service.dart:18`).
+/// `LoginRequest.toJson` with the default `Content-Type: application/json`.
 pub fn login(username: &str, password: &str) -> Request {
     let mut request = Request::new("POST", "/api/login");
     request
@@ -28,11 +25,8 @@ pub fn login(username: &str, password: &str) -> Request {
     request
 }
 
-/// `POST /api/login`, second step of a TOTP login: what `verificationCodeDialog`
-/// sends (`flutter/lib/common/widgets/login.dart:1016-1024`, serialized by
-/// `hbbs.dart:155-177`): the code in both `verificationCode` and `tfaCode`,
-/// the challenge `secret`, the first reply's `user.name` as `username`, no
-/// password.
+/// The code in both `verificationCode` and `tfaCode`, the challenge `secret`, the first reply's
+/// `user.name` as `username`, no password.
 pub fn second_step(secret: &str, username: &str, code: &str) -> Request {
     let mut request = Request::new("POST", "/api/login");
     request
@@ -46,8 +40,6 @@ pub fn second_step(secret: &str, username: &str, code: &str) -> Request {
     request
 }
 
-/// `currentUser` / `logout` with a bearer token
-/// (`flutter/lib/models/user_model.dart:63-78, 170-183`).
 pub fn bearer(path: &str, token: &str) -> Request {
     let mut request = Request::new("POST", path);
     request
@@ -60,8 +52,7 @@ pub fn bearer(path: &str, token: &str) -> Request {
     request
 }
 
-/// `POST /api/oidc/auth` as `OidcSession::auth` sends it (`src/hbbs_http/account.rs:160-176`,
-/// `post_request` always sets `Content-Type: application/json`, `src/common.rs:1774`).
+/// `post_request` always sets `Content-Type: application/json`.
 pub fn oidc_auth(op: &str) -> Request {
     let mut request = Request::new("POST", "/api/oidc/auth");
     request
@@ -74,8 +65,7 @@ pub fn oidc_auth(op: &str) -> Request {
     request
 }
 
-/// `GET /api/oidc/auth-query` as `OidcSession::query` builds it
-/// (`src/hbbs_http/account.rs:179-198`: `Url::parse_with_params`, so form-urlencoded).
+/// `Url::parse_with_params`, so form-urlencoded.
 pub fn oidc_query(code: &str, id: &str, uuid: &str) -> Request {
     let query: String = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("code", code)

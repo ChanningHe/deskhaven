@@ -1,5 +1,3 @@
-//! Command-line interface definition.
-
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -85,7 +83,6 @@ pub enum ConfigCommand {
 }
 
 impl Cli {
-    /// Load options derived from global flags.
     pub fn load_options(&self) -> anyhow::Result<LoadOptions> {
         let mut cli = CliOverrides::default();
         if let Some(dir) = &self.data_dir {

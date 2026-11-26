@@ -1,6 +1,4 @@
-//! `deskhaven healthcheck`: asks the local `/readyz` whether the server is
-//! ready. For container health checks in images without a shell or curl
-//! (distroless); the exit code is the result.
+//! For container health checks in images without a shell or curl; the exit code is the result.
 
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
@@ -10,9 +8,7 @@ use deskhaven_config::bootstrap::{Listen, LoadOptions};
 
 use crate::config_cmd;
 
-/// The whole probe (connect, request, status line) must finish within this.
 pub const TIMEOUT: Duration = Duration::from_secs(3);
-/// Only the status line is read; one without a CRLF within this is malformed.
 const MAX_STATUS_LINE: usize = 256;
 const READY: u16 = 200;
 const CRLF: &[u8] = b"\r\n";
@@ -33,17 +29,13 @@ pub enum HealthError {
     NotReady { addr: SocketAddr, status: u16 },
 }
 
-/// Loads the configuration exactly as `serve` does and probes the client API
-/// listener (the health routes are on every listener).
+/// The health routes are on every listener, so the client API listener is probed.
 pub fn run(options: &LoadOptions) -> anyhow::Result<()> {
     let loaded = config_cmd::load_reporting(options)?;
     probe(probe_addr(&loaded.config.listen), TIMEOUT)?;
     Ok(())
 }
 
-/// Where a local client reaches the client API listener: a wildcard bind
-/// address becomes the loopback address of the same family (IPv6 scope and
-/// flow info kept).
 pub fn probe_addr(listen: &Listen) -> SocketAddr {
     let mut addr = listen.client_api;
     match addr.ip() {
@@ -54,8 +46,6 @@ pub fn probe_addr(listen: &Listen) -> SocketAddr {
     addr
 }
 
-/// `GET /readyz` on `addr`; `Ok` only for a 200. Everything, connect
-/// included, shares one `timeout` budget.
 pub fn probe(addr: SocketAddr, timeout: Duration) -> Result<(), HealthError> {
     let probe = Probe {
         addr,
@@ -94,8 +84,6 @@ impl Probe {
             .map_err(|e| self.fail(e, false))
     }
 
-    /// Up to the first CRLF, EOF or [`MAX_STATUS_LINE`] bytes, whichever
-    /// comes first; the deadline is for all reads together.
     fn read_status_line(&self, stream: &mut TcpStream) -> Result<Vec<u8>, HealthError> {
         let mut line = Vec::with_capacity(MAX_STATUS_LINE);
         let mut chunk = [0u8; MAX_STATUS_LINE];
@@ -139,8 +127,6 @@ impl Probe {
     }
 }
 
-/// The status code of `HTTP/1.x <3 digits>` followed by a space or the CRLF,
-/// within the first [`MAX_STATUS_LINE`] bytes. Nothing is UTF-8 decoded.
 fn parse_status(response: &[u8]) -> Option<u16> {
     let head = &response[..response.len().min(MAX_STATUS_LINE)];
     let line = &head[..find(head, CRLF)?];

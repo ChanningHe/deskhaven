@@ -287,8 +287,8 @@ fn the_global_caps_scale_with_the_open_file_limit_within_bounds() {
     );
 }
 
-/// Re-review MEDIUM-2: at a low open-file limit the scaled caps must not let the connection
-/// cap refuse before pending eviction runs.
+/// At a low open-file limit the scaled caps must not let the connection cap refuse before
+/// pending eviction runs.
 #[test]
 fn a_low_open_file_limit_cannot_reopen_the_pending_lockout() {
     for nofile in [1024, 4096] {
@@ -310,7 +310,6 @@ fn a_low_open_file_limit_cannot_reopen_the_pending_lockout() {
     }
 }
 
-/// Re-review LOW: a full source table forgets idle sources instead of skipping the checks.
 #[test]
 fn a_full_source_table_still_applies_the_per_source_limits() {
     let gate = AcceptGate::new(LIMITS);

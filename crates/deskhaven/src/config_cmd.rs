@@ -1,5 +1,3 @@
-//! `deskhaven config ...` subcommands.
-
 use std::io::Write;
 
 use anyhow::{Context, bail};
@@ -8,14 +6,11 @@ use deskhaven_config::bootstrap::{EffectiveEntry, LoadOptions, Loaded, json_sche
 
 use crate::log_safe;
 
-/// A readiness check run by `config check` after the configuration loaded.
 pub struct Check {
     pub name: &'static str,
     pub run: fn(&Loaded) -> anyhow::Result<()>,
 }
 
-/// Checks beyond bootstrap validation (which `load` already performs), all
-/// read-only; cheap ones first.
 const CHECKS: &[Check] = &[
     Check {
         name: "settings pins",
@@ -35,7 +30,6 @@ const CHECKS: &[Check] = &[
     },
 ];
 
-/// Loads the configuration and reports warnings on stderr.
 pub fn load_reporting(options: &LoadOptions) -> anyhow::Result<Loaded> {
     let loaded = load(options).context("failed to load configuration")?;
     let mut err = std::io::stderr().lock();
@@ -45,8 +39,6 @@ pub fn load_reporting(options: &LoadOptions) -> anyhow::Result<Loaded> {
     Ok(loaded)
 }
 
-/// Runs every check, reporting each failure on stderr as it happens; fails
-/// if any did. Read-only throughout.
 pub fn check(options: &LoadOptions) -> anyhow::Result<()> {
     let loaded = load_reporting(options)?;
     let failed = CHECKS
@@ -64,7 +56,6 @@ pub fn check(options: &LoadOptions) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Whether `check` passed; a failure is printed with its secret-safe chain.
 fn run_reporting(check: &Check, loaded: &Loaded) -> bool {
     let Err(err) = (check.run)(loaded) else {
         return true;
@@ -79,8 +70,6 @@ fn run_reporting(check: &Check, loaded: &Loaded) -> bool {
     false
 }
 
-/// Prints `key = value  # source`; with `include_defaults` every key, else
-/// only keys some layer set explicitly.
 pub fn print(options: &LoadOptions, include_defaults: bool) -> anyhow::Result<()> {
     let loaded = load_reporting(options)?;
     let rows: Vec<(String, String)> = loaded

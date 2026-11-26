@@ -3,10 +3,8 @@ use std::sync::mpsc::{self, Receiver};
 
 use super::*;
 
-/// Budget for probes that should succeed or fail fast: generous, the fake
-/// server side is bounded on its own.
+/// Generous: the fake server side is bounded on its own.
 const GENEROUS: Duration = Duration::from_secs(5);
-/// Budget for the timeout tests.
 const SHORT: Duration = Duration::from_millis(600);
 /// Scheduling slack below a deadline (timers may fire a little early).
 const SLACK: Duration = Duration::from_millis(50);
@@ -26,9 +24,6 @@ fn listen(client_api: SocketAddr) -> Listen {
     }
 }
 
-/// A one-shot server: reads the request head, runs `script` on the
-/// connection, then drains it until the client closes. Sends back the
-/// request it received (an error if nobody connected in time).
 fn serve(script: Script) -> (SocketAddr, Receiver<Result<String, String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -81,7 +76,6 @@ fn answer(listener: &TcpListener, script: Script) -> io::Result<String> {
     String::from_utf8(request).map_err(io::Error::other)
 }
 
-/// What the fake server received; bounded wait.
 fn received(server: &Receiver<Result<String, String>>) -> String {
     server
         .recv_timeout(SERVER_LIMIT * 3)
@@ -246,8 +240,8 @@ fn a_silent_server_times_out_on_the_budget() {
     drop(listener);
 }
 
-/// One byte every third of the budget: every single read succeeds well
-/// within the budget, so only a total deadline ends the probe in time.
+/// One byte every third of the budget: every read succeeds in time, so only a total deadline
+/// ends the probe.
 #[test]
 fn a_trickling_server_hits_the_total_deadline() {
     let (addr, server) = serve(Box::new(|stream| {

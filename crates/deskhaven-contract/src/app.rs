@@ -1,6 +1,5 @@
-//! The real client API, in process: a fresh data_dir and SQLite database
-//! (migrated, default settings), the production `client_api` router and the
-//! production middleware stack, called through `tower::ServiceExt::oneshot`.
+//! The real client API, in process: the production router and middleware stack, called
+//! through `tower::ServiceExt::oneshot`.
 
 use std::io::Read;
 use std::net::SocketAddr;
@@ -54,38 +53,29 @@ pub struct TestApp {
     _data_dir: TempDir,
 }
 
-/// How a [`TestApp`] differs from production; the default is production.
 #[derive(Default)]
 pub struct TestOptions {
     /// Merged into the client API (test-only routes, same state and middleware).
     pub routes: Router<Arc<AppState>>,
-    /// Users and sessions rebuilt around this hasher (e.g. one slot, to provoke
-    /// `Busy`). Keep a clone: clones share its concurrency limit.
+    /// Users and sessions rebuilt around this hasher. Keep a clone: clones share its
+    /// concurrency limit.
     pub hasher: Option<PasswordHasher>,
-    /// `security.trusted_proxies` (a peer inside without `X-Forwarded-For` is a
-    /// proxy-fallback client).
+    /// A peer inside without `X-Forwarded-For` is a proxy-fallback client.
     pub trusted_proxies: Vec<Cidr>,
-    /// Which listener the requests go to (default: the client API alone).
     pub listen: Listen,
     /// Bootstrap `public_url` (default unset: OIDC logins are refused).
     pub public_url: String,
-    /// Every service rebuilt on this clock (default: the system clock), e.g. a
-    /// `ManualClock` to step past rate-limit intervals. Not combined with `hasher`.
+    /// Every service rebuilt on this clock; not combined with `hasher`.
     pub clock: Option<SharedClock>,
-    /// The LDAP service talks to this directory (a fake) instead of a real server.
     pub ldap: Option<Arc<dyn Connector>>,
-    /// With `ldap`: other bounds on directory work (e.g. a short timeout).
     pub ldap_limits: Option<DirectoryLimits>,
 }
 
 impl TestApp {
-    /// Production routes only.
     pub async fn start() -> anyhow::Result<Self> {
         Self::start_with_options(TestOptions::default()).await
     }
 
-    /// Production routes plus `extra` (test-only routes; they get the same
-    /// state and sit behind the same middleware).
     pub async fn start_with(extra: Router<Arc<AppState>>) -> anyhow::Result<Self> {
         Self::start_with_options(TestOptions {
             routes: extra,
@@ -94,8 +84,6 @@ impl TestApp {
         .await
     }
 
-    /// Production routes, with the user and session services rebuilt around
-    /// `hasher`.
     pub async fn start_with_hasher(hasher: PasswordHasher) -> anyhow::Result<Self> {
         Self::start_with_options(TestOptions {
             hasher: Some(hasher),
@@ -177,8 +165,7 @@ impl TestApp {
         self.updates.requests.load(Ordering::SeqCst)
     }
 
-    /// Changes one runtime setting through the real settings service (hot
-    /// reload: every service sees it on its next read).
+    /// Hot reload: every service sees it on its next read.
     pub async fn set_setting(&self, key: &str, value: serde_json::Value) -> anyhow::Result<()> {
         let settings = &self.state.settings;
         let version = settings
@@ -201,10 +188,8 @@ impl TestApp {
         Ok(())
     }
 
-    /// Sends `request` and returns what a client's HTTP stack hands its caller: a body the
-    /// server compressed (`Content-Encoding: gzip`, announced by the request's
-    /// `Accept-Encoding`) is decompressed, as Dart's `HttpClient` does; the headers stay as
-    /// the server sent them, so fixtures can still assert the encoding.
+    /// A gzip body is decompressed as Dart's `HttpClient` does; the headers stay as sent, so
+    /// fixtures can still assert the encoding.
     pub async fn send(&self, request: &fixture::Request) -> anyhow::Result<Reply> {
         let response = self.router.clone().oneshot(build(request)?).await?;
         let status = response.status().as_u16();
@@ -220,8 +205,7 @@ impl TestApp {
     }
 }
 
-/// Refuses and counts every request: the harness serves the whole admin API, and its update
-/// check must not reach GitHub.
+/// Refuses and counts every request: the harness's update check must not reach GitHub.
 #[derive(Default)]
 struct OfflineFetch {
     requests: AtomicUsize,
@@ -234,7 +218,6 @@ impl HttpFetch for OfflineFetch {
     }
 }
 
-/// `state` whose update check asks `fetch`.
 fn offline_updates(state: AppState, fetch: Arc<OfflineFetch>) -> AppState {
     let updates = UpdateService::new(state.settings.clone(), Arc::clone(&state.clock), fetch);
     AppState {
@@ -243,8 +226,8 @@ fn offline_updates(state: AppState, fetch: Arc<OfflineFetch>) -> AppState {
     }
 }
 
-/// `body` after undoing its `Content-Encoding` (only `gzip` is understood; anything else
-/// is an error, so a fixture never compares compressed bytes by accident).
+/// Only `gzip` is understood; anything else is an error, so a fixture never compares
+/// compressed bytes by accident.
 fn decode(headers: &HeaderMap, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     let Some(encoding) = headers.get(header::CONTENT_ENCODING) else {
         return Ok(body);
@@ -266,9 +249,6 @@ fn decode(headers: &HeaderMap, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     Ok(plain)
 }
 
-/// `base` with users and sessions on `hasher` (same database, settings and
-/// throttle; the clock is the production one, as in `open_state`).
-/// A state like `base` (same database, settings and keys) whose services run on `clock`.
 fn on_clock(base: &AppState, clock: SharedClock) -> AppState {
     AppState::new(
         base.db.clone(),
@@ -309,7 +289,6 @@ fn with_hasher(base: AppState, hasher: PasswordHasher) -> AppState {
     }
 }
 
-/// `base` whose LDAP service talks to `connector`.
 fn with_ldap(base: AppState, connector: Arc<dyn Connector>, limits: DirectoryLimits) -> AppState {
     let ldap =
         ldap_service(&base, &base.users, Arc::clone(&base.clock), connector).with_limits(limits);

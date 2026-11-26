@@ -1,4 +1,3 @@
-//! End-to-end tests of `deskhaven config ...` and `serve` config handling.
 //! Each run gets a cleared environment and its own directory.
 
 // Test code: panicking helpers are fine; figment::Jail fixes the closure error type.
@@ -8,9 +7,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// Appended to configs that run `config check`: the signal server's fixed
-/// default ports would collide between parallel probes (and with a running
-/// server); its probe has a test of its own (serve_signal.rs).
+/// The signal server's fixed default ports would collide between parallel probes; its probe
+/// has a test of its own.
 const NO_SIGNAL: &str = "[signal]\nenabled = false\n";
 
 fn workdir(name: &str) -> PathBuf {
@@ -101,8 +99,6 @@ fn check_fails_on_unknown_file_key() {
     );
 }
 
-/// Own data_dir and an OS-assigned port: `config check` probes both; no
-/// signal server ([`NO_SIGNAL`]).
 fn isolated_config(dir: &Path, extra: &str) -> String {
     format!(
         "data_dir = \"{}\"\n{extra}\n[listen]\nclient_api = \"127.0.0.1:0\"\n{NO_SIGNAL}",
@@ -236,7 +232,6 @@ fn check_rejects_invalid_pin_without_echoing_the_value() {
     assert!(!stderr.contains("SECRETISH"), "{stderr}");
 }
 
-/// Review M4: every check runs and reports, not just the first failure.
 #[test]
 fn check_reports_every_failed_check() {
     let dir = workdir("all_checks");

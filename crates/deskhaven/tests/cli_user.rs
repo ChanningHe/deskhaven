@@ -1,5 +1,3 @@
-//! End-to-end tests of `deskhaven user unlock` against a migrated SQLite database.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};

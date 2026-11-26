@@ -1,7 +1,3 @@
-//! OIDC login through the real router (03 §3.5–3.6) against a mock IdP, each reply decoded
-//! as the Rust client decodes it (`src/hbbs_http/account.rs`): `/api/oidc/auth` -> browser
-//! callback -> `/api/oidc/auth-query` polling, single hand-out, device binding, the IP limit
-//! on initiation, failures, login events and the login options.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 #[path = "../../deskhaven-core/tests/common/oidc_idp.rs"]
@@ -31,9 +27,7 @@ use serde_json::{Value, json};
 
 const PUBLIC_URL: &str = "https://rd.example.com";
 const PROVIDER: &str = "corp";
-/// Base64 of a uuid no seeded device registered with.
 const OTHER_UUID_B64: &str = "b3RoZXItbWFjaGluZQ==";
-/// The confirmation page's warnings (`callback.rs`), by a phrase each.
 const REGISTERED_WARNING: &str = "is the one your RustDesk client shows";
 const UNREGISTERED_WARNING: &str = "has not connected to this server yet";
 
@@ -56,7 +50,6 @@ async fn env_with(adjust: impl FnOnce(&mut NewProvider)) -> Env {
     Env { app, idp }
 }
 
-/// Auto-provisioning on, so any identity logs in.
 async fn env() -> Env {
     env_with(|p| p.auto_provision = true).await
 }
@@ -69,7 +62,6 @@ fn error_of(reply: &Reply) -> (u16, String) {
     (reply.status, reply.json::<ErrorBody>().unwrap().error)
 }
 
-/// `/api/oidc/auth` as the client sends it, from the device `id` / `uuid`.
 fn auth_as(id: &str, uuid: &str) -> Request {
     let mut request = oidc_auth(PROVIDER);
     request.body = Body::Json(json!({
@@ -83,7 +75,6 @@ fn header<'r>(reply: &'r Reply, name: &str) -> &'r str {
 }
 
 impl Env {
-    /// `/api/oidc/auth`, as the client parses it.
     async fn start(&self) -> (OidcAuthUrl, AuthRequest) {
         let reply = self.app.send(&oidc_auth(PROVIDER)).await.unwrap();
         assert_eq!(reply.status, 200, "{}", text(&reply));
@@ -94,8 +85,6 @@ impl Env {
         (start, request)
     }
 
-    /// The IdP answers with a token per `shape`; the browser follows the redirect (the
-    /// confirmation page) and the user confirms. The confirmation's reply.
     async fn callback(
         &self,
         request: &AuthRequest,
@@ -455,7 +444,6 @@ async fn auth_refuses_malformed_unknown_and_unconfigured_requests() {
     );
 }
 
-/// M1: the IdP redirect names the device and completes nothing until confirmed.
 #[tokio::test]
 async fn the_redirect_shows_the_device_and_completes_only_on_confirmation() {
     let env = env().await;
@@ -504,8 +492,6 @@ async fn the_redirect_shows_the_device_and_completes_only_on_confirmation() {
     assert_eq!(after.status, 200, "{}", text(&after));
 }
 
-/// M3-02: a console flow is handed on to the console (which holds its binding cookie),
-/// never confirmed or completed on the callback page.
 #[tokio::test]
 async fn a_console_flow_redirects_to_the_console_and_cannot_be_confirmed_here() {
     let env = env().await;
@@ -539,7 +525,6 @@ async fn a_console_flow_redirects_to_the_console_and_cannot_be_confirmed_here() 
     assert!(preview.is_ok(), "the console flow is still live");
 }
 
-/// M1: a confirmation works once.
 #[tokio::test]
 async fn a_replayed_confirmation_is_refused() {
     let env = env().await;
@@ -560,7 +545,6 @@ async fn a_replayed_confirmation_is_refused() {
     assert_eq!(env.idp.token_requests().await.len(), 1);
 }
 
-/// M1: the device's self-description and the request are never markup on the page.
 #[tokio::test]
 async fn the_confirmation_page_escapes_the_device_and_never_reflects_the_request() {
     let env = env().await;
@@ -585,8 +569,8 @@ async fn the_confirmation_page_escapes_the_device_and_never_reflects_the_request
     assert!(page.contains(UNREGISTERED_WARNING), "{page}");
 }
 
-/// Whose id: an id registered with another uuid is refused before any flow exists (the
-/// attacker's flow for a victim's shared id).
+/// An id registered with another uuid is refused before any flow exists (an attacker's flow for
+/// a victim's shared id).
 #[tokio::test]
 async fn auth_refuses_an_id_registered_with_another_uuid() {
     let env = env().await;
@@ -617,7 +601,6 @@ async fn auth_refuses_an_id_registered_with_another_uuid() {
     assert_eq!(flows.len(), 1, "only the device's own flow was stored");
 }
 
-/// Whose id: the registered device itself gets the usual confirmation and its session.
 #[tokio::test]
 async fn a_registered_device_logs_in_with_the_usual_confirmation() {
     let env = env().await;
@@ -653,8 +636,8 @@ async fn a_registered_device_logs_in_with_the_usual_confirmation() {
     assert_eq!(collected.status, 200, "{}", text(&collected));
 }
 
-/// Whose id: checked again on the page and at the confirmation, since the id may have
-/// registered with another uuid after `/api/oidc/auth` let the flow start.
+/// Checked again on the page and at the confirmation: the id may have registered with another
+/// uuid after the flow started.
 #[tokio::test]
 async fn an_id_registered_by_another_device_meanwhile_is_not_signed_in() {
     let env = env().await;
@@ -690,7 +673,6 @@ async fn an_id_registered_by_another_device_meanwhile_is_not_signed_in() {
     assert_eq!(error_of(&polled), (404, OIDC_PENDING_MESSAGE.to_owned()));
 }
 
-/// M1: an IdP error asks before telling the device to stop; the confirmation fails the flow.
 #[tokio::test]
 async fn an_idp_error_is_confirmed_before_the_device_stops_waiting() {
     let env = env().await;

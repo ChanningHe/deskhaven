@@ -1,5 +1,4 @@
-//! `deskhaven user ...` subcommands: account maintenance on the configured database,
-//! safe while the server runs (the lockout lives in the database, not in memory).
+//! Safe while the server runs: the lockout lives in the database, not in memory.
 
 use std::io::Write;
 use std::sync::Arc;
@@ -14,8 +13,7 @@ use serde_json::json;
 
 use crate::{config_cmd, database};
 
-/// Clears the login lockout and failure counters of `username` (06 §3.6), whether or not
-/// such an account exists, and records it in the console audit (actor `cli`).
+/// Whether or not such an account exists; recorded in the console audit (actor `cli`).
 pub fn unlock(options: &LoadOptions, username: &str) -> anyhow::Result<()> {
     if username_norm(username).is_none() {
         bail!("{username:?} is not a valid username (1-64 characters of A-Z a-z 0-9 . _ @ -)");

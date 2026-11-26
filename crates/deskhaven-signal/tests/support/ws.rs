@@ -1,6 +1,3 @@
-//! Websocket client (main port + 2): one protobuf per binary message, like RustDesk's
-//! websocket transport.
-
 use super::{Conn, Recv, Rendezvous, io, next_client_ip};
 use hbb_common::{
     futures::{SinkExt, StreamExt},
@@ -27,13 +24,11 @@ pub struct WsClient {
 }
 
 impl WsClient {
-    /// Connects from a fresh loopback source address ([`next_client_ip`]).
     pub async fn connect(server: SocketAddr) -> Self {
         Self::connect_from(next_client_ip(), server, &[]).await
     }
 
-    /// Connects from `ip` with extra handshake headers (e.g. what a reverse proxy adds);
-    /// connect + handshake must finish within [`super::IO_DEADLINE`] of real time.
+    /// Connect + handshake must finish within [`super::IO_DEADLINE`] of real time.
     pub async fn connect_from(ip: IpAddr, server: SocketAddr, headers: &[(&str, &str)]) -> Self {
         io(
             "websocket connect + handshake",
@@ -58,12 +53,10 @@ impl WsClient {
         Self { ws, local }
     }
 
-    /// The TCP address of this connection.
     pub fn local_addr(&self) -> SocketAddr {
         self.local
     }
 
-    /// Sends any frame, e.g. a text frame or a binary frame that is not a protobuf.
     pub async fn send_frame(&mut self, frame: Message) {
         self.ws.send(frame).await.unwrap();
     }
@@ -75,8 +68,7 @@ impl Conn for WsClient {
         self.send_frame(Message::Binary(bytes.into())).await;
     }
 
-    /// Skips control frames; answers server heartbeats (empty binary messages) with an empty
-    /// one, like a RustDesk client in websocket mode.
+    /// Answers server heartbeats with an empty message, like a RustDesk client in websocket mode.
     async fn recv_within(&mut self, wait: Duration) -> Recv {
         let deadline = Instant::now() + wait;
         loop {

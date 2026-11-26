@@ -1,6 +1,3 @@
-//! HTTP wiring: listener topology and stack settings from the bootstrap
-//! configuration, the routers of each side and the readiness probe.
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,14 +21,9 @@ use crate::signal_server::SignalStatus;
 /// HSTS for https deployments: one year, without `includeSubDomains`
 /// (other hosts under the domain are not ours to pin).
 pub const HSTS: &str = "max-age=31536000";
-/// A readiness probe slower than this counts as not ready.
 pub const READY_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const HTTPS_PREFIX: &str = "https://";
 
-/// Stack settings: proxies, CSP of the console, HSTS per listener (the
-/// client API, or the single listener, follows `public_url`; a split admin
-/// listener follows `admin_public_url`), and the drain share of the shutdown
-/// budget.
 pub fn http_config(config: &Bootstrap, drain_timeout: Duration) -> HttpConfig {
     HttpConfig {
         trusted_proxies: TrustedProxies::new(config.security.trusted_proxies.iter().map(Cidr::net)),
@@ -43,9 +35,7 @@ pub fn http_config(config: &Bootstrap, drain_timeout: Duration) -> HttpConfig {
     }
 }
 
-/// The console's CSP: the static policy, plus the web client relay's WebSocket origin
-/// (`public_url`'s host) when the console is served from another origin (a split admin
-/// listener on another host or port).
+/// Plus the web client relay's WebSocket origin when the console is served from another origin.
 fn console_csp(config: &Bootstrap) -> HeaderValue {
     let fixed = HeaderValue::from_static(deskhaven_web::CSP);
     let Some(relay) = ws_origin(&config.public_url) else {
@@ -69,8 +59,6 @@ fn hsts_for(url: &str) -> Option<HeaderValue> {
         .then(|| HeaderValue::from_static(HSTS))
 }
 
-/// Origins the console is served from, for the admin API's same-origin check of
-/// state-changing requests (besides each request's own `Host`).
 pub fn trusted_origins(config: &Bootstrap) -> TrustedOrigins {
     TrustedOrigins::from_urls([
         config.public_url.as_str(),
@@ -86,10 +74,7 @@ pub fn listen_config(listen: &Listen) -> ListenConfig {
     }
 }
 
-/// Routers of both sides with the API error renderers. Health routes are on
-/// both, so a split admin listener can be probed on its own. `admin_routes`:
-/// the admin API (`deskhaven_admin_api::api_routes`). `signal` is the signal
-/// server readiness follows (`None`: not running in this process).
+/// Health routes are on both, so a split admin listener can be probed on its own.
 pub fn apps(
     state: Arc<AppState>,
     admin_routes: AdminRoutes,
@@ -110,15 +95,12 @@ pub fn apps(
     }
 }
 
-/// `/api/*` (RustDesk client contract), plus the health routes.
 fn client_api_router(state: Arc<AppState>, readiness: impl ReadinessCheck) -> Router {
     health_routes(readiness).merge(deskhaven_client_api::router().with_state(state))
 }
 
-/// `/admin/api/v1/*`, `GET /api/version` (the console's version and source
-/// link; the client API router has the same route, which a single listener
-/// matches first) plus the console. The console serves every other path
-/// through its fallback, so it must stay the only router with a fallback.
+/// The console serves every other path through its fallback, so it must stay the only router
+/// with a fallback.
 fn admin_router(admin_api: Router, readiness: impl ReadinessCheck) -> Router {
     health_routes(readiness)
         .merge(admin_api)
@@ -126,16 +108,10 @@ fn admin_router(admin_api: Router, readiness: impl ReadinessCheck) -> Router {
         .merge(deskhaven_web::router())
 }
 
-/// `/readyz`: the database answers a ping, the process is not shutting down,
-/// and the signal server (when enabled) is serving: a deployment without
-/// rendezvous cannot connect anyone, so a load balancer should stop sending
-/// clients here while the supervisor restarts it (`/healthz` stays up, so the
-/// process is not killed meanwhile). Migrations are applied by construction
-/// (requests are only served after `migrate` succeeded). Settings load
-/// warnings do not count: the service runs on safe fallbacks, and a restart
-/// would not fix a bad row. The ping uses the shared pool, so a saturated pool
-/// (no connection within [`READY_PROBE_TIMEOUT`]) also reports not ready. One
-/// ping answers every probe for [`PING_TTL`] (the route is public).
+/// `/readyz` also requires the signal server: a deployment without rendezvous cannot connect
+/// anyone. Settings load warnings do not count (a restart would not fix a bad row). The ping
+/// uses the shared pool, so a saturated pool reports not ready; one ping answers every probe
+/// for [`PING_TTL`] (the route is public).
 pub fn readiness(
     db: DatabaseConnection,
     shutdown: CancellationToken,

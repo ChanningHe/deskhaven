@@ -1,5 +1,4 @@
-//! Discovers fixtures, replays each against a fresh [`TestApp`] and collects
-//! every failure (one bad fixture does not hide the others).
+//! Every failure is collected: one bad fixture does not hide the others.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -14,12 +13,10 @@ use crate::check::{Reply, check};
 use crate::fixture::Fixture;
 use crate::seeds::Seeds;
 
-/// Part of a reply body quoted in a failure.
 const BODY_EXCERPT: usize = 512;
 /// Every file under `fixtures/` must have it.
 const FIXTURE_EXTENSION: &str = "json";
 
-/// `tests/contract` at the repository root.
 pub fn contract_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/contract")
 }
@@ -39,25 +36,20 @@ pub struct Outcome {
     pub failures: Vec<Failure>,
 }
 
-/// What the app is built with besides production code.
 #[derive(Clone, Default)]
 pub struct Setup {
-    /// Seed registry (the built-ins by default).
     pub seeds: Seeds,
     /// Merged into the client API before the middleware. Runner self-tests
     /// add an echo route here; the real fixtures run with none.
     pub routes: Router<Arc<AppState>>,
 }
 
-/// Runs `<dir>/fixtures/**/*.json` whose relative path contains `filter`,
-/// against production code only. Any other file under `fixtures/` is an
-/// error (a misnamed fixture would silently never run).
+/// Any other file under `fixtures/` is an error: a misnamed fixture would silently never run.
 pub async fn run_dir(dir: &Path, filter: Option<&str>) -> anyhow::Result<Outcome> {
     run_dir_with(dir, filter, &Setup::default()).await
 }
 
-/// [`run_dir`] with extra seeds and routes. Fixture problems are failures;
-/// only an unreadable layout is an `Err`.
+/// Fixture problems are failures; only an unreadable layout is an `Err`.
 pub async fn run_dir_with(
     dir: &Path,
     filter: Option<&str>,

@@ -1,7 +1,3 @@
-//! Per-IP limiting of bearer authentication (`deskhaven_client_api::BearerUser`): rejected
-//! tokens spend the address's login budget and, once over it, uncached tokens get a 429
-//! before any database lookup; cached valid tokens always pass; login denials never close
-//! the bearer gate; `/api/login-options` is never limited.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use deskhaven_config::settings::AUTH_IP_RATE_LIMIT_PER_MINUTE;
@@ -65,7 +61,6 @@ async fn cached_token_from(app: &TestApp, peer: &str) -> String {
     token
 }
 
-/// Random tokens from `peer` until one is refused with 429; the number of 401s before it.
 async fn spray_until_gated(app: &TestApp, peer: &str, max: u32) -> u32 {
     for sent in 0..=max {
         let reply = app

@@ -1,15 +1,5 @@
-//! Error rendering for logs and terminal output (06-security: no secrets in logs).
-//!
-//! Policy, applied to every startup, shutdown and `config check` error:
-//! - Errors of deskhaven crates name keys, paths and causes, never values (key
-//!   material, pin values, URLs); they are rendered with their source chain.
-//! - Database errors (`DbErr`, `sqlx::Error`) can embed row contents
-//!   (constraint details, decode failures) or connection parameters. The chain
-//!   stops at the first one, which is reduced to its kind, the SQLSTATE /
-//!   SQLite result code and a fixed description of well-known codes. Their own
-//!   text is never logged, at any level.
-//! - Database URLs are never logged, only the backend name
-//!   ([`crate::database::backend`]).
+//! Database errors can embed row contents or connection parameters, so the chain stops at the
+//! first one, reduced to its kind and result code; database URLs are never logged.
 
 use std::error::Error;
 
@@ -17,10 +7,8 @@ use sea_orm::sqlx;
 use sea_orm::sqlx::error::{DatabaseError, ErrorKind};
 use sea_orm::{ConnAcquireErr, DbErr, RuntimeErr};
 
-/// Mask of the primary result code in an extended SQLite result code.
 const SQLITE_PRIMARY_MASK: i32 = 0xff;
 
-/// PostgreSQL SQLSTATEs an operator is likely to meet at startup.
 const PG_CODES: &[(&str, &str)] = &[
     ("28P01", "password authentication failed"),
     (
@@ -35,7 +23,6 @@ const PG_CODES: &[(&str, &str)] = &[
     ("57P03", "the server is starting up or shutting down"),
 ];
 
-/// SQLite primary result codes (`code & 0xff`).
 const SQLITE_CODES: &[(i32, &str)] = &[
     (5, "database is locked"),
     (8, "attempt to write a read-only database"),
@@ -47,12 +34,10 @@ const SQLITE_CODES: &[(i32, &str)] = &[
     (26, "file is not a database"),
 ];
 
-/// `context: cause: ...` with database errors reduced as described above.
 pub fn render(err: &anyhow::Error) -> String {
     render_chain(err.chain())
 }
 
-/// [`render`] for a plain error and its sources.
 pub fn render_error(err: &(dyn Error + 'static)) -> String {
     render_chain(std::iter::successors(Some(err), |e| (*e).source()))
 }
@@ -124,7 +109,6 @@ fn describe_database_error(err: &dyn DatabaseError) -> String {
     }
 }
 
-/// SQLite codes are numeric (extended result codes), PostgreSQL's are SQLSTATEs.
 fn known_code(code: &str) -> Option<&'static str> {
     match code.parse::<i32>() {
         Ok(number) => {

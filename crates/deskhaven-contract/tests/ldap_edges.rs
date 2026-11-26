@@ -1,8 +1,3 @@
-//! `/api/login` edge cases of directory accounts (06 §3.5, §3.6) through the real client
-//! API and the fake directory: `auth.tfa.enforce` for a directory account that has not
-//! enrolled (403, counted), a promotion while the login is in flight (the second factor is
-//! judged on the committed role), and a directory that goes silent after the password was
-//! sent (503, but counted).
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 #[path = "../../deskhaven-core/tests/common/ldap_fake.rs"]
@@ -19,7 +14,6 @@ use deskhaven_core::users::{Credential, NewUser, Role};
 use ldap_fake::{FakeDirectory, SERVICE_DN, SERVICE_PASSWORD, USER_BASE, USER_PASSWORD, group_dn};
 use serde_json::json;
 
-/// `TFA_SETUP_REQUIRED_MESSAGE` of the client API.
 const SETUP_REQUIRED: &str =
     "Two-factor authentication is required: set it up in the web console first";
 

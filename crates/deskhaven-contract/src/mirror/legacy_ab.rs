@@ -1,5 +1,3 @@
-//! The legacy address book document (03 §5.2): `GET /api/ab` and `POST /api/ab/get`.
-
 use std::collections::HashMap;
 
 use serde::de::Error as _;
@@ -8,15 +6,8 @@ use serde_json::{Map, Value};
 
 use super::AbPeer;
 
-/// `{"data": "<json string>", "licensed_devices": n}`, or the literal `null` for an empty
-/// book (the caller reads `Option<LegacyAbReply>`).
-///
-/// - Flutter, `flutter/lib/models/ab_model.dart:1010-1040`: a body with an `error` key is an
-///   error; `json['data']` goes through `jsonDecode`, so it must be a *string* (anything
-///   else throws and shows a pull error); `licensed_devices` is read inside a try block, so
-///   a non-integer is ignored (the mirror requires an integer when the key is present).
-/// - Sciter, `src/ui/ab.tis:650-662`: the same `data` string through `JSON.parse`;
-///   `updated_at` is read and ignored.
+/// `data` goes through `jsonDecode`, so it must be a *string*; `null` is an empty book. The
+/// client ignores a non-integer `licensed_devices`; the mirror requires an integer when present.
 #[derive(Debug)]
 pub struct LegacyAbReply {
     pub data: LegacyAbData,
@@ -53,16 +44,8 @@ impl<'de> Deserialize<'de> for LegacyAbReply {
     }
 }
 
-/// The document inside `data`: `_deserialize`, `ab_model.dart:1325-1356`.
-///
-/// - `tags`: read only when a list; each element is `toString()`ed (the mirror requires
-///   strings).
-/// - `peers`: read only when a list; each element is `Peer.fromJson`'d (the [`AbPeer`]
-///   mirror).
-/// - `tag_colors`: read only when a *string*, `jsonDecode`d and `Map<String, int>.from`
-///   (every value an integer). An object here would be silently ignored by the client, and
-///   a missing key makes it invent colours; the mirror requires the string because
-///   deskhaven always sends one.
+/// `tag_colors` is read only when a *string* (an object is silently ignored, a missing key makes
+/// the client invent colours); the mirror requires it because deskhaven always sends one.
 #[derive(Debug, Default)]
 pub struct LegacyAbData {
     pub tags: Vec<String>,

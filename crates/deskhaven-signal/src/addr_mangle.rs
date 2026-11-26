@@ -1,10 +1,5 @@
-//! Checked decoding of client-supplied mangled addresses (deskhaven code; M4-05 fuzzing).
-//!
-//! hbb_common's `AddrMangle::decode` recovers an IPv4 address and port by subtracting the
-//! timestamp folded into them, without checking: bytes a client chose (`socket_addr` of
-//! RelayResponse, PunchHoleSent, LocalAddr) overflow it, which panics with overflow checks on
-//! and yields a garbage address without. [`decode`] refuses those inputs and otherwise returns
-//! exactly what `AddrMangle::decode` does.
+//! hbb_common's `AddrMangle::decode` overflows on client-chosen bytes (a panic with overflow
+//! checks on, a garbage address without); [`decode`] refuses those and otherwise matches it.
 
 use std::net::SocketAddr;
 
@@ -16,7 +11,6 @@ const TM_MASK: u128 = u32::MAX as u128;
 const PORT_FIELD: u128 = 0xFF_FFFF;
 const TM_PORT_MASK: u128 = 0xFFFF;
 
-/// `AddrMangle::decode(bytes)`, or `None` where it would overflow.
 pub(crate) fn decode(bytes: &[u8]) -> Option<SocketAddr> {
     if bytes.len() <= MAX_V4_LEN {
         let mut padded = [0u8; MAX_V4_LEN];

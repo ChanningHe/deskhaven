@@ -1,6 +1,4 @@
-//! `POST /api/heartbeat` flows (03 §2.1): sequences of heartbeats as the client sends them,
-//! each reply decoded with the client mirror and applied the way `sync.rs:248-277` does.
-//! Both database backends are covered by the core tests (`deskhaven-core/tests/devices`).
+//! Both database backends are covered by the core tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::HashMap;
@@ -23,7 +21,6 @@ use serde_json::{Value, json};
 /// The client's tick with live connections.
 const TICK: Duration = Duration::from_secs(3);
 
-/// What the client keeps between heartbeats: `strategy_timestamp` and its options.
 #[derive(Default)]
 struct Client {
     modified_at: i64,
@@ -42,8 +39,7 @@ impl Client {
         heartbeat_request(body)
     }
 
-    /// Applies a reply as `sync.rs:261-277` and `handle_config_options` (no advanced
-    /// defaults): an empty value removes the option.
+    /// An empty value removes the option, as the client applies it.
     fn apply(&mut self, reply: &HeartbeatResponse) {
         if let Some(strategy) = &reply.strategy {
             for (key, value) in &strategy.config_options {
@@ -86,7 +82,6 @@ impl Harness {
         Self { app, clock }
     }
 
-    /// One tick later, the client's heartbeat; the reply is applied.
     async fn beat(&self, client: &mut Client) -> HeartbeatResponse {
         self.clock.advance(TICK);
         let reply = self.app.send(&client.request(&[])).await.unwrap();
@@ -124,15 +119,12 @@ fn options(pairs: &[(&str, &str)]) -> HashMap<String, String> {
 
 #[tokio::test]
 async fn the_strategy_is_sent_until_the_client_holds_its_version() {
-    // Arrange
     let h = Harness::start(&["registered-device", "device-sysinfo", "global-strategy"]).await;
     let mut client = Client::default();
 
-    // Act
     let first = h.beat(&mut client).await;
     let second = h.beat(&mut client).await;
 
-    // Assert
     assert!(first.strategy.is_some() && first.modified_at.is_some());
     assert_eq!(
         client.options,
@@ -145,21 +137,18 @@ async fn the_strategy_is_sent_until_the_client_holds_its_version() {
 
 #[tokio::test]
 async fn an_option_removed_from_the_strategy_is_sent_empty_once() {
-    // Arrange
     let h = Harness::start(&["registered-device", "device-sysinfo", "global-strategy"]).await;
     h.set_global_options(&[("a", "1"), ("b", "2")]).await;
     let mut client = Client::default();
     h.beat(&mut client).await;
     h.beat(&mut client).await;
 
-    // Act
     h.set_global_options(&[("a", "1")]).await;
     let removal = h.beat(&mut client).await;
     let confirmed = h.beat(&mut client).await;
     h.set_global_options(&[("a", "2")]).await;
     let next = h.beat(&mut client).await;
 
-    // Assert
     let sent = |r: &HeartbeatResponse| r.strategy.as_ref().unwrap().config_options.clone();
     assert_eq!(sent(&removal), options(&[("a", "1"), ("b", "")]));
     assert!(confirmed.strategy.is_none());
@@ -169,30 +158,26 @@ async fn an_option_removed_from_the_strategy_is_sent_empty_once() {
 
 #[tokio::test]
 async fn a_heartbeat_within_the_minimum_interval_is_429() {
-    // Arrange
     let h = Harness::start(&["registered-device"]).await;
     let client = Client::default();
     h.app.send(&client.request(&[])).await.unwrap();
 
-    // Act
     h.clock
         .advance(HEARTBEAT_MIN_INTERVAL - Duration::from_millis(1));
     let early = h.app.send(&client.request(&[])).await.unwrap();
     h.clock.advance(Duration::from_millis(1));
     let on_time = h.app.send(&client.request(&[])).await.unwrap();
 
-    // Assert
     assert_eq!(early.status, 429);
     assert_eq!(early.json::<ErrorBody>().unwrap().error, TRY_LATER_MESSAGE);
     assert_eq!(early.headers["retry-after"], "2");
     assert_eq!(on_time.status, 200);
 }
 
-/// Malformed requests and unknown ids (each costs a lookup) count against the client
-/// network's quota; another network has its own.
+/// Malformed requests and unknown ids each cost a lookup, so they count against the network's
+/// quota.
 #[tokio::test]
 async fn malformed_and_unknown_heartbeats_over_the_per_ip_quota_are_429() {
-    // Arrange
     let h = Harness::start(&[]).await;
     let garbage = heartbeat_request(json!({ "id": DEVICE_ID }));
     for _ in 0..HEARTBEAT_PER_IP_PER_MINUTE {
@@ -200,7 +185,6 @@ async fn malformed_and_unknown_heartbeats_over_the_per_ip_quota_are_429() {
         assert_eq!(reply.status, 400);
     }
 
-    // Act
     let limited = h.app.send(&garbage).await.unwrap();
     let unknown = h.app.send(&Client::default().request(&[])).await.unwrap();
     let elsewhere = h
@@ -209,7 +193,6 @@ async fn malformed_and_unknown_heartbeats_over_the_per_ip_quota_are_429() {
         .await
         .unwrap();
 
-    // Assert
     assert_eq!(limited.status, 429);
     assert!(limited.headers.contains_key("retry-after"));
     assert_eq!(unknown.status, 429, "an unknown id needs a lookup");
@@ -220,7 +203,6 @@ async fn malformed_and_unknown_heartbeats_over_the_per_ip_quota_are_429() {
 /// network's quota, so a large NAT of verified devices is limited only per device.
 #[tokio::test]
 async fn heartbeats_of_known_devices_are_not_charged_to_the_network_quota() {
-    // Arrange
     let h = Harness::start(&["registered-device"]).await;
     let mut client = Client::default();
     h.beat(&mut client).await;
@@ -235,11 +217,9 @@ async fn heartbeats_of_known_devices_are_not_charged_to_the_network_quota() {
         }
     }
 
-    // Act
     let known = h.app.send(&client.request(&[])).await.unwrap();
     let malformed = h.app.send(&garbage).await.unwrap();
 
-    // Assert
     assert!(drained, "the quota was used up");
     assert_eq!(known.status, 200, "{}", text(&known));
     assert_eq!(malformed.status, 429);
@@ -247,14 +227,11 @@ async fn heartbeats_of_known_devices_are_not_charged_to_the_network_quota() {
 
 #[tokio::test]
 async fn an_oversized_body_is_413() {
-    // Arrange
     let h = Harness::start(&["registered-device"]).await;
     let conns: Vec<i32> = (0..i32::try_from(MAX_HEARTBEAT_BODY).unwrap()).collect();
     let request = Client::default().request(&conns);
 
-    // Act
     let reply = h.app.send(&request).await.unwrap();
 
-    // Assert
     assert_eq!(reply.status, 413);
 }

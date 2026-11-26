@@ -1,9 +1,5 @@
-//! Upstream-behavior baseline (M1-04): relay requests and relay selection.
-//!
-//! Pins upstream hbbs at 873230e (`rs` = src/rendezvous_server.rs at that commit). Relay
-//! addresses are TEST-NET-1 (RFC 5737), so the health check never finds them healthy and never
-//! replaces the list. This binary asserts only membership; the rotation order is pinned in
-//! `relay_rotation.rs`.
+//! Relay addresses are TEST-NET-1, so the health check never finds them healthy and never
+//! replaces the list; the rotation order is pinned in `relay_rotation.rs`.
 
 // Test code: panicking helpers are fine.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -26,23 +22,16 @@ const RELAY_1: &str = "192.0.2.1:21117";
 const RELAY_2: &str = "192.0.2.2:21117";
 const RELAY_3: &str = "192.0.2.3:21117";
 const RELAY_4: &str = "192.0.2.4:21117";
-/// Punch holes sampled after a relay list took effect.
 const SAMPLES: usize = 6;
 
 fn relays(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// Changed in M1-08. Upstream (rs:541-554) passed a RequestRelay for a peer in memory on over
-/// UDP unchanged except for socket_addr (the controller's address), i.e. including the
-/// controller's `token`, `licence_key` and `switch_code`, in clear (07 §2.4, P0), and whatever
-/// `control_permissions` / `controlled_context` the controller put in, which the target applies
-/// over its own local settings (connection.rs `permission`) although only the server may set
-/// them (Pro, M5). All five are now cleared before forwarding; everything else is passed on as
-/// before. The controller gets no direct answer.
+/// The controller's `token`, `licence_key`, `switch_code`, `control_permissions` and
+/// `controlled_context` must not reach the target: only the server may set the last two.
 #[tokio::test]
 async fn request_relay_is_forwarded_without_secrets_or_server_only_fields() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let mut controller = server.tcp().await;
@@ -62,11 +51,9 @@ async fn request_relay_is_forwarded_without_secrets_or_server_only_fields() {
     };
     assert!(!req.token.is_empty() && !req.licence_key.is_empty());
 
-    // Act
     controller.request_relay(req.clone()).await;
     let fwd = expect_msg!(target.recv().await, RequestRelay);
 
-    // Assert
     assert_eq!(decode_addr(&fwd.socket_addr), controller.local_addr());
     assert_eq!(fwd.token, "");
     assert_eq!(fwd.licence_key, "");
@@ -87,35 +74,25 @@ async fn request_relay_is_forwarded_without_secrets_or_server_only_fields() {
     server.stop().await;
 }
 
-/// Changed in M1-08. Upstream (rs:546-553, no else branch) did not answer a RequestRelay for an
-/// id not in memory at all, so the client waited for each of its 3 attempts and then failed
-/// with "Timeout". It now gets RelayResponse{refuse_reason} at once, worded like the client's
-/// own PunchHoleResponse ID_NOT_EXIST message (a translation key, client.rs:1840-1841, 1009).
+/// Upstream left a RequestRelay for an unknown id unanswered, so the client timed out; the
+/// refusal is worded like the client's own ID_NOT_EXIST message.
 #[tokio::test]
 async fn request_relay_to_unknown_peer_is_refused_with_id_does_not_exist() {
-    // Arrange
     let server = TestServer::start().await;
     let mut controller = server.tcp().await;
     let req = request_relay("unknown-peer", &server.licence_key);
 
-    // Act
     controller.request_relay(req.clone()).await;
     let res = expect_msg!(controller.recv().await, RelayResponse);
 
-    // Assert
     assert_eq!(res.refuse_reason, "ID does not exist");
     assert_eq!(res.uuid, req.uuid);
     assert!(res.relay_server.is_empty() && res.socket_addr.is_empty());
     server.stop().await;
 }
 
-/// M1-08 review (M2): strings a client hands the server to pass on to another client are
-/// bounded (uuid: 64, relay_server: 259). A RequestRelay at the bounds is forwarded; one over
-/// them is dropped (the target hears nothing) and its connection closed; a RelayResponse /
-/// PunchHoleSent with an oversized relay_server never reaches the controller.
 #[tokio::test]
 async fn forwarded_strings_over_their_bounds_are_dropped() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let at_bounds = max_size_request_relay(TARGET, &server.licence_key);
@@ -128,7 +105,6 @@ async fn forwarded_strings_over_their_bounds_are_dropped() {
         ..at_bounds.clone()
     };
 
-    // Act + Assert: requests.
     let mut ok = server.tcp().await;
     ok.request_relay(at_bounds.clone()).await;
     let fwd = expect_msg!(target.recv().await, RequestRelay);
@@ -140,7 +116,6 @@ async fn forwarded_strings_over_their_bounds_are_dropped() {
         target.assert_silent().await;
     }
 
-    // Act + Assert: answers to the controller `ok`.
     let long = "r".repeat(MAX_RELAY_SERVER_LEN + 1);
     let mut answer = relay_response(&fwd, TARGET);
     answer.relay_server = long.clone();
@@ -159,14 +134,10 @@ async fn forwarded_strings_over_their_bounds_are_dropped() {
     server.stop().await;
 }
 
-/// Relay uuids follow the client's rule (rustdesk 78450f4 #16858, common.rs `check_relay_uuid`:
-/// `[A-Za-z0-9_-]{1,128}`) within the server's 64-byte bound, so older clients that pass the
-/// uuid on unchecked never get anything else. A RequestRelay with a uuid outside it (empty
-/// included) is dropped like an oversized one: the target hears nothing and the controller's
-/// connection is closed.
+/// Relay uuids follow the client's rule (`[A-Za-z0-9_-]{1,128}`), so older clients that pass
+/// the uuid on unchecked never get anything else.
 #[tokio::test]
 async fn request_relay_with_a_uuid_outside_the_client_rule_is_dropped() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let base = request_relay(TARGET, &server.licence_key);
@@ -180,7 +151,6 @@ async fn request_relay_with_a_uuid_outside_the_client_rule_is_dropped() {
     ];
 
     for uuid in ["a", "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12", "A_z-0"] {
-        // Act
         let mut controller = server.tcp().await;
         let req = RequestRelay {
             uuid: uuid.to_owned(),
@@ -188,12 +158,10 @@ async fn request_relay_with_a_uuid_outside_the_client_rule_is_dropped() {
         };
         controller.request_relay(req).await;
 
-        // Assert
         let fwd = expect_msg!(target.recv().await, RequestRelay);
         assert_eq!(fwd.uuid, uuid);
     }
     for uuid in bad {
-        // Act
         let mut controller = server.tcp().await;
         let req = RequestRelay {
             uuid: uuid.to_owned(),
@@ -201,20 +169,16 @@ async fn request_relay_with_a_uuid_outside_the_client_rule_is_dropped() {
         };
         controller.request_relay(req).await;
 
-        // Assert
         controller.assert_closed().await;
         target.assert_silent().await;
     }
     server.stop().await;
 }
 
-/// The same rule on the RelayResponse a target sends back: one with a malformed uuid is dropped
-/// (its connection closed, the controller hears nothing). One without a uuid is how clients
-/// answer a RequestRelay (rendezvous_mediator.rs `create_relay`, `initiate` false), so it still
-/// reaches the controller.
+/// A RelayResponse without a uuid is how clients answer a RequestRelay, so it still reaches the
+/// controller.
 #[tokio::test]
 async fn relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_passes() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, _) = server.online_peer(TARGET).await;
     let mut controller = server.tcp().await;
@@ -232,7 +196,6 @@ async fn relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_
         "\u{e9}",
         &over_cap,
     ] {
-        // Act
         let mut target_tcp = server.tcp().await;
         let bad = RelayResponse {
             uuid: uuid.to_owned(),
@@ -240,12 +203,10 @@ async fn relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_
         };
         target_tcp.send(&rv(|m| m.set_relay_response(bad))).await;
 
-        // Assert
         target_tcp.assert_closed().await;
         controller.assert_silent().await;
     }
 
-    // Act
     let unset = RelayResponse {
         uuid: String::new(),
         ..answer
@@ -257,18 +218,13 @@ async fn relay_response_with_a_malformed_uuid_is_dropped_and_one_without_a_uuid_
         .await;
     let res = expect_msg!(controller.recv().await, RelayResponse);
 
-    // Assert
     assert_eq!(res.uuid, "");
     assert_eq!(res.relay_server, fwd.relay_server);
     server.stop().await;
 }
 
-/// rs:555-574, 1245 `get_pk`: the target's RelayResponse (over its own TCP connection) reaches
-/// the controller with socket_addr cleared and the id replaced by the target's pk signed by
-/// the server key; uuid, relay_server and version are unchanged.
 #[tokio::test]
 async fn relay_response_from_target_reaches_controller_with_signed_pk() {
-    // Arrange
     let server = TestServer::start().await;
     let (mut target, keys) = server.online_peer(TARGET).await;
     let mut controller = server.tcp().await;
@@ -278,12 +234,10 @@ async fn relay_response_from_target_reaches_controller_with_signed_pk() {
     let fwd = expect_msg!(target.recv().await, RequestRelay);
     let mut target_tcp = server.tcp().await;
 
-    // Act
     let answer = relay_response(&fwd, TARGET);
     target_tcp.send(&rv(|m| m.set_relay_response(answer))).await;
     let res = expect_msg!(controller.recv().await, RelayResponse);
 
-    // Assert
     assert!(res.socket_addr.is_empty());
     let expected_pk = IdPk {
         id: TARGET.to_owned(),
@@ -297,13 +251,8 @@ async fn relay_response_from_target_reaches_controller_with_signed_pk() {
     server.stop().await;
 }
 
-/// Changed in M1-06. Upstream (rs:1174-1182) cloned the relay list into each connection task
-/// at accept, so a controller connection accepted before a relay update kept handing out the
-/// old set. The list is now shared by every connection: once an update took effect, the
-/// already open connection's next punch holes name only relays of the new set.
 #[tokio::test]
 async fn early_connection_uses_relay_set_replaced_later() {
-    // Arrange
     let (old, new) = ([RELAY_1, RELAY_2], [RELAY_3, RELAY_4]);
     let server = TestServer::start_with_relays(&old).await;
     let (mut target, _) = server.online_peer(TARGET).await;
@@ -312,11 +261,9 @@ async fn early_connection_uses_relay_set_replaced_later() {
     let mut early = server.tcp().await;
     let before = relay_via(&mut early, &mut target, &req).await;
 
-    // Act
     server.handle.set_relay_servers(relays(&new)).await.unwrap();
     wait_for_relay(&server, &mut target, &req, |r| new.contains(&r)).await;
 
-    // Assert
     assert!(old.contains(&before.as_str()), "{before:?}");
     for _ in 0..SAMPLES {
         let after = relay_via(&mut early, &mut target, &req).await;

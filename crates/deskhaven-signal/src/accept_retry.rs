@@ -1,12 +1,6 @@
-//! Accepting through resource exhaustion (deskhaven code, not vendored; M4-05 review LOW-1).
-//!
-//! Upstream rebound a listener on every accept error. When the process is out of file
-//! descriptors (EMFILE / ENFILE) that drops every connection waiting in the backlog, and the
-//! new socket may fail to be created at all, which ends the server. On such errors the
-//! listener pauses for [`BACKOFF`] (it would otherwise spin, the backlog entry stays) and
-//! accepts again. Errors of a single connection (reset or aborted in the backlog, network
-//! errors Linux passes on) consumed that entry: the next one is accepted at once. Any other
-//! error is returned, and the caller rebinds as before.
+//! On EMFILE / ENFILE a listener pauses for [`BACKOFF`] instead of rebinding: a rebind drops
+//! the whole backlog and may fail to create the socket at all. Errors of a single backlog
+//! entry are retried at once; anything else makes the caller rebind.
 
 use std::io;
 use std::net::SocketAddr;
@@ -18,7 +12,6 @@ use hbb_common::tokio::time::{Instant as TokioInstant, sleep_until};
 
 use crate::log_limit::LogLimit;
 
-/// Pause of a listener after a transient accept error.
 pub(crate) const BACKOFF: Duration = Duration::from_millis(250);
 /// `ENFILE` / `EMFILE`: the same numbers on Linux, macOS and the BSDs.
 const ENFILE: i32 = 23;
@@ -26,9 +19,8 @@ const EMFILE: i32 = 24;
 
 static TRANSIENT_LOG: LogLimit = LogLimit::new(Duration::from_secs(60));
 
-/// `listener.accept()`, waiting out transient errors. `pause` keeps the end of the current
-/// pause across calls, so the future can be dropped (by `select!`) and created again without
-/// cutting the pause short or extending it.
+/// `pause` keeps the end of the current pause across calls, so the future can be dropped (by
+/// `select!`) and recreated without changing the pause.
 pub(crate) async fn accept(
     listener: &TcpListener,
     pause: &mut Option<TokioInstant>,
@@ -55,14 +47,10 @@ pub(crate) async fn accept(
     }
 }
 
-/// What to do after a failed accept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
-    /// The error concerned one backlog entry, which it consumed: accept the next one now.
     Retry,
-    /// The process or system is out of a resource: wait [`BACKOFF`], the entry stays queued.
     Pause,
-    /// Anything else: the caller rebinds the listener.
     Fail,
 }
 
@@ -87,9 +75,7 @@ fn classify(err: &io::Error) -> Action {
     }
 }
 
-/// accept(2) on Linux passes on pending network errors of the new socket as its own (man
-/// page, "Error handling"): EPROTO, ENONET, EHOSTDOWN, ENOPROTOOPT, EOPNOTSUPP. The
-/// unreachable / timed-out ones are matched by kind above.
+/// Linux accept(2) passes on pending network errors of the new socket as its own.
 #[cfg(target_os = "linux")]
 fn is_linux_network_error(err: &io::Error) -> bool {
     const LINUX_NETWORK_ERRORS: [i32; 5] = [71, 64, 112, 92, 95];
@@ -114,7 +100,6 @@ mod tests {
         assert_eq!(classify(&io::ErrorKind::OutOfMemory.into()), Action::Pause);
     }
 
-    /// Review LOW-1: these concern one backlog entry, which the failed accept consumed.
     #[test]
     fn errors_of_one_connection_retry_at_once() {
         use io::ErrorKind::*;

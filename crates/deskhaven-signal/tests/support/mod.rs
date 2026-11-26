@@ -1,31 +1,9 @@
-//! Shared protocol test harness (M1-04) for the deskhaven-signal integration tests.
-//!
-//! - [`TestServer`]: a `SignalServer` on free loopback ports, with its addresses, licence key,
-//!   public key and handle; [`TestServer::stop`] checks the clean shutdown,
-//!   [`TestServer::restart`] brings the same server (ports, key) back.
-//! - Clients speaking the wire protocol the way RustDesk clients and hbbs do (hbb_common
-//!   protobufs): [`UdpClient`] (one protobuf per datagram, what hbbs' `FramedSocket` sends),
-//!   [`TcpClient`] (hbb_common `FramedStream`, i.e. `BytesCodec` length framing; skips and
-//!   records server-first KeyExchange frames like a RustDesk client) and [`WsClient`] (one
-//!   protobuf per binary websocket message). [`Conn`] is the common send / receive surface
-//!   ([`Recv`] tells silence from a closed connection), [`Rendezvous`] the typed request
-//!   helpers of the stream transports; `flows` holds multi-step flows.
-//! - `kx` (M1-07): the client half of the KeyExchange as RustDesk clients run it (both client
-//!   generations), to secure a [`TcpClient`] and to check the server's offer.
-//!
-//! Determinism: the server keeps process-wide state (`IP_BLOCKER`: RegisterPk per source IP).
-//! Every client binds its own loopback source address from [`next_client_ip`] so no two
-//! clients share an `IP_BLOCKER` entry. The relay round-robin cursor lives in each server's
-//! `AllowAll` (it was process-wide upstream); only the `relay_rotation` binary asserts the
-//! rotation order. Requires Linux routing all of 127.0.0.0/8 to `lo` (macOS only configures
-//! 127.0.0.1): the first `next_client_ip` call probes 127.77.0.1 and fails with that
-//! explanation otherwise.
+//! Every client binds its own loopback source address from [`next_client_ip`], so no two
+//! clients share a per-IP limit entry. Requires Linux routing all of 127.0.0.0/8 to `lo`.
 
 // Each test binary uses a different subset of the harness.
 #![allow(dead_code)]
 
-/// The payload of the `$variant` arm of a `RendezvousMessage`; panics with the actual message
-/// otherwise.
 macro_rules! expect_msg {
     ($msg:expr, $variant:ident) => {
         match $msg.union {

@@ -1,7 +1,3 @@
-//! M2-12 review (M5), end to end over the device registry: deleting a device through the
-//! core makes the running signal server forget it (`startup::forget_deleted_devices` ->
-//! `SignalHandle::reload_peer`), so the device re-registers as a new row at once.
-
 use std::sync::Arc;
 
 use deskhaven_config::settings::PinSet;
@@ -38,7 +34,6 @@ pub(super) async fn state(db: &TestDb) -> AppState {
     )
 }
 
-/// The stored row of [`TARGET`] once the write-behind has stored it (within [`STEP`]).
 async fn stored(repo: &DeviceRepository, not: Option<i64>) -> device::Model {
     let deadline = Instant::now() + STEP;
     loop {
@@ -54,7 +49,6 @@ async fn stored(repo: &DeviceRepository, not: Option<i64>) -> device::Model {
 #[tokio::test]
 async fn a_deleted_device_is_forgotten_by_the_signal_server_and_registers_again() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let state = state(db).await;
         let repo = DeviceRepository::new(db.conn.clone());
         let store: Arc<dyn PeerStore> = Arc::new(SignalPeerStore::new(repo.clone()));
@@ -68,10 +62,8 @@ async fn a_deleted_device_is_forgotten_by_the_signal_server_and_registers_again(
         let first = stored(&repo, None).await;
         assert!(!target.register_peer().await, "registered");
 
-        // Act
         assert!(state.devices.delete(first.id).await.unwrap());
 
-        // Assert: the server asks for the key again, and the re-registration is a new row.
         let deadline = Instant::now() + STEP;
         while !target.register_peer().await {
             assert!(
