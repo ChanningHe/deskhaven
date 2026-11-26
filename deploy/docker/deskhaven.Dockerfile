@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 #
 # deskhaven: one static musl binary (web console embedded) on distroless/static,
 # non-root (65532), meant to run with a read-only root and a volume at
@@ -33,7 +33,7 @@ COPY --from=web /src/web/dist /
 # rust:1.99.1-alpine3.22; keep in step with rust-toolchain.toml (excluded from
 # the build context, so rustup uses the image's toolchain instead of
 # installing the dev components).
-FROM rust:1.99.1-alpine3.22@sha256:7a54a528456cc1cae43aab7a23e346198a68fdde39134e207110d91273ea3cea AS build
+FROM rust:1.99.1-alpine3.22@sha256:9a744dc47d1ac2a7d17fc3cedfc8b4928b1696dfcba3274ab25bfb40988a9ff0 AS build
 # make + file: the bundled libsodium build (its configure script needs both).
 # OpenSSL: hbb_common's native-tls (tungstenite) links it on Linux; statically here.
 RUN apk add --no-cache musl-dev make file pkgconf openssl-dev openssl-libs-static
@@ -72,7 +72,7 @@ COPY --from=build /out/usr/local/bin/deskhaven /deskhaven
 FROM scratch AS notices
 
 # --- runtime: gcr.io/distroless/static-debian13:nonroot
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="deskhaven" \
       org.opencontainers.image.description="Self-hosted server for the RustDesk client" \
