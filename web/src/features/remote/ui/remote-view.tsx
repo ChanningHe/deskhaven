@@ -1,14 +1,13 @@
-import { Info, Unplug } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 
 import type { Speaker } from '../audio/speaker'
 import type { Session } from '../session/session'
 import type { SessionIntent } from '../settings/protocol'
 import type { RemoteSettings } from '../settings/settings'
 import { PastePanel, RemoteClipboardPanel } from './clipboard-panels'
+import { DisconnectButton } from './reconnect-stage'
 import { RemoteBar, type BarFrame } from './remote-bar'
 import { RemoteScreen } from './remote-screen'
 import { StatsOverlay } from './stats-overlay'
@@ -17,6 +16,7 @@ import { useClipboardSync } from './use-clipboard-sync'
 import { useCodecFallback } from './use-codec-fallback'
 import { canLockKeyboard, useKeyboardLock } from './use-keyboard-lock'
 import { useStore } from './use-remote'
+import type { FrozenFrame } from './use-screen'
 
 type Panel = 'paste' | 'remote' | null
 type Notice = 'sent' | 'copiedFromDevice' | null
@@ -84,6 +84,7 @@ export function RemoteView({
   stats,
   onStats,
   onDisconnect,
+  freeze,
 }: {
   session: Session
   frame: BarFrame
@@ -95,6 +96,7 @@ export function RemoteView({
   stats: boolean
   onStats: (on: boolean) => void
   onDisconnect: () => void
+  freeze?: FrozenFrame
 }) {
   const { t } = useTranslation()
   const [notice, setNotice] = useState<Notice>(null)
@@ -102,6 +104,7 @@ export function RemoteView({
   useKeyboardLock(fullscreen)
   const [panel, setPanel] = useState<Panel>(null)
   const peer = useStore(session.peer)
+  const hostname = peer?.info.hostname === '' ? undefined : peer?.info.hostname
   const remoteText = useStore(session.remoteClipboard)
   const { keyboard, clipboard } = useStore(session.permissions)
   const codecNotice = useCodecFallback(session, NOTICE_MS)
@@ -156,7 +159,7 @@ export function RemoteView({
         {...frame}
         status="active"
         viewOnly={intent.viewOnly}
-        hostname={peer?.info.hostname === '' ? undefined : peer?.info.hostname}
+        hostname={hostname}
         tools={
           <Toolbar
             ref={toolbar}
@@ -178,12 +181,7 @@ export function RemoteView({
             }}
           />
         }
-        end={
-          <Button variant="destructive" onClick={onDisconnect}>
-            <Unplug aria-hidden />
-            {t('remote.toolbar.disconnect')}
-          </Button>
-        }
+        end={<DisconnectButton onClick={onDisconnect} />}
       />
       <PermissionNotice keyboard={keyboard} clipboard={clipboard} />
       <div className="relative flex min-h-0 flex-1 flex-col bg-muted/40 dark:bg-background">
@@ -196,6 +194,8 @@ export function RemoteView({
           onPointerEnter={sync.onPointerEnter}
           onGesture={sync.onGesture}
           onPaste={sync.onPaste}
+          frozen={freeze?.frozen?.canvas}
+          onFrozen={(canvas) => freeze?.hold(canvas && { canvas, hostname })}
         />
         {stats ? <StatsOverlay session={session} transport={frame.transport} /> : null}
         {panel === 'paste' && clipboard ? <PastePanel onSend={sync.send} onClose={close} /> : null}

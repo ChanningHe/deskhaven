@@ -1896,6 +1896,8 @@
     "opening": "Asking the device for a session…",
     "connecting": "Connecting to the device…",
     "reconnecting": "The connection dropped. Reconnecting (attempt {{attempt}})…",
+    "resuming": "Reconnecting…",
+    "resumingAttempt": "Reconnecting… (attempt {{attempt}})",
     "password": {
       "title": "Device password",
       "description": "Enter the access password set on the device, or ask someone at the device to accept this connection.",

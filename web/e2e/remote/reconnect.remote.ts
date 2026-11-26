@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { device, expectDesktop, submitPassword } from './support/console.ts'
+import { device, expectDesktop, frameShare, submitPassword } from './support/console.ts'
 import { stackInfo } from './support/env.ts'
 import type { ClientKey, DeviceInfo } from './support/env.ts'
 import { test as base, expect } from './support/fixtures.ts'
@@ -16,6 +16,8 @@ const SESSION_BUDGET_REFILL_MS = 60_000
 // The client logs no rejected login, only connections and accepted logins (connection.rs).
 const OPENED = 'Connection opened from'
 const LOGGED_IN = 'peer info supported_encoding'
+const RECONNECTING = /Reconnecting… \(attempt 1\)/
+const FROZEN_LIT_SHARE = 0.5
 
 const test = base.extend<{ relay: Proxy }>({
   // eslint-disable-next-line no-empty-pattern -- Playwright fixtures destructure their deps
@@ -85,7 +87,8 @@ test('a short relay cut reconnects without the password, and the device accepts 
 
   const cut = Date.now()
   relay.dropRelay()
-  await expect(page.getByText(/Reconnecting \(attempt 1\)/)).toBeVisible()
+  await expect(page.getByText(RECONNECTING)).toBeVisible()
+  expect(await frameShare(page)).toBeGreaterThan(FROZEN_LIT_SHARE)
   await expectDesktop(page, 'Relay')
   expect(Date.now() - cut).toBeLessThan(PEER_WINDOW_MS)
   expect(await passwordPrompts(page)).toBe(0)
@@ -112,7 +115,8 @@ test('a cut past the reconnect budget asks for the password once, on reconnect',
 
   relay.refuseRelay(true)
   relay.dropRelay()
-  await expect(page.getByText(/Reconnecting \(attempt 1\)/)).toBeVisible()
+  await expect(page.getByText(RECONNECTING)).toBeVisible()
+  expect(await frameShare(page)).toBeGreaterThan(FROZEN_LIT_SHARE)
   await expect(page.getByText(/The connection to the relay was lost/)).toBeVisible({
     timeout: GIVE_UP_WITHIN_MS,
   })

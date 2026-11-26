@@ -11,9 +11,11 @@ import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
 import { ApprovalPanel, ProgressPanel, SecretPanel, WindowsSessionPanel } from './panels'
 import { ProblemPanel } from './problem-panel'
+import { ReconnectStage } from './reconnect-stage'
 import type { BarFrame } from './remote-bar'
 import { RemoteView } from './remote-view'
 import { useRemote, useStore } from './use-remote'
+import { useFrozenFrame, type FrozenFrame } from './use-screen'
 import { Waiting } from './waiting'
 
 interface Actions {
@@ -28,6 +30,7 @@ interface Actions {
   onReconnect: () => void
   onDisconnect: () => void
   leave: ReactNode
+  freeze: FrozenFrame
 }
 
 function SessionStep({ session, ...actions }: { session: Session } & Actions) {
@@ -126,7 +129,9 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
         </Waiting>
       )
     case 'reconnecting':
-      return (
+      return actions.freeze.frozen ? (
+        <ReconnectStage {...actions} frozen={actions.freeze.frozen} attempt={phase.attempt} />
+      ) : (
         <Waiting frame={frame} status="connecting">
           <ProgressPanel
             text={t('remote.reconnecting', { attempt: phase.attempt })}
@@ -177,6 +182,7 @@ export function RemotePage({
   } = useRemote(deviceId, useContext(RemoteDepsContext))
   // Here, not in RemoteView: a reconnect remounts the view and must not turn the overlay off.
   const [stats, setStats] = useState(false)
+  const freeze = useFrozenFrame(phase)
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
@@ -192,6 +198,7 @@ export function RemotePage({
         onReconnect={reconnect}
         onDisconnect={disconnect}
         leave={leave}
+        freeze={freeze}
       />
     </div>
   )

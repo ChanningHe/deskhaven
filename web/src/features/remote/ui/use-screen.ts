@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -10,25 +11,55 @@ import {
 } from 'react'
 import type { RefObject } from 'react'
 
+import type { RemotePhase } from '../connect/controller'
 import { CssCursors } from '../cursor/css-cursor'
 import type { CursorShape } from '../cursor/cursor'
 import { localCursor, paintedCursor, type CursorScene } from '../cursor/plan'
 import { pointerInput, wheelInput } from '../input/dom'
-import type { Session } from '../session/session'
+import type { Session, SessionState } from '../session/session'
 import { canvasPoint, drawCursor, drawFrame, type Rect, type Size } from './draw'
 import { useStore } from './use-remote'
 
-/** Draws the session's frames on `canvas`; returns the frame size once the first one is drawn. */
-export function useVideo(session: Session, canvas: RefObject<HTMLCanvasElement | null>) {
+/** A copy of the canvas's pixels, detached from the page; null where it cannot be drawn. */
+function snapshot(source: HTMLCanvasElement): HTMLCanvasElement | null {
+  const copy = document.createElement('canvas')
+  copy.width = source.width
+  copy.height = source.height
+  const ctx = copy.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(source, 0, 0)
+  copy.setAttribute('aria-hidden', 'true')
+  return copy
+}
+
+/**
+ * Draws the session's frames on `canvas`; returns the frame size once the first one is drawn.
+ * `onFrozen` hears null when the first frame is drawn, and a copy of the last one when drawing
+ * stops: the page shows that copy until the next session draws.
+ */
+export function useVideo(
+  session: Session,
+  canvas: RefObject<HTMLCanvasElement | null>,
+  onFrozen?: (frame: HTMLCanvasElement | null) => void,
+) {
   const [size, setSize] = useState<Size | null>(null)
-  useEffect(() => {
+  const frozen = useEffectEvent((frame: HTMLCanvasElement | null) => {
+    onFrozen?.(frame)
+  })
+  // A layout effect: the copy must reach the page before the next paint, or the full-page
+  // reconnect panel flashes.
+  useLayoutEffect(() => {
+    const target = canvas.current
     let stopped = false
+    let drawn = false
     const run = async () => {
       for await (const frame of session.frames) {
         try {
-          const target = stopped ? null : canvas.current
-          const resized = target ? drawFrame(target, frame) : null
+          if (stopped || !target) continue
+          const resized = drawFrame(target, frame)
           if (resized) setSize(resized)
+          if (!drawn) frozen(null)
+          drawn = true
         } finally {
           frame.close()
         }
@@ -37,9 +68,47 @@ export function useVideo(session: Session, canvas: RefObject<HTMLCanvasElement |
     void run()
     return () => {
       stopped = true
+      const copy = drawn && target ? snapshot(target) : null
+      if (copy) frozen(copy)
     }
   }, [session, canvas])
   return size
+}
+
+/** The last frame of a session that dropped, kept while the page reconnects. */
+export interface Frozen {
+  canvas: HTMLCanvasElement
+  hostname: string | undefined
+}
+
+export interface FrozenFrame {
+  frozen: Frozen | null
+  hold: (frozen: Frozen | null) => void
+}
+
+function useSessionKind(phase: RemotePhase): SessionState['kind'] | undefined {
+  const session = phase.kind === 'session' ? phase.session : null
+  const subscribe = useCallback(
+    (listener: () => void) => (session ? session.state.subscribe(listener) : () => undefined),
+    [session],
+  )
+  return useSyncExternalStore(subscribe, () => session?.state.get().kind)
+}
+
+/**
+ * The frozen frame the page holds: shown while it reconnects and until the new session draws,
+ * dropped whenever the page shows anything else.
+ */
+export function useFrozenFrame(phase: RemotePhase): FrozenFrame {
+  const [held, setHeld] = useState<Frozen | null>(null)
+  const kind = useSessionKind(phase)
+  const holds = phase.kind === 'reconnecting' || kind === 'active'
+  const [holding, setHolding] = useState(holds)
+  if (holds !== holding) {
+    setHolding(holds)
+    if (holds) setHeld(null)
+  }
+  return { frozen: holds ? held : null, hold: setHeld }
 }
 
 /** The content size of `element`, followed as it changes. */

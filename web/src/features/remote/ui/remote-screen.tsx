@@ -9,6 +9,7 @@ import { cursorScale } from '../cursor/css-cursor'
 import type { Session } from '../session/session'
 import type { RemoteSettings } from '../settings/settings'
 import { fitSize } from './draw'
+import { FrozenScreen } from './frozen-screen'
 import { useStore } from './use-remote'
 import { useCursor, useElementSize, useScreenInput, useVideo } from './use-screen'
 import { pasteKey, useScreenKeys } from './use-screen-keys'
@@ -30,6 +31,8 @@ export function RemoteScreen({
   onPointerEnter,
   onGesture,
   onPaste,
+  frozen,
+  onFrozen,
 }: {
   session: Session
   scale: RemoteSettings['scale']
@@ -39,6 +42,9 @@ export function RemoteScreen({
   onPointerEnter?: () => void
   onGesture?: () => void
   onPaste?: (text: string) => void
+  /** The last session's frame, shown until this one draws its first. */
+  frozen?: HTMLCanvasElement | null | undefined
+  onFrozen?: (frame: HTMLCanvasElement | null) => void
 }) {
   const { t } = useTranslation()
   const hintId = useId()
@@ -47,7 +53,8 @@ export function RemoteScreen({
   const overlay = useRef<HTMLCanvasElement>(null)
   const keys = useRef<HTMLTextAreaElement>(null)
   const peer = useStore(session.peer)
-  const frame = useVideo(session, video)
+  const frame = useVideo(session, video, onFrozen)
+  const still = frame ? null : frozen
   const boxSize = useElementSize(box)
   const display = peer?.display ?? null
   const cursorWidth = display?.width ?? frame?.width ?? 1
@@ -81,7 +88,8 @@ export function RemoteScreen({
         scale === 'original' ? 'overflow-auto' : 'overflow-hidden',
       )}
     >
-      {size ? null : (
+      {still ? <FrozenScreen canvas={still} scale={scale} hint={t('remote.resuming')} /> : null}
+      {size || still ? null : (
         <p
           role="status"
           className="absolute inset-0 m-auto flex size-fit items-center gap-2 text-sm text-muted-foreground"
