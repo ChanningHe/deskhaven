@@ -41,7 +41,7 @@ describe('limitHints', () => {
 describe('LimitsHint', () => {
   const LOCKLESS_DENIED = [
     '此浏览器无法捕获 Win、Alt+Tab、Ctrl+W 等系统快捷键，请用“输入”菜单中的“发送按键”。',
-    '浏览器禁止此页面读取剪贴板：设备上复制的文本仍会同步，本机文本在远程画面按 Ctrl+V 发送。',
+    '浏览器禁止此页面读取剪贴板：设备上复制的文本仍会同步，本机文本在远程画面按 Ctrl/⌘ + V 发送。',
   ]
 
   function trigger() {

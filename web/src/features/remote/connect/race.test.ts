@@ -62,29 +62,31 @@ describe('preferWebRtc', () => {
     const r = race()
     r.relay.resolve('ws')
     await vi.advanceTimersByTimeAsync(RELAY_FALLBACK_DELAY_MS)
-    expect(r.result()).toEqual({ winner: 'relay', value: 'ws' })
+    expect(r.result()).toEqual({ winner: 'relay', value: 'ws', webrtc: 'pending' })
     r.webrtc.resolve('dc')
     await vi.advanceTimersByTimeAsync(0)
-    expect(r.result()).toEqual({ winner: 'relay', value: 'ws' })
+    expect(r.result()).toEqual({ winner: 'relay', value: 'ws', webrtc: 'pending' })
   })
 
   it('takes a held relay at once when WebRTC fails during the grace period', async () => {
     const r = race()
     r.relay.resolve('ws')
     await vi.advanceTimersByTimeAsync(10)
-    r.webrtc.reject(new Error('ice failed'))
+    const failure = new Error('ice failed')
+    r.webrtc.reject(failure)
     await vi.advanceTimersByTimeAsync(0)
-    expect(r.result()).toEqual({ winner: 'relay', value: 'ws' })
+    expect(r.result()).toStrictEqual({ winner: 'relay', value: 'ws', webrtc: { failed: failure } })
   })
 
   it('takes the relay without waiting when WebRTC already failed', async () => {
     const r = race()
-    r.webrtc.reject(new Error('ice failed'))
+    const failure = new Error('ice failed')
+    r.webrtc.reject(failure)
     await vi.advanceTimersByTimeAsync(0)
     expect(r.result()).toBeNull()
     r.relay.resolve('ws')
     await vi.advanceTimersByTimeAsync(0)
-    expect(r.result()).toEqual({ winner: 'relay', value: 'ws' })
+    expect(r.result()).toStrictEqual({ winner: 'relay', value: 'ws', webrtc: { failed: failure } })
   })
 
   it('waits for WebRTC alone when the relay fails', async () => {

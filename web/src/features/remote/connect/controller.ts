@@ -67,8 +67,29 @@ export type RemotePhase =
   | { kind: 'session'; session: Session }
   | { kind: 'failed'; failure: ConnectFailure }
 
-/** How the session reaches the peer; `connecting` until the race between the two is decided. */
-export type TransportKind = 'connecting' | 'relay' | 'webrtc'
+/** Why a session runs over the relay. */
+export type FallbackReason =
+  /** The settings ask for the relay. */
+  | { kind: 'chosen' }
+  /** A handshake over WebRTC failed earlier, with `error`: the relay alone until one succeeds. */
+  | { kind: 'after-failure'; error: string }
+  /** The browser cannot make an offer. */
+  | { kind: 'unsupported'; error?: string }
+  /** The device gave no WebRTC answer. */
+  | { kind: 'no-answer' }
+  | { kind: 'webrtc-failed'; error: string }
+  /** The relay paired and WebRTC, in `state`, was not ready by the end of the grace period. */
+  | { kind: 'relay-first'; state: RTCPeerConnectionState }
+
+/** How the session reaches the peer, and for the relay why. */
+export type TransportChoice = { kind: 'webrtc' } | { kind: 'relay'; why: FallbackReason }
+
+interface Linked {
+  link: Link
+  transport: TransportChoice
+}
+
+type Offer = { offerer: WebRtcOfferer } | { why: FallbackReason }
 
 export interface WebRtcDeps extends TrickleApi {
   /** Rejects where WebRTC is unavailable or the offer cannot be sent: the relay goes alone. */
@@ -182,14 +203,15 @@ interface Attempt {
  */
 export class RemoteController {
   readonly #phase = new ValueStore<RemotePhase>({ kind: 'idle' })
-  readonly #transport = new ValueStore<TransportKind>('connecting')
+  readonly #transport = new ValueStore<TransportChoice | null>(null)
   readonly #settings: ValueStore<RemoteSettings>
   readonly #intent = new ValueStore<SessionIntent>(NO_INTENT)
   readonly #storage: Storage | null
   readonly #deviceId: string
   readonly #deps: ConnectDeps
   #current: Attempt | null = null
-  #relayOnly = false
+  /** Why the last handshake over WebRTC failed, while connects go by the relay alone. */
+  #relayOnly: string | null = null
   #sessionId = randomSessionId()
   #credential: Credential | null = null
   #armed = false
@@ -238,8 +260,8 @@ export class RemoteController {
     return this.#phase
   }
 
-  /** The current attempt's transport. */
-  get transport(): Store<TransportKind> {
+  /** The current attempt's transport; null until the race between the two is decided. */
+  get transport(): Store<TransportChoice | null> {
     return this.#transport
   }
 
@@ -306,7 +328,7 @@ export class RemoteController {
       retry,
     }
     this.#current = attempt
-    this.#transport.set('connecting')
+    this.#transport.set(null)
     if (retry === 0) this.#phase.set({ kind: 'opening' })
     void this.#run(attempt)
   }
@@ -318,8 +340,8 @@ export class RemoteController {
       this.#fail(attempt, { kind: 'no_decoder' })
       return
     }
-    const relayOnly = this.#relayOnly || this.#settings.get().transport === 'relay'
-    const offerer = relayOnly ? null : await this.#offerer()
+    const offer = await this.#offer()
+    const offerer = 'offerer' in offer ? offer.offerer : null
     if (this.#stale(attempt)) {
       offerer?.close()
       return
@@ -345,7 +367,7 @@ export class RemoteController {
       return
     }
     let params: HandshakeParams
-    let link: Link
+    let linked: Linked
     try {
       const settings = this.#settings.get()
       params = this.#params(attempt, opened, decoders, settings)
@@ -354,10 +376,11 @@ export class RemoteController {
       const relay = this.#deps.createRelay(this.#relayOptions(opened))
       const webrtc = this.#deps.webrtc
       if (offerer && opened.answer && webrtc) {
-        link = await this.#race(attempt, opened, opened.answer, offerer, relay, webrtc)
+        linked = await this.#race(attempt, opened, opened.answer, offerer, relay, webrtc)
       } else {
         offerer?.close()
-        link = { kind: 'relay', transport: relay }
+        const why: FallbackReason = 'why' in offer ? offer.why : { kind: 'no-answer' }
+        linked = { link: { kind: 'relay', transport: relay }, transport: { kind: 'relay', why } }
       }
     } catch (error) {
       offerer?.close()
@@ -367,11 +390,12 @@ export class RemoteController {
       return
     }
     attempt.pending.clear()
+    const { link } = linked
     if (this.#stale(attempt)) {
       link.transport.close()
       return
     }
-    this.#transport.set(link.kind)
+    this.#transport.set(linked.transport)
     const session = this.#deps.startSession(link, params, attempt.toldIntent, attempt.told.fps)
     attempt.session = session
     let handshaken = false
@@ -390,14 +414,14 @@ export class RemoteController {
       if (state.kind !== 'closed') {
         if (state.kind === 'connecting') return
         handshaken = true
-        this.#relayOnly = false
+        this.#relayOnly = null
         this.#loggedIn(attempt, session, state)
         return
       }
       stop()
       for (const off of unwatch) off()
       if (!handshaken && link.kind === 'webrtc' && state.cause.by !== 'user') {
-        this.#relayOnly = true
+        this.#relayOnly = state.cause.reason
       }
       this.#release(attempt)
       this.#ended(attempt, session, state.cause)
@@ -502,14 +526,16 @@ export class RemoteController {
     }
   }
 
-  /** Null where the browser cannot offer: the relay goes alone. */
-  async #offerer(): Promise<WebRtcOfferer | null> {
+  /** A WebRTC offer, or why the relay goes alone. */
+  async #offer(): Promise<Offer> {
+    if (this.#settings.get().transport === 'relay') return { why: { kind: 'chosen' } }
+    if (this.#relayOnly !== null) return { why: { kind: 'after-failure', error: this.#relayOnly } }
     const webrtc = this.#deps.webrtc
-    if (!webrtc) return null
+    if (!webrtc) return { why: { kind: 'unsupported' } }
     try {
-      return await webrtc.createOfferer()
-    } catch {
-      return null
+      return { offerer: await webrtc.createOfferer() }
+    } catch (error) {
+      return { why: { kind: 'unsupported', error: errorText(error) } }
     }
   }
 
@@ -572,7 +598,7 @@ export class RemoteController {
     offerer: WebRtcOfferer,
     relay: KeyedTransport,
     webrtc: WebRtcDeps,
-  ): Promise<Link> {
+  ): Promise<Linked> {
     const exchange: { trickle: Trickle | null } = { trickle: null }
     attempt.pending.add(() => {
       relay.close()
@@ -594,10 +620,17 @@ export class RemoteController {
       )
       if (result.winner === 'webrtc') {
         relay.close()
-        return { kind: 'webrtc', transport: offerer, remoteFingerprint: result.value }
+        return {
+          link: { kind: 'webrtc', transport: offerer, remoteFingerprint: result.value },
+          transport: { kind: 'webrtc' },
+        }
       }
+      const why: FallbackReason =
+        result.webrtc === 'pending'
+          ? { kind: 'relay-first', state: offerer.connectionState }
+          : { kind: 'webrtc-failed', error: errorText(result.webrtc.failed) }
       offerer.close()
-      return { kind: 'relay', transport: result.value }
+      return { link: { kind: 'relay', transport: result.value }, transport: { kind: 'relay', why } }
     } catch (error) {
       relay.close()
       throw error

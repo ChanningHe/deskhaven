@@ -2027,7 +2027,7 @@
       "remoteClipboard": "Device clipboard",
       "clipboardSync": "Sync clipboard automatically",
       "clipboardAllow": "Allow reading the clipboard",
-      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl+V on the remote screen. Allow it in the site settings.",
+      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl/⌘ + V on the remote screen. Allow it in the site settings.",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
       "clipboardOff": "The device has turned off the clipboard."
     },
@@ -2038,11 +2038,19 @@
       "escape": "In full screen Esc goes to the device too: hold Esc to leave full screen, press it twice to leave the remote screen.",
       "clipboardBoth": "When clipboard sync is on, text copied here or on the device is synced both ways.",
       "clipboardAsk": "Turning on clipboard sync asks the browser for clipboard access; text copied here syncs to the device only once you allow it.",
-      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl+V on the remote screen."
+      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl/⌘ + V on the remote screen."
     },
     "stats": {
       "label": "Connection statistics",
       "transport": "Link",
+      "fallback": "Fallback",
+      "fallbacks": {
+        "after-failure": "WebRTC handshake failed last time",
+        "unsupported": "This browser cannot offer WebRTC",
+        "no-answer": "The device gave no WebRTC answer",
+        "webrtc-failed": "WebRTC failed",
+        "relay-first": "WebRTC not ready in time"
+      },
       "fps": "FPS",
       "sentFps": "Requested FPS",
       "decodeFps": "Decode est.",

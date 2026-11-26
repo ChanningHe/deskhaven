@@ -11,7 +11,11 @@ export const RELAY_FALLBACK_DELAY_MS = 2500
 /** The client's bound on the data channel opening (client.rs:1146, `wait_connected`). */
 export const WEBRTC_CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_MS
 
-export type RaceResult<W, R> = { winner: 'webrtc'; value: W } | { winner: 'relay'; value: R }
+/** WebRTC when the relay was taken: still pending after the grace period, or failed. */
+export type WebRtcOutcome = 'pending' | { failed: unknown }
+
+export type RaceResult<W, R> =
+  { winner: 'webrtc'; value: W } | { winner: 'relay'; value: R; webrtc: WebRtcOutcome }
 
 /**
  * Races WebRTC against the relay, preferring WebRTC (client.rs:220-332,
@@ -53,7 +57,7 @@ export function preferWebRtc<W, R>(
       },
       (error: unknown) => {
         webrtcError = { error }
-        if (held) finish({ winner: 'relay', value: held.value })
+        if (held) finish({ winner: 'relay', value: held.value, webrtc: { failed: error } })
         else bothFailed()
       },
     )
@@ -61,12 +65,12 @@ export function preferWebRtc<W, R>(
       (value) => {
         if (settled) return
         if (webrtcError) {
-          finish({ winner: 'relay', value })
+          finish({ winner: 'relay', value, webrtc: { failed: webrtcError.error } })
           return
         }
         held = { value }
         grace = setTimeout(() => {
-          finish({ winner: 'relay', value })
+          finish({ winner: 'relay', value, webrtc: 'pending' })
         }, graceMs)
       },
       (error: unknown) => {

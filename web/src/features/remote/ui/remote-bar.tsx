@@ -5,8 +5,9 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { TransportChoice } from '../connect/controller'
+
 export type BarStatus = 'connecting' | 'active' | 'ended'
-export type Transport = 'relay' | 'webrtc'
 
 const DOT: Record<BarStatus, string> = {
   connecting: 'bg-warning motion-safe:animate-pulse',
@@ -20,7 +21,7 @@ export interface BarFrame {
   /** The way back to the console; the route supplies it so the page needs no router. */
   back?: ReactNode
   /** The link the session runs over, once the race has a winner. */
-  transport?: Transport | undefined
+  transport?: TransportChoice | undefined
 }
 
 interface RemoteBarProps extends BarFrame {
@@ -70,7 +71,7 @@ export function RemoteBar({
               <span aria-hidden className="text-border">
                 |
               </span>
-              {t(`remote.transport.${transport}`)}
+              {t(`remote.transport.${transport.kind}`)}
             </span>
           )}
         </span>

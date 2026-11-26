@@ -136,8 +136,10 @@ export class FakePeerConnection implements PeerConnectionLike {
     return Promise.resolve()
   }
 
+  // As RTCPeerConnection.close(): the state turns closed without a connectionstatechange event.
   close(): void {
     this.closed = true
+    this.connectionState = 'closed'
   }
 
   /** A gathered candidate (`text` its SDP line), or null for the end of gathering. */

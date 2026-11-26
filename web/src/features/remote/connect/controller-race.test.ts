@@ -63,7 +63,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     expect(r.createRelay).toHaveBeenCalledTimes(1)
     expect(r.startSession).not.toHaveBeenCalled()
     expect(r.controller.phase.get()).toEqual({ kind: 'opening' })
-    expect(r.controller.transport.get()).toBe('connecting')
+    expect(r.controller.transport.get()).toBeNull()
   })
 
   it('takes the data channel the moment it opens and closes the relay', async () => {
@@ -78,7 +78,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     expect(params?.targetId).toBe(DEVICE)
     expect(r.relays[0]?.closed).toBe(true)
     expect(r.pc().closed).toBe(false)
-    expect(r.controller.transport.get()).toBe('webrtc')
+    expect(r.controller.transport.get()).toEqual({ kind: 'webrtc' })
     expect(r.controller.phase.get()).toEqual({ kind: 'session', session: r.sessions[0] })
     expect(r.w.polls.length).toBeGreaterThan(0)
     expect(r.w.polls.every((signal) => signal.aborted)).toBe(true)
@@ -109,7 +109,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     expect(first?.done === false && first.value.union.case).toBe('testDelay')
     expect(r.pc().closed).toBe(true)
     expect(r.relays[0]?.closed).toBe(false)
-    expect(r.controller.transport.get()).toBe('relay')
+    expect(r.controller.transport.get()?.kind).toBe('relay')
   })
 
   it('goes straight to the relay when the device gave no answer', async () => {
@@ -122,7 +122,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
       expect.anything(),
     )
     expect(r.pc().closed).toBe(true)
-    expect(r.controller.transport.get()).toBe('relay')
+    expect(r.controller.transport.get()?.kind).toBe('relay')
   })
 
   it('offers nothing where the browser has no WebRTC', async () => {
@@ -156,6 +156,34 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(r.startSession.mock.calls[0]?.[0].kind).toBe('relay')
     expect(r.pc().closed).toBe(true)
+  })
+
+  it.each([
+    {
+      path: 'WebRTC failed before the relay paired',
+      play: async (r: ReturnType<typeof race>) => {
+        r.pc().setState('failed')
+        await vi.advanceTimersByTimeAsync(0)
+        pair(r.relays[0])
+        await vi.advanceTimersByTimeAsync(0)
+      },
+      why: { kind: 'webrtc-failed', error: 'WebRTC connection failed' },
+    },
+    {
+      path: 'the relay paired and WebRTC was still connecting after the grace period',
+      play: async (r: ReturnType<typeof race>) => {
+        r.pc().setState('connecting')
+        pair(r.relays[0])
+        await vi.advanceTimersByTimeAsync(RELAY_FALLBACK_DELAY_MS)
+      },
+      why: { kind: 'relay-first', state: 'connecting' },
+    },
+  ])('keeps why it fell back to the relay: $path', async ({ play, why }) => {
+    const r = race()
+    await vi.advanceTimersByTimeAsync(0)
+    await play(r)
+    expect(r.startSession.mock.calls[0]?.[0].kind).toBe('relay')
+    expect(r.controller.transport.get()).toEqual({ kind: 'relay', why })
   })
 
   it('fails, closing everything, only when both links fail', async () => {
@@ -211,7 +239,7 @@ describe('RemoteController: WebRTC first, the relay as fallback', () => {
     expect(r.openSession.mock.calls[1]).toEqual([DEVICE])
     expect(r.w.createOfferer).toHaveBeenCalledTimes(1)
     expect(r.startSession.mock.calls[1]?.[0].kind).toBe('relay')
-    expect(r.controller.transport.get()).toBe('relay')
+    expect(r.controller.transport.get()?.kind).toBe('relay')
 
     r.sessions[1]?.end({ by: 'link', reason: 'relay connection closed' })
     r.controller.connect()

@@ -5,7 +5,7 @@ import {
   RemoteController,
   type ConnectDeps,
   type RemotePhase,
-  type TransportKind,
+  type TransportChoice,
 } from '../connect/controller'
 import type { Store } from '../session/store'
 import type { SessionIntent } from '../settings/protocol'
@@ -19,7 +19,7 @@ export function useStore<T>(store: Store<T>): T {
 
 export interface Remote {
   phase: RemotePhase
-  transport: TransportKind
+  transport: TransportChoice | null
   settings: RemoteSettings
   updateSettings: (patch: Partial<RemoteSettings>) => void
   intent: SessionIntent

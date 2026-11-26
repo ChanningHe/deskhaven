@@ -47,7 +47,7 @@ async function live(s: Setup) {
   s.params(0).onHeard?.(Date.now())
   s.params(0).credentials?.keep(CREDENTIAL)
   session(s, 0).activate()
-  expect(s.controller.transport.get()).toBe('webrtc')
+  expect(s.controller.transport.get()).toEqual({ kind: 'webrtc' })
 }
 
 describe('RemoteController: the transport setting', () => {
@@ -58,7 +58,7 @@ describe('RemoteController: the transport setting', () => {
     expect(s.w.createOfferer).not.toHaveBeenCalled()
     expect(s.openSession.mock.calls[0]).toEqual([DEVICE])
     expect(s.startSession.mock.calls[0]?.[0].kind).toBe('relay')
-    expect(s.controller.transport.get()).toBe('relay')
+    expect(s.controller.transport.get()?.kind).toBe('relay')
   })
 
   it('offers WebRTC with the auto setting', async () => {
@@ -80,7 +80,7 @@ describe('RemoteController: the transport setting', () => {
     expect(s.openSession.mock.calls[1]).toEqual([DEVICE])
     expect(s.w.createOfferer).toHaveBeenCalledTimes(1)
     expect(s.startSession.mock.calls[1]?.[0].kind).toBe('relay')
-    expect(s.controller.transport.get()).toBe('relay')
+    expect(s.controller.transport.get()?.kind).toBe('relay')
     expect(s.controller.phase.get()).toEqual({ kind: 'session', session: s.sessions[1] })
     expect(s.params(1).sessionId).toBe(s.params(0).sessionId)
     expect(s.params(1).credentials?.take()).toBe(CREDENTIAL)

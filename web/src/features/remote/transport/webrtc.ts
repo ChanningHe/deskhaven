@@ -42,6 +42,7 @@ export interface WebRtcOfferer extends Transport {
   readonly offer: string
   /** Settles when the data channel opens; rejects when the attempt fails or is closed first. */
   readonly opened: Promise<void>
+  readonly connectionState: RTCPeerConnectionState
   /** Our candidates as `RTCIceCandidate.toJSON()` text; ends when gathering does. */
   readonly localCandidates: AsyncIterable<string>
   /** Applies the peer's answer; resolves with the DTLS fingerprint it commits the peer to. */
@@ -132,6 +133,10 @@ export class WebRtcTransport implements WebRtcOfferer {
       if (candidate.candidate !== '') this.#candidates.push(JSON.stringify(candidate.toJSON()))
     }
     this.messages = this.#decode()
+  }
+
+  get connectionState(): RTCPeerConnectionState {
+    return this.#pc.connectionState
   }
 
   get localCandidates(): AsyncIterable<string> {

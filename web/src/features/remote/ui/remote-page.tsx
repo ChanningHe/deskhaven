@@ -187,7 +187,7 @@ export function RemotePage({
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
         phase={phase}
-        frame={{ deviceId, back, transport: transport === 'connecting' ? undefined : transport }}
+        frame={{ deviceId, back, transport: transport ?? undefined }}
         settings={settings}
         onSettings={updateSettings}
         intent={intent}

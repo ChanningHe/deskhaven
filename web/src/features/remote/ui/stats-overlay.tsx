@@ -3,16 +3,17 @@ import { Download, X } from 'lucide-react'
 import { Fragment, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { FallbackReason, TransportChoice } from '../connect/controller'
 import type { Session } from '../session/session'
 import type { Quality } from '../settings/settings'
 import { downloadSample, SAMPLE_FRAMES } from '../video/sample-export'
-import type { Transport } from './remote-bar'
 import { useStore } from './use-remote'
 
 const NONE = '–'
 
 type StatName =
   | 'transport'
+  | 'fallback'
   | 'fps'
   | 'sentFps'
   | 'decodeFps'
@@ -44,17 +45,46 @@ function qualityText(quality: Quality | null, t: TFunction): string {
   return t('remote.stats.qualities.custom', { level: quality.custom })
 }
 
+type Row = [
+  stat: StatName,
+  value: string | number | null,
+  text: string,
+  detail?: string | undefined,
+]
+
+function fallbackDetail(why: FallbackReason): string | undefined {
+  switch (why.kind) {
+    case 'after-failure':
+    case 'unsupported':
+    case 'webrtc-failed':
+      return why.error
+    case 'relay-first':
+      return why.state
+    case 'chosen':
+    case 'no-answer':
+      return undefined
+  }
+}
+
+function transportRows(transport: TransportChoice | undefined, t: TFunction): Row[] {
+  if (transport === undefined) return [['transport', null, NONE]]
+  const row: Row = ['transport', transport.kind, t(`remote.transport.${transport.kind}`)]
+  if (transport.kind !== 'relay' || transport.why.kind === 'chosen') return [row]
+  const { why } = transport
+  return [row, ['fallback', why.kind, t(`remote.stats.fallbacks.${why.kind}`), fallbackDetail(why)]]
+}
+
 export function StatsOverlay({
   session,
   transport,
 }: {
   session: Session
-  transport: Transport | undefined
+  transport: TransportChoice | undefined
 }) {
   const { t } = useTranslation()
   const s = useStore(session.stats)
-  const rows: [stat: StatName, value: string | number | null, text: string][] = [
-    ['transport', transport ?? null, transport ? t(`remote.transport.${transport}`) : NONE],
+  const rows: Row[] = [
+    ...transportRows(transport, t),
     ['fps', s.fps, String(s.fps)],
     ['sentFps', s.sentFps, plain(s.sentFps)],
     ['decodeFps', s.decodeFps, plain(s.decodeFps)],
@@ -75,11 +105,14 @@ export function StatsOverlay({
       className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2"
     >
       <dl className="grid grid-cols-[auto_auto] gap-x-4 rounded-lg bg-black/75 px-3 py-2 font-mono text-[11px] leading-[18px] text-white tabular-nums shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
-        {rows.map(([stat, value, text]) => (
+        {rows.map(([stat, value, text, detail]) => (
           <Fragment key={stat}>
             <dt className="text-white/65">{t(`remote.stats.${stat}`)}</dt>
             <dd data-stat={stat} data-value={value ?? ''} className="text-right">
               {text}
+              {detail ? (
+                <span className="line-clamp-2 max-w-60 break-words text-white/65">{detail}</span>
+              ) : null}
             </dd>
           </Fragment>
         ))}
