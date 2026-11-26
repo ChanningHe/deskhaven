@@ -53,10 +53,8 @@ deny = [
     { crate = "openssl-sys", wrappers = ["native-tls", "openssl"] },
     { crate = "native-tls", wrappers = ["tokio-native-tls", "tungstenite", "tokio-tungstenite"] },
     { crate = "tokio-native-tls", wrappers = ["hbb_common", "tokio-tungstenite"] },
-    # Exactly one libsqlite3-sys (duplicates are an error), and it must stay
-    # below 0.38 (sqlx constraint).
+    # Exactly one libsqlite3-sys: its `links` key forbids duplicates.
     { crate = "libsqlite3-sys", deny-multiple-versions = true },
-    { crate = "libsqlite3-sys@>=0.38" },
 ]
 
 [advisories]
@@ -75,8 +73,6 @@ ignore = [
     { id = "RUSTSEC-2021-0145", reason = "atty unsound (unaligned read on Windows only): build-time only, as RUSTSEC-2024-0375; listed for `cargo audit` of the workspace lockfile (M4-05), `cargo deny` only reports unsound advisories of workspace crates" },
     # deskhaven holds no RSA private key; only the OIDC tests sign, with throwaway keys.
     { id = "RUSTSEC-2023-0071", reason = "rsa: only public-key signature verification of ID tokens in production; Marvin concerns private-key operations" },
-    # Whoever can write the data dir can already replace the database. Drop on the sqlx bump.
-    { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache leak needs an attacker-written database/-wal pair; deskhaven only opens its own operator-configured database file" },
     # Moving to jiff/time is a migration, not a patch-release change.
     { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no known vulnerability; required by sea-orm/sqlx/openidconnect/hbb_common; migration tracked separately" },
     # A replacement must accept the same duration syntax, so it waits with chrono.
