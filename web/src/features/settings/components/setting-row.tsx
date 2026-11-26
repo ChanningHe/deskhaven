@@ -12,6 +12,8 @@ import type { Draft } from '../drafts'
 import { problemOf, toEditor } from '../editor'
 import type { Editor } from '../editor'
 import { valueSource } from '../format'
+import { settingHelp, settingName } from '../labels'
+import { CopyCode } from './copy-code'
 import { ProblemText, RangeHint, RiskHint } from './setting-hints'
 import { SettingControl } from './setting-control'
 
@@ -41,7 +43,7 @@ function shownEditor(
   return toEditor(setting)
 }
 
-/** One setting: name, help, source badge, control, and its reset and history actions. */
+/** One setting: name, key and variable, help, source badge, control, and its actions. */
 export function SettingRow({
   setting,
   draft,
@@ -77,8 +79,8 @@ export function SettingRow({
       <div className="min-w-0 space-y-1 sm:pt-1">
         <div className="flex items-start gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <label htmlFor={id} className="font-mono text-sm font-medium break-all">
-              {setting.key}
+            <label htmlFor={id} className="text-sm font-medium break-words">
+              {settingName(setting.key, t)}
             </label>
             <SourceBadge source={valueSource(source)} />
             {draft === undefined ? null : (
@@ -89,8 +91,12 @@ export function SettingRow({
           </div>
           <HistoryButton onClick={onHistory} />
         </div>
+        <div className="flex flex-wrap items-center gap-x-3 font-mono text-[11px] text-muted-foreground">
+          <CopyCode value={setting.key} />
+          <CopyCode value={setting.schema.env} />
+        </div>
         <p id={helpId} className="text-xs text-muted-foreground">
-          {setting.description}
+          {settingHelp(setting, t)}
         </p>
         {setting.pinned ? (
           <PinnedNote source={source} />

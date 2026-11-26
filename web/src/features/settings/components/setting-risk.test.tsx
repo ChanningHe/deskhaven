@@ -2,11 +2,13 @@
 // administrator or owner accounts by email.
 
 import { screen } from '@testing-library/react'
+import i18n from 'i18next'
 import { describe, expect, it } from 'vitest'
 
 import type { SettingView } from '@/api/generated/model'
 import { renderApp } from '@/test/render-app'
 
+import { settingName } from '../labels'
 import { sampleSettings, SETTINGS_PATH } from '../test-data'
 
 const KEY = 'auth.oidc.link_email_max_role'
@@ -38,7 +40,7 @@ describe('the email link role ceiling', () => {
     const { user } = renderApp('/settings', {
       api: { [`GET ${SETTINGS_PATH}`]: { body: withCeiling('user') } },
     })
-    const control = await screen.findByLabelText(KEY)
+    const control = await screen.findByLabelText(settingName(KEY, i18n.t))
 
     expect(screen.queryByText(WARNING)).not.toBeInTheDocument()
     await user.selectOptions(control, 'admin')

@@ -999,6 +999,192 @@
       "updates": "Updates",
       "web_client": "Browser remote control"
     },
+    "items": {
+      "auth": {
+        "session_ttl": {
+          "name": "Session lifetime",
+          "description": "Absolute lifetime of client and console sessions."
+        },
+        "session_idle_ttl": {
+          "name": "Session idle timeout",
+          "description": "Sliding idle timeout of client and console sessions: any activity starts it again."
+        },
+        "max_sessions_per_user": {
+          "name": "Sessions per user",
+          "description": "Most client and console sessions one user can hold; signing in once more ends the user's least recently used session. Every RustDesk client signed in to an account holds one session, so an account shared by more devices than this logs the least recently used device out."
+        },
+        "password": {
+          "min_length": {
+            "name": "Minimum password length",
+            "description": "Minimum password length (the maximum is fixed at 256)."
+          }
+        },
+        "lockout": {
+          "max_failures": {
+            "name": "Failures before lockout",
+            "description": "Failed logins per account within the window before the account is locked."
+          },
+          "window": {
+            "name": "Failure window",
+            "description": "Window in which failed logins are counted."
+          },
+          "duration": {
+            "name": "Lockout duration",
+            "description": "Base lockout duration; repeated lockouts back off exponentially, capped at 24h."
+          }
+        },
+        "ip_rate_limit": {
+          "per_minute": {
+            "name": "Login rate per IP",
+            "description": "Requests per minute from one IP address to login-type endpoints."
+          }
+        },
+        "registration": {
+          "name": "Self-service registration",
+          "description": "Whether people can register themselves: disabled, by invitation only, or open."
+        },
+        "tfa": {
+          "enforce": {
+            "name": "Require two-factor",
+            "description": "Which users must enroll a second factor for password sign-ins (OIDC sign-ins never ask for it). A covered user without one is refused by the RustDesk client until they enroll in the web console, which asks them to at their next console sign-in."
+          }
+        },
+        "email_code": {
+          "enabled": {
+            "name": "Email codes",
+            "description": "Allow one-time codes sent by email as a second factor (requires SMTP)."
+          }
+        },
+        "oidc": {
+          "link_email_max_role": {
+            "name": "OIDC email linking limit",
+            "description": "Highest role an OIDC login may reach by linking an existing account by email (both sides verified, no TOTP, not LDAP); off never links by email. admin and owner let the identity provider take those accounts over by email: use them only with an identity provider whose users cannot change their own email address."
+          }
+        }
+      },
+      "smtp": {
+        "host": {
+          "name": "SMTP host",
+          "description": "SMTP server host name; empty means SMTP is not configured."
+        },
+        "port": {
+          "name": "SMTP port",
+          "description": "SMTP server port."
+        },
+        "tls": {
+          "name": "SMTP encryption",
+          "description": "Transport security of the connection to the SMTP server."
+        },
+        "username": {
+          "name": "SMTP user name",
+          "description": "SMTP user name; empty means no authentication."
+        },
+        "password": {
+          "name": "SMTP password",
+          "description": "SMTP password."
+        },
+        "from": {
+          "name": "Sender address",
+          "description": "Sender address of outgoing mail."
+        }
+      },
+      "devices": {
+        "verify_uuid": {
+          "name": "Verify device UUID",
+          "description": "Device endpoints check that id and uuid match the registered device."
+        },
+        "require_deploy": {
+          "name": "Accept deploy registrations",
+          "description": "Accept rustdesk --deploy registrations. Refusing devices that were not deployed (NOT_DEPLOYED) is not in effect yet."
+        },
+        "last_seen_flush": {
+          "name": "Last-seen write interval",
+          "description": "Interval for batch-writing device last-seen times."
+        },
+        "accept_presets": {
+          "name": "Apply device presets",
+          "description": "Apply the preset-* fields of a device's first sysinfo: row = owner, device group, note and strategy; all = also the address book entry (written as the owner). Presets let a device choose its own placement: enable only for controlled custom-client rollouts. Never applied while devices.verify_uuid is off."
+        }
+      },
+      "addressbook": {
+        "max_peers": {
+          "name": "Peers per address book",
+          "description": "Maximum peers per address book returned to clients (max_peer_one_ab)."
+        }
+      },
+      "audit": {
+        "retention": {
+          "connection": {
+            "name": "Connection log retention",
+            "description": "How long connection audit records are kept; 0 = forever."
+          },
+          "file": {
+            "name": "File transfer log retention",
+            "description": "How long file-transfer audit records are kept; 0 = forever."
+          },
+          "alarm": {
+            "name": "Alarm log retention",
+            "description": "How long alarm audit records are kept; 0 = forever."
+          },
+          "login": {
+            "name": "Login log retention",
+            "description": "How long login audit records are kept; 0 = forever."
+          },
+          "console": {
+            "name": "Console log retention",
+            "description": "How long console audit records are kept; 0 = forever."
+          }
+        }
+      },
+      "signal": {
+        "relay_servers": {
+          "name": "Relay servers",
+          "description": "Relay servers handed to clients by the signal server."
+        },
+        "always_use_relay": {
+          "name": "Always use relay",
+          "description": "Force all connections through a relay."
+        },
+        "require_kx_v1": {
+          "name": "Require key exchange v1",
+          "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected."
+        },
+        "acl": {
+          "default": {
+            "name": "ACL default decision",
+            "description": "Connection ACL decision when no rule matches (not in effect yet)."
+          },
+          "on_error": {
+            "name": "ACL decision on failure",
+            "description": "Connection ACL decision when the control plane fails (fail closed; not in effect yet)."
+          }
+        }
+      },
+      "updates": {
+        "check": {
+          "name": "Check for updates",
+          "description": "While on, admins using the console make the server ask GitHub (api.github.com) for the latest deskhaven release at most once a day; off sends no request."
+        }
+      },
+      "web_client": {
+        "enabled": {
+          "name": "Browser remote control",
+          "description": "Let console users control their own devices from the browser (administrators and owners: every device). Off refuses every web client session."
+        },
+        "ice_servers": {
+          "name": "ICE servers",
+          "description": "ICE servers the browser uses for WebRTC: comma-separated stun:, stuns:, turn: or turns: URLs; empty: none. The defaults are the RustDesk client's public STUN servers."
+        },
+        "turn_username": {
+          "name": "TURN user name",
+          "description": "User name for the turn: / turns: servers of web_client.ice_servers; empty: none. Handed to every browser that opens a web client session."
+        },
+        "turn_credential": {
+          "name": "TURN credential",
+          "description": "Credential for the TURN server of web_client.ice_servers (while it is set, every turn: / turns: URL there must name that one host, which receives it). Handed to every browser that opens a web client session: use a TURN account for that alone."
+        }
+      }
+    },
     "nav": {
       "label": "Setting categories",
       "unsaved_one": "{{label}}, {{count}} unsaved",
@@ -1009,6 +1195,7 @@
       "reset": "Reset to default",
       "undo": "Undo",
       "history": "History",
+      "copy": "Copy {{value}}",
       "willReset": "Will be reset to the default when you save.",
       "serverRefused": "The server refused this value: {{reason}}"
     },

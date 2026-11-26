@@ -1,5 +1,6 @@
-// Fails when a translation key exists in one locale but not in another, or
-// when a key's {{placeholders}} differ between locales.
+// Fails when a translation key exists in one locale but not in another, when a
+// key's {{placeholders}} differ between locales, or when `settings.items` does not
+// name and describe exactly the settings of the server's registry snapshot.
 // Usage: pnpm i18n:check
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -7,6 +8,12 @@ import { basename } from 'node:path'
 import { findMissingKeys, findPlaceholderMismatches, flattenKeys } from './lib/locale-keys.ts'
 
 const LOCALES_DIR = new URL('../src/i18n/locales/', import.meta.url)
+const SETTINGS_SNAPSHOT = new URL(
+  '../../crates/deskhaven-config/tests/snapshots/settings_schema.json',
+  import.meta.url,
+)
+const SETTING_ITEMS = 'settings.items.'
+const SETTING_FIELDS = ['name', 'description']
 const MIN_LOCALES = 2
 
 function loadLocales(): Record<string, unknown> {
@@ -17,6 +24,38 @@ function loadLocales(): Record<string, unknown> {
       JSON.parse(readFileSync(new URL(file, LOCALES_DIR), 'utf8')),
     ]),
   )
+}
+
+function settingKeys(): string[] {
+  const snapshot = JSON.parse(readFileSync(SETTINGS_SNAPSHOT, 'utf8')) as {
+    settings: { key: string }[]
+  }
+  return snapshot.settings.map((setting) => setting.key)
+}
+
+/** Per locale, the `settings.items` keys missing for a registry setting, and those for none. */
+function settingItemProblems(locales: Record<string, unknown>): number {
+  const expected = new Set(
+    settingKeys().flatMap((key) =>
+      SETTING_FIELDS.map((field) => `${SETTING_ITEMS}${key}.${field}`),
+    ),
+  )
+  let problems = 0
+  for (const [locale, tree] of Object.entries(locales)) {
+    const present = new Set(flattenKeys(tree).filter((key) => key.startsWith(SETTING_ITEMS)))
+    const missing = [...expected].filter((key) => !present.has(key))
+    const unknown = [...present].filter((key) => !expected.has(key)).sort()
+    for (const [what, keys] of [
+      ['is missing', missing],
+      ['has keys for no registry setting', unknown],
+    ] as const) {
+      if (keys.length === 0) continue
+      problems += keys.length
+      process.stderr.write(`i18n:check: ${locale} ${what} (${keys.length}):\n`)
+      for (const key of keys) process.stderr.write(`  - ${key}\n`)
+    }
+  }
+  return problems
 }
 
 function main(): number {
@@ -42,7 +81,8 @@ function main(): number {
       process.stderr.write(`  - ${locale}: ${names.length > 0 ? names.join(', ') : '(none)'}\n`)
     }
   }
-  if (problems.length > 0 || mismatches.length > 0) return 1
+  const itemProblems = settingItemProblems(locales)
+  if (problems.length > 0 || mismatches.length > 0 || itemProblems > 0) return 1
 
   const keyCount = flattenKeys(locales[names[0] ?? '']).length
   process.stdout.write(`i18n:check: ${keyCount} keys consistent across ${names.join(', ')}\n`)

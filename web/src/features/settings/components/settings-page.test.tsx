@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react'
+import i18n from 'i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SettingView } from '@/api/generated/model'
@@ -7,10 +8,13 @@ import { errorEnvelope } from '@/test/mock-api'
 import type { MockHandler } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
+import { settingName } from '../labels'
 import { sampleSettings, SETTINGS_PATH, withSetting } from '../test-data'
 
 const TTL = 'auth.session_ttl'
 const MIN_LENGTH = 'auth.password.min_length'
+
+const field = (key: string) => screen.getByLabelText(settingName(key, i18n.t))
 
 function one(settings: readonly SettingView[], key: string): SettingView {
   const found = settings.find((s) => s.key === key)
@@ -46,7 +50,7 @@ async function openPage(
 ) {
   const stub = settingsApi(initial, onPatch)
   const app = renderApp('/settings', { api: stub.api })
-  await screen.findByText(TTL)
+  await screen.findByLabelText(settingName(TTL, i18n.t))
   return { ...app, ...stub }
 }
 
@@ -57,15 +61,13 @@ describe('settings page', () => {
     for (const heading of ['认证与会话', '邮件（SMTP）', '设备', '信令']) {
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
     }
-    expect(screen.getByLabelText(TTL)).toHaveValue('30d')
-    expect(screen.getByLabelText(MIN_LENGTH)).toHaveValue('10')
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('disabled')
-    expect(within(screen.getByLabelText('auth.registration')).getAllByRole('option')).toHaveLength(
-      3,
-    )
-    expect(screen.getByLabelText('smtp.password')).toHaveAttribute('type', 'password')
-    expect(screen.getByLabelText('signal.relay_servers').tagName).toBe('TEXTAREA')
-    expect(screen.getByRole('checkbox', { name: /devices.verify_uuid|启用/ })).toBeChecked()
+    expect(field(TTL)).toHaveValue('30d')
+    expect(field(MIN_LENGTH)).toHaveValue('10')
+    expect(field('auth.registration')).toHaveValue('disabled')
+    expect(within(field('auth.registration')).getAllByRole('option')).toHaveLength(3)
+    expect(field('smtp.password')).toHaveAttribute('type', 'password')
+    expect(field('signal.relay_servers').tagName).toBe('TEXTAREA')
+    expect(screen.getByRole('checkbox', { name: /启用/ })).toBeChecked()
     expect(screen.getByText('范围 8 至 256。')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^默认/ })).toHaveLength(sampleSettings().length)
   })
@@ -75,7 +77,7 @@ describe('settings page', () => {
     const after = withSetting(initial, MIN_LENGTH, modified(12, 1))
     const { user, state } = await openPage(initial, () => ({ body: after }))
 
-    const input = screen.getByLabelText(MIN_LENGTH)
+    const input = field(MIN_LENGTH)
     await user.clear(input)
     await user.type(input, '12')
     expect(screen.getByText('1 项未保存的更改')).toBeInTheDocument()
@@ -85,10 +87,10 @@ describe('settings page', () => {
       expect(screen.getByText('已保存 1 项设置。')).toBeInTheDocument()
     })
     expect(state.patches).toEqual([{ changes: [{ key: MIN_LENGTH, version: 0, value: 12 }] }])
-    const row = screen.getByLabelText(MIN_LENGTH).closest('li')
+    const row = field(MIN_LENGTH).closest('li')
     expect(row).not.toBeNull()
     expect(within(row as HTMLElement).getByRole('button', { name: /^已修改/ })).toBeInTheDocument()
-    expect(screen.getByLabelText(MIN_LENGTH)).toHaveValue('12')
+    expect(field(MIN_LENGTH)).toHaveValue('12')
   })
 
   it('keeps a relay list typed line by line and saves every line', async () => {
@@ -96,7 +98,7 @@ describe('settings page', () => {
     const initial = withSetting(sampleSettings(), RELAYS, { value: ['a:1'] })
     const { user, state } = await openPage(initial)
 
-    const input = screen.getByLabelText(RELAYS)
+    const input = field(RELAYS)
     await user.type(input, '{Enter}')
     expect(input).toHaveValue('a:1\n')
     expect(screen.getByText('没有未保存的更改。')).toBeInTheDocument()
@@ -127,16 +129,16 @@ describe('settings page', () => {
     )
     await openPage(pinned)
 
-    expect(screen.getByLabelText(TTL)).toBeDisabled()
-    expect(screen.getByLabelText(TTL)).toHaveValue('7d')
+    expect(field(TTL)).toBeDisabled()
+    expect(field(TTL)).toHaveValue('7d')
     expect(
       screen.getByText('由环境变量 DESKHAVEN_SETTINGS__AUTH__SESSION_TTL 固定，此处只读。'),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText('auth.registration')).toBeDisabled()
+    expect(field('auth.registration')).toBeDisabled()
     expect(
       screen.getByText('由配置文件 /etc/deskhaven/deskhaven.toml 固定，此处只读。'),
     ).toBeInTheDocument()
-    const row = screen.getByLabelText(TTL).closest('li') as HTMLElement
+    const row = field(TTL).closest('li') as HTMLElement
     expect(within(row).queryByRole('button', { name: '恢复默认' })).not.toBeInTheDocument()
     expect(within(row).getByRole('button', { name: /^配置锁定/ })).toBeInTheDocument()
   })
@@ -144,7 +146,7 @@ describe('settings page', () => {
   it('refuses an invalid value before it is sent', async () => {
     const { user, state } = await openPage(sampleSettings())
 
-    const input = screen.getByLabelText(MIN_LENGTH)
+    const input = field(MIN_LENGTH)
     await user.clear(input)
     await user.type(input, '3')
 
@@ -158,7 +160,7 @@ describe('settings page', () => {
     const after = withSetting(initial, 'smtp.password', modified({ set: true }, 1))
     const { user, state } = await openPage(initial, () => ({ body: after }))
 
-    const input = screen.getByLabelText('smtp.password')
+    const input = field('smtp.password')
     expect(input).toHaveValue('')
     await user.type(input, 's3cret-value')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
@@ -169,11 +171,8 @@ describe('settings page', () => {
     expect(state.patches).toEqual([
       { changes: [{ key: 'smtp.password', version: 0, value: 's3cret-value' }] },
     ])
-    expect(screen.getByLabelText('smtp.password')).toHaveValue('')
-    expect(screen.getByLabelText('smtp.password')).toHaveAttribute(
-      'placeholder',
-      '已设置。输入新值可替换。',
-    )
+    expect(field('smtp.password')).toHaveValue('')
+    expect(field('smtp.password')).toHaveAttribute('placeholder', '已设置。输入新值可替换。')
     expect(document.body.textContent).not.toContain('s3cret-value')
   })
 
@@ -186,31 +185,31 @@ describe('settings page', () => {
     })
     const { user, state } = await openPage(initial, () => ({ body: after }))
 
-    const row = screen.getByLabelText(TTL).closest('li') as HTMLElement
+    const row = field(TTL).closest('li') as HTMLElement
     await user.click(within(row).getByRole('button', { name: '恢复默认' }))
     expect(screen.getByText('保存后将恢复为默认值。')).toBeInTheDocument()
-    expect(screen.getByLabelText(TTL)).toBeDisabled()
+    expect(field(TTL)).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '保存更改' }))
 
     await waitFor(() => {
       expect(screen.getByText('已保存 1 项设置。')).toBeInTheDocument()
     })
     expect(state.patches).toEqual([{ changes: [{ key: TTL, version: 2, reset: true }] }])
-    expect(screen.getByLabelText(TTL)).toHaveValue('30d')
+    expect(field(TTL)).toHaveValue('30d')
   })
 
   it('undoes and discards edits', async () => {
     const { user, state } = await openPage(sampleSettings())
 
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.selectOptions(field('auth.registration'), 'open')
     expect(screen.getByText('未保存')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '撤销' }))
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('disabled')
+    expect(field('auth.registration')).toHaveValue('disabled')
     expect(screen.getByText('没有未保存的更改。')).toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'invite')
+    await user.selectOptions(field('auth.registration'), 'invite')
     await user.click(screen.getByRole('button', { name: '放弃更改' }))
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('disabled')
+    expect(field('auth.registration')).toHaveValue('disabled')
     expect(state.patches).toEqual([])
   })
 
@@ -226,7 +225,7 @@ describe('settings page', () => {
       },
     }))
 
-    const input = screen.getByLabelText(TTL)
+    const input = field(TTL)
     await user.clear(input)
     await user.type(input, '1m')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
@@ -234,7 +233,7 @@ describe('settings page', () => {
     expect(
       await screen.findByText('服务器拒绝了该值：must be between 5m and 365d'),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText(TTL)).toHaveValue('1m')
+    expect(field(TTL)).toHaveValue('1m')
   })
 })
 
@@ -261,7 +260,7 @@ describe('settings page conflicts', () => {
       return calls === 1 ? CONFLICT(theirs) : { body: saved }
     })
 
-    const input = screen.getByLabelText(TTL)
+    const input = field(TTL)
     await user.clear(input)
     await user.type(input, '60d')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
@@ -290,7 +289,7 @@ describe('settings page conflicts', () => {
     // The reload shows the server's list from here on.
     state.settings = theirsList
 
-    const input = screen.getByLabelText(TTL)
+    const input = field(TTL)
     await user.clear(input)
     await user.type(input, '60d')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
@@ -298,7 +297,7 @@ describe('settings page conflicts', () => {
     await user.click(within(dialog).getByRole('button', { name: '采用对方的值' }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText(TTL)).toHaveValue('90d')
+      expect(field(TTL)).toHaveValue('90d')
     })
     expect(screen.getByText('没有未保存的更改。')).toBeInTheDocument()
     expect(state.patches).toHaveLength(1)
@@ -308,7 +307,7 @@ describe('settings page conflicts', () => {
     const theirs = one(withSetting(sampleSettings(), TTL, modified('90d', 5)), TTL)
     const { user } = await openPage(sampleSettings(), () => CONFLICT(theirs))
 
-    const input = screen.getByLabelText(TTL)
+    const input = field(TTL)
     await user.clear(input)
     await user.type(input, '60d')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
@@ -318,7 +317,7 @@ describe('settings page conflicts', () => {
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     })
-    expect(screen.getByLabelText(TTL)).toHaveValue('60d')
+    expect(field(TTL)).toHaveValue('60d')
     expect(screen.getByText('1 项未保存的更改')).toBeInTheDocument()
   })
 
@@ -329,7 +328,7 @@ describe('settings page conflicts', () => {
     }
     const { user } = await openPage(sampleSettings(), () => CONFLICT(theirs))
 
-    await user.type(screen.getByLabelText('smtp.password'), 'my-new-secret')
+    await user.type(field('smtp.password'), 'my-new-secret')
     await user.click(screen.getByRole('button', { name: '保存更改' }))
 
     const dialog = await screen.findByRole('alertdialog', { name: '已被他人修改' })
@@ -357,11 +356,11 @@ describe('settings page failed saves', () => {
       body: errorEnvelope('internal'),
     }))
 
-    await user.type(screen.getByLabelText('smtp.password'), SECRET_TEXT)
+    await user.type(field('smtp.password'), SECRET_TEXT)
     await user.click(screen.getByRole('button', { name: '保存更改' }))
 
     expect(await screen.findByText('无法保存设置')).toBeInTheDocument()
-    expect(screen.getByLabelText('smtp.password')).toHaveValue(SECRET_TEXT)
+    expect(field('smtp.password')).toHaveValue(SECRET_TEXT)
     await waitFor(() => {
       expect(cachedMutations(queryClient)).not.toContain(SECRET_TEXT)
     })
@@ -380,7 +379,7 @@ describe('settings page failed saves', () => {
       },
     }))
 
-    await user.type(screen.getByLabelText('smtp.password'), SECRET_TEXT)
+    await user.type(field('smtp.password'), SECRET_TEXT)
     await user.click(screen.getByRole('button', { name: '保存更改' }))
 
     await screen.findByRole('alertdialog', { name: '已被他人修改' })
@@ -407,23 +406,23 @@ describe('settings page failed saves', () => {
       }
     })
 
-    const input = screen.getByLabelText(TTL)
+    const input = field(TTL)
     await user.clear(input)
     await user.type(input, '60d')
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.selectOptions(field('auth.registration'), 'open')
     state.settings = pinned
     await user.click(screen.getByRole('button', { name: '保存更改' }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText(TTL)).toBeDisabled()
+      expect(field(TTL)).toBeDisabled()
     })
     expect(refreshed).toBe(true)
-    expect(screen.getByLabelText(TTL)).toHaveValue('7d')
+    expect(field(TTL)).toHaveValue('7d')
     expect(
       screen.getByText('以下设置已被服务器配置固定，你对它们的修改已丢弃：auth.session_ttl'),
     ).toBeInTheDocument()
     expect(screen.getByText('1 项未保存的更改')).toBeInTheDocument()
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
+    expect(field('auth.registration')).toHaveValue('open')
   })
 })
 
@@ -459,7 +458,7 @@ describe('settings page category navigation', () => {
   it('jumps to a category without asking to leave and focuses its heading', async () => {
     const { user, router } = await openPage(sampleSettings())
 
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.selectOptions(field('auth.registration'), 'open')
     await user.click(within(categoryNav()).getByRole('button', { name: '信令' }))
 
     const heading = screen.getByRole('heading', { name: '信令' })
@@ -467,7 +466,7 @@ describe('settings page category navigation', () => {
     expect(scrollIntoView.mock.contexts).toEqual([heading])
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(router.state.location.href).toBe('/settings')
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
+    expect(field('auth.registration')).toHaveValue('open')
   })
 
   it('counts the unsaved changes of each category until they are saved', async () => {
@@ -479,8 +478,8 @@ describe('settings page category navigation', () => {
     )
     const { user } = await openPage(initial, () => ({ body: after }))
 
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
-    await user.type(screen.getByLabelText('smtp.host'), 'mail.example.com')
+    await user.selectOptions(field('auth.registration'), 'open')
+    await user.type(field('smtp.host'), 'mail.example.com')
 
     const nav = categoryNav()
     expect(within(nav).getByRole('button', { name: '认证与会话，1 项未保存' })).toHaveTextContent(
@@ -535,9 +534,9 @@ describe('settings page history and guards', () => {
         [`GET ${SETTINGS_PATH}/${TTL}/history`]: { body: history },
       },
     })
-    await screen.findByText(TTL)
+    await screen.findByLabelText(settingName(TTL, i18n.t))
 
-    const row = screen.getByLabelText(TTL).closest('li') as HTMLElement
+    const row = field(TTL).closest('li') as HTMLElement
     await user.click(within(row).getByRole('button', { name: '历史' }))
 
     const drawer = await screen.findByRole('dialog', { name: '修改历史' })
@@ -558,7 +557,7 @@ describe('settings page history and guards', () => {
   it('shows history as an icon button with its name as a tooltip', async () => {
     const { user } = await openPage(sampleSettings())
 
-    const row = screen.getByLabelText(TTL).closest('li') as HTMLElement
+    const row = field(TTL).closest('li') as HTMLElement
     const history = within(row).getByRole('button', { name: '历史' })
     expect(history).toHaveTextContent(/^$/)
 
@@ -569,13 +568,13 @@ describe('settings page history and guards', () => {
   it('asks before leaving the page with unsaved changes', async () => {
     const { user, router } = await openPage(sampleSettings())
 
-    await user.selectOptions(screen.getByLabelText('auth.registration'), 'open')
+    await user.selectOptions(field('auth.registration'), 'open')
     void router.navigate({ to: '/groups' })
 
     const dialog = await screen.findByRole('alertdialog', { name: '放弃未保存的修改？' })
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
     expect(router.state.location.pathname).toBe('/settings')
-    expect(screen.getByLabelText('auth.registration')).toHaveValue('open')
+    expect(field('auth.registration')).toHaveValue('open')
 
     void router.navigate({ to: '/groups' })
     const again = await screen.findByRole('alertdialog', { name: '放弃未保存的修改？' })

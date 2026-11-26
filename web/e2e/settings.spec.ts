@@ -12,7 +12,7 @@ const row = (page: Page, key: string) => page.locator(`li[data-setting="${key}"]
 
 async function stage(page: Page, value: string) {
   await page.goto('/settings')
-  await page.getByLabel(KEY, { exact: true }).fill(value)
+  await row(page, KEY).getByRole('textbox').fill(value)
   await expect(row(page, KEY).getByText('Unsaved')).toBeVisible()
 }
 
@@ -35,7 +35,7 @@ test('a setting pinned by the environment is read-only and names the variable', 
 
   await expect(pinned.getByText('Locked by config', { exact: true })).toBeVisible()
   await expect(pinned).toContainText(`Fixed by environment variable ${PINNED.env}; read-only here.`)
-  await expect(page.getByLabel(PINNED.key, { exact: true })).toBeDisabled()
+  await expect(pinned.getByRole('combobox')).toBeDisabled()
 })
 
 test('saving over a concurrent change asks whose value wins', async ({ page, context }) => {
@@ -51,5 +51,5 @@ test('saving over a concurrent change asks whose value wins', async ({ page, con
   await expect(conflict).toContainText('60d')
   await conflict.getByRole('button', { name: 'Keep my values' }).click()
   await expect(other.getByText('Saved 1 setting.')).toBeVisible()
-  await expect(other.getByLabel(KEY, { exact: true })).toHaveValue('30d')
+  await expect(row(other, KEY).getByRole('textbox')).toHaveValue('30d')
 })

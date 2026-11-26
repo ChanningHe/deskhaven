@@ -999,6 +999,192 @@
       "updates": "更新",
       "web_client": "浏览器远程"
     },
+    "items": {
+      "auth": {
+        "session_ttl": {
+          "name": "会话有效期",
+          "description": "客户端与控制台会话的绝对有效期，到期后须重新登录。"
+        },
+        "session_idle_ttl": {
+          "name": "会话空闲超时",
+          "description": "客户端与控制台会话无活动多久后失效；每次活动都会重新计时。"
+        },
+        "max_sessions_per_user": {
+          "name": "每用户会话上限",
+          "description": "单个用户可同时持有的客户端与控制台会话数；超出后再登录会结束其最久未用的会话。每台登录该账号的 RustDesk 客户端各占一个会话，因此多于此数的设备共用一个账号时，最久未用的设备会被登出。"
+        },
+        "password": {
+          "min_length": {
+            "name": "密码最短长度",
+            "description": "密码的最少字符数（最大长度固定为 256）。"
+          }
+        },
+        "lockout": {
+          "max_failures": {
+            "name": "锁定前失败次数",
+            "description": "同一账号在统计窗口内登录失败达到此次数即被锁定。"
+          },
+          "window": {
+            "name": "失败统计窗口",
+            "description": "统计登录失败次数的时间窗口。"
+          },
+          "duration": {
+            "name": "锁定时长",
+            "description": "首次锁定的时长；再次锁定按指数递增，最长 24 小时。"
+          }
+        },
+        "ip_rate_limit": {
+          "per_minute": {
+            "name": "单 IP 登录限速",
+            "description": "同一 IP 每分钟可向登录类接口发起的请求数。"
+          }
+        },
+        "registration": {
+          "name": "自助注册",
+          "description": "用户能否自行注册：关闭、仅限邀请或开放注册。"
+        },
+        "tfa": {
+          "enforce": {
+            "name": "强制两步验证",
+            "description": "哪些用户在密码登录时必须绑定第二验证因素（OIDC 登录不要求）。未绑定的受约束用户会被 RustDesk 客户端拒绝登录，直到在网页控制台完成绑定；控制台会在其下次登录时要求绑定。"
+          }
+        },
+        "email_code": {
+          "enabled": {
+            "name": "邮件验证码",
+            "description": "允许用邮件发送的一次性验证码作为第二验证因素（需先配置 SMTP）。"
+          }
+        },
+        "oidc": {
+          "link_email_max_role": {
+            "name": "OIDC 邮箱关联上限",
+            "description": "OIDC 登录凭邮箱关联已有账号时可关联到的最高角色（要求双方邮箱均已验证、该账号未启用 TOTP 且不是 LDAP 账号）；off 表示从不凭邮箱关联。设为 admin 或 owner 时，身份提供方可凭邮箱接管这些账号：只在身份提供方不允许用户自行修改邮箱时使用。"
+          }
+        }
+      },
+      "smtp": {
+        "host": {
+          "name": "SMTP 服务器",
+          "description": "SMTP 服务器主机名；留空表示未配置邮件发送。"
+        },
+        "port": {
+          "name": "SMTP 端口",
+          "description": "SMTP 服务器端口。"
+        },
+        "tls": {
+          "name": "SMTP 加密方式",
+          "description": "与 SMTP 服务器连接时的传输加密方式。"
+        },
+        "username": {
+          "name": "SMTP 用户名",
+          "description": "SMTP 登录用户名；留空表示不认证。"
+        },
+        "password": {
+          "name": "SMTP 密码",
+          "description": "SMTP 登录密码。"
+        },
+        "from": {
+          "name": "发件人地址",
+          "description": "外发邮件的发件人地址。"
+        }
+      },
+      "devices": {
+        "verify_uuid": {
+          "name": "校验设备 UUID",
+          "description": "设备接口校验请求中的 id 与 uuid 是否与已登记的设备一致。"
+        },
+        "require_deploy": {
+          "name": "接受部署注册",
+          "description": "接受通过 rustdesk --deploy 发起的设备注册。拒绝未部署设备（NOT_DEPLOYED）尚未生效。"
+        },
+        "last_seen_flush": {
+          "name": "在线时间写入间隔",
+          "description": "批量写入设备最后在线时间的间隔。"
+        },
+        "accept_presets": {
+          "name": "应用设备预设",
+          "description": "采用设备首次上报的 sysinfo 中的 preset-* 字段：row 设置所有者、设备组、备注和策略；all 还会写入地址簿条目（以所有者身份写入）。预设让设备自行决定归属：只应在受控的定制客户端部署中开启。devices.verify_uuid 关闭时从不应用。"
+        }
+      },
+      "addressbook": {
+        "max_peers": {
+          "name": "地址簿设备上限",
+          "description": "每个地址簿返回给客户端的最多设备数（max_peer_one_ab）。"
+        }
+      },
+      "audit": {
+        "retention": {
+          "connection": {
+            "name": "连接日志保留期",
+            "description": "连接审计记录的保留时长；0 表示永久保留。"
+          },
+          "file": {
+            "name": "文件传输日志保留期",
+            "description": "文件传输审计记录的保留时长；0 表示永久保留。"
+          },
+          "alarm": {
+            "name": "告警日志保留期",
+            "description": "告警审计记录的保留时长；0 表示永久保留。"
+          },
+          "login": {
+            "name": "登录日志保留期",
+            "description": "登录审计记录的保留时长；0 表示永久保留。"
+          },
+          "console": {
+            "name": "控制台日志保留期",
+            "description": "控制台操作审计记录的保留时长；0 表示永久保留。"
+          }
+        }
+      },
+      "signal": {
+        "relay_servers": {
+          "name": "中继服务器",
+          "description": "信令服务器下发给客户端的中继服务器列表。"
+        },
+        "always_use_relay": {
+          "name": "强制中继",
+          "description": "所有连接都强制经由中继服务器。"
+        },
+        "require_kx_v1": {
+          "name": "要求 v1 密钥交换",
+          "description": "拒绝 v1 之前的客户端（收发共用一把密钥）发起的信令 KeyExchange；跳过密钥交换的客户端不受影响。"
+        },
+        "acl": {
+          "default": {
+            "name": "ACL 默认决策",
+            "description": "没有规则匹配时的连接 ACL 决策（尚未生效）。"
+          },
+          "on_error": {
+            "name": "ACL 故障决策",
+            "description": "控制面出错时的连接 ACL 决策（默认拒绝，即故障时关闭；尚未生效）。"
+          }
+        }
+      },
+      "updates": {
+        "check": {
+          "name": "检查更新",
+          "description": "开启后，管理员使用控制台时，服务器每天最多向 GitHub（api.github.com）查询一次 deskhaven 最新版本；关闭则不发出任何请求。"
+        }
+      },
+      "web_client": {
+        "enabled": {
+          "name": "浏览器远程控制",
+          "description": "允许控制台用户在浏览器中控制自己的设备（管理员和所有者可控制所有设备）。关闭后拒绝所有浏览器远程会话。"
+        },
+        "ice_servers": {
+          "name": "ICE 服务器",
+          "description": "浏览器建立 WebRTC 连接所用的 ICE 服务器：以逗号分隔的 stun:、stuns:、turn: 或 turns: 地址；留空表示不使用。默认值是 RustDesk 客户端所用的公共 STUN 服务器。"
+        },
+        "turn_username": {
+          "name": "TURN 用户名",
+          "description": "web_client.ice_servers 中 turn: / turns: 服务器的用户名；留空表示无。会下发给每个打开浏览器远程会话的浏览器。"
+        },
+        "turn_credential": {
+          "name": "TURN 凭据",
+          "description": "web_client.ice_servers 中 TURN 服务器的凭据（设置后，其中所有 turn: / turns: 地址必须指向同一台主机，凭据只发给它）。会下发给每个打开浏览器远程会话的浏览器：请为此单独准备一个 TURN 账号。"
+        }
+      }
+    },
     "nav": {
       "label": "设置类别",
       "unsaved_one": "{{label}}，{{count}} 项未保存",
@@ -1009,6 +1195,7 @@
       "reset": "恢复默认",
       "undo": "撤销",
       "history": "历史",
+      "copy": "复制 {{value}}",
       "willReset": "保存后将恢复为默认值。",
       "serverRefused": "服务器拒绝了该值：{{reason}}"
     },
