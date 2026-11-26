@@ -27,16 +27,21 @@ describe('limitHints', () => {
     ['prompt', 'remote.limits.clipboardAsk'],
     [null, 'remote.limits.clipboardAsk'],
     ['denied', 'remote.limits.clipboardDenied'],
-    ['unsupported', 'remote.limits.clipboardUnsupported'],
   ] as const)('reads clipboard access %s as %s', (clipboard, line) => {
     expect(limitHints({ keyboardLock: false, clipboard }).at(-1)).toBe(line)
+  })
+
+  it('says nothing of the clipboard where the browser cannot report its access', () => {
+    expect(limitHints({ keyboardLock: false, clipboard: 'unsupported' })).toEqual([
+      'remote.limits.shortcutsMenu',
+    ])
   })
 })
 
 describe('LimitsHint', () => {
   const LOCKLESS_DENIED = [
     '此浏览器无法捕获 Win、Alt+Tab、Ctrl+W 等系统快捷键，请用“输入”菜单中的“发送按键”。',
-    '浏览器禁止此页面读取剪贴板：只会同步设备上复制的文本，本机的文本请用“剪贴板”菜单中的“发送剪贴板”。',
+    '浏览器禁止此页面读取剪贴板：设备上复制的文本仍会同步，本机文本在远程画面按 Ctrl+V 发送。',
   ]
 
   function trigger() {

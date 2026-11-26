@@ -162,7 +162,6 @@ class RemoteSession implements Session {
       this.#steer()
       this.#stats.set({
         ...this.#meter.stats.get(),
-        userFps: governor.userFps,
         sentFps: this.#sentFps,
         decodeFps: governor.decodeFps,
       })

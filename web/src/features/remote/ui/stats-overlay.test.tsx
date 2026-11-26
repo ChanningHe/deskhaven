@@ -115,33 +115,29 @@ describe('stats overlay', () => {
     expect(stat).toHaveTextContent(text)
   })
 
-  it('shows the fps ceiling, the fps asked of the peer and the decode estimate after fps', async () => {
+  it('shows the fps asked of the peer and the decode estimate after fps', async () => {
     const { user, session } = await activePage()
     await showStats(user)
     act(() => {
-      session.stats.set({ ...NO_STATS, fps: 29.5, userFps: 60, sentFps: 30, decodeFps: null })
+      session.stats.set({ ...NO_STATS, fps: 29.5, sentFps: 30, decodeFps: null })
     })
     const overlay = screen.getByLabelText('连接统计')
     const stats = [...overlay.querySelectorAll('dd')].map((dd) => dd.dataset.stat)
-    expect(stats.slice(stats.indexOf('fps'), stats.indexOf('fps') + 4)).toEqual([
+    expect(stats.slice(stats.indexOf('fps'), stats.indexOf('fps') + 3)).toEqual([
       'fps',
-      'userFps',
       'sentFps',
       'decodeFps',
     ])
     const stat = (name: string) => overlay.querySelector(`[data-stat="${name}"]`)
-    expect(stat('userFps')).toHaveAttribute('data-value', '60')
-    expect(stat('userFps')).toHaveTextContent('60')
     expect(stat('sentFps')).toHaveAttribute('data-value', '30')
     expect(stat('sentFps')).toHaveTextContent('30')
     expect(stat('decodeFps')).toHaveAttribute('data-value', '')
     expect(stat('decodeFps')).toHaveTextContent('–')
-    expect(within(overlay).getByText('帧率设置')).toBeInTheDocument()
     expect(within(overlay).getByText('请求帧率')).toBeInTheDocument()
     expect(within(overlay).getByText('解码估算')).toBeInTheDocument()
 
     act(() => {
-      session.stats.set({ ...NO_STATS, userFps: 60, sentFps: null, decodeFps: 48 })
+      session.stats.set({ ...NO_STATS, sentFps: null, decodeFps: 48 })
     })
     expect(stat('sentFps')).toHaveAttribute('data-value', '')
     expect(stat('sentFps')).toHaveTextContent('–')

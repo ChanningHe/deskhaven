@@ -90,6 +90,9 @@ console's own address.
 - **Ctrl+Alt+Del**, the display picker and full screen are in the top bar.
 - **Clipboard**: *Send clipboard* puts this computer's clipboard text on the device; the
   device's clipboard text appears under *Device clipboard* for you to copy.
+- **AV1** is encoded in software on the device, so on a device with a modest CPU it can deliver
+  far fewer frames and bits than VP9 (measured at 1024×768, quality 500: about 19 fps and
+  300 kbps with AV1, while VP9 reaches about 8 Mbps). Choose VP9 when smoothness matters.
 
 Not supported yet: audio, file transfer, chat, more than one display at a time.
 

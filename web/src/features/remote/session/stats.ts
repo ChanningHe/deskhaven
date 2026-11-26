@@ -17,7 +17,6 @@ export interface MeterStats {
 }
 
 export interface FpsReadings {
-  userFps: number
   sentFps: number | null
   decodeFps: number | null
 }
@@ -61,7 +60,6 @@ export const NO_STATS: SessionStats = {
   height: 0,
   codec: null,
   quality: null,
-  userFps: 0,
   sentFps: null,
   decodeFps: null,
 }

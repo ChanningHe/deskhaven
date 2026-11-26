@@ -14,7 +14,6 @@ const NONE = '–'
 type StatName =
   | 'transport'
   | 'fps'
-  | 'userFps'
   | 'sentFps'
   | 'decodeFps'
   | 'kbps'
@@ -57,7 +56,6 @@ export function StatsOverlay({
   const rows: [stat: StatName, value: string | number | null, text: string][] = [
     ['transport', transport ?? null, transport ? t(`remote.transport.${transport}`) : NONE],
     ['fps', s.fps, String(s.fps)],
-    ['userFps', s.userFps, String(s.userFps)],
     ['sentFps', s.sentFps, plain(s.sentFps)],
     ['decodeFps', s.decodeFps, plain(s.decodeFps)],
     ['kbps', s.kbps, `${String(s.kbps)} kbps`],

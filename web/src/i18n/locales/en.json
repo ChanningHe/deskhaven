@@ -2025,7 +2025,7 @@
       "remoteClipboard": "Device clipboard",
       "clipboardSync": "Sync clipboard automatically",
       "clipboardAllow": "Allow reading the clipboard",
-      "clipboardDenied": "The browser blocks this page from reading the clipboard, so only text copied on the device comes over. Allow it in the site settings.",
+      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl+V on the remote screen. Allow it in the site settings.",
       "keyboardOff": "The device has turned off keyboard and mouse control.",
       "clipboardOff": "The device has turned off the clipboard."
     },
@@ -2036,14 +2036,12 @@
       "escape": "In full screen Esc goes to the device too: hold Esc to leave full screen, press it twice to leave the remote screen.",
       "clipboardBoth": "When clipboard sync is on, text copied here or on the device is synced both ways.",
       "clipboardAsk": "Turning on clipboard sync asks the browser for clipboard access; text copied here syncs to the device only once you allow it.",
-      "clipboardDenied": "The browser blocks this page from reading the clipboard: only text copied on the device is synced; send text from here with Send clipboard in the Clipboard menu.",
-      "clipboardUnsupported": "This browser cannot read the clipboard by itself: only text copied on the device is synced; send text from here with Send clipboard in the Clipboard menu."
+      "clipboardDenied": "The browser blocks this page from reading the clipboard: text copied on the device is still synced; send text from here by pressing Ctrl+V on the remote screen."
     },
     "stats": {
       "label": "Connection statistics",
       "transport": "Link",
       "fps": "FPS",
-      "userFps": "FPS setting",
       "sentFps": "Requested FPS",
       "decodeFps": "Decode est.",
       "kbps": "Video",
