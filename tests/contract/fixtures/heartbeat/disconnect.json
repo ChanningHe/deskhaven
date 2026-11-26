@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
     "src/hbbs_http/sync.rs:107",
-    "src/hbbs_http/sync.rs:240-242",
-    "src/hbbs_http/sync.rs:256-260",
-    "src/server/connection.rs:1389-1392"
+    "src/hbbs_http/sync.rs:236-238",
+    "src/hbbs_http/sync.rs:252-256",
+    "src/server/connection.rs:1424-1427"
   ],
   "description": "Connections 12 and 13 were queued for closing; the device reports its live connections 12 and 14 in conns. The reply lists only 12: 13 already ended, 14 was not asked for. The client broadcasts the list (Vec<i32>) to its connections and each one whose id is listed closes (\"Closed manually by the web console\").",
   "seed": ["registered-device", "device-sysinfo", "strategy-version", "device-disconnect"],

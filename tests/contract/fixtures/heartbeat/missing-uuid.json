@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:236-245"
+    "src/hbbs_http/sync.rs:232-241"
   ],
   "description": "A body without uuid is not something the client sends (it always sets id, uuid, ver and modified_at). 400 with the usual error body; the client ignores it like any reply without known keys.",
   "seed": ["registered-device"],

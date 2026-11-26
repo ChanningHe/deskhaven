@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/core_main.rs:538-563",
-    "src/core_main.rs:616-626"
+    "src/core_main.rs:553-578",
+    "src/core_main.rs:631-641"
   ],
   "description": "The CLI sends the device's own id and uuid; an id the signal server never registered, or one bound to another uuid, is refused with 404 ID_NOT_FOUND (the heartbeat's word for it) and nothing changes.",
   "seed": ["registered-device", "device-preset-targets", "api-token"],

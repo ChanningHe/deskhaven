@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
     "flutter/lib/models/user_model.dart:198-211",
-    "flutter/lib/common/widgets/login.dart:850-851",
+    "flutter/lib/common/widgets/login.dart:856-857",
     "src/lang/template.rs:138"
   ],
   "description": "The account's failure budget from this source is spent (login-locked-out): 429 with Retry-After and {\"error\": \"Please try later\"} (a client translation key), even with the right password; no verification runs. Identical for an unknown username (login/locked-out-unknown-user), so the lock reveals nothing about existence.",

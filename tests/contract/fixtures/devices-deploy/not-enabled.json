@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/ui_interface.rs:1117-1121",
-    "src/ui_interface.rs:1191-1192",
-    "src/core_main.rs:663-666"
+    "src/ui_interface.rs:1119-1123",
+    "src/ui_interface.rs:1193-1194",
+    "src/core_main.rs:678-681"
   ],
   "description": "devices.require_deploy is off (the default): the server does not require deployment, so a valid deploy token gets result NOT_ENABLED and nothing is written; the CLI prints \"Server does not require deployment.\" and exits 3.",
   "seed": ["registered-device", "api-token"],

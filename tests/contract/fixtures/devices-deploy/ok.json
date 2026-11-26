@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/ui_interface.rs:1133-1158",
-    "src/ui_interface.rs:1159-1191",
-    "src/core_main.rs:636-661",
-    "src/common.rs:1682-1690"
+    "src/ui_interface.rs:1135-1160",
+    "src/ui_interface.rs:1161-1193",
+    "src/core_main.rs:651-676",
+    "src/common.rs:1691-1699"
   ],
   "description": "`rustdesk --deploy --token <t>` on a registered device while the server requires deployment (devices.require_deploy): the token has the deploy scope and the id is bound to this uuid, so the device is marked deployed (deployed_at) and the client reads result OK (\"Device deployed.\"). Every result is a 200 JSON object; the client only reads the result string.",
   "seed": ["registered-device", "deploy-required", "api-token"],

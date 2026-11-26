@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:238",
-    "src/hbbs_http/sync.rs:245-250"
+    "src/hbbs_http/sync.rs:234",
+    "src/hbbs_http/sync.rs:241-246"
   ],
   "description": "A registered id with another device's uuid (devices.verify_uuid, default on): the same 404 as an unknown id, so the reply does not tell whether the id exists, and nothing is handed out (strategy, disconnects) or recorded (presence).",
   "seed": ["registered-device", "device-disconnect"],

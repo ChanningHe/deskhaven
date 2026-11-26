@@ -1,12 +1,12 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
     "flutter/lib/common/hbbs/hbbs.dart:10-20",
     "flutter/lib/common/hbbs/hbbs.dart:180-197",
     "flutter/lib/common/hbbs/hbbs.dart:36-47",
     "flutter/lib/models/user_model.dart:193-235",
-    "flutter/lib/common/widgets/login.dart:790-812",
-    "flutter/lib/common/widgets/login.dart:1003-1024"
+    "flutter/lib/common/widgets/login.dart:796-818",
+    "flutter/lib/common/widgets/login.dart:1019-1040"
   ],
   "description": "Right password for an account with TOTP enabled: 200 {type: \"email_check\", tfa_type: \"tfa_check\", secret, user: {name}} and no access_token. handleLoginResponse opens the 2FA dialog for tfa_type tfa_check; verificationCodeDialog sends secret back and user.name as the second step's username, so user.name is required. Nothing else about the account is disclosed before the second factor.",
   "seed": ["totp-user"],

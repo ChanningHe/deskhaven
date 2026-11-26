@@ -1,11 +1,11 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:236-245",
-    "src/hbbs_http/sync.rs:261-277",
+    "src/hbbs_http/sync.rs:232-241",
+    "src/hbbs_http/sync.rs:257-279",
     "src/hbbs_http/sync.rs:45-51",
-    "src/hbbs_http/sync.rs:295-311",
-    "src/common.rs:1774"
+    "src/hbbs_http/sync.rs:296-362",
+    "src/common.rs:1783"
   ],
   "description": "A client whose strategy_timestamp differs from the server's version (here 0: never got one) receives the full effective strategy: config_options with every option, the empty value included (the client deletes that option, or keeps it empty when an advanced default exists), and the version to store as strategy_timestamp. The device has no sysinfo on the server yet, so the reply also asks for one.",
   "seed": ["registered-device", "global-strategy"],

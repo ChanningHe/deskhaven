@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/server/connection.rs:1559-1572",
-    "src/server/connection.rs:1733-1742"
+    "src/server/connection.rs:1594-1607",
+    "src/server/connection.rs:1768-1777"
   ],
   "description": "A connection record without conn_id names no connection: 400, which the client treats as a deterministic rejection and drops (no retry storm).",
   "seed": ["registered-device"],

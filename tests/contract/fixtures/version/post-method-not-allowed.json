@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/common.rs:1270-1311"
+    "src/common.rs:1279-1320"
   ],
   "description": "Read-only endpoint: another method is a 405 with the stack error body {\"error\": \"method not allowed\"}, not a 404. The cited lines are how the client derives the API origin; the client never calls this path.",
   "request": {

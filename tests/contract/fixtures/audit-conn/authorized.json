@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/server/connection.rs:1940-1948",
-    "src/server/connection.rs:1559-1572",
-    "src/server/connection.rs:1707-1712"
+    "src/server/connection.rs:1975-1983",
+    "src/server/connection.rs:1594-1607",
+    "src/server/connection.rs:1742-1747"
   ],
   "description": "After a successful login the device reports the controller ([my_id, my_name] of the login request), the connection type and how it authenticated, with the controller's session id. 200 with an empty body means stored.",
   "seed": ["registered-device"],

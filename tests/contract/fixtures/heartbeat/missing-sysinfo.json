@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:251-255",
+    "src/hbbs_http/sync.rs:247-251",
     "src/hbbs_http/sync.rs:109-131"
   ],
   "description": "The server holds no sysinfo of this device (e.g. its row was deleted and registered anew while the client kept running, so the client believes it already uploaded). The presence of the sysinfo key, whatever its value, makes the client reset info_uploaded and upload again on a following tick.",

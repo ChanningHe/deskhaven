@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:211-224"
+    "src/hbbs_http/sync.rs:207-220"
   ],
   "description": "An id the signal server never registered (06 §2: unregistered ids are refused, nothing is written). The client compares with the exact text ID_NOT_FOUND and retries on its next 3 s tick (last_uploaded = None), which picks the device up as soon as its registration is stored.",
   "seed": [],

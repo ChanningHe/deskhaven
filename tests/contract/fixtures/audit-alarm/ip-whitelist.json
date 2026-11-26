@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/server/connection.rs:1439-1442",
-    "src/server/connection.rs:1627-1656",
-    "src/server/connection.rs:6542-6554",
-    "src/server/connection.rs:1707-1712"
+    "src/server/connection.rs:1474-1477",
+    "src/server/connection.rs:1662-1691",
+    "src/server/connection.rs:6686-6698",
+    "src/server/connection.rs:1742-1747"
   ],
   "description": "The device reports a connection refused by its IP whitelist (typ 0); info is a JSON string. 200 with an empty body means stored.",
   "seed": ["registered-device"],

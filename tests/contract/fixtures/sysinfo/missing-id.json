@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:211-228"
+    "src/hbbs_http/sync.rs:207-224"
   ],
   "description": "A body without id / uuid is not something the client sends (it always sets both). 400 with the usual error body: anything but SYSINFO_UPDATED / ID_NOT_FOUND makes the client wait 120 s before the next upload (last_uploaded = now), unlike ID_NOT_FOUND which retries every 3 s.",
   "seed": [],

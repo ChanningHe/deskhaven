@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/server/connection.rs:1713-1732",
-    "src/server/connection.rs:1733-1742"
+    "src/server/connection.rs:1748-1767",
+    "src/server/connection.rs:1768-1777"
   ],
   "description": "An id the signal server never registered (06 §2: refused, nothing stored). Any 4xx other than 408 / 429 is a deterministic rejection: the client drops the record at once instead of retrying.",
   "seed": [],

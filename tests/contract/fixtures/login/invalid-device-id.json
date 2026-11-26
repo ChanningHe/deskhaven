@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "flutter/lib/common/widgets/login.dart:842-849",
+    "flutter/lib/common/widgets/login.dart:848-855",
     "flutter/lib/models/user_model.dart:198-211"
   ],
   "description": "The device id the session would be bound to is not a RustDesk id (characters outside [A-Za-z0-9_-]): rejected at the boundary with 400 before anything is counted or verified.",

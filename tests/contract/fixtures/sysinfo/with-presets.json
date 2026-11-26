@@ -1,10 +1,10 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:136-187",
-    "src/hbbs_http/sync.rs:211-220",
+    "src/hbbs_http/sync.rs:136-183",
+    "src/hbbs_http/sync.rs:207-216",
     "libs/base/src/config/keys.rs:79-86",
-    "libs/base/src/config/keys.rs:114-116"
+    "libs/base/src/config/keys.rs:115-117"
   ],
   "description": "First sysinfo of a deployed custom client: every non-empty preset-* option is added to the body, preset-device-username / preset-device-name already replaced username / hostname. Answered SYSINFO_UPDATED whether or not the presets apply (devices.accept_presets, off by default; seeded here as all, with the preset owner holding rule 2 on the book). What they place is checked in crates/deskhaven-contract/tests/sysinfo.rs and crates/deskhaven-core/tests/devices/presets.rs.",
   "seed": ["registered-device", "device-preset-targets", "device-presets-accepted"],

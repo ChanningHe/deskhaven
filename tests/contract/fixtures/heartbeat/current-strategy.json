@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/hbbs_http/sync.rs:236-245",
-    "src/hbbs_http/sync.rs:248-277"
+    "src/hbbs_http/sync.rs:232-241",
+    "src/hbbs_http/sync.rs:244-279"
   ],
   "description": "The steady state: a device with a stored sysinfo whose client already holds the server's strategy version. Every reply key is optional and the client acts only on those present, so the reply is an empty object: no strategy, no modified_at (the client keeps its strategy_timestamp), no sysinfo request, nothing to disconnect.",
   "seed": ["registered-device", "device-sysinfo", "global-strategy", "strategy-version"],

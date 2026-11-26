@@ -1,11 +1,11 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "flutter/lib/common/widgets/login.dart:842-849",
+    "flutter/lib/common/widgets/login.dart:848-855",
     "flutter/lib/common/hbbs/hbbs.dart:155-177",
     "flutter/lib/utils/http_service.dart:18",
     "flutter/lib/models/user_model.dart:193-235",
-    "flutter/lib/common/widgets/login.dart:773-788",
+    "flutter/lib/common/widgets/login.dart:779-794",
     "flutter/lib/common/hbbs/hbbs.dart:180-197",
     "src/hbbs_http/account.rs:79-108"
   ],

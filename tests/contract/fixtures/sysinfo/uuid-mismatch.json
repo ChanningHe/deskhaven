@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
     "src/hbbs_http/sync.rs:135",
-    "src/hbbs_http/sync.rs:211-224"
+    "src/hbbs_http/sync.rs:207-220"
   ],
   "description": "A registered id with another device's uuid (devices.verify_uuid, default on): answered exactly like an unknown id, ID_NOT_FOUND, and nothing is written (06 §2).",
   "seed": ["registered-device"],

@@ -1,8 +1,8 @@
 {
-  "upstream_commit": "78450f49877fa047b729619c662703ed93bb119a",
+  "upstream_commit": "51f94394ce61e1f3d26229565c326b2862cbdd1f",
   "source": [
-    "src/ui_interface.rs:1153-1159",
-    "src/ui_interface.rs:1195-1201"
+    "src/ui_interface.rs:1155-1161",
+    "src/ui_interface.rs:1197-1203"
   ],
   "description": "A valid API token without the deploy scope (here: assign only) is no deploy credential: 401 with the generic message, like an unknown, revoked or expired token. The client finds no result string and prints the body.",
   "seed": ["registered-device", "deploy-required", "api-token-assign-only"],
