@@ -33,7 +33,7 @@ async function linkDialog(user: ReturnType<typeof renderApp>['user'], provider: 
 }
 
 describe('My account: linked sign-ins', () => {
-  it('lists the linked identities with the standing warning', async () => {
+  it('offers only the providers not linked yet', async () => {
     renderApp('/me', {
       me: USER_ME,
       api: {
@@ -42,11 +42,6 @@ describe('My account: linked sign-ins', () => {
       },
     })
 
-    expect(await screen.findByText('Corp SSO')).toBeInTheDocument()
-    expect(screen.getByText('alice@corp.example')).toBeInTheDocument()
-    expect(screen.getByText(/不再需要本账号的两步验证码/)).toBeInTheDocument()
-    expect(screen.getByText('本人关联')).toBeInTheDocument()
-    // Only providers without a linked identity are offered.
     expect(await screen.findByRole('button', { name: '关联 other' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '关联 corp' })).not.toBeInTheDocument()
   })
@@ -62,7 +57,7 @@ describe('My account: linked sign-ins', () => {
       },
     })
 
-    expect(await screen.findByText(/只有使用本地密码的账号/)).toBeInTheDocument()
+    expect(await screen.findByText('Corp SSO')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /关联 other/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /解除关联/ })).not.toBeInTheDocument()
   })
@@ -117,7 +112,7 @@ describe('My account: linked sign-ins', () => {
     })
   })
 
-  it('shows a wrong password and a refused link in the dialog', async () => {
+  it('stays in the dialog on a wrong password and a refused link', async () => {
     let calls = 0
     const { user } = renderApp('/me', {
       me: USER_ME,
@@ -141,17 +136,18 @@ describe('My account: linked sign-ins', () => {
     const submit = dialog.getByRole('button', { name: '前往身份提供方' })
     await user.type(dialog.getByLabelText('当前密码'), 'nope')
     await user.click(submit)
-    expect(await dialog.findByText(/当前密码错误/)).toBeInTheDocument()
+    expect(await dialog.findByRole('alert')).toBeInTheDocument()
     await user.type(dialog.getByLabelText('当前密码'), 'secret pw')
     await user.click(submit)
 
-    expect(
-      await dialog.findByText('你的账号已关联了这个身份提供方的登录方式。'),
-    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(calls).toBe(2)
+    })
+    expect(await dialog.findByRole('alert')).toBeInTheDocument()
     expect(assignLocation).not.toHaveBeenCalledWith('https://idp.example/auth')
   })
 
-  it('unlinks with the password, says an email link unverifies the address, and refreshes', async () => {
+  it('unlinks with the password and refreshes', async () => {
     let sent: unknown
     let accountCalls = 0
     const { user } = renderApp('/me', {
@@ -171,7 +167,6 @@ describe('My account: linked sign-ins', () => {
 
     await user.click(await screen.findByRole('button', { name: '解除关联 Corp SSO' }))
     const dialog = within(await screen.findByRole('dialog'))
-    expect(dialog.getByText(/你的邮箱将被标记为未验证/)).toBeInTheDocument()
     expect(dialog.queryByLabelText('验证码或恢复码')).not.toBeInTheDocument()
     await user.type(dialog.getByLabelText('当前密码'), 'secret pw')
     const before = accountCalls

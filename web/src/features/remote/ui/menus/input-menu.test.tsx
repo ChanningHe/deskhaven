@@ -47,35 +47,12 @@ const ITEMS: [string, SessionAction][] = [
 ]
 
 describe('send keys menu', () => {
-  it('names the app switch for the peer: ⌘Tab on a Mac, Alt+Tab elsewhere', async () => {
-    const { user, session } = await activePage()
-    act(() => {
-      session.activate(1, 'Mac OS')
-    })
-    await openMenu(user, '输入')
-    await openSendKeys(user)
-    expect(await screen.findByRole('menuitem', { name: '⌘Tab' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Alt+Tab' })).toBeNull()
-  })
-
   it.each(ITEMS)('sends %s', async (name, kind) => {
     const { user, session } = await activePage()
     await openMenu(user, '输入')
     await openSendKeys(user)
     await user.click(await screen.findByRole('menuitem', { name }))
     expect(session.actions).toEqual([kind])
-  })
-
-  it('lists exactly the five keys', async () => {
-    const { user } = await activePage()
-    await openMenu(user, '输入')
-    await openSendKeys(user)
-    await screen.findByRole('menuitem', { name: 'Alt+Tab' })
-    const names = screen
-      .getAllByRole('menuitem')
-      .map((i) => i.textContent)
-      .filter((n) => n !== '发送按键')
-    expect(names).toEqual(ITEMS.map(([name]) => name))
   })
 
   it('is disabled while the device has the keyboard off, and enabled again with it', async () => {

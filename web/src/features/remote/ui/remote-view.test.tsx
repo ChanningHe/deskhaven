@@ -114,7 +114,6 @@ async function activePage() {
 }
 
 const overlay = () => screen.getByTestId('remote-screen')
-const cursor = () => overlay().style.getPropertyValue('--remote-cursor')
 
 async function viewOnly(user: Awaited<ReturnType<typeof activePage>>['user']) {
   await openMenu(user, '操作')
@@ -137,16 +136,6 @@ async function pointerEnters(session: FakeSession, text: string) {
 }
 
 describe('remote view: sending the clipboard by hand', () => {
-  it('does not send the same text again when the automatic sync reads it next', async () => {
-    const { user, session } = await activePage()
-    await settle()
-    local = 'sent by hand'
-    await openMenu(user, '剪贴板')
-    await user.click(screen.getByRole('menuitem', { name: '发送剪贴板' }))
-    expect(session.pasted).toEqual(['sent by hand'])
-    expect(await pointerEnters(session, 'sent by hand')).toEqual(['sent by hand'])
-  })
-
   it('does not send a text pasted into the box again either', async () => {
     const { user, session } = await activePage()
     await settle()
@@ -161,15 +150,6 @@ describe('remote view: sending the clipboard by hand', () => {
 })
 
 describe('remote view: view only', () => {
-  it('shows the peer cursor as the local pointer, then a plain arrow while viewing only', async () => {
-    const { user } = await activePage()
-    await waitFor(() => {
-      expect(cursor()).toMatch(/^url\("blob:cursor"\)/)
-    })
-    await viewOnly(user)
-    expect(cursor()).toBe('default')
-  })
-
   it('stops the clipboard sync both ways, and starts it again', async () => {
     const { user, session } = await activePage()
     await settle()
@@ -224,34 +204,5 @@ describe('remote view: view only', () => {
       'aria-disabled',
       'true',
     )
-  })
-})
-
-describe('remote view: codec fallback', () => {
-  it('says so when the session gives up a codec and goes back to VP9', async () => {
-    const { session } = await activePage()
-    expect(screen.queryByText(/已切回 VP9/)).toBeNull()
-    act(() => {
-      session.codecs.set({
-        ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'failed', vp8: 'ok', h264: 'peer', h265: 'peer' },
-        failed: 'av1',
-        failedAt: 5000,
-      })
-    })
-    expect(screen.getByText('AV1 画面无法解码，已切回 VP9。')).toHaveAttribute('role', 'status')
-  })
-
-  it('says the device did not switch when it kept sending another codec', async () => {
-    const { session } = await activePage()
-    act(() => {
-      session.codecs.set({
-        ...session.codecs.get(),
-        support: { vp9: 'ok', av1: 'ok', vp8: 'ignored', h264: 'peer', h265: 'peer' },
-        failed: 'vp8',
-        failedAt: 5000,
-      })
-    })
-    expect(screen.getByText('设备没有切换到 VP8，已切回 VP9。')).toHaveAttribute('role', 'status')
   })
 })

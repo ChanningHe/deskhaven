@@ -1,16 +1,10 @@
 // Fixtures of the identity page tests.
 
-import type {
-  LdapDiagnosticView,
-  LdapDirectoryView,
-  OidcProviderView,
-  SettingView,
-} from '@/api/generated/model'
+import type { LdapDirectoryView, OidcProviderView, SettingView } from '@/api/generated/model'
 
 export const PROVIDERS_PATH = '/admin/api/v1/oidc-providers'
 export const DIRECTORIES_PATH = '/admin/api/v1/ldap-directories'
 export const CONNECTION_TEST_PATH = '/admin/api/v1/ldap-tests/connection'
-export const USER_TEST_PATH = '/admin/api/v1/ldap-tests/user'
 export const SETTINGS_PATH = '/admin/api/v1/settings'
 export const CALLBACK_URL = 'https://rd.example.com/api/oidc/callback'
 
@@ -62,26 +56,6 @@ export function directoryView(patch: Partial<LdapDirectoryView> = {}): LdapDirec
     updated_at: 1_700_000_000_000,
     ...patch,
   }
-}
-
-export const USER_DIAGNOSTIC: LdapDiagnosticView = {
-  passed: false,
-  steps: [
-    { step: 'connect', status: 'passed', message: 'connected to ldaps://ldap.example.org (TLS)' },
-    { step: 'service_bind', status: 'passed', message: 'bound as cn=svc,dc=example,dc=org' },
-    { step: 'user_search', status: 'passed', message: 'found uid=alice,ou=people' },
-    { step: 'user_bind', status: 'failed', message: 'the directory refused the password' },
-    { step: 'group_mapping', status: 'skipped', message: 'skipped after an earlier failure' },
-  ],
-  user: {
-    dn: 'uid=alice,ou=people',
-    username: 'alice',
-    email: 'alice@example.org',
-    display_name: 'Alice',
-    directory_groups: [],
-    mapped_groups: [],
-    admin: null,
-  },
 }
 
 export function tfaSetting(patch: Partial<SettingView> = {}): SettingView {

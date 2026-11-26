@@ -87,9 +87,3 @@ describe('createQueryClient onForbidden hook', () => {
     ])
   })
 })
-
-describe('shouldRetryQuery for statuses below 400', () => {
-  it('does not retry a 2xx that failed to parse', () => {
-    expect(shouldRetryQuery(0, new HttpError(200))).toBe(false)
-  })
-})

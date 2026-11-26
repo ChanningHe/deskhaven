@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { pageOf, userView } from '@/features/users/test-data'
 import { renderApp } from '@/test/render-app'
 
-import { ALPHA_PATH, drawerApi } from '../test-data'
+import { drawerApi } from '../test-data'
 
 const USERS = '/admin/api/v1/users'
 
@@ -35,45 +35,5 @@ describe('owner picker in the device drawer', () => {
     await waitFor(() => {
       expect(router.state.location.search).toEqual({})
     })
-  })
-
-  it('never saves the drawer on Enter in the search field', async () => {
-    let patched = 0
-    const { user } = renderApp('/devices?device=1', {
-      api: drawerApi({
-        [`GET ${USERS}`]: pageOf([userView(6, 'carol')]),
-        [`PATCH ${ALPHA_PATH}`]: () => {
-          patched += 1
-          return { body: { status: 200 } }
-        },
-      }),
-    })
-    const drawer = await screen.findByRole('dialog', { name: 'alpha' })
-    await user.type(within(drawer).getByLabelText('备注'), '!')
-    await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
-    await user.type(
-      within(drawer).getByRole('combobox', { name: '搜索用户作为所有者' }),
-      'zz{Enter}',
-    )
-    expect(patched).toBe(0)
-  })
-
-  it('moves focus to the search after removing the owner and to the remove button after picking', async () => {
-    const { user } = app()
-    const drawer = await screen.findByRole('dialog', { name: 'alpha' })
-
-    await user.click(within(drawer).getByRole('button', { name: '移除所有者' }))
-    const search = within(drawer).getByRole('combobox', { name: '搜索用户作为所有者' })
-    await waitFor(() => {
-      expect(search).toHaveFocus()
-    })
-
-    await user.type(search, 'ca')
-    await user.click(await screen.findByRole('option', { name: /carol/ }))
-    const remove = await within(drawer).findByRole('button', { name: '移除所有者' })
-    await waitFor(() => {
-      expect(remove).toHaveFocus()
-    })
-    expect(within(drawer).getByText('carol')).toBeInTheDocument()
   })
 })

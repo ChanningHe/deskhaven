@@ -3,14 +3,12 @@
 import type {
   CatalogOptionView,
   CatalogView,
-  EffectiveStrategyView,
   OptionKindView,
   StrategyView,
 } from '@/api/generated/model'
 
 export const STRATEGIES_PATH = '/admin/api/v1/strategies'
 export const CATALOG_PATH = '/admin/api/v1/strategy-catalog'
-export const PREVIEW_PATH = '/admin/api/v1/strategy-preview'
 
 export function strategyView(
   id: number,
@@ -85,8 +83,4 @@ export const CATALOG: CatalogView = {
       label: { en: 'Proxy password', zh: '代理密码' },
     }),
   ],
-}
-
-export function effectiveView(patch: Partial<EffectiveStrategyView> = {}): EffectiveStrategyView {
-  return { modified_at: 1_700_000_000_500, layers: [], options: [], ...patch }
 }

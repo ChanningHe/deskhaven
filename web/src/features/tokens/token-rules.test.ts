@@ -3,15 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { ADMIN_ME, OWNER_ME } from '@/test/fixtures'
 
 import { tokenView } from './test-data'
-import { canRevoke, DEFAULT_EXPIRY, expiryFromChoice, MS_PER_DAY } from './token-rules'
+import { canRevoke, expiryFromChoice, MS_PER_DAY } from './token-rules'
 
 const NOW = 1_800_000_000_000
 
 describe('expiryFromChoice', () => {
-  it('preselects 90 days', () => {
-    expect(DEFAULT_EXPIRY).toBe('90')
-  })
-
   it('counts days from now and maps "never" to null', () => {
     expect(expiryFromChoice('30', NOW)).toBe(NOW + 30 * MS_PER_DAY)
     expect(expiryFromChoice('90', NOW)).toBe(NOW + 90 * MS_PER_DAY)

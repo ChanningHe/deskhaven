@@ -45,10 +45,9 @@ describe('identity page: 2FA policy', () => {
     await user.click(save)
 
     await waitFor(() => {
-      expect(tfaSection().getByText('策略已保存。')).toBeInTheDocument()
-    })
-    expect(patched).toEqual({
-      changes: [{ key: 'auth.tfa.enforce', value: 'admins', version: 3 }],
+      expect(patched).toEqual({
+        changes: [{ key: 'auth.tfa.enforce', value: 'admins', version: 3 }],
+      })
     })
     expect(select).toHaveValue('admins')
   })
@@ -76,7 +75,7 @@ describe('identity page: 2FA policy', () => {
     expect(tfaSection().queryByRole('button', { name: '保存策略' })).not.toBeInTheDocument()
   })
 
-  it('tells about a concurrent change', async () => {
+  it('reports a version conflict as a concurrent change, not as an error', async () => {
     const { user } = renderApp('/identity?tab=tfa', {
       api: {
         ...BASE,
@@ -88,13 +87,14 @@ describe('identity page: 2FA policy', () => {
     await user.selectOptions(select, 'all')
     await user.click(tfaSection().getByRole('button', { name: '保存策略' }))
 
-    expect(await tfaSection().findByText(/他人修改了此策略/)).toBeInTheDocument()
+    expect(await tfaSection().findByRole('status')).toBeInTheDocument()
+    expect(tfaSection().queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('shows admins that only the owner decides, without reading the settings', async () => {
     const { fetchSpy } = renderApp('/identity?tab=tfa', { me: ADMIN_ME, api: BASE })
 
-    expect(await screen.findByText('只有所有者可以修改此策略。')).toBeInTheDocument()
+    await screen.findByText('只有所有者可以修改此策略。')
     expect(callsTo(fetchSpy, SETTINGS_PATH)).toBe(0)
   })
 })

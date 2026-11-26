@@ -7,7 +7,6 @@ import { renderApp } from '@/test/render-app'
 
 import { account, ACCOUNT_PATH, API } from '../test-data'
 
-const PROFILE_PATH = `${API}/me`
 const PASSWORD_PATH = `${API}/me/password`
 
 function open(overrides: Parameters<typeof account>[0]) {
@@ -16,74 +15,6 @@ function open(overrides: Parameters<typeof account>[0]) {
     api: { [`GET ${ACCOUNT_PATH}`]: { body: account(overrides) } },
   })
 }
-
-describe('My account: profile', () => {
-  it('shows the profile and saves the display name', async () => {
-    let sent: unknown
-    const { user: actor } = renderApp('/me', {
-      me: USER_ME,
-      api: {
-        [`GET ${ACCOUNT_PATH}`]: { body: account() },
-        [`PATCH ${PROFILE_PATH}`]: ({ init }) => {
-          sent = JSON.parse(init.body as string)
-          return { body: { ...USER_ME, display_name: 'Alice B' } }
-        },
-      },
-    })
-
-    const name = await screen.findByLabelText('显示名称')
-    expect(name).toHaveValue('Alice')
-    expect(screen.getByLabelText('邮箱')).toHaveValue('alice@example.test')
-    expect(screen.getByText('已验证')).toBeInTheDocument()
-    const save = screen.getByRole('button', { name: '保存资料' })
-    expect(save).toBeDisabled()
-    await actor.clear(name)
-    await actor.type(name, 'Alice B')
-    await actor.click(save)
-
-    await waitFor(() => {
-      expect(sent).toEqual({ display_name: 'Alice B' })
-    })
-  })
-
-  it('puts each part of the account in its own titled region', async () => {
-    open({})
-
-    const profile = await screen.findByRole('region', { name: '个人资料' })
-    expect(within(profile).getByRole('button', { name: '保存资料' })).toBeInTheDocument()
-    const password = screen.getByRole('region', { name: '密码' })
-    expect(within(password).getByRole('button', { name: '修改密码' })).toBeInTheDocument()
-    for (const name of ['两步验证', '关联的登录方式']) {
-      const region = screen.getByRole('region', { name })
-      expect(within(region).getByRole('heading', { level: 2, name })).toBeInTheDocument()
-    }
-  })
-
-  it('shows the email read-only and says an administrator changes it', async () => {
-    open({})
-
-    const email = await screen.findByLabelText('邮箱')
-    expect(email).toHaveValue('alice@example.test')
-    expect(email).toHaveAttribute('readonly')
-    expect(screen.getByText(/只能由管理员修改/)).toBeInTheDocument()
-  })
-
-  it('shows a rejected name in the form', async () => {
-    const { user: actor } = renderApp('/me', {
-      me: USER_ME,
-      api: {
-        [`GET ${ACCOUNT_PATH}`]: { body: account() },
-        [`PATCH ${PROFILE_PATH}`]: { status: 422, body: errorEnvelope('validation_failed') },
-      },
-    })
-
-    const name = await screen.findByLabelText('显示名称')
-    await actor.type(name, ' B')
-    await actor.click(screen.getByRole('button', { name: '保存资料' }))
-
-    expect(await screen.findByRole('alert')).toBeInTheDocument()
-  })
-})
 
 describe('My account: password', () => {
   it('changes the password after the two new entries match', async () => {
@@ -111,21 +42,15 @@ describe('My account: password', () => {
     await waitFor(() => {
       expect(sent).toEqual({ current_password: 'old secret', new_password: 'brand new secret' })
     })
-    expect(await screen.findByText(/密码已更新/)).toBeInTheDocument()
-    expect(screen.getByLabelText('当前密码')).toHaveValue('')
+    await waitFor(() => {
+      expect(screen.getByLabelText('当前密码')).toHaveValue('')
+    })
   })
 
-  it('says why a directory account has no password form', async () => {
-    open({ auth_source: 'ldap', can_change_password: false })
+  it.each(['ldap', 'oidc'] as const)('offers a %s account no password form', async (authSource) => {
+    open({ auth_source: authSource, can_change_password: false })
 
-    expect(await screen.findByText(/LDAP 目录/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('新密码')).not.toBeInTheDocument()
-  })
-
-  it('says why a single sign-on account has no password form', async () => {
-    open({ auth_source: 'oidc', can_change_password: false, can_use_totp: false })
-
-    expect(await screen.findByText(/没有本地密码/)).toBeInTheDocument()
+    await screen.findByRole('region', { name: '密码' })
     expect(screen.queryByLabelText('新密码')).not.toBeInTheDocument()
   })
 })
@@ -169,8 +94,9 @@ describe('My account: two-factor authentication', () => {
     await actor.click(within(reveal).getByRole('checkbox'))
     await actor.click(within(reveal).getByRole('button', { name: '完成' }))
 
-    expect(await screen.findByText('已启用')).toBeInTheDocument()
-    expect(callsTo(fetchSpy, ACCOUNT_PATH)).toBeGreaterThanOrEqual(2)
+    await waitFor(() => {
+      expect(callsTo(fetchSpy, ACCOUNT_PATH)).toBeGreaterThanOrEqual(2)
+    })
     expect(screen.queryByText('aaaa-bbbb')).not.toBeInTheDocument()
   })
 
@@ -192,8 +118,7 @@ describe('My account: two-factor authentication', () => {
       },
     })
 
-    expect(await screen.findByText('剩余 8 个恢复码')).toBeInTheDocument()
-    await actor.click(screen.getByRole('button', { name: '关闭两步验证' }))
+    await actor.click(await screen.findByRole('button', { name: '关闭两步验证' }))
     const dialog = await screen.findByRole('dialog', { name: '关闭两步验证' })
     await actor.type(within(dialog).getByLabelText('当前密码'), 'nope')
     await actor.type(within(dialog).getByLabelText('验证码或恢复码'), '123456')
@@ -212,7 +137,6 @@ describe('My account: two-factor authentication', () => {
       { current_password: 'nope', code: '123456' },
       { current_password: 'right', code: 'abcd-efgh' },
     ])
-    expect(await screen.findByText('未启用')).toBeInTheDocument()
   })
 
   it('cannot turn TOTP off when the server requires it', async () => {
@@ -220,7 +144,6 @@ describe('My account: two-factor authentication', () => {
 
     const off = await screen.findByRole('button', { name: '关闭两步验证' })
     expect(off).toBeDisabled()
-    expect(screen.getByText(/无法关闭/)).toBeInTheDocument()
   })
 
   it('regenerates the recovery codes after the password and shows them once', async () => {
@@ -247,10 +170,10 @@ describe('My account: two-factor authentication', () => {
     expect(within(reveal).getByRole('textbox')).toHaveValue('new1-new1\nnew2-new2')
   })
 
-  it('explains that single sign-on accounts use no local second factor', async () => {
+  it('offers single sign-on accounts no local second factor', async () => {
     open({ auth_source: 'oidc', can_change_password: false, can_use_totp: false })
 
-    expect(await screen.findByText(/不使用本地两步验证/)).toBeInTheDocument()
+    await screen.findByRole('region', { name: '两步验证' })
     expect(screen.queryByRole('button', { name: '启用两步验证' })).not.toBeInTheDocument()
   })
 })

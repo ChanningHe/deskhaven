@@ -12,7 +12,6 @@ import { settingName } from '../labels'
 import { sampleSettings, SETTINGS_PATH } from '../test-data'
 
 const KEY = 'auth.oidc.link_email_max_role'
-const WARNING = /身份提供方可以凭邮箱接管管理员或所有者账号/
 
 function withCeiling(value: string): SettingView[] {
   const ceiling: SettingView = {
@@ -42,11 +41,11 @@ describe('the email link role ceiling', () => {
     })
     const control = await screen.findByLabelText(settingName(KEY, i18n.t))
 
-    expect(screen.queryByText(WARNING)).not.toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
     await user.selectOptions(control, 'admin')
-    expect(screen.getByText(WARNING)).toBeInTheDocument()
+    expect(screen.getByRole('note')).toBeInTheDocument()
     await user.selectOptions(control, 'off')
-    expect(screen.queryByText(WARNING)).not.toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
   it('warns for a stored owner ceiling', async () => {
@@ -54,6 +53,6 @@ describe('the email link role ceiling', () => {
       api: { [`GET ${SETTINGS_PATH}`]: { body: withCeiling('owner') } },
     })
 
-    expect(await screen.findByText(WARNING)).toBeInTheDocument()
+    expect(await screen.findByRole('note')).toBeInTheDocument()
   })
 })

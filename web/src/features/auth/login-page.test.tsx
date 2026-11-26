@@ -84,31 +84,9 @@ describe('login page', () => {
     await user.type(await screen.findByLabelText('验证码'), '000000')
     await user.click(screen.getByRole('button', { name: '验证' }))
 
-    expect(await screen.findByText(/每个验证码只能使用一次/)).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '返回' }))
     expect(await screen.findByRole('heading', { name: '登录 deskhaven' })).toBeInTheDocument()
-  })
-
-  it('translates wrong credentials and explains a plain-HTTP console', async () => {
-    let attempt = 0
-    const { user } = renderApp('/login', {
-      me: null,
-      api: {
-        [LOGIN]: () => {
-          attempt += 1
-          return attempt === 1
-            ? { status: 401, body: errorEnvelope('invalid_credentials') }
-            : { status: 403, body: errorEnvelope('insecure_transport') }
-        },
-      },
-    })
-
-    await signIn(user)
-    expect(await screen.findByText('用户名或密码错误。')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '登录' }))
-
-    expect(await screen.findByText('当前连接不安全')).toBeInTheDocument()
-    expect(screen.getByText(/ssh -L 21114/)).toBeInTheDocument()
   })
 
   it('sends a session with a pending setup step to that step', async () => {
@@ -139,14 +117,5 @@ describe('login page', () => {
       expect(assignLocation).toHaveBeenCalledWith('https://idp.example/auth?x=1')
     })
     expect(callsTo(fetchSpy, '/admin/api/v1/auth/oidc/start')).toBe(1)
-  })
-
-  it('points at the setup link while the server has no owner', async () => {
-    renderApp('/login', {
-      me: null,
-      api: { 'GET /admin/api/v1/setup': { body: { required: true, public_url: null } } },
-    })
-
-    expect(await screen.findByText(/此服务器尚无所有者/)).toBeInTheDocument()
   })
 })

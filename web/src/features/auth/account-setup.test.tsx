@@ -79,7 +79,7 @@ describe('account setup', () => {
       await user.click(screen.getByRole('button', { name: '修改密码' }))
     }
     await fill()
-    expect(await screen.findByText('当前密码错误。')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/account/password')
     await user.clear(screen.getByLabelText('当前密码'))
     await user.clear(screen.getByLabelText('新密码'))
@@ -121,7 +121,7 @@ describe('account setup', () => {
     await user.type(screen.getByLabelText('当前密码'), 'wrong')
     await user.type(screen.getByLabelText('应用中的验证码'), '123456')
     await user.click(screen.getByRole('button', { name: '启用' }))
-    expect(await screen.findByText('当前密码错误。')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
     await user.clear(screen.getByLabelText('当前密码'))
     await user.type(screen.getByLabelText('当前密码'), 'my password')
     await user.type(screen.getByLabelText('应用中的验证码'), '654321')

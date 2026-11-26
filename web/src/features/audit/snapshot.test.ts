@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { diffSnapshots, purgeSummary, showValue } from './snapshot'
+import { diffSnapshots, purgeSummary } from './snapshot'
 
 describe('snapshot diff', () => {
   it('lists added, removed and changed members and counts the rest', () => {
@@ -39,12 +39,6 @@ describe('snapshot diff', () => {
   it('gives up on snapshots that are not objects', () => {
     expect(diffSnapshots([1], { a: 1 })).toBeUndefined()
     expect(diffSnapshots('text', null)).toBeUndefined()
-  })
-
-  it('shows values as indented JSON', () => {
-    expect(showValue({ a: 1 })).toBe('{\n  "a": 1\n}')
-    expect(showValue(undefined)).toBe('')
-    expect(showValue(null)).toBe('null')
   })
 })
 

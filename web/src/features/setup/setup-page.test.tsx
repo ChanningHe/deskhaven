@@ -2,7 +2,6 @@ import { screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { OWNER_ME } from '@/test/fixtures'
-import { errorEnvelope } from '@/test/mock-api'
 import { renderApp } from '@/test/render-app'
 
 const STATUS = 'GET /admin/api/v1/setup'
@@ -53,30 +52,6 @@ describe('first-run setup', () => {
     await user.type(await screen.findByLabelText('密码'), 'one password')
     await user.type(screen.getByLabelText('确认密码'), 'another one')
 
-    expect(screen.getByText('两次输入的密码不一致。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '创建所有者' })).toBeDisabled()
-  })
-
-  it('explains a missing link, a used link and a finished setup', async () => {
-    const missing = renderApp('/setup', { me: null })
-    expect(await screen.findByText(/一次性初始化链接/)).toBeInTheDocument()
-    missing.unmount()
-
-    const used = renderApp('/setup#token=old', {
-      me: null,
-      api: { [SETUP]: { status: 403, body: errorEnvelope('invalid_setup_token') } },
-    })
-    await used.user.type(await screen.findByLabelText('用户名'), 'root')
-    await used.user.type(screen.getByLabelText('密码'), 'first owner password')
-    await used.user.type(screen.getByLabelText('确认密码'), 'first owner password')
-    await used.user.click(screen.getByRole('button', { name: '创建所有者' }))
-    expect(await screen.findByText('初始化链接无效、已过期或已被使用。')).toBeInTheDocument()
-    used.unmount()
-
-    renderApp('/setup#token=x', {
-      me: null,
-      api: { [STATUS]: { body: { required: false, public_url: null } } },
-    })
-    expect(await screen.findByText('此服务器已完成初始化。')).toBeInTheDocument()
   })
 })

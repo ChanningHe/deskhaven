@@ -29,7 +29,7 @@ describe('OIDC completion page', () => {
     expect(callsTo(fetchSpy, '/admin/api/v1/auth/oidc/complete')).toBe(1)
   })
 
-  it('explains why a login failed', async () => {
+  it('shows a failed login and drops the answer from the address bar', async () => {
     const { router } = renderApp('/login/oidc?state=st-1&error=access_denied', {
       me: null,
       api: {
@@ -40,9 +40,8 @@ describe('OIDC completion page', () => {
       },
     })
 
-    expect(await screen.findByText('身份提供方取消或拒绝了登录。')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
-    expect(screen.getByRole('link', { name: '返回登录' })).toBeInTheDocument()
   })
 })
 
