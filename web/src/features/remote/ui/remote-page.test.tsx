@@ -20,10 +20,10 @@ beforeEach(() => {
 
 const LEAVE = <a href="/">返回控制台</a>
 
-function page(f: ReturnType<typeof fakeDeps>) {
+function page(f: ReturnType<typeof fakeDeps>, autoConnect = true) {
   return (
     <RemoteDepsContext.Provider value={f.deps}>
-      <RemotePage deviceId={DEVICE} leave={LEAVE} />
+      <RemotePage deviceId={DEVICE} autoConnect={autoConnect} leave={LEAVE} />
     </RemoteDepsContext.Provider>
   )
 }
@@ -64,6 +64,20 @@ function set(session: FakeSession, state: Parameters<FakeSession['state']['set']
     session.state.set(state)
   })
 }
+
+describe('remote page: opened from a link', () => {
+  it('opens no session until the user confirms, so a crafted link cannot connect', async () => {
+    const f = fakeDeps()
+    const { user } = renderWithProviders(page(f, false))
+
+    const confirm = await screen.findByRole('button', { name: '连接' })
+    expect(f.openSession).not.toHaveBeenCalled()
+    await user.click(confirm)
+    await waitFor(() => {
+      expect(f.sessions).toHaveLength(1)
+    })
+  })
+})
 
 describe('remote page: logging in', () => {
   it('asks for the device password and sends it', async () => {

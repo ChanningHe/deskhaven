@@ -36,7 +36,7 @@ async function activePage() {
   const f = fakeDeps()
   const view = renderWithProviders(
     <RemoteDepsContext.Provider value={f.deps}>
-      <RemotePage deviceId="123456789" />
+      <RemotePage deviceId="123456789" autoConnect />
     </RemoteDepsContext.Provider>,
   )
   await waitFor(() => {

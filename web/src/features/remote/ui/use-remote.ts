@@ -29,10 +29,11 @@ export interface Remote {
   disconnect: () => void
 }
 
-export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
+export function useRemote(deviceId: string, deps: ConnectDeps, started: boolean): Remote {
   const controller = useMemo(() => new RemoteController(deviceId, deps), [deviceId, deps])
 
   useEffect(() => {
+    if (!started) return
     controller.connect()
     const leave = () => {
       controller.disconnect()
@@ -42,7 +43,7 @@ export function useRemote(deviceId: string, deps: ConnectDeps): Remote {
       window.removeEventListener('pagehide', leave)
       controller.disconnect()
     }
-  }, [controller])
+  }, [controller, started])
 
   const speaker = useMemo(() => new Speaker(deps.audio), [deps])
   const settings = useStore(controller.settings)

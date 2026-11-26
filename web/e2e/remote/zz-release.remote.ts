@@ -1,6 +1,6 @@
 // Named to run last: it waits out the rate window first, so earlier specs cannot make it hit
 // the per-user session limit.
-import { device, expectDesktop, submitPassword } from './support/console.ts'
+import { device, expectDesktop, openFromLink, submitPassword } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
 
 const RATE_WINDOW_MS = 61_000
@@ -17,7 +17,7 @@ test('closing the tab releases the session', async ({ context }) => {
     await page.addInitScript(() => {
       Reflect.deleteProperty(window, 'RTCPeerConnection')
     })
-    await page.goto(`/remote/${target.id}`)
+    await openFromLink(page, target.id)
     await submitPassword(page)
     await expectDesktop(page, 'Relay')
     await page.close()

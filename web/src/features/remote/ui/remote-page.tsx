@@ -2,114 +2,28 @@ import { useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { Speaker } from '../audio/speaker'
 import type { RemotePhase } from '../connect/controller'
-import type { Session } from '../session/session'
-import type { SessionIntent } from '../settings/protocol'
-import type { RemoteSettings } from '../settings/settings'
+import { ConfirmPanel } from './confirm-panel'
 import { RemoteDepsContext } from './deps-context'
 import { endingMessage, failureMessage } from './messages'
-import { ApprovalPanel, ProgressPanel, SecretPanel, WindowsSessionPanel } from './panels'
+import { ProgressPanel } from './panels'
 import { ProblemPanel } from './problem-panel'
 import { ReconnectStage } from './reconnect-stage'
-import type { BarFrame } from './remote-bar'
-import { RemoteView } from './remote-view'
-import { useRemote, useStore } from './use-remote'
-import { useFrozenFrame, type FrozenFrame } from './use-screen'
+import { SessionStep, type Actions } from './session-step'
+import { useRemote } from './use-remote'
+import { useFrozenFrame } from './use-screen'
 import { Waiting } from './waiting'
 
-interface Actions {
-  frame: BarFrame
-  settings: RemoteSettings
-  onSettings: (patch: Partial<RemoteSettings>) => void
-  intent: SessionIntent
-  onIntent: (patch: Partial<SessionIntent>) => void
-  speaker: Speaker
-  stats: boolean
-  onStats: (on: boolean) => void
-  onReconnect: () => void
-  onDisconnect: () => void
-  leave: ReactNode
-  freeze: FrozenFrame
-}
-
-function SessionStep({ session, ...actions }: { session: Session } & Actions) {
-  const { frame, onReconnect, onDisconnect, leave } = actions
-  const { t } = useTranslation()
-  const state = useStore(session.state)
-  switch (state.kind) {
-    case 'connecting':
-      return (
-        <Waiting frame={frame} status="connecting">
-          <ProgressPanel text={t('remote.connecting')} onCancel={onDisconnect} />
-        </Waiting>
-      )
-    case 'need_password':
-    case 'wrong_password':
-      return (
-        <Waiting frame={frame} status="connecting">
-          <SecretPanel
-            key="password"
-            kind="password"
-            wrong={state.kind === 'wrong_password'}
-            onSubmit={(password) => void session.login(password)}
-            onCancel={onDisconnect}
-          />
-        </Waiting>
-      )
-    case 'need_2fa':
-      return (
-        <Waiting frame={frame} status="connecting">
-          <SecretPanel
-            key="twoFactor"
-            kind="twoFactor"
-            wrong={state.wrongCode}
-            onSubmit={(code) => {
-              session.submit2fa(code)
-            }}
-            onCancel={onDisconnect}
-          />
-        </Waiting>
-      )
-    case 'awaiting_approval':
-      return (
-        <Waiting frame={frame} status="connecting">
-          <ApprovalPanel onCancel={onDisconnect} />
-        </Waiting>
-      )
-    case 'choose_session':
-      return (
-        <Waiting frame={frame} status="connecting">
-          <WindowsSessionPanel
-            choice={state}
-            onChoose={(sid) => {
-              session.chooseWindowsSession(sid)
-            }}
-            onCancel={onDisconnect}
-          />
-        </Waiting>
-      )
-    case 'active':
-      return <RemoteView session={session} {...actions} />
-    case 'closed':
-      return (
-        <Waiting frame={frame} status="ended">
-          <ProblemPanel
-            title={t('remote.ended.title')}
-            message={endingMessage(state.cause, t)}
-            onRetry={onReconnect}
-            retryLabel={t('remote.ended.reconnect')}
-            leave={leave}
-          />
-        </Waiting>
-      )
-  }
-}
-
-function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
+function PhaseStep({ phase, ...actions }: { phase: RemotePhase | { kind: 'confirm' } } & Actions) {
   const { frame, onReconnect, onDisconnect, leave } = actions
   const { t } = useTranslation()
   switch (phase.kind) {
+    case 'confirm':
+      return (
+        <Waiting frame={frame} status="ended">
+          <ConfirmPanel deviceId={frame.deviceId} onConfirm={onReconnect} leave={leave} />
+        </Waiting>
+      )
     case 'idle':
       return (
         <Waiting frame={frame} status="ended">
@@ -158,13 +72,17 @@ function PhaseStep({ phase, ...actions }: { phase: RemotePhase } & Actions) {
 
 export function RemotePage({
   deviceId,
+  autoConnect,
   back,
   leave,
 }: {
   deviceId: string
+  /** False unless opened from the console's own Connect link: a crafted link must not connect. */
+  autoConnect: boolean
   back?: ReactNode
   leave?: ReactNode
 }) {
+  const [started, setStarted] = useState(autoConnect)
   const {
     phase,
     transport,
@@ -175,14 +93,14 @@ export function RemotePage({
     speaker,
     reconnect,
     disconnect,
-  } = useRemote(deviceId, useContext(RemoteDepsContext))
+  } = useRemote(deviceId, useContext(RemoteDepsContext), started)
   // Here, not in RemoteView: a reconnect remounts the view and must not turn the overlay off.
   const [stats, setStats] = useState(false)
   const freeze = useFrozenFrame(phase)
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <PhaseStep
-        phase={phase}
+        phase={started ? phase : { kind: 'confirm' }}
         frame={{ deviceId, back, transport: transport ?? undefined }}
         settings={settings}
         onSettings={updateSettings}
@@ -191,7 +109,13 @@ export function RemotePage({
         speaker={speaker}
         stats={stats}
         onStats={setStats}
-        onReconnect={reconnect}
+        onReconnect={
+          started
+            ? reconnect
+            : () => {
+                setStarted(true)
+              }
+        }
         onDisconnect={disconnect}
         leave={leave}
         freeze={freeze}

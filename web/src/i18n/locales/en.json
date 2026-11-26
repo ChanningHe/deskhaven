@@ -1912,6 +1912,11 @@
       "submit": "Verify",
       "wrong": "Wrong code. Try again."
     },
+    "confirm": {
+      "title": "Connect to device {{id}}?",
+      "description": "This page was not opened from the console's Connect button. Connect only if this is the device you mean to control; once connected, the clipboard syncs as set in the remote settings.",
+      "connect": "Connect"
+    },
     "approval": {
       "title": "Waiting for approval",
       "description": "The person at the device must accept this connection."

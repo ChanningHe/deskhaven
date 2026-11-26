@@ -28,7 +28,7 @@ async function activePage({
   const deps = { ...f.deps, audio: audio.deps }
   const view = renderWithProviders(
     <RemoteDepsContext.Provider value={deps}>
-      <RemotePage deviceId="123456789" />
+      <RemotePage deviceId="123456789" autoConnect />
     </RemoteDepsContext.Provider>,
   )
   await waitFor(() => {

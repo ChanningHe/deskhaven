@@ -1,3 +1,4 @@
+import { openFromLink } from './support/console.ts'
 import { stackInfo } from './support/env.ts'
 import { expect, test } from './support/fixtures.ts'
 
@@ -12,7 +13,7 @@ test('an offline device shows the device_offline message', async ({ page }) => {
   await expect
     .poll(
       async () => {
-        await page.goto(`/remote/${ghost}`)
+        await openFromLink(page, ghost)
         const message = page
           .getByRole('alert')
           .or(page.getByText(/The device (is offline|did not answer)/))

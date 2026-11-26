@@ -11,6 +11,13 @@ import { useMe } from '@/features/auth/session'
 // This file is the remote feature's only import outside its lazy route: it must not pull in
 // the protocol code.
 
+declare module '@tanstack/react-router' {
+  interface HistoryState {
+    // Set only by this in-app link; a cross-site link cannot set history state.
+    remoteConnect?: true
+  }
+}
+
 export function RemoteConnectButton({
   device,
 }: {
@@ -31,6 +38,7 @@ export function RemoteConnectButton({
       <Link
         to="/remote/$deviceId"
         params={{ deviceId: device.rustdesk_id }}
+        state={{ remoteConnect: true }}
         className={buttonVariants({ variant: 'outline', size: 'sm' })}
       >
         {label}

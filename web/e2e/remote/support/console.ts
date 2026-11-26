@@ -23,6 +23,12 @@ export async function openFromDeviceList(page: Page, id: string) {
   await expect(page).toHaveURL(new RegExp(`/remote/${id}$`))
 }
 
+// A link opened from outside the console asks before it connects.
+export async function openFromLink(page: Page, id: string) {
+  await page.goto(`/remote/${id}`)
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+}
+
 export async function waitOnline(page: Page, id: string) {
   await expect
     .poll(

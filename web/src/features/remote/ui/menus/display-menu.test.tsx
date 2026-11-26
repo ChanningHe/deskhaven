@@ -24,7 +24,7 @@ async function activePage(stored?: Partial<RemoteSettings>, displays = 1) {
   const updates = vi.spyOn(RemoteController.prototype, 'updateSettings')
   const view = renderWithProviders(
     <RemoteDepsContext.Provider value={f.deps}>
-      <RemotePage deviceId="123456789" />
+      <RemotePage deviceId="123456789" autoConnect />
     </RemoteDepsContext.Provider>,
   )
   await waitFor(() => {

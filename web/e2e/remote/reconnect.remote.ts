@@ -1,6 +1,12 @@
 import type { Page } from '@playwright/test'
 
-import { device, expectDesktop, frameShare, submitPassword } from './support/console.ts'
+import {
+  device,
+  expectDesktop,
+  frameShare,
+  openFromLink,
+  submitPassword,
+} from './support/console.ts'
 import { stackInfo } from './support/env.ts'
 import type { ClientKey, DeviceInfo } from './support/env.ts'
 import { test as base, expect } from './support/fixtures.ts'
@@ -66,7 +72,7 @@ function deviceLogins(key: ClientKey, info: DeviceInfo): { opened: number; in: n
 }
 
 async function connect(page: Page, info: DeviceInfo) {
-  await page.goto(`/remote/${info.id}`)
+  await openFromLink(page, info.id)
   await submitPassword(page)
   await expectDesktop(page, 'Relay')
   await page.evaluate(() => {
