@@ -1,8 +1,3 @@
-//! LDAP "test connection" / "test user" (M3-09): structured per-step diagnostics for a
-//! saved directory or an unsaved form, owner-only, rate limited per client, the same URL
-//! filter as logins, and `test_user` with a password counted against the tested
-//! username's lockout like a login (it is a password oracle). Runs on SQLite and
-//! PostgreSQL against the fake directory.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -71,7 +66,6 @@ async fn test_user(env: &Env, username: &str, password: Option<&str>) -> Reply {
     env.h.write(Method::POST, USER, &env.owner, body).await
 }
 
-/// The audit row of `action`.
 async fn audit_row(h: &Harness, action: &str) -> console_audit::Model {
     h.audit_rows()
         .await
@@ -80,7 +74,6 @@ async fn audit_row(h: &Harness, action: &str) -> console_audit::Model {
         .unwrap_or_else(|| panic!("no {action} audit row"))
 }
 
-/// `(step, status)` of every step.
 fn steps(reply: &Reply) -> Vec<(String, String)> {
     let steps = reply.body["steps"].as_array().unwrap();
     steps

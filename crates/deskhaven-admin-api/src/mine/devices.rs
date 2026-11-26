@@ -1,6 +1,4 @@
-//! `GET /me/devices`: the devices the signed-in user owns, with their online state. Read
-//! only (ownership is assigned by administrators and `deskhaven deploy`). The owner filter
-//! is the session's user, never a query value: the query accepts paging only.
+//! The owner filter is the session's user, never a query value.
 
 use std::sync::Arc;
 

@@ -1,6 +1,3 @@
-//! `GET /users` and `GET /groups/{id}/members`: paginated, sortable, filterable account
-//! lists (M3-03 list conventions: `page`, `page_size`, `sort=field|-field`, `q`).
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -15,7 +12,6 @@ use super::view::{AuthSourceView, StatusView, UserView};
 use crate::domain_error::invalid_field;
 use crate::{AdminApiError, PageQuery, Paginated, RoleView, ValidPath, ValidQuery};
 
-/// Longest accepted `q`.
 const MAX_Q_CHARS: usize = 200;
 const SORT_FIELDS: [(&str, UserSortField); 6] = [
     ("username", UserSortField::Username),

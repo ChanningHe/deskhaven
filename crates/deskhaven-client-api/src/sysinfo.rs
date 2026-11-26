@@ -1,17 +1,5 @@
-//! `POST /api/sysinfo` (03 §2.2; `src/hbbs_http/sync.rs:126-228`): a device reports its
-//! system information, with deployment presets on a custom client. No Authorization: the
-//! device is identified by `id` + `uuid` (06 §2, `deskhaven_core::devices`).
-//!
-//! | case | status | body (plain text) |
-//! |---|---|---|
-//! | registered id, matching uuid (stored or unchanged) | 200 | `SYSINFO_UPDATED` |
-//! | unknown id, or uuid mismatch | 200 | `ID_NOT_FOUND` (client retries next tick, 3 s) |
-//! | malformed body, missing / oversized `id` or `uuid` | 400 | `{"error": ...}` (client retries in 120 s) |
-//! | body over [`MAX_SYSINFO_BODY`] | 413 | stack renderer |
-//! | over the per-IP quota, or a changing write within 30 s of the last (`deskhaven_core::devices` limits) | 429 + `Retry-After` | `{"error": "Please try later"}` (client retries in 120 s; never loops) |
-//!
-//! The client compares the body with the two texts exactly (`x == "SYSINFO_UPDATED"`), so no
-//! trailing newline.
+//! No Authorization: the device is identified by `id` + `uuid`. The client compares the body
+//! with the two texts exactly, so no trailing newline.
 
 use std::sync::Arc;
 
@@ -26,18 +14,18 @@ use serde::Deserialize;
 use crate::ClientApiError;
 use crate::client::Client;
 
-/// Largest accepted body (bytes): a real report is well under 1 KiB, presets included.
+/// A real report is well under 1 KiB, presets included.
 pub const MAX_SYSINFO_BODY: usize = 16 * 1024;
-/// Longest accepted `id` (bytes): hbbs `MAX_PEER_ID_LEN`.
+/// Matches hbbs `MAX_PEER_ID_LEN`.
 const ID_MAX_LEN: usize = 253;
-/// Longest accepted `uuid` (base64 characters); machine ids are far shorter.
+/// Machine ids are far shorter.
 const UUID_MAX_LEN: usize = 512;
 
 pub const UPDATED: &str = "SYSINFO_UPDATED";
 pub const ID_NOT_FOUND: &str = "ID_NOT_FOUND";
 const INVALID_BODY: &str = "Invalid request body";
 
-/// The body as `sync.rs` builds it; unknown keys are ignored.
+/// Unknown keys are ignored.
 #[derive(Deserialize)]
 struct Body {
     id: Option<String>,
@@ -115,8 +103,8 @@ fn parse(raw: &[u8]) -> Result<SysinfoReport, ClientApiError> {
     })
 }
 
-/// The client sends only non-empty presets; an empty one counts as absent all the same. The
-/// password moves into a zeroizing buffer without a copy.
+/// An empty preset counts as absent. The password moves into a zeroizing buffer without a
+/// copy.
 fn presets(body: Body) -> Presets {
     let address_book = given(body.preset_address_book_name).map(|name| AddressBookPreset {
         name,

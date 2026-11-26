@@ -1,5 +1,3 @@
-//! `GET|PUT /address-books/{guid}/shares`, `DELETE /address-books/{guid}/shares/{subject_type}/{subject_id}`.
-
 use std::sync::Arc;
 
 use axum::Json;

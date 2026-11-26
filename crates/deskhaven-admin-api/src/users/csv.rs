@@ -1,9 +1,5 @@
-//! A small RFC 4180 reader for the account import: comma separated, fields optionally in
-//! double quotes (`""` is a literal quote; quoted fields may hold commas and line breaks),
-//! records end at LF or CRLF, a leading UTF-8 BOM is ignored, blank lines are skipped.
-//! Errors name a line, never a field's content.
+//! RFC 4180 reader for the account import. Errors name a line, never a field's content.
 
-/// One record and the (1-based) line it starts on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Record {
     pub line: usize,
@@ -27,7 +23,6 @@ struct Reader {
     field: String,
     line: usize,
     start: usize,
-    /// The current field started with a quote (and may have ended it).
     quoted: bool,
     in_quotes: bool,
     /// The current record has any content (a quote counts, even around nothing).
@@ -78,7 +73,6 @@ impl Reader {
     }
 }
 
-/// Every non-blank record of `text`.
 pub(crate) fn parse(text: &str) -> Result<Vec<Record>, CsvError> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut r = Reader {

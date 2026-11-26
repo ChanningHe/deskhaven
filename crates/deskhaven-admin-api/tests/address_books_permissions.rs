@@ -1,6 +1,3 @@
-//! Who may use the address book endpoints: admins and owners only. Plain users get 403 and
-//! change nothing, no session gets 401, a write without the CSRF header 403. A client
-//! session is no console session. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,12 +1,5 @@
-//! `GET /api/login-options` (03-client-api-contract §3.1): third-party login buttons. The
-//! Rust client also calls it as a TLS probe, so it takes no auth, touches nothing slow (the
-//! buttons are cached by the OIDC service) and always answers 200.
-//!
-//! Flutter (`flutter/lib/models/user_model.dart:240-264`) takes the first
-//! `common-oidc/<json [{name, icon}]>` item if there is one, else every `oidc/<name>`
-//! item. Plain `oidc/<name>` items when no provider has an icon; otherwise one
-//! `common-oidc/` item carrying every provider with its icon (an SVG document,
-//! `login.dart:79-82`; `null` keeps the built-in one).
+//! The Rust client also calls it as a TLS probe, so it takes no auth, touches nothing slow
+//! and always answers 200.
 
 use std::sync::Arc;
 

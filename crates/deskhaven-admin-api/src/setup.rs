@@ -1,17 +1,5 @@
-//! First-run setup (08 §3.2 `/setup`, M3-02) over `deskhaven_core::setup`:
-//!
-//! | method | path | permission | what |
-//! |---|---|---|---|
-//! | `GET` | `/setup` | public | whether the instance still needs its owner, and `public_url` |
-//! | `POST` | `/setup` | public | the setup link's token and the owner account; signs the owner in |
-//!
-//! `POST` is per-IP limited (the token has 256 bits; the limit only bounds the work an
-//! address can cause), requires a secure transport (it sets the session cookies) and
-//! refuses with 409 `setup_completed` once an owner exists. The token check (constant
-//! time), the single use, the owner creation and its audit row (`setup.complete`, actor =
-//! the new owner via `Audit::actor`: a public route has no session to attribute it to)
-//! are one transaction in the core service. A bad, used or expired token: 403
-//! `invalid_setup_token` (not 401: there is no session to lose).
+//! `POST` is per-IP limited only to bound the work an address can cause (the token has 256
+//! bits). A bad token is 403, not 401: there is no session to lose.
 
 use std::sync::Arc;
 
@@ -37,7 +25,6 @@ use crate::session::Client;
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode, ValidJson};
 
-/// Longest accepted token, name or password input (characters).
 const MAX_INPUT: usize = 1024;
 
 pub(crate) fn routes() -> Result<AdminRoutes, RouteError> {
@@ -73,7 +60,6 @@ pub struct SetupRequest {
     pub password: String,
 }
 
-/// What the audit row shows of the new owner.
 #[derive(Serialize)]
 struct OwnerSnapshot<'a> {
     username: &'a str,

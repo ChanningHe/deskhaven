@@ -1,15 +1,10 @@
-//! Query parameters of the OIDC endpoints, form-urlencoded: the client builds the poll URL
-//! with `Url::parse_with_params` (its uuid is base64, so `+ / =` arrive encoded), and IdPs
-//! encode `code` / `state` likewise.
+//! The client's uuid is base64, so `+ / =` arrive encoded.
 
 use url::form_urlencoded;
 
-/// Longest accepted parameter value (codes and states are 43 characters here; IdP codes
-/// and error names are short).
+/// Codes and states are 43 characters here; IdP codes and error names are short.
 const MAX_VALUE_LEN: usize = 2048;
 
-/// The decoded value of the first parameter named `key`; `None` when missing, empty or
-/// longer than [`MAX_VALUE_LEN`].
 pub(super) fn param(query: Option<&str>, key: &str) -> Option<String> {
     form_urlencoded::parse(query.unwrap_or_default().as_bytes())
         .find(|(k, _)| k == key)

@@ -1,5 +1,4 @@
-//! Wire types of the LDAP directory endpoints. The bind password is write-only: requests
-//! may carry it, responses only say whether one is set. Timestamps are unix milliseconds.
+//! The bind password is write-only: responses only say whether one is set.
 
 use deskhaven_core::ldap::{Directory, DirectoryUpdate, NewDirectory};
 use garde::Validate;

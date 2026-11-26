@@ -1,20 +1,5 @@
-//! `POST /api/devices/deploy` (03 §2.8; `src/ui_interface.rs:1133-1200`): `rustdesk --deploy
-//! --token <t> [--id <id>]`, with an API token holding the `deploy` scope.
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | no, unknown, revoked or expired token, or one without `deploy` | 401 | `{"error": "Unauthorized"}` |
-//! | uncached token from an address over its bearer budget | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//! | `devices.require_deploy` off | 200 | `{"result": "NOT_ENABLED"}` |
-//! | malformed body, unusable id / uuid / pk | 200 | `{"result": "INVALID_INPUT"}` |
-//! | id bound to another uuid (stored, or live in the signal server) | 200 | `{"result": "ID_TAKEN"}` |
-//! | a new id beyond the new-id quota of the network or token | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//! | a new id the signal server did not say in time whether it holds | 503 + `Retry-After` | `{"error": "Please try later"}` |
-//! | deployed (or already deployed: nothing written) | 200 | `{"result": "OK"}` |
-//! | body over [`MAX_DEPLOY_BODY`] | 413 | stack renderer |
-//!
-//! The client reads only `result` (anything else it prints as an error), so every outcome
-//! past authentication is a 200 with one; the rules are `DeviceService::deploy`'s.
+//! The client reads only `result` and prints anything else as an error, so every outcome past
+//! authentication is a 200 with one.
 
 use std::sync::Arc;
 
@@ -32,10 +17,9 @@ use super::{requester, token_auth};
 use crate::ClientApiError;
 use crate::client::Client;
 
-/// Largest accepted body (bytes): a real one is about 150.
+/// A real one is about 150 bytes.
 pub const MAX_DEPLOY_BODY: usize = 4 * 1024;
 
-/// The body `ui_interface.rs:1148-1152` builds.
 #[derive(Deserialize)]
 struct Body {
     id: Option<String>,

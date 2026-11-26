@@ -1,17 +1,5 @@
-//! Who may manage whom (06 §4.1), evaluated inside the write transaction through a
-//! [`TxGuard`], together with the console audit row of the change.
-//!
-//! - Admins manage users and admins; only an owner may create, change or delete an owner
-//!   account, or give anyone the owner role. A guard sees the target before and after the
-//!   change, so "is or becomes an owner" covers promotion, demotion and every other action.
-//! - Nobody can take away the last active owner (core: `UserError::LastOwner`).
-//! - Nobody deletes their own account (checked by the handler: the ids are known up front).
-//! - The rules use the actor's role as committed when the write runs, not the session's:
-//!   [`AuditCtx::admin_guard`] re-reads the acting account in the transaction. The
-//!   handlers' early checks with the session role only save work.
-//!
-//! Audit snapshots carry no secret: the account view has none, and a password reset is
-//! recorded as a `password` member whose value the core log masks anyway.
+//! The rules use the actor's role as committed when the write runs, not the session's; the
+//! handlers' early checks with the session role only save work.
 
 use deskhaven_core::console_audit::{ConsoleAuditLog, Refused, TxGuard};
 use deskhaven_core::sessions::SessionPrincipal;
@@ -23,7 +11,6 @@ use super::view::{AuthSourceView, StatusView};
 use crate::domain_error::OWNER_REQUIRED;
 use crate::{Audit, AuditCtx, RoleView};
 
-/// The administrator making a change: role for the rules, request facts for the audit row.
 #[derive(Clone, Debug)]
 pub(crate) struct Acting {
     pub user_id: i64,
@@ -40,14 +27,12 @@ impl Acting {
         }
     }
 
-    /// Refuses unless this administrator may act on an account that is `target` (06 §4.1).
     pub fn may_manage(&self, target: &User) -> Result<(), Refused> {
         check_target(self.role, Some(target), None)
     }
 
-    /// The guard of `user.update`: the account rules, and with `expected` (an address being
-    /// marked verified) the stored address must still be that one (case-insensitively), or
-    /// the change is refused with [`EMAIL_CHANGED`].
+    /// With `expected`, the stored address must still be that one (case-insensitively), or the
+    /// change is refused with [`EMAIL_CHANGED`].
     pub fn update_guard(&self, log: &ConsoleAuditLog, expected: Option<String>) -> TxGuard<User> {
         let ctx = self.ctx.clone();
         self.ctx.admin_guard(
@@ -65,8 +50,6 @@ impl Acting {
         )
     }
 
-    /// A guard applying the account rules and recording `action` on the account, with
-    /// `extra` members merged into the `after` snapshot.
     pub fn user_guard(
         &self,
         log: &ConsoleAuditLog,
@@ -84,10 +67,8 @@ impl Acting {
     }
 }
 
-/// [`Refused::code`] of an address marked verified that is no longer the stored one.
 pub(crate) const EMAIL_CHANGED: &str = "email_changed";
 
-/// The audit row of `action` on an account seen `before` and `after` the change.
 fn audit_of(
     action: &'static str,
     before: Option<&User>,
@@ -120,8 +101,8 @@ pub(crate) fn check_target(
     Ok(())
 }
 
-/// The audited view of an account. `must_change` is not named `must_change_password`: the
-/// audit log masks every member whose name contains `pass`.
+/// `must_change`, not `must_change_password`: the audit log masks every member whose name
+/// contains `pass`.
 #[derive(Serialize)]
 pub(crate) struct UserSnapshot {
     username: String,
@@ -161,7 +142,6 @@ fn with_extra(snapshot: impl Serialize, extra: Option<Value>) -> Value {
     value
 }
 
-/// `{key: value}` for [`Acting::user_guard`]'s `extra`.
 pub(crate) fn extra(key: &str, value: impl Into<Value>) -> Option<Value> {
     let mut members = Map::new();
     members.insert(key.to_owned(), value.into());

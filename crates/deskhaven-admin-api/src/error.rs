@@ -1,7 +1,5 @@
-//! Admin API errors: status + `{"error": {"code", "message", "details"?}}`
-//! (08-web-console §6). `code` is a stable machine code the console
-//! translates; internal detail goes only to the log (the request span carries
-//! the request id).
+//! `code` is a stable machine code the console translates; internal detail goes only to the
+//! log.
 
 use std::borrow::Cow;
 use std::error::Error;
@@ -17,8 +15,7 @@ use utoipa::ToSchema;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
-/// `Retry-After` of a request the database aborted as a deadlock victim: the other
-/// transaction is long done by then.
+/// A deadlock victim's peer transaction is long done by then.
 const TRANSIENT_RETRY_AFTER: Duration = Duration::from_secs(1);
 
 /// Stable wire codes. Renaming one is a breaking API change.
@@ -35,13 +32,11 @@ pub enum ErrorCode {
     RateLimited,
     UnsupportedMediaType,
     Internal,
-    // Produced by the HTTP stack (see `render_stack_error`).
     BadRequest,
     MethodNotAllowed,
     PayloadTooLarge,
     Timeout,
     Unavailable,
-    // Console login and first-run setup (M3-02).
     /// Login: wrong username or password, or an account without a local password; one
     /// code for all, so it does not tell whether the account exists.
     InvalidCredentials,
@@ -65,7 +60,6 @@ pub enum ErrorCode {
     SetupCompleted,
     /// A console OIDC login failed (`details.reason`).
     OidcFailed,
-    // Account and group rules (06 §4.1, 05 §4.1).
     /// Only an owner may create, change or delete an owner, or promote to owner.
     OwnerRequired,
     /// The change would leave no active owner.
@@ -84,13 +78,11 @@ pub enum ErrorCode {
     TfaEnforced,
     /// The only OIDC identity of an account that signs in through OIDC alone (M4-09).
     LastIdentity,
-    // Settings (05 §3.2, §3.4).
     /// The setting is fixed by the configuration file or an environment variable
     /// (`details.keys`).
     SettingPinned,
     /// The setting changed since it was read (`details.keys`, `details.conflicts`).
     VersionConflict,
-    // Web client (remote control from the console).
     /// `web_client.enabled` is off.
     WebClientDisabled,
     /// The device has not been seen by the signal server for 30 s.
@@ -264,7 +256,6 @@ impl AdminApiError {
         Self::new(ErrorCode::CsrfFailed, "missing or invalid CSRF token")
     }
 
-    /// 429 with `Retry-After` (whole seconds, rounded up, at least 1).
     pub fn rate_limited(retry_after: Duration) -> Self {
         Self {
             retry_after: Some(retry_after),
@@ -272,7 +263,6 @@ impl AdminApiError {
         }
     }
 
-    /// 503 with `Retry-After` (e.g. the password hasher is saturated).
     pub fn unavailable(retry_after: Duration) -> Self {
         Self {
             retry_after: Some(retry_after),
@@ -283,9 +273,8 @@ impl AdminApiError {
         }
     }
 
-    /// Generic 500; `err` is logged, never returned. A database deadlock or serialization
-    /// failure anywhere in its chain (nothing was written; the same request can succeed on a
-    /// retry) is a 503 with `Retry-After` instead.
+    /// `err` is logged, never returned. A deadlock or serialization failure in its chain is a
+    /// 503 with `Retry-After` instead: nothing was written and a retry can succeed.
     pub fn internal(err: impl Into<BoxError>) -> Self {
         let source: BoxError = err.into();
         if deskhaven_db::chain_has_transient_conflict(source.as_ref()) {

@@ -1,5 +1,3 @@
-//! `GET|POST /device-groups`, `GET|PATCH|DELETE /device-groups/{id}`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -49,15 +47,12 @@ fn parse_sort(raw: &str) -> Result<DeviceGroupSort, AdminApiError> {
     Ok(DeviceGroupSort { field, descending })
 }
 
-/// Snapshot of a device group in its audit rows.
 #[derive(Serialize)]
 struct GroupSnapshot<'a> {
     name: &'a str,
     note: &'a str,
 }
 
-/// Any admin may manage device groups: beyond re-checking that the actor is still an admin
-/// or owner the guard never refuses.
 fn group_guard(state: &AppState, ctx: &AuditCtx, action: &'static str) -> TxGuard<DeviceGroup> {
     let entry_ctx = ctx.clone();
     ctx.admin_guard(

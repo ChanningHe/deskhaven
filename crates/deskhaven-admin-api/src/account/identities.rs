@@ -1,10 +1,4 @@
-//! `POST /me/identities/{id}/unlink {current_password}`: the account holder removes one of
-//! their OIDC identities (M4-09). Re-authenticated with the password like a password change
-//! (one throttle attempt, see `reauth`); removing a way in needs no second factor. OIDC
-//! accounts have no password (409 `not_local_account`: an administrator unlinks for them),
-//! and their last identity stays anyway (409 `last_identity`). Another account's identity
-//! is 404. Audited `user.identity_unlink` in the removing transaction. Any removal also marks
-//! a verified account address unverified, so the identity is not linked again by email.
+//! Re-authenticated with the password; removing a way in needs no second factor.
 
 use std::sync::Arc;
 
@@ -76,7 +70,6 @@ pub async fn unlink(
     Ok((Audited, StatusCode::NO_CONTENT))
 }
 
-/// Records `user.identity_unlink` on the holder's own account (still active).
 fn unlink_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<IdentityChange> {
     TxGuard::for_account(
         &state.console_audit,
@@ -85,9 +78,8 @@ fn unlink_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<Identi
     )
 }
 
-/// `user.identity_unlink` on account `user_id`, with the removed identity as `before`.
-/// Removing any identity also marks a verified account address unverified (core
-/// `unlink_identity`), recorded as `after.email_verified: false` of the same row.
+/// Unlinking also marks a verified account address unverified (core `unlink_identity`);
+/// `after` records that.
 pub(crate) fn unlink_audit(user_id: i64, before: Option<&IdentityChange>) -> Audit {
     let audit = Audit::new("user.identity_unlink").target("user", user_id);
     let Some(change) = before else {

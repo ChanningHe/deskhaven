@@ -1,17 +1,11 @@
-//! Audit guard of address book writes: any admin may manage shared books, so beyond
-//! re-checking that the actor is still an active admin or owner ([`AuditCtx::admin_guard`])
-//! it never refuses. The snapshots are the core service's (`before` / `after`, as JSON).
-
 use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::state::AppState;
 use serde_json::Value;
 
 use crate::{Audit, AuditCtx};
 
-/// The audit target kind of every address book operation.
 const TARGET: &str = "address_book";
 
-/// Records `action` on book `guid`; `None` for a creation, whose guid is in the snapshot.
 pub(crate) fn book_guard(
     state: &AppState,
     ctx: &AuditCtx,

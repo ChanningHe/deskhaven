@@ -1,5 +1,4 @@
-//! Wire types of the device endpoints. Timestamps are unix milliseconds (UTC). Sysinfo
-//! fields are what the device reported about itself (06 §2): the console labels them so.
+//! Sysinfo fields are what the device reported about itself; the console labels them so.
 
 use deskhaven_core::devices::{ConnectionRecord, DeviceStatus, DeviceSummary, DeviceUpdate};
 use garde::Validate;

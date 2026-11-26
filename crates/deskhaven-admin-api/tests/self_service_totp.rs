@@ -1,7 +1,3 @@
-//! "My account" (M3-13), turning TOTP off: the current password AND a current TOTP or
-//! recovery code (a stolen password plus session cannot remove the factor), refused while
-//! `auth.tfa.enforce` covers the user. Wrong codes count against the login throttle. An
-//! OIDC account has no password: the code alone. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

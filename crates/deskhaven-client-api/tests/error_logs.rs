@@ -1,6 +1,5 @@
-//! Internal error details reach the log with the request id. Its own test binary:
-//! `tracing` caches callsite interest process-wide, so a scoped subscriber races with
-//! tests running in parallel in the same binary.
+//! Its own test binary: `tracing` caches callsite interest process-wide, so a scoped
+//! subscriber races with tests running in parallel.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 

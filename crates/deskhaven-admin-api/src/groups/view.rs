@@ -1,5 +1,3 @@
-//! Wire types of the group endpoints.
-
 use deskhaven_core::groups::{Group, GroupSummary, ManagedBy};
 use garde::Validate;
 use serde::{Deserialize, Serialize};

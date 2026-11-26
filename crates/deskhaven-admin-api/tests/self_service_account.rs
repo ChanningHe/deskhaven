@@ -1,8 +1,3 @@
-//! "My account" (M3-13), credentials and profile: the account view, the profile edit (the
-//! display name only: the email is not editable here), recovery code regeneration
-//! (re-authenticates), and the acceptance flow: enrol through the console endpoints, then
-//! the client's `/api/login` asks for the code. TOTP disable is in `self_service_totp`.
-//! Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,5 +1,3 @@
-//! A fake signal server for the web client endpoints: answers every punch (or fails it with a
-//! chosen error), records the requests, and exposes each route's two candidate halves.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -31,12 +29,10 @@ pub const UUID: &str = "e4c181d0-41c7-4ae6-8ef0-36581b6b2b12";
 pub const RELAY: &str = "relay.example.com:21117";
 pub const SIGNED_PK: [u8; 4] = [1, 2, 3, 4];
 
-/// One route the fake handed out.
 pub struct Route {
     pub request: PunchRequest,
-    /// The browser's candidates the route passed to the device.
     pub to_device: Arc<Mutex<Vec<String>>>,
-    /// Sends the device's candidates to the browser; drop it to close the route.
+    /// Drop it to close the route.
     pub from_device: mpsc::UnboundedSender<String>,
 }
 
@@ -49,25 +45,21 @@ pub struct FakePunches {
 }
 
 impl FakePunches {
-    /// Installs a new fake as `h`'s signal server.
     pub fn install(h: &Harness) -> Arc<Self> {
         let fake = Arc::new(Self::default());
         h.state.web_client.set_punches(fake.clone());
         fake
     }
 
-    /// Every later punch fails with `err` (`None`: succeeds).
     pub fn fail_with(&self, err: Option<PunchError>) {
         *self.fail.lock().unwrap() = err;
     }
 
-    /// Every later browser candidate is refused with `err`.
     pub fn reject_candidates(&self, err: CandidateRejected) {
         *self.reject.lock().unwrap() = Some(err);
     }
 
-    /// The routes handed out so far; `take` empties the list (dropping a route's
-    /// `from_device` closes it).
+    /// Dropping a route's `from_device` closes it.
     pub fn take(&self) -> Vec<Route> {
         std::mem::take(&mut *self.routes.lock().unwrap())
     }
@@ -145,7 +137,7 @@ impl WebPunches for FakePunches {
     }
 }
 
-/// `web_client.enabled` pinned on by a real configuration file: the only way to turn it on.
+/// Pinned on by a real configuration file: the only way to turn it on.
 pub fn enabled() -> PinSet {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("deskhaven.toml");
@@ -159,17 +151,14 @@ pub fn enabled() -> PinSet {
     PinSet::from_bootstrap(&loaded.config.settings).unwrap()
 }
 
-/// The production routes with the web client on.
 pub async fn enabled_harness(db: &TestDb) -> Harness {
     harness_pinned(db, AdminRoutes::new(), enabled()).await
 }
 
-/// [`enabled_harness`] with every service on `clock`.
 pub async fn enabled_harness_on_clock(db: &TestDb, clock: SharedClock) -> Harness {
     harness_on_clock(db, enabled(), clock).await
 }
 
-/// Registers `rustdesk_id` and gives it to `owner` (through the admin API, as `admin`).
 pub async fn owned_device(h: &Harness, admin: &Console, rustdesk_id: &str, owner: i64) {
     let id = register(h, rustdesk_id).await;
     let path = format!("/admin/api/v1/devices/{id}");
@@ -184,8 +173,7 @@ pub async fn owned_device(h: &Harness, admin: &Console, rustdesk_id: &str, owner
     assert_eq!(done.status, 200, "{:?}", done.body);
 }
 
-/// On an [`enabled_harness`]: a fake signal server, an owner and a plain user `alice` who owns
-/// device `111111111` (the owner owns `222222222`).
+/// `alice`, a plain user, owns device `111111111`; the owner owns `222222222`.
 pub struct Setup {
     pub fake: Arc<FakePunches>,
     pub owner: Console,
@@ -204,7 +192,6 @@ pub async fn setup(h: &Harness) -> Setup {
     Setup { fake, owner, alice }
 }
 
-/// `POST /web-client/sessions` as `console` for `device_id`, with the fake offer if `offer`.
 pub async fn open(h: &Harness, console: &Console, device_id: &str, offer: bool) -> Reply {
     let mut body = json!({ "device_id": device_id });
     if offer {
@@ -213,7 +200,6 @@ pub async fn open(h: &Harness, console: &Console, device_id: &str, offer: bool) 
     h.write(Method::POST, SESSIONS, console, body).await
 }
 
-/// The id of a session `console` opened (asserting it opened).
 pub async fn opened(h: &Harness, console: &Console, device_id: &str) -> String {
     let reply = open(h, console, device_id, true).await;
     assert_eq!(reply.status, 201, "{:?}", reply.body);

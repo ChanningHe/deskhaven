@@ -1,6 +1,3 @@
-//! `GET /me`: the signed-in console user, including a session that must finish its
-//! account setup first (`setup_required` says which step).
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -64,7 +61,6 @@ pub struct Me {
 }
 
 impl Me {
-    /// `user` as the console shows it, with its pending setup step.
     pub fn of(state: &AppState, user: User) -> Self {
         let setup_required = pending_step(&state.tfa, user.role, AccountFlags::from(&user));
         Self {

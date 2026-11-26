@@ -1,6 +1,3 @@
-//! The M3-06 acceptance: what the console changes in a shared book is what the client API
-//! reads, and what a client writes is what the console shows. Both sides run on one state
-//! (the real routers and middleware stacks). Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -26,8 +23,6 @@ struct Scene {
     bob: String,
 }
 
-/// Book "ops" with entry 100 (password) and tag lobby; alice (rule 2) and, through a group,
-/// bob (rule 1) are granted it.
 async fn scene(db: &TestDb) -> Scene {
     let h = harness(db, AdminRoutes::new()).await;
     let admin = h.console("adm", Role::Admin).await;
@@ -126,7 +121,7 @@ async fn what_the_console_sets_up_is_what_the_clients_read() {
                 (Some("100"), Some("Front desk"))
             );
             assert_eq!(peer["tags"], json!(["lobby"]));
-            // The client connects with it: a read grant hands out the password (06 4.2).
+            // The client connects with it: a read grant hands out the password.
             assert_eq!(peer["password"], SECRET);
             let (_, tags) = read(&s, token, &format!("/api/ab/tags/{}", s.guid)).await;
             assert_eq!(

@@ -1,4 +1,3 @@
-//! Self-service helpers (M3-13): requests from the https console origin with any method.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -32,24 +31,21 @@ pub const CONFIRM: &str = "/admin/api/v1/me/totp/enrolment/confirm";
 pub const DISABLE: &str = "/admin/api/v1/me/totp/disable";
 pub const RECOVERY: &str = "/admin/api/v1/me/totp/recovery-codes";
 
-/// A user enrolled through the self-service endpoints.
 pub struct Enrolled {
     pub secret: TotpSecret,
     pub recovery: Vec<String>,
-    /// The console session the confirmation handed out (the old one is rotated away).
+    /// The confirmation rotated the old one away.
     pub console: Console,
 }
 
 impl Enrolled {
-    /// A code of the step after the current one: inside the accepted window and after the
-    /// step the enrolment recorded. Only one such code can be spent.
+    /// Inside the accepted window and after the step the enrolment recorded: only one such code
+    /// can be spent.
     pub fn next_code(&self) -> String {
         totp::code_at_step(&self.secret, totp::step_at(SystemClock.now_ms()) + 1)
     }
 }
 
-/// Signs `username` in with its password, then turns the account into a `source` account
-/// (no local password) and drops the cached session principal.
 pub async fn external_console(h: &Harness, username: &str, source: AuthSource) -> Console {
     let id = h.create_user(username, Role::User).await;
     let console = h.signed_in(username).await;
@@ -65,7 +61,6 @@ pub async fn external_console(h: &Harness, username: &str, source: AuthSource) -
 }
 
 impl Harness {
-    /// `method path` from the console origin as `console` (cookie and CSRF token).
     pub async fn as_console(
         &self,
         method: Method,
@@ -82,8 +77,6 @@ impl Harness {
         self.raw(request(method, path, &headers, body)).await
     }
 
-    /// `method path` from the console origin with no session (the anonymous CSRF value, as
-    /// the login page sends it).
     pub async fn as_anonymous(&self, method: Method, path: &str, body: Option<Value>) -> Reply {
         let headers = [
             ("origin", ORIGIN),
@@ -93,13 +86,10 @@ impl Harness {
         self.raw(request(method, path, &headers, body)).await
     }
 
-    /// Enables TOTP through the self-service endpoints (begin, then confirm).
     pub async fn enrol_through_console(&self, console: &Console) -> Enrolled {
         self.enrol_with_password(console, PASSWORD).await
     }
 
-    /// [`enrol_through_console`](Self::enrol_through_console) for an account whose current
-    /// password is `password` (a directory account's differs).
     pub async fn enrol_with_password(&self, console: &Console, password: &str) -> Enrolled {
         let begun = self.post(ENROL, Some(console), json!({})).await;
         assert_eq!(begun.status, 200, "{:?}", begun.body);
@@ -120,7 +110,6 @@ impl Harness {
     }
 }
 
-/// `POST /api/login` of the official client API with `body`; status and JSON reply.
 pub async fn client_login(h: &Harness, body: Value) -> (StatusCode, Value) {
     let router = apply_middleware(
         deskhaven_client_api::router().with_state(Arc::clone(&h.state)),
@@ -136,7 +125,6 @@ pub async fn client_login(h: &Harness, body: Value) -> (StatusCode, Value) {
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
-/// The first step of a client login: username, password and a device.
 pub fn client_password_step(username: &str, password: &str) -> Value {
     json!({
         "type": "account", "username": username, "password": password,
@@ -144,7 +132,6 @@ pub fn client_password_step(username: &str, password: &str) -> Value {
     })
 }
 
-/// The second step answering `challenge` (the first step's reply) with `code`.
 pub fn client_code_step(challenge: &Value, code: &str) -> Value {
     json!({
         "type": "email_code", "username": challenge["user"]["name"],

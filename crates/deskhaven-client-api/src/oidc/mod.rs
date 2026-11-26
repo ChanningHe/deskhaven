@@ -1,51 +1,8 @@
-//! OIDC login of the RustDesk client (03 §3.5–3.6, 06 §3.4), over
-//! `deskhaven_core::oidc`. The Rust client (`src/hbbs_http/account.rs:160-340`) posts
-//! `/api/oidc/auth`, opens the returned `url` in the browser, and polls
-//! `/api/oidc/auth-query` every second for up to 3 minutes. It reads bodies only
-//! (`HbbHttpResponse::parse`): any `error` other than `"No authed oidc is found"` ends the
-//! login with that message; a 5xx makes it retry once through the hbbs proxy.
-//!
-//! `POST /api/oidc/auth` (`{op, id, uuid, deviceInfo, apiDomain}`; `apiDomain` is ignored,
-//! the callback URL is fixed by `public_url`):
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | flow started | 200 | `{code, url}` |
-//! | malformed, not `application/json`, bad device | 400 | `{"error": "Invalid login request"}` |
-//! | `id` registered here with another `uuid` | 403 | `{"error": ID_TAKEN_MESSAGE}` |
-//! | no `public_url` | 404 | `{"error": NOT_CONFIGURED_MESSAGE}` |
-//! | unknown or disabled `op` | 404 | `{"error": UNKNOWN_PROVIDER_MESSAGE}` |
-//! | IP over `auth.ip_rate_limit.per_minute` | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//! | IdP discovery failed | 502 | `{"error": PROVIDER_UNAVAILABLE_MESSAGE}` |
-//! | the signal server cannot tell who holds `id` in time | 503 + `Retry-After` | `{"error": "Please try later"}` |
-//!
-//! **Whose id** (`DeviceService::id_holder`): nothing in the request proves that `id` is the
-//! device's own, and ids are shared routinely (remote support). Someone who starts a flow
-//! for another person's id and sends them the authorization URL would get a confirmation
-//! page naming that person's own id, and the session. So an id registered here with
-//! another uuid is refused; a real client's id and uuid always match the registration
-//! (the signal server answers `UUID_MISMATCH` otherwise, and the client picks another id).
-//! An id not registered yet is let through (a new client may log in right after its first
-//! contact), and the confirmation page says plainly that the server cannot vouch for it.
-//! The confirmation page and its `POST` check again (see `callback`).
-//!
-//! Only the per-IP limiter applies (there is no username to count, see
-//! `deskhaven_core::auth::limiter`); it bounds flow rows and outbound discovery requests.
-//!
-//! `GET /api/oidc/auth-query?code=&id=&uuid=` (not rate limited: a login polls up to 180
-//! times; each poll is one indexed lookup of a hashed 256-bit code):
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | callback not completed yet | 404 | `{"error": "No authed oidc is found"}` |
-//! | completed (once) | 200 | AuthBody `{access_token, type: "access_token", user}` |
-//! | flow failed | 403 | `{"error": <the failure's message>}` |
-//! | unknown, expired, already used code; another device; account changed since | 401 | `{"error": INVALID_LOGIN_MESSAGE}` |
-//! | missing parameter | 400 | `{"error": "Invalid login request"}` |
-//!
-//! `GET <public_url>/api/oidc/callback` is the browser's redirect from the IdP: it shows which
-//! device would be signed in and a button; the button's `POST` completes the flow (see
-//! `callback`). Both always answer 200 with a small HTML page.
+//! Nothing proves that `id` is the device's own, and ids are shared routinely for remote
+//! support, so an id registered here with another uuid is refused; an id not registered yet
+//! passes, and the confirmation page says the server cannot vouch for it. `auth-query` is
+//! not rate limited: a login polls up to 180 times, each one indexed lookup of a hashed
+//! 256-bit code.
 
 mod auth;
 mod callback;
@@ -67,7 +24,7 @@ use crate::login::failure::{DISABLED_MESSAGE, UNVERIFIED_MESSAGE};
 pub const NOT_CONFIGURED_MESSAGE: &str = "OIDC login is not configured on this server";
 pub const UNKNOWN_PROVIDER_MESSAGE: &str = "Unknown OIDC provider";
 pub const PROVIDER_UNAVAILABLE_MESSAGE: &str = "The OIDC provider is unavailable, please try later";
-/// The client keeps polling on exactly this message (`account.rs:323`).
+/// The client keeps polling on exactly this message.
 pub const PENDING_MESSAGE: &str = "No authed oidc is found";
 pub const INVALID_LOGIN_MESSAGE: &str = "OIDC login expired, please log in again";
 pub const ID_TAKEN_MESSAGE: &str = "This RustDesk ID belongs to another device on this server";
@@ -85,7 +42,6 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
 }
 
-/// What the user is told about a failed flow (client dialog and callback page).
 pub(crate) const fn failure_message(failure: Failure) -> &'static str {
     match failure {
         Failure::Denied => "OIDC login was cancelled or denied",

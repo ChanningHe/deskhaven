@@ -1,10 +1,4 @@
-//! `GET /overview` (M3-14): the aggregate numbers of the console's landing page, in one
-//! read-only admin call. Online devices and live connections come from the in-memory
-//! presence table; the rest are index range scans and two aggregates, so the call stays
-//! cheap enough for the page to poll it.
-//!
-//! The client versions and the alarm texts are device self-reported (06 §2); the console
-//! renders them as text.
+//! Index range scans and two aggregates keep the call cheap enough for the page to poll.
 
 use std::sync::Arc;
 
@@ -20,11 +14,8 @@ use utoipa_axum::routes;
 use crate::audit_views::AlarmAuditView;
 use crate::{AdminApiError, AdminRoutes, RouteError};
 
-/// Window of the connection and failed login counts.
 const WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
-/// Alarms listed.
 const RECENT_ALARMS: u64 = 5;
-/// Client versions listed before "other".
 const TOP_VERSIONS: u64 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -120,7 +111,6 @@ pub async fn get_overview(
     }))
 }
 
-/// The `/overview` route.
 pub(crate) fn routes(r: AdminRoutes) -> Result<AdminRoutes, RouteError> {
     r.routes(routes!(get_overview))
 }

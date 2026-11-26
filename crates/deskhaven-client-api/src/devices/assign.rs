@@ -1,18 +1,4 @@
-//! `POST /api/devices/cli` (03 §2.9; `src/core_main.rs:530-626`): `rustdesk --assign --token
-//! <t> [--user_name ...]`, with an API token holding the `assign` scope. The CLI prints
-//! "Done!" for an empty body and any other body as it is.
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | placed | 200 | empty |
-//! | no, unknown, revoked or expired token, or one without `assign` | 401 | `{"error": "Unauthorized"}` |
-//! | uncached token from an address over its bearer budget | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//! | malformed body, missing `id` / `uuid`, nothing to assign, a malformed value | 400 | `{"error": ...}` naming the field |
-//! | a name that matches nothing (checked only once the device is known) | 400 | `{"error": "<field> does not name an existing <kind>"}` |
-//! | unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` |
-//! | body over [`MAX_ASSIGN_BODY`] | 413 | stack renderer |
-//!
-//! What each field does is `DeviceService::assign`'s.
+//! The CLI prints "Done!" for an empty body and any other body as it is.
 
 use std::sync::Arc;
 
@@ -28,13 +14,13 @@ use super::{requester, token_auth};
 use crate::ClientApiError;
 use crate::client::Client;
 
-/// Largest accepted body (bytes): every option at its longest is well under this.
+/// Every option at its longest is well under this.
 pub const MAX_ASSIGN_BODY: usize = 16 * 1024;
-/// Error text of an unknown id or a uuid mismatch (the heartbeat's word for it).
+/// Same text as the heartbeat's.
 const ID_NOT_FOUND: &str = "ID_NOT_FOUND";
 const INVALID_BODY: &str = "Invalid request body";
 
-/// The body `core_main.rs:558-615` builds; unknown keys are ignored.
+/// Unknown keys are ignored.
 #[derive(Deserialize)]
 struct Body {
     id: Option<String>,

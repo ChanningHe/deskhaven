@@ -1,6 +1,3 @@
-//! Query parameters every audit list takes (time window, order) and the checks on the
-//! others (`device`, `q`, enum names).
-
 use deskhaven_core::audit_query::{AuditQueryError, Listing};
 use garde::Validate;
 use serde::Deserialize;
@@ -9,9 +6,7 @@ use utoipa::IntoParams;
 use crate::domain_error::invalid_field;
 use crate::{AdminApiError, PageQuery};
 
-/// Longest accepted `q`.
 pub(super) const MAX_Q_CHARS: usize = 200;
-/// Longest accepted `device`, `result`, `action` and `target_type`.
 pub(super) const MAX_LABEL_CHARS: usize = 256;
 
 /// Time window and order, shared by every audit list.
@@ -33,7 +28,6 @@ pub struct WindowQuery {
 }
 
 impl WindowQuery {
-    /// The core listing for this window and `page`.
     pub(super) fn listing(&self, page: PageQuery) -> Result<Listing, AdminApiError> {
         if let (Some(from), Some(to)) = (self.from, self.to)
             && from > to
@@ -54,8 +48,7 @@ impl WindowQuery {
     }
 }
 
-/// garde rule of the text filters: no control characters. A NUL makes PostgreSQL reject the
-/// query (a 500), and no stored text has one (see `deskhaven_core::text`).
+/// No control characters: a NUL makes PostgreSQL reject the query (a 500).
 pub(super) fn plain_text(value: &Option<String>, _context: &()) -> garde::Result {
     match value {
         Some(text) if text.chars().any(char::is_control) => {
@@ -65,13 +58,10 @@ pub(super) fn plain_text(value: &Option<String>, _context: &()) -> garde::Result
     }
 }
 
-/// `value` without surrounding blanks; `None` when nothing is left.
 pub(super) fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
-/// `name` as a variant of a database enum by its stored name (`parse` is
-/// [`parse_stored`]); an unknown name is a validation error on `field`.
 pub(super) fn known<E>(
     field: &str,
     name: Option<&str>,

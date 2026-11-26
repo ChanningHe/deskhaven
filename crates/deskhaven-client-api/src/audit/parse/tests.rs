@@ -1,5 +1,3 @@
-//! Parsing of the audit bodies, as the client builds them.
-
 use serde_json::json;
 
 use super::*;

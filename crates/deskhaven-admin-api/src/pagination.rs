@@ -1,7 +1,3 @@
-//! List pagination (08 §6): `?page=&page_size=` in, `{items, total, page, page_size}` out.
-//! Bounds are core's ([`MAX_PAGE`], [`MAX_PAGE_SIZE`] = 200); a list handler takes
-//! `ValidQuery<PageQuery>` next to its own filter query.
-
 use deskhaven_core::pagination::{MAX_PAGE, MAX_PAGE_SIZE, Page, PageRequest};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
@@ -58,7 +54,6 @@ pub struct Paginated<T> {
 }
 
 impl<T> Paginated<T> {
-    /// A core page with each item converted to its wire type.
     pub fn from_page<U>(page: Page<U>, convert: impl FnMut(U) -> T) -> Self {
         Self {
             items: page.items.into_iter().map(convert).collect(),

@@ -1,5 +1,3 @@
-//! The web client endpoints (see the module docs of `web_client`).
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,17 +21,13 @@ use crate::audit::{Audit, AuditCtx, Audited};
 use crate::session::ConsoleUser;
 use crate::{AdminApiError, ValidJson, ValidPath, ValidQuery};
 
-/// `result` of a request dropped before the punch ended.
 const CANCELLED: &str = "cancelled";
 
-/// What a session request's audit row records: never the offer, the answer or candidates.
+/// Never the offer, the answer or candidates.
 #[derive(Serialize)]
 struct OpenOutcome {
-    /// Whether the browser sent a WebRTC offer.
     offer: bool,
-    /// `ok`, or the error code answered.
     result: &'static str,
-    /// Whether the device answered the offer (the browser can try WebRTC).
     #[serde(skip_serializing_if = "Option::is_none")]
     webrtc: Option<bool>,
 }
@@ -90,9 +84,7 @@ pub async fn open(
     Ok((StatusCode::CREATED, Audited, Json(session)))
 }
 
-/// Opens the session and records `web_client.session.open`. `requester` closes once the
-/// request is dropped: a session opened for nobody is closed again and recorded as
-/// `cancelled`. A session whose row cannot be written is closed too.
+/// A session opened for nobody, or whose row cannot be written, is closed again.
 async fn open_audited(
     state: Arc<AppState>,
     ctx: AuditCtx,

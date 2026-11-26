@@ -1,6 +1,3 @@
-//! Sessions with an unfinished account setup (M3-02): restricted at the gate (not by the
-//! SPA) to `/me`, the password change, the TOTP enrolment and logout; finishing a step
-//! mints a fresh session and retires the restricted one. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -22,7 +19,6 @@ const ENROL: &str = "/admin/api/v1/me/totp/enrolment";
 const CONFIRM: &str = "/admin/api/v1/me/totp/enrolment/confirm";
 const NEW_PASSWORD: &str = "glacier Pen 1984 river";
 
-/// Status (and code) of every kind of route for `console`.
 async fn matrix(h: &Harness, console: &Console) -> Vec<(&'static str, u16, String)> {
     let mut out = Vec::new();
     let checks: [(&str, Method, &str); 6] = [
@@ -306,7 +302,6 @@ async fn enrolment_while_enabled_is_a_conflict_and_confirm_needs_a_pending_seed(
     .await;
 }
 
-/// A pending enrolment of `console`'s user; its seed.
 async fn begin_enrolment(h: &Harness, console: &Console) -> TotpSecret {
     let begun = h.post(ENROL, Some(console), json!({})).await;
     assert_eq!(begun.status, 200, "{:?}", begun.body);

@@ -1,6 +1,3 @@
-//! Provider and directory errors -> enveloped admin API errors (fixed English messages;
-//! details name fields only).
-
 use deskhaven_core::ldap::DirectoryError;
 use deskhaven_core::oidc::ProviderError;
 use serde_json::json;

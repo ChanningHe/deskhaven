@@ -1,7 +1,3 @@
-//! `POST /api/ab/tags/<guid>`, `POST /api/ab/tag/add/<guid>`,
-//! `PUT /api/ab/tag/rename/<guid>`, `PUT /api/ab/tag/update/<guid>`,
-//! `DELETE /api/ab/tag/<guid>` (`flutter/lib/models/ab_model.dart:1499-1545, 1776-1877`).
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -15,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::{ab_error, parse_body, service};
 use crate::{BearerUser, ClientApiError};
 
-/// `{name, color}` both ways; color is the ARGB int (`Color.value`).
+/// Color is the ARGB int (`Color.value`).
 #[derive(Serialize, Deserialize)]
 pub struct TagBody {
     name: String,
@@ -46,7 +42,7 @@ pub struct RenameBody {
     new: String,
 }
 
-/// Every tag of the book (rule 1): a JSON list, not a page.
+/// A JSON list, not a page.
 pub async fn list(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -57,7 +53,7 @@ pub async fn list(
     Ok(Json(tags.into_iter().map(TagBody::from).collect()))
 }
 
-/// Adds a tag; an existing one is kept as it is (rule 2).
+/// An existing one is kept as it is.
 pub async fn add(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -73,7 +69,6 @@ pub async fn add(
     Ok(StatusCode::OK)
 }
 
-/// Recolours a tag (rule 2).
 pub async fn update(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -89,7 +84,6 @@ pub async fn update(
     Ok(StatusCode::OK)
 }
 
-/// Renames a tag, in the peers too (rule 2).
 pub async fn rename(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -105,7 +99,6 @@ pub async fn rename(
     Ok(StatusCode::OK)
 }
 
-/// Deletes the tags the body lists, from the peers too (rule 2).
 pub async fn remove(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,

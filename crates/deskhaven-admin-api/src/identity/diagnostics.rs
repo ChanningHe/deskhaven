@@ -1,26 +1,6 @@
-//! `POST /ldap-tests/connection`, `POST /ldap-tests/user`: the login steps one by one, for
-//! a saved directory or an unsaved form. Owner only: the target is whatever URL the
-//! request names. Guards:
-//!
-//! - **Address filter**: a form goes through `DirectorySettings::from_new`, the same URL
-//!   rules as a saved directory (TLS, no link-local or metadata literals, no numeric host
-//!   spellings); a saved directory was checked when written, and every connection resolves
-//!   and filters host names the same way. Nothing is contacted for a refused form.
-//! - **Rate limit**: every test spends one token of the client's login-type IP bucket
-//!   (`auth.ip_rate_limit.per_minute`); the core holds a directory slot shared with logins
-//!   and ends a test after a total timeout.
-//! - **Password oracle** (`test_user` with a password): a username a login would refuse as
-//!   malformed is a 422 before anything is reserved or contacted (it would charge the
-//!   shared malformed lockout row while the directory matched a real entry). Otherwise the
-//!   test is reserved against the username like a login (`LoginThrottle::pre_check`: 429
-//!   while it is locked) before the directory sees it, then settled as a login would be
-//!   ([`Diagnostic::attempted`]): counted once the password reached the directory (refused,
-//!   interrupted, timed out) or the directory had no single entry for the name; refunded
-//!   when the bind passed or the directory failed before that. A passed test is no login:
-//!   it does not clear earlier failures.
-//!
-//! Tests are recorded in the console audit (the directory or the form's connection, the
-//! tested username, the result; never a password). Nothing else is written.
+//! Owner only: the target is whatever URL the request names. A form passes the same URL rules
+//! as a saved directory before anything is contacted. With a password a test is reserved and
+//! settled like a login, so it is no password oracle; a passed test clears no failures.
 
 use std::sync::Arc;
 
@@ -121,7 +101,6 @@ pub async fn test_ldap_user(
     Ok((audit, Json(diagnostic.into())))
 }
 
-/// What a test runs against.
 enum Target {
     Saved(i64),
     Unsaved(Box<NewDirectory>),
@@ -139,8 +118,6 @@ impl Target {
         }
     }
 
-    /// The settings to test: the stored directory with its password opened, or the form
-    /// through the same validation as a saved directory.
     async fn settings(&self, state: &AppState) -> Result<DirectorySettings, AdminApiError> {
         match self {
             Self::Saved(id) => Ok(state.ldap.stored_settings(*id).await?),
@@ -148,7 +125,6 @@ impl Target {
         }
     }
 
-    /// The audit row of a test of this target (`details`: the outcome).
     fn audit(&self, action: &'static str, settings: &DirectorySettings, details: Value) -> Audit {
         let (id, connection) = match self {
             Self::Saved(id) => (id.to_string(), Value::Null),
@@ -174,8 +150,6 @@ fn spend_token(state: &AppState, client: ClientAddr) -> Result<(), AdminApiError
         .map_err(AdminApiError::rate_limited)
 }
 
-/// With a password: one login attempt for `username` (takes the IP token too); without:
-/// the IP token only.
 async fn reserve(
     state: &AppState,
     client: ClientAddr,
@@ -195,7 +169,6 @@ async fn reserve(
     }
 }
 
-/// Settles a reserved attempt by the outcome (see the module docs).
 async fn settle(state: &AppState, attempt: Attempt, diagnostic: &Diagnostic) {
     if is_counted(diagnostic) {
         state.login_throttle.on_failure(attempt);
@@ -206,7 +179,6 @@ async fn settle(state: &AppState, attempt: Attempt, diagnostic: &Diagnostic) {
     }
 }
 
-/// A login would have counted it: attempted, and the password not accepted.
 fn is_counted(diagnostic: &Diagnostic) -> bool {
     let accepted = diagnostic
         .steps
@@ -215,7 +187,6 @@ fn is_counted(diagnostic: &Diagnostic) -> bool {
     diagnostic.attempted && !accepted
 }
 
-/// The non-secret connection of an unsaved form, for its audit row.
 fn form_connection(form: &NewDirectory) -> Value {
     json!({
         "url": form.url,

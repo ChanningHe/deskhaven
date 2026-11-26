@@ -1,5 +1,3 @@
-//! `GET /audit/files`.
-
 use std::sync::Arc;
 
 use axum::Json;

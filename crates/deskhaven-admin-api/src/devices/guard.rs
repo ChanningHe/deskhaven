@@ -1,6 +1,3 @@
-//! Audit guard of device writes: any admin may manage devices, so beyond re-checking that
-//! the actor is still an active admin or owner ([`AuditCtx::admin_guard`]) it never refuses.
-
 use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::devices::DeviceRecord;
 use deskhaven_core::state::AppState;
@@ -10,7 +7,6 @@ use serde_json::json;
 use super::view::DeviceStatusView;
 use crate::{Audit, AuditCtx};
 
-/// Snapshot of a device in its audit rows: what the console can change, and the id.
 #[derive(Serialize)]
 struct DeviceSnapshot<'a> {
     rustdesk_id: &'a str,
@@ -32,8 +28,6 @@ impl<'a> From<&'a DeviceRecord> for DeviceSnapshot<'a> {
     }
 }
 
-/// The guard of a disconnect request: the actor is re-checked in the transaction and the row
-/// names the connection (`after`: `{rustdesk_id, conn_id}`).
 pub(super) fn disconnect_guard(
     state: &AppState,
     ctx: &AuditCtx,

@@ -1,22 +1,8 @@
-//! `Authorization: Bearer <access_token>` (03-client-api-contract §1.2). Any problem with
-//! the credential is a 401 with one generic message: the client then resets its login
-//! (§1.3), and the message reveals nothing about why. Tokens are never logged.
-//!
-//! Token spraying, in order:
-//! 1. The session cache answers first (`SessionService::authenticate_cached`): a cached
-//!    valid token passes and spends nothing, whatever the address's limit state; a cached
-//!    but expired or wrong-kind token (or a malformed one) is a 401 that spends one token.
-//! 2. Otherwise the token needs a database lookup. While a recent bearer rejection found the
-//!    address over its per-IP budget (`LoginThrottle::check_bearer`; login denials do not
-//!    count), that is a 429 **before** the lookup, so random tokens cannot drive one
-//!    database read each. A 429 rather than a 401: the token was not checked, and a
-//!    legitimate client sharing the address keeps its login (a 401 would reset it).
-//! 3. A looked-up token that does not authenticate spends one token of the per-IP budget
-//!    logins also draw from (`LoginThrottle::on_bearer_rejected`); none left -> 429.
-//!
-//! So during an attack from the same address (NAT, or the shared trusted-proxy fallback
-//! bucket) users with cached sessions are unaffected; only a cache miss (at most one per
-//! session per cache TTL) may get a 429. A missing or malformed header is a plain 401.
+//! Any credential problem is one generic 401: the client then resets its login, and the
+//! message reveals nothing about why. An uncached token from an address over its bearer
+//! budget is a 429 before the database lookup, so random tokens cannot drive one read each;
+//! a 429, not a 401, because the token was not checked and a client sharing the address keeps
+//! its login.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,18 +16,11 @@ use deskhaven_core::state::AppState;
 use crate::ClientApiError;
 use crate::client::Client;
 
-/// Body message of every 401.
 pub const UNAUTHORIZED_MESSAGE: &str = "Unauthorized";
 
 const SCHEME: &str = "bearer";
 
-/// The client session behind a valid bearer token (the raw token is not kept). As a
-/// handler argument it rejects with 401
-/// `{"error": "Unauthorized"}` when the header is missing or malformed, or the token is
-/// unknown, a console token, revoked, expired or belongs to an inactive user; with 429 +
-/// `Retry-After` when an uncached token comes from an address over its per-IP limit (see
-/// the module docs); storage failures are a 500 (never a 401, which would log the client
-/// out).
+/// Storage failures are a 500, never a 401, which would log the client out.
 #[derive(Clone, Debug)]
 pub struct BearerUser(pub SessionPrincipal);
 
@@ -91,8 +70,6 @@ pub(crate) fn unauthorized() -> ClientApiError {
     ClientApiError::Unauthorized(UNAUTHORIZED_MESSAGE.into())
 }
 
-/// The token of the one `Authorization` header: scheme `Bearer` (case-insensitive), one or
-/// more spaces (RFC 7235 `1*SP`), then exactly one non-empty token without whitespace.
 /// Several `Authorization` headers are ambiguous and rejected.
 pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(header::AUTHORIZATION).iter();

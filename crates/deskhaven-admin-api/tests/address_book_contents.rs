@@ -1,6 +1,3 @@
-//! Entries, tags and the device import of a shared book: passwords are write-only (never in
-//! a response or an audit row), capacity, search, tag rename rewriting entries. Runs on
-//! SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -451,7 +448,6 @@ async fn dot_segments_and_slashes_are_names_the_console_can_still_address() {
     .await;
 }
 
-/// Percent-encoding of a path segment, as `encodeURIComponent` does.
 fn encode(segment: &str) -> String {
     segment
         .bytes()

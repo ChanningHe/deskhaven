@@ -1,26 +1,6 @@
-//! Console OIDC login (06 §3.4, M3-02) over `deskhaven_core::oidc`:
-//!
-//! 1. `POST /auth/oidc/start {provider}`: per-IP limited (no username to count); a
-//!    `flow = console` row and the IdP's authorization URL, plus the flow's browser binding
-//!    in the HttpOnly cookie [`OIDC_BINDING_COOKIE`] (5 minutes, the flow's lifetime). The
-//!    console sends the browser to the URL.
-//! 2. The IdP redirects to `<public_url>/api/oidc/callback`, which hands a console flow on
-//!    to the console's `/login/oidc` page with the IdP's query (client API).
-//! 3. `POST /auth/oidc/complete {state, code | error}` from that page:
-//!    `OidcService::complete_console` with the binding cookie. Only the browser that
-//!    started the flow holds it, which is why no confirmation page is needed (unlike a
-//!    client flow, whose session goes to another device): a forwarded authorization URL or
-//!    a planted callback link reaches a browser without the cookie and does nothing. On
-//!    success, a fresh console session (cookies; the binding cookie is cleared).
-//!
-//! Failures of a claimed flow: 403 `oidc_failed` with `details.reason` (`denied`,
-//! `unavailable`, `invalid_token`, `no_linked_account`, `disabled`, `unverified`,
-//! `provisioning_failed`); no live flow for this browser: `reason: expired`. Login events
-//! (method `oidc`, `provider:subject`) for every claimed flow.
-//!
-//! OIDC sign-ins ask for no local second factor (the IdP authenticates, see
-//! `deskhaven_core::oidc`), and an OIDC account's session is never restricted to a TOTP
-//! enrolment (`account_setup`).
+//! Only the browser that started a console flow holds its binding cookie, so a forwarded
+//! authorization URL or a planted callback link does nothing and no confirmation page is
+//! needed.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,9 +26,7 @@ use crate::session::{self, Client, http_only_cookie};
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode, ValidJson};
 
-/// HttpOnly cookie binding a console OIDC flow to the browser that started it.
 pub const OIDC_BINDING_COOKIE: &str = "__Host-deskhaven_oidc";
-/// Longest accepted provider name, state, code or error (characters).
 const MAX_FIELD: usize = 2048;
 
 /// An OIDC login button of the console.
@@ -212,7 +190,6 @@ pub async fn complete(
     Ok((AppendHeaders([(header::SET_COOKIE, clear)]), signed).into_response())
 }
 
-/// A `Set-Cookie` value that removes the binding cookie (completion, logout).
 pub(crate) fn clear_binding_cookie() -> HeaderValue {
     http_only_cookie(OIDC_BINDING_COOKIE, "", Duration::ZERO)
 }
@@ -234,7 +211,6 @@ const fn reason(failure: Failure) -> &'static str {
     }
 }
 
-/// The login event of a claimed console flow.
 async fn record(state: &AppState, client: ClientAddr, report: &CallbackReport) {
     let attempted = match &report.subject {
         Some(subject) => format!("{}:{subject}", report.provider),

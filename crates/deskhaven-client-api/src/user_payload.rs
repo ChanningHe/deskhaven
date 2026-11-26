@@ -1,7 +1,5 @@
-//! UserPayload (03-client-api-contract §3.3): `currentUser`, the `user` of a login reply,
-//! and later the items of `/api/users`. Read leniently by Flutter
-//! (`flutter/lib/common/hbbs/hbbs.dart:36-48`) and strictly by the Rust client
-//! (`src/hbbs_http/account.rs:53-97`: `name` and `info` required, `status` only 0/1/-1).
+//! Read leniently by Flutter and strictly by the Rust client: `name` and `info` required,
+//! `status` only 0/1/-1.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +10,7 @@ use serde::Serialize;
 pub struct UserPayload {
     pub name: String,
     pub display_name: String,
-    /// Server-relative (`/…`): the client prefixes its API address (03 §3.3).
+    /// Server-relative (`/…`): the client prefixes its API address.
     pub avatar: Option<String>,
     pub email: Option<String>,
     pub note: String,
@@ -25,10 +23,10 @@ pub struct UserPayload {
     pub verifier: Option<String>,
 }
 
-/// `user.info`. Must be present (the Rust client fails the whole payload otherwise).
+/// Must be present: the Rust client fails the whole payload otherwise.
 #[derive(Debug, Serialize)]
 pub struct UserInfo {
-    /// Email code on login (M2-09); off until then.
+    /// Email code on login; not offered.
     pub email_verification: bool,
     pub email_alarm_notification: bool,
     /// Pro's device whitelist; not offered.
@@ -66,7 +64,6 @@ const fn client_status(status: Status) -> i8 {
     }
 }
 
-/// The stored avatar path as a server-relative URL path; blank is no avatar.
 fn avatar_url(path: &str) -> Option<String> {
     let path = path.trim();
     if path.is_empty() {

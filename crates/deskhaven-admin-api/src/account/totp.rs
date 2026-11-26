@@ -1,24 +1,6 @@
-//! TOTP enrolment of the signed-in user (06 §3.3) over `TfaService`:
-//!
-//! 1. `POST /me/totp/enrolment`: a new pending seed (replacing an earlier pending one),
-//!    shown once as base32 text, `otpauth://` URI and QR path data (`qr`). 409 while TOTP
-//!    is enabled.
-//! 2. `POST /me/totp/enrolment/confirm {current_password, code}`: the current password
-//!    (re-authentication, see `reauth`: a stolen session alone cannot bind an attacker's
-//!    authenticator, take the recovery codes and log the owner out), then a code of the
-//!    pending seed enables TOTP and issues the recovery codes, returned once. Then every
-//!    console session of the user is rotated (`SessionService::rotate_console`): this one
-//!    is replaced by a fresh one (cookies), others are revoked, so no session that never
-//!    passed the new factor keeps working with it (a session restricted to this enrolment
-//!    included). Wrong password: 422 `wrong_password`; wrong code: 422 `invalid_code`.
-//!
-//! Password accounts enrol, local or LDAP (the current password is then checked against the
-//! directory); OIDC accounts get 409 `not_local_account` (an OIDC sign-in never asks for a
-//! local factor), and only once the password step of the account setup is done (403
-//! `setup_required` while a temporary password is pending: the steps go in order).
-//!
-//! Both are recorded in their own transaction (`user.totp_enrolment_begin`,
-//! `user.totp_enable`). Responses carrying secrets are `Cache-Control: no-store`.
+//! The current password is required to confirm, so a stolen session alone cannot bind an
+//! attacker's authenticator. Confirming rotates every console session of the user, so no
+//! session that never passed the new factor keeps working.
 
 use std::sync::Arc;
 
@@ -180,8 +162,6 @@ pub async fn confirm(
     }
 }
 
-/// The user, when it may enrol TOTP now: a password account, local or LDAP (an OIDC
-/// sign-in never asks for a local factor), past the password step of its account setup.
 async fn may_enrol(state: &AppState, user_id: i64) -> Result<User, AdminApiError> {
     let user = state.users.get(user_id).await.map_err(user_error)?;
     if user.auth_source == AuthSource::Oidc {

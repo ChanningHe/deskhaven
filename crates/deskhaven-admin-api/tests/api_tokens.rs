@@ -1,7 +1,3 @@
-//! API token endpoints (M3-12): create (the secret appears once), list, revoke, the audit
-//! rows without the secret, and the acceptance: a revoked token is a 401 at the real
-//! `--deploy` endpoint. Runs on SQLite and PostgreSQL. Rules and validation:
-//! `api_tokens_rules.rs`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

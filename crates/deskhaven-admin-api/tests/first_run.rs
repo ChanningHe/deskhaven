@@ -1,6 +1,3 @@
-//! First-run setup through the real router, and the M3-02 acceptance flow (first run ->
-//! create the owner -> log in -> enrol TOTP -> log out -> the next login needs TOTP; the
-//! setup token works once). Browser E2E (Playwright) for the same flow is M3-15.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -147,7 +144,6 @@ async fn setup_attempts_are_limited_per_address() {
     .await;
 }
 
-/// The acceptance flow of M3-02, end to end on the real router.
 #[tokio::test]
 async fn first_run_owner_login_totp_logout_and_login_with_totp() {
     each_migrated_backend(async |db: &TestDb| {
@@ -155,18 +151,15 @@ async fn first_run_owner_login_totp_logout_and_login_with_totp() {
         let b = db.backend;
         let token = h.state.setup.issue().await.unwrap();
 
-        // First run: create the owner.
         let created = h.post(SETUP, None, setup_body(token.expose())).await;
         assert_eq!(created.status, 200, "{b}: {:?}", created.body);
         let reuse = h.post(SETUP, None, setup_body(token.expose())).await;
         assert_eq!(reuse.code(), "setup_completed", "{b}: the token works once");
 
-        // Log in with the password: no 2FA yet.
         let login = h.login("root", OWNER_PASSWORD).await;
         assert_eq!(login.body["status"], "signed_in", "{b}");
         let console = console_of(&login);
 
-        // Enrol TOTP.
         let begun = h
             .post("/admin/api/v1/me/totp/enrolment", Some(&console), json!({}))
             .await;
@@ -182,14 +175,12 @@ async fn first_run_owner_login_totp_logout_and_login_with_totp() {
         assert_eq!(confirmed.status, 200, "{b}: {:?}", confirmed.body);
         let console = console_of(&confirmed);
 
-        // Log out.
         let out = h
             .post("/admin/api/v1/auth/logout", Some(&console), json!({}))
             .await;
         assert_eq!(out.status, 204, "{b}");
         assert_eq!(h.get("/admin/api/v1/me", &console).await.status, 401, "{b}");
 
-        // The next login needs TOTP, and no cookie comes before it.
         let step1 = h.login("root", OWNER_PASSWORD).await;
         assert_eq!(step1.body["status"], "totp_required", "{b}");
         assert!(set_cookies(&step1).is_empty(), "{b}");

@@ -1,32 +1,8 @@
-//! Legacy address book endpoints (03 §5.2), for clients that hold the book as one document:
-//! the Sciter UI (always) and any client whose `POST /api/ab/personal` probe fails (it never
-//! does here, see [`super`]). They are a projection of the user's **personal** book (no
-//! name lookup, no shared books): nothing is stored apart from the new API's rows.
-//!
-//! | endpoint | request | reply |
-//! |---|---|---|
-//! | `GET /api/ab` | `Accept-Encoding: gzip` | `{"data": "<document>", "licensed_devices": 0}`, or the literal `null` for an empty book; gzip when accepted |
-//! | `POST /api/ab/get` | any body (the Sciter UI sends `{}`) | `{"data": "<document>", "updated_at": <unix ms>}`, or `null`; same negotiation |
-//! | `POST /api/ab` | `{"data": "<document>"}`, never compressed | 200, empty body |
-//!
-//! `<document>` is described in [`document`]. A push replaces the personal book's peers and
-//! tags in one transaction ([`deskhaven_core::addressbooks::AddressBookService::replace_contents`]):
-//! same validation and `addressbook.max_peers` cap as the per-item API, fields a legacy
-//! client does not send survive, `password` is dropped, the hash is sealed.
-//!
-//! `licensed_devices` is always 0. A positive value makes clients before 2026-01 gzip their
-//! pushes and stop at that many peers; deskhaven enforces its cap on the server and says so
-//! (400, the client's own "maximum number of managed devices" text), so gzip bodies need not
-//! be decoded (and are refused: 400 "Unsupported content encoding").
-//!
-//! Errors are the new API's ([`super::ab_error`]): 401 without a credential, 400
-//! `{"error": ...}` for a malformed or over-cap push (nothing changes), 413 over
-//! [`MAX_LEGACY_AB_BODY`] (the stack renderer's body), 503 `Please try later` with
-//! `Retry-After` when `PUSH_SLOTS` pushes are already running and none finishes within
-//! `PUSH_WAIT`.
-//!
-//! A push is read as a stream ([`parse`]) that stops at the peer and tag caps, so a small
-//! body of many tiny elements cannot grow into a large tree before the caps apply.
+//! A projection of the user's personal book: nothing is stored apart from the new API's rows.
+//! `licensed_devices` is always 0: a positive value makes older clients gzip their pushes and
+//! stop at that many peers, while deskhaven enforces its cap on the server. A push is read as
+//! a stream that stops at the caps, so a small body of tiny elements cannot grow into a
+//! large tree first.
 
 mod document;
 mod encoding;
@@ -51,30 +27,21 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 use super::{ab_error, parse_body, service};
 use crate::{BearerUser, ClientApiError};
 
-/// Largest accepted legacy push (bytes): the whole book in one body, the document escaped
-/// once more inside `data`. It is the stack's own request body limit
-/// ([`DEFAULT_BODY_LIMIT`]): a larger route limit could never apply, the outer layer
-/// answers 413 first, so the constant is derived from it rather than repeated. The default
-/// `addressbook.max_peers` of 1000 peers leaves about 2 KiB per peer, several times what a
-/// client writes (0.3-1 KiB); raising `max_peers` beyond about 2000 can make pushes of the
-/// largest books fail with 413 (the pull still works). The new API's per-item routes keep
-/// their [`super::MAX_AB_BODY`].
+/// The stack's own body limit: a larger route limit could never apply. The default
+/// `addressbook.max_peers` of 1000 leaves about 2 KiB per peer; beyond about 2000 peers the
+/// largest pushes can fail with 413 (the pull still works).
 pub const MAX_LEGACY_AB_BODY: usize = DEFAULT_BODY_LIMIT;
-/// Pushes handled at once, process-wide. A push is parsed and written in memory-hungry
-/// steps (the body, the peers and the rows of a whole book), so many at once is the cost
-/// that matters, not many per user.
+/// Process-wide: a push is parsed and written in memory-hungry steps, so many at once is the
+/// cost that matters, not many per user.
 const PUSH_SLOTS: usize = 4;
-/// How long a push waits for a slot before it is shed. Pushes take milliseconds, so a
-/// short wait absorbs a burst; waiting without bound would let a flood pile up buffered
-/// bodies and connections. A shed legacy client pushes again on its next change.
+/// Pushes take milliseconds, so a short wait absorbs a burst; an unbounded wait would let a
+/// flood pile up buffered bodies. A shed client pushes again on its next change.
 const PUSH_WAIT: Duration = Duration::from_secs(2);
 const PUSH_RETRY_AFTER: Duration = Duration::from_secs(5);
 static PUSHES: Semaphore = Semaphore::const_new(PUSH_SLOTS);
 const UNSUPPORTED_ENCODING: &str = "Unsupported content encoding";
-/// Sent as `licensed_devices` (see the module docs).
 const LICENSED_DEVICES: u32 = 0;
 
-/// The legacy routes, with their own body limit.
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/ab", get(pull).post(push))
@@ -87,7 +54,6 @@ struct Push {
     data: String,
 }
 
-/// `GET /api/ab`.
 async fn pull(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -101,7 +67,7 @@ async fn pull(
     encoding::json_reply(body, encoding::accepts_gzip(&headers)).await
 }
 
-/// `POST /api/ab/get` (Sciter UI); the request body is ignored.
+/// The request body is ignored.
 async fn pull_sciter(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -116,7 +82,6 @@ async fn pull_sciter(
     encoding::json_reply(body, encoding::accepts_gzip(&headers)).await
 }
 
-/// `POST /api/ab`: replaces the personal book's peers and tags.
 async fn push(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -138,7 +103,7 @@ async fn push(
     Ok(StatusCode::OK)
 }
 
-/// A slot of `slots` within `wait`, else 503 "Please try later" (the client translates it).
+/// 503 "Please try later": the client translates that text.
 async fn acquire(slots: &Semaphore, wait: Duration) -> Result<SemaphorePermit<'_>, ClientApiError> {
     match tokio::time::timeout(wait, slots.acquire()).await {
         Ok(Ok(permit)) => Ok(permit),
@@ -158,7 +123,6 @@ async fn personal_contents(state: &AppState, user_id: i64) -> Result<BookContent
         .map_err(ab_error)
 }
 
-/// The reply body: `null` for an empty book, else `envelope(<document>)`.
 fn reply(contents: &BookContents, envelope: impl FnOnce(String) -> serde_json::Value) -> String {
     if contents.peers.is_empty() && contents.tags.is_empty() {
         return "null".to_owned();

@@ -1,6 +1,3 @@
-//! `GET /strategy-catalog`: the client options the editor knows, generated from the client
-//! source (see `deskhaven_core::strategies::catalog`).
-
 use deskhaven_core::strategies::catalog::{self, CatalogOption, Group, OptionKind, Text};
 use serde::Serialize;
 use utoipa::ToSchema;

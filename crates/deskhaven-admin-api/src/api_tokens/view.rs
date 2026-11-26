@@ -1,6 +1,3 @@
-//! Wire types of the API token endpoints. Timestamps are unix milliseconds (UTC). Nothing
-//! here carries a token hash; the secret exists only in [`ApiTokenCreated`].
-
 use deskhaven_core::api_tokens::{ApiTokenEntry, ApiTokenSecret, Scope, TokenCreator};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
@@ -93,7 +90,6 @@ pub struct ApiTokenView {
 }
 
 impl ApiTokenView {
-    /// `now_ms` decides between `active` and `expired`.
     pub fn of(entry: ApiTokenEntry, now_ms: i64) -> Self {
         let t = entry.token;
         let expires_at = t.expires_at.map(|at| at.timestamp_millis());
@@ -117,8 +113,7 @@ impl ApiTokenView {
     }
 }
 
-/// A token's secret as shown once. Serializes as the plain string, but `Debug` prints
-/// `<redacted>`, so a logged response or error never carries it.
+/// `Debug` prints `<redacted>`, so a logged response or error never carries the secret.
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ShownToken(String);

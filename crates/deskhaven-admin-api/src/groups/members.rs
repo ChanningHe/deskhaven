@@ -1,6 +1,3 @@
-//! `POST /groups/{id}/members`, `DELETE /groups/{id}/members/{user_id}` (the member list
-//! is `users::list::list_group_members`). Both are idempotent.
-
 use std::sync::Arc;
 
 use axum::extract::State;

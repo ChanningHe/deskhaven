@@ -1,7 +1,5 @@
-//! Content negotiation of the legacy pull: the client asks with `Accept-Encoding: gzip`
-//! (`flutter/lib/models/ab_model.dart:1015`) and its HTTP stack inflates a gzip reply by
-//! itself. Pushes are never compressed (since 2026-01 the client does not; before, only when
-//! `licensed_devices` > 0, which deskhaven never sends).
+//! Pushes are never compressed: current clients do not, and older ones only when
+//! `licensed_devices` > 0, which deskhaven never sends.
 
 use std::io::Write;
 
@@ -18,9 +16,7 @@ const X_GZIP: &str = "x-gzip";
 const IDENTITY: &str = "identity";
 const JSON: &str = "application/json";
 
-/// Whether `Accept-Encoding` allows a gzip body: a `gzip` (or `x-gzip`) member whose
-/// weight is not zero. `*` is not read as gzip: callers that accept anything also accept
-/// plain bytes.
+/// `*` is not read as gzip: callers that accept anything also accept plain bytes.
 pub fn accepts_gzip(headers: &HeaderMap) -> bool {
     headers
         .get_all(header::ACCEPT_ENCODING)
@@ -35,7 +31,6 @@ pub fn accepts_gzip(headers: &HeaderMap) -> bool {
         })
 }
 
-/// `q=0`, `q=0.0`, ... (any spelling of zero).
 fn is_zero_weight(param: &str) -> bool {
     let Some((name, weight)) = param.split_once('=') else {
         return false;
@@ -43,7 +38,6 @@ fn is_zero_weight(param: &str) -> bool {
     name.trim().eq_ignore_ascii_case("q") && weight.trim().parse::<f32>().is_ok_and(|w| w == 0.0)
 }
 
-/// Whether a request body may be read as plain JSON: no `Content-Encoding`, or `identity`.
 pub fn is_plain(headers: &HeaderMap) -> bool {
     headers
         .get_all(header::CONTENT_ENCODING)
@@ -55,10 +49,9 @@ pub fn is_plain(headers: &HeaderMap) -> bool {
         })
 }
 
-/// A `200` JSON reply, gzipped when `gzip`. `Vary` always names the header the choice
-/// depends on, so a cache never hands a compressed body to a client that did not ask.
-/// Compressing a large book takes long enough to stall an async worker, so it runs on the
-/// blocking pool.
+/// `Vary` always names the header, so a cache never hands a compressed body to a client that
+/// did not ask. Compressing a large book can stall an async worker, so it runs on the blocking
+/// pool.
 pub async fn json_reply(body: String, gzip: bool) -> Result<Response, ClientApiError> {
     let mut response = if gzip {
         let compressed = tokio::task::spawn_blocking(move || compress(body.as_bytes()))

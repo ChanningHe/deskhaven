@@ -1,6 +1,5 @@
-//! `GET /api/oidc/auth-query`: the client's polling (see the module docs). The session is
-//! minted here, bound to the device the flow was started from, under the credential stamp
-//! the callback recorded; this is the login event of a successful OIDC login.
+//! The session is bound to the device the flow was started from, under the credential stamp
+//! the callback recorded.
 
 use std::sync::Arc;
 
@@ -46,7 +45,6 @@ pub async fn auth_query(
     }
 }
 
-/// The client session and the AuthBody.
 async fn issue(
     state: &AppState,
     client: ClientAddr,

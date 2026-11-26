@@ -1,7 +1,3 @@
-//! `POST /devices/{id}/disconnect`: the connection id is queued and the device's next
-//! heartbeat, through the client API's `/api/heartbeat`, hands it back (the M3-05
-//! acceptance); moving a device changes what its next heartbeat sends. Runs on SQLite and
-//! PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -157,8 +153,7 @@ async fn a_full_queue_answers_503_with_the_attempt_audited_and_nothing_queued() 
     .await;
 }
 
-/// Changes `user_id`'s role behind the services' back: the session cache keeps the old role,
-/// as for a demotion racing an in-flight request.
+/// The session cache keeps the old role, as for a demotion racing an in-flight request.
 async fn demote_quietly(h: &Harness, user_id: i64, role: Role) {
     user::Entity::update_many()
         .col_expr(user::Column::Role, Expr::value(role))

@@ -1,18 +1,3 @@
-//! The console's link confirmation (`/me/oidc-link`, see `link`):
-//!
-//! - `POST /me/identities/link/verify {state, code | error}`: exchanges the IdP's code
-//!   once and answers the verified IdP identity (subject, verified address, preferred
-//!   username), the provider and the account; a reload answers the same without asking the
-//!   IdP again. Only for the browser holding the flow's binding cookie and the account the
-//!   flow was started for. A refusal at the IdP is 403 `oidc_failed` with the reason
-//!   (`denied`, `unavailable`, `invalid_token`); no live flow is reason `expired`; another
-//!   request verifying the same flow right now is 409 `conflict`, reason `verifying` (ask
-//!   again). The call that exchanged the code records `user.identity_link_verify` (which
-//!   IdP identity was presented, by provider name and subject; nothing changes).
-//! - `POST /me/identities/link/complete {state}`: links exactly the verified identity
-//!   (single use), audited `user.identity_link` in the linking transaction; refusals as in
-//!   `link`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -36,7 +21,6 @@ use crate::transport::SecureTransport;
 use crate::users::view::IdentityView;
 use crate::{AdminApiError, ValidJson};
 
-/// Longest accepted state (characters).
 const MAX_FIELD: usize = 2048;
 
 /// Which link flow to confirm. Never logged.
@@ -151,8 +135,6 @@ pub async fn complete(
     Ok((clear, Audited, Json(IdentityView::from(identity))).into_response())
 }
 
-/// Records `user.identity_link` in the linking transaction (the account must still be
-/// active).
 fn link_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<IdentityChange> {
     TxGuard::for_account(
         &state.console_audit,

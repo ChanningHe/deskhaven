@@ -1,5 +1,3 @@
-//! The official client API (the real router and middleware stack) as a user's client would
-//! call it, on the same state as the console harness.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -17,7 +15,6 @@ use tower::ServiceExt;
 
 use super::{Harness, PASSWORD, request};
 
-/// A client session of `username` (an existing local user); returns its bearer token.
 pub async fn client_token(h: &Harness, username: &str) -> String {
     let auth = h
         .state
@@ -39,8 +36,6 @@ pub async fn client_token(h: &Harness, username: &str) -> String {
     token.expose().to_owned()
 }
 
-/// `method path` (with its query) against the client API as the holder of `token`; the
-/// status and the JSON body (`Null` when empty).
 pub async fn client_call(
     h: &Harness,
     method: Method,

@@ -1,5 +1,3 @@
-//! Group endpoints: list, detail, create, update, delete, members (list / add / remove),
-//! config-managed groups read-only, audit rows, role gate. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

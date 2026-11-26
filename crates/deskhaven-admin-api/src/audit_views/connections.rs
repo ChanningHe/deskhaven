@@ -1,5 +1,3 @@
-//! `GET /audit/connections`.
-
 use std::sync::Arc;
 
 use axum::Json;

@@ -1,32 +1,7 @@
-//! Console session cookie and CSRF token (06 §3.2, §6).
-//!
-//! - **Session**: the opaque console session token in `__Host-deskhaven_session`
-//!   (`HttpOnly; Secure; SameSite=Lax; Path=/`). `__Host-` forbids a `Domain` attribute,
-//!   so a sibling subdomain cannot plant or overwrite it.
-//! - **CSRF** (double submit): every state-changing request (anything but GET, HEAD,
-//!   OPTIONS) on every admin route, `Public` included, must carry exactly one
-//!   `X-Deskhaven-CSRF` header (a custom header forces a CORS preflight, which is never
-//!   granted). With a session cookie present it must equal [`csrf_token`] of that token;
-//!   without one (login, setup) any non-empty value passes. The gate also refuses
-//!   cross-site browser requests (see `origin`).
-//!   The value is derived, not stored: `base64url(SHA-256("deskhaven/csrf/v1" || 0x00 ||
-//!   token))`, unpadded. The server hands it to the SPA in the JS-readable
-//!   `__Host-deskhaven_csrf` cookie, but checks the header against the session cookie,
-//!   never against that cookie: a planted CSRF cookie cannot match a session it was not
-//!   derived from, and the value reveals neither the token nor its stored hash (different
-//!   input). The comparison is constant-time.
-//!
-//! - **Plain HTTP**: the attributes stay `__Host-` + `Secure`, with no switch to relax
-//!   them. A browser on an http page would drop both cookies, so the requests that set
-//!   them refuse with `insecure_transport` instead (see `transport`): deployments put the
-//!   console behind an https reverse proxy or reach it through an SSH tunnel to localhost.
-//! - **Fixation**: every login, OIDC completion and setup mints a fresh token (and revokes
-//!   one the request presented); finishing an account setup step mints another
-//!   (`account_setup`).
-//!
-//! Cookie authentication shares the bearer gate's spraying defense (see
-//! `deskhaven_client_api::BearerUser`): cache first, per-IP budget before a database
-//! lookup, rejected lookups spend from it.
+//! `__Host-` forbids a `Domain` attribute, so a sibling subdomain cannot plant the cookies.
+//! CSRF is a double submit checked against the session cookie, never the CSRF cookie: a
+//! planted CSRF cookie cannot match a session it was not derived from. Over plain HTTP the
+//! requests that set cookies refuse with `insecure_transport` instead of relaxing them.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -46,22 +21,15 @@ use subtle::ConstantTimeEq;
 use crate::AdminApiError;
 use crate::account_setup::{pending_step, setup_required};
 
-/// HttpOnly cookie holding the console session token.
 pub const SESSION_COOKIE: &str = "__Host-deskhaven_session";
-/// JS-readable cookie holding the CSRF token for the SPA to echo.
 pub const CSRF_COOKIE: &str = "__Host-deskhaven_csrf";
-/// Header every state-changing request must carry.
 pub const CSRF_HEADER: HeaderName = HeaderName::from_static("x-deskhaven-csrf");
 
 const CSRF_DOMAIN: &[u8] = b"deskhaven/csrf/v1\0";
 const COOKIE_ATTRIBUTES: &str = "Path=/; Secure; SameSite=Lax";
 
-/// The authenticated console session of a request. As a handler argument it reuses the
-/// gate's result, or (on a `Public` route) authenticates the session cookie itself; the
-/// gate has already checked origin and CSRF for every route. Rejects with 401 (no,
-/// malformed or invalid cookie, or a client session), 403 `setup_required` (on a `Public`
-/// route, a session whose account setup is unfinished), 429 (uncached cookie from an
-/// address over its budget) or 500 (storage failure).
+/// On a `Public` route it authenticates the session cookie itself (the gate has checked
+/// origin and CSRF).
 #[derive(Clone, Debug)]
 pub struct ConsoleUser(pub SessionPrincipal);
 
@@ -92,12 +60,12 @@ impl FromRequestParts<Arc<AppState>> for ConsoleUser {
     }
 }
 
-/// Lets the gate of a `Public` route learn the user a handler authenticated through
-/// [`ConsoleUser`], to attribute that request's audit row.
+/// Lets the gate of a `Public` route attribute its audit row to the user a handler
+/// authenticated.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SessionSlot(pub Arc<OnceLock<i64>>);
 
-/// The requesting address as the throttle keys it; a missing peer is a wiring bug (500).
+/// A missing peer is a wiring bug (500).
 pub(crate) async fn client_addr<S: Send + Sync>(
     parts: &mut Parts,
     state: &S,
@@ -111,7 +79,6 @@ pub(crate) async fn client_addr<S: Send + Sync>(
     })
 }
 
-/// The principal of a console session token (see the module docs for the throttle).
 pub(crate) async fn authenticate(
     state: &AppState,
     client: ClientAddr,
@@ -144,14 +111,12 @@ pub(crate) async fn authenticate(
     }
 }
 
-/// The value of the one [`SESSION_COOKIE`] across all `Cookie` headers; `None` when it
-/// is absent, empty or present more than once (ambiguous).
+/// `None` when absent, empty or present more than once (ambiguous).
 pub(crate) fn session_token(headers: &HeaderMap) -> Option<&str> {
     cookie(headers, SESSION_COOKIE)
 }
 
-/// The value of the one cookie `name` across all `Cookie` headers; `None` when it is
-/// absent, empty or present more than once (ambiguous).
+/// `None` when absent, empty or present more than once (ambiguous).
 pub(crate) fn cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
     let mut found = headers
         .get_all(header::COOKIE)
@@ -165,7 +130,6 @@ pub(crate) fn cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> 
     (found.next().is_none() && !value.is_empty()).then_some(value)
 }
 
-/// The requesting address as the login throttle keys it (see [`client_addr`]).
 #[derive(Debug, Clone, Copy)]
 pub struct Client(pub ClientAddr);
 
@@ -177,7 +141,6 @@ impl<S: Send + Sync> FromRequestParts<S> for Client {
     }
 }
 
-/// The CSRF token of a console session token (see the module docs).
 pub fn csrf_token(session_token: &str) -> String {
     let digest = Sha256::new()
         .chain_update(CSRF_DOMAIN)
@@ -186,13 +149,10 @@ pub fn csrf_token(session_token: &str) -> String {
     URL_SAFE_NO_PAD.encode(digest)
 }
 
-/// Whether `method` changes state and so needs the CSRF header.
 pub(crate) fn is_state_changing(method: &Method) -> bool {
     !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
-/// Exactly one non-empty [`CSRF_HEADER`]; with a session token it must equal
-/// [`csrf_token`] of it (see the module docs).
 pub(crate) fn check_csrf(
     headers: &HeaderMap,
     session_token: Option<&str>,
@@ -212,8 +172,7 @@ pub(crate) fn check_csrf(
     }
 }
 
-/// `Set-Cookie` values that start a console session: the session cookie and the CSRF
-/// cookie, both expiring after `max_age` (use the session's absolute lifetime).
+/// Both expire after `max_age`: use the session's absolute lifetime.
 pub fn session_cookies(token: &SessionToken, max_age: Duration) -> [HeaderValue; 2] {
     let secs = max_age.as_secs();
     let session = format!(
@@ -227,7 +186,6 @@ pub fn session_cookies(token: &SessionToken, max_age: Duration) -> [HeaderValue;
     [session, csrf].map(cookie_header)
 }
 
-/// A `Set-Cookie` value for a short-lived HttpOnly cookie `name` (console attributes).
 pub(crate) fn http_only_cookie(name: &str, value: &str, max_age: Duration) -> HeaderValue {
     let secs = max_age.as_secs();
     cookie_header(format!(
@@ -235,7 +193,6 @@ pub(crate) fn http_only_cookie(name: &str, value: &str, max_age: Duration) -> He
     ))
 }
 
-/// `Set-Cookie` values that remove both cookies (logout).
 pub fn clear_session_cookies() -> [HeaderValue; 2] {
     [
         format!("{SESSION_COOKIE}=; {COOKIE_ATTRIBUTES}; HttpOnly; Max-Age=0"),

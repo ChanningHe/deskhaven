@@ -1,17 +1,4 @@
-//! `POST /auth/login/totp`: the second step of a password login with TOTP, in the login
-//! throttle's order:
-//!
-//! 1. `pre_check` with the request's username: the first step's username key (the
-//!    challenge only verifies for the username it was issued to), so password and code
-//!    guesses share one budget. Locked or over the limit -> 429 before the challenge is
-//!    looked up.
-//! 2. `TfaService::verify_challenge` with the console binding (a client challenge never
-//!    verifies here): one attempt of the challenge, then the code (a six-digit TOTP code
-//!    or a recovery code) and the challenge are spent together.
-//! 3. Passed -> the console session under the first step's credential stamp (a password
-//!    change or disable in between is a counted 401), then `complete` with the
-//!    challenge's subject. Wrong code: 422 `invalid_code` (try again); no usable
-//!    challenge: 401 `invalid_challenge` (log in again). Both counted.
+//! `pre_check` uses the first step's username, so password and code guesses share one budget.
 
 use std::sync::Arc;
 
@@ -34,7 +21,6 @@ use crate::session::Client;
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ValidJson};
 
-/// Longest accepted challenge / code input (characters).
 const MAX_SECRET_INPUT: usize = 64;
 
 /// The challenge of the password step and a code. Never logged.

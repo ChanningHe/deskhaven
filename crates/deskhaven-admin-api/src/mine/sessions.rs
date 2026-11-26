@@ -1,9 +1,5 @@
-//! `GET /me/sessions`, `DELETE /me/sessions/{id}`, `POST /me/sessions/revoke-others`: the
-//! user's own client and console sessions. A session is matched by its owner in the
-//! revoking statement itself (`SessionService::revoke_own_audited`), so another user's id
-//! is answered like an unknown one (404). Revoking the current console session signs the
-//! user out: the response clears the cookies. Audited as `session.revoke` and
-//! `session.revoke_others`, in the revocation's transaction.
+//! A session is matched by its owner in the revoking statement itself, so another user's id
+//! is answered like an unknown one (404).
 
 use std::sync::Arc;
 

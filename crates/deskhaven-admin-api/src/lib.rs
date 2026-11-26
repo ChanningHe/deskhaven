@@ -1,13 +1,4 @@
 //! Admin HTTP API (`/admin/api/v1`) backing the web console.
-//!
-//! - Routes: added only through [`AdminRoutes`] from `utoipa_axum::routes!`; each
-//!   operation declares a [`Permission`] in its `#[utoipa::path]` (see [`permission`]).
-//! - Gate (per route): same-origin and CSRF header on writes, console session cookie,
-//!   role, console audit fallback (see [`session`], [`audit`]; writes record in their own
-//!   transaction via [`AuditCtx`]).
-//! - Wire conventions (08 §6): errors [`AdminApiError`], input [`ValidJson`] /
-//!   [`ValidQuery`], lists [`PageQuery`] / [`Paginated`].
-//! - OpenAPI: [`openapi_json`], committed at [`SPEC_PATH`] by `cargo xtask gen-openapi`.
 
 mod account;
 pub mod account_setup;
@@ -79,8 +70,8 @@ pub use mine::{
 };
 pub use setup::{SetupRequest, SetupStatus};
 
-/// Every production admin API route. Fails when an operation declares no valid
-/// permission, so the server cannot start with an unguarded route.
+/// Fails when an operation declares no valid permission, so the server cannot start with an
+/// unguarded route.
 pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     let routes = AdminRoutes::new()
         .routes(routes!(me::get_me))?
@@ -104,7 +95,6 @@ pub fn api_routes() -> Result<AdminRoutes, RouteError> {
     settings::routes(routes)
 }
 
-/// The production routes behind their gates, for the admin listener.
 pub fn router(state: Arc<AppState>) -> Result<Router, RouteError> {
     Ok(api_routes()?.into_router(state))
 }

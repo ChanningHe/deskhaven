@@ -1,7 +1,3 @@
-//! `rustdesk --deploy` and `rustdesk --assign` (03 §2.8, §2.9): device placement by an API
-//! token (`deskhaven_core::api_tokens`), not by the device itself. The core writes every
-//! change together with its console audit row, as the token.
-
 mod assign;
 mod deploy;
 mod token_auth;
@@ -32,7 +28,6 @@ pub(crate) fn routes() -> Router<Arc<AppState>> {
         )
 }
 
-/// The token's request as the core audits and rate-limits it.
 fn requester(principal: &ApiTokenPrincipal, client: ClientAddr) -> Requester {
     Requester {
         actor: Actor::ApiToken(principal.token_id),

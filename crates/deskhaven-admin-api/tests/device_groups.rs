@@ -1,6 +1,3 @@
-//! Device group endpoints: list with device counts, detail, create, update, delete (its
-//! devices become ungrouped, its strategy assignment goes), config-managed groups
-//! read-only, audit rows. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

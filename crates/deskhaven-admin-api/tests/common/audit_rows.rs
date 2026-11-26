@@ -1,5 +1,3 @@
-//! Row builders of the audit view tests: one audit record per call, written straight to the
-//! tables (the ingest paths have their own tests in core).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -20,10 +18,8 @@ use serde_json::Value;
 
 use super::{Console, Harness, harness};
 
-/// A fixed epoch for the rows' times, so tests read in seconds after it.
 pub const T0: i64 = 1_700_000_000_000;
 
-/// `T0` plus `secs` seconds, as a row timestamp.
 pub fn at(secs: i64) -> TimestampMs {
     time::from_millis(T0 + secs * 1000).unwrap()
 }
@@ -32,8 +28,6 @@ fn db(h: &Harness) -> &DatabaseConnection {
     &h.state.db
 }
 
-/// A connection of `device` created `secs` after [`T0`]; `edit` sets the optional columns.
-/// Returns the row id.
 pub async fn connection(
     h: &Harness,
     device: &str,
@@ -119,7 +113,6 @@ pub async fn login(
     .id
 }
 
-/// One console audit row.
 pub struct Change<'a> {
     pub actor: (ActorKind, Option<i64>),
     pub action: &'a str,

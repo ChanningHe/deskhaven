@@ -1,6 +1,3 @@
-//! Device endpoints: list (filters, sort, presence), detail (sysinfo, effective strategy
-//! and its sources, recent connections), update (owner, device group, note, status) and
-//! delete, with their audit rows. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

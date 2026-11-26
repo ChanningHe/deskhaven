@@ -1,25 +1,6 @@
-//! The signed-in user's own credentials. The first three are `Session` routes (reachable
-//! while the account setup is unfinished, which they finish); the rest are `self` routes
-//! (M3-13, the account page). Every one acts on the session's user, never on an id from
-//! the request.
-//!
-//! | method | path | what | audit |
-//! |---|---|---|---|
-//! | `POST` | `/me/password` | change the password (current one required) | `user.password_change` |
-//! | `POST` | `/me/totp/enrolment` | a new pending TOTP seed (text, URI, QR) | `user.totp_enrolment_begin` |
-//! | `POST` | `/me/totp/enrolment/confirm` | enable TOTP with a code; recovery codes | `user.totp_enable` |
-//! | `POST` | `/me/totp/disable` | turn TOTP off (password and code; refused when enforced; ends other sessions) | `user.totp_disable` |
-//! | `POST` | `/me/totp/recovery-codes` | replace the recovery codes (password and code) | `user.recovery_codes_regenerate` |
-//! | `GET` | `/me/account` | the account page's data | |
-//! | `PATCH` | `/me` | display name | `user.profile_update` |
-//! | `POST` | `/me/identities/link` | start linking an OIDC identity (password, and a code with TOTP) | `user.identity_link_begin` |
-//! | `POST` | `/me/identities/link/verify` | exchange the IdP answer once, show the IdP identity | `user.identity_link_verify` |
-//! | `POST` | `/me/identities/link/complete` | link it to this account | `user.identity_link` |
-//! | `POST` | `/me/identities/{id}/unlink` | remove an OIDC identity (password) | `user.identity_unlink` |
-//!
-//! The password change and the TOTP confirmation change the session's standing, so both
-//! answer with a fresh console session (cookies): a password change revokes every session
-//! of the user (06 §3.2), the TOTP confirmation rotates every console session of the user.
+//! Every route acts on the session's user, never on an id from the request. The password
+//! change and the TOTP confirmation change the session's standing, so both answer with a
+//! fresh console session.
 
 mod identities;
 mod link;

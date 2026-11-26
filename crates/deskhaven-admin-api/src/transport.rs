@@ -1,25 +1,6 @@
-//! Insecure-transport detection for the requests that set the console's cookies (login,
-//! first-run setup, OIDC start and completion).
-//!
-//! The session and CSRF cookies are `__Host-` + `Secure` (see `session`), and stay so: a
-//! browser on a plain-http page drops them, and the console would loop on 401 right after
-//! a "successful" login. Those requests therefore refuse with 403 `insecure_transport`
-//! before doing anything, and the console explains the fix: reach it through an https
-//! reverse proxy, or through an SSH tunnel to `localhost`. There is no switch to relax
-//! the cookies. This is a usability check, not a security control (the cookie attributes
-//! are): it only says "secure" on positive evidence.
-//!
-//! Rule:
-//! 1. `Origin` present (browsers send it on every `POST`): the page the browser shows, so
-//!    it decides. `https://…` is secure; `http://` to a loopback host (`localhost`,
-//!    `*.localhost`, `127.0.0.0/8`, `[::1]`: secure contexts that keep `Secure` cookies)
-//!    is secure; anything else is not. This also catches a plain-http address that
-//!    bypasses a configured https proxy.
-//! 2. No `Origin` (not a browser), in order: the socket peer is a trusted proxy
-//!    (`security.trusted_proxies`) that sent `X-Forwarded-Proto`, whose last entry decides
-//!    (`https` is secure); else a loopback peer (SSH tunnel, local client) is secure; else
-//!    an https `public_url` or `listen.admin_public_url` (TLS ends in front) is secure;
-//!    otherwise not.
+//! A usability check, not a security control (the cookie attributes are): a browser on a
+//! plain-http page drops `Secure` cookies and the console would loop on 401 right after a
+//! login. It only says "secure" on positive evidence.
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -33,11 +14,10 @@ use deskhaven_http::{TrustedProxies, socket_peer};
 use crate::origin::TrustedOrigins;
 use crate::{AdminApiError, ErrorCode};
 
-/// `X-Forwarded-Proto` (not among the `http` crate's constants).
+/// Not among the `http` crate's constants.
 pub const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 
-/// Extractor that refuses (403 `insecure_transport`) a request reaching the console over
-/// plain HTTP (see the module docs). Put it before the body in a handler's arguments.
+/// Put it before the body in a handler's arguments.
 #[derive(Debug, Clone, Copy)]
 pub struct SecureTransport;
 
@@ -70,7 +50,6 @@ fn insecure() -> AdminApiError {
     )
 }
 
-/// What the rule looks at.
 struct Facts<'a> {
     headers: &'a HeaderMap,
     peer: Option<IpAddr>,
@@ -102,7 +81,6 @@ fn forwarded_proto(headers: &HeaderMap) -> Option<&str> {
     (!entry.is_empty()).then_some(entry)
 }
 
-/// An `Origin` value names a page that keeps `Secure` cookies.
 fn origin_is_secure(origin: &str) -> bool {
     let Some((scheme, authority)) = origin.split_once("://") else {
         return false;
@@ -113,7 +91,6 @@ fn origin_is_secure(origin: &str) -> bool {
     scheme.eq_ignore_ascii_case("http") && is_loopback_host(host_of(authority))
 }
 
-/// The host of `host[:port]` / `[v6][:port]`, brackets dropped.
 fn host_of(authority: &str) -> &str {
     match authority.strip_prefix('[') {
         Some(rest) => rest.split(']').next().unwrap_or_default(),

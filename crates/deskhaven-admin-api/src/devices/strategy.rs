@@ -1,4 +1,3 @@
-//! The effective strategy of a device with the layer each option comes from (05 §4.3).
 //! Values of secret catalog options are withheld (`redacted`).
 
 use deskhaven_core::devices::DeviceRecord;
@@ -57,7 +56,6 @@ pub struct EffectiveStrategyView {
     pub options: Vec<StrategyOptionView>,
 }
 
-/// A layer with the options of its strategy, for resolving sources.
 struct Layer {
     view: StrategyLayerView,
     options: Options,
@@ -73,8 +71,8 @@ fn scope_of(target: Target) -> (StrategyScopeView, Option<i64>) {
     }
 }
 
-/// The effective strategy of `device`. A strategy deleted since the merge is left out of
-/// the layers (its options then have no source: they are dropped too).
+/// A strategy deleted since the merge is left out of the layers; its options then have no
+/// source and are dropped too.
 pub(crate) async fn effective_strategy(
     state: &AppState,
     device: &DeviceRecord,

@@ -1,21 +1,16 @@
-//! The callback's HTML pages: no script, no style, nothing loaded (`default-src 'none'`),
-//! forms only to this origin, never framed, cached or sent as a referrer (the URL carries
-//! the code and state). Text from outside (the device's self-description, provider names)
-//! is HTML-escaped; request parameters never appear (the form posts back to the page's own
-//! URL, so the code and state are not copied into it).
+//! No script, no style, nothing loaded, never framed, cached or sent as a referrer: the URL
+//! carries the code and state.
 
 use axum::http::{HeaderValue, header};
 use axum::response::{Html, IntoResponse, Response};
 
 const CSP: &str = "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
-/// A page saying `message` (already escaped or static).
 pub(super) fn message(message: &str) -> Response {
     render(&format!("<p>{message}</p>"))
 }
 
-/// A question, a paragraph per note (all already escaped or static), and one button that
-/// POSTs to this same URL (query included).
+/// One button that POSTs to this same URL, query included.
 pub(super) fn confirm(question: &str, notes: &[String], button: &str) -> Response {
     let notes: String = notes.iter().map(|n| format!("<p>{n}</p>")).collect();
     render(&format!(
@@ -44,7 +39,6 @@ fn render(body: &str) -> Response {
     response
 }
 
-/// `text` safe inside HTML text and attribute values.
 pub(super) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {

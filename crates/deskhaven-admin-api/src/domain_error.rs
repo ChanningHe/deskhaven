@@ -1,4 +1,3 @@
-//! Core service errors -> enveloped admin API errors. Messages are fixed English text;
 //! `details` carries only field names and policy reasons, never input values.
 
 use deskhaven_core::api_tokens::ApiTokenError;
@@ -13,14 +12,10 @@ use serde_json::json;
 
 use crate::{AdminApiError, ErrorCode};
 
-/// [`Refused::code`] of the account rule "only an owner may manage owners" (06 §4.1).
 pub(crate) const OWNER_REQUIRED: &str = "owner_required";
 
-/// [`Refused::code`] of an actor that may not use the operation at all (no longer an
-/// administrator). Like `ACTOR_INACTIVE` it maps to 403 `forbidden`.
 pub(crate) const FORBIDDEN: &str = "forbidden";
 
-/// One invalid field, in the `validation_failed` details shape of `ValidJson`.
 pub(crate) fn invalid_field(field: &str, reason: impl ToString) -> AdminApiError {
     AdminApiError::validation_failed("invalid input")
         .with_details(json!({ "fields": { field: [reason.to_string()] } }))

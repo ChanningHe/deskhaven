@@ -1,6 +1,5 @@
-//! Audit request bodies, as `src/server/connection.rs` and `src/ui_session_interface.rs`
-//! build them, into the core's records. Unknown keys (`conn_audit_ref`, P1) are ignored; a
-//! present key of the wrong type, or a missing required one, is a 400.
+//! Unknown keys are ignored; a present key of the wrong type, or a missing required one, is a
+//! 400.
 
 use std::net::IpAddr;
 
@@ -14,24 +13,21 @@ use serde_json::{Map, Value};
 
 use crate::ClientApiError;
 
-/// Longest accepted `id` / `peer_id` (bytes): hbbs `MAX_PEER_ID_LEN`.
+/// Matches hbbs `MAX_PEER_ID_LEN`.
 const ID_MAX_LEN: usize = 253;
-/// Longest accepted `uuid` (base64 characters); machine ids are far shorter.
+/// Machine ids are far shorter.
 const UUID_MAX_LEN: usize = 512;
-/// Longest accepted `nonce` (the client sends a 36-character UUID).
+/// The client sends a 36-character UUID.
 const NONCE_MAX_LEN: usize = 64;
 const INVALID_BODY: &str = "Invalid request body";
 
-/// What `/api/audit/conn` received.
 #[derive(Debug)]
 pub(super) enum ConnMessage {
-    /// A record of the controlled device (03 §2.3).
     Record(Envelope, ConnReport),
-    /// The controller's session note (03 §2.4): `note`, without `conn_id` and `action`.
+    /// `note`, without `conn_id` and `action`.
     Note(ControllerNote),
 }
 
-/// `post_conn_audit` (`connection.rs:1559-1572`) plus the note of `send_note`.
 #[derive(Deserialize)]
 struct ConnBody {
     id: Option<String>,
@@ -41,7 +37,7 @@ struct ConnBody {
     session_id: Option<Value>,
     action: Option<String>,
     ip: Option<String>,
-    /// `[my_id, my_name]`; a newer client may append elements.
+    /// A newer client may append elements.
     peer: Option<Vec<Value>>,
     #[serde(rename = "type")]
     conn_type: Option<i32>,
@@ -50,7 +46,6 @@ struct ConnBody {
     note: Option<String>,
 }
 
-/// `post_file_audit` (`connection.rs:1590-1625`).
 #[derive(Deserialize)]
 struct FileBody {
     id: Option<String>,
@@ -65,16 +60,15 @@ struct FileBody {
     info: Option<String>,
 }
 
-/// The `info` JSON string of a file record: `{ip, name, num, files: [[name, size]...]}`.
+/// The `info` JSON string: `{ip, name, num, files: [[name, size]...]}`.
 #[derive(Deserialize)]
 struct FileInfoBody {
     ip: Option<String>,
     num: Option<u64>,
-    /// `[[name, size], ...]`; a newer client may append elements to a pair.
+    /// A newer client may append elements to a pair.
     files: Option<Vec<Vec<Value>>>,
 }
 
-/// `post_alarm_audit` (`connection.rs:1627-1656`).
 #[derive(Deserialize)]
 struct AlarmBody {
     id: Option<String>,
@@ -121,8 +115,7 @@ fn conn_event(body: &ConnBody) -> Result<ConnEvent, ClientApiError> {
     }
 }
 
-/// The first two elements of a client tuple (`[a, b, ...]`); elements a newer client appends
-/// are ignored.
+/// Elements a newer client appends are ignored.
 fn pair<A: DeserializeOwned, B: DeserializeOwned>(
     items: &[Value],
 ) -> Result<(A, B), ClientApiError> {
@@ -134,7 +127,7 @@ fn pair<A: DeserializeOwned, B: DeserializeOwned>(
     Ok((a, b))
 }
 
-/// The note names a session: 0 (no session yet) names none.
+/// 0 (no session yet) names none.
 fn note(body: ConnBody) -> Result<ConnMessage, ClientApiError> {
     let session_id = session_id(body.session_id.as_ref())?;
     let rustdesk_id = body.id.filter(|id| bounded(id, ID_MAX_LEN));

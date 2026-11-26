@@ -1,6 +1,3 @@
-//! Account actions: `POST /users/{id}/{disable,enable,reset-password,reset-2fa,
-//! revoke-sessions,unlock}`. Each is one guarded, audited transaction.
-
 use std::sync::Arc;
 
 use axum::Json;

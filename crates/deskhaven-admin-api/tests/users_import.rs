@@ -1,6 +1,3 @@
-//! `POST /users/import`: all or nothing, a per-row report of every problem, bounded size
-//! and row count, no password column, temporary passwords shown once and never audited.
-//! Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

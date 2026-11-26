@@ -1,8 +1,3 @@
-//! User administration (M3-04): list, detail, create, update, delete, account actions and
-//! CSV import. Every route needs an admin (or owner); finer rules (only owners manage
-//! owners, the last owner stays, nobody deletes themselves) are in `rules`, and every
-//! write records its console audit row inside its own transaction.
-
 mod actions;
 mod crud;
 mod csv;
@@ -19,7 +14,6 @@ pub(crate) use rules::EMAIL_CHANGED;
 
 use crate::{AdminRoutes, RouteError};
 
-/// The `/users` routes.
 pub(crate) fn routes(r: AdminRoutes) -> Result<AdminRoutes, RouteError> {
     r.routes(routes!(list::list_users, crud::create_user))?
         .routes(routes!(import::import_users))?

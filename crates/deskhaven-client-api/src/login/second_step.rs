@@ -1,17 +1,5 @@
-//! Second step of a two-step login (`type: "email_code"` answering a `tfa_check`
-//! challenge), in the order the login throttle requires:
-//!
-//! 1. `pre_check` with the request's username: the same username key as the first step
-//!    (the challenge only verifies for the username it was issued to), so password and
-//!    second-factor guesses share one budget. Locked or over the limit -> 429 before the
-//!    challenge is even looked up.
-//! 2. `TfaService::verify_challenge`: claims one attempt of the challenge, checks its
-//!    username and device binding, spends the code (TOTP step or recovery code) and
-//!    consumes the challenge.
-//! 3. Passed -> the client session under the first step's credential stamp (a password
-//!    change or disable in between is a counted 401), then `complete` with the challenge's
-//!    lockout subject. Wrong code (401 `wrong-2fa-code`, the dialog stays open) or no usable
-//!    challenge (401, log in again) -> `on_failure`.
+//! `pre_check` uses the first step's username, so password and second-factor guesses share
+//! one budget.
 
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
@@ -24,7 +12,6 @@ use super::failure::Failure;
 use super::request::SecondStepLogin;
 use crate::ClientApiError;
 
-/// The whole second step, with its login event.
 pub async fn login(
     state: &AppState,
     client: ClientAddr,

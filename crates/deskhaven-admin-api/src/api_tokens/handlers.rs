@@ -1,5 +1,3 @@
-//! `GET|POST /api-tokens`, `POST /api-tokens/{id}/revoke`.
-
 use std::sync::Arc;
 
 use axum::Json;

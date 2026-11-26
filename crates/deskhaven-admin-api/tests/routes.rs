@@ -1,6 +1,3 @@
-//! Route assembly: every operation must declare a permission, or the route set (and so
-//! server startup, which builds it) fails. Also the generated OpenAPI document.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use axum::Json;

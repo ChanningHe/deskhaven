@@ -1,5 +1,3 @@
-//! Why a console sign-in step failed: its error reply and its login event.
-
 use std::time::Duration;
 
 use deskhaven_core::auth::limiter::{Attempt, ClientAddr, LockStatus, ThrottleError};
@@ -10,7 +8,7 @@ use deskhaven_core::users::{AuthError, PasswordError};
 
 use crate::{AdminApiError, BoxError, ErrorCode};
 
-/// `Retry-After` of a 503 for a busy password hasher (its default acquire timeout).
+/// The hasher's default acquire timeout.
 pub(crate) const BUSY_RETRY_AFTER: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -19,25 +17,16 @@ pub(crate) enum Failure {
     InvalidCredentials,
     Disabled,
     Unverified,
-    /// Second step: wrong, replayed or used code.
     InvalidCode,
-    /// Second step: no usable challenge.
     InvalidChallenge,
-    /// A verified failure (one of the above) that started a lockout.
     LockStarted(Box<Failure>),
-    /// Nothing verified: the password hasher is saturated or the directory is unavailable.
     Busy,
-    /// The directory stopped answering after the password was sent: 503 like [`Busy`],
-    /// but the attempt counts (no verdict, so no login event).
-    ///
-    /// [`Busy`]: Self::Busy
+    /// The directory went silent after the password was sent: 503, yet the attempt counts.
     Interrupted,
     Internal(BoxError),
 }
 
 impl Failure {
-    /// The `login_events` result, or `None` for attempts that are not recorded (nothing
-    /// was verified, or the server failed: logged instead).
     pub(crate) fn event_result(&self) -> Option<LoginResult> {
         match self {
             Self::InvalidCredentials => Some(LoginResult::InvalidCredentials),
@@ -106,7 +95,6 @@ impl From<ChallengeError> for Failure {
     }
 }
 
-/// A verified failure: the attempt stays counted; marks the one that started a lockout.
 pub(crate) fn counted(
     state: &AppState,
     client: ClientAddr,
@@ -122,7 +110,6 @@ pub(crate) fn counted(
     }
 }
 
-/// Reports a failed password verification to the throttle (busy hasher: refunded).
 pub(crate) async fn failed(
     state: &AppState,
     client: ClientAddr,

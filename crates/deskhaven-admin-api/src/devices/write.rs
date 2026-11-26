@@ -1,5 +1,3 @@
-//! `PATCH|DELETE /devices/{id}`, `POST /devices/{id}/disconnect`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -44,7 +42,6 @@ pub async fn update_device(
     Ok((Audited, Json(summary.into())))
 }
 
-/// The audit action of an update: a lone status change reads as disable / enable.
 fn action_of(update: &DeviceUpdate) -> &'static str {
     let only_status =
         update.owner_user_id.is_none() && update.device_group_id.is_none() && update.note.is_none();

@@ -1,6 +1,3 @@
-//! "My account" (M3-13), sessions: a user lists their client and console sessions and
-//! revokes one or all others; never another user's. Revoking the current console session
-//! signs out. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -17,7 +14,6 @@ use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
 
-/// A client session of `username` on device `rustdesk_id`; its id and bearer token.
 async fn client_session(h: &Harness, username: &str, rustdesk_id: &str) -> (i64, String) {
     let auth = h
         .state

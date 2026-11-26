@@ -1,6 +1,3 @@
-//! Console login through the real router (M3-02): password step, TOTP / recovery code
-//! step, equal answers for unknown and wrong, lockout, fixation, logout, login events and
-//! the insecure-transport refusal. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

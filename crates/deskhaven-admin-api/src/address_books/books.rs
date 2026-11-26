@@ -1,5 +1,3 @@
-//! `GET|POST /address-books`, `GET|PATCH|DELETE /address-books/{guid}`.
-
 use std::sync::Arc;
 
 use axum::Json;

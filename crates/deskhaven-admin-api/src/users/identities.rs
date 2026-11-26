@@ -1,9 +1,4 @@
-//! `DELETE /users/{id}/identities/{identity_id}`: an administrator removes an account's
-//! OIDC identity (M4-09; the identities are listed in `GET /users/{id}`). Administrators
-//! view and unlink only, they never link for someone. The account rules apply (only an
-//! owner touches an owner's account), checked on the committed state in the removing
-//! transaction, which records `user.identity_unlink`. The last identity of an OIDC account
-//! stays (409 `last_identity`).
+//! Administrators view and unlink only; they never link for someone.
 
 use std::sync::Arc;
 

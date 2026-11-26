@@ -1,24 +1,5 @@
-//! Password login (`type: "account"`), in the order the login throttle requires
-//! (`deskhaven_core::auth::limiter`, "Handler protocol"):
-//!
-//! 1. `pre_check`: per-IP token, then one attempt reserved (counted) for the username from
-//!    this source. Locked or over the limit -> 429; a database error fails closed (500, no
-//!    verification).
-//! 2. `LdapService::authenticate_password`: the local password, or the directory for LDAP
-//!    accounts (and unknown names while a directory is enabled), never both. One Argon2id
-//!    verification either way, real or dummy (unknown accounts), so unknown user and wrong
-//!    password cost the same and answer the same 401, whether or not the account has 2FA.
-//! 3. Wrong password, unknown, disabled or unverified account -> `on_failure` (the attempt
-//!    stays counted). Hasher busy or directory unavailable -> `refund` (never counted) and
-//!    503: nothing was verified, and an LDAP account never falls back to a local password.
-//!    A directory that stops answering after the password was sent is a counted 503.
-//! 4. Right password, by the user's second factor (`TfaService::requirement`):
-//!    - none: the client session (bound to the request's device, re-checking the
-//!      credential stamp; a credential changed meanwhile is a counted 401), then
-//!      `on_success`;
-//!    - TOTP: `on_password_ok_pending_2fa` (the attempt stays counted, no `on_success`),
-//!      a challenge holding the returned subject, and the challenge reply;
-//!    - enforced but not enrolled: counted, 403 (enrolment is in the web console).
+//! Unknown user and wrong password cost the same Argon2id verification and answer the same
+//! 401. An LDAP account never falls back to a local password.
 
 use deskhaven_core::auth::limiter::{Attempt, ClientAddr, LockStatus, PendingSubject};
 use deskhaven_core::login_events::{LoginMethod, LoginResult};
@@ -32,33 +13,26 @@ use super::failure::Failure;
 use super::request::AccountLogin;
 use crate::ClientApiError;
 
-/// A logged-in user and the new client session's token.
 pub struct LoggedIn {
     pub user: User,
     pub token: SessionToken,
 }
 
-/// The password was right and a second factor is due.
 pub struct Challenged {
     pub user: User,
     pub secret: ChallengeSecret,
 }
 
-/// Outcome of a right password.
 pub enum PasswordStep {
     LoggedIn(LoggedIn),
     Challenged(Challenged),
 }
 
-/// What completes the login throttle once the session exists.
 pub(super) enum Completion {
-    /// One-step login: `on_success`.
     Password,
-    /// Second factor passed: `complete` with the first step's subject.
     SecondFactor(PendingSubject),
 }
 
-/// The whole password step, with its login event.
 pub async fn login(
     state: &AppState,
     client: ClientAddr,
@@ -83,8 +57,6 @@ pub async fn login(
     outcome.map_err(Failure::into_error)
 }
 
-/// The password step and how the password was checked (`password` or `ldap`, for the
-/// login event).
 async fn authenticate(
     state: &AppState,
     client: ClientAddr,
@@ -133,7 +105,6 @@ async fn password_step(
     }
 }
 
-/// Keeps the attempt counted and stores the challenge carrying its subject.
 async fn challenge(
     state: &AppState,
     request: &AccountLogin,
@@ -156,7 +127,6 @@ async fn challenge(
     Ok(PasswordStep::Challenged(Challenged { user, secret }))
 }
 
-/// Reports a failed verification to the throttle.
 async fn fail(state: &AppState, client: ClientAddr, attempt: Attempt, failure: Failure) -> Failure {
     let throttle = &state.login_throttle;
     match failure {
@@ -172,7 +142,6 @@ async fn fail(state: &AppState, client: ClientAddr, attempt: Attempt, failure: F
     }
 }
 
-/// A verified failure: the attempt stays counted; marks the one that started a lockout.
 pub(super) fn counted(
     state: &AppState,
     client: ClientAddr,
@@ -188,14 +157,12 @@ pub(super) fn counted(
     }
 }
 
-/// Who gets a session, on which device, under which credential stamp.
 pub(super) struct Session<'a> {
     pub(super) device: &'a ClientDevice,
     pub(super) user: User,
     pub(super) stamp: CredentialStamp,
 }
 
-/// The client session, then the throttle completion.
 pub(super) async fn issue_session(
     state: &AppState,
     client: ClientAddr,

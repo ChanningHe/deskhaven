@@ -1,5 +1,3 @@
-//! API token rules (M3-12): input validation, who may create and revoke (06 §4.1), and
-//! the lock order against account edits (PostgreSQL). Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -104,8 +102,8 @@ async fn only_administrators_reach_the_endpoints() {
     .await;
 }
 
-/// 06 §4.1: tokens carry their creator's authority, so an owner's tokens (and system
-/// tokens, which have no creator) are an owner's to revoke; admins revoke each other's.
+/// Tokens carry their creator's authority: an owner's tokens (and system tokens) are an
+/// owner's to revoke; admins revoke each other's.
 #[tokio::test]
 async fn admins_cannot_revoke_owner_or_system_tokens() {
     each_migrated_backend(async |db: &TestDb| {
@@ -199,7 +197,6 @@ async fn an_expiry_beyond_ten_years_is_rejected_and_a_shorter_one_accepted() {
     .await;
 }
 
-/// How many backends of the test's database wait for a lock.
 async fn lock_waiters(h: &Harness) -> i64 {
     let sql = "SELECT count(*) AS n FROM pg_stat_activity \
                WHERE datname = current_database() AND wait_event_type = 'Lock'";
@@ -218,10 +215,8 @@ async fn wait_for_lock_waiters(h: &Harness, count: i64) {
     panic!("fewer than {count} backends waited for a lock");
 }
 
-/// `UserService::edit` locks every active owner, then the edited account, then (guard) the
-/// acting account. A revocation by an owner of the edited account's token must take the
-/// same locks in the same order: with creator first, owner O (revoking) and the editor
-/// would wait for each other and PostgreSQL would abort one of them.
+/// A revocation of the edited account's token by an owner must take the edit's locks in the
+/// same order, or PostgreSQL aborts one of the two as deadlocked.
 #[tokio::test]
 async fn revoking_a_token_while_its_creator_is_edited_does_not_deadlock() {
     each_migrated_backend(async |db: &TestDb| {

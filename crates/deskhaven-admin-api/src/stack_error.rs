@@ -1,6 +1,3 @@
-//! Admin envelope for errors produced by the HTTP stack itself; plug into
-//! `deskhaven_http::ErrorBodies::admin`.
-
 use axum::response::{IntoResponse, Response};
 use deskhaven_http::StackError;
 

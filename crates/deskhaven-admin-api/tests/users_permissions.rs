@@ -1,8 +1,3 @@
-//! Who may manage whom (06 §4.1): every user endpoint, as user / admin / owner, against an
-//! owner / admin / user target. Users never pass the gate; admins manage admins and users
-//! but no owner (`owner_required`, nothing changes, no audit row; reading one is fine);
-//! owners manage everyone. Promotion to owner and creating owners need an owner. Runs on
-//! SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -69,8 +64,7 @@ impl Action {
     }
 }
 
-/// `None`: allowed (2xx); `Some((status, code))`: refused with this error. Reading an
-/// owner account is not managing it.
+/// Reading an owner account is not managing it.
 fn expected(actor: Role, target: Role, action: Action) -> Option<(u16, &'static str)> {
     match (actor, target) {
         (Role::User, _) => Some((403, "forbidden")),
@@ -179,8 +173,8 @@ async fn only_owners_create_owners_or_promote_to_owner() {
     .await;
 }
 
-/// Changes `user_id`'s role behind the services' back: no commit hook runs, so the
-/// session cache keeps the old role, as for a demotion racing an in-flight request.
+/// No commit hook runs, so the session cache keeps the old role, as for a demotion racing
+/// an in-flight request.
 async fn demote_quietly(h: &Harness, user_id: i64, role: Role) {
     user::Entity::update_many()
         .col_expr(user::Column::Role, Expr::value(role))

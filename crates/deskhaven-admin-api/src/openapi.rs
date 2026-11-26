@@ -1,7 +1,3 @@
-//! The OpenAPI document of the admin API: the console's single source of API types
-//! (08 §2, generated with orval). `cargo xtask gen-openapi` writes [`openapi_json`] of
-//! the production routes to [`SPEC_PATH`]; CI fails when the committed file drifts.
-
 use axum::http::Method;
 use utoipa::openapi::path::{Operation, Parameter, ParameterBuilder, ParameterIn};
 use utoipa::openapi::schema::{ObjectBuilder, Type};
@@ -17,10 +13,8 @@ use crate::session::{SESSION_COOKIE, is_state_changing};
 /// `session::CSRF_HEADER` in its documented spelling.
 const CSRF_HEADER_NAME: &str = "X-Deskhaven-CSRF";
 
-/// Committed location of the generated document, relative to the repository root.
 pub const SPEC_PATH: &str = "crates/deskhaven-admin-api/openapi.json";
 
-/// Name of the error body schema in `components.schemas`.
 pub(crate) const ERROR_SCHEMA: &str = "ErrorEnvelope";
 
 #[derive(OpenApi)]
@@ -58,13 +52,10 @@ impl Modify for SessionScheme {
     }
 }
 
-/// The document without operations: info, security scheme and shared schemas.
 pub(crate) fn base() -> Document {
     ApiDoc::openapi()
 }
 
-/// Documents what the gate adds to an operation (unless the handler already documents
-/// that status): the required CSRF header on state-changing methods, and its failures.
 pub(crate) fn add_gate_docs(operation: &mut Operation, method: &Method, permission: Permission) {
     let writes = is_state_changing(method);
     if writes {
@@ -125,7 +116,6 @@ fn csrf_parameter() -> Parameter {
         .build()
 }
 
-/// The production routes' document, as committed: pretty JSON with a final newline.
 pub fn openapi_json() -> Result<String, OpenApiError> {
     let doc = crate::api_routes()?.openapi();
     let mut json = doc.to_pretty_json().map_err(OpenApiError::Serialize)?;

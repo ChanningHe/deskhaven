@@ -1,5 +1,3 @@
-//! Web client sessions at the edges: a request dropped while the device is being punched,
-//! and disabled devices. The signal server is a fake (`common::web_client`). Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -24,7 +22,6 @@ const POLL: Duration = Duration::from_millis(10);
 #[tokio::test]
 async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let release = s.fake.park_next();
@@ -36,7 +33,6 @@ async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
             Some(body),
         ));
 
-        // Act
         tokio::select! {
             _ = call => panic!("the punch is parked"),
             () = async { while s.fake.punches() == 0 { sleep(POLL).await } } => {}
@@ -58,7 +54,6 @@ async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
             sleep(POLL).await;
         };
 
-        // Assert
         let b = db.backend;
         let after: Value = serde_json::from_str(row.after.as_deref().unwrap()).unwrap();
         assert_eq!(after["result"], "cancelled", "{b}");
@@ -73,7 +68,6 @@ async fn a_request_dropped_mid_punch_is_audited_and_its_session_closed() {
 #[tokio::test]
 async fn a_disabled_device_is_not_found_for_its_owner_and_for_admins() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let repo = DeviceRepository::new(h.state.db.clone());
@@ -89,12 +83,10 @@ async fn a_disabled_device_is_not_found_for_its_owner_and_for_admins() {
         };
         disable.update(&h.state.db).await.unwrap();
 
-        // Act
         let unknown = open(&h, &s.alice, "999999999", false).await;
         let by_owner = open(&h, &s.alice, ALICE_DEVICE, false).await;
         let by_admin = open(&h, &s.owner, ALICE_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(unknown.status, 404, "{b}");
         for reply in [&by_owner, &by_admin] {

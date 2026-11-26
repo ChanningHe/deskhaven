@@ -1,15 +1,11 @@
-//! Query strings of the paged endpoints: `current` (1-based), `pageSize`, for address book
-//! peers `ab` (`flutter/lib/models/ab_model.dart:303-314, 1440-1451`) and for the group
-//! panel `status` (`flutter/lib/models/group_model.dart:177-186`), and the `{total, data}`
-//! reply. Values are taken verbatim: the client sends digits and UUIDs, which Dart's `Uri`
-//! never percent-encodes; an encoded value simply matches nothing.
+//! Values are taken verbatim: the client sends digits and UUIDs, which Dart's `Uri` never
+//! percent-encodes; an encoded value simply matches nothing.
 
 use deskhaven_core::pagination::PageRequest;
 use serde::Serialize;
 
 use crate::ClientApiError;
 
-/// `{total, data}` (03 §1.3).
 #[derive(Serialize)]
 pub struct PageReply<T> {
     pub total: u64,
@@ -21,7 +17,6 @@ const PAGE_SIZE: &str = "pageSize";
 const BOOK: &str = "ab";
 const STATUS: &str = "status";
 
-/// The value of the first `key=value` pair named `key`.
 fn value<'q>(query: &'q str, key: &str) -> Option<&'q str> {
     query
         .split('&')
@@ -30,8 +25,7 @@ fn value<'q>(query: &'q str, key: &str) -> Option<&'q str> {
         .map(|(_, v)| v)
 }
 
-/// The page asked for; a missing parameter takes the default. Range checks are the
-/// service's ([`PageRequest::index`]).
+/// Range checks are the service's ([`PageRequest::index`]).
 pub fn page(query: Option<&str>) -> Result<PageRequest, ClientApiError> {
     let query = query.unwrap_or_default();
     let defaults = PageRequest::default();
@@ -47,8 +41,7 @@ pub fn page(query: Option<&str>) -> Result<PageRequest, ClientApiError> {
     })
 }
 
-/// The `status` filter (`1` normal, `0` disabled, `-1` unverified); a blank or missing value
-/// is no filter. What the numbers mean for each endpoint is the caller's to check.
+/// A blank or missing value is no filter; what the numbers mean is the caller's to check.
 pub fn status(query: Option<&str>) -> Result<Option<i8>, ClientApiError> {
     match value(query.unwrap_or_default(), STATUS) {
         None | Some("") => Ok(None),
@@ -59,7 +52,6 @@ pub fn status(query: Option<&str>) -> Result<Option<i8>, ClientApiError> {
     }
 }
 
-/// The `ab` guid, required.
 pub fn book(query: Option<&str>) -> Result<&str, ClientApiError> {
     value(query.unwrap_or_default(), BOOK)
         .filter(|guid| !guid.is_empty())

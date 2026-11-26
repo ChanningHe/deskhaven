@@ -1,20 +1,5 @@
-//! `POST /auth/login`: the password step, in the login throttle's order:
-//!
-//! 1. `pre_check` (per-IP token, then one attempt reserved for the username from this
-//!    source): locked or over the limit -> 429, nothing verified.
-//! 2. `LdapService::authenticate_password`: the local password, or the directory for LDAP
-//!    accounts (never both); one Argon2id verification either way, real or dummy, so
-//!    unknown account and wrong password cost the same and answer the same 401
-//!    `invalid_credentials`, whether or not the account has 2FA. Disabled / unverified
-//!    (right password only): 403. Busy hasher or unavailable directory: refunded, 503; a
-//!    directory silent after the password was sent: counted, 503.
-//! 3. Right password, by the second factor (`TfaService::requirement`):
-//!    - TOTP enabled: `on_password_ok_pending_2fa` (the attempt stays counted), a console
-//!      challenge holding that subject, `totp_required`; **no session**;
-//!    - otherwise (none, or enforced but not enrolled): the console session under the
-//!      login's credential stamp, then `on_success`. An unenrolled account under
-//!      `auth.tfa.enforce` gets a session restricted to the enrolment (`account_setup`),
-//!      unlike the client, which has nowhere to enrol.
+//! Unknown account and wrong password cost the same Argon2id verification and answer the same
+//! 401.
 
 use std::sync::Arc;
 
@@ -39,8 +24,7 @@ use crate::session::Client;
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ValidJson};
 
-/// Longest accepted password input (characters). Longer ones would fail anyway (the
-/// policy maximum is 256); the bound keeps request bodies small.
+/// Longer input fails the policy anyway; the bound keeps request bodies small.
 pub(crate) const MAX_PASSWORD_INPUT: usize = 1024;
 
 /// Username and password. Never logged.
@@ -54,24 +38,19 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-/// A signed-in user and the new session.
 pub(super) struct SignedIn {
     pub(super) user: User,
     pub(super) session: Session,
     pub(super) token: SessionToken,
 }
 
-/// Outcome of a right password.
 enum Step {
     SignedIn(SignedIn),
     Challenged { user: User, secret: ChallengeSecret },
 }
 
-/// What completes the login throttle once the session exists.
 pub(super) enum Completion {
-    /// One-step login: `on_success`.
     Password,
-    /// Second factor passed: `complete` with the first step's subject.
     SecondFactor(PendingSubject),
 }
 
@@ -124,8 +103,6 @@ pub async fn login(
     }
 }
 
-/// The password step and how the password was checked (`password` or `ldap`, for the
-/// login event).
 async fn authenticate(
     state: &AppState,
     client: ClientAddr,
@@ -175,7 +152,6 @@ async fn password_step(
     }
 }
 
-/// Keeps the attempt counted and stores the console challenge carrying its subject.
 async fn challenge(
     state: &AppState,
     attempt: Attempt,
@@ -197,14 +173,12 @@ async fn challenge(
     Ok(Step::Challenged { user, secret })
 }
 
-/// Who gets a console session, under which credential stamp.
 pub(super) struct NewSession<'a> {
     pub(super) user: User,
     pub(super) stamp: CredentialStamp,
     pub(super) user_agent: Option<&'a str>,
 }
 
-/// The console session, then the throttle completion.
 pub(super) async fn issue_session(
     state: &AppState,
     client: ClientAddr,

@@ -1,17 +1,5 @@
-//! Typed, validated input (06 §6): JSON bodies and query strings are deserialized into
-//! request types and checked with `garde` before a handler runs. Every failure is an
-//! enveloped error:
-//!
-//! | problem | status | code |
-//! |---|---|---|
-//! | body without `Content-Type: application/json` | 415 | `unsupported_media_type` |
-//! | body that is not JSON | 400 | `bad_request` |
-//! | JSON of the wrong shape (types, unknown fields with `deny_unknown_fields`) | 422 | `validation_failed` |
-//! | query string of the wrong shape | 422 | `validation_failed` |
-//! | a `garde` rule fails | 422 | `validation_failed`, `details.fields` |
-//!
-//! Body types should use `#[serde(deny_unknown_fields)]` (unknown fields are errors for
-//! the admin API). `details` of a rule failure: `{"fields": {"<path>": ["<problem>", ...]}}`.
+//! Body types should use `#[serde(deny_unknown_fields)]`: unknown fields are errors for the
+//! admin API.
 
 use std::collections::BTreeMap;
 
@@ -27,11 +15,9 @@ use serde_json::json;
 
 use crate::{AdminApiError, ErrorCode};
 
-/// A validated JSON request body.
 #[derive(Debug, Clone)]
 pub struct ValidJson<T>(pub T);
 
-/// A validated query string.
 #[derive(Debug, Clone)]
 pub struct ValidQuery<T>(pub T);
 
@@ -65,7 +51,7 @@ where
     }
 }
 
-/// Typed path parameters (ids). A parameter that does not parse names no resource: 404.
+/// A parameter that does not parse names no resource: 404.
 #[derive(Debug, Clone)]
 pub struct ValidPath<T>(pub T);
 
@@ -84,8 +70,8 @@ where
     }
 }
 
-/// `deserialize_with` of a nullable patch field: distinguishes an absent field (`None`,
-/// with `#[serde(default)]`) from an explicit `null` (`Some(None)`).
+/// Tells an absent field (`None`, with `#[serde(default)]`) from an explicit `null`
+/// (`Some(None)`).
 pub(crate) fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -110,10 +96,10 @@ fn report_error(report: Report) -> AdminApiError {
     AdminApiError::validation_failed("invalid input").with_details(json!({ "fields": fields }))
 }
 
-/// Longest `details.reason` returned (characters); serde messages can quote input.
+/// Serde messages can quote input.
 pub const MAX_REASON_CHARS: usize = 256;
 
-/// The rejection's message for the requester, bounded. Never logged: it may echo input.
+/// Never logged: it may echo input.
 fn reason(body_text: &str) -> String {
     body_text.chars().take(MAX_REASON_CHARS).collect()
 }

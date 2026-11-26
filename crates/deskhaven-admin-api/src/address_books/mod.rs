@@ -1,12 +1,4 @@
-//! Shared address book administration (M3-06): books, grants (user / group x rule 1-3),
-//! entries, tags and the import of devices. Admin routes; personal books are never reachable
-//! here (the core service reports them as not found). Every write records its audit row in
-//! its own transaction; the audit target is the book (`address_book`, its guid) and the
-//! snapshots are built by the core service, which keeps entry passwords out of them.
-//!
 //! Entry passwords are write-only: a response carries `has_password`, never the password.
-//! (A rule 1 grant does hand the password to the sharee's client, which connects with it;
-//! the share dialog of the console says so, 06 §4.2.)
 
 mod books;
 mod error;
@@ -26,7 +18,6 @@ use crate::{AdminRoutes, RouteError};
 
 type Problem = crate::ErrorEnvelope<'static>;
 
-/// The address book service over the process state (stateless: built per request).
 fn service(state: &AppState) -> AddressBookService {
     AddressBookService::new(
         state.db.clone(),
@@ -35,7 +26,6 @@ fn service(state: &AppState) -> AddressBookService {
     )
 }
 
-/// The `/address-books` routes.
 pub(crate) fn routes(r: AdminRoutes) -> Result<AdminRoutes, RouteError> {
     r.routes(routes!(books::list_books, books::create_book))?
         .routes(routes!(

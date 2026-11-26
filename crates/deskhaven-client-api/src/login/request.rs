@@ -1,15 +1,5 @@
-//! The `/api/login` body (03 §3.2), as `LoginRequest.toJson` sends it
-//! (`flutter/lib/common/hbbs/hbbs.dart:155-177`), validated at the boundary: nothing is
-//! counted or verified for a malformed request.
-//!
-//! `Content-Type` must be `application/json` (parameters allowed, any case), as the client
-//! sends it. Unknown fields are ignored (the client adds fields over time, 06 §6).
-//!
-//! The second step of a two-step login (`verificationCodeDialog`,
-//! `flutter/lib/common/widgets/login.dart:1003-1024`) has `type: "email_code"`, the
-//! challenge `secret`, the `username` the first reply named (`user.name`), the device, and
-//! the code in `verificationCode`, plus in `tfaCode` for a TOTP challenge (both carry the
-//! same text). No password.
+//! Validated at the boundary: nothing is counted or verified for a malformed request. Unknown
+//! fields are ignored because the client adds fields over time.
 
 use std::fmt;
 
@@ -21,14 +11,13 @@ use serde_json::Value;
 
 use crate::ClientApiError;
 
-/// `type` of a password login (`HttpType.kAuthReqTypeAccount`).
 const ACCOUNT: &str = "account";
-/// `type` of the second step (`HttpType.kAuthReqTypeEmailCode`), for TOTP too.
+/// The second step's `type`, for TOTP too.
 const EMAIL_CODE: &str = "email_code";
 const JSON: &str = "application/json";
-/// Longest accepted code (a TOTP code is 6 digits, a recovery code 11 characters).
+/// A TOTP code is 6 digits, a recovery code 11 characters.
 pub const MAX_CODE_LEN: usize = 64;
-/// Longest accepted challenge secret (ours are 43 characters).
+/// Ours are 43 characters.
 pub const MAX_SECRET_LEN: usize = 128;
 pub const INVALID_REQUEST_MESSAGE: &str = "Invalid login request";
 pub const UNSUPPORTED_TYPE_MESSAGE: &str = "Unsupported login type";
@@ -51,14 +40,10 @@ struct Raw {
     tfa_code: Option<String>,
 }
 
-/// A login request by type.
 #[derive(Debug)]
 pub enum LoginRequest {
-    /// `type: "account"` (or no type): username and password.
     Account(AccountLogin),
-    /// `type: "email_code"`: the code answering a challenge of the first step.
     SecondStep(SecondStepLogin),
-    /// Any other type (later tasks add their own); refused.
     Unsupported,
 }
 
@@ -66,7 +51,7 @@ pub enum LoginRequest {
 pub struct AccountLogin {
     pub username: String,
     pub password: Password,
-    /// `id`, `uuid` and `deviceInfo`: what the session is bound to.
+    /// What the session is bound to.
     pub device: ClientDevice,
 }
 
@@ -89,7 +74,6 @@ impl fmt::Debug for SecondStepLogin {
 }
 
 impl LoginRequest {
-    /// 400 [`INVALID_REQUEST_MESSAGE`] unless `body` is a well-formed login request.
     pub fn parse(body: &[u8]) -> Result<Self, ClientApiError> {
         let raw: Raw = serde_json::from_slice(body).map_err(|_| invalid())?;
         match raw.kind.as_deref() {
@@ -132,7 +116,7 @@ impl Raw {
     }
 }
 
-/// `id`, `uuid` and `deviceInfo`, checked as the session service will.
+/// Checked as the session service will.
 pub(crate) fn device(
     id: Option<String>,
     uuid: Option<String>,
@@ -153,8 +137,7 @@ pub(crate) fn device(
     Ok(device)
 }
 
-/// 400 [`INVALID_REQUEST_MESSAGE`] unless the one `Content-Type` is `application/json`
-/// (`; charset=...` and other parameters allowed, case-insensitive).
+/// Parameters such as `; charset=...` are allowed, case-insensitive.
 pub fn require_json(headers: &HeaderMap) -> Result<(), ClientApiError> {
     let mut values = headers.get_all(header::CONTENT_TYPE).iter();
     let is_json = match (values.next(), values.next()) {
@@ -167,10 +150,8 @@ pub fn require_json(headers: &HeaderMap) -> Result<(), ClientApiError> {
     is_json.then_some(()).ok_or_else(invalid)
 }
 
-/// Ids of ASCII letters, digits, `-` and `_`: numeric and ASCII custom ids. Narrower than what
-/// the signal server registers (deskhaven-signal peer.rs `is_peer_id`, which also takes the
-/// client's non-ASCII custom ids such as `aé12345`), so a device with such an id registers but
-/// cannot sign in, as in v0.1.0. The length is bounded elsewhere (`MAX_DEVICE_FIELD_LEN`).
+/// Narrower than what the signal server registers (it also takes non-ASCII custom ids), so a
+/// device with such an id registers but cannot sign in.
 fn is_rustdesk_id(id: &str) -> bool {
     !id.is_empty()
         && id
@@ -178,7 +159,7 @@ fn is_rustdesk_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// The client's uuid is base64 of the machine id: printable ASCII, no spaces.
+/// The client's uuid is base64 of the machine id.
 fn is_uuid(uuid: &str) -> bool {
     !uuid.is_empty() && uuid.bytes().all(|b| b.is_ascii_graphic())
 }
@@ -218,7 +199,6 @@ mod tests {
         }
     }
 
-    /// The second step as `verificationCodeDialog` sends it for a TOTP challenge.
     fn second_step(changes: Value) -> Result<SecondStepLogin, ClientApiError> {
         let mut all = json!({
             "type": "email_code", "password": null, "secret": "s3cret-challenge",
@@ -262,7 +242,7 @@ mod tests {
         assert_eq!(step.secret, "s3cret-challenge");
         assert_eq!(step.code, "123456");
         assert_eq!(step.device.rustdesk_id, "123456789");
-        // No tfaCode (an email challenge, M2-09): the verification code.
+        // No `tfaCode` (an email challenge): the verification code.
         let email = second_step(json!({ "tfaCode": null, "verificationCode": "654321" }));
         assert_eq!(email.unwrap().code, "654321");
     }

@@ -1,6 +1,3 @@
-//! Who may use the device and device group endpoints: admins and owners only. Plain users
-//! get 403 and change nothing, no session gets 401, a write without the CSRF header 403.
-//! Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,6 +1,3 @@
-//! Strategy endpoints (M3-07): the option catalog, CRUD with option patches, validation,
-//! secret options (never returned, masked in audit rows) and configuration-managed
-//! strategies. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -30,7 +27,6 @@ fn one(id: i64) -> String {
     format!("{STRATEGIES}/{id}")
 }
 
-/// Every audit before / after snapshot, as text.
 async fn audit_text(h: &Harness) -> String {
     let rows = h.audit_rows().await;
     let snapshots = rows
@@ -192,8 +188,8 @@ async fn strategies_are_created_patched_listed_and_deleted_with_audit() {
     .await;
 }
 
-/// Clients before rustdesk 78450f4 (#16692) do not trim IP whitelist entries: a spaced
-/// whitelist is stored, shown and pushed to devices without the spaces.
+/// Older RustDesk clients do not trim IP whitelist entries: a spaced whitelist is stored,
+/// shown and pushed to devices without the spaces.
 #[tokio::test]
 async fn ip_whitelist_is_stored_and_pushed_without_spaces() {
     each_migrated_backend(async |db: &TestDb| {

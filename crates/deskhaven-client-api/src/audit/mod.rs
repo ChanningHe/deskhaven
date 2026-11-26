@@ -1,22 +1,5 @@
-//! `POST /api/audit/{conn,file,alarm}` (03 §2.3-§2.6; `src/server/connection.rs:1559-1756`,
-//! `src/ui_session_interface.rs:2112-2115`): audit records of the controlled device and the
-//! controller's session note. No Authorization: the device is identified by `id` + `uuid`
-//! (06 §2); the work is `deskhaven_core::audit::AuditService`.
-//!
-//! The client reads only the status and whether a 2xx body is empty
-//! (`connection.rs:1707-1742`):
-//!
-//! | case | status | body | client |
-//! |---|---|---|---|
-//! | stored, or a nonce already stored (a retry) | 200 | empty | done |
-//! | controller note, whatever became of it (set, ignored, waiting, no room to wait, unknown id) | 200 | empty | (ignores the reply) |
-//! | record of an unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` | drops the record |
-//! | malformed body, missing / oversized / mistyped field | 400 | `{"error": ...}` | drops the record |
-//! | body over [`MAX_AUDIT_BODY`] | 413 | stack renderer | drops the record |
-//! | over the per-IP quota ([`AUDIT_PER_IP_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_IP_PER_MINUTE)), or a verified device over its quota ([`AUDIT_PER_DEVICE_PER_MINUTE`](deskhaven_core::audit::AUDIT_PER_DEVICE_PER_MINUTE)) | 429 + `Retry-After` | `{"error": "Please try later"}` | retries (10 s, 30 s) |
-//! | storage failure | 500 | `{"error": ...}` | retries; the nonce was not claimed |
-//!
-//! Every reply but 200 carries a body, so no failure reads as "stored".
+//! No Authorization: the device is identified by `id` + `uuid`. Every reply but 200 carries a
+//! body, so no failure reads as "stored".
 
 mod parse;
 
@@ -34,9 +17,9 @@ use crate::ClientApiError;
 use crate::client::Client;
 use parse::ConnMessage;
 
-/// Largest accepted body (bytes): a file record lists at most ten names next to its path.
+/// A file record lists at most ten names next to its path.
 pub const MAX_AUDIT_BODY: usize = 64 * 1024;
-/// Error text of an unknown id or a uuid mismatch (the heartbeat's).
+/// Same text as the heartbeat's.
 const ID_NOT_FOUND: &str = "ID_NOT_FOUND";
 
 pub fn routes() -> Router<Arc<AppState>> {

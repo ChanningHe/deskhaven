@@ -1,49 +1,26 @@
-//! Route permissions (06 §4.1): every admin API operation declares one, in its
-//! `#[utoipa::path]` attribute, as an OpenAPI security requirement:
-//!
-//! | declaration | permission | who passes |
-//! |---|---|---|
-//! | `security(())` | [`Permission::Public`] | anyone, no session |
-//! | `security(("console_session" = ["session"]))` | [`Permission::Session`] | any console session, also one restricted to its account setup |
-//! | `security(("console_session" = ["self"]))` | [`Permission::SelfService`] | any console user |
-//! | `security(("console_session" = ["admin"]))` | [`Permission::Admin`] | admin, owner |
-//! | `security(("console_session" = ["owner"]))` | [`Permission::Owner`] | owner |
-//!
-//! A session whose account setup is unfinished (a password it must change, a second
-//! factor `auth.tfa.enforce` requires but it has not enrolled; see `account_setup`) passes
-//! only `Public` and `Session` routes; every other route answers 403 `setup_required`.
-//!
 //! The declaration is the single source of truth: route assembly reads it back from the
-//! generated operation (an operation without one, or with anything else, fails assembly,
-//! so the server does not start), the gate enforces it, and the published OpenAPI document
-//! shows it (OpenAPI 3.1 allows role names as the scopes of non-OAuth schemes).
+//! generated operation (none fails assembly, so the server does not start), the gate
+//! enforces it, and the OpenAPI document shows it.
 
 use deskhaven_core::users::Role;
 use serde_json::Value;
 use utoipa::openapi::path::Operation;
 
-/// Name of the cookie security scheme in the OpenAPI document.
 pub const SESSION_SCHEME: &str = "console_session";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Permission {
-    /// No session needed (console login, first-run setup). Not audited automatically.
     Public,
-    /// Any console session, including one that must finish its account setup first: only
-    /// what that setup needs (`/me`, password change, TOTP enrolment).
+    /// Also a session that must finish its account setup first.
     Session,
-    /// Any authenticated console user, acting on their own account (08: "self").
     SelfService,
-    /// Administrators and the owner.
     Admin,
-    /// The owner only.
     Owner,
 }
 
 impl Permission {
     const SCOPED: [Self; 4] = [Self::Session, Self::SelfService, Self::Admin, Self::Owner];
 
-    /// The role name in the security requirement; `None` for [`Permission::Public`].
     pub const fn scope(self) -> Option<&'static str> {
         match self {
             Self::Public => None,
@@ -54,7 +31,6 @@ impl Permission {
         }
     }
 
-    /// Whether a console user of `role` may call an operation with this permission.
     pub fn allows(self, role: Role) -> bool {
         match self {
             Self::Public | Self::Session | Self::SelfService => true,
@@ -63,12 +39,10 @@ impl Permission {
         }
     }
 
-    /// Whether a session with an unfinished account setup may call it.
     pub const fn admits_setup(self) -> bool {
         matches!(self, Self::Public | Self::Session)
     }
 
-    /// The permission an operation declares (see the module docs), or why it declares none.
     pub fn of_operation(operation: &Operation) -> Result<Self, &'static str> {
         let declared = operation
             .security

@@ -1,7 +1,4 @@
-//! `POST /auth/logout`: revokes the presented console session (06 §3.2: immediately) and
-//! clears its cookies (session, CSRF and a pending OIDC binding). Public, so it also clears
-//! the cookies of a session that is already gone (the gate still requires the CSRF header and a same-origin request). Audited as
-//! `session.logout` by the owner of a session it revoked.
+//! Public, so it also clears the cookies of a session that is already gone.
 
 use std::sync::Arc;
 

@@ -1,5 +1,3 @@
-//! Why a login step failed: the reply and the login event of each case.
-
 use std::time::Duration;
 
 use deskhaven_core::auth::limiter::ThrottleError;
@@ -9,20 +7,17 @@ use deskhaven_core::users::{AuthError, PasswordError};
 
 use crate::{BoxError, ClientApiError};
 
-/// Client translation key (`src/lang/en.rs:57`: "Wrong username or password").
+/// A client translation key.
 pub const WRONG_CREDENTIALS_MESSAGE: &str = "Wrong credentials";
 pub const DISABLED_MESSAGE: &str = "Account disabled";
 pub const UNVERIFIED_MESSAGE: &str = "Account not verified";
-/// `auth.tfa.enforce` covers the account and it has no second factor yet.
 pub const TFA_SETUP_REQUIRED_MESSAGE: &str =
     "Two-factor authentication is required: set it up in the web console first";
-/// Client translation key (`src/lang/en.rs:202`: "Can't verify the code. Check that code
-/// and local time settings are correct").
+/// A client translation key.
 pub const WRONG_CODE_MESSAGE: &str = "wrong-2fa-code";
-/// The challenge is gone (expired, used, out of attempts) or was not issued to this
-/// username / device: the code dialog cannot succeed, the user must log in again.
+/// The code dialog cannot succeed: the user must log in again.
 pub const INVALID_CHALLENGE_MESSAGE: &str = "Verification expired, please log in again";
-/// `Retry-After` of a 503 for a busy password hasher (its default acquire timeout).
+/// The hasher's default acquire timeout.
 pub const BUSY_RETRY_AFTER: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -31,28 +26,19 @@ pub(super) enum Failure {
     InvalidCredentials,
     Disabled,
     Unverified,
-    /// Right password; enrolment enforced but missing.
     SetupRequired,
-    /// Second step: wrong, replayed or used code.
     InvalidCode,
-    /// Second step: no usable challenge.
     InvalidChallenge,
-    /// A verified failure (one of the above) that started a lockout.
     LockStarted(Box<Failure>),
-    /// Nothing verified: the password hasher is saturated or the directory is unavailable.
     Busy,
-    /// The directory stopped answering after the password was sent: 503 like [`Busy`],
-    /// but the attempt counts (no verdict, so no login event).
-    ///
-    /// [`Busy`]: Self::Busy
+    /// The directory went silent after the password was sent: 503, yet the attempt counts.
     Interrupted,
     Internal(BoxError),
 }
 
 impl Failure {
-    /// The `login_events` result, or `None` for attempts that are not recorded: nothing
-    /// was verified (throttled, busy: unbounded in number, so recording them would turn
-    /// every refused request into a database write) or the server failed (logged).
+    /// `None` for attempts that are not recorded: refusals are unbounded in number, so recording
+    /// them would turn every refused request into a database write.
     pub(super) fn event_result(&self) -> Option<LoginResult> {
         match self {
             Self::InvalidCredentials => Some(LoginResult::InvalidCredentials),

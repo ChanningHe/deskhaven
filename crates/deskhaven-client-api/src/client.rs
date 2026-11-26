@@ -1,6 +1,3 @@
-//! The requesting client's address as the login throttle keys it: the real IP resolved by
-//! the HTTP layer (`deskhaven_http::ClientIp`, 06-security §3.6).
-
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use deskhaven_core::auth::limiter::ClientAddr;
@@ -8,7 +5,7 @@ use deskhaven_http::ClientIp;
 
 use crate::ClientApiError;
 
-/// Extractor; a missing peer or proxy configuration is a wiring bug (500).
+/// A missing peer or proxy configuration is a wiring bug (500).
 #[derive(Debug, Clone, Copy)]
 pub struct Client(pub ClientAddr);
 

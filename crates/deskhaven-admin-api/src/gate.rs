@@ -1,15 +1,5 @@
-//! The per-route gate every admin operation runs behind, in order:
-//! 1. state-changing methods (all routes, `Public` included): same-origin check and the
-//!    CSRF header (403 `csrf_failed`; see `origin` and `session`);
-//! 2. authenticated routes: console session (401), then role against the route's
-//!    [`Permission`] (403 `forbidden`), then the account setup: a session that must change
-//!    its password or enrol a required second factor passes only `Session` routes (403
-//!    `setup_required`, see `account_setup`);
-//! 3. handler;
-//! 4. console audit fallback for 2xx responses (see `audit`).
-//!
-//! The gate wraps the route's whole method router, so a method the route does not serve
-//! (405) and `HEAD` (served by the `GET` handler, under the `GET` gate) pass it too.
+//! The gate wraps the route's whole method router, so a 405 and `HEAD` (under the `GET`
+//! gate) pass it too.
 
 use std::sync::Arc;
 
@@ -26,11 +16,10 @@ use crate::origin::{TrustedOrigins, check_same_origin};
 use crate::permission::Permission;
 use crate::session::{self, ConsoleUser, SessionSlot};
 
-/// What the gate knows about the route it guards.
 #[derive(Clone, Debug)]
 pub(crate) struct RouteGuard {
     pub permission: Permission,
-    /// Operation id per method: the audit action when the handler names none.
+    /// The audit action when the handler names none.
     pub operations: Arc<[(Method, String)]>,
     pub origins: TrustedOrigins,
 }

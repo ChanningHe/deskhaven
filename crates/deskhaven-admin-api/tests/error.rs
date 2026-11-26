@@ -1,4 +1,3 @@
-//! `AdminApiError` -> status + `{error:{code,message,details?}}` (08-web-console §6).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -38,7 +37,7 @@ fn codes_are_stable_snake_case_with_fixed_statuses() {
             "internal",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
-        // M3-02: none of the codes a session holder can trigger is a 401.
+        // None of the codes a session holder can trigger is a 401.
         (
             ErrorCode::InvalidCredentials,
             "invalid_credentials",

@@ -1,6 +1,5 @@
-//! Web client errors -> enveloped admin API errors. `foreign_relay` names the device's own
-//! relay in `details.relay_server` (configuration, not a secret), for the console to tell the
-//! user what to change on the device.
+//! `foreign_relay` names the device's relay (configuration, not a secret) so the console can
+//! say what to change.
 
 use std::time::Duration;
 
@@ -9,7 +8,6 @@ use serde_json::json;
 
 use crate::{AdminApiError, ErrorCode};
 
-/// `Retry-After` when the signal server has too many punches in flight.
 const BUSY_RETRY_AFTER: Duration = Duration::from_secs(1);
 
 impl From<WebClientError> for AdminApiError {

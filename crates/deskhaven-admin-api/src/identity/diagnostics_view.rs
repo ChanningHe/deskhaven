@@ -1,6 +1,3 @@
-//! Wire types of the LDAP diagnostics: what to test (a saved directory or an unsaved form)
-//! and the result of every step.
-
 use deskhaven_core::ldap::{Diagnostic, ProbedUser, Step, StepReport, StepStatus};
 use deskhaven_core::login_events::MAX_USERNAME_ATTEMPTED_CHARS;
 use garde::Validate;
@@ -9,7 +6,6 @@ use utoipa::ToSchema;
 
 use super::ldap_view::NewLdapDirectoryBody;
 
-/// Longest accepted test password (characters), as for logins.
 const MAX_PASSWORD_INPUT: usize = 1024;
 
 /// "Test connection": connect and service bind. Give exactly one of `directory_id` (the

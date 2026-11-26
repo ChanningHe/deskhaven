@@ -1,7 +1,3 @@
-//! `POST /api/ab/peers`, `POST /api/ab/peer/add/<guid>`, `PUT /api/ab/peer/update/<guid>`,
-//! `DELETE /api/ab/peer/<guid>`. The peer JSON codec (relay string, `hash` / `password`,
-//! `extra`) is `deskhaven_core::addressbooks::PeerPatch` / `Peer::to_json`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -16,7 +12,6 @@ use super::{ab_error, parse_body, service};
 use crate::query::{self, PageReply};
 use crate::{BearerUser, ClientApiError};
 
-/// One page of a book's peers (rule 1).
 pub async fn list(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -35,7 +30,6 @@ pub async fn list(
     }))
 }
 
-/// Adds one peer (rule 2).
 pub async fn add(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -51,7 +45,6 @@ pub async fn add(
     Ok(StatusCode::OK)
 }
 
-/// Changes the fields of one peer that the body carries (rule 2).
 pub async fn update(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -67,7 +60,6 @@ pub async fn update(
     Ok(StatusCode::OK)
 }
 
-/// Deletes the peers whose ids the body lists (rule 2).
 pub async fn remove(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,

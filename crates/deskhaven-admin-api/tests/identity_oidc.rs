@@ -1,7 +1,3 @@
-//! OIDC provider administration (M3-09): CRUD with the client secret write-only, the fixed
-//! callback URL, config-managed providers read-only (409), linked providers not deletable,
-//! audit rows without the secret, and the permission matrix (the owner writes, admins read, a user
-//! is refused). Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

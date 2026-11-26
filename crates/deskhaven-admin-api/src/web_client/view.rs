@@ -1,18 +1,15 @@
-//! Wire types of the web client endpoints.
-
 use deskhaven_core::web_client::IceServer;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-/// Longest WebRTC offer endpoint accepted (the signal server's limit).
+/// The signal server's limit.
 pub const MAX_OFFER_BYTES: usize = 4096;
-/// Longest ICE candidate accepted (the signal server's limit).
+/// The signal server's limit.
 pub const MAX_CANDIDATE_BYTES: usize = 2048;
-/// Longest a candidate poll waits for the device; below the HTTP request timeout.
+/// Below the HTTP request timeout.
 pub const MAX_POLL_WAIT_SECS: u32 = 20;
 const MAX_DEVICE_ID_CHARS: usize = 64;
-/// Beyond any candidate index a route can reach.
 const MAX_AFTER: u32 = 1024;
 
 /// Opens a web client session to a device.
@@ -28,7 +25,6 @@ pub struct OpenWebClientSession {
     pub offer: Option<String>,
 }
 
-/// RustDesk ids: letters, digits, `-` and `_`.
 fn rustdesk_id_chars(value: &str, _context: &()) -> garde::Result {
     let valid = value
         .bytes()

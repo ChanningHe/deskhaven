@@ -1,12 +1,5 @@
-//! The signed-in user's profile and account standing:
-//!
-//! - `GET /me/account`: what the account page shows and which actions the account has
-//!   (password change: local accounts; TOTP: password accounts, local or LDAP; whether
-//!   `auth.tfa.enforce` makes the second factor mandatory).
-//! - `PATCH /me {display_name}`: the display name only. The user is the session's, never a
-//!   request value. The email is not editable here (an administrator sets it): an address
-//!   typed by its holder would be unverified yet hold the real owner's address (unique
-//!   index), which the OIDC linking refuses to match. Audited as `user.profile_update`.
+//! The email is not editable here: an address typed by its holder would be unverified yet
+//! hold the real owner's address (unique index), which OIDC linking refuses to match.
 
 use std::sync::Arc;
 
@@ -26,7 +19,6 @@ use crate::session::ConsoleUser;
 use crate::users::view::{AuthSourceView, IdentityView};
 use crate::{AdminApiError, RoleView, ValidJson};
 
-/// Longest accepted display name (characters), as for administrators.
 const MAX_NAME_CHARS: usize = 128;
 
 /// The user's own account page. Carries no secret.
@@ -149,7 +141,6 @@ pub async fn edit(
     Ok((Audited, Json(Me::of(&state, user))))
 }
 
-/// Whether `requested` (blank means the username) differs from the stored display name.
 fn renames(user: &User, requested: &str) -> bool {
     let requested = requested.trim();
     let wanted = if requested.is_empty() {
@@ -160,7 +151,6 @@ fn renames(user: &User, requested: &str) -> bool {
     wanted != user.display_name
 }
 
-/// The audited view of the profile fields.
 #[derive(Serialize)]
 struct ProfileSnapshot {
     display_name: String,
@@ -178,8 +168,6 @@ impl From<&User> for ProfileSnapshot {
     }
 }
 
-/// Records `user.profile_update` in the edit's transaction, which also re-checks that the
-/// acting account is still active.
 fn profile_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<User> {
     TxGuard::for_account(&state.console_audit, user_id, move |_, before, after| {
         let mut audit = Audit::new("user.profile_update").target("user", user_id);

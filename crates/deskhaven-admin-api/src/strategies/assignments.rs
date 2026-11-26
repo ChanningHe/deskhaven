@@ -1,5 +1,4 @@
-//! `GET|POST|DELETE /strategies/{id}/assignments`: the targets of a strategy. A target has
-//! at most one strategy, so assigning replaces the strategy the target had.
+//! A target has at most one strategy, so assigning replaces the one it had.
 
 use std::sync::Arc;
 

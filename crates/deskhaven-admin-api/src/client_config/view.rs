@@ -1,5 +1,3 @@
-//! Wire type of the client configuration endpoint.
-
 use deskhaven_core::client_config::{ClientConfig, ConfigError, HostSource, ServerConfig};
 use serde::Serialize;
 use utoipa::ToSchema;

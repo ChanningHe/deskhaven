@@ -1,5 +1,3 @@
-//! `POST /api/ab/personal`, `/api/ab/settings`, `/api/ab/shared/profiles`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -22,13 +20,12 @@ pub struct SettingsReply {
     max_peer_one_ab: u32,
 }
 
-/// `AbProfile.fromJson` (`flutter/lib/common/hbbs/hbbs.dart:268-274`); `info` is left
-/// out (the client keeps it as an opaque `dynamic`).
+/// `info` is left out: the client keeps it as an opaque `dynamic`.
 #[derive(Serialize)]
 pub struct ProfileReply {
     guid: String,
     name: String,
-    /// Owner's username; `""` for an admin-managed book.
+    /// `""` for an admin-managed book.
     owner: String,
     note: String,
     rule: u8,
@@ -46,7 +43,6 @@ impl From<Profile> for ProfileReply {
     }
 }
 
-/// `ShareRule` values (`flutter/lib/common/hbbs/hbbs.dart:210-216`).
 fn rule_number(rule: Rule) -> u8 {
     match rule {
         Rule::ReadOnly => 1,
@@ -55,7 +51,7 @@ fn rule_number(rule: Rule) -> u8 {
     }
 }
 
-/// The caller's personal book, created on first access.
+/// Created on first access.
 pub async fn personal(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -67,7 +63,6 @@ pub async fn personal(
     Ok(Json(PersonalReply { guid: book.guid }))
 }
 
-/// `addressbook.max_peers`.
 pub async fn settings(
     BearerUser(_): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -77,7 +72,6 @@ pub async fn settings(
     })
 }
 
-/// One page of the shared books the caller reaches, with the caller's rule.
 pub async fn shared_profiles(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,

@@ -1,6 +1,3 @@
-//! `GET /client-config` (M3-11): the server addresses, public key, config string, QR code
-//! and Windows file names for RustDesk clients. Admins and owners only. Runs on SQLite and
-//! PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -29,16 +26,13 @@ async fn with_public_url(db: &TestDb, public_url: &str) -> Harness {
 #[tokio::test]
 async fn an_admin_gets_the_addresses_key_and_config_string() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = with_public_url(db, "https://rd.example.com/").await;
         let admin = h.console("adm", Role::Admin).await;
         h.set_setting("signal.relay_servers", json!("relay.example.com:21117"))
             .await;
 
-        // Act
         let reply = h.get(PATH, &admin).await;
 
-        // Assert
         assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
         let body = &reply.body;
         assert_eq!(body["id_server"], "rd.example.com");

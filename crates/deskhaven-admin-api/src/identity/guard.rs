@@ -1,11 +1,6 @@
-//! Audit guards of identity writes, decided in the write transaction on the committed
-//! role: providers and directories are the owner's alone (06 §3.6: whoever can point the
-//! directory elsewhere can impersonate every directory account; a provider's admin group and
-//! auto-provisioning mint administrators).
-//!
-//! Snapshots name every field a write can change, so url, bind DN, TLS and enabled changes
-//! show in `before` / `after`. A secret appears only as its key with `null` (none) or a
-//! marker the audit log masks (set); its value never reaches a snapshot.
+//! Providers and directories are the owner's alone: whoever points the directory elsewhere can
+//! impersonate every directory account, and a provider's admin group mints administrators.
+//! A secret appears in a snapshot only as its key, never its value.
 
 use deskhaven_core::console_audit::{Refused, TxGuard};
 use deskhaven_core::ldap::Directory;
@@ -17,7 +12,6 @@ use serde::Serialize;
 use crate::domain_error::FORBIDDEN;
 use crate::{Audit, AuditCtx};
 
-/// Stands for a stored secret in a snapshot (masked by the audit log's key rules anyway).
 const SET: &str = "set";
 
 pub(super) fn provider_guard(

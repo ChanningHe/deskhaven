@@ -1,6 +1,3 @@
-//! Tags of a book: `GET|POST /address-books/{guid}/tags`, `PATCH .../tags/{name}`,
-//! `POST .../tags/delete`.
-
 use std::sync::Arc;
 
 use axum::Json;

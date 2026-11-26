@@ -1,5 +1,4 @@
-//! `GET|PATCH /settings`, `GET /settings/{key}/history`. Owner only: the settings hold the
-//! security policy (lockout, sessions, registration, enforced 2FA) and the SMTP login.
+//! Owner only: the settings hold the security policy and the SMTP login.
 
 use std::sync::Arc;
 
@@ -113,8 +112,6 @@ pub async fn get_setting_history(
     Ok(Json(Paginated::from_page(found, HistoryEntryView::from)))
 }
 
-/// Settings and resets of a patch, each key once; a change with both or neither of
-/// `value` and `reset` is invalid.
 fn split(entries: &[SettingChangeBody]) -> Result<(Vec<Change>, Vec<Reset>), AdminApiError> {
     let mut changes = Vec::new();
     let mut resets = Vec::new();
@@ -138,7 +135,6 @@ fn split(entries: &[SettingChangeBody]) -> Result<(Vec<Change>, Vec<Reset>), Adm
     Ok((changes, resets))
 }
 
-/// The current views of `only` (all settings when `None`), with their authors' names.
 async fn views(
     state: &AppState,
     only: Option<&[String]>,
@@ -159,9 +155,8 @@ async fn views(
         .collect()
 }
 
-/// The wire error of a failed update. A version conflict carries the current settings of
-/// the stale keys (the service refreshed its snapshot from the locked read), so the
-/// console can show the difference.
+/// A version conflict carries the current settings of the stale keys, so the console can show
+/// the difference.
 async fn failure(state: &AppState, err: SettingsError) -> AdminApiError {
     match err {
         SettingsError::Pinned { keys } => AdminApiError::new(

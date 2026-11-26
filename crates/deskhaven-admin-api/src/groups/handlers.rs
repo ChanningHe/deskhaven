@@ -1,5 +1,3 @@
-//! `GET|POST /groups`, `GET|PATCH|DELETE /groups/{id}`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -180,7 +178,6 @@ pub async fn delete_group(
     Ok((Audited, StatusCode::NO_CONTENT))
 }
 
-/// Snapshot of a group in its audit rows.
 #[derive(Serialize)]
 pub(crate) struct GroupSnapshot<'a> {
     name: &'a str,

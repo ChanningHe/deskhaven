@@ -1,7 +1,3 @@
-//! `GET|POST /ldap-directories`, `GET|PATCH|DELETE /ldap-directories/{id}`. Admins read;
-//! every write is the owner's (06 §3.6), declared on the route and re-checked on the
-//! committed role in the write transaction.
-
 use std::sync::Arc;
 
 use axum::Json;

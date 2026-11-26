@@ -1,5 +1,3 @@
-//! Helpers of the API token tests: console users, created tokens, the real `--deploy`
-//! endpoint and the audit snapshots.
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -23,7 +21,6 @@ use super::{Console, Harness, Reply, harness, request};
 pub const TOKENS: &str = "/admin/api/v1/api-tokens";
 pub const HOUR_MS: i64 = 3_600_000;
 
-/// A harness with one admin, `adm`, logged in.
 pub async fn setup(db: &TestDb) -> (Harness, Console) {
     let h = harness(db, AdminRoutes::new()).await;
     let admin = h.console("adm", Role::Admin).await;
@@ -34,7 +31,6 @@ pub fn now_ms() -> i64 {
     time::now().timestamp_millis()
 }
 
-/// Creates a token expiring in an hour; returns the response body (`token`, `secret`).
 pub async fn create(h: &Harness, console: &Console, name: &str, scopes: &[&str]) -> Value {
     let body = json!({ "name": name, "scopes": scopes, "expires_at": now_ms() + HOUR_MS });
     let reply = h.write(Method::POST, TOKENS, console, body).await;
@@ -50,7 +46,6 @@ pub fn revoke_path(id: i64) -> String {
     format!("{TOKENS}/{id}/revoke")
 }
 
-/// `POST /api/devices/deploy` through the real client API stack with `token`.
 pub async fn deploy(h: &Harness, token: &str) -> (StatusCode, Value) {
     let router = apply_middleware(
         deskhaven_client_api::router().with_state(Arc::clone(&h.state)),
@@ -67,7 +62,6 @@ pub async fn deploy(h: &Harness, token: &str) -> (StatusCode, Value) {
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
-/// A token without creator, as a future CLI would issue one.
 pub async fn system_token(h: &Harness) -> i64 {
     let new = NewApiToken {
         name: "system".to_owned(),

@@ -1,5 +1,3 @@
-//! The per-route gate: console session cookie, CSRF, role (M3-01 acceptance).
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -478,7 +476,6 @@ async fn session_cookies_carry_the_required_attributes_and_authenticate() {
         let token = user
             .cookie
             .trim_start_matches(&format!("{SESSION_COOKIE}="));
-        // Re-mint cookies from a real token through the public helper.
         let auth = app
             .state
             .users

@@ -1,16 +1,5 @@
-//! The group panel (03-client-api-contract §4), read by `flutter/lib/models/group_model.dart`:
-//! `GET /api/users`, `GET /api/peers` and `GET /api/device-group/accessible`. Every endpoint
-//! needs a client bearer token and lists only what the caller may see (06 §4.2, enforced by
-//! the queries of `deskhaven_core::accessible`); a role changes nothing.
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | page | 200 | `{total, data}`; `total` counts the whole visible set |
-//! | bad `current` / `pageSize` (0, over 200) or `status` | 400 | `{"error": ...}` |
-//! | missing or invalid token | 401 | `{"error": "Unauthorized"}` (the client resets its login) |
-//!
-//! `accessible` is sent empty by the client and carries no meaning here: the list is always
-//! the accessible set.
+//! Lists only what the caller may see; a role changes nothing. `accessible` is sent empty by
+//! the client and carries no meaning: the list is always the accessible set.
 
 use std::sync::Arc;
 
@@ -29,7 +18,6 @@ use crate::query::{self, PageReply};
 use crate::user_payload::UserPayload;
 use crate::{BearerUser, ClientApiError};
 
-/// The three routes (merged into the client API router).
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/users", get(users))
@@ -37,14 +25,12 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/device-group/accessible", get(device_groups))
 }
 
-/// `PeerPayload.fromJson` (`flutter/lib/common/hbbs/hbbs.dart:77-93`).
 #[derive(Serialize)]
 struct PeerReply {
     id: String,
     info: PeerInfoReply,
     /// 1 active, 0 disabled.
     status: u8,
-    /// Owner's username.
     user: String,
     /// Owner's username again: the panel matches it against the selected user's `name`.
     user_name: String,
@@ -52,7 +38,7 @@ struct PeerReply {
     note: String,
 }
 
-/// `PeerPayload.toPeer` (`hbbs.dart:95-128`) reads `username`, `os` and `device_name`.
+/// The client reads `username`, `os` and `device_name`.
 #[derive(Serialize)]
 struct PeerInfoReply {
     username: String,
@@ -101,7 +87,6 @@ fn list_error(err: AccessibleError) -> ClientApiError {
     }
 }
 
-/// The query parameter a core page problem is about, as the client spells it.
 fn client_param(field: &str) -> &str {
     match field {
         "page" => "current",
@@ -110,9 +95,8 @@ fn client_param(field: &str) -> &str {
     }
 }
 
-/// The row of `user` for `viewer`. Other users' rows carry only what the panel shows (name,
-/// display name, avatar, status, `is_admin`): the admin-written `note` and the `email` are
-/// the viewer's own business.
+/// Other users' rows carry only what the panel shows: the admin-written `note` and the
+/// `email` are the viewer's own business.
 fn user_row(viewer: i64, user: &User) -> UserPayload {
     let payload = UserPayload::from(user);
     if user.id == viewer {
@@ -129,7 +113,6 @@ fn bad_status() -> ClientApiError {
     ClientApiError::BadRequest("Invalid status".into())
 }
 
-/// `status` of `/api/users`: 1, 0 or -1.
 fn user_status(raw: Option<i8>) -> Result<Option<Status>, ClientApiError> {
     raw.map(|n| match n {
         1 => Ok(Status::Active),
@@ -140,7 +123,6 @@ fn user_status(raw: Option<i8>) -> Result<Option<Status>, ClientApiError> {
     .transpose()
 }
 
-/// `status` of `/api/peers`: 1 (active) or 0 (disabled).
 fn device_status(raw: Option<i8>) -> Result<Option<DeviceStatus>, ClientApiError> {
     raw.map(|n| match n {
         1 => Ok(DeviceStatus::Active),
@@ -150,7 +132,6 @@ fn device_status(raw: Option<i8>) -> Result<Option<DeviceStatus>, ClientApiError
     .transpose()
 }
 
-/// The caller and the users sharing a group with them.
 async fn users(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -172,7 +153,6 @@ async fn users(
     }))
 }
 
-/// The devices of the caller and of the users sharing a group with them.
 async fn peers(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,
@@ -190,7 +170,6 @@ async fn peers(
     }))
 }
 
-/// The device groups holding a device the caller can see.
 async fn device_groups(
     BearerUser(principal): BearerUser,
     State(state): State<Arc<AppState>>,

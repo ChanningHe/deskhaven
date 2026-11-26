@@ -1,23 +1,5 @@
-//! Managing an enabled TOTP second factor (06 §3.3). A stolen session alone must neither
-//! remove the factor nor read fresh recovery codes, and neither must a stolen password:
-//! both actions need the current password AND a code of the factor (a current TOTP code or
-//! an unused recovery code).
-//!
-//! - `POST /me/totp/disable {current_password, code}`: forgets the seed, the recovery codes
-//!   and pending login challenges (`user.totp_disable`), then revokes the user's other
-//!   sessions (`session.revoke_others`), like an enrolment rotates them. Refused with 409
-//!   `tfa_enforced` while `auth.tfa.enforce` covers the account (checked first, a refused
-//!   attempt costs no try, and again against the locked row in the transaction), 409
-//!   `conflict` when TOTP is off.
-//! - `POST /me/totp/recovery-codes {current_password, code}`: replaces every recovery
-//!   code, shown once (`user.recovery_codes_regenerate`; the codes never reach the audit
-//!   row).
-//!
-//! Password and code are one throttle attempt (see `reauth`), so a wrong code counts like a
-//! wrong password (422 `wrong_password`, 422 `invalid_code`), and the code is spent
-//! (`totp_last_step`, anti-replay) in the transaction of the change: a failure spends
-//! nothing. An OIDC account has no password: it sends the code alone, and gets 409
-//! `not_local_account` when it holds no TOTP. The account is always the session's.
+//! Disabling TOTP and replacing recovery codes need the current password AND a code: neither
+//! a stolen session nor a stolen password alone suffices.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -45,7 +27,6 @@ use crate::session::{Client, ConsoleUser};
 use crate::transport::SecureTransport;
 use crate::{AdminApiError, ErrorCode, ValidJson};
 
-/// [`Refused::code`] of the guard that finds the second factor mandatory for the account.
 const TFA_ENFORCED: &str = "tfa_enforced";
 
 /// Proof of possession for a change of the second factor: the password and a code of the
@@ -146,8 +127,6 @@ pub async fn regenerate(
     Ok((no_store(), Audited, Json(issued)).into_response())
 }
 
-/// The session's account, which must hold a TOTP factor, and the password to check: none
-/// for an OIDC account (the code alone proves it), else the one sent.
 async fn prepare(
     state: &AppState,
     user_id: i64,
@@ -170,8 +149,6 @@ async fn prepare(
     Ok((user, password))
 }
 
-/// Runs `change` (which spends the code in its transaction) after the password check, as
-/// one attempt of the login throttle: a wrong password or code is a counted failure.
 async fn reauthenticated<T>(
     state: &AppState,
     client: ClientAddr,
@@ -189,7 +166,6 @@ async fn reauthenticated<T>(
     throttled(state, client, &user.username, verify).await
 }
 
-/// The failure of the changing transaction: a wrong code is a counted failure.
 fn code_failure(err: TfaError) -> Failed {
     match err {
         TfaError::InvalidCode => {
@@ -200,7 +176,6 @@ fn code_failure(err: TfaError) -> Failed {
     }
 }
 
-/// `auth.tfa.enforce` makes the factor mandatory for `user` (OIDC sign-ins are exempt).
 fn is_enforced(state: &AppState, user: &User) -> bool {
     user.auth_source != AuthSource::Oidc && state.tfa.enforced_for(user.role)
 }
@@ -212,9 +187,6 @@ fn enforced() -> AdminApiError {
     )
 }
 
-/// Records `user.totp_disable` in the disabling transaction, which also re-checks that the
-/// acting account is still active and that the factor is still not mandatory for the
-/// locked row.
 fn disable_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<User> {
     let tfa = state.tfa.clone();
     TxGuard::for_account(
@@ -231,8 +203,7 @@ fn disable_guard(state: &AppState, ctx: AuditCtx, user_id: i64) -> TxGuard<User>
     )
 }
 
-/// The factor changed: sessions that never passed it end, like after an enrolment. The
-/// factor is already off, so a failure here is logged, not the request's.
+/// The factor is already off, so a failure here is logged, not the request's.
 async fn revoke_other_sessions(state: &AppState, ctx: &AuditCtx, keep: i64, user_id: i64) {
     let audit = ctx.entry(Audit::new("session.revoke_others").target("user", user_id));
     if let Err(err) = state

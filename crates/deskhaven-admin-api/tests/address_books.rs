@@ -1,5 +1,3 @@
-//! Shared address book endpoints: list with counts, create, detail, update, delete, grants
-//! (user / group x rule 1-3), audit rows with before / after. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

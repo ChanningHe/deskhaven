@@ -1,19 +1,10 @@
-//! The login event of a console sign-in step (04 §7 `login_events`, `client = console`).
-//!
-//! Recorded, as for the client: every verified attempt (`success`, `invalid_credentials`
-//! for wrong password and unknown account alike, `disabled`, `unverified`, `locked` for the
-//! failure that started a lockout, `tfa_required` when a challenge was issued,
-//! `invalid_code` / `invalid_challenge` for the second step with method `totp` or
-//! `recovery`), and OIDC outcomes (method `oidc`, the attempted name `provider:subject`).
-//! Not recorded: throttled or busy refusals (unbounded in number, nothing verified),
-//! malformed requests and server failures (logged).
+//! Throttled and busy refusals are not recorded: unbounded in number, nothing verified.
 
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginClient, LoginMethod, LoginResult, NewLoginEvent};
 use deskhaven_core::state::AppState;
 
-/// Writes the event. Best effort: a failed write is logged and never changes the reply.
-/// No password, code, token or request body is stored or logged.
+/// Best effort: a failed write is logged and never changes the reply.
 pub(crate) async fn record(
     state: &AppState,
     client: ClientAddr,

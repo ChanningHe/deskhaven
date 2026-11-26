@@ -1,14 +1,5 @@
-//! Same-origin check for state-changing requests (06 §6), the browser-side half of the
-//! CSRF defence; the other half is the `X-Deskhaven-CSRF` header (see `session`).
-//!
-//! - `Sec-Fetch-Site` present: only `same-origin` and `none` (user-initiated, e.g. typed
-//!   or bookmarked) pass.
-//! - Otherwise `Origin` present: its `scheme://host[:port]` must be one of the
-//!   [`TrustedOrigins`] (from `public_url` / `admin_public_url`), or its `host[:port]`
-//!   must equal the request's `Host` (the console's own origin when no URL is configured).
-//!   `Origin: null` never passes.
-//! - Neither header: not a browser (or one too old to send either); the CSRF header
-//!   requirement still applies.
+//! The browser-side half of the CSRF defence; the other half is the `X-Deskhaven-CSRF` header,
+//! which still applies to a request with neither `Sec-Fetch-Site` nor `Origin`.
 
 use std::sync::Arc;
 
@@ -19,13 +10,10 @@ use crate::AdminApiError;
 const SEC_FETCH_SITE: &str = "sec-fetch-site";
 const ALLOWED_FETCH_SITES: [&str; 2] = ["same-origin", "none"];
 
-/// Origins the console is served from, normalized to lowercase `scheme://host[:port]`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TrustedOrigins(Arc<[String]>);
 
 impl TrustedOrigins {
-    /// The origins of `urls` (public URLs of the deployment); empty or unparsable entries
-    /// are skipped.
     pub fn from_urls<'a>(urls: impl IntoIterator<Item = &'a str>) -> Self {
         Self(urls.into_iter().filter_map(url_origin).collect())
     }
@@ -34,13 +22,11 @@ impl TrustedOrigins {
         self.0.iter().any(|o| o == origin)
     }
 
-    /// Whether any configured URL is https (TLS terminates in front of the console).
     pub(crate) fn any_https(&self) -> bool {
         self.0.iter().any(|o| o.starts_with("https://"))
     }
 }
 
-/// `Err(csrf_failed)` when the request is a cross-site browser request (module docs).
 pub(crate) fn check_same_origin(
     headers: &HeaderMap,
     trusted: &TrustedOrigins,
@@ -77,14 +63,12 @@ fn cross_site() -> AdminApiError {
     AdminApiError::new(crate::ErrorCode::CsrfFailed, "cross-site request refused")
 }
 
-/// `scheme://authority` of a configured URL (path, query and fragment dropped).
 fn url_origin(url: &str) -> Option<String> {
     let (scheme, rest) = url.trim().split_once("://")?;
     let authority = rest.split(['/', '?', '#']).next()?;
     origin_of(scheme, authority)
 }
 
-/// An `Origin` header value: exactly `scheme://authority`, nothing after it.
 fn header_origin(value: &str) -> Option<String> {
     let (scheme, authority) = value.split_once("://")?;
     if authority.contains(['/', '?', '#']) {

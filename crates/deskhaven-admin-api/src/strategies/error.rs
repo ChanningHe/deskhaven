@@ -1,6 +1,3 @@
-//! Strategy service errors -> enveloped admin API errors. Messages are fixed English text;
-//! `details` carries only field names and policy reasons, never input values.
-
 use deskhaven_core::strategies::StrategyError;
 use serde_json::json;
 

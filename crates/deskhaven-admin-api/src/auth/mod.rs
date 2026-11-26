@@ -1,24 +1,5 @@
-//! Console sign-in and sign-out (06 §3, M3-02).
-//!
-//! | method | path | permission | what |
-//! |---|---|---|---|
-//! | `POST` | `/auth/login` | public | password; signed in, or a TOTP challenge |
-//! | `POST` | `/auth/login/totp` | public | the challenge with a TOTP or recovery code |
-//! | `POST` | `/auth/logout` | public | revokes the presented session, clears the cookies |
-//! | `GET` | `/auth/oidc/providers` | public | the OIDC login buttons |
-//! | `POST` | `/auth/oidc/start` | public | a console OIDC flow; the IdP URL and a binding cookie |
-//! | `POST` | `/auth/oidc/complete` | public | the IdP's answer, from the browser that started |
-//!
-//! Every sign-in requires a secure transport (`transport`), mints a fresh console session
-//! (06 §3.2; a session the request presented is revoked: no fixation) and answers
-//! [`LoginResponse::SignedIn`] with the session and CSRF cookies. A session is only ever
-//! issued once every factor passed: with TOTP enabled the password step returns a
-//! challenge and no cookie. A session whose account setup is unfinished is still issued,
-//! but restricted at the gate (`account_setup`); `user.setup_required` tells the console
-//! where to go.
-//!
-//! Login steps follow the login throttle's protocol (`deskhaven_core::auth::limiter`) and
-//! write `login_events` with `client = console` (see `event`).
+//! A session is issued only once every factor passed, and every sign-in revokes the session
+//! the request presented (no fixation).
 
 mod event;
 mod failure;
@@ -54,7 +35,6 @@ pub use oidc::{
 pub use password::LoginRequest;
 pub use totp::TotpLoginRequest;
 
-/// The console's sign-in routes.
 pub(crate) fn routes() -> Result<AdminRoutes, RouteError> {
     AdminRoutes::new()
         .routes(routes!(password::login))?
@@ -79,7 +59,6 @@ pub enum LoginResponse {
     TotpRequired { challenge: String },
 }
 
-/// A refusal of the login throttle as an API error.
 pub(crate) fn throttle_error(err: ThrottleError) -> AdminApiError {
     match err {
         ThrottleError::Throttled { retry_after } => AdminApiError::rate_limited(retry_after),
@@ -87,14 +66,12 @@ pub(crate) fn throttle_error(err: ThrottleError) -> AdminApiError {
     }
 }
 
-/// The `User-Agent` of a request, stored with its session.
 pub(crate) fn user_agent(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
 }
 
-/// `body` with the cookies of the new console session.
 pub(crate) fn with_session(
     session: &Session,
     token: &SessionToken,
@@ -109,7 +86,6 @@ pub(crate) fn with_session(
         .into_response()
 }
 
-/// The signed-in answer for `user` with its new session's cookies.
 pub(crate) fn signed_in(
     state: &AppState,
     user: User,
@@ -122,7 +98,6 @@ pub(crate) fn signed_in(
     with_session(session, token, body)
 }
 
-/// Revokes the session a sign-in request presented (it is replaced). Best effort.
 pub(crate) async fn revoke_presented(state: &Arc<AppState>, headers: &HeaderMap) {
     let Some(old) = session::session_token(headers) else {
         return;
@@ -132,7 +107,6 @@ pub(crate) async fn revoke_presented(state: &Arc<AppState>, headers: &HeaderMap)
     }
 }
 
-/// The absolute lifetime of a session, for the cookies' `Max-Age`.
 fn lifetime(session: &Session) -> Duration {
     let ms = session
         .expires_at

@@ -1,10 +1,5 @@
-//! `GET /me/address-books`: the signed-in user's personal book and the shared books they own
-//! or are granted, each with the rule the user holds (1 read-only, 2 read-write, 3 full
-//! control). Read only: entries are edited in the client. The user is the session's; the
-//! core service reaches a book only through ownership or a share naming the user or one of
-//! their groups, so nobody else's personal book or unshared book appears.
-//!
-//! The personal book is created on first access, as when the client first asks for it.
+//! The core service reaches a book only through ownership or a share naming the user or one
+//! of their groups, so nobody else's book appears.
 
 use std::sync::Arc;
 
@@ -20,7 +15,6 @@ use crate::AdminApiError;
 use crate::address_books::view::rule_number;
 use crate::session::ConsoleUser;
 
-/// Pages of shared books read at most (of [`MAX_PAGE_SIZE`] books each).
 const MAX_SHARED_PAGES: u64 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]

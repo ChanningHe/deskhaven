@@ -1,6 +1,3 @@
-//! Admin API harness: real state on a dual-backend test database, the given routes behind
-//! the production middleware stack, and console sessions minted through the real login
-//! services (password check + `SessionService::create_console`).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 // Each test crate uses a subset.
@@ -44,13 +41,12 @@ pub mod tokens;
 pub mod web_client;
 
 pub const PASSWORD: &str = "correct horse battery staple 42";
-/// Cheap Argon2id parameters: tests create many accounts.
+/// Tests create many accounts.
 const FAST: HashParams = HashParams {
     memory_kib: 1024,
     iterations: 1,
     parallelism: 1,
 };
-/// `deskhaven_admin_api::CSRF_HEADER` as a static string.
 pub const CSRF_HEADER_NAME: &str = "x-deskhaven-csrf";
 /// TEST-NET-3 peer, not a trusted proxy.
 pub const PEER: SocketAddr = SocketAddr::new(
@@ -61,11 +57,9 @@ pub const PEER: SocketAddr = SocketAddr::new(
 pub struct Harness {
     pub state: Arc<AppState>,
     router: Router,
-    /// The gate's detached fallback audit writes, not yet awaited.
     detached: Mutex<UnboundedReceiver<JoinHandle<()>>>,
 }
 
-/// A logged-in console user: the `Cookie` header value and the matching CSRF token.
 #[derive(Clone, Debug)]
 pub struct Console {
     pub user_id: i64,
@@ -79,22 +73,18 @@ pub struct Reply {
     pub body: Value,
 }
 
-/// The production routes plus `extra`, on `db`.
 pub async fn harness(db: &TestDb, extra: AdminRoutes) -> Harness {
     harness_pinned(db, extra, PinSet::empty()).await
 }
 
-/// [`harness`] with settings pinned by the bootstrap configuration.
 pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Harness {
     build(db, extra, pins, Arc::new(OfflineFetch)).await
 }
 
-/// [`harness`] whose update check asks `fetch`.
 pub async fn harness_with_updates(db: &TestDb, fetch: Arc<dyn HttpFetch>) -> Harness {
     build(db, AdminRoutes::new(), PinSet::empty(), fetch).await
 }
 
-/// The production routes with every service on `clock` (e.g. a `ManualClock`).
 pub async fn harness_on_clock(db: &TestDb, pins: PinSet, clock: SharedClock) -> Harness {
     build_on(db, AdminRoutes::new(), pins, Arc::new(OfflineFetch), clock).await
 }
@@ -142,7 +132,6 @@ async fn build_on(
     Harness::new(state, router)
 }
 
-/// `state` whose update check asks `fetch` instead of GitHub.
 pub fn with_update_fetch(state: AppState, fetch: Arc<dyn HttpFetch>) -> AppState {
     let updates = UpdateService::new(state.settings.clone(), Arc::clone(&state.clock), fetch);
     AppState {
@@ -151,7 +140,6 @@ pub fn with_update_fetch(state: AppState, fetch: Arc<dyn HttpFetch>) -> AppState
     }
 }
 
-/// `state` whose update check never leaves the process.
 pub fn offline(state: AppState) -> AppState {
     with_update_fetch(state, Arc::new(OfflineFetch))
 }
@@ -165,7 +153,6 @@ impl HttpFetch for OfflineFetch {
     }
 }
 
-/// Answers every request with a release tagged `tag`; counts the requests.
 pub struct FixedRelease {
     tag: &'static str,
     calls: AtomicUsize,
@@ -193,7 +180,6 @@ impl HttpFetch for FixedRelease {
 }
 
 impl Harness {
-    /// `router` on `state`, its fallback audit writes handed to the harness to await.
     pub fn new(state: Arc<AppState>, router: Router) -> Self {
         let (hook, detached) = unbounded_channel();
         Self {
@@ -203,8 +189,7 @@ impl Harness {
         }
     }
 
-    /// Awaits the fallback audit writes of every request so far (the gate writes them in
-    /// detached tasks), so `console_audit` reads that follow see their rows.
+    /// The gate writes them in detached tasks, so `console_audit` reads must wait for them.
     pub async fn settle(&self) {
         loop {
             let next = self.detached.lock().unwrap().try_recv();
@@ -213,7 +198,6 @@ impl Harness {
         }
     }
 
-    /// The address book service over the harness state, to seed and inspect books directly.
     pub fn books(&self) -> deskhaven_core::addressbooks::AddressBookService {
         deskhaven_core::addressbooks::AddressBookService::new(
             self.state.db.clone(),
@@ -222,7 +206,6 @@ impl Harness {
         )
     }
 
-    /// Creates an active local user of `role` and logs it in to the console.
     pub async fn console(&self, username: &str, role: Role) -> Console {
         let user_id = self.create_user(username, role).await;
         let auth = self
@@ -244,7 +227,6 @@ impl Harness {
         }
     }
 
-    /// A *client* session of a new user, presented as the console cookie.
     pub async fn client_session_cookie(&self, username: &str) -> String {
         let user_id = self.create_user(username, Role::Owner).await;
         let auth = self
@@ -267,7 +249,6 @@ impl Harness {
         format!("{SESSION_COOKIE}={}", token.expose())
     }
 
-    /// Creates an active local user of `role` (password [`PASSWORD`]); returns its id.
     pub async fn create_user(&self, username: &str, role: Role) -> i64 {
         let credential = Credential::Local {
             password: Password::new(PASSWORD),
@@ -279,7 +260,6 @@ impl Harness {
         self.state.users.create(new).await.unwrap().id
     }
 
-    /// Sends `method path` with optional session cookie, CSRF header and JSON body.
     pub async fn send(
         &self,
         method: Method,
@@ -307,25 +287,21 @@ impl Harness {
         self.router.clone().oneshot(request)
     }
 
-    /// GET with the console's cookie.
     pub async fn get(&self, path: &str, console: &Console) -> Reply {
         self.send(Method::GET, path, Some(&console.cookie), None, None)
             .await
     }
 
-    /// A state-changing request with the console's cookie and CSRF token.
     pub async fn write(&self, method: Method, path: &str, console: &Console, body: Value) -> Reply {
         let (cookie, csrf) = (Some(console.cookie.as_str()), Some(console.csrf.as_str()));
         self.send(method, path, cookie, csrf, Some(body)).await
     }
 
-    /// A body-less state-changing request (`POST` action, `DELETE`) as `console`.
     pub async fn act(&self, method: Method, path: &str, console: &Console) -> Reply {
         let (cookie, csrf) = (Some(console.cookie.as_str()), Some(console.csrf.as_str()));
         self.send(method, path, cookie, csrf, None).await
     }
 
-    /// Every console audit row, oldest first.
     pub async fn audit_rows(&self) -> Vec<console_audit::Model> {
         use sea_orm::{EntityTrait, QueryOrder};
         self.settle().await;
@@ -336,7 +312,6 @@ impl Harness {
             .unwrap()
     }
 
-    /// Sends `request`; returns once its fallback audit row, if any, is written.
     pub async fn raw(&self, request: Request<Body>) -> Reply {
         let response = self.router.clone().oneshot(request).await.unwrap();
         let status = response.status();
@@ -357,7 +332,6 @@ impl Harness {
     }
 }
 
-/// `method path` from [`PEER`] with `headers` and an optional JSON body.
 pub fn request(
     method: Method,
     path: &str,
@@ -381,7 +355,6 @@ pub fn request(
     builder.body(body).unwrap()
 }
 
-/// `(cookie, csrf)` headers of `console`, followed by `extra`.
 pub fn auth_headers<'a>(
     console: &'a Console,
     extra: &[(&'a str, &'a str)],

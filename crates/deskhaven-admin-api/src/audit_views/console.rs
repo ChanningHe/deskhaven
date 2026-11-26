@@ -1,5 +1,3 @@
-//! `GET /audit/console`.
-
 use std::sync::Arc;
 
 use axum::Json;

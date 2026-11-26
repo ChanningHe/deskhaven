@@ -1,8 +1,3 @@
-//! "My account" (M3-13), the proof behind a change of the second factor: turning TOTP off
-//! ends the user's other sessions, wrong passwords and wrong codes of regenerating the
-//! recovery codes are counted by the login throttle, and a directory account proves with
-//! the directory (a reachable one: positive; an unreachable one: 503, never counted).
-//! Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

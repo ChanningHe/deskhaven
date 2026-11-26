@@ -1,7 +1,3 @@
-//! Test-only routes exercising the machinery: one per permission, a write recorded in its
-//! own transaction, fallback-audited writes and reads, a failing write, validated input,
-//! a paginated list and a path whose methods have different permissions.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -26,9 +22,7 @@ use tokio::sync::Notify;
 use utoipa::ToSchema;
 use utoipa_axum::routes;
 
-/// Notified by [`fallback_write`] just before it returns.
 pub static FALLBACK_HANDLER_DONE: Notify = Notify::const_new();
-/// Actor [`public_write`] names for itself.
 pub const PUBLIC_ACTOR: Actor = Actor::User(424_242);
 
 #[derive(Serialize)]

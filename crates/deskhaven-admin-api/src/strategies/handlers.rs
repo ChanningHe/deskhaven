@@ -1,5 +1,3 @@
-//! `GET|POST /strategies`, `GET|PATCH|DELETE /strategies/{id}`.
-
 use std::sync::Arc;
 
 use axum::Json;

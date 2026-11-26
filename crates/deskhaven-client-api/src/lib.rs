@@ -1,7 +1,5 @@
-//! HTTP API consumed by the official RustDesk client (`/api/*`).
-//!
-//! Every endpoint is contract-tested by fixtures in `tests/contract`
-//! (crate `deskhaven-contract`, which this crate must never depend on).
+//! HTTP API consumed by the official RustDesk client (`/api/*`). Contract-tested by fixtures
+//! in `tests/contract` (crate `deskhaven-contract`, which this crate must never depend on).
 
 mod ab;
 mod account;
@@ -42,9 +40,8 @@ pub use stack_error::render_stack_error;
 pub use sysinfo::MAX_SYSINFO_BODY;
 pub use version::{SOURCE_URL, VERSION};
 
-/// `GET /api/version` alone, stateless. The console shows the version and the
-/// source offer (AGPL-3.0 §13) from it, so a split admin listener serves it
-/// too ([`router`] includes it; the route is defined only here).
+/// The console shows the version and the AGPL-3.0 §13 source offer from it, so a split admin
+/// listener serves it too.
 pub fn version_router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -52,9 +49,7 @@ where
     Router::new().route("/api/version", get(version::version))
 }
 
-/// Client API routes, without middleware or state: the server applies the
-/// stack and provides the state (`with_state`) when composing. Handlers that
-/// need services take `State<Arc<AppState>>`.
+/// Without middleware or state: the server applies the stack and the state when composing.
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/login-options", get(login_options::login_options))

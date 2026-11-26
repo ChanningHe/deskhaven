@@ -1,6 +1,3 @@
-//! Audit views (M3-08), part two: file, alarm, login and console lists, their wire shape and
-//! filters. Runs on SQLite and PostgreSQL. Part one (permissions, connections, time window,
-//! validation) is `audit_views.rs`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

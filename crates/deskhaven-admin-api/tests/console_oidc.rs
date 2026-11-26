@@ -1,7 +1,3 @@
-//! Console OIDC login through the real router against the mock IdP (M3-02): providers,
-//! start (binding cookie), completion only in the browser that started, failures as
-//! `oidc_failed` reasons, login events, and no TOTP restriction for OIDC accounts.
-//! Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -44,7 +40,6 @@ async fn env(db: &TestDb) -> Env {
 }
 
 impl Env {
-    /// Starts a flow; the IdP request and the binding cookie (`name=value`).
     async fn start(&self) -> (AuthRequest, String) {
         let reply = self
             .h

@@ -1,8 +1,3 @@
-//! Linking an OIDC identity to one's own account through the console (M4-09), against the
-//! mock IdP: re-authentication first (password, and a code when TOTP is on), a link flow
-//! bound to the browser and the account, the confirmation preview, completion, the
-//! identity on the account page, self-service unlinking with the password, and an owner
-//! with TOTP signing in through the linked identity without it. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -49,7 +44,6 @@ async fn env(db: &TestDb) -> Env {
     Env { h, idp }
 }
 
-/// `console` with the link flow's binding cookie next to its session cookie.
 fn with_binding(console: &Console, binding: &str) -> Console {
     Console {
         user_id: console.user_id,
@@ -67,7 +61,6 @@ impl Env {
         self.h.post(LINK, Some(console), body).await
     }
 
-    /// A started link flow: the IdP request and the binding cookie value.
     async fn started(&self, console: &Console, proof: Value) -> (AuthRequest, String) {
         let reply = self.start(console, proof).await;
         assert_eq!(reply.status, 200, "{:?}", reply.body);
@@ -81,7 +74,6 @@ impl Env {
         self.idp.mount_token(&spec).await;
     }
 
-    /// The confirmation page's first call: the IdP's answer, exchanged once.
     async fn verify(&self, console: &Console, request: &AuthRequest) -> common::Reply {
         let body = json!({ "state": request.state, "code": AUTH_CODE });
         self.h.post(VERIFY, Some(console), body).await
@@ -92,7 +84,6 @@ impl Env {
         self.h.post(COMPLETE, Some(console), body).await
     }
 
-    /// Start, IdP answer for `subject`, verification and confirmation in the same browser.
     async fn link(&self, console: &Console, subject: &str, proof: Value) -> common::Reply {
         let (request, binding) = self.started(console, proof).await;
         self.mount(subject, &request).await;
@@ -261,7 +252,6 @@ async fn refusals_name_their_reason() {
     .await;
 }
 
-/// The acceptance case on the console path (the client path is covered in core).
 #[tokio::test]
 async fn an_owner_with_totp_signs_in_through_the_linked_identity_without_it() {
     each_migrated_backend(async |db: &TestDb| {
@@ -332,8 +322,6 @@ async fn the_holder_unlinks_with_the_password() {
     .await;
 }
 
-/// An administrator sees a user's identities and unlinks them; only an owner touches an
-/// owner's; an `oidc` account keeps its last one; a plain user may not.
 #[tokio::test]
 async fn administrators_unlink_by_the_account_rules() {
     each_migrated_backend(async |db: &TestDb| {
@@ -437,8 +425,6 @@ async fn administrators_unlink_by_the_account_rules() {
     .await;
 }
 
-/// Unlinking an identity, here an explicit one, marks the verified address unverified in the same change,
-/// and the audit row says so.
 #[tokio::test]
 async fn an_admin_unlinking_an_explicit_link_unverifies_the_address() {
     each_migrated_backend(async |db: &TestDb| {
@@ -507,7 +493,6 @@ async fn oidc_account_identity(h: &Harness, user_id: i64, subject: &str) {
         .unwrap();
 }
 
-/// An `oidc` account with one identity (as provisioning leaves it): (user id, identity id).
 async fn oidc_account(h: &Harness, subject: &str) -> (i64, i64) {
     let new = NewUser::new(format!("u-{subject}"), Credential::Oidc);
     let user = h.state.users.create(new).await.unwrap();

@@ -1,11 +1,4 @@
-//! QR codes as SVG path data, for the console to draw under its strict CSP.
-//!
-//! The console may load no `data:` image and set no inline style, and must not inject
-//! markup. So the server encodes (`qrcodegen`, no dependencies) and returns only the
-//! modules as one SVG path (`M x y h n v1 h-n z` per run of dark modules) and the side
-//! length including the quiet zone; the console renders
-//! `<svg viewBox="0 0 size size"><path d="…"/></svg>` with React elements and a theme
-//! class for the colour. The secret also travels as text, so nothing depends on a camera.
+//! QR codes as SVG path data: the console's CSP allows no `data:` image and no inline style.
 
 use std::fmt::Write as _;
 
@@ -13,7 +6,6 @@ use qrcodegen::{QrCode as Encoder, QrCodeEcc};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-/// Light modules around the code (the standard quiet zone).
 const QUIET_ZONE: i32 = 4;
 
 /// A QR code to draw: a square of `size` units, dark modules in `path`.
@@ -25,7 +17,6 @@ pub struct QrCode {
     pub path: String,
 }
 
-/// `text` as a QR code (error correction M), or `None` when it does not fit one.
 pub fn encode(text: &str) -> Option<QrCode> {
     let code = Encoder::encode_text(text, QrCodeEcc::Medium).ok()?;
     let side = code.size();

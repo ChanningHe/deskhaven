@@ -1,7 +1,5 @@
-//! Wire types of the settings endpoints. Timestamps are unix milliseconds (UTC).
-//!
 //! A sensitive setting's value is never on the wire: `value` and `default` are
-//! `{"set": bool}` (the core's public form), history included.
+//! `{"set": bool}`, history included.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
@@ -17,7 +15,6 @@ use utoipa::openapi::schema::{ObjectBuilder, Schema, SchemaType};
 
 use crate::AdminApiError;
 
-/// Any JSON value (OpenAPI 3.1 `{}`).
 pub(crate) fn any_json() -> Schema {
     ObjectBuilder::new()
         .schema_type(SchemaType::AnyValue)
@@ -95,7 +92,6 @@ pub struct SettingSchema {
     pub max_items: Option<u32>,
 }
 
-/// The schemas of all settings, by key, built once from the registry's export.
 fn schemas() -> &'static BTreeMap<String, SettingSchema> {
     static SCHEMAS: OnceLock<BTreeMap<String, SettingSchema>> = OnceLock::new();
     SCHEMAS.get_or_init(|| {
@@ -209,7 +205,6 @@ impl SettingView {
     }
 }
 
-/// The ids of the accounts behind the `Database` sources of `views`.
 pub(crate) fn authors(views: &[CoreView]) -> Vec<i64> {
     views
         .iter()

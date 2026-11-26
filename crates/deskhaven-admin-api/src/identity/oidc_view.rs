@@ -1,5 +1,4 @@
-//! Wire types of the OIDC provider endpoints. The client secret is write-only: requests
-//! may carry it, responses only say whether one is set. Timestamps are unix milliseconds.
+//! The client secret is write-only: responses only say whether one is set.
 
 use deskhaven_core::oidc::{MAX_ICON_LEN, MAX_ISSUER_LEN, NewProvider, Provider, ProviderUpdate};
 use garde::Validate;

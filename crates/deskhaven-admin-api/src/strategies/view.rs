@@ -1,7 +1,3 @@
-//! Wire types of the strategy endpoints and the option checks of the console: option names
-//! are `[A-Za-z0-9._-]`, and values of catalog options must fit their kind (bool, choice,
-//! number). Sizes and control characters are the core service's checks.
-
 use std::collections::BTreeMap;
 
 use deskhaven_core::strategies::catalog;
@@ -177,7 +173,6 @@ pub struct PreviewQuery {
     pub device_id: i64,
 }
 
-/// Option names are 1-128 of `A-Z a-z 0-9 . _ -`.
 fn key_problem(key: &str) -> Option<&'static str> {
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
     match key.chars().count() {
@@ -190,7 +185,6 @@ fn key_problem(key: &str) -> Option<&'static str> {
     }
 }
 
-/// Checks names and, for catalog options, values; `None` values (removals) only by name.
 /// The error names the option, never its value.
 pub(super) fn check_options<'a>(
     entries: impl IntoIterator<Item = (&'a String, Option<&'a String>)>,

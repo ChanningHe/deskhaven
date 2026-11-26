@@ -1,5 +1,3 @@
-//! Wire pieces shared by the audit lists. Timestamps are unix milliseconds (UTC).
-
 use deskhaven_core::audit_query::AuditUser;
 use serde::Serialize;
 use utoipa::ToSchema;

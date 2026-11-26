@@ -1,19 +1,5 @@
-//! `POST /users/import`: local accounts from CSV, **all or nothing**.
-//!
-//! One import is one administrative intent: either every row becomes an account (one
-//! transaction, one audit row per account) or none does, and the answer lists every
-//! problem at once, by line, so the file can be fixed and sent again. A partial import
-//! would leave the administrator to work out which rows landed, and re-sending the file
-//! would then fail on the rows that did.
-//!
-//! - Body: `{"csv": "..."}` (the admin API takes JSON only), at most [`MAX_CSV_BYTES`].
-//! - Header row required; columns `username` (required), `display_name`, `email`, `role`
-//!   (`user` default, `admin`, `owner`), `note`, in any order. Any other column, `password`
-//!   included, is refused: passwords never travel in the file.
-//! - At most [`MAX_IMPORT_ROWS`] accounts. Each gets a generated temporary password that
-//!   must be changed at first login, returned once in the success response.
-//! - Row problems: 422 `validation_failed` with `details.rows` ([`ImportRowError`]): field
-//!   and a stable code, never the field's value.
+//! All or nothing: a partial import would leave the administrator to work out which rows
+//! landed, and re-sending the file would fail on those. Passwords never travel in the file.
 
 use std::sync::Arc;
 
@@ -33,11 +19,8 @@ use super::view::{ShownSecret, UserView};
 use crate::domain_error::{OWNER_REQUIRED, invalid_field};
 use crate::{AdminApiError, AuditCtx, Audited, ConsoleUser, ErrorCode, ValidJson};
 
-/// Largest accepted CSV text (bytes).
 pub const MAX_CSV_BYTES: usize = 64 * 1024;
-/// Most accounts one import creates. Each needs an Argon2id hash (default parameters:
-/// ~19 ms on one core of a 2021 server CPU, so 100 rows ~2 s single-threaded); 100 keeps an
-/// import well inside the request deadline on a CPU ten times slower with a single slot.
+/// Each row costs an Argon2id hash; 100 keeps an import well inside the request deadline.
 pub const MAX_IMPORT_ROWS: usize = 100;
 const COLUMNS: [&str; 5] = ["username", "display_name", "email", "role", "note"];
 
@@ -168,7 +151,6 @@ pub async fn import_users(
     Ok((Audited, Json(ImportResult { created })).into_response())
 }
 
-/// The fields of one data row, by column.
 #[derive(Debug, Clone, Default)]
 struct Row {
     username: String,
@@ -188,7 +170,6 @@ impl Row {
         }
     }
 
-    /// The account to create (role already checked by `admin_checks`).
     fn new_user(&self, password: Password) -> NewUser {
         NewUser {
             display_name: self.display_name.clone(),
@@ -201,8 +182,6 @@ impl Row {
     }
 }
 
-/// Header and data rows, or why the text is unusable as a whole.
-/// A data row by line: its fields, or why its shape is wrong.
 type ParsedRow = (usize, Result<Row, ImportRowError>);
 
 fn parse_rows(text: &str) -> Result<Vec<ParsedRow>, AdminApiError> {
@@ -261,7 +240,6 @@ fn row(columns: &[&'static str], record: &Record) -> Result<Row, ImportRowError>
     Ok(row)
 }
 
-/// Rows the API refuses before the core sees them (shape, role), and the remaining rows.
 fn admin_checks(acting: &Acting, rows: &[ParsedRow]) -> (Vec<ImportRowError>, Vec<(usize, Row)>) {
     let mut errors = Vec::new();
     let mut candidates = Vec::new();
@@ -284,9 +262,8 @@ fn admin_checks(acting: &Acting, rows: &[ParsedRow]) -> (Vec<ImportRowError>, Ve
     (errors, candidates)
 }
 
-/// A core row problem, by CSV line.
-/// A row's own problem as a report line; anything else (the actor no longer an admin, a
-/// database failure) fails the whole request with its own error, not as an `invalid` row.
+/// A row's own problem as a report line; anything else fails the whole request, not as an
+/// `invalid` row.
 fn row_error(lines: &[usize], err: RowError) -> Result<ImportRowError, AdminApiError> {
     let line = lines.get(err.index).copied().unwrap_or(0);
     let (field, code) = match err.error {

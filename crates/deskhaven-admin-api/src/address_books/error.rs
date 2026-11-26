@@ -1,5 +1,4 @@
-//! Address book service errors -> enveloped admin API errors. Messages are fixed English
-//! text; `details` carries only field names and policy reasons, never input values.
+//! `details` carries only field names and policy reasons, never input values.
 
 use deskhaven_core::addressbooks::AddressBookError;
 use serde_json::json;

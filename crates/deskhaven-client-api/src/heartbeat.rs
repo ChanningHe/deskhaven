@@ -1,22 +1,6 @@
-//! `POST /api/heartbeat` (03 §2.1; `src/hbbs_http/sync.rs:232-277`): every 15 s, every 3 s
-//! with live connections. No Authorization: the device is identified by `id` + `uuid` (06
-//! §2); the work is `DeviceService::heartbeat` (no database access on the steady path).
-//!
-//! Request: `{id, uuid, ver, conns?, modified_at}`; `ver` is ignored, a missing `conns` means
-//! none, a missing `modified_at` counts as 0.
-//!
-//! | case | status | body |
-//! |---|---|---|
-//! | verified device | 200 | object with the keys that apply, often `{}` (below) |
-//! | unknown id, or uuid mismatch | 404 | `{"error": "ID_NOT_FOUND"}` (identical for both) |
-//! | malformed body, missing / oversized `id` or `uuid` | 400 | `{"error": ...}` |
-//! | body over [`MAX_HEARTBEAT_BODY`] | 413 | stack renderer |
-//! | within 2 s of the device's previous heartbeat, or a request needing a lookup (malformed, unknown id, identity not cached, uuid mismatch) over the per-IP quota | 429 + `Retry-After` | `{"error": "Please try later"}` |
-//!
-//! Reply keys (each only when it applies): `sysinfo: true` (server lacks the device's
-//! sysinfo), `disconnect: [ids]` (queued and still live), `strategy: {config_options}` and
-//! `modified_at` (the client's version differs; `strategy` is left out when it would be
-//! empty). A 4xx reply has none of these keys, so the client simply tries again next time.
+//! No Authorization: the device is identified by `id` + `uuid`, with no database access on the
+//! steady path. A 4xx reply has none of the reply keys, so the client simply tries again next
+//! time.
 
 use std::sync::Arc;
 
@@ -34,19 +18,18 @@ use serde_json::{Map, Value, json};
 use crate::ClientApiError;
 use crate::client::Client;
 
-/// Largest accepted body (bytes): a real heartbeat is about 100 bytes plus 12 per live
-/// connection.
+/// A real heartbeat is about 100 bytes plus 12 per live connection.
 pub const MAX_HEARTBEAT_BODY: usize = 8 * 1024;
-/// Longest accepted `id` (bytes): hbbs `MAX_PEER_ID_LEN`.
+/// Matches hbbs `MAX_PEER_ID_LEN`.
 const ID_MAX_LEN: usize = 253;
-/// Longest accepted `uuid` (base64 characters); machine ids are far shorter.
+/// Machine ids are far shorter.
 const UUID_MAX_LEN: usize = 512;
 
-/// Error text of an unknown id or a uuid mismatch (the sysinfo endpoint's word for it).
+/// Same text as the sysinfo endpoint's.
 pub const ID_NOT_FOUND: &str = "ID_NOT_FOUND";
 const INVALID_BODY: &str = "Invalid request body";
 
-/// The body as `sync.rs:236-244` builds it; unknown keys (`ver`) are ignored.
+/// Unknown keys (`ver`) are ignored.
 #[derive(Deserialize)]
 struct Body {
     id: Option<String>,
@@ -104,7 +87,7 @@ fn parse(raw: &[u8], client: ClientAddr) -> Result<Heartbeat, ClientApiError> {
     })
 }
 
-/// The reply object: only the keys that apply (the client acts on each present key).
+/// Only the keys that apply: the client acts on each present key.
 fn render(reply: HeartbeatReply) -> Value {
     let mut map = Map::new();
     if reply.sysinfo {

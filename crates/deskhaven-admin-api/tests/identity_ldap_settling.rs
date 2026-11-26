@@ -1,8 +1,3 @@
-//! How LDAP "test user" settles the reserved login attempt (M3-09): counted when a login
-//! would have counted (password sent, unknown name), refunded when the directory failed
-//! before the user step; malformed usernames are refused before anything is reserved or
-//! contacted; a timed-out test after the password was sent counts. Plus the audit of an
-//! unsaved form. Runs on SQLite and PostgreSQL against the fake directory.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -68,7 +63,7 @@ fn saved(env: &Env) -> Value {
     json!({ "directory_id": env.directory_id })
 }
 
-/// The status of a test of `alice` after `first`: 429 when `first` was counted.
+/// 429 when `first` was counted.
 async fn next_status(env: &Env) -> u16 {
     env.fake.set_down(false);
     test_user(env, saved(env), "alice", "wrong-again")
@@ -77,7 +72,6 @@ async fn next_status(env: &Env) -> u16 {
         .as_u16()
 }
 
-/// The audit row of `action`.
 async fn audit_row(h: &Harness, action: &str) -> console_audit::Model {
     h.audit_rows()
         .await

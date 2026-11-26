@@ -1,7 +1,3 @@
-//! The 2FA enforcement policy of the identity page (M3-09) is the `auth.tfa.enforce`
-//! setting behind `/settings`: the owner changes it with its version, admins and users are
-//! refused, a value pinned by the bootstrap file is read-only. Runs on SQLite and
-//! PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

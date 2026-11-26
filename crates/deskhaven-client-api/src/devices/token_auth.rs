@@ -1,12 +1,5 @@
-//! `Authorization: Bearer <API token>` of `--deploy` / `--assign` (03 §1.2). Any problem with
-//! the token (unknown, revoked, expired, its creator no longer an active administrator, or
-//! lacking the endpoint's scope) is a 401 with the generic message; tokens are never logged.
-//!
-//! API tokens are not cached, so every request with a token reads the database. While a
-//! recent bearer rejection found the address over its per-IP budget
-//! (`LoginThrottle::check_bearer`, shared with client sessions), that is a 429 **before** the
-//! lookup; each rejected token spends one token of that budget. A missing or malformed header
-//! is a plain 401.
+//! API tokens are not cached, so every request reads the database; an address over its bearer
+//! budget gets a 429 before the lookup.
 
 use axum::http::HeaderMap;
 use deskhaven_core::api_tokens::{ApiTokenPrincipal, Scope};
@@ -16,7 +9,6 @@ use deskhaven_core::state::AppState;
 use crate::ClientApiError;
 use crate::auth::{bearer_token, too_many, unauthorized};
 
-/// The principal of the request's API token, which must hold `scope`.
 pub(crate) async fn authorize(
     state: &AppState,
     headers: &HeaderMap,

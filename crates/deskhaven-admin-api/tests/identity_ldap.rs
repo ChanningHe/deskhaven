@@ -1,8 +1,3 @@
-//! LDAP directory administration (M3-09, 06 §3.6): every write is owner-only (whoever can
-//! change the URL can impersonate every directory account), admins may read; the bind
-//! password is write-only and must be entered again when the connection changes;
-//! config-managed directories are read-only (409); writes are audited with url, bind DN,
-//! TLS and enabled but never the password. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

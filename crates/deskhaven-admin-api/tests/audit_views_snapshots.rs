@@ -1,5 +1,3 @@
-//! Audit views (M3-08): console snapshots are redacted again when read, and text that does
-//! not parse is never shown. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

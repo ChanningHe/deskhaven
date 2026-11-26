@@ -1,6 +1,3 @@
-//! Settings endpoints: list shape (sources, pins, schemas), secret masking, batch update,
-//! optimistic-lock conflicts, cross-key rules, reset to the default and history. Runs on
-//! SQLite and PostgreSQL. Permissions and audit rows are in `settings_audit.rs`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -410,7 +407,7 @@ async fn cross_key_rules_are_422_on_the_candidate_state_of_the_whole_batch() {
     .await;
 }
 
-/// Pins from a real bootstrap file, so the source is the file's path.
+/// A real bootstrap file, so the source is the file's path.
 fn pinned_from_file(dir: &tempfile::TempDir) -> (PinSet, String) {
     let path = dir.path().join("deskhaven.toml");
     let content = "[settings]\n\"auth.registration\" = \"invite\"\n\"auth.session_ttl\" = \"7d\"\n";

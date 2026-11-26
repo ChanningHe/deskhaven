@@ -1,6 +1,4 @@
-//! `GET /update-check`: whether a newer deskhaven release is out, for the version footnote
-//! of the console. Answers from the server's cache at once (see `deskhaven_core::update`);
-//! admins only, so the console does not tell anyone without a role that the server is behind.
+//! Admins only, so the console does not tell anyone without a role that the server is behind.
 
 use std::sync::Arc;
 
@@ -54,7 +52,6 @@ pub async fn get_update_check(State(state): State<Arc<AppState>>) -> Json<Update
     Json(state.updates.available().into())
 }
 
-/// The `/update-check` route.
 pub(crate) fn routes(r: AdminRoutes) -> Result<AdminRoutes, RouteError> {
     r.routes(routes!(get_update_check))
 }

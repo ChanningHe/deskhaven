@@ -1,9 +1,3 @@
-//! Administrators mark an account's email verified (M4-09): `PATCH /users/{id}` with
-//! `email_verified: true` and the `expected_email` they checked (a different stored address
-//! is 409 `conflict`, reason `email_changed`), never together with a new `email` (a separate
-//! step); under the account rules (only an owner touches an owner), audited as
-//! `user.update`; a new address resets the flag; an account without an address cannot be
-//! marked. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

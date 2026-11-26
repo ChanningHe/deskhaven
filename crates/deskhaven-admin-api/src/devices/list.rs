@@ -1,6 +1,3 @@
-//! `GET /devices`: paginated, sortable, filterable device list (M3-03 list conventions:
-//! `page`, `page_size`, `sort=field|-field`, `q`).
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -15,7 +12,6 @@ use super::view::{DeviceStatusView, DeviceView};
 use crate::domain_error::invalid_field;
 use crate::{AdminApiError, PageQuery, Paginated, ValidQuery};
 
-/// Longest accepted `q` and `os`.
 const MAX_Q_CHARS: usize = 200;
 const SORT_FIELDS: [(&str, DeviceSortField); 7] = [
     ("rustdesk_id", DeviceSortField::RustdeskId),

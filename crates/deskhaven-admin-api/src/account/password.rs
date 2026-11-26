@@ -1,11 +1,5 @@
-//! `POST /me/password`: the user's own password change.
-//!
-//! The current password is verified like a login (same throttle: `pre_check` with the
-//! username, a wrong one is a counted failure), but a wrong one is **422**
-//! `wrong_password`, never 401 (the console treats 401 as signed out). The new password
-//! must pass the policy (422 `validation_failed`, `details.fields.new_password`).
-//! Success revokes every session of the user in the change's transaction, records
-//! `user.password_change` there, and answers the fresh session's cookies with the user.
+//! A wrong current password is 422 `wrong_password`, never 401: the console treats 401 as
+//! signed out.
 
 use std::sync::Arc;
 

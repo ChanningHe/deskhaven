@@ -1,6 +1,3 @@
-//! `GET /strategy-preview?device_id=`: the strategy a device ends up with, each option
-//! with the layer it comes from, as the next heartbeat delivers it (secret values withheld).
-
 use std::sync::Arc;
 
 use axum::Json;

@@ -1,5 +1,3 @@
-//! `POST /users`, `GET|PATCH|DELETE /users/{id}`.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -51,7 +49,7 @@ pub struct NewUserBody {
     pub must_change_password: bool,
 }
 
-/// By hand: the chosen `password` prints as `<redacted>` (or `None`).
+/// By hand, so the chosen `password` prints as `<redacted>`.
 impl std::fmt::Debug for NewUserBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NewUserBody")

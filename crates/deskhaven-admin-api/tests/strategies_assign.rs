@@ -1,6 +1,3 @@
-//! Strategy assignments and the effective-strategy preview (M3-07), and the acceptance flow:
-//! create a strategy, assign it to a device group, preview the merged result, and the next
-//! heartbeat of the real client API delivers it. Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

@@ -1,7 +1,3 @@
-//! The guards decide on the committed role inside the write transaction: an admin's write
-//! that got past the route (a role changed meanwhile) is refused there and nothing is
-//! written, neither the change nor an audit row. Both backends.
-
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 

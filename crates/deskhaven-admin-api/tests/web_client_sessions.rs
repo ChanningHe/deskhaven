@@ -1,6 +1,3 @@
-//! Open web client sessions: trickle ICE both ways (long poll included), ownership, the
-//! per-user cap, expiry and rate limits. The signal server is a fake
-//! (`common::web_client`). Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -25,7 +22,6 @@ use serde_json::json;
 #[tokio::test]
 async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.alice, ALICE_DEVICE).await;
@@ -36,7 +32,6 @@ async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
             .send("candidate:dev-0".to_owned())
             .unwrap();
 
-        // Act
         let sent = h
             .write(
                 Method::POST,
@@ -63,7 +58,6 @@ async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
         };
         let (second, ()) = tokio::join!(poll, push);
 
-        // Assert
         let b = db.backend;
         assert_eq!(sent.status, 204, "{b}: {:?}", sent.body);
         assert_eq!(*route.to_device.lock().unwrap(), ["candidate:web-0"]);
@@ -86,7 +80,6 @@ async fn candidates_travel_both_ways_and_an_idle_poll_ends_empty() {
 #[tokio::test]
 async fn a_closed_route_and_refused_candidates_answer_their_codes() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.owner, OWNER_DEVICE).await;
@@ -97,7 +90,6 @@ async fn a_closed_route_and_refused_candidates_answer_their_codes() {
             h.write(Method::POST, &path, &s.owner, body).await
         };
 
-        // Act
         let gone = h.get(&path, &s.owner).await;
         s.fake.reject_candidates(CandidateRejected::Invalid);
         let rejected_id = opened(&h, &s.owner, OWNER_DEVICE).await;
@@ -121,7 +113,6 @@ async fn a_closed_route_and_refused_candidates_answer_their_codes() {
             .await;
         let too_long = send(&"x".repeat(2049)).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             (gone.status.as_u16(), gone.code()),
@@ -146,14 +137,12 @@ async fn a_closed_route_and_refused_candidates_answer_their_codes() {
 #[tokio::test]
 async fn a_session_answers_only_the_user_who_opened_it() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let id = opened(&h, &s.alice, ALICE_DEVICE).await;
         let path = candidates_path(&id);
         let session = format!("{SESSIONS}/{id}");
 
-        // Act
         let poll = h.get(&format!("{path}?wait=0"), &s.owner).await;
         let send = h
             .write(Method::POST, &path, &s.owner, json!({ "candidate": "c" }))
@@ -165,7 +154,6 @@ async fn a_session_answers_only_the_user_who_opened_it() {
             .act(Method::DELETE, &format!("{SESSIONS}/nope"), &s.alice)
             .await;
 
-        // Assert
         let b = db.backend;
         for reply in [&poll, &send, &close, &after_close, &unknown] {
             assert_eq!(reply.status, 404, "{b}: {:?}", reply.body);
@@ -178,7 +166,6 @@ async fn a_session_answers_only_the_user_who_opened_it() {
 #[tokio::test]
 async fn sessions_are_capped_per_user_and_expire() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
         let h = enabled_harness_on_clock(db, clock.clone()).await;
         let s = setup(&h).await;
@@ -187,7 +174,6 @@ async fn sessions_are_capped_per_user_and_expire() {
             ids.push(opened(&h, &s.alice, ALICE_DEVICE).await);
         }
 
-        // Act
         let over = open(&h, &s.alice, ALICE_DEVICE, false).await;
         let other_user = open(&h, &s.owner, OWNER_DEVICE, false).await;
         let closed = h
@@ -200,7 +186,6 @@ async fn sessions_are_capped_per_user_and_expire() {
             .await;
         let after_expiry = open(&h, &s.alice, ALICE_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(
             (over.status.as_u16(), over.code()),
@@ -219,13 +204,11 @@ async fn sessions_are_capped_per_user_and_expire() {
 #[tokio::test]
 async fn sessions_to_one_device_are_rate_limited() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let admin = h.console("admin", Role::Admin).await;
         let mut statuses = Vec::new();
 
-        // Act
         for i in 0..WEB_SESSIONS_PER_DEVICE_PER_MINUTE {
             let by = if i % 2 == 0 { &s.owner } else { &admin };
             let reply = open(&h, by, ALICE_DEVICE, false).await;
@@ -236,7 +219,6 @@ async fn sessions_to_one_device_are_rate_limited() {
         }
         let over = open(&h, &s.alice, ALICE_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert!(statuses.iter().all(|s| *s == 201), "{b}: {statuses:?}");
         assert_eq!(
@@ -252,12 +234,10 @@ async fn sessions_to_one_device_are_rate_limited() {
 #[tokio::test]
 async fn sessions_of_one_user_are_rate_limited() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let mut statuses = Vec::new();
 
-        // Act
         for i in 0..WEB_SESSIONS_PER_USER_PER_MINUTE {
             let device = if i % 2 == 0 {
                 ALICE_DEVICE
@@ -275,7 +255,6 @@ async fn sessions_of_one_user_are_rate_limited() {
         let over = open(&h, &s.owner, OWNER_DEVICE, false).await;
         let alice = open(&h, &s.alice, ALICE_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert!(statuses.iter().all(|s| *s == 201), "{b}: {statuses:?}");
         assert_eq!(

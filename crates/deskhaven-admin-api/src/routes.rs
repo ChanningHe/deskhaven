@@ -1,8 +1,5 @@
-//! Route assembly. [`AdminRoutes`] is the only way to add an admin API route: it takes
-//! the output of `utoipa_axum::routes!` (so every handler has a `#[utoipa::path]`),
-//! reads each operation's [`Permission`] from it (none -> [`RouteError`], and the server
-//! does not start), puts the handler behind the gate for that permission, and documents
-//! the gate's own error responses in the OpenAPI operation.
+//! [`AdminRoutes`] is the only way to add a route, so every handler has a `#[utoipa::path]`
+//! and a permission.
 
 use std::sync::Arc;
 
@@ -21,12 +18,10 @@ use crate::openapi;
 use crate::origin::TrustedOrigins;
 use crate::permission::Permission;
 
-/// Prefix of every admin API route (08 §6).
 pub const ADMIN_API_V1: &str = "/admin/api/v1";
 
 type Schemas = Vec<(String, RefOr<Schema>)>;
 
-/// An operation that cannot be served as declared.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("admin route {method} {path}: {reason}")]
 pub struct RouteError {
@@ -35,7 +30,6 @@ pub struct RouteError {
     pub reason: &'static str,
 }
 
-/// Admin API routes under construction (see the module docs).
 #[derive(Default)]
 pub struct AdminRoutes {
     entries: Vec<Entry>,
@@ -56,8 +50,7 @@ impl AdminRoutes {
         Self::default()
     }
 
-    /// Adds the operations of one `routes!(...)` call: one path, one permission (put
-    /// handlers with different permissions in separate calls).
+    /// One path, one permission: put handlers with different permissions in separate calls.
     pub fn routes(self, routes: UtoipaMethodRouter<Arc<AppState>>) -> Result<Self, RouteError> {
         let (schemas, paths, methods) = routes;
         let (relative, mut item) = single_path(paths)?;
@@ -86,7 +79,6 @@ impl AdminRoutes {
         Ok(Self { entries, ..self })
     }
 
-    /// Adds every route of `other`; the same operation twice is a [`RouteError`].
     pub fn merge(self, other: Self) -> Result<Self, RouteError> {
         for entry in &other.entries {
             self.reject_duplicates(&entry.path, &entry.item)?;
@@ -120,7 +112,6 @@ impl AdminRoutes {
         Ok(())
     }
 
-    /// The OpenAPI document of these routes.
     pub fn openapi(&self) -> OpenApi {
         let mut doc = openapi::base();
         for entry in &self.entries {
@@ -137,14 +128,11 @@ impl AdminRoutes {
         doc
     }
 
-    /// Origins the console is served from (`public_url`, `admin_public_url`), accepted by
-    /// the same-origin check besides the request's own `Host`.
     #[must_use]
     pub fn trusted_origins(self, origins: TrustedOrigins) -> Self {
         Self { origins, ..self }
     }
 
-    /// The routes, each behind its gate, ready to merge into the admin listener's router.
     pub fn into_router(self, state: Arc<AppState>) -> Router {
         let origins = self.origins;
         let router = self
@@ -177,7 +165,6 @@ fn single_path(paths: Paths) -> Result<(String, PathItem), RouteError> {
     }
 }
 
-/// `path` with parameter names erased: `{id}` -> `{}`, `{*rest}` -> `{*}`.
 fn path_shape(path: &str) -> String {
     path.split('/')
         .map(
@@ -198,7 +185,6 @@ fn absolute(relative: &str) -> String {
     }
 }
 
-/// The one permission all operations of `item` declare.
 fn route_permission(path: &str, item: &PathItem) -> Result<Permission, RouteError> {
     let error = |method: &Method, reason| RouteError {
         method: method.to_string(),
@@ -251,7 +237,6 @@ fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = (Method, &mut Ope
     .filter_map(|(method, op)| op.as_mut().map(|op| (method, op)))
 }
 
-/// A JSON response whose body is the `ErrorEnvelope` schema.
 pub(crate) fn error_response(description: &str) -> RefOr<utoipa::openapi::Response> {
     let content = Content::new(Some(Ref::from_schema_name(openapi::ERROR_SCHEMA)));
     ResponseBuilder::new()

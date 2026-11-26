@@ -1,6 +1,5 @@
-//! `POST /api/currentUser` and `POST /api/logout` (03-client-api-contract §3.3-3.4). Both
-//! carry `{id, uuid}`, which is ignored: the session already is bound to the device it was
-//! issued to, and the client may change its id without logging in again.
+//! The `{id, uuid}` body is ignored: the session is already bound to its device, and the
+//! client may change its id without logging in again.
 
 use std::sync::Arc;
 
@@ -14,8 +13,7 @@ use crate::auth::unauthorized;
 use crate::user_payload::UserPayload;
 use crate::{BearerUser, ClientApiError};
 
-/// The session user's UserPayload (`flutter/lib/models/user_model.dart:84-100`: 401 resets
-/// the login, any other non-200 is shown as an error).
+/// 401 resets the client's login; any other non-200 is shown as an error.
 pub async fn current_user(
     State(state): State<Arc<AppState>>,
     BearerUser(principal): BearerUser,
@@ -31,8 +29,7 @@ pub async fn current_user(
     }
 }
 
-/// Revokes the presented session; 200 with an empty body (the client ignores the reply,
-/// `flutter/lib/models/user_model.dart:170-190`). Other sessions of the user stay valid.
+/// 200 with an empty body; other sessions of the user stay valid.
 pub async fn logout(
     State(state): State<Arc<AppState>>,
     BearerUser(principal): BearerUser,

@@ -1,6 +1,3 @@
-//! "My account" (M3-13), what the user owns or sees: their devices with online state and
-//! their address books with the effective rule; plus the gate of every self-service route
-//! (no session, client session, missing CSRF, unfinished account setup). Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

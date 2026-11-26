@@ -1,7 +1,3 @@
-//! `GET|POST /oidc-providers`, `GET|PATCH|DELETE /oidc-providers/{id}`. Admins read; writes
-//! are the owner's, declared on the route and re-checked on the committed role in the
-//! write transaction.
-
 use std::sync::Arc;
 
 use axum::Json;

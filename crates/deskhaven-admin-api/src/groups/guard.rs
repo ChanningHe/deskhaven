@@ -1,6 +1,3 @@
-//! Audit guards of group writes: any admin may manage groups, so beyond re-checking that
-//! the actor is still an active admin or owner ([`AuditCtx::admin_guard`]) they never refuse.
-
 use deskhaven_core::console_audit::TxGuard;
 use deskhaven_core::groups::{Group, Membership};
 use deskhaven_core::state::AppState;
@@ -32,7 +29,6 @@ pub(crate) fn group_guard(
     )
 }
 
-/// `before` / `after`: `{user_id, username}` when the user was / is a member.
 pub(crate) fn member_guard(
     state: &AppState,
     ctx: &AuditCtx,

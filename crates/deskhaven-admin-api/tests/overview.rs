@@ -1,5 +1,3 @@
-//! `GET /overview` (M3-14): permissions and the correctness of every number, on SQLite and
-//! PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -27,7 +25,6 @@ async fn setup(db: &TestDb) -> (Harness, Console) {
     (h, admin)
 }
 
-/// Seconds after [`T0`] that are `ago` seconds before now, for the row builders.
 fn secs_ago(ago: i64) -> i64 {
     (time::now().timestamp_millis() - T0) / 1000 - ago
 }

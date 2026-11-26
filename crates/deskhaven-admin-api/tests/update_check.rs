@@ -1,6 +1,4 @@
-//! `GET /update-check`: admins only; empty while the check is off or nothing newer is known;
-//! the newest release and a link built from its version once the server has seen one. GitHub
-//! is never contacted: the harness answers every outbound request.
+//! GitHub is never contacted: the harness answers every outbound request.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -40,8 +38,6 @@ async fn only_admins_ask_for_updates() {
     .await;
 }
 
-/// The first request starts the check and answers from the empty cache; a later one carries
-/// the release.
 #[tokio::test]
 async fn a_newer_release_comes_with_its_release_page() {
     each_migrated_backend(async |db: &TestDb| {

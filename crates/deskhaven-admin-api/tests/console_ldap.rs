@@ -1,8 +1,3 @@
-//! Console sign-in of directory accounts (06 §3.5) through the real router and the fake
-//! directory: the directory password signs in, wrong and unknown answer the same 401, an
-//! unreachable directory is a 503 (directory accounts) that never falls back to a local
-//! password, TOTP applies to directory accounts (enrolment re-authenticates against the
-//! directory), login events say `ldap`. Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

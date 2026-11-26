@@ -1,9 +1,5 @@
-//! Log output of `AdminApiError`: an internal error's detail reaches the log, tagged with
-//! the request id.
-//!
-//! Kept in its own test binary: `tracing` caches callsite interest process-wide, so a
-//! callsite first hit by a parallel test thread without a subscriber can miss events in a
-//! scoped one (see crates/deskhaven-core/tests/throttle_logs.rs).
+//! Its own test binary: `tracing` caches callsite interest process-wide, so a callsite first
+//! hit by a parallel test without a subscriber can miss events in a scoped one.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 

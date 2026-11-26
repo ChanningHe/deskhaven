@@ -1,6 +1,3 @@
-//! `GET /devices/{id}`: one device with its live connections, effective strategy and
-//! recent connections.
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -15,7 +12,6 @@ use crate::{AdminApiError, ValidPath};
 
 type Problem = crate::ErrorEnvelope<'static>;
 
-/// Connections listed in the detail.
 const RECENT_CONNECTIONS: u64 = 10;
 
 /// A device with everything the console's drawer shows.

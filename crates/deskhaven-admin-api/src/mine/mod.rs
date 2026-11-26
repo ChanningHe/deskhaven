@@ -1,15 +1,4 @@
-//! What the signed-in user sees of their own data (M3-13, `self` permission): sessions,
-//! devices and address books. Every handler scopes by the session's user id; no route takes
-//! a user id from the client, and the session and address book services match ownership in
-//! the statement itself.
-//!
-//! | method | path | what | audit |
-//! |---|---|---|---|
-//! | `GET` | `/me/sessions` | client and console sessions, the current one marked | |
-//! | `DELETE` | `/me/sessions/{id}` | revoke one (the current one signs out) | `session.revoke` |
-//! | `POST` | `/me/sessions/revoke-others` | revoke all but the current | `session.revoke_others` |
-//! | `GET` | `/me/devices` | owned devices with online state (paged) | |
-//! | `GET` | `/me/address-books` | personal and shared books with the user's rule | |
+//! Every handler scopes by the session's user id; no route takes a user id from the client.
 
 mod address_books;
 mod devices;

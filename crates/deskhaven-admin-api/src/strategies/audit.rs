@@ -1,10 +1,6 @@
-//! Console audit of strategy writes: the guards and the snapshots they record.
-//!
-//! Options are recorded as `[{key, value}]`, not as an object keyed by option name: the
-//! console audit log masks members whose *name* looks like a credential, which would blind
-//! harmless options such as `temporary-password-length`. Secret catalog options are masked
-//! here instead; in an `after` snapshot they carry `changed` (whether the value differs from
-//! `before`), so a change stays visible without its value.
+//! Options are recorded as `[{key, value}]`, not keyed by name: the audit log masks members
+//! whose name looks like a credential, which would blind options such as
+//! `temporary-password-length`.
 
 use deskhaven_config::REDACTED;
 use deskhaven_core::console_audit::TxGuard;
@@ -16,7 +12,6 @@ use serde::Serialize;
 use super::view::{TargetKind, kind_of};
 use crate::{Audit, AuditCtx};
 
-/// Snapshot of a strategy in its audit rows.
 #[derive(Serialize)]
 struct StrategySnapshot<'a> {
     name: &'a str,
@@ -33,8 +28,6 @@ struct OptionEntry<'a> {
     changed: Option<bool>,
 }
 
-/// `previous`: the options of `before` when `s` is the `after` snapshot (empty for a
-/// creation); `None` for a `before` snapshot.
 fn snapshot<'a>(s: &'a Strategy, previous: Option<&Options>) -> StrategySnapshot<'a> {
     let entry = |(key, value): (&'a String, &'a String)| {
         let secret = !value.is_empty() && catalog::is_secret(key);
@@ -53,7 +46,6 @@ fn snapshot<'a>(s: &'a Strategy, previous: Option<&Options>) -> StrategySnapshot
     }
 }
 
-/// Snapshot of an assignment in its audit rows.
 #[derive(Serialize)]
 struct AssignmentSnapshot {
     strategy_id: i64,
@@ -70,8 +62,6 @@ fn assignment_snapshot(a: &Assignment) -> AssignmentSnapshot {
     }
 }
 
-/// Any admin may manage strategies: beyond re-checking that the actor is still an admin or
-/// owner the guard never refuses. The row targets the strategy.
 pub(super) fn strategy_guard(
     state: &AppState,
     ctx: &AuditCtx,
@@ -96,8 +86,6 @@ pub(super) fn strategy_guard(
     )
 }
 
-/// Like [`strategy_guard`] for assignments; the row targets the strategy assigned (or
-/// unassigned), the snapshots are the assignment replaced and the new one.
 pub(super) fn assignment_guard(
     state: &AppState,
     ctx: &AuditCtx,

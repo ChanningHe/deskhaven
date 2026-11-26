@@ -1,9 +1,6 @@
-//! The audit guard of settings writes: owner only, one row per batch.
-//!
-//! `before` is `{changes: [{key, value}]}` of the written keys; `after` is the same (a
-//! reset's entry also has `reset: true`) plus the batch's `reason` when given. Values are the public JSON form, so a secret appears only as
-//! `{"set": bool}`; the keys are string values here, not object keys, so the core log's
-//! name-based masking does not blank `auth.password.min_length`.
+//! Keys are string values in the snapshot, not object keys, so the core log's name-based
+//! masking does not blank `auth.password.min_length`; a secret appears only as
+//! `{"set": bool}`.
 
 use deskhaven_core::console_audit::{Refused, TxGuard};
 use deskhaven_core::settings::{AppliedChanges, SettingChange};
@@ -18,8 +15,8 @@ const ACTION_UPDATE: &str = "setting.update";
 const ACTION_RESET: &str = "setting.reset";
 const TARGET: &str = "setting";
 
-/// Re-checks, in the write transaction, that the actor is still the owner (the session's
-/// role may be stale), then records the batch.
+/// Re-checks in the write transaction that the actor is still the owner: the session's role
+/// may be stale.
 pub(crate) fn settings_guard(state: &AppState, ctx: &AuditCtx) -> TxGuard<AppliedChanges> {
     let entry_ctx = ctx.clone();
     ctx.admin_guard(
@@ -54,7 +51,6 @@ fn before_entry(change: &SettingChange) -> Value {
     json!({ "key": change.key, "value": change.before })
 }
 
-/// `{changes, reason?}`: the note is only there when the caller gave one.
 fn after_snapshot(changes: &[SettingChange], reason: Option<&str>) -> Value {
     let mut snapshot = json!({ "changes": entries(changes, after_entry) });
     if let (Some(reason), Some(members)) = (reason, snapshot.as_object_mut()) {
@@ -70,7 +66,6 @@ fn after_entry(change: &SettingChange) -> Value {
     }
 }
 
-/// The key of a single-key batch; the keys comma-separated otherwise (cut by the log).
 fn target_id(changes: &[SettingChange]) -> String {
     let keys: Vec<&str> = changes.iter().map(|c| c.key).collect();
     keys.join(",")

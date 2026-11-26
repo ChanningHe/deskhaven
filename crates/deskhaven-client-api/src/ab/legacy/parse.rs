@@ -1,20 +1,6 @@
-//! Reading a pushed document (see [`super::document`]) as a stream.
-//!
-//! A push is authenticated but otherwise untrusted, and the document is up to
-//! [`MAX_LEGACY_AB_BODY`](super::MAX_LEGACY_AB_BODY) bytes of small elements: building a
-//! `serde_json::Value` tree of it and only then counting costs tens of times the body in
-//! memory (64k `{"id":"1"}` peers are 1 MB of text and about 80 MB of tree). So the caps
-//! are enforced while reading:
-//!
-//! - the element after the `max_peers`-th peer is not read, the push is refused (the count
-//!   is of raw elements: a client that sends more than the book holds is wrong);
-//! - the same for more than [`MAX_BOOK_TAGS`] tags and for more than that many colours;
-//! - one peer is read as raw text first and refused above [`MAX_PEER_BYTES`], so the tree
-//!   built for it (then dropped) is small, and only the checked [`PeerPatch`] is kept;
-//! - unknown top-level keys are skipped without building anything.
-//!
-//! Why a push stopped is passed out through a side channel (serde errors are text): see
-//! [`Stash`].
+//! A push is authenticated but otherwise untrusted: building a `serde_json::Value` tree first
+//! would cost tens of times the body in memory, so the caps are enforced while reading. Why a
+//! read stopped travels through [`Stash`] because serde errors are text.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -37,15 +23,13 @@ const INVALID_DATA: &str = "Invalid data";
 const MAX_PEER_BYTES: usize = 32 * 1024;
 const MAX_TAGS: usize = MAX_BOOK_TAGS as usize;
 
-/// The reason a read stopped, set right before the visitor returns its (textual) serde
-/// error. `None` after a failed read means malformed JSON or a wrongly typed value.
+/// Set right before the visitor returns its textual serde error; `None` after a failed read
+/// means malformed JSON or a wrongly typed value.
 type Stash<'a> = &'a RefCell<Option<ClientApiError>>;
 
-/// What a pushed `data` string asks for. Absent or `null` `tags`, `peers` and `tag_colors`
-/// are empty (the Sciter UI starts from `{tags: [], peers: []}`); a wrongly typed one is
-/// refused. A colour for a name not in `tags` is ignored, a tag without a colour has none
-/// (the book then keeps or defaults it). More than `max_peers` peers (counting repeated
-/// ids) is [`AddressBookError::Full`], as for the per-item API.
+/// Absent or `null` lists are empty (the Sciter UI starts from `{tags: [], peers: []}`).
+/// More than `max_peers` peers, repeated ids counted, is [`AddressBookError::Full`], as for
+/// the per-item API.
 pub fn parse(data: &str, max_peers: u32) -> Result<BookReplacement, ClientApiError> {
     let stash = RefCell::new(None);
     let parts = read(data, max_peers, &stash).map_err(|_| {
@@ -82,7 +66,6 @@ fn read(data: &str, max_peers: u32, stash: Stash) -> Result<Parts, serde_json::E
     Ok(parts)
 }
 
-/// Stops the read for `reason`.
 fn abort<E: de::Error>(stash: Stash, reason: ClientApiError) -> E {
     *stash.borrow_mut() = Some(reason);
     E::custom("push refused")
@@ -125,7 +108,6 @@ impl<'de> Visitor<'de> for Document<'_> {
     }
 }
 
-/// `null` reads as the default; anything else goes to the inner seed.
 struct Nullable<S>(S);
 
 impl<'de, S> DeserializeSeed<'de> for Nullable<S>
@@ -164,7 +146,6 @@ where
     }
 }
 
-/// `tags`: a list of at most [`MAX_BOOK_TAGS`] strings.
 struct Names<'a>(Stash<'a>);
 
 impl<'de> DeserializeSeed<'de> for Names<'_> {
@@ -197,7 +178,6 @@ impl<'de> Visitor<'de> for Names<'_> {
     }
 }
 
-/// `peers`: a list of at most `max_peers` peer objects.
 struct Peers<'a>(Document<'a>);
 
 impl<'de> DeserializeSeed<'de> for Peers<'_> {
@@ -235,8 +215,7 @@ impl<'de> Visitor<'de> for Peers<'_> {
     }
 }
 
-/// One peer from its raw JSON: size-checked before the tree is built, validated by the
-/// per-item API's own codec.
+/// Size-checked before the tree is built.
 fn peer<E: de::Error>(raw: &RawValue, stash: Stash) -> Result<PeerPatch, E> {
     let invalid = |reason: String| {
         let error = AddressBookError::Invalid {
@@ -252,9 +231,7 @@ fn peer<E: de::Error>(raw: &RawValue, stash: Stash) -> Result<PeerPatch, E> {
     PeerPatch::from_client_json(value).map_err(|err| abort(stash, ab_error(err)))
 }
 
-/// `tag_colors`: a JSON string holding `{name: int}` (what the client writes) or the object
-/// itself, of at most [`MAX_BOOK_TAGS`] entries. Values must be integers; their range is
-/// checked with the tag.
+/// A JSON string holding `{name: int}` (what the client writes) or the object itself.
 struct Colors<'a>(Stash<'a>);
 
 impl<'de> DeserializeSeed<'de> for Colors<'_> {
@@ -311,7 +288,6 @@ mod tests {
         result.map(|_| ()).unwrap_err().to_string()
     }
 
-    /// `n` minimal peers as JSON list items (no brackets).
     fn peers(n: usize) -> String {
         (0..n)
             .map(|i| format!(r#"{{"id":"{i}"}}"#))

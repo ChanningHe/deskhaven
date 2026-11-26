@@ -1,26 +1,5 @@
-//! Linking an OIDC identity to the signed-in account (M4-09, over
-//! `deskhaven_core::oidc` `link`):
-//!
-//! 1. `POST /me/identities/link {provider, current_password, code?}`: re-authentication
-//!    first, as one attempt of the login throttle (see `reauth`): the password, and while
-//!    TOTP is on also a current code or an unused recovery code (spent). Linking makes the
-//!    identity a way in that asks for no local second factor, so it needs what turning
-//!    the factor off needs. LDAP accounts are refused (`oidc_failed`,
-//!    `directory_account`); OIDC accounts have no password to re-authenticate with
-//!    (409 `not_local_account`). Then a `link` flow, its authorization URL, and its browser
-//!    binding in the same HttpOnly cookie a console login uses.
-//! 2. The IdP redirects to the callback, which sends a link flow to the console's
-//!    `/me/oidc-link`. That page posts the IdP's answer to `POST /me/identities/link/verify`
-//!    (`link_confirm`): the code is exchanged once and the page shows the verified IdP
-//!    identity and the account, with a button.
-//! 3. `POST /me/identities/link/complete {state}` links exactly that identity to the
-//!    session's account, only in the browser holding the binding and only for the account
-//!    the flow was started for (anything else: `oidc_failed`, `expired`). Audited
-//!    `user.identity_link` in the linking transaction.
-//!
-//! Refusals are 403 `oidc_failed` with `details.reason`: `denied`, `unavailable`,
-//! `invalid_token`, `identity_taken` (another account's), `provider_linked` (the account
-//! already has an identity there), `directory_account`, `account_inactive`, `expired`.
+//! Linking makes the identity a way in that asks for no local second factor, so it
+//! re-authenticates with what turning the factor off needs.
 
 use std::sync::Arc;
 
@@ -50,7 +29,6 @@ use crate::transport::SecureTransport;
 
 use crate::{AdminApiError, ErrorCode, ValidJson};
 
-/// Longest accepted provider name or state (characters).
 const MAX_FIELD: usize = 2048;
 
 /// Which provider to link, and the re-authentication. Never logged.
@@ -133,7 +111,6 @@ pub async fn start(
     Ok(([(header::SET_COOKIE, cookie)], audit, reply).into_response())
 }
 
-/// The password, then (TOTP on) the code, spent: one throttle attempt.
 async fn reauthenticate(
     state: &AppState,
     user: &User,

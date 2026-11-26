@@ -1,6 +1,3 @@
-//! Entries of a book: `GET|POST /address-books/{guid}/peers`, `PATCH .../peers/{id}`,
-//! `POST .../peers/delete`, `POST .../peers/import`. Passwords go in, never out.
-
 use std::sync::Arc;
 
 use axum::Json;

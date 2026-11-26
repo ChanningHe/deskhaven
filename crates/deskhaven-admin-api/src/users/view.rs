@@ -1,5 +1,3 @@
-//! Wire types of the user endpoints. Timestamps are unix milliseconds (UTC).
-
 use deskhaven_core::groups::Group;
 use deskhaven_core::oidc::Identity;
 use deskhaven_core::sessions::{Session, SessionKind};
@@ -226,8 +224,7 @@ pub struct UserDetail {
     pub sessions_total: u64,
 }
 
-/// A secret a response shows once (a temporary password): serialized as the plain string,
-/// but `Debug` prints `<redacted>`, so a logged response or error never carries it.
+/// `Debug` prints `<redacted>`, so a logged response or error never carries it.
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ShownSecret(String);

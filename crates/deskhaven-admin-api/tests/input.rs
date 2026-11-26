@@ -1,5 +1,3 @@
-//! Wire conventions (08 §6): enveloped input errors, garde validation, pagination shape.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

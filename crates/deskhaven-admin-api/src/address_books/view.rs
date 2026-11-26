@@ -1,5 +1,4 @@
-//! Wire types of the address book endpoints. Timestamps are unix milliseconds; colours are
-//! the client's 32-bit ARGB integers.
+//! Timestamps are unix milliseconds; colours are the client's 32-bit ARGB integers.
 
 use std::fmt;
 
@@ -11,9 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use utoipa::ToSchema;
 
-/// Highest ARGB value (32 bits).
 const MAX_COLOR: i64 = 0xFFFF_FFFF;
-/// Most ids or names one batch request carries.
 const MAX_BATCH: usize = 1000;
 
 /// A shared book with the sizes of its parts.
@@ -118,7 +115,6 @@ impl From<NamedShare> for ShareView {
     }
 }
 
-/// The number clients and the console use for a rule.
 pub fn rule_number(rule: Rule) -> u8 {
     match rule {
         Rule::ReadOnly => 1,
@@ -127,7 +123,6 @@ pub fn rule_number(rule: Rule) -> u8 {
     }
 }
 
-/// The rule behind `number` (1-3).
 pub fn rule_from_number(number: u8) -> Option<Rule> {
     match number {
         1 => Some(Rule::ReadOnly),
@@ -236,7 +231,6 @@ impl fmt::Debug for PeerBody {
 }
 
 impl PeerBody {
-    /// The client-format peer object for entry `id` (what `PeerPatch::from_json` parses).
     pub fn to_json(&self, id: &str) -> Value {
         let text = [
             ("alias", &self.alias),

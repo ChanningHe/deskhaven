@@ -1,17 +1,6 @@
-//! Who may do what with API tokens (06 §4.1), decided inside the write transaction by a
-//! [`TxGuard`] together with the audit row.
-//!
-//! - Any administrator creates tokens; a token carries its creator's authority, which the
-//!   core re-checks (active administrator) in the same transaction.
-//! - Any administrator revokes tokens of administrators. A token whose creator is an owner
-//!   is an owner's authority in someone else's hands, and a system token (no creator) has
-//!   no administrator behind it: both need an owner, like every other owner-level
-//!   resource (`owner_required`).
-//!
-//! Snapshots carry the token's identity (id as target, name, prefix, scopes, expiry,
-//! creator, revoked flag) and never the secret or its hash. The display prefix is recorded
-//! without its `dhk_` scheme marker: the console audit masks every string that looks like
-//! a token.
+//! A token carries its creator's authority: one created by an owner, or a system token, needs
+//! an owner to revoke. The audited prefix drops its `dhk_` marker because the console audit
+//! masks every string that looks like a token.
 
 use deskhaven_core::api_tokens::{API_TOKEN_PREFIX, TokenTarget};
 use deskhaven_core::console_audit::{ConsoleAuditLog, Refused, TxGuard};
@@ -21,7 +10,6 @@ use serde::Serialize;
 use crate::domain_error::OWNER_REQUIRED;
 use crate::{Audit, AuditCtx};
 
-/// A token in an audit row.
 #[derive(Serialize)]
 struct TokenSnapshot<'a> {
     name: &'a str,
@@ -47,10 +35,8 @@ impl<'a> From<&'a TokenTarget> for TokenSnapshot<'a> {
     }
 }
 
-/// A rule on who may write to an existing token: the actor's committed role against it.
 pub(crate) type TokenRule = fn(Role, &TokenTarget) -> Result<(), Refused>;
 
-/// Refuses an admin on a token that is an owner's (or nobody's) authority.
 pub(crate) fn may_revoke(actor: Role, target: &TokenTarget) -> Result<(), Refused> {
     match (actor, target.creator_role) {
         (Role::Owner, _) => Ok(()),
@@ -59,9 +45,6 @@ pub(crate) fn may_revoke(actor: Role, target: &TokenTarget) -> Result<(), Refuse
     }
 }
 
-/// A guard recording `action` on the token. Creation has no rule beyond the actor being
-/// an administrator (`admin_guard`); a write to an existing token passes `rule`, which
-/// judges the actor's committed role against the token as it was.
 pub(crate) fn token_guard(
     ctx: &AuditCtx,
     log: &ConsoleAuditLog,

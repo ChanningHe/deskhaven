@@ -1,5 +1,3 @@
-//! `POST /api/oidc/auth`: starts a flow (see the module docs).
-
 use std::sync::Arc;
 
 use axum::Json;
@@ -22,10 +20,10 @@ use crate::ClientApiError;
 use crate::client::Client;
 use crate::login::request::{INVALID_REQUEST_MESSAGE, device, require_json};
 
-/// Longest accepted `op` (provider names are at most 32 characters).
+/// Provider names are at most 32 characters.
 const MAX_OP_LEN: usize = 64;
 
-/// The body as `OidcSession::auth` sends it (`account.rs:160-176`). Unknown fields ignored.
+/// Unknown fields are ignored.
 #[derive(Deserialize)]
 struct Request {
     op: Option<String>,
@@ -35,7 +33,7 @@ struct Request {
     device_info: Option<Value>,
 }
 
-/// `OidcAuthUrl` (`account.rs:27-31`): `url` must parse as a URL.
+/// `url` must parse as a URL.
 #[derive(Serialize)]
 pub struct AuthReply {
     code: String,
@@ -80,10 +78,9 @@ pub async fn auth(
     }))
 }
 
-/// 403 [`ID_TAKEN_MESSAGE`] when the id is registered with another uuid: the session would
-/// be bound to someone else's device, and a confirmation page naming that id is what its
-/// owner expects to see (they share their id for remote support). An id not registered yet
-/// passes; the confirmation page says so. 503 when the signal server cannot tell in time.
+/// The session would be bound to someone else's device, and a confirmation page naming that
+/// id is what its owner expects to see (ids are shared for remote support). 503 when the
+/// signal server cannot tell in time.
 async fn require_own_id(
     state: &AppState,
     device: &ClientDevice,

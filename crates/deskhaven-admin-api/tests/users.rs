@@ -1,6 +1,3 @@
-//! User endpoints: list (pagination, filters, sort), detail, create, update, account
-//! actions, delete, last-owner and self-delete protection, and their audit rows (before /
-//! after, secrets masked). Every test runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -25,7 +22,6 @@ async fn setup(db: &TestDb) -> (Harness, Console) {
     (h, admin)
 }
 
-/// A client session token of `username` (password [`PASSWORD`]).
 async fn client_token(h: &Harness, username: &str) -> String {
     let auth = h
         .state

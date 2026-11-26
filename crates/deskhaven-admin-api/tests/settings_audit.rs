@@ -1,6 +1,3 @@
-//! Settings endpoints: who may call them (owner only, gate and in-transaction re-check)
-//! and what the console audit rows hold (before / after values, secrets as `{"set": bool}`).
-//! Runs on SQLite and PostgreSQL.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;

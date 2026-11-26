@@ -1,6 +1,3 @@
-//! Console audit of admin API operations: in-transaction recording, the detached
-//! fallback, `Audit` on reads and `Public` routes, masked before/after values.
-
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -310,10 +307,9 @@ async fn fallback_write_failure_keeps_the_success_response() {
     .await;
 }
 
-/// How long [`block_audit_writes`] holds off the fallback write: far longer than a request.
+/// Far longer than a request.
 const HELD: Duration = Duration::from_millis(500);
 
-/// Blocks every write to `console_audit` (readers go on) until the transaction ends.
 async fn block_audit_writes(db: &TestDb) -> DatabaseTransaction {
     let tx = deskhaven_db::begin_write(&db.conn).await.unwrap();
     if db.backend == Backend::Postgres {

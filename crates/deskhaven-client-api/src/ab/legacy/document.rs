@@ -1,27 +1,12 @@
-//! The legacy address book document: the JSON *string* in the `data` field of
-//! `GET /api/ab`, `POST /api/ab/get` and `POST /api/ab`.
-//!
-//! ```text
-//! {"tags": ["a"],
-//!  "peers": [{"id": "1", "username": "", "hostname": "", "platform": "", "alias": "",
-//!             "tags": ["a"], "hash": "..."}],
-//!  "tag_colors": "{\"a\": 4278190335}"}        <- a JSON string again, name -> ARGB int
-//! ```
-//!
-//! Written by `_serialize` (`flutter/lib/models/ab_model.dart:1309-1323`), read by
-//! `_deserialize` (`:1325-1356`) and, in the Sciter UI, by `JSON.parse` / `JSON.stringify`
-//! (`src/ui/ab.tis:650-670`).
-//!
-//! Peers use the per-item API's codec (`Peer::to_json`, `PeerPatch::from_client_json`), so every
-//! field both APIs share is one definition; a legacy client ignores the fields it does not
-//! know and a push without them leaves the stored values alone. Reading a push is
-//! [`super::parse`].
+//! `tag_colors` is a JSON string again inside the document string: `{name: ARGB int}`.
+//! Peers use the per-item API's codec, so every field both APIs share has one definition;
+//! a legacy client ignores fields it does not know, and a push without them leaves the stored
+//! values alone.
 
 use deskhaven_core::addressbooks::BookContents;
 use serde_json::{Map, Value};
 
-/// The document for `contents`, as the string clients put in `data`. Peers come ordered by
-/// id and tags by name (what the book stores; a legacy client's own tag order is not kept).
+/// Peers by id and tags by name: a legacy client's own tag order is not kept.
 pub fn render(contents: &BookContents) -> String {
     let peers: Vec<Value> = contents
         .peers

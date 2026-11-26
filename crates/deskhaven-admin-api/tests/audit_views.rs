@@ -1,7 +1,3 @@
-//! Audit views (M3-08), part one: permissions, the connection list, the time window, the
-//! retired-session and deleted-controller cases, and query validation. Admin only. Runs on
-//! SQLite and PostgreSQL. File, alarm, login and console lists: `audit_views_kinds.rs`; the
-//! 100k-row timing: `audit_views_perf.rs`.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -227,8 +223,7 @@ async fn bad_queries_are_validation_errors() {
     .await;
 }
 
-/// Control characters (a NUL makes PostgreSQL fail the query with a 500) are refused in every
-/// text filter of every list.
+/// A NUL makes PostgreSQL fail the query with a 500.
 #[tokio::test]
 async fn control_characters_in_text_filters_are_validation_errors() {
     each_migrated_backend(async |db: &TestDb| {

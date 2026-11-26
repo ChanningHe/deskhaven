@@ -1,27 +1,8 @@
-//! Console audit of admin API operations (06 §7, 04 §7 `console_audit`).
-//!
-//! **Rule: production write handlers record in their own transaction.** A handler takes
-//! [`AuditCtx`] (actor, client ip, request id), passes `ctx.entry(Audit::new(..)...)` to
-//! the service, which calls `ConsoleAuditLog::record_in` on its write transaction, and
-//! returns [`Audited`] with its response. The change and its row then commit or roll back
-//! together, whatever happens to the request afterwards (deadline, client disconnect).
-//!
-//! **Fallback (safety net)** for a 2xx response without [`Audited`]: the gate records
-//! - the handler's [`Audit`] when one is attached, on any route and method (a secret
-//!   viewed through a GET, the first-run setup on a `Public` route); and
-//! - a default row (actor, operation id as action) for a state-changing request on an
-//!   authenticated route that attached nothing.
-//!
-//! The fallback row is written by a detached task spawned before the gate returns, with
-//! no await in between, so neither the request deadline nor a disconnect can cancel it.
-//! It never changes the response (the change is committed; a 500 would invite a retry
-//! and swallow show-once secrets); if the write fails, the redacted record is logged at
-//! ERROR in the request's span (request id), making the log the fallback sink.
-//!
-//! Actor: the handler's [`Audit::actor`], else the gate's console user, else `system`
-//! (logged: a `Public` route's [`Audit`] should name its actor). Failed and denied
-//! requests are not recorded here (logins have their own log). Snapshots are redacted by
-//! the core log (secret names, credential-shaped values, `deskhaven_config::Secret`).
+//! Write handlers record their audit row in their own transaction and return [`Audited`], so
+//! the change and its row commit together. Without it, a 2xx response is recorded by a
+//! detached task spawned before the gate returns (no deadline or disconnect cancels it); a
+//! failed write is logged, never a 500, because the change is committed and a retry would
+//! swallow show-once secrets.
 
 use std::borrow::Cow;
 use std::net::IpAddr;
@@ -46,7 +27,6 @@ use crate::AdminApiError;
 use crate::domain_error::FORBIDDEN;
 use crate::session::{ConsoleUser, client_addr};
 
-/// What an operation changed (or revealed). Every part is optional.
 #[derive(Clone, Debug, Default)]
 pub struct Audit {
     actor: Option<Actor>,
@@ -84,7 +64,6 @@ impl Audit {
         }
     }
 
-    /// Snapshot of the target before the change (redacted when written).
     #[must_use]
     pub fn before(self, snapshot: &impl Serialize) -> Self {
         Self {
@@ -93,7 +72,6 @@ impl Audit {
         }
     }
 
-    /// Snapshot of the target after the change (redacted when written).
     #[must_use]
     pub fn after(self, snapshot: &impl Serialize) -> Self {
         Self {
@@ -103,7 +81,6 @@ impl Audit {
     }
 }
 
-/// Fallback: attached to a response, the gate records it (see the module docs).
 impl IntoResponseParts for Audit {
     type Error = std::convert::Infallible;
 
@@ -113,8 +90,6 @@ impl IntoResponseParts for Audit {
     }
 }
 
-/// Response marker: the handler recorded its audit row inside its own transaction; the
-/// gate records nothing more.
 #[derive(Clone, Copy, Debug)]
 pub struct Audited;
 
@@ -127,26 +102,19 @@ impl IntoResponseParts for Audited {
     }
 }
 
-/// The facts of the request an audit row needs, for in-transaction recording. Extracting
-/// it requires a console session (the gate's, or the cookie on a `Public` route).
 #[derive(Clone, Debug)]
 pub struct AuditCtx {
     pub actor: Actor,
     pub ip: IpAddr,
-    /// `X-Request-Id` of the request, for the handler's own logs.
     pub request_id: Option<String>,
 }
 
 impl AuditCtx {
-    /// The row for `audit`, attributed to this request (an actor set on `audit` wins).
     pub fn entry(&self, audit: Audit) -> NewConsoleAudit {
         entry(audit, self.actor, self.ip, "")
     }
 
-    /// The [`TxGuard`] of an administrator's write. In the write transaction it re-reads
-    /// this request's account and refuses one that is gone, disabled or no longer an admin
-    /// or owner (the session's role may be stale by then); `decide` applies the
-    /// operation's own rules with the committed role and returns the audit row.
+    /// Re-reads the account in the write transaction: the session's role may be stale by then.
     pub(crate) fn admin_guard<T: 'static>(
         &self,
         log: &ConsoleAuditLog,
@@ -210,14 +178,11 @@ fn entry(audit: Audit, actor: Actor, ip: IpAddr, default_action: &str) -> NewCon
     }
 }
 
-/// Test hook: a request carrying this extension hands the task of its fallback write here,
-/// so a test harness can await the row instead of racing the detached task. Production
-/// requests carry none, and the task runs on detached as usual.
+/// Lets a test await the fallback write instead of racing the detached task.
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct DetachedAudits(pub UnboundedSender<JoinHandle<()>>);
 
-/// What the gate knows when it falls back to recording.
 pub(crate) struct Fallback<'a> {
     pub user_id: Option<i64>,
     pub ip: IpAddr,
@@ -225,8 +190,8 @@ pub(crate) struct Fallback<'a> {
     pub hook: Option<DetachedAudits>,
 }
 
-/// Spawns the fallback write of `audit` (see the module docs). Synchronous on purpose: the
-/// task exists once this returns, so the caller cannot be cancelled in between.
+/// Synchronous on purpose: the task exists once this returns, so the caller cannot be
+/// cancelled in between.
 pub(crate) fn record_detached(state: &Arc<AppState>, ctx: Fallback<'_>, audit: Audit) {
     let gate_actor = ctx.user_id.map(Actor::User);
     if audit.actor.is_none() && gate_actor.is_none() {

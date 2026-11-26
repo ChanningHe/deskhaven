@@ -1,4 +1,3 @@
-//! `ClientApiError` -> status + `{"error": "<msg>"}` (03-client-api-contract §1.3).
 // Test helpers outside `#[test]` fns are not covered by clippy.toml allow-*-in-tests.
 #![allow(clippy::unwrap_used, clippy::panic)]
 

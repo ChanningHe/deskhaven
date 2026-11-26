@@ -1,6 +1,3 @@
-//! Opening web client sessions: the switch, authorization by device ownership (admins and
-//! owners: any device), the signal server's failures as stable error codes, and the audit
-//! row of every outcome. The signal server is a fake (`common::web_client`). Both backends.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 mod common;
@@ -32,20 +29,17 @@ fn after(row: &console_audit::Model) -> Value {
 #[tokio::test]
 async fn a_session_needs_a_console_session_and_the_switch_on() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = harness(db, AdminRoutes::new()).await;
         FakePunches::install(&h);
         let owner = h.console("owner", Role::Owner).await;
         owned_device(&h, &owner, OWNER_DEVICE, owner.user_id).await;
         let body = json!({ "device_id": OWNER_DEVICE });
 
-        // Act
         let anonymous = h
             .send(Method::POST, SESSIONS, None, Some("x"), Some(body))
             .await;
         let disabled = open(&h, &owner, OWNER_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(anonymous.status, 401, "{b}");
         assert_eq!(disabled.status, 403, "{b}");
@@ -60,17 +54,14 @@ async fn a_session_needs_a_console_session_and_the_switch_on() {
 #[tokio::test]
 async fn me_tells_every_role_whether_the_switch_is_on() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let off_h = harness(db, AdminRoutes::new()).await;
         let off_user = off_h.console("uma", Role::User).await;
         let on_h = enabled_harness(db).await;
         let on_user = on_h.console("ulla", Role::User).await;
 
-        // Act
         let off = off_h.get("/admin/api/v1/me", &off_user).await;
         let on = on_h.get("/admin/api/v1/me", &on_user).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(off.body["web_client_enabled"], false, "{b}");
         assert_eq!(on.body["web_client_enabled"], true, "{b}");
@@ -81,15 +72,12 @@ async fn me_tells_every_role_whether_the_switch_is_on() {
 #[tokio::test]
 async fn without_a_signal_server_in_the_process_it_is_unavailable() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let owner = h.console("owner", Role::Owner).await;
         owned_device(&h, &owner, OWNER_DEVICE, owner.user_id).await;
 
-        // Act
         let reply = open(&h, &owner, OWNER_DEVICE, false).await;
 
-        // Assert
         assert_eq!(reply.status, 503, "{}", db.backend);
         assert_eq!(reply.code(), "unavailable");
     })
@@ -99,19 +87,16 @@ async fn without_a_signal_server_in_the_process_it_is_unavailable() {
 #[tokio::test]
 async fn users_reach_their_own_devices_and_admins_every_device() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let admin = h.console("admin", Role::Admin).await;
 
-        // Act
         let foreign = open(&h, &s.alice, OWNER_DEVICE, false).await;
         let unknown = open(&h, &s.alice, "999999999", false).await;
         let own = open(&h, &s.alice, ALICE_DEVICE, false).await;
         let by_admin = open(&h, &admin, ALICE_DEVICE, false).await;
         let by_owner = open(&h, &s.owner, ALICE_DEVICE, false).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(foreign.status, 404, "{b}");
         assert_eq!(foreign.code(), "not_found", "{b}");
@@ -128,14 +113,11 @@ async fn users_reach_their_own_devices_and_admins_every_device() {
 #[tokio::test]
 async fn an_opened_session_carries_what_the_browser_needs() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
 
-        // Act
         let reply = open(&h, &s.alice, ALICE_DEVICE, true).await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(reply.status, 201, "{b}: {:?}", reply.body);
         let body = &reply.body;
@@ -167,7 +149,6 @@ async fn an_opened_session_carries_what_the_browser_needs() {
 #[tokio::test]
 async fn turn_credentials_go_with_turn_urls_only() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let urls = "stun:stun.example.com,turns:turn.example.com:5349?transport=tcp";
@@ -177,10 +158,8 @@ async fn turn_credentials_go_with_turn_urls_only() {
         h.set_setting("web_client.turn_credential", json!("s3cret"))
             .await;
 
-        // Act
         let reply = open(&h, &s.alice, ALICE_DEVICE, false).await;
 
-        // Assert
         assert_eq!(reply.status, 201, "{}", db.backend);
         assert_eq!(reply.body.get("answer"), None, "no offer, no answer");
         assert_eq!(
@@ -203,7 +182,6 @@ async fn turn_credentials_go_with_turn_urls_only() {
 #[tokio::test]
 async fn signal_server_failures_answer_stable_codes() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let foreign = PunchError::ForeignRelay {
@@ -221,11 +199,9 @@ async fn signal_server_failures_answer_stable_codes() {
         ];
 
         for (err, status, code) in cases {
-            // Act
             s.fake.fail_with(Some(err.clone()));
             let reply = open(&h, &s.owner, OWNER_DEVICE, true).await;
 
-            // Assert
             let b = db.backend;
             assert_eq!(reply.status, status, "{b}: {err:?}");
             assert_eq!(reply.code(), code, "{b}: {err:?}");
@@ -253,18 +229,15 @@ async fn signal_server_failures_answer_stable_codes() {
 #[tokio::test]
 async fn the_audit_row_names_user_device_ip_offer_and_outcome_but_no_sdp() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
 
-        // Act
         let reply = open(&h, &s.alice, ALICE_DEVICE, true).await;
         let id = reply.body["session_id"].as_str().unwrap().to_owned();
         let closed = h
             .act(Method::DELETE, &format!("{SESSIONS}/{id}"), &s.alice)
             .await;
 
-        // Assert
         let b = db.backend;
         assert_eq!(closed.status, 204, "{b}");
         let rows = web_rows(&h).await;
@@ -296,7 +269,6 @@ async fn the_audit_row_names_user_device_ip_offer_and_outcome_but_no_sdp() {
 #[tokio::test]
 async fn malformed_requests_are_refused_before_any_punch() {
     each_migrated_backend(async |db: &TestDb| {
-        // Arrange
         let h = enabled_harness(db).await;
         let s = setup(&h).await;
         let long_offer = "x".repeat(4097);
@@ -309,12 +281,10 @@ async fn malformed_requests_are_refused_before_any_punch() {
         ];
 
         for body in bodies {
-            // Act
             let reply = h
                 .write(Method::POST, SESSIONS, &s.alice, body.clone())
                 .await;
 
-            // Assert
             assert_eq!(reply.status, 422, "{}: {body}", db.backend);
         }
         assert_eq!(s.fake.punches(), 0);

@@ -1,5 +1,4 @@
-//! `GET /client-config` (M3-11, 05 §5): what a RustDesk client needs to use this server.
-//! Admin routes. Public data only: the hbbs public key, never the private one.
+//! Public data only: the hbbs public key, never the private one.
 
 mod view;
 
@@ -16,7 +15,6 @@ use utoipa_axum::routes;
 use crate::{AdminRoutes, RouteError};
 use view::ClientConfigView;
 
-/// The `/client-config` route.
 pub(crate) fn routes(r: AdminRoutes) -> Result<AdminRoutes, RouteError> {
     r.routes(routes!(get_client_config))
 }

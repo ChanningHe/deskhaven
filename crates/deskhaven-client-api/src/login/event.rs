@@ -1,34 +1,18 @@
-//! The login event of a client login step (04 §7 `login_events`), written from [`record`]
-//! only.
-//!
-//! Recorded: every attempt that was verified — `success`, `invalid_credentials` (wrong
-//! password, unknown or non-local account alike), `disabled`, `unverified`, `locked` for
-//! the verified failure that started a lockout, and for two-step logins `tfa_required`
-//! (password right, challenge issued), `tfa_setup_required` (refused: enrolment enforced),
-//! `invalid_code` and `invalid_challenge` (second step, method `totp` or `recovery` by the
-//! code's shape). Not recorded: refused attempts (429: IP limit or lockout; 503: hasher
-//! busy), because nothing was verified and their number is unbounded, so recording them
-//! would hand attackers one database write per request; malformed requests (400); server
-//! failures (500, logged instead).
-//!
-//! `user_id` is set when the account is known without an extra lookup: password steps
-//! that passed the password (success, challenge issued, setup required) and successful
-//! second steps. A failure row must not need an account lookup (which would make the
-//! failure paths differ), and `username_attempted` names it anyway.
+//! Refused attempts (429, 503) are not recorded: nothing was verified and their number is
+//! unbounded, so recording them would hand attackers one database write per request. A
+//! failure row needs no account lookup, which would make the failure paths differ.
 
 use deskhaven_core::auth::limiter::ClientAddr;
 use deskhaven_core::login_events::{LoginClient, LoginMethod, LoginResult, NewLoginEvent};
 use deskhaven_core::state::AppState;
 
-/// Who tried, from which device, how.
 pub struct Attempted<'a> {
     pub username: &'a str,
     pub rustdesk_id: &'a str,
     pub method: LoginMethod,
 }
 
-/// Writes the event. Best effort: a failed write is logged and never changes the reply.
-/// No password, code, token or request body is stored or logged.
+/// Best effort: a failed write is logged and never changes the reply.
 pub async fn record(
     state: &AppState,
     client: ClientAddr,
