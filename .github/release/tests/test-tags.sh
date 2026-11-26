@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# tags.sh: plan, highest and prev, with the semver edge cases (long numbers, rc ordering,
-# old-line patches). All tag lists come from stdin, as in the workflow.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

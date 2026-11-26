@@ -1,4 +1,3 @@
-// Console steps the remote specs share.
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 
@@ -17,7 +16,6 @@ export async function signIn(page: Page) {
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
 }
 
-/** The console's device row action for `id`: the drawer's "Connect in browser" link. */
 export async function openFromDeviceList(page: Page, id: string) {
   await page.goto('/devices')
   await page.getByText(id, { exact: true }).first().click()
@@ -25,7 +23,6 @@ export async function openFromDeviceList(page: Page, id: string) {
   await expect(page).toHaveURL(new RegExp(`/remote/${id}$`))
 }
 
-/** Waits until the console lists the device as online (the client has registered). */
 export async function waitOnline(page: Page, id: string) {
   await expect
     .poll(
@@ -51,10 +48,7 @@ export async function submitPassword(page: Page) {
   await page.getByRole('button', { name: 'Connect' }).click()
 }
 
-/**
- * The share of the video canvas's pixels that are `lit` (visible and not black) or `dark`
- * (black), read back from the canvas; 0 while no frame has been drawn.
- */
+/** 0 while no frame has been drawn. */
 export async function frameShare(page: Page, kind: 'lit' | 'dark' = 'lit'): Promise<number> {
   return page.evaluate((wanted) => {
     const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-hidden]')
@@ -72,7 +66,6 @@ export async function frameShare(page: Page, kind: 'lit' | 'dark' = 'lit'): Prom
   }, kind)
 }
 
-/** The session is up over `transport` and the video canvas shows a decoded frame. */
 export async function expectDesktop(page: Page, transport: 'Relay' | 'WebRTC') {
   const pill = page.locator('header span.rounded-full', { hasText: 'Connected' })
   await expect(pill).toContainText(transport)

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# The preflight job's script (extracted from release.yml) against a stubbed gh.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

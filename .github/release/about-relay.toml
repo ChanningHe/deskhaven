@@ -1,8 +1,4 @@
-# cargo-about configuration for the relay image's notice (hbbr, from the pinned upstream
-# release's lockfile). Run through .github/release/notices-relay.sh. Same scope and
-# accepted list as about.toml, plus what upstream's older dependency set needs:
-# ring 0.16/0.17 carry an OpenSSL-licensed part (cargo-about's built-in clarification
-# `ring` splits it out).
+# As about.toml, plus what upstream's older ring 0.16/0.17 needs for its OpenSSL-licensed part.
 
 accepted = [
     "AGPL-3.0-only",

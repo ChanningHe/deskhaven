@@ -1,6 +1,4 @@
-// Registers a device the way a RustDesk client does on its first start: UDP RegisterPeer,
-// then RegisterPk (hbb_common rendezvous.proto), which creates the `devices` row. The
-// protobuf messages are encoded by hand; only the fields used here exist.
+// Protobuf encoded by hand: only the fields used here exist.
 import { createSocket } from 'node:dgram'
 import type { Socket } from 'node:dgram'
 
@@ -74,7 +72,6 @@ function fields(bytes: Buffer): Field[] {
   return out
 }
 
-/** The payload of the RendezvousMessage variant `field` in `reply`. */
 function variant(reply: Buffer, field: number): Buffer {
   const found = fields(reply).find((f) => f.field === field)
   if (found === undefined || typeof found.value === 'number') {
@@ -83,7 +80,6 @@ function variant(reply: Buffer, field: number): Buffer {
   return found.value
 }
 
-/** Sends `message` from `socket` and resolves with the next datagram it receives. */
 function exchange(socket: Socket, port: number, message: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -104,7 +100,6 @@ export interface Device {
   uuid: Buffer
 }
 
-/** Registers `device` with the signal server on `port`; throws unless the result is OK. */
 export async function registerDevice(port: number, device: Device): Promise<void> {
   const id = Buffer.from(device.rustdeskId)
   const pk = Buffer.concat([

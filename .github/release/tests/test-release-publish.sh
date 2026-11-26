@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# release-publish.sh: existing release handling (draft / foreign / its own published one),
-# tag checks before creating and before publishing, draft by API with an id, uploads by id,
-# verification of assets and their GitHub digests, publish by id with make_latest. The gh
-# stub runs the script's real --jq filters over JSON.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -22,7 +18,6 @@ reset() {
   (cd "$assets" && sha256sum ./*.gz ./*.txt | sed 's| \./| |' >SHA256SUMS)
   echo "notes" >"$TMP/body.md"
 }
-# an existing release page entry: id 777, tag, draft?, with the assets and their real digests
 existing_release() { # TAG DRAFT(true|false) [skip-asset-name] [bad-digest-name]
   local tag="$1" draft="$2" skip="${3:-}" bad="${4:-}" f name digest list="[]"
   for f in "$assets"/*; do

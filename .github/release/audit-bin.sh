@@ -1,22 +1,8 @@
 #!/usr/bin/env bash
-# Audits a release binary built with `cargo auditable` against the RustSec advisory
-# database (`cargo audit bin`).
-#
-#   enforce  exit 1 on any vulnerability, unmaintained, unsound or yanked finding that
-#            deny.toml does not ignore (deskhaven)
-#   report   never fails on findings, only prints and records them (hbbr, whose upstream
-#            lockfile has advisories we cannot fix without modifying upstream); nothing
-#            is ignored, the report shows everything
-#
-# Both modes fail if the binary carries no dependency data or the advisory database could
-# not be loaded: a pass must mean "audited", not "could not look".
-#
-# Ignored advisories are the `advisories.ignore` ids of deny.toml, read with a real TOML
-# parser (comments and look-alike text do not count), the one place where accepted
-# advisories are recorded with their reasons. AUDIT_DENY_TOML overrides the file (tests).
-#
-# Colour is forced off: cargo-audit honours CARGO_TERM_COLOR=always, and escape codes
-# would break the greps below.
+#   enforce  exit 1 on any finding deny.toml does not ignore
+#   report   never fails on findings (hbbr: upstream's lockfile is not ours to fix)
+# Both modes fail without dependency data or advisory database: a pass must mean "audited".
+# AUDIT_DENY_TOML overrides deny.toml. Colour is off: escape codes would break the greps.
 #
 # Usage: .github/release/audit-bin.sh MODE BINARY REPORT_FILE [TITLE]
 # Needs: cargo-audit (`.github/ci-setup.sh cargo-audit@VERSION`) and python3 (tomllib).
@@ -55,15 +41,12 @@ for entry in entries:
     audit_args+=(--ignore "$id")
     ignored=$((ignored + 1))
   done <<<"$ids"
-  # (A deny.toml that does not parse fails in python above; an empty ignore list is legal.)
-  # Unmaintained, unsound and yanked findings fail too, unless ignored above.
+  # Unmaintained, unsound and yanked findings are warnings: fail on them too.
   audit_args+=(--deny warnings)
 fi
 
-# cargo-audit reads audit.toml from ./.cargo/ and $CARGO_HOME: a file there could silently
-# ignore advisories or switch checks off. It therefore runs from an EMPTY directory with a
-# fresh CARGO_HOME (so it also fetches its own advisory database and index), the binary and
-# the report given by absolute path, and is started directly, not through `cargo`.
+# An audit.toml in ./.cargo/ or $CARGO_HOME could silently ignore advisories, so cargo-audit
+# runs from an empty directory with a fresh CARGO_HOME.
 binary="$(realpath "$binary")"
 report="$(realpath -m "$report")"
 sandbox="$(mktemp -d)"
@@ -82,9 +65,7 @@ grep -q "Found 'cargo auditable' data" "$report" || {
   exit 1
 }
 
-# cargo-audit only WARNS ("couldn't update/open crates.io index", "couldn't check if the
-# package is yanked") when the index is unreachable and then skips the yanked check: that
-# must not read as "no yanked crates" when enforcing.
+# An unreachable index only warns and skips the yanked check: that must not pass when enforcing.
 if [ "$mode" = enforce ]; then
   if ! grep -q "Updating.*crates.io index" "$report" ||
     grep -qE "couldn't (update|open) crates.io index|couldn't check if the package is yanked" "$report"; then

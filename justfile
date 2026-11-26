@@ -1,6 +1,4 @@
-# Release chores. A release is two steps: `just bump X.Y.Z` commits the version, you push
-# main and wait for its ci run, then `just tag` pushes vX.Y.Z, which publishes it
-# (.github/workflows/release.yml). A version is never reused.
+# `just bump X.Y.Z`, push main and wait for its ci run, then `just tag`. A version is never reused.
 
 _default:
     @just --list

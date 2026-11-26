@@ -1,5 +1,3 @@
-// The RustDesk client's HTTP API, called the way the client calls it (JSON bodies,
-// Bearer tokens), for the client-side half of the flows.
 import type { Device } from './rendezvous.ts'
 
 /** Well under the test timeout, so a hung request fails with its own error. */
@@ -38,7 +36,6 @@ function deviceFields(device: Device) {
   }
 }
 
-/** The access token of a login reply; throws on anything else. */
 export function accessToken(reply: ClientReply): string {
   const token = reply.body.access_token
   if (reply.status !== 200 || typeof token !== 'string') {
@@ -47,7 +44,6 @@ export function accessToken(reply: ClientReply): string {
   return token
 }
 
-/** The password step of `POST /api/login` from `device`. */
 export function passwordLogin(
   baseUrl: string,
   device: Device,
@@ -62,7 +58,6 @@ export function passwordLogin(
   })
 }
 
-/** The second step: the TOTP `code` for the challenge `secret` of the password step. */
 export function codeLogin(
   baseUrl: string,
   device: Device,
@@ -79,7 +74,6 @@ export function codeLogin(
   })
 }
 
-/** A password login without a second factor; the access token. */
 export async function clientLogin(
   baseUrl: string,
   device: Device,
@@ -89,13 +83,11 @@ export async function clientLogin(
   return accessToken(await passwordLogin(baseUrl, device, username, password))
 }
 
-/** `POST /api/currentUser` with `token`. */
 export function currentUser(baseUrl: string, device: Device, token: string): Promise<ClientReply> {
   const body = { id: device.rustdeskId, uuid: device.uuid.toString('base64') }
   return post(baseUrl, '/api/currentUser', body, token)
 }
 
-/** One `POST /api/heartbeat` of an idle client that has no strategy yet. */
 export function heartbeat(baseUrl: string, device: Device): Promise<ClientReply> {
   return post(baseUrl, '/api/heartbeat', {
     id: device.rustdeskId,

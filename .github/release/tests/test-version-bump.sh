@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# version-bump.sh: what a bump rewrites (and leaves alone), and every refusal, in a scratch
-# repository with a stubbed cargo.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# cargo stub: logs its arguments; STUB_CARGO_FAIL=1 makes it fail
 mkdir -p "$TMP/bin"
 cat >"$TMP/bin/cargo" <<'EOF'
 #!/usr/bin/env bash

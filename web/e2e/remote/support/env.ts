@@ -1,5 +1,3 @@
-// What the remote stack needs from the machine (tool paths), and what its global setup
-// hands to the specs (through the environment, which Playwright passes on to its workers).
 import { networkInterfaces } from 'node:os'
 
 /** The official client launchers under test; a project whose variable is unset is skipped. */
@@ -23,7 +21,6 @@ export const TOOL_ENV = {
 export const STACK_ENV = 'E2E_REMOTE_STACK'
 export const BASE_URL_ENV = 'E2E_BASE_URL'
 
-/** The device password every client in the stack is given. */
 export const DEVICE_PASSWORD = 'Remote-E2e-7f3a91'
 
 export const OWNER = { username: 'owner', password: 'e2e owner passphrase 1' } as const

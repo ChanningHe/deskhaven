@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Regression checks for scripts/contract-watch.sh against local fake upstreams (file://),
-# no network. Usage: scripts/contract-watch.test.sh
+# Usage: scripts/contract-watch.test.sh (local fake upstreams, no network)
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,10 +30,8 @@ cjk_text() { # line-count
   for ((i = 0; i < $1; i++)); do echo "漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字 $i"; done
 }
 
-# make_fake <name> [skipped-path]: fake client + hbb_common, base and head commits.
-# Head changes: a large CJK addition to src/common.rs, a context line made of exactly three
-# backticks in src/core_main.rs, and a new hbb_common commit touching rendezvous.proto.
-# Sets FAKE_BASE (client base sha).
+# make_fake <name> [skipped-path]: sets FAKE_BASE. Head adds a large CJK block, a context
+# line of exactly three backticks, and an hbb_common commit touching rendezvous.proto.
 make_fake() {
   local root=$TMP/$1 skip=${2:-} entry path file hbb_base hbb_head
   new_repo "$root/hbb"
@@ -67,7 +64,7 @@ make_fake() {
   git_in "$root/client" commit -q -m head
 }
 
-# run_watch <name> [env assignments...]: runs the script in dry-run, sets STATUS and BODY.
+# run_watch <name> [env assignments...]: sets STATUS and BODY.
 run_watch() {
   local name=$1
   shift
@@ -88,19 +85,17 @@ for budget in 40000 40001 40002; do
 done
 pass "CJK diff truncated mid-character still yields a valid, non-empty body (budgets 40000-40002)"
 
-# A context line of exactly three backticks must not close the (longer) fence.
 grep -qx ' ```' "$BODY" || fail "fixture lost its three-backtick context line"
 grep -qx '````diff' "$BODY" || fail "diff block is not fenced with 4 backticks"
 pass "fence is longer than the backtick run inside the diff"
 
-# Body clipped to a tiny limit: head -c stops early, no SIGPIPE, still exit 0.
+# head -c stops early: no SIGPIPE, still exit 0.
 run_watch ok CONTRACT_WATCH_BODY_LIMIT_BYTES=3000
 [ "$STATUS" -eq 0 ] || fail "tiny body limit: exit $STATUS: $(cat "$TMP/ok.err")"
 [ "$(wc -c <"$BODY")" -le 3000 ] || fail "body exceeds the tiny limit"
 [ -s "$BODY" ] || fail "tiny body limit: empty body"
 pass "body larger than the limit is clipped without SIGPIPE"
 
-# A watched entry that exists at neither commit must fail loudly.
 make_fake missing src/custom_server.rs
 run_watch missing
 [ "$STATUS" -ne 0 ] || fail "missing watched file: expected a failure"

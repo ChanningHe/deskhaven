@@ -393,7 +393,7 @@ for (const transport of ['Relay', 'WebRTC'] as const) {
 }
 
 // Q500: custom quality 500 over an unshaped link with the whole screen changing, so the bitrate
-// is the quality's. 4300 kbps is twice the old ceiling here, custom 100 at 1280×800 (2148 kbps).
+// is the quality's. 4300 kbps is twice custom 100 at 1280×800 (2148 kbps).
 const Q500 = {
   quality: { custom: 500 },
   warmUpMs: 30_000,

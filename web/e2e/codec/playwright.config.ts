@@ -2,8 +2,7 @@ import { fileURLToPath } from 'node:url'
 
 import { defineConfig, devices } from '@playwright/test'
 
-// Browser checks of the remote client's media path; no server, so none of the console flows'
-// global setup (e2e/README.md, "Remote client codec check").
+// No server, so none of the console flows' global setup.
 export default defineConfig({
   testDir: '.',
   testMatch: '*.codec.ts',

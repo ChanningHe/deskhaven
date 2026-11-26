@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# cliff.toml: contributor-controlled subjects are rendered inside code spans (so mentions,
-# links, images, HTML and autolinks are inert), and a final release is ONE section even
-# when release candidates lie inside its range.
-#
-# Runs only if git-cliff is installed. The CI job does not install it (a `cargo install`
-# takes minutes and the release workflow exercises cliff on every run anyway); run it
-# locally, or in the job if a prebuilt git-cliff is on PATH.
+# Runs only if git-cliff is on PATH: CI skips it, the release workflow exercises cliff anyway.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

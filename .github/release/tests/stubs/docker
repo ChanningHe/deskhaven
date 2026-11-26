@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
-# docker stub: `docker buildx imagetools inspect|create` against a registry kept as files in
-# $STUB_REG (all calls are logged to $STUB_REG/docker.log):
-#   tags/<image>/<tag>   digest the tag points to
-#   idx/<digest>         child digests of an index, one per line
-#   rev/<digest>         revision label of a platform image
 # A missing ref answers exactly like buildx against registry:2: `ERROR: <ref>: not found`.
-#   STUB_REGISTRY_ERROR=1       every call fails like an unreachable registry
-#   STUB_FLAKY_ERROR=1          every inspect of a TAG (not of a digest) fails with a transient
-#                               error that CONTAINS "404" and "not found" (a reset to port 40404)
-#   STUB_FAIL_CREATE_N=<n>      the n-th `imagetools create` fails (counting from 1)
-#   STUB_FAIL_CREATE_FROM=<n>   the n-th and every later create fails
-#   STUB_APPLY_THEN_FAIL_N=<n>  the n-th create is APPLIED but reported as failed
-#   STUB_CREATE_WRONG=1         an index create records only the first source (a create that
-#                               "succeeds" onto something else)
 set -euo pipefail
 : "${STUB_REG:?STUB_REG is required}"
 echo "docker $*" >>"$STUB_REG/docker.log"
@@ -33,7 +20,6 @@ if [ "${STUB_FLAKY_ERROR:-0}" = 1 ] && [ "$action" = inspect ] && [[ "${1:-}" !=
   exit 1
 fi
 
-# resolve REF -> digest ("" if it does not exist)
 resolve() {
   local ref="${1#*/*/}" image tag digest
   case "$ref" in
@@ -49,7 +35,6 @@ resolve() {
   esac
 }
 
-# the config JSON of one platform image
 config_of() { printf '{"rootfs":{},"config":{"Labels":{"org.opencontainers.image.revision":"%s"}}}' "$(cat "$STUB_REG/rev/$1" 2>/dev/null || true)"; }
 
 case "$action" in
@@ -73,7 +58,6 @@ case "$action" in
         ;;
       --format)
         if [ -f "$STUB_REG/idx/$digest" ]; then
-          # an index: one image config per platform, keyed by platform
           n=0
           printf '{'
           while IFS= read -r child; do

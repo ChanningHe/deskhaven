@@ -1,6 +1,4 @@
-// The smallest reverse proxy shaped like deploy/compose/Caddyfile: `/ws/relay*` goes to the
-// relay's WebSocket port, everything else to the console. The browser then sees one origin
-// and the console's `connect-src 'self'` holds, as behind a real proxy.
+// One origin for the browser, so the console's `connect-src 'self'` holds as behind a real proxy.
 import { createServer, request } from 'node:http'
 import type { IncomingMessage, Server } from 'node:http'
 import { connect } from 'node:net'
@@ -22,14 +20,12 @@ export interface Shaping {
 export const BUFFER_BYTES = 64 * 1024
 
 export interface Proxy {
-  /** `http://127.0.0.1:<port>`. */
   origin: string
   dropRelay: () => void
   refuseRelay: (on: boolean) => void
   stop: () => Promise<void>
 }
 
-/** The raw head of an upgrade request, replayed to the upstream. */
 function upgradeHead(req: IncomingMessage): string {
   const lines = [`${req.method ?? 'GET'} ${req.url ?? '/'} HTTP/1.1`]
   for (let i = 0; i < req.rawHeaders.length; i += 2) {

@@ -20,18 +20,14 @@
 #                       "Below" is semver order, not creation order, so a patch tag for an
 #                       old line (v0.1.1 after v0.2.0) gets v0.1.0, not v0.2.0.
 #
-# Ordering: major.minor.patch numerically (any number of digits); a prerelease sorts before
-# its final release; prerelease identifiers compare per semver (numeric ones numerically,
-# and below alphanumeric ones). Tags that are not vX.Y.Z[-prerelease] are ignored.
+# Tags that are not vX.Y.Z[-prerelease] are ignored.
 set -euo pipefail
 export LC_ALL=C
 
 SEMVER='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
 FINAL='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
-# Sort key of a tag: byte-wise (LC_ALL=C) order of the keys is semver order. A number is
-# written as its digit count (3 digits) followed by its digits, so longer numbers sort
-# after shorter ones whatever their size.
+# Byte-wise order of the keys is semver order: each number is prefixed with its digit count.
 key() {
   awk -v tag="$1" '
     function num(x) { sub(/^0+/, "", x); if (x == "") x = "0"; return sprintf("%03d%s", length(x), x) }
@@ -53,7 +49,6 @@ key() {
     }'
 }
 
-# Tags from stdin (plus the extra one given), valid ones only, as "key<TAB>tag" sorted ascending.
 sorted() {
   local extra="$1" tag
   {

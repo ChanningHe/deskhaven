@@ -1,7 +1,3 @@
-// The remote stack: deskhaven + upstream hbbr + a same-origin proxy + one official client
-// per version under its own Xvfb, all throwaway state under
-// one temp dir. Mirrors .shoal-dev spike s0 (the way a real client is made to use a
-// private server) and deploy/compose (the proxy shape).
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -42,7 +38,6 @@ async function listening(port: number): Promise<boolean> {
   })
 }
 
-/** A display number whose X lock and socket are free. */
 function freeDisplay(taken: Set<number>): number {
   for (let n = FIRST_DISPLAY; n < FIRST_DISPLAY + 100; n += 1) {
     if (taken.has(n)) continue
@@ -154,7 +149,7 @@ function withToolDir(path: string, name: keyof typeof TOOL_ENV): string {
   return isAbsolute(file) ? `${dirname(file)}:${path}` : path
 }
 
-/** The owner, through the one-time setup link (the wizard's API; the UI steps are decoration). */
+/** Through the setup wizard's API: its UI steps are decoration. */
 async function createOwner(baseUrl: string, setupPath: string) {
   const token = new URLSearchParams(setupPath.split('#')[1]).get('token')
   const reply = await fetch(new URL('/admin/api/v1/setup', baseUrl), {

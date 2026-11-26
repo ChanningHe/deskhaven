@@ -21,15 +21,13 @@ deskhaven-signal = { path = "crates/deskhaven-signal" }
 deskhaven-contract = { path = "crates/deskhaven-contract" }
 deskhaven-loadgen = { path = "crates/deskhaven-loadgen" }
 
-# --- db (M0-04) ---
-# sqlx 0.9 `tls-rustls` == `tls-rustls-ring-webpki`: ring provider only, no aws-lc-rs.
+# sqlx 0.9 `tls-rustls` is ring only, no aws-lc-rs.
 sea-orm = { version = "2.0.4", default-features = false, features = ["macros", "with-chrono", "runtime-tokio-rustls", "sqlx-sqlite", "sqlx-postgres"] }
 sea-orm-migration = { version = "2.0.4", default-features = false, features = ["runtime-tokio-rustls", "sqlx-sqlite", "sqlx-postgres"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 thiserror = "2"
 tokio = { version = "1.54", features = ["macros", "rt-multi-thread", "time"] }
 tempfile = "3"
-# --- config (M0-03) ---
 figment = { version = "0.10.19", features = ["toml", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
@@ -43,16 +41,12 @@ anyhow = "1.0"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter"] }
 toml = "0.8"
 
-# --- signal (M1-02) ---
-# (chrono, tempfile: reused from the db block; serde, serde_json: from the config block.)
-# Pinned to the rev the RustDesk client master pins; bump together with the client.
-# Its default feature set is already empty (the only feature is the optional `webrtc`).
+# The rev the RustDesk client pins; bump together with the client.
 hbb_common = { git = "https://github.com/rustdesk/hbb_common", rev = "fae47e024dd83cef6aaecde0aa7d11731df11649" }
 # Same fork and rev as hbb_common's, so Cargo unifies both into a single copy.
 tokio-tungstenite = { git = "https://github.com/rustdesk-org/tokio-tungstenite", rev = "c241b11b03de4881faf1ecd2fe6e867c92f3013b", version = "0.29" }
 tungstenite = "0.29"
-# Upstream hbbs version. Since M1-03 only `encode` (licence key from the public key) remains;
-# key-file parsing moved out of the crate (M0-06). Do not use in new code.
+# Upstream hbbs's version; new code uses `base64_022`.
 base64 = "0.13"
 ipnetwork = "0.20"
 lazy_static = "1.5"
@@ -61,30 +55,20 @@ once_cell = "1.8"
 serde_derive = "1.0"
 sodiumoxide = "0.2"
 uuid = { version = "1.16", features = ["v4"] }
-# --- core crypto (M0-06) ---
-# RustCrypto only (no libsodium): XChaCha20-Poly1305 SecretBox, Ed25519 hbbs key pair.
-# (thiserror, tempfile: reused from the db block.)
 chacha20poly1305 = "0.10.1"
 ed25519-dalek = "2.2"
 zeroize = "1.8"
 sha2 = "0.10"
-# `base64` is taken by the signal block (0.13, legacy API, lenient padding). New code
-# needs 0.22's engines (strict unpadded decoding for sealed strings), hence its own key.
+# 0.22's strict unpadded decoding for sealed strings.
 base64_022 = { package = "base64", version = "0.22" }
-# Safe O_NOFOLLOW open and geteuid for key-file hardening (already in the tree via tempfile).
+# O_NOFOLLOW open and geteuid for key-file hardening.
 rustix = { version = "1.1", features = ["fs", "process"] }
 
-# --- signal lib (M1-03) ---
-# (thiserror: reused from the db block.)
-# CancellationToken (public `run` API) and TaskTracker (`rt`); same 0.7 line hbb_common uses.
+# Same 0.7 line hbb_common uses.
 tokio-util = { version = "0.7", features = ["rt"] }
-# --- signal defects (M1-08) ---
-# TCP listeners without SO_REUSEPORT but with dual-stack and SO_REUSEADDR (hbb_common's helpers
-# always set SO_REUSEPORT); same 0.6 line tokio already pulls in.
+# Listeners without SO_REUSEPORT, which hbb_common's helpers always set.
 socket2 = "0.6"
 
-# --- http (M0-07) ---
-# (tokio, tokio-util, serde, serde_json, thiserror, ipnet, url, tracing-subscriber, uuid: reused from earlier blocks.)
 deskhaven-http = { path = "crates/deskhaven-http" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "tracing"] }
 hyper = { version = "1.12", default-features = false, features = ["http1", "server"] }
@@ -94,105 +78,53 @@ tower-http = { version = "0.7.1", default-features = false, features = ["catch-p
 tracing = "0.1.44"
 proptest = "1.7"
 
-# --- settings (M0-05) ---
-# Lock-free hot snapshot of runtime settings (05-config §3.3).
-# (tokio, serde_json, sea-orm, thiserror: reused from the db/config blocks; tokio's `sync`
-# feature for `watch` is enabled by the consuming crate.)
 arc-swap = "1.9"
 
-# --- web embed (M0-08) ---
-# (axum, tower, tokio, thiserror: reused from earlier blocks; http types come from `axum::http`.)
-# `mime-guess`: Content-Type per asset; `include-exclude`: enables the `#[exclude]` attributes
-# deskhaven-web uses to keep source maps and dotfiles out of the embed.
+# `include-exclude` keeps source maps and dotfiles out of the embed.
 rust-embed = { version = "8.13", default-features = false, features = ["mime-guess", "include-exclude"] }
 
-# --- bin (M0-09) ---
-# (tokio, tokio-util, tracing, tracing-subscriber, axum, sea-orm, rustix: reused from earlier
-# blocks; the bin enables tokio `signal`/`net` and tracing-subscriber `fmt`/`json`/
-# `tracing-log` itself.)
-# Only to install ring as the process-wide CryptoProvider (02 §5.1); never aws-lc.
+# Only to install ring as the process-wide CryptoProvider; never aws-lc.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 
-# --- users (M2-04) ---
-# (thiserror, tokio, sea-orm, zeroize: reused from earlier blocks.)
-# Argon2id password hashing (06 §3.1), RustCrypto. No `rand` feature: salts come from the
-# OS RNG core already uses (chacha20poly1305's `OsRng`).
+# No `rand` feature: salts come from the OS RNG core already uses.
 argon2 = { version = "0.5.3", default-features = false, features = ["std", "password-hash", "zeroize"] }
 
-# --- peer store (M1-05) ---
-# (tokio, thiserror, sea-orm: reused from the db block.)
-# `deskhaven_signal::PeerStore` is used as `Arc<dyn PeerStore>`, so its async methods need
-# boxing; async-trait 0.1 is already in the graph through sea-orm-migration.
+# `PeerStore` is used as `Arc<dyn PeerStore>`, so its async methods need boxing.
 async-trait = "0.1"
 
-# --- rate limit (M2-06) ---
-# (tokio, tracing, sea-orm, arc-swap, chrono: reused from earlier blocks.)
-# Keyed GCRA limiter for login-type endpoints (02 §5.1); never tower_governor (trusts XFF).
-# No `quanta` (time comes from core's injectable `Clock`), `jitter` or `dashmap` (a mutexed
-# HashMap is plenty for login traffic).
+# Never tower_governor: it trusts XFF. No `quanta`: time comes from core's `Clock`.
 governor = { version = "0.10.4", default-features = false, features = ["std"] }
 
-# --- 2FA (M2-08) ---
-# (zeroize: reused from an earlier block.)
-# TOTP (RFC 6238) is a dozen lines over HMAC-SHA1, so no TOTP crate (totp-rs would add
-# hmac 0.12, base32, constant_time_eq and rand). All of these are already in the graph
-# (hmac/sha2 0.11 via sqlx-postgres, data-encoding via tungstenite); the digest-0.11
-# family is needed because hmac 0.13 only takes digest-0.11 hashes. `sha2` above stays
-# 0.10 (ed25519-dalek and existing code); 0.11 gets its own key, like `base64_022`.
+# TOTP is a dozen lines over HMAC-SHA1, so no TOTP crate. hmac 0.13 only takes
+# digest-0.11 hashes, hence `sha2_011` next to sha2 0.10.
 hmac = { version = "0.13", default-features = false }
 sha1 = { version = "0.11", default-features = false }
 sha2_011 = { package = "sha2", version = "0.11", default-features = false }
 data-encoding = "2.11"
-# Constant-time comparison of TOTP codes and admin CSRF tokens (already in the graph via
-# the RustCrypto AEADs).
+# Constant-time comparison of TOTP codes and admin CSRF tokens.
 subtle = { version = "2.6", default-features = false }
 
-# --- admin api (M3-01) ---
-# (axum, serde, serde_json, sha2, base64_022, subtle, tracing: reused from earlier blocks.)
-# OpenAPI from handler annotations (02 §5.1); no swagger-ui / scalar UI crate.
 utoipa = { version = "6.0", default-features = false, features = ["macros"] }
 utoipa-axum = "0.3"
-# Input validation; every field needs a rule or an explicit skip (02 §5.1).
 garde = { version = "0.23", default-features = false, features = ["derive"] }
 
-# --- legacy address book (M2-17) ---
-# gzip for `GET /api/ab` (the client sends `Accept-Encoding: gzip`, 03 §5.2); pure-Rust
-# miniz_oxide backend, so no C code. Adds flate2, miniz_oxide, adler2, crc32fast and
-# simd-adler32 (all MIT / Apache-2.0 / Zlib).
+# Pure-Rust backend, so no C code.
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 
-# --- oidc (M2-10) ---
-# (url, serde, serde_json, tokio, rustls, tracing: reused from earlier blocks.)
-# Relying-party protocol (discovery, PKCE, code exchange, ID token signature and claims).
-# No default features: its `reqwest` feature pins reqwest 0.12 with aws-lc; deskhaven plugs
-# its own `AsyncHttpClient` over reqwest 0.13 instead (02 §5.1). `accept-string-booleans`:
-# some IdPs (AWS Cognito) send `email_verified` as "true"/"false"; without it such ID tokens
-# fail to parse at all.
+# Its `reqwest` feature would pin reqwest 0.12 with aws-lc. `accept-string-booleans`:
+# some IdPs send `email_verified` as a string, which otherwise fails to parse.
 openidconnect = { version = "4.1.0", default-features = false, features = ["accept-string-booleans"] }
-# Outbound HTTP to admin-configured IdPs. `rustls-no-provider`: rustls without aws-lc; the
-# TLS config is built explicitly on ring with the platform verifier. No http2, no
-# system-proxy, no decompression, no cookies: a JSON fetcher with a size cap.
+# `rustls-no-provider`: TLS is built explicitly on ring with the platform verifier.
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
-# OS root store for those TLS connections; the same version reqwest's rustls path uses.
+# The same version reqwest's rustls path uses.
 rustls-platform-verifier = "0.6.2"
-# Mock IdP (discovery, JWKS, token endpoint) for the OIDC tests. Dev only.
 wiremock = "0.6.5"
 
-# --- loadgen (M4-04) ---
-# (hyper, hyper-util, tokio, hbb_common, sea-orm, ed25519-dalek, humantime, clap: reused from
-# earlier blocks.) Request bodies of the simulated clients' HTTP calls; already in the graph
-# via axum.
 http-body-util = "0.1.3"
-# Seeded per-device randomness (audit / sysinfo arrivals); already in the graph via tempfile.
 fastrand = "2.3"
 
-# --- console login (M3-02) ---
-# QR encoding of the TOTP provisioning URI (Project Nayuki; MIT, no dependencies). The
-# admin API returns SVG path data the console draws under its strict CSP.
 qrcodegen = "1.8"
 
-# --- update check (0.1.2) ---
-# Compares the running version with the latest GitHub release tag; already in the graph.
 semver = "1.0.28"
 
 [workspace.lints.rust]
@@ -219,6 +151,6 @@ opt-level = 3
 opt-level = 3
 
 # The bundled SQLite is C code: unoptimized it is several times slower, which skews the
-# timing of the audit list tests (M3-08) and slows every SQLite-backed test.
+# timing of the audit list tests and slows every SQLite-backed test.
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3

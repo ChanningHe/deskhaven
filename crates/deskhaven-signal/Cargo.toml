@@ -1,7 +1,7 @@
 [package]
 name = "deskhaven-signal"
 version.workspace = true
-# Upstream hbbs is edition 2021; the 2024 drop-order changes were reviewed (CHANGES.md, M1-03).
+# Upstream hbbs is edition 2021; the 2024 drop-order changes were reviewed (CHANGES.md).
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ testing = []
 fuzzing = []
 
 [dependencies]
-# Relay list shared lock-free by the server loop and every connection task (M1-06).
+# Relay list shared lock-free by the server loop and every connection task.
 arc-swap.workspace = true
 async-trait.workspace = true
 base64.workspace = true
@@ -24,7 +24,7 @@ lazy_static.workspace = true
 local-ip-address.workspace = true
 once_cell.workspace = true
 sodiumoxide.workspace = true
-# TCP listeners without SO_REUSEPORT (M1-08).
+# TCP listeners without SO_REUSEPORT.
 socket2.workspace = true
 thiserror.workspace = true
 tokio-tungstenite.workspace = true
@@ -32,9 +32,8 @@ tokio-util.workspace = true
 tungstenite.workspace = true
 
 [dev-dependencies]
-# Random device uuids in the protocol test harness.
 uuid.workspace = true
-# Lowers the open-file limit in the descriptor exhaustion test (M4-05).
+# Lowers the open-file limit in the descriptor exhaustion test.
 rustix.workspace = true
 # Paused clock for the writer retry / deadline unit tests.
 tokio = { workspace = true, features = ["test-util"] }

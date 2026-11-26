@@ -6,11 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# Development tool (M4-04, `cargo xtask loadgen`): simulates RustDesk devices against a
-# spawned `deskhaven serve` and reports latency, process CPU / RSS and database writes.
-# Never a dependency of the server.
+# Development tool: never a dependency of the server.
 [dependencies]
-# The connection factory the server uses (database write counters, 09-testing §1 load row).
+# The connection factory the server uses, for the database write counters.
 deskhaven-db = { workspace = true }
 base64_022 = { workspace = true }
 clap = { workspace = true }

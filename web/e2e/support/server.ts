@@ -1,6 +1,4 @@
-// The deskhaven binary under test: a fresh data dir, loopback listeners, JSON logs on
-// stderr. Startup is over when the log says "ready"; the first-run setup link and the
-// client API address are read from the same log.
+// Startup is over when the log says "ready"; the setup link and client API address come from it.
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
@@ -27,7 +25,6 @@ export interface RunningServer {
   stop: () => Promise<void>
 }
 
-/** The `fields` of one JSON log line, or `undefined` for anything else. */
 function logFields(line: string): Record<string, unknown> | undefined {
   try {
     const event: unknown = JSON.parse(line)
@@ -74,7 +71,6 @@ async function settle(closed: Promise<unknown>, flushed: Promise<void>) {
   await flushed
 }
 
-/** SIGTERM, then SIGKILL after the grace period; resolves once the log is complete. */
 function stopper(child: ChildProcess, closed: Promise<unknown>, flushed: Promise<void>) {
   return async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
@@ -92,7 +88,6 @@ function stopper(child: ChildProcess, closed: Promise<unknown>, flushed: Promise
   }
 }
 
-/** Starts `deskhaven serve` and resolves once it is ready, with what the tests need. */
 export function startServer(options: ServerOptions): Promise<RunningServer> {
   const child = spawn(options.binary, ['serve'], {
     cwd: options.dataDir,

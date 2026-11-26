@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# release.yml itself: the assets job's `if:` (evaluated for the publish/dry-run matrix), the
-# git-cliff step having no token, and the ONBUILD refusal step (run against OCI layouts).
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# job_block JOB: the YAML text of one job
 job_block() {
   awk -v job="  $1:" '
     $0 == job { f = 1; print; next }
     f && /^  [a-z-]+:$/ { exit }
     f { print }' "$WORKFLOW"
 }
-# step_block JOB STEP: the YAML text of one step of a job
 step_block() {
   job_block "$1" | awk -v name="      - name: $2" '
     $0 == name { f = 1; print; next }
@@ -23,8 +19,7 @@ step_block() {
 echo "== the assets job runs exactly when it should"
 cond="$(job_block assets | sed -n 's/^    if: \${{ \(.*\) }}$/\1/p')"
 [ -n "$cond" ] || { bad "the assets job has no if: condition"; finish; exit 1; }
-# evaluate the expression with bash: needs.<job>.result and the publish output are substituted
-# by quoted strings, `!cancelled()` by true, and [[ ]] provides ==, !=, && and ||.
+# Evaluated by bash: results become quoted strings and `!cancelled()` becomes true.
 eval_if() { # meta_result notices changelog image_build manifest publish
   local expr="$cond"
   expr="${expr//'!cancelled()'/true}"
@@ -63,7 +58,6 @@ if [ -n "$onbuild_line" ] && [ -n "$login_line" ] && [ "$onbuild_line" -lt "$log
 step="$TMP/onbuild.sh"
 extract_step "the archive's image config has no ONBUILD triggers" >"$step"
 [ -s "$step" ] || { bad "the ONBUILD step was not found"; finish; exit 1; }
-# layout CONFIG-JSON: an OCI layout in $TMP/work/image-oci whose image config is the given JSON
 layout() {
   rm -rf "$TMP/work"
   mkdir -p "$TMP/work/image-oci/blobs/sha256"

@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 # Shared by notices.sh and notices-relay.sh (sourced, not run).
 
-# The crates cargo-about cannot render because they declare no license and ship no license
-# file. They are covered by a manual section instead (unlicensed_crates_section). Any OTHER
-# crate it cannot resolve fails the build: `cargo about generate --fail` would fail on
-# these two as well, so the check is done here.
+# These declare no license and get a manual section; `cargo about generate --fail` would
+# fail on them too, so any other unresolved crate is failed here instead.
 EXPECTED_UNLICENSED="default_net hbb_common"
 
 section() {
   printf '\n\n%s\n%s\n\n' "$(printf '#%.0s' $(seq 1 80))" "$1"
 }
 
-# generate_crate_notice CONFIG TEMPLATE OUTPUT: runs cargo-about in the current directory.
 generate_crate_notice() {
   local config="$1" template="$2" output="$3" log skipped
   log="$(mktemp)"
-  # cargo-about exits non-zero for a license it cannot satisfy; unresolvable crates are
-  # only warnings, collected below.
+  # Unresolvable crates are only warnings, collected below.
   cargo about generate --locked --config "$config" --output-file "$output" "$template" 2>"$log" || {
     cat "$log" >&2
     rm -f "$log"
@@ -58,8 +54,7 @@ under other crates; the copyright holders are:
 EOF
 }
 
-# require_text FILE NEEDLE...: fail loudly if an expected part is missing (template or
-# config drift would otherwise ship a notice that silently lacks it).
+# Template or config drift would otherwise ship a notice that silently lacks a part.
 require_text() {
   local file="$1" needle
   shift

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# assemble-assets.sh: per-artifact file sets, symlinks, unexpected artifacts, tarballs whose
-# binary must equal the audited one, SHA256SUMS.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

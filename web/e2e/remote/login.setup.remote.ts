@@ -1,5 +1,3 @@
-// Signs the owner in, waits for every device to be online, and saves the session for the other
-// projects.
 import { fileURLToPath } from 'node:url'
 
 import { signIn, waitOnline } from './support/console.ts'

@@ -1,28 +1,5 @@
 #!/usr/bin/env bash
-# gh stub for `gh api`. The GitHub API is simulated with JSON files in $STUB_DIR and the
-# script's REAL `--jq` filter is applied with the real jq (per page with --paginate), so a
-# broken filter in a script breaks its test. All calls are appended to gh.log.
-#
-#   releases/page-N.json   pages of GET repos/R/releases (arrays of release objects with
-#                          id, tag_name, draft, prerelease, assets[]); build them with
-#                          set_releases in tests/lib.sh
-#   release.json           the release created by POST repos/R/releases, updated by uploads
-#                          and PATCH
-#   STUB_IMAGE             Packages API answer: absent | exists | other | denied | neterr
-#   STUB_API_ERROR=1       every releases listing fails with HTTP 500
-#   STUB_UPLOAD_FAIL=1     uploads fail
-#   STUB_UPLOAD_SKIP=name  the upload "succeeds" but the asset is not attached
-#   STUB_UPLOAD_CORRUPT=name  the asset is attached with a wrong digest
-#   STUB_NO_DIGEST=1       assets are attached without a digest field
-#   STUB_PATCH_IGNORED=1   PATCH answers ok but does not publish
-#   STUB_RELEASE_ID        id of a created release (default 4242)
-# version-tag.sh:
-#   STUB_MAIN_SHA          the commit main points to on GitHub
-#   runs.json              {"workflow_runs": [...]} of ci.yml, filtered by the head_sha query
-#                          like the API does (absent: no runs)
-#   refs.json              every git ref of the repository ([{ref}]), filtered by prefix like
-#                          GET git/matching-refs does (absent: none)
-#   STUB_FAIL=main|runs|refs  that call fails with HTTP 500
+# The script's real --jq filter runs over the fixture JSON, so a broken filter breaks its test.
 set -euo pipefail
 : "${STUB_DIR:?STUB_DIR is required}"
 echo "gh $*" >>"$STUB_DIR/gh.log"
@@ -52,15 +29,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-emit() { jq -r "$filter"; } # real jq, the script's real filter
+emit() { jq -r "$filter"; }
 
-# ---- repository
 if [ "$path" = "repos/ChanningHe/deskhaven" ]; then
   echo '{"owner":{"type":"User"}}' | emit
   exit 0
 fi
 
-# ---- GitHub Packages API (meta.sh)
 if [[ "$path" == */packages/container/* ]]; then
   case "${STUB_IMAGE:-absent}" in
     exists) echo '[{"metadata":{"container":{"tags":["0.1.0","0.0.9","latest"]}}},{"metadata":{"container":{"tags":[]}}}]' | emit ;;
@@ -72,7 +47,6 @@ if [[ "$path" == */packages/container/* ]]; then
   exit 0
 fi
 
-# ---- upload an asset (uploads API, by release id)
 if [ "$method" = POST ] && [[ "$path" == https://uploads.github.com/repos/*/releases/*/assets\?name=* ]]; then
   name="${path##*name=}"
   id="${path#*/releases/}"
@@ -93,7 +67,6 @@ if [ "$method" = POST ] && [[ "$path" == https://uploads.github.com/repos/*/rele
   exit 0
 fi
 
-# ---- releases
 if [[ "$path" == repos/*/releases\?per_page=* ]] && [ "$method" = GET ]; then
   if [ "${STUB_API_ERROR:-0}" = 1 ]; then echo "gh: HTTP 500" >&2; exit 1; fi
   shopt -s nullglob
@@ -119,7 +92,6 @@ if [[ "$path" == repos/*/releases/* ]]; then
     exit 0
   fi
   if [ "$method" = GET ]; then
-    # a release from the fixture pages, by id
     found="$(cat "$STUB_DIR"/releases/page-*.json 2>/dev/null | jq -c --argjson id "$id" '.[] | select(.id == $id)' | head -n 1)"
     [ -n "$found" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     emit <<<"$found"
@@ -137,7 +109,6 @@ if [[ "$path" == repos/*/releases/* ]]; then
   fi
 fi
 
-# ---- version-tag.sh
 if [ "$method" = GET ] && [[ "$path" == repos/*/commits/main ]]; then
   if [ "${STUB_FAIL:-}" = main ]; then echo "gh: HTTP 500" >&2; exit 1; fi
   jq -n --arg s "${STUB_MAIN_SHA:?}" '{sha: $s}' | emit

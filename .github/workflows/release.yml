@@ -1,89 +1,7 @@
-# Release pipeline for deskhaven (M4-06).
-#
-# A VERSION IS NEVER REUSED. If a publishing run fails after anything was pushed (an image, a
-# tag, a release), do not delete and retry: fix forward and release the NEXT patch version.
-# Re-running failed jobs of the same run is allowed only because every publishing step
-# re-checks the world first (see below) and refuses anything that is not exactly this run.
-#
-# OPERATING RULE: push ONE release tag at a time and wait for its run to finish. Runs that
-# publish share one concurrency group and GitHub keeps only one pending run per group, so
-# a second tag pushed while one run is going and a third tag pushed after it would drop the
-# second run. GitHub also does not start workflows at all when more than 3 tags are
-# pushed at once.
-#
-# Releasing (justfile): `just bump X.Y.Z[-pre]` commits the version everywhere it is pinned
-# (version-bump.sh); push main, and once its ci run passed, `just tag` checks the gates below
-# locally and pushes the tag (version-tag.sh).
-#
-# Triggers
-#   push of a `v*` tag     builds, verifies and PUBLISHES: images to ghcr.io, a GitHub Release
-#   workflow_dispatch      NEVER publishes, whatever ref it runs on: builds and verifies
-#                          everything. The jobs that hold packages: write or contents: write
-#                          (image-push, manifest, release, promote, preflight) are SKIPPED, so
-#                          a dry run holds no write permission at all; the release files and
-#                          notes are kept as the `release-preview` artifact
-#
-# Publishing is refused (.github/release/meta.sh, preflight) unless the tag is
-# `vX.Y.Z[-prerelease]`, equals the workspace version in Cargo.toml, deploy/compose/.env.example
-# pins that version (DESKHAVEN_TAG), the commit is on main and has a successful push ci run
-# there, and neither a release (draft included) nor the images for this version exist yet:
-# nothing already published is ever replaced.
-#
-# Publish order (each step only starts when the previous one succeeded)
-#   preflight           no release or draft for the tag exists (before anything is pushed)
-#   image-push          per-arch images by digest, nothing tagged
-#   manifest            the exact tag X.Y.Z for BOTH images (exact-tags.sh: the git tag still
-#                       points to the built commit; an existing X.Y.Z must be exactly this run)
-#   assets              release files, checked per artifact (read-only job)
-#   release             draft created via gh api, assets attached, published by id
-#   promote             converges X.Y and latest on the highest PUBLISHED releases
-# A failure anywhere stops the later steps. Re-running the failed jobs is safe at each step:
-#   manifest   an X.Y.Z that already lists exactly this run's images is accepted, anything else
-#              refused
-#   release    if its release was published but the job failed afterwards (e.g. the check after
-#              the PATCH), the re-run finds that release, sees the tag still on the built
-#              commit and every asset's GitHub digest equal to SHA256SUMS, and succeeds
-#              without touching it, so promote can run; a draft or any other content fails
-#   promote    converges on the current published releases; idempotent
-#
-# Job graph
-#   meta ─┬─ web ─┬─ csp (built-dist CSP checks, hard-fail)
-#   preflight     └─ notices-sbom (notices of deskhaven and hbbr, Rust SBOM)
-#         ├─ changelog (git-cliff)
-#         └─ image-build x4 {deskhaven, relay} x {amd64, arm64}   needs web, csp, notices-sbom
-#              │   build natively, cargo audit bin, tarball, image as an OCI archive,
-#              │   then load that archive, compare binaries, run the smoke tests
-#              └─ image-push x4   (needs preflight) push THAT archive by digest, never runs it
-#                   └─ manifest -> assets -> release -> promote
-#
-# What is audited
-#   deskhaven   `cargo audit bin` BLOCKS on any vulnerability, unmaintained, unsound or
-#               yanked finding that deny.toml does not ignore
-#   relay (hbbr) `cargo audit bin` is REPORTED only (job summary + release asset): upstream
-#               hbbr's lockfile has advisories we cannot fix without modifying upstream
-#   console     `pnpm audit --prod` BLOCKS on any advisory in the production dependencies
-#               (what ships in dist) that web/package.json does not ignore
-#
-# Trust boundaries: third-party code (cargo-installed tools, base images, the build itself,
-# the images when run) executes only in jobs WITHOUT `packages: write` or `contents: write`:
-# image-build builds, audits, loads the image and runs the smoke tests. image-push, which
-# holds the registry token, never runs a container and installs nothing: it pushes the
-# archive image-build produced (a `FROM` an OCI layout pinned by digest, so the pushed
-# manifest is byte-identical to the built one, which is asserted) and compares the pushed
-# binaries with the audited ones. preflight has `contents: write` and runs no repository
-# code at all. The token is passed to docker login and gh steps only.
-#
-# Conventions as in ci.yml: sources come from plain git, no third-party JavaScript actions.
-# The exceptions are GitHub's own artifact actions, pinned by commit (upload-artifact is the
-# one ci.yml uses on failure). Tools are installed with `cargo install --locked` at pinned
-# versions through .github/ci-setup.sh; tool versions marked `renovate:` are bumped by
-# Renovate (renovate.json). No caching until a prebuilt CI image exists. The scripts under
-# .github/release/ are tested by .github/release/tests/ (job release-scripts in ci.yml).
-#
-# Runners: GitHub-hosted only. amd64 images build on ubuntu-latest and arm64 images on the
-# native ubuntu-24.04-arm (free for public repositories), so nothing runs under QEMU.
-# CI_RUNNER_LABEL does not apply here. Network egress needed: everything ci.yml needs, plus
-# ghcr.io, Docker Hub (base images, moby/buildkit) and gcr.io (distroless).
+# A version is never reused: after a partial publish, fix forward with the next patch version.
+# Re-running failed jobs is safe only because every publishing step re-checks what already exists.
+# Push one release tag at a time: publishing runs share a group that keeps a single pending run.
+# Third-party code runs only in jobs without packages: write or contents: write.
 
 name: release
 
@@ -92,18 +10,15 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# All publishing runs share one group, in order; dry runs do not wait for each other.
+# Dry runs get their own group so they never queue behind a publish.
 concurrency:
   group: release-${{ github.event_name == 'push' && 'publish' || github.run_id }}
   cancel-in-progress: false
 
-# Jobs add only what they need: packages: read (meta), contents: write (preflight, release),
-# packages: write (image-push, manifest, promote).
 permissions:
   contents: read
 
 env:
-  # Tool versions, defined once. (cargo-auditable is pinned in the Dockerfiles.)
   # renovate: datasource=crate depName=cargo-audit
   CARGO_AUDIT_VERSION: "0.22.2"
   # renovate: datasource=crate depName=cargo-cyclonedx
@@ -112,8 +27,6 @@ env:
   CARGO_ABOUT_VERSION: "0.9.3"
   # renovate: datasource=crate depName=git-cliff
   GIT_CLIFF_VERSION: "2.14.2"
-  # The BuildKit that buildx runs in a container (docker-container driver: needed for
-  # push-by-digest and OCI export), pinned by digest.
   # renovate: datasource=docker depName=moby/buildkit
   BUILDKIT_VERSION: "v0.34.0"
   BUILDKIT_DIGEST: "sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c"
@@ -123,8 +36,6 @@ env:
   CI_REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
 jobs:
-  # Decides what this run is (version, whether it publishes) and refuses runs that must not
-  # publish. The logic is .github/release/meta.sh.
   meta:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -137,7 +48,7 @@ jobs:
       publish: ${{ steps.v.outputs.publish }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      # The commit and main: ancestry needs main's history.
+      # The on-main ancestry check needs main's history.
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
@@ -150,7 +61,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/release/meta.sh
-      # A release must not ship a commit whose tests never passed ON MAIN.
       - name: ci passed on main for this commit
         if: steps.v.outputs.publish == 'true'
         env:
@@ -160,12 +70,7 @@ jobs:
             --jq '[.[] | select(.event == "push" and .headBranch == "main" and .conclusion == "success")] | length')"
           [ "$count" -ge 1 ] || { echo "::error::no successful push ci run on main for $GITHUB_SHA"; exit 1; }
 
-  # No release, draft included, may exist for the tag: checked BEFORE anything is pushed
-  # (and again by the release job: a re-run replays this result). `contents: write` is what
-  # makes gh list drafts, so this job runs no repository code at all (no checkout, only gh
-  # against an explicit repository), and it does not exist in dry runs. An API failure of
-  # any kind (404 for the repository included) fails the job; only a readable list without
-  # the tag counts as "free".
+  # Listing drafts needs contents: write, so this job runs no repository code.
   preflight:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
@@ -185,7 +90,6 @@ jobs:
           fi
           echo "no release or draft for $GITHUB_REF_NAME"
 
-  # The console, built once. Its dist is shared with csp (checks) and image-build (consistency).
   web:
     needs: meta
     runs-on: ubuntu-latest
@@ -210,15 +114,12 @@ jobs:
           pnpm --version
       - run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: web
-      # What ships in dist only; the build tooling is watched by Dependabot alerts, not gated.
       - name: audit the production dependencies
         working-directory: web
         run: pnpm audit --prod
       - run: pnpm build
         working-directory: web
-      # `pnpm sbom` ships with pnpm (pinned by packageManager in web/package.json): no extra
-      # tool to install or pin, it reads the lockfile, and it knows pnpm's layout, which the
-      # npm-based CycloneDX tool does not. Production dependencies only: what ships in dist.
+      # pnpm sbom understands pnpm's layout; the npm-based CycloneDX tool does not.
       - name: SBOM and license notice of the production dependencies
         working-directory: web
         run: |
@@ -248,9 +149,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The two deskhaven-web checks that normal CI skips (it builds no web/dist for its Rust
-  # jobs), run against the built dist. DESKHAVEN_TEST_REQUIRE_WEB_DIST=1 turns "dist not
-  # built" from a skip into a failure, so they cannot pass vacuously.
+  # DESKHAVEN_TEST_REQUIRE_WEB_DIST=1 makes a missing dist fail instead of skip.
   csp:
     needs: web
     runs-on: ubuntu-latest
@@ -275,17 +174,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p deskhaven-web --test csp -- the_built | tee csp.log
-          # Exactly the two built-dist tests ran (a renamed test would run none and "pass").
+          # A renamed test would match nothing and still "pass".
           grep -q "test result: ok. 2 passed" csp.log
 
-  # Third-party license notices (cargo-about + SecLists + native libraries + the console's
-  # npm packages for deskhaven; cargo-about over the pinned upstream lockfile for hbbr)
-  # and the Rust SBOM.
-  #
-  # The SBOM comes from `cargo cyclonedx` for the shipping binary (crates/deskhaven): it
-  # resolves the whole workspace graph for the musl release target, normal dependencies only,
-  # which is exactly what is linked. The other workspace members are libraries inside that
-  # graph or dev tooling (xtask) that ships nowhere.
   notices-sbom:
     needs: [meta, web]
     runs-on: ubuntu-latest
@@ -327,11 +218,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Release notes from the conventional commits between the previous PUBLISHED release and
-  # this one (tags.sh prev over the GitHub releases: semver order, so an old-line patch gets
-  # its own line's previous release, and a final release skips its release candidates).
-  # cliff.toml renders subjects inside code spans and splits sections at final tags only,
-  # so a final release's notes are one section.
   changelog:
     needs: meta
     runs-on: ubuntu-latest
@@ -339,7 +225,7 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      # Full history and all tags: the range is "previous release tag .. this commit".
+      # Full history and tags: the notes range starts at the previous release tag.
       - name: checkout
         run: |
           git config --global --add safe.directory "$PWD"
@@ -348,7 +234,6 @@ jobs:
           git checkout -q "$GITHUB_SHA"
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
       - run: CI_SKIP_APT=1 .github/ci-setup.sh git-cliff@${{ env.GIT_CLIFF_VERSION }}
-      # The only step with the token: it reads the release list and nothing else.
       - name: previous published release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -364,7 +249,7 @@ jobs:
           prev="$PREV_TAG"
           echo "notes for $tag: ${prev:-the beginning}..$GITHUB_SHA"
           git-cliff --config .github/release/cliff.toml "${prev:+$prev..}$GITHUB_SHA" --tag "$tag" --strip all --output release-notes.md
-          # Only tests, ci and chores in the range: a heading alone would look broken.
+          # A range of only tests, ci and chores would leave a bare heading.
           if ! grep -q '^- ' release-notes.md; then
             printf '\nNo user-facing changes.\n' >>release-notes.md
           fi
@@ -378,20 +263,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # One job per image and architecture, each on a native runner. No registry or release
-  # token here (only `contents: read`), because this is where third-party code runs, the
-  # built images included.
-  #   1. the binary alone (Dockerfile target `binary`) is audited with `cargo audit bin`
-  #      and, for deskhaven, packed as the release tarball;
-  #   2. the image is exported as an OCI archive, built by the same cached stages, so its
-  #      binaries are the very files audited in step 1. It carries the label
-  #      org.opencontainers.image.revision (this commit);
-  #   3. that archive is loaded (as a `FROM` an OCI layout pinned by its manifest digest),
-  #      its binaries are compared with the audited ones, and the smoke tests run.
-  # The archive and the audited binaries are uploaded for image-push. No provenance or SBOM
-  # attestations on the per-arch images: they would turn each per-arch digest into an index
-  # and the multi-arch manifest into an index of indexes. The dependency data of the
-  # binaries is embedded by cargo auditable instead.
+  # Third-party code runs here, so this job holds no write token. Provenance and SBOM
+  # attestations are off: they would turn each per-arch digest into an index.
   image-build:
     needs: [meta, web, csp, notices-sbom]
     runs-on: ${{ matrix.runner }}
@@ -440,15 +313,13 @@ jobs:
             echo "DOCKERFILE=deploy/docker/relay.Dockerfile" >>"$GITHUB_ENV"
             notice=THIRD-PARTY-NOTICES-relay.txt
           fi
-          # The `notices` stage of the Dockerfile is replaced by a directory holding just the notice.
           mkdir -p notices
           cp "supply-chain/${notice}" notices/THIRD-PARTY-NOTICES.txt
-          # The docker-container driver is what supports OCI export and push-by-digest.
+          # Only the docker-container driver supports OCI export and push-by-digest.
           docker buildx create --name release --driver docker-container --driver-opt "image=moby/buildkit:${BUILDKIT_VERSION}@${BUILDKIT_DIGEST}" --use
           docker buildx inspect --bootstrap
       - run: CI_SKIP_APT=1 .github/ci-setup.sh cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
 
-      # VERSION is a build arg of the deskhaven Dockerfile only (the relay one has none).
       - name: build the binaries alone
         run: |
           set -euo pipefail
@@ -485,7 +356,6 @@ jobs:
           install -m 0755 binary/deskhaven "pack/${name}/deskhaven"
           install -m 0644 LICENSE "pack/${name}/LICENSE"
           install -m 0644 notices/THIRD-PARTY-NOTICES.txt "pack/${name}/THIRD-PARTY-NOTICES.txt"
-          # Reproducible archive: sorted, no owners, commit time as mtime, no gzip name/time.
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$(git log -1 --format=%ct)" \
             -C pack -cf - "$name" | gzip -n >"out/${name}.tar.gz"
           ls -l out
@@ -502,8 +372,6 @@ jobs:
           jq -e '.manifests | length == 1' image-oci/index.json >/dev/null
           printf 'FROM image\n' >push.Dockerfile
 
-      # Load the archive just built (the context is pinned to its manifest digest), compare
-      # the files in it with the audited ones, and run it. No credentials exist in this job.
       - name: load the archive into the local docker
         run: |
           set -euo pipefail
@@ -543,7 +411,6 @@ jobs:
             [ "$reported" = "deskhaven ${VERSION}" ] || { echo "::error::the image reports '$reported'"; exit 1; }
           else
             timeout 30 docker run --rm --read-only --entrypoint /usr/local/bin/hbbr "$ref" --version
-            # The key guard must refuse to start without KEY (fail closed), not start hbbr.
             if timeout 30 docker run --rm --read-only "$ref" 2>guard.err; then
               echo "::error::the relay started without KEY"; exit 1
             fi
@@ -572,12 +439,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Pushes the archive image-build produced and smoke-tested, by digest only (no tag yet;
-  # the manifest job tags it). Holds the registry token and runs no repository code (no
-  # checkout, no tool installs, only docker), and NEVER RUNS A CONTAINER: it extracts the
-  # archive (entries other than files and directories are refused), pushes it, checks the
-  # digest equals the built manifest, and compares the pulled binaries (docker create + cp)
-  # with the audited ones. Does not exist in dry runs.
+  # Holds the registry token: runs no repository code and never runs a container.
   image-push:
     if: needs.meta.outputs.publish == 'true'
     needs: [meta, preflight, image-build]
@@ -620,9 +482,7 @@ jobs:
           fi
           docker buildx create --name release --driver docker-container --driver-opt "image=moby/buildkit:${BUILDKIT_VERSION}@${BUILDKIT_DIGEST}" --use
           docker buildx inspect --bootstrap
-          # The archive comes from another job: only regular files and directories, no
-          # absolute or parent-relative paths, before it is extracted. (Variables, not a
-          # pipe into `grep -q`: under pipefail an early-exiting grep fails the pipeline.)
+          # Variables, not a pipe into grep -q: under pipefail an early-exiting grep fails.
           listing="$(tar -tvf oci/image.tar)"
           names="$(tar -tf oci/image.tar)"
           if awk '{ t = substr($1, 1, 1); if (t != "-" && t != "d") bad = 1 } END { exit bad }' <<<"$listing"; then :; else
@@ -635,12 +495,8 @@ jobs:
           tar -xf oci/image.tar -C image-oci --no-same-owner
           jq -e '.manifests | length == 1' image-oci/index.json >/dev/null
           printf 'FROM image\n' >push.Dockerfile
-      # The push is a buildkit build (`FROM image`), so the image config written by the
-      # untrusted build job is read by buildkit while the registry token exists: an ONBUILD
-      # trigger in it would RUN during that build. Refuse any before the login. (A tool that
-      # copies the layout without building, e.g. skopeo or crane, would remove buildkit from
-      # this job altogether; it would be one more downloaded binary to pin and trust, and its
-      # push-by-digest semantics are less settled than buildx's, so the check was chosen.)
+      # The push is a buildkit build, so an ONBUILD trigger from the untrusted build job
+      # would run while the registry token exists.
       - name: the archive's image config has no ONBUILD triggers
         run: |
           set -euo pipefail
@@ -668,7 +524,6 @@ jobs:
             --metadata-file metadata.json empty
           digest="$(jq -r '."containerimage.digest"' metadata.json)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no valid image digest in the build metadata"; exit 1; }
-          # The registry holds exactly the manifest image-build produced.
           [ "$digest" = "$built" ] || { echo "::error::pushed manifest $digest differs from the built $built"; exit 1; }
           docker pull "${IMAGE_NAME}@${digest}"
           id="$(docker create "${IMAGE_NAME}@${digest}")"
@@ -696,14 +551,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Joins the per-arch images into one multi-arch manifest per image and creates the EXACT
-  # tag X.Y.Z (no leading v: the Docker convention; git tags keep it) for BOTH images, via
-  # exact-tags.sh: the git tag must still point to the built commit, every per-arch image must
-  # carry that commit as its revision label, and an X.Y.Z that already exists is accepted only
-  # if it lists exactly this run's per-arch digests (a re-run of this very run). Both images
-  # are checked before the first index is created. The moving tags (X.Y, latest) are not
-  # touched here: promote does that after the release is published. Both images share the
-  # version tag (one DESKHAVEN_TAG in compose pins both). Does not exist in dry runs.
   manifest:
     if: needs.meta.outputs.publish == 'true'
     needs: [meta, image-push]
@@ -761,11 +608,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The release files, assembled and checked in a job with NO write permission (it runs in
-  # dry runs too and produces the preview there): every artifact is downloaded by exact name
-  # into its own directory, its file set is checked separately, names must not collide, and
-  # each deskhaven tarball is unpacked and its binary compared with the audited one
-  # (assemble-assets.sh). In publish runs it waits for the exact image tags (manifest).
   assets:
     needs: [meta, notices-sbom, changelog, image-build, manifest]
     if: ${{ !cancelled() && needs.meta.result == 'success' && needs.notices-sbom.result == 'success' && needs.changelog.result == 'success' && needs.image-build.result == 'success' && (needs.manifest.result == 'success' || (needs.meta.outputs.publish != 'true' && needs.manifest.result == 'skipped')) }}
@@ -855,7 +697,6 @@ jobs:
         run: |
           ls -l publish/assets
           cat publish/release-body.md
-          # What the real run would decide for the GitHub "Latest" badge and the moving tags.
           .github/release/promote.sh decide
       - name: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -865,11 +706,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Creates the GitHub Release as a draft through the API, keeps its id, attaches the
-  # assets, and publishes BY ID (release-publish.sh), after repeating the preflight check,
-  # drafts included, and checking that the tag still points to the built commit. Runs
-  # after the images carry their exact tag and BEFORE the moving tags move. Does not exist
-  # in dry runs.
   release:
     if: needs.meta.outputs.publish == 'true'
     needs: [meta, assets]
@@ -900,11 +736,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: .github/release/release-publish.sh publish/assets publish/release-body.md
 
-  # Converges X.Y and latest for BOTH images on the highest PUBLISHED releases, last, after
-  # the release is published, deciding from the releases published at that moment (never from
-  # git tags or earlier jobs), after checking that the images of every version involved carry
-  # the commit of their release tag. Moves are interleaved per tag, rolled back on failure,
-  # and idempotent: if this job fails, re-run it alone. Does not exist in dry runs.
+  # Idempotent: if it fails, re-run this job alone.
   promote:
     if: needs.meta.outputs.publish == 'true'
     needs: [meta, release]

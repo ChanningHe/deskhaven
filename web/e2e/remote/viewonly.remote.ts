@@ -1,5 +1,3 @@
-// Actions > View only: mouse and keys on the screen do not reach the device; turned off, they do.
-// The device's X pointer and a `cat > file` in an xterm tell what arrived.
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 

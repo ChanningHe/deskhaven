@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
 # Decides what a release workflow run is, and refuses runs that must not publish.
 # Writes version, tag, publish and prerelease to $GITHUB_OUTPUT.
-#
-#   publish   true only for a `push` of a tag. workflow_dispatch NEVER publishes, whatever
-#             ref it runs on: a manual run is always a dry run.
-#   version   the workspace version in Cargo.toml (the binary reports it). When publishing
-#             it must equal the tag without its `v`, and deploy/compose/.env.example must
-#             pin it with exactly one DESKHAVEN_TAG line, so the compose files at tag
-#             vX.Y.Z pull the images of that very release.
-#
-# When publishing it also fails if the tagged commit is not on origin/main, or an image
-# tagged with the version exists (a re-run must never retag images). That is answered by
-# the GitHub Packages API: a 404 (no such package) is the only "free" answer, every other
-# failure fails the run. (That a release for the tag exists is checked by the preflight
-# job, which can see drafts; which tags may move is decided by the promote job.)
+# workflow_dispatch never publishes. .env.example must pin the version so the compose
+# files at the tag pull that very release; an existing image tag fails (never retag).
 #
 # Inputs (environment): GITHUB_EVENT_NAME, GITHUB_REF_TYPE, GITHUB_REF_NAME, GITHUB_SHA,
 # GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, GITHUB_OUTPUT (default: stdout), GH_TOKEN
@@ -54,8 +43,6 @@ fi
 prerelease=false
 if [[ "$version" == *-* ]]; then prerelease=true; fi
 
-# package_has_tag PACKAGE TAG: 0 if the container package has the tag, 1 if the package
-# has not been published yet or lacks the tag; anything else fails the run.
 package_has_tag() {
   local package="$1" wanted="$2" kind versions err
   err="$(mktemp)"

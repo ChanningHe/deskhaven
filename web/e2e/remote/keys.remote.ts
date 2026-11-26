@@ -1,4 +1,4 @@
-// Input > Send keys: Alt+Tab, PrintScreen and Win show up in a device xterm; lock screen and Ctrl+Alt+Del leave no trace on a bare Xvfb.
+// Lock screen and Ctrl+Alt+Del leave no trace on a bare Xvfb.
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 

@@ -1,4 +1,3 @@
-// Starts the remote stack once per run and stops it in the returned teardown.
 import { fileURLToPath } from 'node:url'
 
 import { BASE_URL_ENV, STACK_ENV } from './support/env.ts'

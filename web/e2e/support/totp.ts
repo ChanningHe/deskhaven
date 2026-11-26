@@ -1,6 +1,4 @@
-// RFC 6238 TOTP (HMAC-SHA1, 6 digits, 30 s steps: what deskhaven provisions), playing the
-// authenticator app. The server accepts one step either side of its own and each step
-// once per user, so a second code within the same 30 s comes from the next step.
+// The server accepts each step once per user, so a second code within 30 s comes from the next step.
 import { createHmac } from 'node:crypto'
 
 const STEP_MS = 30_000
@@ -26,7 +24,6 @@ function base32Decode(text: string): Buffer {
   return Buffer.from(bytes)
 }
 
-/** RFC 4226 HOTP of `counter`. */
 export function hotp(key: Buffer, counter: number): string {
   const message = Buffer.alloc(8)
   message.writeBigUInt64BE(BigInt(counter))
@@ -36,7 +33,6 @@ export function hotp(key: Buffer, counter: number): string {
   return String(code % 10 ** DIGITS).padStart(DIGITS, '0')
 }
 
-/** An authenticator for one seed that never hands out the same step twice. */
 export class Authenticator {
   private readonly key: Buffer
   private lastStep = -1

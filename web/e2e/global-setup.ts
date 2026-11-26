@@ -1,5 +1,3 @@
-// Starts one deskhaven for the whole run (fresh data dir; SQLite, or the empty
-// PostgreSQL database of DESKHAVEN_E2E_PG_URL) and stops it in the returned teardown.
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

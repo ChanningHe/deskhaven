@@ -17,11 +17,9 @@
 # (iptables) port publishing keeps the client source address, which hole
 # punching depends on.
 #
-# The rendezvous ports (21115, 21116) are published on IPv4 only. This network
-# has no IPv6, so Docker would hand IPv6 connections to its userland proxy and
-# every IPv6 client would arrive from the gateway address: one client could then
-# take over another's registration. IPv6 clients fall back to IPv4; see
-# docs/reference/known-limitations.md (client addresses) for the opt-in.
+# The rendezvous ports are IPv4 only: without IPv6 on this network, Docker's
+# userland proxy would make every IPv6 client arrive from the gateway, letting
+# one take over another's registration (docs/reference/known-limitations.md).
 
 name: deskhaven
 
@@ -70,8 +68,7 @@ services:
     <<: *hardening
     image: ghcr.io/channinghe/deskhaven-relay:${DESKHAVEN_TAG:-latest}
     environment:
-      # deskhaven's public key (`deskhaven key show`); the relay only lets
-      # clients with this key through, and refuses to start without a valid one.
+      # deskhaven's public key (`deskhaven key show`).
       KEY: ${RELAY_KEY:-}
     # Its own network: deskhaven never talks to the relay.
     networks: [relay]

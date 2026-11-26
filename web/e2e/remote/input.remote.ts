@@ -1,7 +1,5 @@
-// (d) Input reaches the device: the page clicks into an xterm on the device's X display and
-// types a random line into `tee <file>`, ended by Ctrl+D so it flushes; the file the device wrote is what the test reads.
-// Only unshifted keys are typed (letters, digits, space): Playwright's `keyboard.type` sets
-// no Shift modifier for them, and the modes under test must agree on exactly these keys.
+// Only unshifted keys: Playwright's `keyboard.type` sets no Shift for them, and the modes under
+// test must agree on exactly these keys. Ctrl+D ends the line so `tee` flushes.
 import { randomBytes } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'

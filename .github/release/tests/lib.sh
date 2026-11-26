@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Shared helpers of the release script tests (sourced). No network: gh, docker, git
-# ls-remote and cargo-audit are stubs from tests/stubs, put first on PATH by use_stubs.
-#
-# RELEASE_DIR points the tests at another copy of the scripts (used to prove that a test
-# fails against a deliberately broken script); it defaults to the repository's.
+# RELEASE_DIR points the tests at another copy of the scripts, to prove a test fails against
+# a deliberately broken one.
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$TESTS_DIR/../../.." && pwd)"
@@ -34,8 +31,7 @@ assert_not_contains() {
   if grep -qF -- "$2" <<<"$3"; then bad "$1: '$2' unexpectedly found in: $3"; else ok "$1"; fi
 }
 
-# run_capture VAR_PREFIX COMMAND...: runs the command, stores stdout+stderr in
-# ${VAR_PREFIX}_out and the exit status in ${VAR_PREFIX}_rc.
+# run_capture VAR_PREFIX COMMAND...: sets ${VAR_PREFIX}_out and ${VAR_PREFIX}_rc.
 run_capture() {
   local prefix="$1" out rc
   shift
@@ -47,7 +43,6 @@ run_capture() {
   printf -v "${prefix}_rc" '%s' "$rc"
 }
 
-# expect_pass LABEL COMMAND... / expect_fail LABEL NEEDLE COMMAND...
 expect_pass() {
   local label="$1"
   shift
@@ -67,9 +62,7 @@ expect_fail() {
 
 use_stubs() { export PATH="$STUBS_DIR:$PATH"; }
 
-# set_releases SPEC...: the releases the gh stub lists (GET repos/R/releases), as JSON pages
-# of STUB_PAGE_SIZE (default 2) release objects. SPEC is `tag:kind` with kind published |
-# draft | prerelease. Needs STUB_DIR. The scripts' real --jq filters run over this JSON.
+# set_releases TAG:KIND...: KIND is published | draft | prerelease.
 set_releases() {
   local dir="$STUB_DIR/releases" spec id=100 page=1 count=0 size="${STUB_PAGE_SIZE:-2}"
   rm -rf "$dir"
@@ -90,7 +83,6 @@ set_releases() {
   rm -f "$dir/current.ndjson"
 }
 
-# extract_step STEPNAME: the `run: |` script of the workflow step with that name.
 extract_step() {
   awk -v name="$1" '
     $0 == "      - name: " name { f = 1; next }
@@ -98,7 +90,6 @@ extract_step() {
     r { if ($0 ~ /^          /) { sub(/^          /, ""); print } else if ($0 !~ /^$/) exit }' "$WORKFLOW"
 }
 
-# digest_of_text TEXT: a deterministic well-formed sha256 digest for fixtures.
 fixture_digest() { printf 'sha256:%s' "$(printf '%s' "$1" | sha256sum | cut -d' ' -f1)"; }
 
 finish() {

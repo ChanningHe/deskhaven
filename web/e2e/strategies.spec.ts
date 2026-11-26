@@ -1,5 +1,3 @@
-// M3-07: create a strategy -> assign it to a device group -> the preview shows the merged
-// result -> the device's next heartbeat delivers it.
 import { heartbeat } from './support/client-api.ts'
 import { SIGNAL_PORT_ENV, required } from './support/env.ts'
 import { expect, test } from './support/fixtures.ts'
@@ -9,7 +7,6 @@ import type { Device } from './support/rendezvous.ts'
 const DEVICE: Device = { rustdeskId: '512345678', uuid: Buffer.from('e2e-lab-device-uuid') }
 const DEVICE_GROUP = 'Lab'
 const STRATEGY = 'Lab policy'
-/** A catalog option (bool) and the value the strategy sets. */
 const OPTION = { label: 'Clipboard', key: 'enable-clipboard', choice: 'Off', value: 'N' }
 
 test('a strategy assigned to a device group reaches its device', async ({ page, serverUrl }) => {

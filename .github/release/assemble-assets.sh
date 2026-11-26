@@ -5,11 +5,8 @@
 #   DL_DIR  one directory per artifact, named as the artifact (downloaded by exact name)
 #   OUT_DIR the merged assets plus SHA256SUMS
 #
-# Each artifact's file set is checked on its own BEFORE merging (a job that smuggled in an
-# extra file, or dropped one, fails here under its own name), a name that two artifacts
-# both provide is an error, every file must be a regular file (no symlinks), each
-# deskhaven tarball is unpacked and its binary compared with the audited binary of the
-# same architecture, and SHA256SUMS covers the result.
+# Each artifact's file set is checked before merging, so a job that adds or drops a file
+# fails under its own name.
 set -euo pipefail
 
 dl="${1:?usage: assemble-assets.sh DL_DIR OUT_DIR}"
@@ -24,7 +21,6 @@ fail() {
 
 declare -A target=([amd64]=x86_64-unknown-linux-musl [arm64]=aarch64-unknown-linux-musl)
 
-# expected ARTIFACT FILE...: the artifact directory holds exactly these files.
 declare -A expected=()
 expected[rel-sbom-web]="deskhaven-web-v${version}.cdx.json"
 expected[rel-supply-chain]="THIRD-PARTY-NOTICES-relay.txt THIRD-PARTY-NOTICES.txt deskhaven-v${version}.cdx.json"
@@ -36,7 +32,7 @@ done
 if [ "$publish" = true ]; then expected[rel-images]="images.txt"; fi
 
 mkdir -p "$out"
-# bin-* are inputs of the checks below, not release assets
+# bin-* are inputs of the checks below, not release assets.
 merge=()
 for artifact in "${!expected[@]}"; do
   dir="${dl}/${artifact}"
@@ -49,7 +45,6 @@ for artifact in "${!expected[@]}"; do
   done
   case "$artifact" in bin-*) ;; *) merge+=("$artifact") ;; esac
 done
-# no extra artifact directories either
 for dir in "$dl"/*/; do
   name="$(basename "$dir")"
   [ -n "${expected[$name]:-}" ] || fail "unexpected artifact ${name}"
@@ -62,7 +57,6 @@ for artifact in "${merge[@]}"; do
   done
 done
 
-# the tarballs contain the audited binaries
 for arch in amd64 arm64; do
   tarball="${out}/deskhaven-v${version}-${target[$arch]}.tar.gz"
   listing="$(tar -tzvf "$tarball")"
@@ -82,7 +76,7 @@ for arch in amd64 arm64; do
   rm -rf "$work"
 done
 
-# SHA256SUMS: written outside OUT_DIR first, the listing must not include itself
+# Written outside OUT_DIR so the listing does not include itself.
 sums="$(mktemp)"
 (cd "$out" && find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs sha256sum) >"$sums"
 chmod 0644 "$sums"

@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# exact-tags.sh (the manifest job's guard): an existing X.Y.Z that is exactly this run is
-# accepted, a different one, a moved git tag, a wrong revision or a bad digest is refused
-# BEFORE any index is created.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -25,7 +22,7 @@ reg_init() {
     done
   done
 }
-# existing_tag IMAGE [swap]: the exact tag already exists; with "swap" it lists other children
+# existing_tag IMAGE [swap]: with "swap" the existing tag lists someone else's children.
 existing_tag() {
   local image="$1" idx a b
   idx="$(fixture_digest "existing-$1")"

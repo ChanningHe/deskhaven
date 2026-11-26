@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# version-tag.sh: every refusal leaves no tag anywhere, and a tag is pushed only for a clean
-# main that GitHub has, pins its version and passed ci in a push run on main. A scratch
-# repository with a local bare origin and a stubbed gh.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -28,7 +25,7 @@ head="$(git rev-parse HEAD)"
 export STUB_MAIN_SHA="$head"
 
 tag_it() { bash "$RELEASE_DIR/version-tag.sh"; }
-# run SHA EVENT BRANCH CONCLUSION: one ci.yml run object
+# run SHA EVENT BRANCH CONCLUSION
 run() { jq -n -c --arg s "$1" --arg e "$2" --arg b "$3" --arg c "$4" \
   '{id: 7, head_sha: $s, event: $e, head_branch: $b, conclusion: (if $c == "null" then null else $c end)}'; }
 set_runs() { jq -s '{workflow_runs: .}' >"$STUB_DIR/runs.json"; }

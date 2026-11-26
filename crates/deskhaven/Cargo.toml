@@ -25,8 +25,6 @@ tokio = { workspace = true, features = ["net", "signal", "sync"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "json", "tracing-log"] }
-# signal peer store adapter (M1-05); signal server wiring (M1-06: the hbbs key in
-# sodiumoxide's layout for `SignalConfig::secret_key`)
 deskhaven-signal = { workspace = true }
 async-trait = { workspace = true }
 sodiumoxide = { workspace = true }
@@ -38,7 +36,6 @@ deskhaven-db = { workspace = true, features = ["testing"] }
 hbb_common = { workspace = true }
 # Fault injection for the supervisor tests (`SignalHandle::inject_fault`).
 deskhaven-signal = { workspace = true, features = ["testing"] }
-# tests/loadgen.rs: the load generator (M4-04) against this binary.
 deskhaven-loadgen = { workspace = true }
 
 # umask, flock on the instance lock; tests also send signals with it.

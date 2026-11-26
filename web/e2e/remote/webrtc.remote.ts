@@ -1,5 +1,3 @@
-// (b) WebRTC with a 1.5.x client, switched to "Relay only" mid-session, and (c) the fallback:
-// with every UDP path closed the session still comes up, over the relay.
 import { device, expectDesktop, openFromDeviceList, submitPassword } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
 import { xclock } from './support/x11.ts'

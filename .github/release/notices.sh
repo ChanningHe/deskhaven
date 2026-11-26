@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
-# Assembles THIRD-PARTY-NOTICES.txt, the notice shipped with every release and copied
-# into the deskhaven image:
-#   1. every Rust crate linked into the binary (cargo-about; config and template next to
-#      this script),
-#   2. crates that declare no license (cargo-about cannot render them),
-#   3. native libraries and data compiled into the binary (the SecLists password list),
-#   4. code compiled into the console without a license file of its own (rdev key tables,
-#      @bufbuild/protobuf),
-#   5. the console's npm dependencies (optional input, built by web-licenses.mjs).
-#
 # Usage: .github/release/notices.sh OUTPUT_FILE [WEB_NOTICES_FILE]
-# Needs: cargo-about (`.github/ci-setup.sh cargo-about@VERSION/cli`) and network access
-# for the crate sources and license data.
+# Needs: cargo-about (`.github/ci-setup.sh cargo-about@VERSION/cli`) and network access.
 set -euo pipefail
 
 output="${1:?usage: notices.sh OUTPUT_FILE [WEB_NOTICES_FILE]}"

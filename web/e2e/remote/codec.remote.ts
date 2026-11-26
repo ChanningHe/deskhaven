@@ -1,6 +1,4 @@
-// Display > Codec mid-session: the 1.5 client re-encodes in the picked codec, the stats overlay
-// names it, the picture keeps moving, and VP9 comes back the same way. H264 and H265 need a
-// hardware encoder the test peer lacks. The stats overlay saves raw frames as a fixture file.
+// H264 and H265 need a hardware encoder the test peer lacks.
 import { readFile } from 'node:fs/promises'
 
 import type { Page } from '@playwright/test'

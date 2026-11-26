@@ -1,5 +1,3 @@
-// M3-02: first run -> owner -> TOTP enrolment -> sign out -> sign in needs the code;
-// the setup link works once. Saves the owner's session for the other projects.
 import type { Page } from '@playwright/test'
 
 import { bindTotp, signOut, submitCode, submitPassword } from './support/console.ts'

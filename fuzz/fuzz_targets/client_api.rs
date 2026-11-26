@@ -1,11 +1,6 @@
-//! Client API requests through the production router and middleware (`deskhaven-contract`'s
-//! in-process app: migrated SQLite, default settings, the real extractors and handlers).
-//!
-//! Input: byte 0 picks the endpoint, byte 1 bit 0 adds the seeded client session's bearer
-//! token; the rest is the JSON body (bodies are lossily UTF-8 decoded), or the query string of a
-//! GET endpoint (percent-encoded except `=` and `&`). Seeded: a client session, a registered
-//! device and a personal address book, so `{guid}` paths and id/uuid checks can pass. A panic
-//! anywhere (libFuzzer aborts on any panic, caught or not) or a 500 reply is a finding.
+//! Input: byte 0 picks the endpoint, byte 1 bit 0 adds the seeded session's bearer token; the
+//! rest is the JSON body, or the query string of a GET endpoint. The seeded session, device and
+//! address book let `{guid}` paths and id checks pass. A panic or a 500 reply is a finding.
 #![no_main]
 
 use std::collections::BTreeMap;

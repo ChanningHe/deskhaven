@@ -4,7 +4,6 @@ import { join } from 'node:path'
 
 import type { ClientKey, DeviceInfo } from './env.ts'
 
-/** Every `.log` file of the device's client, joined; null while it has written none. */
 export function deviceLog(key: ClientKey, info: DeviceInfo): string | null {
   const logs = join(info.scratchDir, `home-${key.replace('.', '')}`, '.local', 'share', 'logs')
   let files: string[]
@@ -34,10 +33,7 @@ const field = (line: string, name: string): number | undefined => {
   return value === undefined ? undefined : Number(value)
 }
 
-/**
- * What the device's video QoS aimed at (rustdesk 1.5 `video_qos.rs`, `qos_trace` lines at trace
- * level): only written when the client runs with `RD_E2E_PEER_RUST_LOG` (stack.ts).
- */
+/** Trace-level lines: only written when the client runs with `RD_E2E_PEER_RUST_LOG`. */
 export function qosTargets(log: string): QosTarget[] {
   return [...log.matchAll(QOS_TRACE)].flatMap((m) => {
     const fps = field(m[0], 'fps')

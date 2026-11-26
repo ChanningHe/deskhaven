@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# audit-bin.sh against a stubbed cargo-audit: enforce and report, comments in deny.toml,
-# unmaintained findings, a skipped yanked check, an audit.toml that must not be read.
-# Needs python3 (tomllib), as the script itself does.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

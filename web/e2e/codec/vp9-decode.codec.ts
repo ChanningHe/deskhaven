@@ -1,5 +1,3 @@
-// The remote client's video pipeline on real WebCodecs: the captured VP9 key frame of the
-// relay fixture decodes to the peer's 1280×800 screen.
 import { expect, test } from '@playwright/test'
 
 import { openCheck } from './bundle.ts'

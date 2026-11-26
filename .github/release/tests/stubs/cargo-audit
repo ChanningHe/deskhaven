@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# cargo-audit stub for audit-bin.sh: `cargo-audit audit [--color never] [--ignore ID]...
-# [--deny warnings] bin FILE`. It prints cargo-audit's output format from
-#   STUB_FINDINGS   space-separated  kind:crate:version:ID  with kind vuln|warn
-#   STUB_AUDIT      normal | noindex | indexwarn | nodata | nodb
-# honours --ignore and --deny warnings like the real tool, and records where it ran and
-# whether an audit.toml was visible to it in $STUB_AUDIT_LOG.
+# Records where it ran and whether an audit.toml was visible to it, in $STUB_AUDIT_LOG.
 set -euo pipefail
 all_args="$*"
 shift # "audit"

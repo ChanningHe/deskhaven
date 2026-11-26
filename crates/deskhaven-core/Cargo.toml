@@ -30,7 +30,7 @@ sha1 = { workspace = true }
 sha2_011 = { workspace = true }
 data-encoding = { workspace = true }
 subtle = { workspace = true }
-# Address book guids are UUIDv7 strings (04 §1).
+# Address book guids are UUIDv7 strings.
 uuid = { workspace = true, features = ["v7"] }
 openidconnect = { workspace = true }
 reqwest = { workspace = true }
@@ -39,8 +39,7 @@ rustls-platform-verifier = { workspace = true }
 url = { workspace = true }
 serde = { workspace = true }
 semver = { workspace = true }
-# LDAP login (M2-11, 06 §3.5). Not in [workspace.dependencies]: only core uses it. No
-# default features (native-tls); rustls on the ring provider, like every TLS client here.
+# Only core uses it. No default features (native-tls): rustls on ring, like every TLS client here.
 ldap3 = { version = "=0.12.1", default-features = false, features = ["tls-rustls-ring"] }
 
 [target.'cfg(unix)'.dependencies]

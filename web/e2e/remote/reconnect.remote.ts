@@ -8,12 +8,12 @@ import { deviceLog } from './support/peer-log.ts'
 import { startProxy } from './support/proxy.ts'
 import type { Proxy } from './support/proxy.ts'
 
-// The peer keeps a lost session for 30 s (connection.rs:510).
+// The peer keeps a lost session for 30 s.
 const PEER_WINDOW_MS = 30_000
 const GIVE_UP_WITHIN_MS = 60_000
-// ~9 sessions here vs 10/min per user (limits.rs): later specs would be rate_limited.
+// ~9 sessions here vs 10/min per user: later specs would be rate_limited.
 const SESSION_BUDGET_REFILL_MS = 60_000
-// The client logs no rejected login, only connections and accepted logins (connection.rs).
+// The client logs no rejected login, only connections and accepted logins.
 const OPENED = 'Connection opened from'
 const LOGGED_IN = 'peer info supported_encoding'
 const RECONNECTING = /Reconnecting… \(attempt 1\)/

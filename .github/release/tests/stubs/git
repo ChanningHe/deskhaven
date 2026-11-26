@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# git stub: `git ls-remote URL refs/tags/T refs/tags/T^{}` answers from the environment, all
-# other commands run the real git.
-#   STUB_TAG_FILE       lines "<tag> <commit>"; the tag is absent if not listed
-#   STUB_TAG_SHA        (alternative) the commit EVERY tag points to
-#   STUB_TAG_ANNOTATED  1: also print a tag object line before the peeled commit line
+# Only `git ls-remote` is stubbed; every other command runs the real git.
 if [ "${1:-}" = ls-remote ]; then
   tag="${4%^\{\}}"
   tag="${tag#refs/tags/}"
@@ -28,7 +24,6 @@ if [ "${1:-}" = ls-remote ]; then
   fi
   exit 0
 fi
-# the real git: the first `git` on PATH that is not this stub
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 real="$(PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$self_dir" | paste -sd: -)" command -v git)"
 exec "$real" "$@"

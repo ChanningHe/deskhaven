@@ -1,6 +1,4 @@
-// (a) Relay: the owner opens a real client from the device list, enters its password and
-// sees its desktop. The browser has no RTCPeerConnection here, so the relay is the only
-// path whatever the client's version (1.4.x cannot do WebRTC at all).
+// The browser has no RTCPeerConnection here, so the relay is the only path.
 import { device, expectDesktop, openFromDeviceList, submitPassword } from './support/console.ts'
 import type { ClientKey } from './support/env.ts'
 import { test } from './support/fixtures.ts'

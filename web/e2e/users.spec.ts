@@ -1,5 +1,3 @@
-// M3-04: create a user -> add them to a group -> revoke their sessions -> the client's
-// token is refused (401).
 import { clientLogin, currentUser } from './support/client-api.ts'
 import { createUser } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
@@ -7,7 +5,7 @@ import type { Device } from './support/rendezvous.ts'
 
 const USER = { username: 'alice', password: 'alice e2e passphrase 1' }
 const GROUP = 'Support'
-/** The client alice signs in from (sessions record the device; it need not be registered). */
+/** Sessions record the device; it need not be registered. */
 const LAPTOP: Device = { rustdeskId: '300000001', uuid: Buffer.from('alice-laptop-uuid') }
 
 test('a new user in a group loses the client session an admin revokes', async ({

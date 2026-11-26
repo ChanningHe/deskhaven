@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# meta.sh: every publish and refusal case, in a scratch repository with a stubbed gh.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -30,7 +29,7 @@ git commit -q -m "feat: not on main"
 side_sha="$(git rev-parse HEAD)"
 git checkout -q -
 
-# meta EVENT REFTYPE REFNAME SHA [ENV=VAL...]: runs meta.sh, outputs in $out_file
+# meta EVENT REFTYPE REFNAME SHA [ENV=VAL...]
 out_file="$TMP/github-output"
 meta() {
   local event="$1" reftype="$2" refname="$3" sha="$4"

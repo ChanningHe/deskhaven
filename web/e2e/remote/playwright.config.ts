@@ -2,8 +2,7 @@ import { fileURLToPath } from 'node:url'
 
 import { defineConfig, devices } from '@playwright/test'
 
-// Real-client end-to-end checks of the browser remote page (e2e/README.md, "Remote E2E"):
-// one stack per run, one worker, in order. Specs are `*.remote.ts` so the console config never matches them; not part of `pnpm e2e` or CI's `e2e` job.
+// One stack per run, so one worker. Specs are `*.remote.ts` so the console config never matches them.
 const results = fileURLToPath(new URL('../../e2e-results/remote', import.meta.url))
 const owner = fileURLToPath(new URL('../.auth/remote-owner.json', import.meta.url))
 const slow = process.env.RD_E2E_SLOW === '1'

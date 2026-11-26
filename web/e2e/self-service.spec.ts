@@ -1,4 +1,3 @@
-// M3-13: a user binds TOTP on "My account"; the client login then asks for the code.
 import { accessToken, codeLogin, passwordLogin } from './support/client-api.ts'
 import { bindTotp, createUser, submitPassword } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'

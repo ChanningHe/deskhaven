@@ -1,11 +1,6 @@
-// Third-party notice for the console's production dependencies (they are bundled into
-// web/dist, which the binary embeds). Reads `pnpm licenses list --prod --json --long`
-// on stdin, writes plain text to stdout. Run from web/ after `pnpm install`:
+// Run from web/ after `pnpm install`:
 //
 //   pnpm licenses list --prod --json --long | node ../.github/release/web-licenses.mjs
-//
-// A package that ships no license file is listed with its declared license and homepage;
-// the build fails if a package has neither a file nor a declared license.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

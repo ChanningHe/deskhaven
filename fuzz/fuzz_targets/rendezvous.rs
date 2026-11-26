@@ -1,5 +1,3 @@
-//! Rendezvous messages through the signal server's own handlers (`deskhaven_signal::fuzzing`).
-//!
 //! Input: the first byte picks the transport. Even: the rest is one UDP datagram. Odd: the rest
 //! is the frames of one main-port TCP connection, each prefixed by its length (u16, little
 //! endian; a short tail is the last frame). The server is kept across inputs (state-dependent

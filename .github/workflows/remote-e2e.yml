@@ -1,16 +1,3 @@
-# Real-client E2E of the browser remote page (web/e2e/README.md, "Remote E2E"). Manual and
-# nightly only; never on pull requests, and not part of ci.yml.
-#
-# It depends on nix: the pinned official clients (rustdesk 1.5.0 from the flake.lock nixpkgs,
-# 1.4.3 from nixos-25.11 b6018f87), hbbr, Xvfb and Playwright's browsers all come from
-# nixpkgs, with their store paths and sha256 printed by web/e2e/remote/nix-env.sh into the log.
-# Without nix the specs run in a Debian container as the README describes (one client version
-# per run).
-#
-# Network egress needed: github.com (source, the nixpkgs tarballs), nixos.org and
-# cache.nixos.org (nix installer and binary cache), channels.nixos.org, registry.npmjs.org
-# (pnpm), crates.io, index.crates.io and static.crates.io (cargo). Nothing at run time: the
-# stack is local, the signal server has no public STUN and the update check is off.
 name: remote-e2e
 
 on:

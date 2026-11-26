@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 # Prints `export` lines that point the remote E2E stack at pinned tools from nixpkgs, and the
 # store path + sha256 of each client launcher it will run. Use: eval "$(web/e2e/remote/nix-env.sh)"
-#
-# Pins (nixpkgs revisions; `rustdesk-flutter` of each):
-#   1.5.x  the nixpkgs of the repository's flake.lock (rustdesk 1.5.0)
-#   1.4.x  nixos-25.11 at b6018f87da91d19d0ab4cf979885689b469cdd41 (rustdesk 1.4.3)
 # Playwright's browsers are not here: their version must match @playwright/test (e2e/README.md).
-# The tools (hbbr, Xvfb, xterm, xclock, xdotool, xrandr, xclip) come from the same nixpkgs as
-# the flake.lock. Only these are fetched: no other download.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)

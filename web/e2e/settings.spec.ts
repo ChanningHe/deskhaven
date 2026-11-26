@@ -1,5 +1,3 @@
-// M3-10: a saved setting shows as modified; an env-pinned one is read-only and names the
-// variable; two admins saving the same setting get the conflict dialog.
 import type { Page } from '@playwright/test'
 
 import { PINNED } from './support/env.ts'

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
-# Assembles the third-party notice of the relay image (hbbr): the Rust crates of the pinned
-# upstream rustdesk-server release, from ITS lockfile. The upstream source is cloned at the
-# tag and commit pinned in deploy/docker/relay.Dockerfile and is not modified.
+# The relay image's notice comes from the pinned upstream release's own lockfile.
 #
 # Usage: .github/release/notices-relay.sh OUTPUT_FILE
 # Needs: cargo-about, git and network access.

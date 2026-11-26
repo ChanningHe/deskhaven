@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Runs every release script test. Needs bash, git, jq, python3 (3.11+, tomllib) and awk.
-# The CI job lints the scripts separately. No network.
+# Needs bash, git, jq, python3 (3.11+, tomllib) and awk.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chmod +x "$here"/stubs/* 2>/dev/null || true

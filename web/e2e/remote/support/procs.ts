@@ -1,5 +1,4 @@
-// Child processes of the stack: each in its own process group (the client and Xvfb start
-// helpers of their own), output to a log file, the whole group stopped at the end.
+// One process group per child: the client and Xvfb start helpers of their own.
 import { spawn } from 'node:child_process'
 import { closeSync, openSync } from 'node:fs'
 
@@ -57,7 +56,6 @@ export function spawnManaged(
   }
 }
 
-/** Resolves when `ready` returns true; polls every 250 ms. */
 export async function waitFor(what: string, ready: () => boolean | Promise<boolean>, ms: number) {
   const deadline = Date.now() + ms
   for (;;) {

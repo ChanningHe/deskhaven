@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Tags HEAD with the workspace version and pushes the tag, which starts a PUBLISHING
-# release run (release.yml). Refuses, before anything leaves this machine, what that run
-# would refuse or what would release an untested commit:
-#   - HEAD is a clean main and equals main on GitHub
-#   - deploy/compose/.env.example pins the workspace version (exactly one DESKHAVEN_TAG line)
-#   - ci passed for HEAD in a push run on main
-#   - the version is vX.Y.Z[-prerelease] as meta.sh requires
-#   - neither tag vX.Y.Z (here or on GitHub) nor a release or draft for it exists (a version
-#     is never reused)
-# If the push fails, the local tag is deleted again, so the script can simply be re-run.
+# Tags HEAD with the workspace version and pushes the tag, which starts a publishing run.
+# Refuses locally whatever that run would refuse or whatever would release an untested commit.
 #
 # Usage: version-tag.sh   (run inside the repository). Needs gh, authenticated with access to
 # drafts. The repository checked on GitHub is the one the tag is pushed to: origin's push URL.

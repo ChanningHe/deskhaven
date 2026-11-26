@@ -1,4 +1,3 @@
-// Console steps more than one flow takes.
 import type { Locator, Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 
@@ -9,10 +8,7 @@ export interface Account {
   password: string
 }
 
-/**
- * Users page, "New user" with a password the admin chooses. The console still makes the
- * user replace it at the first console sign-in; the client login accepts it as is.
- */
+/** The console makes the user replace this password at first sign-in; the client accepts it. */
 export async function createUser(page: Page, user: Account) {
   await page.goto('/users')
   await page.getByRole('button', { name: 'New user' }).click()
@@ -25,11 +21,7 @@ export async function createUser(page: Page, user: Account) {
   await expect(page.getByRole('button', { name: user.username })).toBeVisible()
 }
 
-/**
- * A TOTP enrolment form inside `form` (the forced enrolment page or the /me dialog): read
- * the seed like an authenticator app, confirm with the password and a code, save the
- * recovery codes. The authenticator for later sign-ins.
- */
+/** `form` is the forced enrolment page or the /me dialog. */
 export async function bindTotp(page: Page, form: Page | Locator, password: string) {
   const seed = form.locator('p:has-text("Or enter this key manually:") + code')
   const authenticator = new Authenticator(await seed.innerText())
@@ -43,7 +35,6 @@ export async function bindTotp(page: Page, form: Page | Locator, password: strin
   return authenticator
 }
 
-/** The login page's password step (a TOTP step may follow). */
 export async function submitPassword(page: Page, account: Account) {
   await page.goto('/login')
   await page.getByLabel('Username').fill(account.username)
@@ -51,7 +42,6 @@ export async function submitPassword(page: Page, account: Account) {
   await page.getByRole('button', { name: 'Sign in' }).click()
 }
 
-/** The login page's TOTP step, with the next code of `authenticator`. */
 export async function submitCode(page: Page, authenticator: Authenticator) {
   await expect(page.getByText('Two-factor authentication')).toBeVisible()
   await page.getByLabel('Code', { exact: true }).fill(authenticator.nextCode())

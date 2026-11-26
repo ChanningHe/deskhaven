@@ -1,7 +1,4 @@
-// (f) @slow: a long session with a screen that keeps changing. Run on request only
-// (RD_E2E_SLOW=1). Reports the time to the first frame and the end-to-end latency of a
-// change on the device (a black window mapped on a white screen, seen in the video canvas)
-// at the start and then once a minute; the latency must not grow.
+// @slow, run on request only (RD_E2E_SLOW=1).
 import { execFileSync } from 'node:child_process'
 
 import type { Page } from '@playwright/test'
@@ -14,10 +11,7 @@ import { xclock, xterm } from './support/x11.ts'
 
 const SOAK_MS = Number(process.env.RD_E2E_SOAK_SECONDS ?? '300') * 1000
 const SAMPLE_EVERY_MS = 60_000
-/**
- * The probe window (an xterm) sits away from the top left, where the client's own windows
- * and the clock are; PROBE is a pixel inside it, as a share of the screen.
- */
+/** Away from the top left, where the client's own windows and the clock are. */
 const PROBE_AT = '+700+100'
 const PROBE = { x: 0.62, y: 0.25 }
 /** The latency at the end may be this many times the start's, plus the slack. */
@@ -61,7 +55,6 @@ function pixelIs(page: Page, dark: boolean, timeoutMs: number): Promise<number> 
   )
 }
 
-/** Map the probe window, return how long the canvas took to show it; then unmap it again. */
 async function latency(page: Page, target: DeviceInfo): Promise<number> {
   xdo(target, 'search', '--class', 'xterm', 'windowunmap')
   await pixelIs(page, false, 20_000)
@@ -102,7 +95,6 @@ for (const [key, transport] of CASES) {
       samples.push(await latency(page, target))
       while (Date.now() - begin + SAMPLE_EVERY_MS < SOAK_MS) {
         await page.waitForTimeout(SAMPLE_EVERY_MS)
-        // Still the same live session, on the same transport.
         await expect(connected).toContainText(transport)
         samples.push(await latency(page, target))
       }

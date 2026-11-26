@@ -1,4 +1,3 @@
-// (e) Error paths: a device that is offline.
 import { stackInfo } from './support/env.ts'
 import { expect, test } from './support/fixtures.ts'
 

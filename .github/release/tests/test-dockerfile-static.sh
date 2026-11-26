@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# The Dockerfiles' "is this binary static" checks (`file BIN | grep -Eq RE`) accept both
-# ways file(1) says static: x86_64 musl builds are static-pie, aarch64 musl builds are plain
-# static ("statically linked"). Every check is found and run against both wordings.
+# file(1) calls x86_64 musl builds static-pie and aarch64 ones "statically linked".
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

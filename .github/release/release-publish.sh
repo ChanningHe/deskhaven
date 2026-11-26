@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
-# Creates the GitHub Release as a draft with all assets and publishes it, addressing it by
-# id from the moment it exists.
-#
 # Usage: release-publish.sh ASSETS_DIR BODY_FILE
 # Environment: GITHUB_REF_NAME (the tag), GITHUB_SHA, GITHUB_REPOSITORY, CI_REPO_URL,
 # VERSION, PRERELEASE, GH_TOKEN (gh, contents: write). ASSETS_DIR holds the assets and their
 # SHA256SUMS.
 #
-#   1. a release for the tag exists?
-#        no   -> continue
-#        yes  -> only ONE case is fine: it is published (not a draft), the tag points to the
-#                commit that was built, and its assets are exactly these files with GitHub's
-#                digest of each equal to SHA256SUMS. That is this very release, published by
-#                an earlier attempt that failed afterwards: succeed without touching it, so
-#                the jobs after it can run. Anything else (a draft, other content) fails.
-#   2. the tag points to the commit that was built
-#   3. create the draft (`gh api`), keep its id
-#   4. upload every asset to that id through the uploads API
-#   5. check the draft by id: right tag, still a draft, exactly the files, and every asset's
-#      GitHub digest equal to the sha256 recorded in SHA256SUMS
-#   6. the tag still points to the built commit (checked again right before publishing)
-#   7. publish by id (PATCH draft=false and make_latest, which promote.sh decide computes
-#      from the releases published right now), then check it is no longer a draft
+# An existing release is accepted only if it is exactly this one, published by an earlier
+# attempt that failed afterwards; the release is addressed by id from the moment it exists.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,8 +27,6 @@ tag_is_built_commit() {
   [ "$(peeled_tag_commit "$CI_REPO_URL" "$tag")" = "$GITHUB_SHA" ]
 }
 
-# want_assets: "name=sha256:hash" for every file, sorted, from SHA256SUMS (and the hash of
-# SHA256SUMS itself); every file in the directory must have an entry.
 want_assets() {
   local sums="${assets}/SHA256SUMS" lines="" file name hash
   [ -f "$sums" ] && [ ! -L "$sums" ] || fail "no SHA256SUMS in ${assets}"
@@ -60,7 +42,6 @@ want_assets() {
   printf '%s' "$lines" | LC_ALL=C sort | paste -sd' ' -
 }
 
-# release_state ID: "tag|draft|name=digest name=digest ..." as GitHub reports it
 release_state() {
   gh api "repos/${repo}/releases/${1}" \
     --jq '[.tag_name, (.draft | tostring), ([.assets[] | .name + "=" + (.digest // "none")] | sort | join(" "))] | join("|")'
@@ -82,7 +63,6 @@ fi
 
 tag_is_built_commit || fail "tag $tag points to '$(peeled_tag_commit "$CI_REPO_URL" "$tag")', not the built $GITHUB_SHA"
 
-# What the Latest badge should be, from the releases published right now.
 latest="$(VERSION="${VERSION:?}" "$here/promote.sh" decide | sed -n 's/^latest=//p')"
 [ "$latest" = true ] || latest=false
 if [ "${PRERELEASE:-false}" = true ]; then latest=false; fi
@@ -92,7 +72,6 @@ id="$(gh api --method POST "repos/${repo}/releases" \
 [[ "$id" =~ ^[0-9]+$ ]] || fail "creating the release returned '$id', not an id"
 echo "draft release ${id} for ${tag}"
 
-# Assets go to the release BY ID (the uploads API), never found by tag.
 for file in "$assets"/*; do
   name="$(basename "$file")"
   gh api --method POST "https://uploads.github.com/repos/${repo}/releases/${id}/assets?name=${name}" \

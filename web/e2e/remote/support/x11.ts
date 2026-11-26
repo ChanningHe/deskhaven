@@ -1,5 +1,4 @@
-// Windows a test puts on a device's X display. Started after the session is up, so they
-// are on top of whatever the client itself has put on screen (its connection window).
+// Started after the session is up, so they sit on top of the client's own windows.
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 
@@ -34,7 +33,6 @@ const CLIPBOARD_PASTE = [
   'Shift <Key>Insert: insert-selection(CLIPBOARD)',
 ].join('')
 
-/** A black xterm (at `at`, default the top left) running `sh`, in the run's temp dir. */
 export function xterm(device: DeviceInfo, at = '+0+0', pasteClipboard = false): XWindow {
   return run(device, tool('xterm'), [
     ...(pasteClipboard ? ['-xrm', CLIPBOARD_PASTE] : []),
@@ -94,9 +92,8 @@ export function noise(device: DeviceInfo, at: string, cols: number, rows: number
   ])
 }
 
-// Clears to the next of six colors well over 60 times a second, so the device always has a new
-// frame to send (a 1.5 X11 capture equal to the last one sends nothing), and cheap to encode, so
-// the bitrate never caps the frame rate. With `sleep 0.008` a 60 fps target got ~52.
+// Well over 60 changes a second (a capture equal to the last one sends nothing) and cheap to
+// encode, so the bitrate never caps the frame rate. With `sleep 0.008` a 60 fps target got ~52.
 const FLICKER =
   'i=0; while :; do printf "\\033[4%dm\\033[2J" $((i % 6 + 1)); i=$((i + 1)); sleep 0.004; done'
 
@@ -115,7 +112,6 @@ export function flicker(device: DeviceInfo, at: string, cols: number, rows: numb
   ])
 }
 
-/** A clock that redraws every second, at the bottom left. */
 export function xclock(device: DeviceInfo): XWindow {
   return run(device, tool('xclock'), [
     '-digital',
@@ -130,11 +126,7 @@ export function xclock(device: DeviceInfo): XWindow {
   ])
 }
 
-/**
- * Gives the keyboard focus to the newest window of `windowClass`. There is no window manager
- * on the display, so nothing moves the focus when a window is clicked, and the client's
- * connection window (1.5) keeps it.
- */
+/** No window manager: a click moves no focus, and the client's connection window keeps it. */
 export function focus(device: DeviceInfo, windowClass: string) {
   execFileSync(
     tool('xdotool'),
@@ -181,10 +173,7 @@ function outputOf(device: DeviceInfo): string {
   return output
 }
 
-/**
- * Xvfb has one mode, so its client lists one resolution. This gives the output another one,
- * smaller than the screen. The client finds `xrandr` through its PATH (see stack.ts).
- */
+/** Xvfb has one mode, so the client would list one resolution. */
 export function addMode(device: DeviceInfo, width: number, height: number): void {
   const name = `${width}x${height}`
   const output = outputOf(device)

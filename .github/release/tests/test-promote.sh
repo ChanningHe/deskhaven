@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# promote.sh decide and apply: the decision table and the registry scenarios (converging,
-# self-healing, refusing on a revision mismatch, rolling back on a failure midway), against
-# stubbed gh, docker and git ls-remote.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -11,9 +8,8 @@ mkdir -p "$STUB_DIR"
 export GITHUB_REPOSITORY=ChanningHe/deskhaven GITHUB_REPOSITORY_OWNER=ChanningHe CI_REPO_URL=unused
 
 promote() { env VERSION="$1" bash "$RELEASE_DIR/promote.sh" "$2"; }
-# published TAG...: those are the published final releases. The fixture ALSO holds a draft
-# v99.0.0 and a prerelease v98.0.0-rc.1, which must never count (pages of 2 releases each,
-# so the filter is applied per page).
+# The fixture also holds a draft v99.0.0 and a prerelease v98.0.0-rc.1, which must never
+# count; pages of 2 releases make the filter apply per page.
 published() {
   local specs=() t
   for t in "$@"; do specs+=("$t:published"); done
@@ -36,10 +32,8 @@ assert_eq "a stray unreleased git tag v10.0.0 does not freeze latest" "latest=tr
 run_capture d env STUB_API_ERROR=1 VERSION=0.2.0 bash "$RELEASE_DIR/promote.sh" decide
 assert_eq "an unreadable release list fails" "1" "$d_rc"
 
-# ---- registry fixtures
 sha_of() { printf '%040d' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"; }
 reg_init() { rm -rf "$STUB_REG"; mkdir -p "$STUB_REG/tags/deskhaven" "$STUB_REG/tags/deskhaven-relay" "$STUB_REG/idx" "$STUB_REG/rev"; : >"$STUB_TAG_FILE"; }
-# add_version VERSION: both images get the exact tag; the git tag points to sha_of(VERSION)
 add_version() {
   local version="$1" image a b idx
   echo "v${version} $(sha_of "$version")" >>"$STUB_TAG_FILE"

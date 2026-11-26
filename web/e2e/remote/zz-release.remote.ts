@@ -1,6 +1,5 @@
-// Sessions are limited per user (4 at once, 10 new ones a minute); closing the tab must
-// release its session, or the fifth connection in a row is refused. Named to run last: it
-// waits out the rate window first so the specs before it cannot make it hit the limit.
+// Named to run last: it waits out the rate window first, so earlier specs cannot make it hit
+// the per-user session limit.
 import { device, expectDesktop, submitPassword } from './support/console.ts'
 import { expect, test } from './support/fixtures.ts'
 

@@ -1,18 +1,9 @@
-//! relay-key-guard: entrypoint of the deskhaven-relay image. Starts the
-//! upstream relay (hbbr, unmodified) only with deskhaven's public key in
-//! `KEY`, by replacing itself with hbbr (`exec`), so hbbr is the only process.
+//! Execs hbbr only with deskhaven's public key in `KEY`. hbbr fails open: an
+//! empty key, or `-` / `_` on a read-only root, lets every client relay, and a
+//! private key would be accepted. So `KEY` is the only way in: `-k` / `--key`
+//! and a `.env` in the working directory are refused.
 //!
-//! hbbr fails open on bad keys: an empty key, or `-` / `_` when it cannot
-//! write a key pair (read-only root), lets every client relay; a private key
-//! is silently reduced to its public half, so the private key sat in the
-//! relay's environment. Hence: `KEY` must be the base64 of a 32-byte public
-//! key (what `deskhaven key show` prints), `-k` / `--key` arguments are
-//! refused, and so is a `.env` in the working directory (hbbr loads it after
-//! its arguments, and `KEY=` there would reopen the relay): the checked
-//! variable is the only way in.
-//!
-//! Single file, std only: built and tested with plain `rustc` in
-//! relay.Dockerfile.
+//! Std only: built and tested with plain `rustc`.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -53,9 +44,7 @@ impl Refusal {
 /// hbbr reads this from its working directory after parsing its arguments.
 const ENV_FILE: &str = ".env";
 
-/// No `.env` entry of any kind in `dir`. `symlink_metadata` does not follow
-/// links, so a dangling link counts; anything but "not found" (unreadable
-/// directory included) is refused too.
+/// A dangling link counts; anything but "not found" is refused.
 fn check_workdir(dir: &std::path::Path) -> Result<(), Refusal> {
     match std::fs::symlink_metadata(dir.join(ENV_FILE)) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -73,7 +62,7 @@ fn base64_value(c: u8) -> Option<usize> {
     BASE64.iter().position(|&b| b == c)
 }
 
-/// Canonical padded base64 of exactly 32 bytes; empty counts as unset.
+/// Empty counts as unset.
 fn check_key(key: Option<&str>) -> Result<(), Refusal> {
     let key = key.filter(|k| !k.is_empty()).ok_or(Refusal::Missing)?;
     let bytes = key.as_bytes();
@@ -128,7 +117,6 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
-    /// A real hbbs public key (base64 of 32 bytes).
     const PUBLIC: &str = "DHiFZnzGD91wLg4QtlwlQ7XVp9HTNMuHUEYdgO8KvUg=";
 
     fn args(list: &[&str]) -> Vec<OsString> {
@@ -197,7 +185,6 @@ mod tests {
         }
     }
 
-    /// A fresh, empty directory under the system temp dir.
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir =
             std::env::temp_dir().join(format!("relay-key-guard-{}-{name}", std::process::id()));

@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Upstream client contract watch (09-testing §2.3).
-#
-# Diffs the watched upstream client files between the last verified commit
-# (tests/contract/UPSTREAM_COMMIT) and the current upstream master. When anything changed
-# it opens a GitHub issue carrying a diff summary and the affected 03 sections; the
-# issue is not repeated for the same upstream master sha.
-#
 # Usage: scripts/contract-watch.sh [--dry-run] [--base <sha>]
 #   --dry-run     print the issue body to stdout instead of touching GitHub
 #   --base <sha>  compare against this (full) client commit instead of UPSTREAM_COMMIT
@@ -25,12 +18,10 @@ BODY_LIMIT_BYTES=${CONTRACT_WATCH_BODY_LIMIT_BYTES:-60000}
 DIFF_BUDGET_BYTES=${CONTRACT_WATCH_DIFF_BUDGET_BYTES:-40000}
 MIN_FENCE_LEN=4
 SUBMODULE_PATH=libs/hbb_common
-# Watched paths carrying this prefix live in the hbb_common submodule (repo-relative path
-# after the prefix), diffed at the submodule commits the two client commits pin.
+# Diffed at the submodule commits the two client commits pin.
 SUBMODULE_PREFIX=hbb_common/
 
-# THE watched-file list (the only copy): "<git pathspec>|<03 sections it feeds>".
-# Pathspec `*` crosses directories. Section "07" is the hbbs fork design doc.
+# The only copy of the list: "<git pathspec>|<sections it feeds>"; `*` crosses directories.
 WATCHED=(
   "src/common.rs|1.1 1.2 1.3 1.4 1.5"
   "src/custom_server.rs|1.1"
@@ -94,8 +85,7 @@ export GIT_TERMINAL_PROMPT=0
 CLIENT_REPO=$WORK/client
 HBB_REPO=$WORK/hbb_common
 
-# Treeless shallow fetch into a fresh repo: commits and trees only; blobs of watched files
-# come on demand when diffing. Fetched content is only read, never checked out or executed.
+# Fetched content is only read, never checked out or executed.
 fetch_commits() { # repo-dir url refspec...
   local dir=$1 url=$2
   shift 2
@@ -119,13 +109,11 @@ submodule_pin() { # commit
 }
 HBB_BASE=$(submodule_pin "$BASE_SHA")
 HBB_HEAD=$(submodule_pin "$HEAD_SHA")
-# Always fetched (a single commit when the pins are equal): the watch-list check below
-# needs both trees.
+# Always fetched: the watch-list check below needs both trees.
 fetch_commits "$HBB_REPO" "$HBB_COMMON_URL" \
   "$HBB_BASE:refs/contract/hbb-base" "$HBB_HEAD:refs/contract/hbb-head"
 
-# True when some path read from stdin matches the glob $1 (`*` crosses directories, like
-# a git pathspec).
+# `*` crosses directories, like a git pathspec.
 matches_any_path() {
   local name
   while IFS= read -r name; do
@@ -135,8 +123,7 @@ matches_any_path() {
   return 1
 }
 
-# Every WATCHED entry must match a path in the base or the head tree, otherwise the list
-# itself has drifted (typo, upstream rename) and the entry would silently report "unchanged".
+# An entry matching neither tree would silently report "unchanged".
 check_watch_list() {
   local entry path repo from to tree_base tree_head
   for entry in "${WATCHED[@]}"; do
@@ -159,7 +146,6 @@ if [ "$HEAD_SHA" = "$BASE_SHA" ]; then
   exit 0
 fi
 
-# entry_diff <path> [git diff options...]: diff of one watched path between base and head.
 entry_diff() {
   local path=$1 repo=$CLIENT_REPO from=$BASE_SHA to=$HEAD_SHA prefix=""
   shift
@@ -170,10 +156,8 @@ entry_diff() {
     --src-prefix="a/$prefix" --dst-prefix="b/$prefix" "$@" "$from" "$to" -- "$path"
 }
 
-# clip <max-bytes> <in-file> <out-file>: the first max-bytes bytes of in-file, without a
-# broken UTF-8 sequence at the end. Files only, no pipes: a pipe into `head -c` would die
-# of SIGPIPE under pipefail. `iconv -c` exits 1 when it dropped bytes, which is expected
-# here (a cut mid-character, or invalid UTF-8 in the input); any other status is a failure.
+# clip <max-bytes> <in-file> <out-file>. Files, not pipes: `head -c` in a pipe dies of
+# SIGPIPE under pipefail. `iconv -c` exits 1 when it dropped bytes, which is expected here.
 clip() {
   local status=0
   head -c "$1" "$2" >"$3.raw"
@@ -181,8 +165,7 @@ clip() {
   [ "$status" -le 1 ] || die "iconv failed with status $status"
 }
 
-# fence <file>: a markdown code fence longer than any backtick run in the file (at least
-# MIN_FENCE_LEN), so no line of the content can close the block early.
+# Longer than any backtick run in the file, so no line of it can close the block early.
 fence() {
   local longest
   longest=$(tr -c '`' '\n' <"$1" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')
@@ -191,7 +174,6 @@ fence() {
   printf '%*s' "$len" '' | tr ' ' '`'
 }
 
-# code_block <info-string> <file>: the file as a fenced code block.
 code_block() {
   local fence_str
   fence_str=$(fence "$2")
@@ -203,8 +185,7 @@ code_block() {
 
 CHANGED=()
 for entry in "${WATCHED[@]}"; do
-  # Assigned on its own line so a failing git aborts the script (set -e) instead of
-  # reading as "no change".
+  # On its own line so a failing git aborts (set -e) instead of reading as "no change".
   numstat=$(entry_diff "${entry%%|*}" --numstat)
   if [ -n "$numstat" ]; then
     CHANGED+=("$entry")
@@ -216,8 +197,7 @@ if [ ${#CHANGED[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Full diff of every changed entry on disk, then a fair share of the byte budget for each:
-# small diffs are shown whole and what they leave over goes to the bigger ones.
+# Small diffs are shown whole; what they leave of the budget goes to the bigger ones.
 DIFF_DIR=$WORK/diffs
 mkdir "$DIFF_DIR"
 SIZES=()

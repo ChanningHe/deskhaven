@@ -1,5 +1,4 @@
 # cargo-deny policy. Run: cargo deny check
-# Global constraints: dev/docs/02-architecture.md section 5.1.
 
 [graph]
 all-features = true
@@ -25,21 +24,16 @@ allow = [
     "CDLA-Permissive-2.0", # webpki-roots (bundled Mozilla CA roots, via sqlx rustls)
 ]
 
-# Git crates that declare no license and ship no license file.
-# hbb_common: INFERENCE, not a stated license: rustdesk-server's debian/copyright says
-# "Files: *" are AGPL-3.0 ("or any later version"), and that tree carried hbb_common as
-# its libs/hbb_common submodule. The version pin makes this clarification stop matching
-# (and the crate fail as unlicensed) on any version change; hbb_common has stayed at 0.1.0
-# for a long time, so also re-check for a license field/file on every rev bump.
+# Inferred, not stated: rustdesk-server's debian/copyright makes "Files: *" AGPL-3.0 and
+# carried hbb_common as a submodule. The version has stayed 0.1.0 for long, so re-check for
+# a license field or file on every rev bump.
 [[licenses.clarify]]
 crate = "hbb_common@=0.1.0"
 expression = "AGPL-3.0-or-later"
 license-files = []
 
-# ASSUMPTION, not a grant: rustdesk-org/default_net (original crate, not a fork; no license
-# file or field as of 78f8f70) is authored by the RustDesk org and only consumed by AGPL-3.0
-# projects (rustdesk client, hbb_common); treated as AGPL-3.0-or-later pending an upstream
-# license statement.
+# Assumed, not granted: authored by the RustDesk org and only consumed by AGPL-3.0 projects;
+# pending an upstream license statement.
 [[licenses.clarify]]
 crate = "default_net"
 expression = "AGPL-3.0-or-later"
@@ -54,10 +48,7 @@ deny = [
     # TLS backend is rustls with the ring provider only.
     { crate = "aws-lc-rs" },
     { crate = "aws-lc-sys" },
-    # OpenSSL only through hbb_common's native-tls stack: documented exception, see
-    # dev/docs/02-architecture.md section 5.1 ("openssl exception"). hbb_common
-    # unconditionally depends on native-tls (proxy and wss fallback paths).
-    # deskhaven's own code still uses rustls + ring only.
+    # Only through hbb_common, which depends on native-tls unconditionally.
     { crate = "openssl", wrappers = ["native-tls"] },
     { crate = "openssl-sys", wrappers = ["native-tls", "openssl"] },
     { crate = "native-tls", wrappers = ["tokio-native-tls", "tungstenite", "tokio-tungstenite"] },
@@ -72,12 +63,9 @@ deny = [
 version = 2
 yanked = "deny"
 ignore = [
-    # sodiumoxide is unmaintained; it arrives via hbb_common (RustDesk protocol
-    # crate) which we must stay wire-compatible with. Accepted, documented risk.
     { id = "RUSTSEC-2021-0137", reason = "sodiumoxide is pulled in by hbb_common; protocol compatibility requires it" },
-    # The entries below all arrive via hbb_common (rev fae47e0) and cannot be
-    # upgraded without forking it. Each was checked against hbb_common's source;
-    # re-check on every hbb_common bump.
+    # These arrive via hbb_common and cannot be upgraded without forking it; re-check
+    # each against its source on every hbb_common bump.
     { id = "RUSTSEC-2025-0040", reason = "users 0.11: hbb_common only re-exports the crate and never calls it; deskhaven does not use it, so the group-listing bug is unreachable" },
     { id = "RUSTSEC-2023-0040", reason = "users 0.11 unmaintained: re-exported by hbb_common, never called (see RUSTSEC-2025-0040)" },
     { id = "RUSTSEC-2023-0059", reason = "users 0.11 unsound (unaligned read of a c_char pointer in the group-listing code): re-exported by hbb_common, never called (see RUSTSEC-2025-0040); `cargo audit bin` denies unsound findings, `cargo deny` only reports them for workspace crates" },
@@ -85,22 +73,13 @@ ignore = [
     { id = "RUSTSEC-2021-0139", reason = "ansi_term unmaintained: build-time only (clap 2 <- bindgen 0.59 <- machine-uid build script)" },
     { id = "RUSTSEC-2024-0375", reason = "atty unmaintained: build-time only (clap 2 / env_logger 0.9 <- bindgen 0.59 <- machine-uid build script)" },
     { id = "RUSTSEC-2021-0145", reason = "atty unsound (unaligned read on Windows only): build-time only, as RUSTSEC-2024-0375; listed for `cargo audit` of the workspace lockfile (M4-05), `cargo deny` only reports unsound advisories of workspace crates" },
-    # rsa 0.9 via openidconnect 4.1 (M2-10). The Marvin attack leaks timing of operations
-    # with the RSA *private* key (decryption, signing). deskhaven holds no RSA private key:
-    # it only verifies IdP ID token signatures with public JWKS keys (RS*/PS*), which the
-    # advisory does not affect. Only the OIDC tests sign, with throwaway fixture keys.
+    # deskhaven holds no RSA private key; only the OIDC tests sign, with throwaway keys.
     { id = "RUSTSEC-2023-0071", reason = "rsa: only public-key signature verification of ID tokens in production; Marvin concerns private-key operations" },
-    # Bundled SQLite < 3.54 (libsqlite3-sys 0.37 via sqlx-sqlite 0.9, which caps it at
-    # <0.38). The bug needs a crafted database/-wal pair; deskhaven only opens the one file
-    # named by its operator-set database URL, in a data dir writable by itself alone, and
-    # whoever can write there can already replace the database. Drop on the sqlx bump.
+    # Whoever can write the data dir can already replace the database. Drop on the sqlx bump.
     { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache leak needs an attacker-written database/-wal pair; deskhaven only opens its own operator-configured database file" },
-    # chrono was declared unmaintained (no vulnerability). It is load-bearing below us
-    # (sea-orm, sqlx, openidconnect, oauth2, hbb_common, flexi_logger) and in our own
-    # timestamps; moving to jiff/time is a migration, not a patch-release change.
+    # Moving to jiff/time is a migration, not a patch-release change.
     { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no known vulnerability; required by sea-orm/sqlx/openidconnect/hbb_common; migration tracked separately" },
-    # humantime is unmaintained only because it wraps chrono. We use parse_duration for
-    # config durations; a replacement must accept the same syntax, so it waits with chrono.
+    # A replacement must accept the same duration syntax, so it waits with chrono.
     { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained (wraps chrono), no known vulnerability; config duration syntax depends on it" },
 ]
 
@@ -108,9 +87,8 @@ ignore = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# hbb_common (pinned by rev in Cargo.toml) and the rustdesk-org forks it pulls in.
-# confy, default_net, machine-uid, tokio-socks and sysinfo are branch-tracked by
-# hbb_common; Cargo.lock pins their commits. Review these on every hbb_common bump.
+# Some of these are branch-tracked by hbb_common and pinned only by Cargo.lock: review
+# them on every hbb_common bump.
 allow-git = [
     "https://github.com/rustdesk/hbb_common",
     "https://github.com/rustdesk-org/tokio-tungstenite",

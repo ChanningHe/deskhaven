@@ -1,7 +1,5 @@
-// `test` for every remote spec: the base URL is the proxy the global setup started, and a
-// test's page ends its session with "Disconnect". Closing the browser context does not fire
-// `pagehide`, so without it each test would hold one of the user's 4 session slots until
-// the server's session timeout, and the fifth test in a minute would be refused.
+// Closing the browser context fires no `pagehide`, so each test disconnects: otherwise it
+// would hold one of the user's 4 session slots until the session timeout.
 import { test as base } from '@playwright/test'
 
 import { BASE_URL_ENV } from './env.ts'

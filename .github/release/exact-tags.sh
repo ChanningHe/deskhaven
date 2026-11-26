@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
-# Creates the exact tag X.Y.Z (a multi-arch index of the per-arch images pushed by digest)
-# for BOTH images, and writes images.txt. The moving tags (X.Y, latest) are promote.sh's.
-#
-# "Re-run failed jobs" replays old outputs, so nothing from the run is trusted blindly.
-# Before ANY index is created:
-#   - the git tag still points to the commit this run built;
-#   - every per-arch digest is well-formed and its image carries that commit as revision;
-#   - an image that already has the tag X.Y.Z is accepted only if its index lists EXACTLY
-#     this run's per-arch digests (a genuine re-run of this very run); anything else fails.
-# Both images are checked before the first index is created, so the window in which one
-# image has the tag and the other has not is as small as a failure of the second create.
+# "Re-run failed jobs" replays old outputs, so nothing from the run is trusted blindly, and
+# both images are checked before the first index is created.
 #
 # Environment: VERSION, GITHUB_SHA, GITHUB_REF_NAME, CI_REPO_URL, GITHUB_REPOSITORY_OWNER;
 # arguments: DIGESTS_DIR (files <deskhaven|relay>-<amd64|arm64>.txt) OUTPUT_FILE.
@@ -33,7 +24,6 @@ fail() {
 [ "$(peeled_tag_commit "$CI_REPO_URL" "$GITHUB_REF_NAME")" = "$GITHUB_SHA" ] ||
   fail "tag $GITHUB_REF_NAME no longer points to the built commit $GITHUB_SHA"
 
-# matrix name (as in the digest files) -> repository name
 pairs=(deskhaven:deskhaven relay:deskhaven-relay)
 declare -A sources=() create=() expected=()
 
@@ -71,8 +61,7 @@ for pair in "${pairs[@]}"; do
     read -r -a list <<<"${sources[$pair]}"
     docker buildx imagetools create --tag "${name}:${VERSION}" "${list[@]}"
   fi
-  # Whatever the create said, the tag must now list exactly this run's images: a create
-  # that "succeeded" onto something else, or raced with another writer, must not be recorded.
+  # A create that "succeeded" onto something else, or raced another writer, must not be recorded.
   [ "$(child_digests "${name}:${VERSION}")" = "${expected[$pair]}" ] ||
     fail "${name}:${VERSION} does not list this run's images after the create"
   echo "${name}@$(digest_of "${name}:${VERSION}")  (tag ${VERSION})" >>"$output"

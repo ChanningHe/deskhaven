@@ -1,5 +1,3 @@
-// What the global setup hands to the tests (through the environment, which Playwright
-// passes on to its workers) and the fixed facts of the instance under test.
 import { fileURLToPath } from 'node:url'
 
 /** An empty PostgreSQL database to run on; unset means SQLite in the data dir. */
@@ -45,7 +43,6 @@ export const OWNER = {
   password: 'e2e owner passphrase 1',
 } as const
 
-/** A variable the global setup must have set. */
 export function required(name: string): string {
   const value = process.env[name]
   if (value === undefined || value === '') throw new Error(`${name} is not set (global setup)`)
