@@ -36,7 +36,7 @@ the proxy's address, in sign-in limits and in the audit log.
 
 ```sh
 curl -fsSL -o /etc/nginx/conf.d/deskhaven.conf \
-  https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.1.2/deploy/nginx/deskhaven.conf
+  https://raw.githubusercontent.com/ChanningHe/deskhaven/v0.2.0/deploy/nginx/deskhaven.conf
 ```
 
 Replace `rd.example.com` and the certificate paths in it, then `nginx -s reload`. It needs
