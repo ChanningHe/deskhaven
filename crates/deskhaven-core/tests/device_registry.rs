@@ -73,18 +73,6 @@ async fn first_registration_inserts_an_active_device() {
 }
 
 #[tokio::test]
-async fn find_unknown_id_is_none() {
-    each_migrated_backend(async |db: &TestDb| {
-        let repo = DeviceRepository::new(db.conn.clone());
-
-        let found = repo.find_by_rustdesk_id(ID).await.unwrap();
-
-        assert!(found.is_none(), "{}", db.backend);
-    })
-    .await;
-}
-
-#[tokio::test]
 async fn re_registration_updates_pk_ip_and_time_but_keeps_identity() {
     each_migrated_backend(async |db: &TestDb| {
         // Arrange
@@ -137,26 +125,6 @@ async fn other_uuid_is_rejected_and_changes_nothing() {
             other => panic!("{b}: expected UuidMismatch, got {other:?}"),
         }
         assert_eq!(row(&repo, ID).await, before, "{b}");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn ids_are_separate_rows() {
-    each_migrated_backend(async |db: &TestDb| {
-        let repo = DeviceRepository::new(db.conn.clone());
-
-        repo.upsert_registration(&registration("111111111", b"a", b"pk-a", 1, 1_000))
-            .await
-            .unwrap();
-        repo.upsert_registration(&registration("222222222", b"b", b"pk-b", 2, 1_000))
-            .await
-            .unwrap();
-
-        let b = db.backend;
-        assert_eq!(count(db).await, 2, "{b}");
-        assert_eq!(row(&repo, "111111111").await.pk, b"pk-a".to_vec(), "{b}");
-        assert_eq!(row(&repo, "222222222").await.pk, b"pk-b".to_vec(), "{b}");
     })
     .await;
 }

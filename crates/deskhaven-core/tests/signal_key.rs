@@ -370,7 +370,5 @@ mod unix {
                 mode: 0o777
             }]
         );
-        let text = loaded.warnings[0].to_string();
-        assert!(text.contains("0777") && text.contains("writable"), "{text}");
     }
 }

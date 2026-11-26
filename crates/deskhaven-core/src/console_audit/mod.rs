@@ -130,16 +130,3 @@ pub(crate) async fn insert<C: ConnectionTrait>(
 fn label(s: &str) -> String {
     s.chars().take(MAX_LABEL_CHARS).collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn labels_are_bounded() {
-        let long = "é".repeat(MAX_LABEL_CHARS + 5);
-
-        assert_eq!(label(&long).chars().count(), MAX_LABEL_CHARS);
-        assert_eq!(label("user"), "user");
-    }
-}

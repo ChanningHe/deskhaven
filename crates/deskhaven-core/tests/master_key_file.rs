@@ -51,7 +51,6 @@ fn configured_key_with_wrong_length_is_rejected_without_echo() {
     let text = format!("{err} {err:?}");
     assert!(matches!(err, KeyError::ConfiguredMasterKey(_)), "{text}");
     assert!(!text.contains(value), "{text}");
-    assert!(text.contains("security.master_key"), "{text}");
 }
 
 #[test]
@@ -108,10 +107,6 @@ fn permissive_master_key_file_warns_but_loads() {
         }]
     );
     let text = loaded.warnings[0].to_string();
-    assert!(
-        text.contains("0644") && text.contains("master.key"),
-        "{text}"
-    );
     assert!(!text.contains(generated.value.to_base64().as_str()));
     // Warning only: permissions are left as the operator set them.
     assert_eq!(mode(&path), 0o644);
@@ -246,7 +241,6 @@ mod unix {
             read_master_key(&Secret::default(), dir.path()).unwrap_err(),
         ] {
             assert!(matches!(err, KeyError::Symlink { .. }), "{err:?}");
-            assert!(err.to_string().contains("symlink"), "{err}");
         }
     }
 

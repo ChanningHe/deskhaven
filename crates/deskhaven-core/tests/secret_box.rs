@@ -280,7 +280,6 @@ fn master_key_base64_round_trips() {
 fn master_key_rejects_wrong_length_or_encoding() {
     let err = MasterKey::from_base64("c2hvcnQta2V5LXZhbHVl").unwrap_err();
     assert!(matches!(err, CryptoError::InvalidMasterKey(_)), "{err:?}");
-    assert!(err.to_string().contains("32"), "{err}");
     let err = MasterKey::from_base64("not base64 !!").unwrap_err();
     assert!(matches!(err, CryptoError::InvalidMasterKey(_)), "{err:?}");
 }

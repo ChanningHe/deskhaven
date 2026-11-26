@@ -67,7 +67,9 @@ async fn a_stalled_directory_times_out_and_concurrent_logins_are_bounded() {
 
         let (stalled, queued) =
             tokio::join!(ldap.authenticate_password("alice", &password), async {
-                tokio::time::sleep(Duration::from_millis(20)).await;
+                while env.fake.connects() == 0 {
+                    tokio::task::yield_now().await;
+                }
                 ldap.authenticate_password("alice", &password).await
             });
         let unknown = ldap.authenticate_password("nobody", &password).await;

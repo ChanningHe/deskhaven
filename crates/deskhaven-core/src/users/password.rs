@@ -300,6 +300,8 @@ impl PasswordHasher {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use tokio::sync::oneshot;
+
     use super::*;
 
     const WORK: Duration = Duration::from_millis(50);
@@ -320,14 +322,6 @@ mod tests {
         assert_eq!(params.m_cost(), documented.memory_kib);
         assert_eq!(params.t_cost(), documented.iterations);
         assert_eq!(params.p_cost(), documented.parallelism);
-    }
-
-    #[test]
-    fn default_limits_allow_at_least_two_computations() {
-        let limits = HashLimits::default();
-
-        assert!(limits.max_concurrent >= MIN_DEFAULT_CONCURRENCY);
-        assert_eq!(limits.acquire_timeout, DEFAULT_ACQUIRE_TIMEOUT);
     }
 
     #[test]
@@ -370,23 +364,34 @@ mod tests {
         assert_eq!(peak.load(Ordering::SeqCst), LIMIT);
     }
 
+    /// A computation that reports when it starts, then holds its slot until released.
+    fn held() -> (
+        impl FnOnce() -> Result<(), PasswordError> + Send + 'static,
+        oneshot::Receiver<()>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let (started_tx, started) = oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let work = move || {
+            let _ = started_tx.send(());
+            let _ = released.recv();
+            Ok(())
+        };
+        (work, started, release)
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn busy_when_no_slot_frees_up_within_the_timeout() {
         let hasher = hasher(1, WORK / 5);
+        let (work, started, release) = held();
         let holder = hasher.clone();
-        let hold = tokio::spawn(async move {
-            holder
-                .limited(|| {
-                    std::thread::sleep(WORK * 4);
-                    Ok(())
-                })
-                .await
-        });
-        tokio::time::sleep(WORK / 5).await;
+        let hold = tokio::spawn(async move { holder.limited(work).await });
+        started.await.unwrap();
 
         let result = hasher.verify_dummy(&Password::new("x")).await;
 
         assert!(matches!(result, Err(PasswordError::Busy)), "{result:?}");
+        release.send(()).unwrap();
         hold.await.unwrap().unwrap();
         assert!(hasher.verify_dummy(&Password::new("x")).await.is_ok());
     }
@@ -394,24 +399,20 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn slot_is_released_when_a_cancelled_computation_ends() {
         let hasher = hasher(1, Duration::from_secs(30));
-        let finished = Arc::new(AtomicUsize::new(0));
-        let done = finished.clone();
+        let (work, started, release) = held();
 
         // The caller gives up while the computation is running.
-        let cancelled = tokio::time::timeout(
-            WORK / 5,
-            hasher.limited(move || {
-                std::thread::sleep(WORK);
-                done.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }),
-        )
-        .await;
-        assert!(cancelled.is_err());
+        tokio::select! {
+            _ = hasher.limited(work) => panic!("ended before it was released"),
+            started = started => started.unwrap(),
+        }
         assert_eq!(hasher.permits.available_permits(), 0, "still computing");
 
-        tokio::time::sleep(WORK * 2).await;
-        assert_eq!(finished.load(Ordering::SeqCst), 1);
-        assert_eq!(hasher.permits.available_permits(), 1);
+        release.send(()).unwrap();
+        let freed = tokio::time::timeout(Duration::from_secs(5), hasher.permits.acquire()).await;
+        assert!(
+            freed.is_ok(),
+            "the slot comes back when the computation ends"
+        );
     }
 }

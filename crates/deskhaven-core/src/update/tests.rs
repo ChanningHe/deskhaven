@@ -119,15 +119,22 @@ async fn fixture_for(db: &TestDb, target: Option<Target>, fetch: FakeFetch) -> F
     }
 }
 
-/// Waits until no refresh is running.
-async fn settle(service: &UpdateService) {
+async fn until(what: &str, done: impl Fn() -> bool) {
     for _ in 0..1000 {
-        if !service.cache.lock().unwrap().in_flight {
+        if done() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    panic!("the refresh did not finish");
+    panic!("never saw: {what}");
+}
+
+/// Waits until no refresh is running.
+async fn settle(service: &UpdateService) {
+    until("the refresh finish", || {
+        !service.cache.lock().unwrap().in_flight
+    })
+    .await;
 }
 
 /// Asks, lets the refresh it starts finish, and asks again.
@@ -370,7 +377,8 @@ async fn nothing_is_requested_while_the_check_is_off() {
         for _ in 0..3 {
             assert_eq!(f.service.available(), None);
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        // Lets a refresh, had one been spawned, send its request.
+        tokio::task::yield_now().await;
 
         assert_eq!(f.fetch.calls(), 0);
         assert!(!f.service.cache.lock().unwrap().in_flight);
@@ -436,7 +444,7 @@ async fn concurrent_askers_share_one_request() {
         for _ in 0..5 {
             assert_eq!(f.service.available(), None);
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        until("the request", || f.fetch.calls() > 0).await;
         assert_eq!(f.fetch.calls(), 1);
         assert!(f.service.cache.lock().unwrap().in_flight);
 
@@ -457,7 +465,8 @@ async fn without_a_target_nothing_is_requested() {
         for _ in 0..3 {
             assert_eq!(f.service.available(), None);
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        // Lets a refresh, had one been spawned, send its request.
+        tokio::task::yield_now().await;
 
         assert_eq!(f.fetch.calls(), 0);
         assert!(!f.service.cache.lock().unwrap().in_flight);

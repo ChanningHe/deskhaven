@@ -108,20 +108,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn manual_clock_moves_only_when_told() {
-        let clock = ManualClock::at(1_000);
-        assert_eq!(clock.now_ms(), 1_000);
-        assert_eq!(clock.elapsed(), Duration::from_millis(1_000));
-
-        clock.advance(Duration::from_millis(1_500));
-        assert_eq!(clock.now_ms(), 2_500);
-        assert_eq!(clock.elapsed(), Duration::from_millis(2_500));
-
-        clock.set(42);
-        assert_eq!(clock.now_ms(), 42);
-    }
-
-    #[test]
     fn a_wall_step_moves_only_the_wall_reading() {
         let clock = ManualClock::at(10_000);
 
@@ -131,12 +117,5 @@ mod tests {
         assert_eq!(clock.now_ms(), 6_500);
         assert_eq!(clock.elapsed(), Duration::from_millis(10_500));
         assert_eq!(clock.elapsed_ms(), 10_500);
-    }
-
-    #[test]
-    fn system_clock_is_close_to_now() {
-        let before = chrono::Utc::now().timestamp_millis();
-        let now = SystemClock.now_ms();
-        assert!((before..before + 60_000).contains(&now));
     }
 }

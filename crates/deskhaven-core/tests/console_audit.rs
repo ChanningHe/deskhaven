@@ -109,7 +109,7 @@ async fn every_actor_kind_satisfies_the_schema() {
 async fn over_long_labels_are_cut() {
     each_migrated_backend(async |db: &TestDb| {
         let log = ConsoleAuditLog::new(db.conn.clone(), Arc::new(ManualClock::at(T0_MS)));
-        let long = "x".repeat(MAX_LABEL_CHARS * 2);
+        let long = "é".repeat(MAX_LABEL_CHARS * 2);
 
         let id = log
             .record(&NewConsoleAudit {
@@ -119,7 +119,8 @@ async fn over_long_labels_are_cut() {
             .await
             .unwrap();
 
-        assert_eq!(row(db, id).await.target_id.len(), MAX_LABEL_CHARS);
+        let stored = row(db, id).await.target_id;
+        assert_eq!(stored.chars().count(), MAX_LABEL_CHARS, "{}", db.backend);
     })
     .await;
 }

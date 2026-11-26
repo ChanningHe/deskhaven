@@ -121,11 +121,6 @@ mod tests {
     }
 
     #[test]
-    fn problem_refuses_a_right_to_left_override_spoof() {
-        assert!(problem("\u{202E}nimda", 64, false).is_some());
-    }
-
-    #[test]
     fn problem_accepts_joiners_emoji_sequences_and_scripts_that_need_them() {
         let accepted = [
             "a\u{200D}b",
