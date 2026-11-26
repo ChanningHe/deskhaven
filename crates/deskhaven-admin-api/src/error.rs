@@ -94,6 +94,9 @@ pub enum ErrorCode {
     ForeignRelay,
     /// No relay server is configured (`signal.relay_servers`).
     NoRelay,
+    /// The request's address is a trusted proxy's, not the browser's; the device would be
+    /// told the proxy is calling.
+    ClientIpUnknown,
     /// The WebRTC offer is not an offer endpoint within the size limit.
     InvalidOffer,
     /// An ICE candidate the signal server refuses (empty or too long).
@@ -143,7 +146,9 @@ impl ErrorCode {
             | Self::SettingPinned
             | Self::VersionConflict => StatusCode::CONFLICT,
             Self::WebClientDisabled => StatusCode::FORBIDDEN,
-            Self::DeviceOffline | Self::ForeignRelay | Self::NoRelay => StatusCode::CONFLICT,
+            Self::DeviceOffline | Self::ForeignRelay | Self::NoRelay | Self::ClientIpUnknown => {
+                StatusCode::CONFLICT
+            }
             Self::DeviceNoAnswer => StatusCode::GATEWAY_TIMEOUT,
             Self::InvalidOffer | Self::InvalidCandidate => StatusCode::BAD_REQUEST,
             Self::SessionClosed => StatusCode::GONE,
@@ -193,6 +198,7 @@ impl ErrorCode {
             Self::DeviceNoAnswer => "device_no_answer",
             Self::ForeignRelay => "foreign_relay",
             Self::NoRelay => "no_relay",
+            Self::ClientIpUnknown => "client_ip_unknown",
             Self::InvalidOffer => "invalid_offer",
             Self::InvalidCandidate => "invalid_candidate",
             Self::SessionClosed => "session_closed",

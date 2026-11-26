@@ -60,6 +60,8 @@ export interface HandshakeParams {
   sessionId: bigint
   decoders: DecoderSupport
   loginOption: OptionMessage
+  /** The server's `signal.require_kx_v1`: v0 reuses one key and nonce sequence both ways. */
+  requireKxV1: boolean
   credentials?: CredentialSlot
   onHeard?: (at: number) => void
 }
@@ -261,6 +263,9 @@ class PeerHandshake implements Handshake {
     }
     // WebRTC is keyed by DTLS and takes no stream key of its own, so it always runs version 0.
     const picked = link.kind === 'relay' ? kxVersionFor(peer.kxVersion) : 0
+    if (link.kind === 'relay' && picked === 0 && this.#params.requireKxV1) {
+      throw new Error('the peer offers key exchange v0 only, and the server requires v1')
+    }
     const ours = boxKeyPairFromSecret(this.#random(BOX_KEY_BYTES))
     const key = this.#random(SECRET_KEY_BYTES)
     link.transport.send(

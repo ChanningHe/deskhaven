@@ -8,6 +8,7 @@ use base64_022::Engine as _;
 use base64_022::engine::general_purpose::STANDARD;
 use deskhaven_core::state::AppState;
 use deskhaven_core::web_client::{OpenRequest, Opened, Opener, relay_url};
+use deskhaven_http::ClientIp;
 use serde::Serialize;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
@@ -19,7 +20,7 @@ use super::view::{
 };
 use crate::audit::{Audit, AuditCtx, Audited};
 use crate::session::ConsoleUser;
-use crate::{AdminApiError, ValidJson, ValidPath, ValidQuery};
+use crate::{AdminApiError, ErrorCode, ValidJson, ValidPath, ValidQuery};
 
 const CANCELLED: &str = "cancelled";
 
@@ -47,7 +48,7 @@ struct OpenOutcome {
         (status = 400, description = "The offer is invalid (`invalid_offer`)", body = crate::ErrorEnvelope),
         (status = 403, description = "The web client is disabled (`web_client_disabled`)", body = crate::ErrorEnvelope),
         (status = 404, description = "No such device the user may control (`not_found`)", body = crate::ErrorEnvelope),
-        (status = 409, description = "The device is offline (`device_offline`), uses a relay of its own (`foreign_relay`, `details.relay_server`), or no relay is configured (`no_relay`)", body = crate::ErrorEnvelope),
+        (status = 409, description = "The device is offline (`device_offline`), uses a relay of its own (`foreign_relay`, `details.relay_server`), no relay is configured (`no_relay`), or the request came from a trusted proxy without the browser's address (`client_ip_unknown`)", body = crate::ErrorEnvelope),
         (status = 429, description = "Too many sessions per minute (`rate_limited`) or at once (`too_many_sessions`)", body = crate::ErrorEnvelope),
         (status = 503, description = "No signal server is running in this process (`unavailable`)", body = crate::ErrorEnvelope),
         (status = 504, description = "The device did not answer in time (`device_no_answer`)", body = crate::ErrorEnvelope),
@@ -57,8 +58,17 @@ pub async fn open(
     State(state): State<Arc<AppState>>,
     ConsoleUser(principal): ConsoleUser,
     ctx: AuditCtx,
+    client: ClientIp,
     ValidJson(body): ValidJson<OpenWebClientSession>,
 ) -> Result<(StatusCode, Audited, Json<WebClientSession>), AdminApiError> {
+    // The device's IP allow-list judges this address: a trusted hop's own, or an
+    // `X-Forwarded-For` entry only trusted hops vouch for, is not the browser's.
+    if client.is_proxy_fallback {
+        return Err(AdminApiError::new(
+            ErrorCode::ClientIpUnknown,
+            "the request came from a trusted proxy without the browser's address",
+        ));
+    }
     let user = state.users.get(principal.user_id).await?;
     let by = Opener {
         user_id: principal.user_id,
@@ -147,6 +157,7 @@ fn view(
             .collect(),
         my_id,
         my_name,
+        require_kx_v1: state.web_client.require_kx_v1(),
     }
 }
 

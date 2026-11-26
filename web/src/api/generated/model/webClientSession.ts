@@ -23,6 +23,8 @@ export interface WebClientSession {
   peer_id: string
   /** The relay's WebSocket URL; a bare path is on the console's own origin. */
   relay_url: string
+  /** `signal.require_kx_v1`: a relayed session must not fall back to key exchange v0. */
+  require_kx_v1: boolean
   /** The signal server's public key (base64), the one RustDesk clients are configured with. */
   server_pk: string
   /** For the candidate and close endpoints; valid for the user who opened it only. */

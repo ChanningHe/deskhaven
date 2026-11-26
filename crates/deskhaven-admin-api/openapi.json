@@ -10494,7 +10494,7 @@
             }
           },
           "409": {
-            "description": "The device is offline (`device_offline`), uses a relay of its own (`foreign_relay`, `details.relay_server`), or no relay is configured (`no_relay`)",
+            "description": "The device is offline (`device_offline`), uses a relay of its own (`foreign_relay`, `details.relay_server`), no relay is configured (`no_relay`), or the request came from a trusted proxy without the browser's address (`client_ip_unknown`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -12069,6 +12069,7 @@
           "device_no_answer",
           "foreign_relay",
           "no_relay",
+          "client_ip_unknown",
           "invalid_offer",
           "invalid_candidate",
           "session_closed",
@@ -17244,7 +17245,8 @@
           "relay_url",
           "ice_servers",
           "my_id",
-          "my_name"
+          "my_name",
+          "require_kx_v1"
         ],
         "properties": {
           "answer": {
@@ -17275,6 +17277,10 @@
           "relay_url": {
             "type": "string",
             "description": "The relay's WebSocket URL; a bare path is on the console's own origin."
+          },
+          "require_kx_v1": {
+            "type": "boolean",
+            "description": "`signal.require_kx_v1`: a relayed session must not fall back to key exchange v0."
           },
           "server_pk": {
             "type": "string",

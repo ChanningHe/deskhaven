@@ -326,6 +326,7 @@
       "device_no_answer": "The device did not answer in time. Try again.",
       "foreign_relay": "The device uses a relay server of its own, which the browser cannot reach.",
       "no_relay": "No relay server is configured on this server.",
+      "client_ip_unknown": "The server cannot tell your address from the reverse proxy's. Have the proxy send X-Forwarded-For, and list only the proxy in security.trusted_proxies.",
       "invalid_offer": "The browser sent an invalid connection offer.",
       "invalid_candidate": "The browser sent an invalid network candidate.",
       "session_closed": "The remote session has ended.",
@@ -1147,7 +1148,7 @@
         },
         "require_kx_v1": {
           "name": "Require key exchange v1",
-          "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected."
+          "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions), and browser sessions relayed to devices that only speak it; clients that skip the exchange are not affected."
         },
         "acl": {
           "default": {

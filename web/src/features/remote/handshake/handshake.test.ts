@@ -448,6 +448,7 @@ function syntheticPeer(dtlsFingerprint: string, kxVersion: number) {
       sessionId: 7n,
       decoders: { vp9: false, av1: false, vp8: true, h264: false, h265: false },
       loginOption: create(OptionMessageSchema),
+      requireKxV1: false,
     },
     signedId: msg({
       case: 'signedId',
@@ -517,6 +518,16 @@ describe('identity binding', () => {
     expect(
       await firstEvent(start({ kind: 'relay', transport }, transport, syntheticPeer(FP, 1))),
     ).toMatchObject({ state: { kind: 'failed' } })
+    expect(transport.sent).toHaveLength(0)
+  })
+
+  it('relay: fails closed on version 0 when the server requires version 1', async () => {
+    const transport = new MemoryTransport()
+    const peer = syntheticPeer('', 0)
+    peer.params.requireKxV1 = true
+    expect(await firstEvent(start({ kind: 'relay', transport }, transport, peer))).toMatchObject({
+      state: { kind: 'failed' },
+    })
     expect(transport.sent).toHaveLength(0)
   })
 

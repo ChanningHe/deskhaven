@@ -80,6 +80,8 @@ pub struct WebClientSession {
     pub my_id: String,
     /// `LoginRequest.my_name`: the user's display name, else the user name.
     pub my_name: String,
+    /// `signal.require_kx_v1`: a relayed session must not fall back to key exchange v0.
+    pub require_kx_v1: bool,
 }
 
 /// One of the browser's ICE candidates.

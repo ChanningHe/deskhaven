@@ -49,6 +49,7 @@ export const ErrorCode = {
   device_no_answer: 'device_no_answer',
   foreign_relay: 'foreign_relay',
   no_relay: 'no_relay',
+  client_ip_unknown: 'client_ip_unknown',
   invalid_offer: 'invalid_offer',
   invalid_candidate: 'invalid_candidate',
   session_closed: 'session_closed',

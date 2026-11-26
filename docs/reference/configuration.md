@@ -150,7 +150,7 @@ Apply changes with `docker compose up -d --wait`.
 | --- | --- | --- | --- | --- |
 | `signal.relay_servers` | `DESKHAVEN_SETTINGS__SIGNAL__RELAY_SERVERS` | list of `host:port`, at most 32 | empty | Relay servers handed to clients by the signal server. |
 | `signal.always_use_relay` | `DESKHAVEN_SETTINGS__SIGNAL__ALWAYS_USE_RELAY` | `true`, `false` | `false` | Force all connections through a relay. |
-| `signal.require_kx_v1` | `DESKHAVEN_SETTINGS__SIGNAL__REQUIRE_KX_V1` | `true`, `false` | `false` | Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected. |
+| `signal.require_kx_v1` | `DESKHAVEN_SETTINGS__SIGNAL__REQUIRE_KX_V1` | `true`, `false` | `false` | Refuse the signal KeyExchange of clients from before version 1 (one key for both directions), and browser sessions relayed to devices that only speak it; clients that skip the exchange are not affected. |
 | `signal.acl.default` | `DESKHAVEN_SETTINGS__SIGNAL__ACL__DEFAULT` | `allow`, `deny` | `allow` | Connection ACL decision when no rule matches (not in effect yet). |
 | `signal.acl.on_error` | `DESKHAVEN_SETTINGS__SIGNAL__ACL__ON_ERROR` | `allow`, `deny` | `deny` | Connection ACL decision when the control plane fails (fail closed; not in effect yet). |
 

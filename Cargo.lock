@@ -1413,6 +1413,7 @@ dependencies = [
  "deskhaven-db",
  "deskhaven-http",
  "garde",
+ "ipnet",
  "openidconnect",
  "qrcodegen",
  "sea-orm",

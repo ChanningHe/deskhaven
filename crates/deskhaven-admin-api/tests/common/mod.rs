@@ -24,7 +24,7 @@ use deskhaven_core::update::UpdateService;
 use deskhaven_core::users::{Credential, HashParams, NewUser, Password, PasswordHasher, Role};
 use deskhaven_db::entity::console_audit;
 use deskhaven_db::testing::TestDb;
-use deskhaven_http::{ErrorBodies, HttpConfig, apply_middleware};
+use deskhaven_http::{ErrorBodies, HttpConfig, TrustedProxies, apply_middleware};
 use openidconnect::HttpRequest;
 use serde_json::Value;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
@@ -86,7 +86,34 @@ pub async fn harness_with_updates(db: &TestDb, fetch: Arc<dyn HttpFetch>) -> Har
 }
 
 pub async fn harness_on_clock(db: &TestDb, pins: PinSet, clock: SharedClock) -> Harness {
-    build_on(db, AdminRoutes::new(), pins, Arc::new(OfflineFetch), clock).await
+    let http = HttpConfig::default();
+    build_on(
+        db,
+        AdminRoutes::new(),
+        pins,
+        Arc::new(OfflineFetch),
+        clock,
+        http,
+    )
+    .await
+}
+
+/// [`PEER`] is a trusted proxy here, so `X-Forwarded-For` names the client.
+pub async fn harness_behind_proxy(db: &TestDb, pins: PinSet) -> Harness {
+    let http = HttpConfig {
+        trusted_proxies: TrustedProxies::new([ipnet::IpNet::from(PEER.ip())]),
+        ..HttpConfig::default()
+    };
+    let fetch = Arc::new(OfflineFetch);
+    build_on(
+        db,
+        AdminRoutes::new(),
+        pins,
+        fetch,
+        Arc::new(SystemClock),
+        http,
+    )
+    .await
 }
 
 async fn build(
@@ -95,7 +122,8 @@ async fn build(
     pins: PinSet,
     update_fetch: Arc<dyn HttpFetch>,
 ) -> Harness {
-    build_on(db, extra, pins, update_fetch, Arc::new(SystemClock)).await
+    let clock = Arc::new(SystemClock);
+    build_on(db, extra, pins, update_fetch, clock, HttpConfig::default()).await
 }
 
 async fn build_on(
@@ -104,6 +132,7 @@ async fn build_on(
     pins: PinSet,
     update_fetch: Arc<dyn HttpFetch>,
     clock: SharedClock,
+    http: HttpConfig,
 ) -> Harness {
     let crypto = Arc::new(SecretBox::new(&MasterKey::from_bytes(&[9; 32])));
     let (settings, warnings) = SettingsService::load(db.conn.clone(), Arc::clone(&crypto), pins)
@@ -126,7 +155,7 @@ async fn build_on(
         .unwrap();
     let router = apply_middleware(
         routes.into_router(Arc::clone(&state)),
-        &HttpConfig::default(),
+        &http,
         ErrorBodies::uniform(deskhaven_admin_api::render_stack_error),
     );
     Harness::new(state, router)

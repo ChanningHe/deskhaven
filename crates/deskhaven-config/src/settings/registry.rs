@@ -193,7 +193,8 @@ settings! {
         default: false,
     }
     /// Refuse the signal KeyExchange of clients from before version 1 (one key for both
-    /// directions); clients that skip the exchange are not affected.
+    /// directions), and browser sessions relayed to devices that only speak it; clients that
+    /// skip the exchange are not affected.
     SIGNAL_REQUIRE_KX_V1: bool = "signal.require_kx_v1" {
         default: false,
     }

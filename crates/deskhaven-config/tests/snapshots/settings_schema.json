@@ -421,7 +421,7 @@
     {
       "category": "signal",
       "default": false,
-      "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions); clients that skip the exchange are not affected.",
+      "description": "Refuse the signal KeyExchange of clients from before version 1 (one key for both directions), and browser sessions relayed to devices that only speak it; clients that skip the exchange are not affected.",
       "env": "DESKHAVEN_SETTINGS__SIGNAL__REQUIRE_KX_V1",
       "key": "signal.require_kx_v1",
       "pin_only": false,

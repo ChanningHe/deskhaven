@@ -192,4 +192,5 @@ export const OPENED: WebClientSession = {
   my_id: 'alice',
   my_name: 'Alice',
   ice_servers: [],
+  require_kx_v1: false,
 }

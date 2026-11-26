@@ -326,6 +326,7 @@
       "device_no_answer": "设备未及时响应，请重试。",
       "foreign_relay": "设备使用自己的中继服务器，浏览器无法连接。",
       "no_relay": "此服务器未配置中继服务器。",
+      "client_ip_unknown": "服务器分辨不出你的地址和反向代理的地址。请让反向代理发送 X-Forwarded-For，并在 security.trusted_proxies 里只填反向代理的地址。",
       "invalid_offer": "浏览器发送的连接请求无效。",
       "invalid_candidate": "浏览器发送的网络候选无效。",
       "session_closed": "远程会话已结束。",
@@ -1147,7 +1148,7 @@
         },
         "require_kx_v1": {
           "name": "要求 v1 密钥交换",
-          "description": "拒绝 v1 之前的客户端（收发共用一把密钥）发起的信令 KeyExchange；跳过密钥交换的客户端不受影响。"
+          "description": "拒绝 v1 之前的客户端（收发共用一把密钥）发起的信令 KeyExchange，浏览器也不再经中继连接只支持旧版本的设备；跳过密钥交换的客户端不受影响。"
         },
         "acl": {
           "default": {

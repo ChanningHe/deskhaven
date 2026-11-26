@@ -529,6 +529,7 @@ export class RemoteController {
       sessionId: this.#sessionId,
       decoders,
       loginOption: loginOption(settings, this.#intent.get()),
+      requireKxV1: opened.require_kx_v1,
       credentials: this.#credentials(attempt),
       onHeard: (at) => {
         attempt.heardAt = at

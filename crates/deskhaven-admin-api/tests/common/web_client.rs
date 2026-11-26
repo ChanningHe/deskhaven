@@ -20,7 +20,7 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 
 use super::devices::register;
-use super::{Console, Harness, Reply, harness_on_clock, harness_pinned};
+use super::{Console, Harness, Reply, harness_behind_proxy, harness_on_clock, harness_pinned};
 
 pub const SESSIONS: &str = "/admin/api/v1/web-client/sessions";
 pub const OFFER: &str = "webrtc://eyJ0eXBlIjoib2ZmZXIifQ==";
@@ -153,6 +153,10 @@ pub fn enabled() -> PinSet {
 
 pub async fn enabled_harness(db: &TestDb) -> Harness {
     harness_pinned(db, AdminRoutes::new(), enabled()).await
+}
+
+pub async fn enabled_harness_behind_proxy(db: &TestDb) -> Harness {
+    harness_behind_proxy(db, enabled()).await
 }
 
 pub async fn enabled_harness_on_clock(db: &TestDb, clock: SharedClock) -> Harness {

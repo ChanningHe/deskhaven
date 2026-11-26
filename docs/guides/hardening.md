@@ -15,9 +15,13 @@ When you finish, your server is tightened beyond the defaults for life on the in
 4. **Refuse the old key exchange** once all your clients support version 1 of it, that is
    RustDesk 1.5.0 or later: set `signal.require_kx_v1` to `true` under **Settings →
    Signalling**. Version 0 uses one key for both directions. Signed-in 1.4.x clients only
-   speak version 0 and are then refused, so it stays off by default.
+   speak version 0 and are then refused, and the browser client no longer connects to
+   them through the relay, so it stays off by default.
 5. **Trust only your proxy**: `security.trusted_proxies` should name exactly the address
-   your reverse proxy connects from. The compose deployment sets it for you.
+   your reverse proxy connects from. The compose deployment sets it for you. A browser
+   session is refused when its request comes from a trusted address without
+   `X-Forwarded-For` (an SSH tunnel to the console port, for example): the device would
+   check its IP allow-list against the proxy's address instead of yours.
 6. **Firewall the local ports** on a binary deployment: 21119 and the relay's command
    console ([step 3](binary-systemd.md#3-firewall-the-local-ports)). Keep 21118 on
    loopback with `signal.ws_listen = "127.0.0.1:21118"`; the systemd unit sets it.

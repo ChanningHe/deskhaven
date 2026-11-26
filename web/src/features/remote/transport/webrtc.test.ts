@@ -276,6 +276,7 @@ describe('WebRTC identity binding', () => {
         sessionId: 1n,
         decoders: { vp9: true, av1: false, vp8: false, h264: false, h265: false },
         loginOption: create(OptionMessageSchema),
+        requireKxV1: false,
       },
       signedId,
     }

@@ -50,6 +50,7 @@ const CODE_KEYS: { readonly [Code in ErrorCode]: `errors.codes.${Code}` } = {
   device_no_answer: 'errors.codes.device_no_answer',
   foreign_relay: 'errors.codes.foreign_relay',
   no_relay: 'errors.codes.no_relay',
+  client_ip_unknown: 'errors.codes.client_ip_unknown',
   invalid_offer: 'errors.codes.invalid_offer',
   invalid_candidate: 'errors.codes.invalid_candidate',
   session_closed: 'errors.codes.session_closed',

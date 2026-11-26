@@ -4,10 +4,10 @@ mod common;
 
 use axum::http::Method;
 use common::web_client::{
-    ALICE_DEVICE, ANSWER, FakePunches, OFFER, OWNER_DEVICE, SESSIONS, UUID, enabled_harness, open,
-    owned_device, setup,
+    ALICE_DEVICE, ANSWER, FakePunches, OFFER, OWNER_DEVICE, SESSIONS, UUID, enabled_harness,
+    enabled_harness_behind_proxy, open, owned_device, setup,
 };
-use common::{Harness, PEER, harness};
+use common::{CSRF_HEADER_NAME, Harness, PEER, harness, request};
 use deskhaven_admin_api::AdminRoutes;
 use deskhaven_core::users::Role;
 use deskhaven_core::web_client::PunchError;
@@ -142,6 +142,60 @@ async fn an_opened_session_carries_what_the_browser_needs() {
         assert_eq!(routes[0].request.device_id, ALICE_DEVICE);
         assert_eq!(routes[0].request.offer.as_deref(), Some(OFFER));
         assert_eq!(routes[0].request.client, PEER.ip(), "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_session_needs_the_browser_address_not_the_proxy_one() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = enabled_harness_behind_proxy(db).await;
+        let s = setup(&h).await;
+        let open_via = |xff: Option<&'static str>| {
+            let mut headers = vec![
+                ("cookie", s.alice.cookie.as_str()),
+                (CSRF_HEADER_NAME, s.alice.csrf.as_str()),
+            ];
+            headers.extend(xff.map(|ip| ("x-forwarded-for", ip)));
+            let body = json!({ "device_id": ALICE_DEVICE });
+            h.raw(request(Method::POST, SESSIONS, &headers, Some(body)))
+        };
+
+        let unknown = open_via(None).await;
+        let forwarded = open_via(Some("198.51.100.7")).await;
+
+        let b = db.backend;
+        assert_eq!(unknown.status, 409, "{b}: {:?}", unknown.body);
+        assert_eq!(unknown.code(), "client_ip_unknown", "{b}");
+        assert_eq!(forwarded.status, 201, "{b}: {:?}", forwarded.body);
+        let routes = s.fake.take();
+        assert_eq!(
+            routes.len(),
+            1,
+            "{b}: the proxy's own address reaches no device"
+        );
+        assert_eq!(routes[0].request.client.to_string(), "198.51.100.7", "{b}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_browser_learns_whether_key_exchange_v1_is_required() {
+    each_migrated_backend(async |db: &TestDb| {
+        let h = enabled_harness(db).await;
+        let s = setup(&h).await;
+
+        let before = open(&h, &s.alice, ALICE_DEVICE, false).await;
+        h.set_setting("signal.require_kx_v1", json!(true)).await;
+        let after = open(&h, &s.alice, ALICE_DEVICE, false).await;
+
+        let b = db.backend;
+        assert_eq!(
+            before.body["require_kx_v1"], false,
+            "{b}: {:?}",
+            before.body
+        );
+        assert_eq!(after.body["require_kx_v1"], true, "{b}: {:?}", after.body);
     })
     .await;
 }

@@ -5,7 +5,7 @@ use std::time::Duration;
 use base64_022::Engine as _;
 use base64_022::engine::general_purpose::URL_SAFE_NO_PAD;
 use deskhaven_config::settings::{
-    WEB_CLIENT_ENABLED, WEB_CLIENT_ICE_SERVERS, WEB_CLIENT_TURN_CREDENTIAL,
+    SIGNAL_REQUIRE_KX_V1, WEB_CLIENT_ENABLED, WEB_CLIENT_ICE_SERVERS, WEB_CLIENT_TURN_CREDENTIAL,
     WEB_CLIENT_TURN_USERNAME, ice_urls, is_turn_url,
 };
 use sea_orm::{DatabaseConnection, DbErr};
@@ -245,6 +245,12 @@ impl WebClientService {
         let now = self.inner.clock.elapsed();
         let session = self.inner.table.remove(user_id, id, now)?;
         Some(session.device_id.clone())
+    }
+
+    /// The signal server refuses key exchange v0 from clients; the browser holds relayed
+    /// sessions to the same rule.
+    pub fn require_kx_v1(&self) -> bool {
+        self.inner.settings.snapshot().get(&SIGNAL_REQUIRE_KX_V1)
     }
 
     /// TURN credentials go with `turn:` and `turns:` URLs only, and only when a user name is set.
