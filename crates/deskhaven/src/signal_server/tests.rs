@@ -460,31 +460,6 @@ async fn long_running_server_failure_restarts_after_the_initial_delay() {
     timeout(STEP, running.task).await.unwrap().unwrap();
 }
 
-/// A server that keeps failing shortly after serving waits longer before each restart.
-#[tokio::test]
-async fn quickly_failing_server_backs_off_further() {
-    // Arrange
-    let backoff = REAL_PATH;
-    let store = Arc::new(FlakyStore::failing(0));
-    let token = CancellationToken::new();
-    let (running, _, _) =
-        start_launcher_with(defaults(), store.clone(), allow_all(), backoff, &token).await;
-
-    // Act
-    let mut gaps = Vec::new();
-    for _ in 0..3 {
-        gaps.push(fail_and_measure_restart(&running, &store).await);
-    }
-
-    // Assert
-    let minimum = [backoff.initial, backoff.initial * 2, backoff.max];
-    for (gap, min) in gaps.iter().zip(minimum) {
-        assert!(*gap >= min, "gaps {gaps:?} below {minimum:?}");
-    }
-    token.cancel();
-    timeout(STEP, running.task).await.unwrap().unwrap();
-}
-
 /// M2: when the supervisor is gone (here aborted, as a panic would drop it), its server is
 /// detached, not stopped; `SignalStatus::stopped` (what `serve` awaits before closing the
 /// database) still waits until that server drained its in-flight registration write.

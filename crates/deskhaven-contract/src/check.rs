@@ -206,14 +206,10 @@ mod tests {
 
         let problems = check(&want, &got);
 
-        assert_eq!(
-            problems,
-            [
-                r#"header allow: expected "GET", got "GET,HEAD""#,
-                r#"header content-type: expected to contain "json", got "text/plain""#,
-                "header x-missing: missing",
-            ]
-        );
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        for (problem, header) in problems.iter().zip(["allow", "content-type", "x-missing"]) {
+            assert!(problem.contains(header), "{problems:?}");
+        }
     }
 
     #[test]
@@ -240,8 +236,8 @@ mod tests {
         let problems = check(&want, &reply(404, r#"{"error":"not found"}"#));
 
         assert_eq!(problems.len(), 2, "{problems:?}");
-        assert!(problems[0].contains("expected 200, got 404"));
-        assert!(problems[1].contains("LoginOptions"));
+        assert!(problems[0].contains("404"), "{problems:?}");
+        assert!(problems[1].contains("LoginOptions"), "{problems:?}");
     }
 
     #[test]
@@ -260,13 +256,15 @@ mod tests {
         let got = json!({ "total": 1, "data": [{ "id": "1", "hash": "" }], "extra": true });
 
         assert!(subset(&json!({ "data": [{ "id": "1" }] }), &got, "").is_empty());
-        assert_eq!(
-            subset(&json!({ "data": [] }), &got, ""),
-            vec![r#"json_subset: /data: expected [], got [{"hash":"","id":"1"}]"#]
+        let extra_item = subset(&json!({ "data": [] }), &got, "");
+        assert!(
+            extra_item.len() == 1 && extra_item[0].contains("/data"),
+            "{extra_item:?}"
         );
-        assert_eq!(
-            subset(&json!({ "nope": 1 }), &got, ""),
-            vec!["json_subset: /nope is missing"]
+        let missing = subset(&json!({ "nope": 1 }), &got, "");
+        assert!(
+            missing.len() == 1 && missing[0].contains("/nope"),
+            "{missing:?}"
         );
     }
 

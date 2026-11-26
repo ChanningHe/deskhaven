@@ -20,7 +20,7 @@ use std::{
     collections::BTreeSet,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 use support::{PeerKeys, STEP, TestServer};
@@ -35,6 +35,8 @@ struct DeletableStore {
     deleted: Mutex<BTreeSet<String>>,
     /// Writes fail while set (the write-behind keeps them owed).
     failing: AtomicBool,
+    /// Completed `get`s: a reload has read the store once this grows.
+    gets: AtomicUsize,
 }
 
 impl DeletableStore {
@@ -44,6 +46,16 @@ impl DeletableStore {
 
     fn is_deleted(&self, id: &str) -> bool {
         self.deleted.lock().unwrap().contains(id)
+    }
+
+    async fn reload(&self, server: &TestServer) {
+        let before = self.gets.load(Ordering::SeqCst);
+        server.handle.reload_peer(ID).unwrap();
+        let deadline = Instant::now() + STEP;
+        while self.gets.load(Ordering::SeqCst) == before {
+            assert!(Instant::now() < deadline, "the reload never read the store");
+            sleep(POLL).await;
+        }
     }
 }
 
@@ -62,10 +74,12 @@ impl PeerStore for DeletableStore {
     }
 
     async fn get(&self, id: &str) -> Result<Option<PeerRecord>, StoreError> {
-        match self.is_deleted(id) {
+        let found = match self.is_deleted(id) {
             true => Ok(None),
             false => self.inner.get(id).await,
-        }
+        };
+        self.gets.fetch_add(1, Ordering::SeqCst);
+        found
     }
 
     async fn upsert_pk(&self, rec: &PeerUpsert) -> Result<(), StoreError> {
@@ -122,8 +136,7 @@ async fn reloading_a_stored_peer_keeps_it() {
     }
 
     // Act
-    server.handle.reload_peer(ID).unwrap();
-    sleep(Duration::from_millis(200)).await;
+    store.reload(&server).await;
 
     // Assert
     assert!(!peer.register_peer(ID).await.request_pk);
@@ -157,8 +170,7 @@ async fn reloading_keeps_a_newer_unsaved_key_of_the_same_device() {
     assert_eq!(peer.register_pk(ID, &reinstalled).await, OK);
 
     // Act
-    server.handle.reload_peer(ID).unwrap();
-    sleep(Duration::from_millis(200)).await;
+    store.reload(&server).await;
     store.failing.store(false, Ordering::SeqCst);
 
     // Assert

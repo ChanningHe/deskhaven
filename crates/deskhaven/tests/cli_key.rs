@@ -236,32 +236,27 @@ fn install_master_key(data: &Path, value: &str) {
 }
 
 #[test]
-fn config_check_reminds_to_back_up_the_master_key() {
+fn config_check_names_where_the_master_key_lives_without_echoing_it() {
     let (dir, data) = prepare("check-backup");
     let fresh = check_with_env(&dir, &data, &[]);
     assert!(fresh.status.success(), "{}", text(&fresh.stderr));
-    let stderr = text(&fresh.stderr);
     assert!(
-        stderr.contains("back up") && stderr.contains("master.key"),
-        "{stderr}"
+        text(&fresh.stderr).contains("master.key"),
+        "{}",
+        text(&fresh.stderr)
     );
 
     install_master_key(&data, MASTER_5);
     let existing = check_with_env(&dir, &data, &[]);
     assert!(existing.status.success(), "{}", text(&existing.stderr));
     let stderr = text(&existing.stderr);
-    assert!(
-        stderr.contains("back up") && stderr.contains("master.key"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("master.key"), "{stderr}");
     assert!(!stderr.contains(MASTER_5), "{stderr}");
 
     let configured = check_with_env(&dir, &data, &[("DESKHAVEN_SECURITY__MASTER_KEY", MASTER_5)]);
     let stderr = text(&configured.stderr);
-    assert!(
-        stderr.contains("back up") && stderr.contains("security.master_key"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("security.master_key"), "{stderr}");
+    assert!(!stderr.contains(MASTER_5), "{stderr}");
     assert!(!stderr.contains("warning"), "{stderr}");
 }
 

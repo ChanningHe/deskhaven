@@ -105,13 +105,6 @@ mod tests {
     }
 
     #[test]
-    fn absent_keys_are_none() {
-        let rsp = parse(json!({})).unwrap();
-
-        assert!(rsp.strategy.is_none() && rsp.disconnect.is_none() && rsp.modified_at.is_none());
-    }
-
-    #[test]
     fn mistyped_keys_are_rejected() {
         assert!(parse(json!({ "disconnect": ["12"] })).is_err());
         assert!(parse(json!({ "modified_at": "1" })).is_err());

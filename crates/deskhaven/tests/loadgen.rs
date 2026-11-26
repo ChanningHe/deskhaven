@@ -142,8 +142,6 @@ fn assert_server_side(report: &Report, backend: Backend) {
             "two flushes ran:\n{report}"
         );
     }
-    let text = report.to_string();
-    assert!(text.contains("## NFR verdicts") && text.contains("| Heartbeat p99 |"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

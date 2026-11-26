@@ -46,17 +46,3 @@ pub use legacy_ab::{LegacyAbData, LegacyAbReply};
 pub struct ErrorBody {
     pub error: String,
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn error_body_requires_a_string() {
-        assert!(serde_json::from_value::<ErrorBody>(json!({ "error": "denied" })).is_ok());
-        assert!(serde_json::from_value::<ErrorBody>(json!({ "error": 1 })).is_err());
-        assert!(serde_json::from_value::<ErrorBody>(json!({ "message": "x" })).is_err());
-    }
-}

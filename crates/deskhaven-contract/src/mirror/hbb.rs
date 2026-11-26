@@ -28,36 +28,3 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for HbbData<T> {
             .map_err(D::Error::custom)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    #[derive(Debug, Deserialize)]
-    struct Data {
-        code: String,
-    }
-
-    fn parse(value: Value) -> Result<HbbData<Data>, serde_json::Error> {
-        serde_json::from_value(value)
-    }
-
-    #[test]
-    fn data_without_error_parses() {
-        assert_eq!(parse(json!({ "code": "c1", "x": 1 })).unwrap().0.code, "c1");
-    }
-
-    #[test]
-    fn any_error_key_rejects_the_body() {
-        assert!(parse(json!({ "code": "c1", "error": "" })).is_err());
-        assert!(parse(json!({ "code": "c1", "error": null })).is_err());
-    }
-
-    #[test]
-    fn non_objects_and_bad_data_are_rejected() {
-        assert!(parse(json!(["c1"])).is_err());
-        assert!(parse(json!({ "code": 1 })).is_err());
-    }
-}

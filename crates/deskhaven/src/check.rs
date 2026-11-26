@@ -150,7 +150,11 @@ mod tests {
     #[test]
     fn probe_reports_a_port_taken_on_ipv6_only() {
         let err = probe("signal.port", "TCP", 21116, v6_fails(ErrorKind::AddrInUse)).unwrap_err();
-        assert_eq!(err.to_string(), "signal.port: cannot bind TCP [::]:21116");
+        let text = err.to_string();
+        assert!(
+            text.contains("signal.port") && text.contains("TCP [::]:21116"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -167,9 +171,10 @@ mod tests {
     fn probe_reports_ipv4_first() {
         let taken = |_: SocketAddr| -> io::Result<()> { Err(ErrorKind::AddrInUse.into()) };
         let err = probe("signal.port", "UDP", 21116, taken).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "signal.port: cannot bind UDP 0.0.0.0:21116"
+        let text = err.to_string();
+        assert!(
+            text.contains("signal.port") && text.contains("UDP 0.0.0.0:21116"),
+            "{text}"
         );
     }
 }

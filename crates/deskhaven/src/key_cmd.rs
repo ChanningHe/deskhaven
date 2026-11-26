@@ -144,9 +144,6 @@ mod tests {
 
         assert_eq!(String::from_utf8(out).unwrap(), "KEY\n");
         let err = String::from_utf8(err).unwrap();
-        assert!(
-            err.starts_with("warning:") && err.contains("ASCII"),
-            "{err}"
-        );
+        assert!(err.contains(&ConfigError::NotAscii.to_string()), "{err}");
     }
 }

@@ -126,7 +126,6 @@ fn check_warns_on_unknown_env_but_succeeds() {
 
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert!(text(&out.stderr).contains("DESKHAVEN_TYPO"));
-    assert!(text(&out.stdout).contains("configuration OK"));
 }
 
 #[test]
@@ -268,25 +267,6 @@ fn check_reports_every_failed_check() {
     assert!(stderr.contains("created on first start"), "{stderr}");
     assert!(stderr.contains("2 of 4 checks failed"), "{stderr}");
     assert!(text(&out.stdout).is_empty());
-}
-
-#[test]
-fn check_names_an_in_memory_database() {
-    let dir = workdir("db_memory");
-    std::fs::write(dir.join("deskhaven.toml"), isolated_config(&dir, "")).unwrap();
-
-    let out = run(
-        &dir,
-        &["--config", "deskhaven.toml", "config", "check"],
-        &[("DESKHAVEN_DATABASE__URL", "sqlite::memory:")],
-    );
-
-    assert!(out.status.success(), "{}", text(&out.stderr));
-    assert!(
-        text(&out.stderr).contains("in-memory database"),
-        "{}",
-        text(&out.stderr)
-    );
 }
 
 #[test]

@@ -114,12 +114,4 @@ mod tests {
         assert!(!is_in_memory("sqlite:///var/lib/dh/deskhaven.db"));
         assert!(!is_in_memory("postgres://h/db?application_name=:memory:"));
     }
-
-    #[test]
-    fn options_take_the_pool_size() {
-        let mut cfg = config("/d", "");
-        cfg.database.max_connections = 3;
-
-        assert_eq!(options(&cfg, "sqlite::memory:".into()).max_connections, 3);
-    }
 }

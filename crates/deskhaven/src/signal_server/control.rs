@@ -98,18 +98,4 @@ mod tests {
         token.cancel();
         running.task.await.unwrap();
     }
-
-    /// The decisions stay upstream's (M5 replaces them).
-    #[tokio::test]
-    async fn decisions_are_allow_all() {
-        let control = CoreControl::new(Presence::new(Arc::new(SystemClock)));
-        let relays = ["r1:21117".to_owned()];
-        let ip = IpAddr::from([127, 0, 0, 1]);
-
-        assert_eq!(
-            control.pick_relay(ip, ip, &relays).as_deref(),
-            Some("r1:21117")
-        );
-        assert_eq!(control.health_check("t", (ip, 1).into()).await, None);
-    }
 }

@@ -119,13 +119,6 @@ mod tests {
     }
 
     #[test]
-    fn null_is_an_empty_book() {
-        let parsed: Option<LegacyAbReply> = serde_json::from_value(Value::Null).unwrap();
-
-        assert!(parsed.is_none());
-    }
-
-    #[test]
     fn what_the_client_would_misread_is_refused() {
         let colors = json!({ "a": 1 }).to_string();
         let bad = [

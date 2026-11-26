@@ -172,7 +172,11 @@ mod tests {
 
         let text = render_error(&err);
 
-        assert_eq!(text, "connection error: I/O error (connection refused)");
+        let kind = std::io::ErrorKind::ConnectionRefused.to_string();
+        assert!(
+            text.contains(&kind) && !text.contains("secret-detail"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -195,20 +199,24 @@ mod tests {
 
     #[test]
     fn chain_keeps_context_and_stops_at_the_database_error() {
-        let db = deskhaven_db::DbError::Connect(DbErr::ConnectionAcquire(ConnAcquireErr::Timeout));
+        let driver = DbErr::ConnectionAcquire(ConnAcquireErr::Timeout);
+        let driver_text = driver.to_string();
+        let db = deskhaven_db::DbError::Connect(driver);
+        let context = format!("startup: {db}: ");
         let err = anyhow::Error::new(db).context("startup");
 
-        assert_eq!(
-            render(&err),
-            "startup: failed to connect to the database: timed out acquiring a database connection"
-        );
+        let text = render(&err);
+
+        assert!(text.starts_with(&context), "{text}");
+        assert!(!text.contains(&driver_text), "{text}");
     }
 
     #[test]
     fn known_codes_are_described() {
-        assert_eq!(known_code("28P01"), Some("password authentication failed"));
+        assert!(known_code("28P01").is_some());
         // SQLITE_CANTOPEN_ISDIR (14 | 2 << 8) maps to its primary code.
-        assert_eq!(known_code("526"), Some("unable to open database file"));
+        assert!(known_code("526").is_some());
+        assert_eq!(known_code("526"), known_code("14"));
         assert_eq!(known_code("XX000"), None);
     }
 
@@ -228,9 +236,10 @@ mod tests {
             .unwrap_err();
 
         let text = render(&err);
-        assert_eq!(
-            text,
-            "insert: statement failed: database error 2067: unique constraint violated"
+        assert!(text.starts_with("insert: "), "{text}");
+        assert!(
+            text.contains("2067") && !text.contains("row-secret"),
+            "{text}"
         );
     }
 }

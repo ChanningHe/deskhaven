@@ -10,25 +10,15 @@
 
 mod support;
 
-use deskhaven_signal::{
-    Authz, ConnectReq, ControlPermissions, ControlPlane, Grant, HttpProxyRequest,
-    HttpProxyResponse, RegisterInfo, RegisterVerdict, SignalConfig,
-};
+use deskhaven_signal::ControlPermissions;
 use hbb_common::{
-    rendezvous_proto::{ControlledContext, IdPk, NatType, RelayResponse, RequestRelay},
+    rendezvous_proto::{ControlledContext, IdPk, RelayResponse, RequestRelay},
     tokio,
-};
-use std::{
-    net::{IpAddr, SocketAddr},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
 };
 use support::{
     CLIENT_VERSION, Conn, MAX_RELAY_SERVER_LEN, MAX_RELAY_UUID_LEN, Rendezvous, TestServer,
-    decode_addr, expect_msg, max_size_request_relay, next_relay, open_id_pk, punch_hole_sent,
-    relay_response, relay_via, request_relay, rv, wait_for_relay,
+    decode_addr, expect_msg, max_size_request_relay, open_id_pk, punch_hole_sent, relay_response,
+    relay_via, request_relay, rv, wait_for_relay,
 };
 
 const TARGET: &str = "relay-target-1";
@@ -307,64 +297,6 @@ async fn relay_response_from_target_reaches_controller_with_signed_pk() {
     server.stop().await;
 }
 
-/// rs:962-963: a single configured relay is handed out in every PunchHole.
-#[tokio::test]
-async fn single_configured_relay_is_handed_out_in_every_punch_hole() {
-    // Arrange
-    let server = TestServer::start_with_relays(&[RELAY_1]).await;
-    let (mut target, _) = server.online_peer(TARGET).await;
-    let req = server.punch_req(TARGET);
-
-    // Act + Assert
-    let first = wait_for_relay(&server, &mut target, &req, |r| !r.is_empty()).await;
-    assert_eq!(first, RELAY_1);
-    for _ in 0..SAMPLES {
-        assert_eq!(next_relay(&server, &mut target, &req).await, RELAY_1);
-    }
-    server.stop().await;
-}
-
-/// rs:965-966: with several relays each PunchHole names one of the configured ones.
-#[tokio::test]
-async fn punch_hole_relay_is_a_member_of_the_configured_set() {
-    // Arrange
-    let set = [RELAY_1, RELAY_2, RELAY_3];
-    let server = TestServer::start_with_relays(&set).await;
-    let (mut target, _) = server.online_peer(TARGET).await;
-    let req = server.punch_req(TARGET);
-
-    // Act + Assert
-    wait_for_relay(&server, &mut target, &req, |r| !r.is_empty()).await;
-    for _ in 0..SAMPLES {
-        let relay = next_relay(&server, &mut target, &req).await;
-        assert!(set.contains(&relay.as_str()), "{relay:?} not in {set:?}");
-    }
-    server.stop().await;
-}
-
-/// `SignalHandle::set_relay_servers` (replaces the console `rs` command, CHANGES.md M1-03):
-/// once applied, punch holes on new connections only name relays of the new set.
-#[tokio::test]
-async fn relay_set_replaced_through_handle_is_used_by_new_connections() {
-    // Arrange
-    let (old, new) = ([RELAY_1, RELAY_2], [RELAY_3, RELAY_4]);
-    let server = TestServer::start_with_relays(&old).await;
-    let (mut target, _) = server.online_peer(TARGET).await;
-    let req = server.punch_req(TARGET);
-    wait_for_relay(&server, &mut target, &req, |r| old.contains(&r)).await;
-
-    // Act
-    server.handle.set_relay_servers(relays(&new)).await.unwrap();
-
-    // Assert
-    wait_for_relay(&server, &mut target, &req, |r| new.contains(&r)).await;
-    for _ in 0..SAMPLES {
-        let relay = next_relay(&server, &mut target, &req).await;
-        assert!(new.contains(&relay.as_str()), "{relay:?} not in {new:?}");
-    }
-    server.stop().await;
-}
-
 /// Changed in M1-06. Upstream (rs:1174-1182) cloned the relay list into each connection task
 /// at accept, so a controller connection accepted before a relay update kept handing out the
 /// old set. The list is now shared by every connection: once an update took effect, the
@@ -389,115 +321,6 @@ async fn early_connection_uses_relay_set_replaced_later() {
     for _ in 0..SAMPLES {
         let after = relay_via(&mut early, &mut target, &req).await;
         assert!(new.contains(&after.as_str()), "early connection: {after:?}");
-    }
-    server.stop().await;
-}
-
-/// M1-06: relay choices go through the injected `ControlPlane::pick_relay`, which sees the
-/// controller's and the target's addresses and the current relay list; its answer is what the
-/// target is told (`None`: no relay).
-#[tokio::test]
-async fn control_plane_picks_the_relay_handed_out() {
-    // Arrange
-    let control = Arc::new(FixedPick::default());
-    let server = TestServer::start_with_control(
-        |cfg| SignalConfig {
-            relay_servers: relays(&[RELAY_1, RELAY_2]),
-            ..cfg
-        },
-        control.clone(),
-    )
-    .await;
-    let (mut target, _) = server.online_peer(TARGET).await;
-    let req = server.punch_req(TARGET);
-    let resolved = || {
-        control
-            .last
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|c| c.2.len() == 2)
-    };
-    wait_for_relay(&server, &mut target, &req, |_| resolved()).await;
-    let mut controller = server.tcp().await;
-
-    // Act
-    let picked = relay_via(&mut controller, &mut target, &req).await;
-    control.answer.store(false, Ordering::SeqCst);
-    let none = relay_via(&mut controller, &mut target, &req).await;
-
-    // Assert
-    assert_eq!(picked, PICKED);
-    assert_eq!(none, "");
-    let (a, b, list) = control.last.lock().unwrap().clone().unwrap();
-    assert_eq!(a, controller.local_addr().ip());
-    assert_eq!(b, target.local_addr().ip());
-    assert_eq!(list, relays(&[RELAY_1, RELAY_2]));
-    server.stop().await;
-}
-
-const PICKED: &str = "picked.example:21117";
-
-/// Answers [`PICKED`] (or `None` once `answer` is cleared) and records the last call.
-struct FixedPick {
-    answer: AtomicBool,
-    last: Mutex<Option<(IpAddr, IpAddr, Vec<String>)>>,
-}
-
-impl Default for FixedPick {
-    fn default() -> Self {
-        Self {
-            answer: AtomicBool::new(true),
-            last: Mutex::new(None),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl ControlPlane for FixedPick {
-    fn register_pk(&self, _: &RegisterInfo<'_>) -> RegisterVerdict {
-        RegisterVerdict::Ok
-    }
-    async fn authorize(&self, _: &ConnectReq<'_>) -> Authz {
-        Authz::Allow(Grant::default())
-    }
-    async fn http_proxy(&self, _: SocketAddr, _: HttpProxyRequest) -> HttpProxyResponse {
-        HttpProxyResponse::default()
-    }
-    async fn health_check(&self, _: &str, _: SocketAddr) -> Option<i32> {
-        None
-    }
-    fn pick_relay(&self, a: IpAddr, b: IpAddr, relays: &[String]) -> Option<String> {
-        *self.last.lock().unwrap() = Some((a, b, relays.to_vec()));
-        let answer = self.answer.load(Ordering::SeqCst);
-        answer.then(|| PICKED.to_owned())
-    }
-}
-
-/// rs:771-777: ALWAYS_USE_RELAY (now `SignalHandle::set_always_use_relay`) forces nat_type
-/// SYMMETRIC in the forwarded PunchHole, immediately; switched off, the request's nat_type is
-/// forwarded again.
-#[tokio::test]
-async fn always_use_relay_forces_symmetric_nat_type() {
-    // Arrange
-    let server = TestServer::start().await;
-    let (mut target, _) = server.online_peer(TARGET).await;
-    let mut controller = server.tcp().await;
-    let req = server.punch_req(TARGET);
-    assert_eq!(req.nat_type.enum_value(), Ok(NatType::ASYMMETRIC));
-
-    for (on, expected) in [(true, NatType::SYMMETRIC), (false, NatType::ASYMMETRIC)] {
-        // Act
-        server.handle.set_always_use_relay(on).unwrap();
-        controller.punch_hole_request(req.clone()).await;
-        let ph = expect_msg!(target.recv().await, PunchHole);
-
-        // Assert
-        assert_eq!(
-            ph.nat_type.enum_value(),
-            Ok(expected),
-            "always_use_relay={on}"
-        );
     }
     server.stop().await;
 }

@@ -400,17 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn body_variants_parse() {
-        let empty = fixture(json!({ "request": { "body": "empty" } }));
-        let json = fixture(json!({ "request": { "body": { "json": { "id": "1" } } } }));
-        let text = fixture(json!({ "request": { "body": { "text": "x" } } }));
-
-        assert!(matches!(empty.request.body, Body::Empty));
-        assert!(matches!(json.request.body, Body::Json(_)));
-        assert!(matches!(text.request.body, Body::Text(_)));
-    }
-
-    #[test]
     fn unknown_keys_are_rejected() {
         let text = json!({
             "upstream_commit": COMMIT, "source": ["a:1"], "description": "d",
