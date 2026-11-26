@@ -46,7 +46,7 @@ for entry in entries:
 fi
 
 # An audit.toml in ./.cargo/ or $CARGO_HOME could silently ignore advisories, so cargo-audit
-# runs from an empty directory with a fresh CARGO_HOME.
+# runs from an empty directory with a fresh CARGO_HOME, started directly rather than through cargo.
 binary="$(realpath "$binary")"
 report="$(realpath -m "$report")"
 sandbox="$(mktemp -d)"

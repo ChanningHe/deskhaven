@@ -83,6 +83,7 @@ impl LoginThrottle {
         }
     }
 
+    /// Wrong password, unknown and disabled accounts alike: the attempt is already counted.
     pub fn on_failure(&self, attempt: Attempt) -> LockStatus {
         attempt.status()
     }

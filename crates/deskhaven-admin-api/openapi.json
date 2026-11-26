@@ -5138,7 +5138,7 @@
         "tags": [
           "identity"
         ],
-        "summary": "Every directory, ordered by name (P0 enables at most one).",
+        "summary": "Every directory, ordered by name (at most one is enabled).",
         "operationId": "list_ldap_directories",
         "responses": {
           "200": {
@@ -12078,7 +12078,7 @@
       },
       "ErrorEnvelope": {
         "type": "object",
-        "description": "The error body of every admin API failure (08-web-console §6).",
+        "description": "The error body of every admin API failure.",
         "required": [
           "error"
         ],
@@ -13015,7 +13015,7 @@
       },
       "LinkedViaView": {
         "type": "string",
-        "description": "How an OIDC identity came to its account (M4-09).",
+        "description": "How an OIDC identity came to its account.",
         "enum": [
           "provisioned",
           "email",
@@ -16008,7 +16008,7 @@
       },
       "RoleView": {
         "type": "string",
-        "description": "Console role (06 §4.1).",
+        "description": "Console role.",
         "enum": [
           "owner",
           "admin",
@@ -16031,7 +16031,7 @@
       },
       "ScopeView": {
         "type": "string",
-        "description": "What a token may do (06 §3.2). Scopes are independent: none implies another.",
+        "description": "What a token may do. Scopes are independent: none implies another.",
         "enum": [
           "deploy",
           "assign",
@@ -16531,11 +16531,11 @@
             }
           }
         ],
-        "description": "Where the effective value comes from (05 §3.5)."
+        "description": "Where the effective value comes from."
       },
       "StatusView": {
         "type": "string",
-        "description": "Account status (04 §3).",
+        "description": "Account status.",
         "enum": [
           "active",
           "disabled",

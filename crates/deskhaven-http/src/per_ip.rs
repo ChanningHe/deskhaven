@@ -16,6 +16,7 @@ const WARN_INTERVAL: Duration = Duration::from_secs(60);
 const MIN_PER_KEY: usize = 16;
 const GLOBAL_SHARE_DIVISOR: usize = 64;
 
+/// Adaptive, so a handful of keys can never fill the listener's cap.
 pub(crate) fn per_key_limit(configured: usize, max_connections: usize) -> usize {
     let share = (max_connections / GLOBAL_SHARE_DIVISOR).max(MIN_PER_KEY);
     configured.min(share).max(1)

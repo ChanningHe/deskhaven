@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::RoleView;
 
-/// What a token may do (06 §3.2). Scopes are independent: none implies another.
+/// What a token may do. Scopes are independent: none implies another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum ScopeView {
     /// `rustdesk --deploy`.

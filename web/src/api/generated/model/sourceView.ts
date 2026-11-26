@@ -4,7 +4,7 @@
  */
 
 /**
- * Where the effective value comes from (05 §3.5).
+ * Where the effective value comes from.
  */
 export type SourceView =
   | {

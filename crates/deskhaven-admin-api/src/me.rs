@@ -13,7 +13,7 @@ use crate::AdminApiError;
 use crate::account_setup::{SetupStep, pending_step};
 use crate::session::ConsoleUser;
 
-/// Console role (06 §4.1).
+/// Console role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RoleView {

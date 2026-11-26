@@ -4,7 +4,7 @@
  */
 
 /**
- * Console role (06 §4.1).
+ * Console role.
  */
 export type RoleView = (typeof RoleView)[keyof typeof RoleView]
 

@@ -11,7 +11,7 @@ use crate::{AdminApiError, AuditCtx, Audited, ValidJson, ValidPath};
 
 type Problem = crate::ErrorEnvelope<'static>;
 
-/// Every directory, ordered by name (P0 enables at most one).
+/// Every directory, ordered by name (at most one is enabled).
 #[utoipa::path(
     get,
     path = "/ldap-directories",

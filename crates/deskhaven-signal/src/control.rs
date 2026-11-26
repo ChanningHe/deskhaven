@@ -1,4 +1,7 @@
-//! Policy hooks of the signal server; [`AllowAll`] reproduces the OSS behavior.
+//! Policy hooks of the signal server; [`AllowAll`] reproduces the OSS behavior. Only
+//! `pick_relay`, `peer_online` and `peer_offline` are called today: `register_pk`,
+//! `authorize`, `http_proxy` and `health_check` are not wired yet, so no connection ACL
+//! is enforced here.
 
 use async_trait::async_trait;
 use hbb_common::rendezvous_proto::{

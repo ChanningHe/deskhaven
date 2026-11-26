@@ -76,7 +76,7 @@ pub enum ErrorCode {
     NotLocalAccount,
     /// `auth.tfa.enforce` requires a second factor of this account: it cannot be turned off.
     TfaEnforced,
-    /// The only OIDC identity of an account that signs in through OIDC alone (M4-09).
+    /// The only OIDC identity of an account that signs in through OIDC alone.
     LastIdentity,
     /// The setting is fixed by the configuration file or an environment variable
     /// (`details.keys`).
@@ -294,7 +294,7 @@ impl AdminApiError {
     }
 }
 
-/// The error body of every admin API failure (08-web-console §6).
+/// The error body of every admin API failure.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorEnvelope<'a> {
     error: ErrorBody<'a>,

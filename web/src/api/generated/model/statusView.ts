@@ -4,7 +4,7 @@
  */
 
 /**
- * Account status (04 §3).
+ * Account status.
  */
 export type StatusView = (typeof StatusView)[keyof typeof StatusView]
 

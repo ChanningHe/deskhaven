@@ -4,7 +4,7 @@
  */
 
 /**
- * What a token may do (06 §3.2). Scopes are independent: none implies another.
+ * What a token may do. Scopes are independent: none implies another.
  */
 export type ScopeView = (typeof ScopeView)[keyof typeof ScopeView]
 

@@ -25,8 +25,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// Registrations are rate-limited (3 RegisterPk per id per 6 s, per IP 30 a minute), so only
-/// an outage fills this.
+/// Queued ids beyond which ids that are not bound yet are refused; a bound peer is always
+/// accepted (its id coalesces).
 pub(crate) const WRITE_QUEUE: usize = 1024;
 /// One store call; a slower one counts as a failure.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);

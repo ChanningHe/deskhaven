@@ -1,7 +1,7 @@
 # pnpm 12 refuses to install package versions younger than its minimumReleaseAge
 # (a supply-chain guard against freshly published, possibly compromised
 # releases). The versions below were pinned within that window when the console
-# was scaffolded (2026-11, M0-08), so pnpm recorded them as explicit exceptions.
+# was scaffolded (2026-11), so pnpm recorded them as explicit exceptions.
 # Remove each entry once that version is older than minimumReleaseAge (or when
 # the dependency is bumped); `pnpm install --frozen-lockfile` must still pass.
 minimumReleaseAgeExclude:
@@ -23,7 +23,7 @@ allowBuilds:
   esbuild: false
   '@bufbuild/buf': false
 
-# M4-05 (pnpm audit): orval's @scalar/json-magic pins undici 7.29 (GHSA-4qv8-2p9j-2685,
+# pnpm audit: orval's @scalar/json-magic pins undici 7.29 (GHSA-4qv8-2p9j-2685,
 # GHSA-f72v-6w45-q472, GHSA-xjj6-f33q-929c, GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx,
 # GHSA-qrxm-fqhp-jwvm, GHSA-9fm3-97px-rjf6, GHSA-55wc-3pg8-jfw6); 7.30.1 is the same major.
 overrides:
@@ -32,7 +32,7 @@ overrides:
   # GHSA-g3hv-75wg-m249 (denial of service by globparts amplification); 11.0.1 is the fix.
   'minimatch@>=7.0.0 <11.0.1': ^11.0.1
 
-# M4-05 (pnpm audit): accepted findings in dev-only tools, never in the built console.
+# pnpm audit: accepted findings in dev-only tools, never in the built console.
 auditConfig:
   ignoreGhsas:
     # deepmerge (shadcn CLI only, run by hand to add components): prototype poisoning of the

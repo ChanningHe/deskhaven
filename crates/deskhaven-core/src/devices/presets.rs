@@ -1,7 +1,8 @@
 //! Presets are self-reported: whoever registers an id with a uuid of their choosing can send
 //! any of them. They only apply when an administrator opted in, and never while
 //! `devices.verify_uuid` is off (anyone knowing an id could send the first sysinfo of a migrated
-//! device).
+//! device). `devices.require_deploy` does not gate them. The strategy and address book entry
+//! are written after the commit, best effort.
 //!
 //! Only the first sysinfo a row ever stores applies them, decided under the row lock, so an
 //! administrator's later change is never undone by the device. Each preset only fills what is

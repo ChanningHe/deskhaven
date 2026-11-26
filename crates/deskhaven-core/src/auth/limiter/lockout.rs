@@ -282,7 +282,8 @@ pub async fn unlock_guarded(
 /// The two-key form lives apart from single-`bigint` keys such as the migration lock.
 const PG_USERNAME_LOCK_NS: i32 = 0x6468_6c6b;
 
-/// A hash collision only makes two usernames wait for each other.
+/// SQLite needs nothing: `BEGIN IMMEDIATE` already serializes every writer. A hash collision
+/// only makes two usernames wait for each other.
 async fn lock_username(txn: &DatabaseTransaction, name: &str) -> Result<(), DbErr> {
     if txn.get_database_backend() != DbBackend::Postgres {
         return Ok(());

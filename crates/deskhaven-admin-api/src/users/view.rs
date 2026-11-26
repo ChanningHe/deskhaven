@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use crate::RoleView;
 
-/// Account status (04 §3).
+/// Account status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusView {
@@ -159,7 +159,7 @@ impl From<Session> for SessionView {
     }
 }
 
-/// How an OIDC identity came to its account (M4-09).
+/// How an OIDC identity came to its account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkedViaView {

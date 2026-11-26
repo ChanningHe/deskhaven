@@ -113,7 +113,7 @@ fn schemas() -> &'static BTreeMap<String, SettingSchema> {
     })
 }
 
-/// Where the effective value comes from (05 §3.5).
+/// Where the effective value comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceView {

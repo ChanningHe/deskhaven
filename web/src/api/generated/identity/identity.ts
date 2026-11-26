@@ -58,7 +58,7 @@ export const getListLdapDirectoriesUrl = () => {
 }
 
 /**
- * @summary Every directory, ordered by name (P0 enables at most one).
+ * @summary Every directory, ordered by name (at most one is enabled).
  */
 export const listLdapDirectories = async (
   options?: Parameters<typeof apiFetch>[1],
@@ -150,7 +150,7 @@ export function useListLdapDirectories<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Every directory, ordered by name (P0 enables at most one).
+ * @summary Every directory, ordered by name (at most one is enabled).
  */
 
 export function useListLdapDirectories<

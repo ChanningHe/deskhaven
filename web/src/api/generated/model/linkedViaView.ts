@@ -4,7 +4,7 @@
  */
 
 /**
- * How an OIDC identity came to its account (M4-09).
+ * How an OIDC identity came to its account.
  */
 export type LinkedViaView = (typeof LinkedViaView)[keyof typeof LinkedViaView]
 

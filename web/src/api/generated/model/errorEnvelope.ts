@@ -5,7 +5,7 @@
 import type { ErrorBody } from './errorBody'
 
 /**
- * The error body of every admin API failure (08-web-console §6).
+ * The error body of every admin API failure.
  */
 export interface ErrorEnvelope {
   error: ErrorBody
