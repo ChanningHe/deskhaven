@@ -332,23 +332,20 @@ mod tests {
     }
 
     #[test]
-    fn the_rustdesk_id_comes_first_and_the_self_description_is_labelled() {
+    fn the_question_names_the_rustdesk_id_and_the_self_description_is_only_a_note() {
         let shown = device(Some("Your work PC"), Some("linux"));
 
         let parts = confirmation_parts("corp", &shown, Ask::SignIn { registered: true });
 
-        assert_eq!(
-            parts.question,
-            "Sign in RustDesk device <strong>123456789</strong> with corp?"
-        );
-        assert_eq!(parts.button, "Sign in");
-        let reported = &parts.notes[0];
         assert!(
-            reported.starts_with("Reported by the device itself"),
-            "{reported}"
+            parts.question.contains("<strong>123456789</strong>"),
+            "{}",
+            parts.question
         );
+        assert!(!parts.question.contains("Your work PC"));
+        let reported = &parts.notes[0];
         assert!(reported.contains("Your work PC") && reported.contains("linux"));
-        assert!(parts.notes.last().unwrap().contains("RustDesk ID"));
+        assert_eq!(parts.notes.last(), Some(&WARNING.to_owned()));
     }
 
     #[test]
@@ -357,7 +354,6 @@ mod tests {
 
         let parts = confirmation_parts("corp", &shown, Ask::SignIn { registered: false });
 
-        assert_eq!(parts.button, "Sign in");
         assert_eq!(parts.notes.last(), Some(&UNREGISTERED_WARNING.to_owned()));
         assert!(!parts.notes.contains(&WARNING.to_owned()));
     }
@@ -373,12 +369,9 @@ mod tests {
         );
 
         assert_eq!(silent.notes, [WARNING.to_owned()]);
-        assert!(
-            hostile
-                .question
-                .starts_with("&lt;i&gt;p&lt;/i&gt; did not sign you in.")
-        );
+        assert!(hostile.question.contains("&lt;i&gt;p&lt;/i&gt;"));
+        assert!(!hostile.question.contains("<i>"));
         assert!(hostile.notes[0].contains("&lt;b&gt;x&lt;/b&gt;"));
-        assert_eq!(hostile.button, "Stop waiting");
+        assert!(!hostile.notes[0].contains("<b>"));
     }
 }

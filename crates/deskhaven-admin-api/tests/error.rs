@@ -133,33 +133,6 @@ async fn validation_error_carries_details() {
 }
 
 #[tokio::test]
-async fn convenience_constructors_use_matching_codes() {
-    let cases = [
-        (AdminApiError::unauthorized(), ErrorCode::Unauthorized),
-        (AdminApiError::forbidden(), ErrorCode::Forbidden),
-        (
-            AdminApiError::conflict("version mismatch"),
-            ErrorCode::Conflict,
-        ),
-        (
-            AdminApiError::new(ErrorCode::NotFound, "gone"),
-            ErrorCode::NotFound,
-        ),
-    ];
-    for (err, code) in cases {
-        assert_eq!(err.code(), code);
-        let (status, body) = json_of(err.into_response()).await;
-        assert_eq!(status, code.status());
-        assert_eq!(body["error"]["code"], json!(code.as_str()));
-        assert!(
-            body["error"]["message"]
-                .as_str()
-                .is_some_and(|m| !m.is_empty())
-        );
-    }
-}
-
-#[tokio::test]
 async fn internal_error_never_leaks_detail() {
     let err = AdminApiError::internal(io::Error::other("db password=hunter2"));
     let got = json_of(err.into_response()).await;

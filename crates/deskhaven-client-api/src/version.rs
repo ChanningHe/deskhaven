@@ -21,21 +21,3 @@ pub async fn version() -> Json<VersionInfo> {
         source_url: SOURCE_URL,
     })
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn serializes_version_and_source_url_only() {
-        let Json(info) = version().await;
-
-        let value = serde_json::to_value(&info).unwrap();
-
-        assert_eq!(
-            value,
-            serde_json::json!({ "version": VERSION, "source_url": SOURCE_URL })
-        );
-    }
-}

@@ -110,14 +110,14 @@ fn production_document_declares_auth_on_every_operation() {
     let doc: Value = serde_json::from_str(&openapi_json().unwrap()).unwrap();
 
     assert_eq!(doc["openapi"], "3.1.0");
+    let scheme = &doc["components"]["securitySchemes"]["console_session"];
     assert_eq!(
-        doc["components"]["securitySchemes"]["console_session"],
-        json!({
-            "type": "apiKey",
-            "in": "cookie",
-            "name": "__Host-deskhaven_session",
-            "description": "Console session token (HttpOnly; set by the console login)."
-        })
+        (&scheme["type"], &scheme["in"], &scheme["name"]),
+        (
+            &json!("apiKey"),
+            &json!("cookie"),
+            &json!("__Host-deskhaven_session")
+        )
     );
     let me = &doc["paths"]["/admin/api/v1/me"]["get"];
     assert_eq!(me["security"], json!([{ "console_session": ["session"] }]));

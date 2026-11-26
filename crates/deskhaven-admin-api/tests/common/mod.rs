@@ -89,9 +89,9 @@ pub async fn harness_pinned(db: &TestDb, extra: AdminRoutes, pins: PinSet) -> Ha
     build(db, extra, pins, Arc::new(OfflineFetch)).await
 }
 
-/// [`harness_pinned`] whose update check asks `fetch`.
-pub async fn harness_with_updates(db: &TestDb, pins: PinSet, fetch: Arc<dyn HttpFetch>) -> Harness {
-    build(db, AdminRoutes::new(), pins, fetch).await
+/// [`harness`] whose update check asks `fetch`.
+pub async fn harness_with_updates(db: &TestDb, fetch: Arc<dyn HttpFetch>) -> Harness {
+    build(db, AdminRoutes::new(), PinSet::empty(), fetch).await
 }
 
 /// The production routes with every service on `clock` (e.g. a `ManualClock`).

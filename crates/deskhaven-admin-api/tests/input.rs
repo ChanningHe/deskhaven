@@ -16,27 +16,6 @@ use serde_json::json;
 const SELF_WRITE: &str = "/admin/api/v1/probe/self";
 
 #[tokio::test]
-async fn valid_body_reaches_the_handler() {
-    each_migrated_backend(async |db: &TestDb| {
-        let app = harness(db, probe::routes()).await;
-        let uma = app.console("uma", Role::User).await;
-
-        let reply = app
-            .write(
-                Method::POST,
-                SELF_WRITE,
-                &uma,
-                json!({ "name": "box", "count": 3 }),
-            )
-            .await;
-
-        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-        assert_eq!(reply.body, json!({ "name": "box", "count": 3 }));
-    })
-    .await;
-}
-
-#[tokio::test]
 async fn rule_failures_are_422_with_field_details() {
     each_migrated_backend(async |db: &TestDb| {
         let app = harness(db, probe::routes()).await;

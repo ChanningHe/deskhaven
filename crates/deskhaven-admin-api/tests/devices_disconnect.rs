@@ -6,13 +6,15 @@
 
 mod common;
 
-use std::time::Duration;
+use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
 use common::devices::{heartbeat_http, path, register};
-use common::{Console, Harness, harness};
+use common::{Console, Harness, harness, harness_on_clock};
 use deskhaven_admin_api::AdminRoutes;
-use deskhaven_core::devices::MAX_QUEUED_DEVICES;
+use deskhaven_config::settings::PinSet;
+use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
+use deskhaven_core::devices::{HEARTBEAT_MIN_INTERVAL, MAX_QUEUED_DEVICES};
 use deskhaven_core::strategies::{NewStrategy, Options, Target};
 use deskhaven_core::users::Role;
 use deskhaven_db::entity::user;
@@ -20,9 +22,6 @@ use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use sea_orm::sea_query::Expr;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::{Value, json};
-
-/// The heartbeat of one device is limited to one per `HEARTBEAT_MIN_INTERVAL` (2 s).
-const BEAT_GAP: Duration = Duration::from_millis(2_100);
 
 async fn setup(db: &TestDb) -> (Harness, Console) {
     let h = harness(db, AdminRoutes::new()).await;
@@ -201,7 +200,9 @@ fn options(pairs: &[(&str, &str)]) -> Options {
 #[tokio::test]
 async fn moving_a_device_makes_its_heartbeat_delete_the_old_groups_keys() {
     each_migrated_backend(async |db: &TestDb| {
-        let (h, admin) = setup(db).await;
+        let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
+        let h = harness_on_clock(db, PinSet::empty(), clock.clone()).await;
+        let admin = h.console("adm", Role::Admin).await;
         let id = register(&h, "100").await;
         let (first, second) = (
             h.state.devices.create_group("A", "").await.unwrap(),
@@ -227,7 +228,7 @@ async fn moving_a_device_makes_its_heartbeat_delete_the_old_groups_keys() {
 
         let moved = json!({ "device_group_id": second });
         h.write(Method::PATCH, &path(id), &admin, moved).await;
-        tokio::time::sleep(BEAT_GAP).await;
+        clock.advance(HEARTBEAT_MIN_INTERVAL);
         let (status, left) =
             heartbeat_http(&h, "100", &[], joined["modified_at"].as_i64().unwrap()).await;
 

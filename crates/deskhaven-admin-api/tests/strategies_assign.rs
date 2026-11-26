@@ -5,19 +5,20 @@
 
 mod common;
 
-use std::time::Duration;
+use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
 use common::devices::{heartbeat_http, path, register};
-use common::{Console, Harness, harness};
+use common::{Console, Harness, harness, harness_on_clock};
 use deskhaven_admin_api::AdminRoutes;
+use deskhaven_config::settings::PinSet;
+use deskhaven_core::clock::{Clock, ManualClock, SystemClock};
+use deskhaven_core::devices::HEARTBEAT_MIN_INTERVAL;
 use deskhaven_core::users::Role;
 use deskhaven_db::testing::{TestDb, each_migrated_backend};
 use serde_json::{Value, json};
 
 const STRATEGIES: &str = "/admin/api/v1/strategies";
-/// The heartbeat refuses a device's beats closer than 2 s.
-const BEAT_GAP: Duration = Duration::from_millis(2_100);
 
 async fn setup(db: &TestDb) -> (Harness, Console) {
     let h = harness(db, AdminRoutes::new()).await;
@@ -49,7 +50,9 @@ async fn assign(h: &Harness, admin: &Console, id: i64, target: Value) -> StatusC
 #[tokio::test]
 async fn assigned_to_a_device_group_it_is_previewed_and_delivered_by_the_heartbeat() {
     each_migrated_backend(async |db: &TestDb| {
-        let (h, admin) = setup(db).await;
+        let clock = Arc::new(ManualClock::at(SystemClock.now_ms()));
+        let h = harness_on_clock(db, PinSet::empty(), clock.clone()).await;
+        let admin = h.console("adm", Role::Admin).await;
         let options = json!({ "enable-file-transfer": "N", "approve-mode": "click", "proxy-password": "pw-1" });
         let office = create(&h, &admin, "office", options).await;
         let group = h.state.devices.create_group("Office", "").await.unwrap();
@@ -94,7 +97,7 @@ async fn assigned_to_a_device_group_it_is_previewed_and_delivered_by_the_heartbe
 
         let patch = json!({ "options": { "approve-mode": null, "enable-audio": "N" } });
         assert_eq!(h.write(Method::PATCH, &format!("{STRATEGIES}/{office}"), &admin, patch).await.status, StatusCode::OK);
-        tokio::time::sleep(BEAT_GAP).await;
+        clock.advance(HEARTBEAT_MIN_INTERVAL);
         let (_, changed) = heartbeat_http(&h, "100", &[], beat["modified_at"].as_i64().unwrap()).await;
         assert_eq!(
             changed["strategy"]["config_options"],
@@ -104,7 +107,7 @@ async fn assigned_to_a_device_group_it_is_previewed_and_delivered_by_the_heartbe
 
         let remove = format!("{}?target_type=device_group&target_id={group}", assignments(office));
         assert_eq!(h.act(Method::DELETE, &remove, &admin).await.status, StatusCode::NO_CONTENT);
-        tokio::time::sleep(BEAT_GAP).await;
+        clock.advance(HEARTBEAT_MIN_INTERVAL);
         let (_, left) = heartbeat_http(&h, "100", &[], changed["modified_at"].as_i64().unwrap()).await;
         // Every key the device may still hold is cleared; the delivered-key set is a
         // superset, so the `approve-mode` removed earlier is cleared once more.

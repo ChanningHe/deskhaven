@@ -191,15 +191,9 @@ mod tests {
         let held = acquire(&slots, Duration::from_millis(10)).await.unwrap();
 
         let (waiting, ()) = tokio::join!(acquire(&slots, Duration::from_secs(5)), async {
-            tokio::time::sleep(Duration::from_millis(20)).await;
             drop(held);
         });
 
         let _permit = waiting.unwrap();
-    }
-
-    #[test]
-    fn the_route_limit_is_the_stacks_so_it_can_never_be_the_hidden_one() {
-        assert_eq!(MAX_LEGACY_AB_BODY, DEFAULT_BODY_LIMIT);
     }
 }

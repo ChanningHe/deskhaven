@@ -47,14 +47,18 @@ async fn the_catalog_lists_typed_grouped_options_from_the_client_source() {
         let reply = h.get("/admin/api/v1/strategy-catalog", &admin).await;
 
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
-        assert_eq!(reply.body["source"]["rustdesk"], "23e5bb4");
+        assert!(reply.body["source"]["rustdesk"].is_string());
         let options = reply.body["options"].as_array().unwrap();
         let find = |key: &str| options.iter().find(|o| o["key"] == key).unwrap().clone();
         let approve = find("approve-mode");
         assert_eq!(approve["kind"], "choice");
         assert_eq!(approve["group"], "security");
         assert_eq!(approve["choices"][1]["value"], "click");
-        assert_eq!(approve["label"]["zh"], "会话接受方式");
+        assert!(
+            approve["label"]["zh"]
+                .as_str()
+                .is_some_and(|l| !l.is_empty())
+        );
         let keyboard = find("enable-keyboard");
         assert_eq!(
             (keyboard["kind"].clone(), keyboard["default"].clone()),

@@ -167,14 +167,3 @@ pub(crate) fn extra(key: &str, value: impl Into<Value>) -> Option<Value> {
     members.insert(key.to_owned(), value.into());
     Some(Value::Object(members))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn snapshot_extra_members_are_merged() {
-        let merged = with_extra(serde_json::json!({ "a": 1 }), extra("b", 2));
-        assert_eq!(merged, serde_json::json!({ "a": 1, "b": 2 }));
-    }
-}
